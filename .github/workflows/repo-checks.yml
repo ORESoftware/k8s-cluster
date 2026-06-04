@@ -47,6 +47,10 @@ jobs:
         run: pnpm run check:api-docs
         working-directory: remote/tests
 
+      - name: Verify observability coverage
+        run: pnpm run check:observability-coverage
+        working-directory: remote/tests
+
       - name: Run static repo contract tests
         run: |
           set -euo pipefail

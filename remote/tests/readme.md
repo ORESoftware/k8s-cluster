@@ -50,6 +50,13 @@ Run observability stack checks (collector + Prometheus + Grafana + Loki + Tempo 
 pnpm --dir remote/tests run test:cli:observability-config
 ```
 
+Run the standalone observability coverage guardrail (workload watchlist, Grafana drilldown route,
+and no auto-instrumentation/monkey-patching packages):
+
+```bash
+pnpm --dir remote/tests run check:observability-coverage
+```
+
 Run NATS messaging checks (NATS deployment + exporter scrape + Grafana panels):
 
 ```bash

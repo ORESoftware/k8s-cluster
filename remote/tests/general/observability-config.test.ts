@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -278,6 +279,21 @@ test("resource exporter and Grafana fleet dashboard cover every checked-in workl
   assert.match(dashboardText, /dd_k8s_workload_unavailable_replicas/);
   assert.match(dashboardText, /\{deployment=~\\\"\$\{workload:regex\}\\\"\}/);
   assert.match(dashboardText, /\{log_schema=\\\"dd\.log\.v1\\\",deployment=~\\\"\$\{workload:regex\}\\\"/);
+});
+
+test("standalone observability coverage guardrail passes", async () => {
+  const result = spawnSync("node", ["remote/tools/check-observability-coverage.mjs"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  assert.equal(
+    result.status,
+    0,
+    `observability coverage check failed\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+  );
+  assert.match(result.stdout, /observability coverage ok/);
+  assert.match(result.stdout, /source files avoid common monkey-patching patterns/);
 });
 
 test("promtail parses the shared structured stdio envelope without high-cardinality labels", async () => {

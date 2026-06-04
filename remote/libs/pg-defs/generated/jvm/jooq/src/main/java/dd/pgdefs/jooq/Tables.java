@@ -521,4 +521,75 @@ public final class Tables {
     public static final Field<JSONB> DES_SOCCER_LEARNING_MERGE_EVENTS_METRICS = DSL.field(DSL.name("des_soccer_learning_merge_events", "metrics"), SQLDataType.JSONB);
     public static final Field<OffsetDateTime> DES_SOCCER_LEARNING_MERGE_EVENTS_CREATED_AT = DSL.field(DSL.name("des_soccer_learning_merge_events", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
+    public static final Name DES_FEL_ELEVATOR_LEARNING_RUNS_NAME = DSL.name("des_fel_elevator_learning_runs");
+    public static final Table<org.jooq.Record> DES_FEL_ELEVATOR_LEARNING_RUNS = DSL.table(DES_FEL_ELEVATOR_LEARNING_RUNS_NAME);
+    public static final Field<UUID> DES_FEL_ELEVATOR_LEARNING_RUNS_ID = DSL.field(DSL.name("des_fel_elevator_learning_runs", "id"), SQLDataType.UUID);
+    public static final Field<String> DES_FEL_ELEVATOR_LEARNING_RUNS_RUN_LABEL = DSL.field(DSL.name("des_fel_elevator_learning_runs", "run_label"), SQLDataType.VARCHAR(200));
+    public static final Field<String> DES_FEL_ELEVATOR_LEARNING_RUNS_SCENARIO_SLUG = DSL.field(DSL.name("des_fel_elevator_learning_runs", "scenario_slug"), SQLDataType.VARCHAR(160));
+    public static final Field<String> DES_FEL_ELEVATOR_LEARNING_RUNS_STATUS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "status"), SQLDataType.VARCHAR(32));
+    public static final Field<String> DES_FEL_ELEVATOR_LEARNING_RUNS_DISPATCH_POLICY = DSL.field(DSL.name("des_fel_elevator_learning_runs", "dispatch_policy"), SQLDataType.VARCHAR(40));
+    public static final Field<Long> DES_FEL_ELEVATOR_LEARNING_RUNS_SEED = DSL.field(DSL.name("des_fel_elevator_learning_runs", "seed"), SQLDataType.BIGINT);
+    public static final Field<Integer> DES_FEL_ELEVATOR_LEARNING_RUNS_FLOORS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "floors"), SQLDataType.INTEGER);
+    public static final Field<Integer> DES_FEL_ELEVATOR_LEARNING_RUNS_SHAFTS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "shafts"), SQLDataType.INTEGER);
+    public static final Field<Integer> DES_FEL_ELEVATOR_LEARNING_RUNS_CAPACITY = DSL.field(DSL.name("des_fel_elevator_learning_runs", "capacity"), SQLDataType.INTEGER);
+    public static final Field<Long> DES_FEL_ELEVATOR_LEARNING_RUNS_TRAVEL_SECONDS_MICROS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "travel_seconds_micros"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_FEL_ELEVATOR_LEARNING_RUNS_DWELL_SECONDS_MICROS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "dwell_seconds_micros"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_FEL_ELEVATOR_LEARNING_RUNS_ARRIVAL_RATE_MICROS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "arrival_rate_micros"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_FEL_ELEVATOR_LEARNING_RUNS_HORIZON_SECONDS_MICROS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "horizon_seconds_micros"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_FEL_ELEVATOR_LEARNING_RUNS_EVENTS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "events"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_FEL_ELEVATOR_LEARNING_RUNS_ARRIVALS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "arrivals"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_FEL_ELEVATOR_LEARNING_RUNS_BOARDED = DSL.field(DSL.name("des_fel_elevator_learning_runs", "boarded"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_FEL_ELEVATOR_LEARNING_RUNS_SERVED = DSL.field(DSL.name("des_fel_elevator_learning_runs", "served"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_FEL_ELEVATOR_LEARNING_RUNS_MEAN_WAIT_MICROS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "mean_wait_micros"), SQLDataType.BIGINT);
+    public static final Field<Integer> DES_FEL_ELEVATOR_LEARNING_RUNS_DISPATCH_DECISIONS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "dispatch_decisions"), SQLDataType.INTEGER);
+    public static final Field<Integer> DES_FEL_ELEVATOR_LEARNING_RUNS_POMDP_BELIEF_UPDATES = DSL.field(DSL.name("des_fel_elevator_learning_runs", "pomdp_belief_updates"), SQLDataType.INTEGER);
+    public static final Field<Long> DES_FEL_ELEVATOR_LEARNING_RUNS_ONLINE_LEARNING_UPDATES = DSL.field(DSL.name("des_fel_elevator_learning_runs", "online_learning_updates"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_FEL_ELEVATOR_LEARNING_RUNS_ONLINE_LEARNING_LOSS_LAST_MICROS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "online_learning_loss_last_micros"), SQLDataType.BIGINT);
+    public static final Field<JSONB> DES_FEL_ELEVATOR_LEARNING_RUNS_CONFIG = DSL.field(DSL.name("des_fel_elevator_learning_runs", "config"), SQLDataType.JSONB);
+    public static final Field<JSONB> DES_FEL_ELEVATOR_LEARNING_RUNS_METRICS = DSL.field(DSL.name("des_fel_elevator_learning_runs", "metrics"), SQLDataType.JSONB);
+    public static final Field<JSONB> DES_FEL_ELEVATOR_LEARNING_RUNS_ARTIFACT = DSL.field(DSL.name("des_fel_elevator_learning_runs", "artifact"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> DES_FEL_ELEVATOR_LEARNING_RUNS_CREATED_AT = DSL.field(DSL.name("des_fel_elevator_learning_runs", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> DES_FEL_ELEVATOR_LEARNING_RUNS_UPDATED_AT = DSL.field(DSL.name("des_fel_elevator_learning_runs", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name DES_FEL_ELEVATOR_POLICY_STATES_NAME = DSL.name("des_fel_elevator_policy_states");
+    public static final Table<org.jooq.Record> DES_FEL_ELEVATOR_POLICY_STATES = DSL.table(DES_FEL_ELEVATOR_POLICY_STATES_NAME);
+    public static final Field<UUID> DES_FEL_ELEVATOR_POLICY_STATES_ID = DSL.field(DSL.name("des_fel_elevator_policy_states", "id"), SQLDataType.UUID);
+    public static final Field<UUID> DES_FEL_ELEVATOR_POLICY_STATES_RUN_ID = DSL.field(DSL.name("des_fel_elevator_policy_states", "run_id"), SQLDataType.UUID);
+    public static final Field<String> DES_FEL_ELEVATOR_POLICY_STATES_POLICY_KIND = DSL.field(DSL.name("des_fel_elevator_policy_states", "policy_kind"), SQLDataType.VARCHAR(40));
+    public static final Field<String> DES_FEL_ELEVATOR_POLICY_STATES_SOURCE_KIND = DSL.field(DSL.name("des_fel_elevator_policy_states", "source_kind"), SQLDataType.VARCHAR(40));
+    public static final Field<Integer> DES_FEL_ELEVATOR_POLICY_STATES_FEATURE_DIM = DSL.field(DSL.name("des_fel_elevator_policy_states", "feature_dim"), SQLDataType.INTEGER);
+    public static final Field<Integer> DES_FEL_ELEVATOR_POLICY_STATES_OUTPUT_DIM = DSL.field(DSL.name("des_fel_elevator_policy_states", "output_dim"), SQLDataType.INTEGER);
+    public static final Field<Integer> DES_FEL_ELEVATOR_POLICY_STATES_PARAMETER_COUNT = DSL.field(DSL.name("des_fel_elevator_policy_states", "parameter_count"), SQLDataType.INTEGER);
+    public static final Field<Long> DES_FEL_ELEVATOR_POLICY_STATES_ONLINE_LEARNING_UPDATES = DSL.field(DSL.name("des_fel_elevator_policy_states", "online_learning_updates"), SQLDataType.BIGINT);
+    public static final Field<JSONB> DES_FEL_ELEVATOR_POLICY_STATES_LOSS_HISTORY = DSL.field(DSL.name("des_fel_elevator_policy_states", "loss_history"), SQLDataType.JSONB);
+    public static final Field<JSONB> DES_FEL_ELEVATOR_POLICY_STATES_STATE = DSL.field(DSL.name("des_fel_elevator_policy_states", "state"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> DES_FEL_ELEVATOR_POLICY_STATES_CREATED_AT = DSL.field(DSL.name("des_fel_elevator_policy_states", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name DES_FEL_ELEVATOR_DISPATCH_DECISIONS_NAME = DSL.name("des_fel_elevator_dispatch_decisions");
+    public static final Table<org.jooq.Record> DES_FEL_ELEVATOR_DISPATCH_DECISIONS = DSL.table(DES_FEL_ELEVATOR_DISPATCH_DECISIONS_NAME);
+    public static final Field<UUID> DES_FEL_ELEVATOR_DISPATCH_DECISIONS_ID = DSL.field(DSL.name("des_fel_elevator_dispatch_decisions", "id"), SQLDataType.UUID);
+    public static final Field<UUID> DES_FEL_ELEVATOR_DISPATCH_DECISIONS_RUN_ID = DSL.field(DSL.name("des_fel_elevator_dispatch_decisions", "run_id"), SQLDataType.UUID);
+    public static final Field<Integer> DES_FEL_ELEVATOR_DISPATCH_DECISIONS_DECISION_INDEX = DSL.field(DSL.name("des_fel_elevator_dispatch_decisions", "decision_index"), SQLDataType.INTEGER);
+    public static final Field<Long> DES_FEL_ELEVATOR_DISPATCH_DECISIONS_SIM_TIME_MICROS = DSL.field(DSL.name("des_fel_elevator_dispatch_decisions", "sim_time_micros"), SQLDataType.BIGINT);
+    public static final Field<Integer> DES_FEL_ELEVATOR_DISPATCH_DECISIONS_CALL_FLOOR = DSL.field(DSL.name("des_fel_elevator_dispatch_decisions", "call_floor"), SQLDataType.INTEGER);
+    public static final Field<Integer> DES_FEL_ELEVATOR_DISPATCH_DECISIONS_CAR_INDEX = DSL.field(DSL.name("des_fel_elevator_dispatch_decisions", "car_index"), SQLDataType.INTEGER);
+    public static final Field<String> DES_FEL_ELEVATOR_DISPATCH_DECISIONS_POLICY_KIND = DSL.field(DSL.name("des_fel_elevator_dispatch_decisions", "policy_kind"), SQLDataType.VARCHAR(40));
+    public static final Field<JSONB> DES_FEL_ELEVATOR_DISPATCH_DECISIONS_META_DATA = DSL.field(DSL.name("des_fel_elevator_dispatch_decisions", "meta_data"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> DES_FEL_ELEVATOR_DISPATCH_DECISIONS_CREATED_AT = DSL.field(DSL.name("des_fel_elevator_dispatch_decisions", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name DES_FEL_ELEVATOR_POMDP_BELIEFS_NAME = DSL.name("des_fel_elevator_pomdp_beliefs");
+    public static final Table<org.jooq.Record> DES_FEL_ELEVATOR_POMDP_BELIEFS = DSL.table(DES_FEL_ELEVATOR_POMDP_BELIEFS_NAME);
+    public static final Field<UUID> DES_FEL_ELEVATOR_POMDP_BELIEFS_ID = DSL.field(DSL.name("des_fel_elevator_pomdp_beliefs", "id"), SQLDataType.UUID);
+    public static final Field<UUID> DES_FEL_ELEVATOR_POMDP_BELIEFS_RUN_ID = DSL.field(DSL.name("des_fel_elevator_pomdp_beliefs", "run_id"), SQLDataType.UUID);
+    public static final Field<Integer> DES_FEL_ELEVATOR_POMDP_BELIEFS_BELIEF_INDEX = DSL.field(DSL.name("des_fel_elevator_pomdp_beliefs", "belief_index"), SQLDataType.INTEGER);
+    public static final Field<Long> DES_FEL_ELEVATOR_POMDP_BELIEFS_SIM_TIME_MICROS = DSL.field(DSL.name("des_fel_elevator_pomdp_beliefs", "sim_time_micros"), SQLDataType.BIGINT);
+    public static final Field<Integer> DES_FEL_ELEVATOR_POMDP_BELIEFS_FLOOR = DSL.field(DSL.name("des_fel_elevator_pomdp_beliefs", "floor"), SQLDataType.INTEGER);
+    public static final Field<String> DES_FEL_ELEVATOR_POMDP_BELIEFS_ACTION = DSL.field(DSL.name("des_fel_elevator_pomdp_beliefs", "action"), SQLDataType.VARCHAR(32));
+    public static final Field<String> DES_FEL_ELEVATOR_POMDP_BELIEFS_OBSERVATION = DSL.field(DSL.name("des_fel_elevator_pomdp_beliefs", "observation"), SQLDataType.VARCHAR(32));
+    public static final Field<Integer> DES_FEL_ELEVATOR_POMDP_BELIEFS_EMPTY_PROB_MICROS = DSL.field(DSL.name("des_fel_elevator_pomdp_beliefs", "empty_prob_micros"), SQLDataType.INTEGER);
+    public static final Field<Integer> DES_FEL_ELEVATOR_POMDP_BELIEFS_WAITING_PROB_MICROS = DSL.field(DSL.name("des_fel_elevator_pomdp_beliefs", "waiting_prob_micros"), SQLDataType.INTEGER);
+    public static final Field<Integer> DES_FEL_ELEVATOR_POMDP_BELIEFS_CROWDED_PROB_MICROS = DSL.field(DSL.name("des_fel_elevator_pomdp_beliefs", "crowded_prob_micros"), SQLDataType.INTEGER);
+    public static final Field<JSONB> DES_FEL_ELEVATOR_POMDP_BELIEFS_BELIEF = DSL.field(DSL.name("des_fel_elevator_pomdp_beliefs", "belief"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> DES_FEL_ELEVATOR_POMDP_BELIEFS_CREATED_AT = DSL.field(DSL.name("des_fel_elevator_pomdp_beliefs", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
 }

@@ -42,6 +42,9 @@ resources:
   - dd-live-mutex-submodule.service.yaml
   - dd-rust-network-mutex.deployment.yaml
   - dd-rust-network-mutex.service.yaml
+  - dd-rust-network-mutex-raft.configmap.yaml
+  - dd-rust-network-mutex-raft.service.yaml
+  - dd-rust-network-mutex-raft.statefulset.yaml
   - dd-redis-cache.configmap.yaml
   - dd-redis-cache.deployment.yaml
   - dd-redis-cache.networkpolicy.yaml

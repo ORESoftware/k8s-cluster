@@ -450,3 +450,63 @@ update des_soccer_learning_merge_events set experiment_id = $2, base_policy_vers
 
 -- name: DeleteDesSoccerLearningMergeEvents :exec
 delete from des_soccer_learning_merge_events where id = $1;
+
+-- name: ListDesFelElevatorLearningRuns :many
+select id, run_label, scenario_slug, status, dispatch_policy, seed, floors, shafts, capacity, travel_seconds_micros, dwell_seconds_micros, arrival_rate_micros, horizon_seconds_micros, events, arrivals, boarded, served, mean_wait_micros, dispatch_decisions, pomdp_belief_updates, online_learning_updates, online_learning_loss_last_micros, config, metrics, artifact, created_at, updated_at from des_fel_elevator_learning_runs;
+
+-- name: GetDesFelElevatorLearningRuns :one
+select id, run_label, scenario_slug, status, dispatch_policy, seed, floors, shafts, capacity, travel_seconds_micros, dwell_seconds_micros, arrival_rate_micros, horizon_seconds_micros, events, arrivals, boarded, served, mean_wait_micros, dispatch_decisions, pomdp_belief_updates, online_learning_updates, online_learning_loss_last_micros, config, metrics, artifact, created_at, updated_at from des_fel_elevator_learning_runs where id = $1 limit 1;
+
+-- name: CreateDesFelElevatorLearningRuns :one
+insert into des_fel_elevator_learning_runs (id, run_label, scenario_slug, status, dispatch_policy, seed, floors, shafts, capacity, travel_seconds_micros, dwell_seconds_micros, arrival_rate_micros, horizon_seconds_micros, events, arrivals, boarded, served, mean_wait_micros, dispatch_decisions, pomdp_belief_updates, online_learning_updates, online_learning_loss_last_micros, config, metrics, artifact, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27) returning id, run_label, scenario_slug, status, dispatch_policy, seed, floors, shafts, capacity, travel_seconds_micros, dwell_seconds_micros, arrival_rate_micros, horizon_seconds_micros, events, arrivals, boarded, served, mean_wait_micros, dispatch_decisions, pomdp_belief_updates, online_learning_updates, online_learning_loss_last_micros, config, metrics, artifact, created_at, updated_at;
+
+-- name: UpdateDesFelElevatorLearningRuns :one
+update des_fel_elevator_learning_runs set run_label = $2, scenario_slug = $3, status = $4, dispatch_policy = $5, seed = $6, floors = $7, shafts = $8, capacity = $9, travel_seconds_micros = $10, dwell_seconds_micros = $11, arrival_rate_micros = $12, horizon_seconds_micros = $13, events = $14, arrivals = $15, boarded = $16, served = $17, mean_wait_micros = $18, dispatch_decisions = $19, pomdp_belief_updates = $20, online_learning_updates = $21, online_learning_loss_last_micros = $22, config = $23, metrics = $24, artifact = $25, updated_at = $26 where id = $1 returning id, run_label, scenario_slug, status, dispatch_policy, seed, floors, shafts, capacity, travel_seconds_micros, dwell_seconds_micros, arrival_rate_micros, horizon_seconds_micros, events, arrivals, boarded, served, mean_wait_micros, dispatch_decisions, pomdp_belief_updates, online_learning_updates, online_learning_loss_last_micros, config, metrics, artifact, created_at, updated_at;
+
+-- name: DeleteDesFelElevatorLearningRuns :exec
+delete from des_fel_elevator_learning_runs where id = $1;
+
+-- name: ListDesFelElevatorPolicyStates :many
+select id, run_id, policy_kind, source_kind, feature_dim, output_dim, parameter_count, online_learning_updates, loss_history, state, created_at from des_fel_elevator_policy_states;
+
+-- name: GetDesFelElevatorPolicyStates :one
+select id, run_id, policy_kind, source_kind, feature_dim, output_dim, parameter_count, online_learning_updates, loss_history, state, created_at from des_fel_elevator_policy_states where id = $1 limit 1;
+
+-- name: CreateDesFelElevatorPolicyStates :one
+insert into des_fel_elevator_policy_states (id, run_id, policy_kind, source_kind, feature_dim, output_dim, parameter_count, online_learning_updates, loss_history, state, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id, run_id, policy_kind, source_kind, feature_dim, output_dim, parameter_count, online_learning_updates, loss_history, state, created_at;
+
+-- name: UpdateDesFelElevatorPolicyStates :one
+update des_fel_elevator_policy_states set run_id = $2, policy_kind = $3, source_kind = $4, feature_dim = $5, output_dim = $6, parameter_count = $7, online_learning_updates = $8, loss_history = $9, state = $10 where id = $1 returning id, run_id, policy_kind, source_kind, feature_dim, output_dim, parameter_count, online_learning_updates, loss_history, state, created_at;
+
+-- name: DeleteDesFelElevatorPolicyStates :exec
+delete from des_fel_elevator_policy_states where id = $1;
+
+-- name: ListDesFelElevatorDispatchDecisions :many
+select id, run_id, decision_index, sim_time_micros, call_floor, car_index, policy_kind, meta_data, created_at from des_fel_elevator_dispatch_decisions;
+
+-- name: GetDesFelElevatorDispatchDecisions :one
+select id, run_id, decision_index, sim_time_micros, call_floor, car_index, policy_kind, meta_data, created_at from des_fel_elevator_dispatch_decisions where id = $1 limit 1;
+
+-- name: CreateDesFelElevatorDispatchDecisions :one
+insert into des_fel_elevator_dispatch_decisions (id, run_id, decision_index, sim_time_micros, call_floor, car_index, policy_kind, meta_data, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, run_id, decision_index, sim_time_micros, call_floor, car_index, policy_kind, meta_data, created_at;
+
+-- name: UpdateDesFelElevatorDispatchDecisions :one
+update des_fel_elevator_dispatch_decisions set run_id = $2, decision_index = $3, sim_time_micros = $4, call_floor = $5, car_index = $6, policy_kind = $7, meta_data = $8 where id = $1 returning id, run_id, decision_index, sim_time_micros, call_floor, car_index, policy_kind, meta_data, created_at;
+
+-- name: DeleteDesFelElevatorDispatchDecisions :exec
+delete from des_fel_elevator_dispatch_decisions where id = $1;
+
+-- name: ListDesFelElevatorPomdpBeliefs :many
+select id, run_id, belief_index, sim_time_micros, floor, action, observation, empty_prob_micros, waiting_prob_micros, crowded_prob_micros, belief, created_at from des_fel_elevator_pomdp_beliefs;
+
+-- name: GetDesFelElevatorPomdpBeliefs :one
+select id, run_id, belief_index, sim_time_micros, floor, action, observation, empty_prob_micros, waiting_prob_micros, crowded_prob_micros, belief, created_at from des_fel_elevator_pomdp_beliefs where id = $1 limit 1;
+
+-- name: CreateDesFelElevatorPomdpBeliefs :one
+insert into des_fel_elevator_pomdp_beliefs (id, run_id, belief_index, sim_time_micros, floor, action, observation, empty_prob_micros, waiting_prob_micros, crowded_prob_micros, belief, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id, run_id, belief_index, sim_time_micros, floor, action, observation, empty_prob_micros, waiting_prob_micros, crowded_prob_micros, belief, created_at;
+
+-- name: UpdateDesFelElevatorPomdpBeliefs :one
+update des_fel_elevator_pomdp_beliefs set run_id = $2, belief_index = $3, sim_time_micros = $4, floor = $5, action = $6, observation = $7, empty_prob_micros = $8, waiting_prob_micros = $9, crowded_prob_micros = $10, belief = $11 where id = $1 returning id, run_id, belief_index, sim_time_micros, floor, action, observation, empty_prob_micros, waiting_prob_micros, crowded_prob_micros, belief, created_at;
+
+-- name: DeleteDesFelElevatorPomdpBeliefs :exec
+delete from des_fel_elevator_pomdp_beliefs where id = $1;

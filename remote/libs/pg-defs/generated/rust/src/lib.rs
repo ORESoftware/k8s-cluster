@@ -4211,6 +4211,729 @@ pub fn validate_des_soccer_learning_merge_events_insert(value: &DesSoccerLearnin
     Ok(())
 }
 
+pub const DES_FEL_ELEVATOR_LEARNING_RUNS_TABLE: &str = "des_fel_elevator_learning_runs";
+pub const DES_FEL_ELEVATOR_LEARNING_RUNS_COLUMNS: &[&str] = &["id", "run_label", "scenario_slug", "status", "dispatch_policy", "seed", "floors", "shafts", "capacity", "travel_seconds_micros", "dwell_seconds_micros", "arrival_rate_micros", "horizon_seconds_micros", "events", "arrivals", "boarded", "served", "mean_wait_micros", "dispatch_decisions", "pomdp_belief_updates", "online_learning_updates", "online_learning_loss_last_micros", "config", "metrics", "artifact", "created_at", "updated_at"];
+pub const DES_FEL_ELEVATOR_LEARNING_RUNS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      run_label,
+      scenario_slug,
+      status,
+      dispatch_policy,
+      seed,
+      floors,
+      shafts,
+      capacity,
+      travel_seconds_micros,
+      dwell_seconds_micros,
+      arrival_rate_micros,
+      horizon_seconds_micros,
+      events,
+      arrivals,
+      boarded,
+      served,
+      mean_wait_micros,
+      dispatch_decisions,
+      pomdp_belief_updates,
+      online_learning_updates,
+      online_learning_loss_last_micros,
+      config,
+      metrics,
+      artifact,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_fel_elevator_learning_runs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesFelElevatorLearningRunsStatus {
+    Completed,
+    Failed,
+    Imported,
+}
+
+impl DesFelElevatorLearningRunsStatus {
+    pub const VALUES: &'static [&'static str] = &["completed", "failed", "imported"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Imported => "imported",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesFelElevatorLearningRunsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            "imported" => Ok(Self::Imported),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesFelElevatorLearningRunsDispatchPolicy {
+    Look,
+    MdpTable,
+    NeuralScorer,
+    PomdpBelief,
+    NeuralTd,
+}
+
+impl DesFelElevatorLearningRunsDispatchPolicy {
+    pub const VALUES: &'static [&'static str] = &["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Look => "look",
+            Self::MdpTable => "mdp-table",
+            Self::NeuralScorer => "neural-scorer",
+            Self::PomdpBelief => "pomdp-belief",
+            Self::NeuralTd => "neural-td",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesFelElevatorLearningRunsDispatchPolicy {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "look" => Ok(Self::Look),
+            "mdp-table" => Ok(Self::MdpTable),
+            "neural-scorer" => Ok(Self::NeuralScorer),
+            "pomdp-belief" => Ok(Self::PomdpBelief),
+            "neural-td" => Ok(Self::NeuralTd),
+            _ => Err(format!("unsupported dispatch_policy: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesFelElevatorLearningRunsRow {
+    pub id: String,
+    pub run_label: String,
+    pub scenario_slug: String,
+    pub status: String,
+    pub dispatch_policy: String,
+    pub seed: i64,
+    pub floors: i32,
+    pub shafts: i32,
+    pub capacity: i32,
+    pub travel_seconds_micros: i64,
+    pub dwell_seconds_micros: i64,
+    pub arrival_rate_micros: i64,
+    pub horizon_seconds_micros: i64,
+    pub events: i64,
+    pub arrivals: i64,
+    pub boarded: i64,
+    pub served: i64,
+    pub mean_wait_micros: i64,
+    pub dispatch_decisions: i32,
+    pub pomdp_belief_updates: i32,
+    pub online_learning_updates: i64,
+    pub online_learning_loss_last_micros: Option<i64>,
+    pub config: Value,
+    pub metrics: Value,
+    pub artifact: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesFelElevatorLearningRunsInsert {
+    pub id: Option<String>,
+    pub run_label: Option<String>,
+    pub scenario_slug: Option<String>,
+    pub status: Option<String>,
+    pub dispatch_policy: Option<String>,
+    pub seed: Option<i64>,
+    pub floors: Option<i32>,
+    pub shafts: Option<i32>,
+    pub capacity: Option<i32>,
+    pub travel_seconds_micros: Option<i64>,
+    pub dwell_seconds_micros: Option<i64>,
+    pub arrival_rate_micros: Option<i64>,
+    pub horizon_seconds_micros: Option<i64>,
+    pub events: Option<i64>,
+    pub arrivals: Option<i64>,
+    pub boarded: Option<i64>,
+    pub served: Option<i64>,
+    pub mean_wait_micros: Option<i64>,
+    pub dispatch_decisions: Option<i32>,
+    pub pomdp_belief_updates: Option<i32>,
+    pub online_learning_updates: Option<i64>,
+    pub online_learning_loss_last_micros: Option<i64>,
+    pub config: Option<Value>,
+    pub metrics: Option<Value>,
+    pub artifact: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_des_fel_elevator_learning_runs_row(value: &DesFelElevatorLearningRunsRow) -> Result<(), String> {
+    validate_string_length("des_fel_elevator_learning_runs.run_label", &value.run_label, None, Some(200))?;
+    if (&value.run_label).as_bytes().len() > 200 { return Err("des_fel_elevator_learning_runs.run_label exceeds 200 bytes".to_string()); }
+    validate_slug("des_fel_elevator_learning_runs.scenario_slug", &value.scenario_slug)?;
+    if !["completed", "failed", "imported"].contains(&(&value.status).as_str()) { return Err(format!("unsupported des_fel_elevator_learning_runs.status: {}", &value.status)); }
+    if !["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"].contains(&(&value.dispatch_policy).as_str()) { return Err(format!("unsupported des_fel_elevator_learning_runs.dispatch_policy: {}", &value.dispatch_policy)); }
+    if *(&value.seed) < 0 { return Err("des_fel_elevator_learning_runs.seed is below the minimum".to_string()); }
+    if *(&value.floors) < 2 { return Err("des_fel_elevator_learning_runs.floors is below the minimum".to_string()); }
+    if *(&value.floors) > 256 { return Err("des_fel_elevator_learning_runs.floors is above the maximum".to_string()); }
+    if *(&value.shafts) < 1 { return Err("des_fel_elevator_learning_runs.shafts is below the minimum".to_string()); }
+    if *(&value.shafts) > 128 { return Err("des_fel_elevator_learning_runs.shafts is above the maximum".to_string()); }
+    if *(&value.capacity) < 1 { return Err("des_fel_elevator_learning_runs.capacity is below the minimum".to_string()); }
+    if *(&value.capacity) > 10000 { return Err("des_fel_elevator_learning_runs.capacity is above the maximum".to_string()); }
+    if *(&value.travel_seconds_micros) < 0 { return Err("des_fel_elevator_learning_runs.travel_seconds_micros is below the minimum".to_string()); }
+    if *(&value.dwell_seconds_micros) < 0 { return Err("des_fel_elevator_learning_runs.dwell_seconds_micros is below the minimum".to_string()); }
+    if *(&value.arrival_rate_micros) < 0 { return Err("des_fel_elevator_learning_runs.arrival_rate_micros is below the minimum".to_string()); }
+    if *(&value.horizon_seconds_micros) < 0 { return Err("des_fel_elevator_learning_runs.horizon_seconds_micros is below the minimum".to_string()); }
+    if *(&value.events) < 0 { return Err("des_fel_elevator_learning_runs.events is below the minimum".to_string()); }
+    if *(&value.arrivals) < 0 { return Err("des_fel_elevator_learning_runs.arrivals is below the minimum".to_string()); }
+    if *(&value.boarded) < 0 { return Err("des_fel_elevator_learning_runs.boarded is below the minimum".to_string()); }
+    if *(&value.served) < 0 { return Err("des_fel_elevator_learning_runs.served is below the minimum".to_string()); }
+    if *(&value.mean_wait_micros) < 0 { return Err("des_fel_elevator_learning_runs.mean_wait_micros is below the minimum".to_string()); }
+    if *(&value.dispatch_decisions) < 0 { return Err("des_fel_elevator_learning_runs.dispatch_decisions is below the minimum".to_string()); }
+    if *(&value.pomdp_belief_updates) < 0 { return Err("des_fel_elevator_learning_runs.pomdp_belief_updates is below the minimum".to_string()); }
+    if *(&value.online_learning_updates) < 0 { return Err("des_fel_elevator_learning_runs.online_learning_updates is below the minimum".to_string()); }
+    if let Some(value) = &value.online_learning_loss_last_micros {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.online_learning_loss_last_micros is below the minimum".to_string()); }
+    }
+    if !(&value.config).is_object() { return Err("des_fel_elevator_learning_runs.config must be a JSON object".to_string()); }
+    if !(&value.metrics).is_object() { return Err("des_fel_elevator_learning_runs.metrics must be a JSON object".to_string()); }
+    if !(&value.artifact).is_object() { return Err("des_fel_elevator_learning_runs.artifact must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_fel_elevator_learning_runs_insert(value: &DesFelElevatorLearningRunsInsert) -> Result<(), String> {
+    if let Some(value) = &value.run_label {
+        validate_string_length("des_fel_elevator_learning_runs.run_label", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("des_fel_elevator_learning_runs.run_label exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.scenario_slug {
+        validate_slug("des_fel_elevator_learning_runs.scenario_slug", value)?;
+    }
+    if let Some(value) = &value.status {
+        if !["completed", "failed", "imported"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_learning_runs.status: {}", value)); }
+    }
+    if let Some(value) = &value.dispatch_policy {
+        if !["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_learning_runs.dispatch_policy: {}", value)); }
+    }
+    if let Some(value) = &value.seed {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.seed is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.floors {
+        if *(value) < 2 { return Err("des_fel_elevator_learning_runs.floors is below the minimum".to_string()); }
+        if *(value) > 256 { return Err("des_fel_elevator_learning_runs.floors is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.shafts {
+        if *(value) < 1 { return Err("des_fel_elevator_learning_runs.shafts is below the minimum".to_string()); }
+        if *(value) > 128 { return Err("des_fel_elevator_learning_runs.shafts is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.capacity {
+        if *(value) < 1 { return Err("des_fel_elevator_learning_runs.capacity is below the minimum".to_string()); }
+        if *(value) > 10000 { return Err("des_fel_elevator_learning_runs.capacity is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.travel_seconds_micros {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.travel_seconds_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.dwell_seconds_micros {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.dwell_seconds_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.arrival_rate_micros {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.arrival_rate_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.horizon_seconds_micros {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.horizon_seconds_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.events {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.events is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.arrivals {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.arrivals is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.boarded {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.boarded is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.served {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.served is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.mean_wait_micros {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.mean_wait_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.dispatch_decisions {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.dispatch_decisions is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.pomdp_belief_updates {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.pomdp_belief_updates is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.online_learning_updates {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.online_learning_updates is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.online_learning_loss_last_micros {
+        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.online_learning_loss_last_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.config {
+        if !(value).is_object() { return Err("des_fel_elevator_learning_runs.config must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.metrics {
+        if !(value).is_object() { return Err("des_fel_elevator_learning_runs.metrics must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.artifact {
+        if !(value).is_object() { return Err("des_fel_elevator_learning_runs.artifact must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DES_FEL_ELEVATOR_POLICY_STATES_TABLE: &str = "des_fel_elevator_policy_states";
+pub const DES_FEL_ELEVATOR_POLICY_STATES_COLUMNS: &[&str] = &["id", "run_id", "policy_kind", "source_kind", "feature_dim", "output_dim", "parameter_count", "online_learning_updates", "loss_history", "state", "created_at"];
+pub const DES_FEL_ELEVATOR_POLICY_STATES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      run_id::text as run_id,
+      policy_kind,
+      source_kind,
+      feature_dim,
+      output_dim,
+      parameter_count,
+      online_learning_updates,
+      loss_history,
+      state,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_fel_elevator_policy_states"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesFelElevatorPolicyStatesPolicyKind {
+    Look,
+    MdpTable,
+    NeuralScorer,
+    PomdpBelief,
+    NeuralTd,
+}
+
+impl DesFelElevatorPolicyStatesPolicyKind {
+    pub const VALUES: &'static [&'static str] = &["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Look => "look",
+            Self::MdpTable => "mdp-table",
+            Self::NeuralScorer => "neural-scorer",
+            Self::PomdpBelief => "pomdp-belief",
+            Self::NeuralTd => "neural-td",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesFelElevatorPolicyStatesPolicyKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "look" => Ok(Self::Look),
+            "mdp-table" => Ok(Self::MdpTable),
+            "neural-scorer" => Ok(Self::NeuralScorer),
+            "pomdp-belief" => Ok(Self::PomdpBelief),
+            "neural-td" => Ok(Self::NeuralTd),
+            _ => Err(format!("unsupported policy_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesFelElevatorPolicyStatesSourceKind {
+    RunFinal,
+    OfflineTraining,
+    Import,
+    Checkpoint,
+}
+
+impl DesFelElevatorPolicyStatesSourceKind {
+    pub const VALUES: &'static [&'static str] = &["run-final", "offline-training", "import", "checkpoint"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RunFinal => "run-final",
+            Self::OfflineTraining => "offline-training",
+            Self::Import => "import",
+            Self::Checkpoint => "checkpoint",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesFelElevatorPolicyStatesSourceKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "run-final" => Ok(Self::RunFinal),
+            "offline-training" => Ok(Self::OfflineTraining),
+            "import" => Ok(Self::Import),
+            "checkpoint" => Ok(Self::Checkpoint),
+            _ => Err(format!("unsupported source_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesFelElevatorPolicyStatesRow {
+    pub id: String,
+    pub run_id: String,
+    pub policy_kind: String,
+    pub source_kind: String,
+    pub feature_dim: i32,
+    pub output_dim: i32,
+    pub parameter_count: i32,
+    pub online_learning_updates: i64,
+    pub loss_history: Value,
+    pub state: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesFelElevatorPolicyStatesInsert {
+    pub id: Option<String>,
+    pub run_id: Option<String>,
+    pub policy_kind: Option<String>,
+    pub source_kind: Option<String>,
+    pub feature_dim: Option<i32>,
+    pub output_dim: Option<i32>,
+    pub parameter_count: Option<i32>,
+    pub online_learning_updates: Option<i64>,
+    pub loss_history: Option<Value>,
+    pub state: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_des_fel_elevator_policy_states_row(value: &DesFelElevatorPolicyStatesRow) -> Result<(), String> {
+    if !["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"].contains(&(&value.policy_kind).as_str()) { return Err(format!("unsupported des_fel_elevator_policy_states.policy_kind: {}", &value.policy_kind)); }
+    if !["run-final", "offline-training", "import", "checkpoint"].contains(&(&value.source_kind).as_str()) { return Err(format!("unsupported des_fel_elevator_policy_states.source_kind: {}", &value.source_kind)); }
+    if *(&value.feature_dim) < 0 { return Err("des_fel_elevator_policy_states.feature_dim is below the minimum".to_string()); }
+    if *(&value.output_dim) < 0 { return Err("des_fel_elevator_policy_states.output_dim is below the minimum".to_string()); }
+    if *(&value.parameter_count) < 0 { return Err("des_fel_elevator_policy_states.parameter_count is below the minimum".to_string()); }
+    if *(&value.online_learning_updates) < 0 { return Err("des_fel_elevator_policy_states.online_learning_updates is below the minimum".to_string()); }
+    if !(&value.loss_history).is_array() { return Err("des_fel_elevator_policy_states.loss_history must be a JSON array".to_string()); }
+    if !(&value.state).is_object() { return Err("des_fel_elevator_policy_states.state must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_fel_elevator_policy_states_insert(value: &DesFelElevatorPolicyStatesInsert) -> Result<(), String> {
+    if let Some(value) = &value.policy_kind {
+        if !["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_policy_states.policy_kind: {}", value)); }
+    }
+    if let Some(value) = &value.source_kind {
+        if !["run-final", "offline-training", "import", "checkpoint"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_policy_states.source_kind: {}", value)); }
+    }
+    if let Some(value) = &value.feature_dim {
+        if *(value) < 0 { return Err("des_fel_elevator_policy_states.feature_dim is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.output_dim {
+        if *(value) < 0 { return Err("des_fel_elevator_policy_states.output_dim is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.parameter_count {
+        if *(value) < 0 { return Err("des_fel_elevator_policy_states.parameter_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.online_learning_updates {
+        if *(value) < 0 { return Err("des_fel_elevator_policy_states.online_learning_updates is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.loss_history {
+        if !(value).is_array() { return Err("des_fel_elevator_policy_states.loss_history must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.state {
+        if !(value).is_object() { return Err("des_fel_elevator_policy_states.state must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DES_FEL_ELEVATOR_DISPATCH_DECISIONS_TABLE: &str = "des_fel_elevator_dispatch_decisions";
+pub const DES_FEL_ELEVATOR_DISPATCH_DECISIONS_COLUMNS: &[&str] = &["id", "run_id", "decision_index", "sim_time_micros", "call_floor", "car_index", "policy_kind", "meta_data", "created_at"];
+pub const DES_FEL_ELEVATOR_DISPATCH_DECISIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      run_id::text as run_id,
+      decision_index,
+      sim_time_micros,
+      call_floor,
+      car_index,
+      policy_kind,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_fel_elevator_dispatch_decisions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesFelElevatorDispatchDecisionsPolicyKind {
+    Look,
+    MdpTable,
+    NeuralScorer,
+    PomdpBelief,
+    NeuralTd,
+}
+
+impl DesFelElevatorDispatchDecisionsPolicyKind {
+    pub const VALUES: &'static [&'static str] = &["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Look => "look",
+            Self::MdpTable => "mdp-table",
+            Self::NeuralScorer => "neural-scorer",
+            Self::PomdpBelief => "pomdp-belief",
+            Self::NeuralTd => "neural-td",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesFelElevatorDispatchDecisionsPolicyKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "look" => Ok(Self::Look),
+            "mdp-table" => Ok(Self::MdpTable),
+            "neural-scorer" => Ok(Self::NeuralScorer),
+            "pomdp-belief" => Ok(Self::PomdpBelief),
+            "neural-td" => Ok(Self::NeuralTd),
+            _ => Err(format!("unsupported policy_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesFelElevatorDispatchDecisionsRow {
+    pub id: String,
+    pub run_id: String,
+    pub decision_index: i32,
+    pub sim_time_micros: i64,
+    pub call_floor: i32,
+    pub car_index: i32,
+    pub policy_kind: String,
+    pub meta_data: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesFelElevatorDispatchDecisionsInsert {
+    pub id: Option<String>,
+    pub run_id: Option<String>,
+    pub decision_index: Option<i32>,
+    pub sim_time_micros: Option<i64>,
+    pub call_floor: Option<i32>,
+    pub car_index: Option<i32>,
+    pub policy_kind: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_des_fel_elevator_dispatch_decisions_row(value: &DesFelElevatorDispatchDecisionsRow) -> Result<(), String> {
+    if *(&value.decision_index) < 0 { return Err("des_fel_elevator_dispatch_decisions.decision_index is below the minimum".to_string()); }
+    if *(&value.sim_time_micros) < 0 { return Err("des_fel_elevator_dispatch_decisions.sim_time_micros is below the minimum".to_string()); }
+    if *(&value.call_floor) < 0 { return Err("des_fel_elevator_dispatch_decisions.call_floor is below the minimum".to_string()); }
+    if *(&value.car_index) < 0 { return Err("des_fel_elevator_dispatch_decisions.car_index is below the minimum".to_string()); }
+    if !["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"].contains(&(&value.policy_kind).as_str()) { return Err(format!("unsupported des_fel_elevator_dispatch_decisions.policy_kind: {}", &value.policy_kind)); }
+    if !(&value.meta_data).is_object() { return Err("des_fel_elevator_dispatch_decisions.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_fel_elevator_dispatch_decisions_insert(value: &DesFelElevatorDispatchDecisionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.decision_index {
+        if *(value) < 0 { return Err("des_fel_elevator_dispatch_decisions.decision_index is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.sim_time_micros {
+        if *(value) < 0 { return Err("des_fel_elevator_dispatch_decisions.sim_time_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.call_floor {
+        if *(value) < 0 { return Err("des_fel_elevator_dispatch_decisions.call_floor is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.car_index {
+        if *(value) < 0 { return Err("des_fel_elevator_dispatch_decisions.car_index is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.policy_kind {
+        if !["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_dispatch_decisions.policy_kind: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("des_fel_elevator_dispatch_decisions.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DES_FEL_ELEVATOR_POMDP_BELIEFS_TABLE: &str = "des_fel_elevator_pomdp_beliefs";
+pub const DES_FEL_ELEVATOR_POMDP_BELIEFS_COLUMNS: &[&str] = &["id", "run_id", "belief_index", "sim_time_micros", "floor", "action", "observation", "empty_prob_micros", "waiting_prob_micros", "crowded_prob_micros", "belief", "created_at"];
+pub const DES_FEL_ELEVATOR_POMDP_BELIEFS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      run_id::text as run_id,
+      belief_index,
+      sim_time_micros,
+      floor,
+      action,
+      observation,
+      empty_prob_micros,
+      waiting_prob_micros,
+      crowded_prob_micros,
+      belief,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_fel_elevator_pomdp_beliefs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesFelElevatorPomdpBeliefsAction {
+    Hold,
+    Dispatch,
+}
+
+impl DesFelElevatorPomdpBeliefsAction {
+    pub const VALUES: &'static [&'static str] = &["hold", "dispatch"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Hold => "hold",
+            Self::Dispatch => "dispatch",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesFelElevatorPomdpBeliefsAction {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "hold" => Ok(Self::Hold),
+            "dispatch" => Ok(Self::Dispatch),
+            _ => Err(format!("unsupported action: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesFelElevatorPomdpBeliefsObservation {
+    Quiet,
+    Call,
+}
+
+impl DesFelElevatorPomdpBeliefsObservation {
+    pub const VALUES: &'static [&'static str] = &["quiet", "call"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Quiet => "quiet",
+            Self::Call => "call",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesFelElevatorPomdpBeliefsObservation {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "quiet" => Ok(Self::Quiet),
+            "call" => Ok(Self::Call),
+            _ => Err(format!("unsupported observation: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesFelElevatorPomdpBeliefsRow {
+    pub id: String,
+    pub run_id: String,
+    pub belief_index: i32,
+    pub sim_time_micros: i64,
+    pub floor: i32,
+    pub action: String,
+    pub observation: String,
+    pub empty_prob_micros: i32,
+    pub waiting_prob_micros: i32,
+    pub crowded_prob_micros: i32,
+    pub belief: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesFelElevatorPomdpBeliefsInsert {
+    pub id: Option<String>,
+    pub run_id: Option<String>,
+    pub belief_index: Option<i32>,
+    pub sim_time_micros: Option<i64>,
+    pub floor: Option<i32>,
+    pub action: Option<String>,
+    pub observation: Option<String>,
+    pub empty_prob_micros: Option<i32>,
+    pub waiting_prob_micros: Option<i32>,
+    pub crowded_prob_micros: Option<i32>,
+    pub belief: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_des_fel_elevator_pomdp_beliefs_row(value: &DesFelElevatorPomdpBeliefsRow) -> Result<(), String> {
+    if *(&value.belief_index) < 0 { return Err("des_fel_elevator_pomdp_beliefs.belief_index is below the minimum".to_string()); }
+    if *(&value.sim_time_micros) < 0 { return Err("des_fel_elevator_pomdp_beliefs.sim_time_micros is below the minimum".to_string()); }
+    if *(&value.floor) < 0 { return Err("des_fel_elevator_pomdp_beliefs.floor is below the minimum".to_string()); }
+    if !["hold", "dispatch"].contains(&(&value.action).as_str()) { return Err(format!("unsupported des_fel_elevator_pomdp_beliefs.action: {}", &value.action)); }
+    if !["quiet", "call"].contains(&(&value.observation).as_str()) { return Err(format!("unsupported des_fel_elevator_pomdp_beliefs.observation: {}", &value.observation)); }
+    if *(&value.empty_prob_micros) < 0 { return Err("des_fel_elevator_pomdp_beliefs.empty_prob_micros is below the minimum".to_string()); }
+    if *(&value.empty_prob_micros) > 1000000 { return Err("des_fel_elevator_pomdp_beliefs.empty_prob_micros is above the maximum".to_string()); }
+    if *(&value.waiting_prob_micros) < 0 { return Err("des_fel_elevator_pomdp_beliefs.waiting_prob_micros is below the minimum".to_string()); }
+    if *(&value.waiting_prob_micros) > 1000000 { return Err("des_fel_elevator_pomdp_beliefs.waiting_prob_micros is above the maximum".to_string()); }
+    if *(&value.crowded_prob_micros) < 0 { return Err("des_fel_elevator_pomdp_beliefs.crowded_prob_micros is below the minimum".to_string()); }
+    if *(&value.crowded_prob_micros) > 1000000 { return Err("des_fel_elevator_pomdp_beliefs.crowded_prob_micros is above the maximum".to_string()); }
+    if !(&value.belief).is_object() { return Err("des_fel_elevator_pomdp_beliefs.belief must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_fel_elevator_pomdp_beliefs_insert(value: &DesFelElevatorPomdpBeliefsInsert) -> Result<(), String> {
+    if let Some(value) = &value.belief_index {
+        if *(value) < 0 { return Err("des_fel_elevator_pomdp_beliefs.belief_index is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.sim_time_micros {
+        if *(value) < 0 { return Err("des_fel_elevator_pomdp_beliefs.sim_time_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.floor {
+        if *(value) < 0 { return Err("des_fel_elevator_pomdp_beliefs.floor is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.action {
+        if !["hold", "dispatch"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_pomdp_beliefs.action: {}", value)); }
+    }
+    if let Some(value) = &value.observation {
+        if !["quiet", "call"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_pomdp_beliefs.observation: {}", value)); }
+    }
+    if let Some(value) = &value.empty_prob_micros {
+        if *(value) < 0 { return Err("des_fel_elevator_pomdp_beliefs.empty_prob_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("des_fel_elevator_pomdp_beliefs.empty_prob_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.waiting_prob_micros {
+        if *(value) < 0 { return Err("des_fel_elevator_pomdp_beliefs.waiting_prob_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("des_fel_elevator_pomdp_beliefs.waiting_prob_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.crowded_prob_micros {
+        if *(value) < 0 { return Err("des_fel_elevator_pomdp_beliefs.crowded_prob_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("des_fel_elevator_pomdp_beliefs.crowded_prob_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.belief {
+        if !(value).is_object() { return Err("des_fel_elevator_pomdp_beliefs.belief must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
 fn validate_string_length(field: &str, value: &str, min: Option<usize>, max: Option<usize>) -> Result<(), String> {
     let count = value.chars().count();
     if let Some(min) = min {

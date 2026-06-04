@@ -10039,7 +10039,10 @@ async fn main() {
         .route("/presence-test/", get(presence_test_page))
         .route("/wss-test", get(wss_test_page))
         .route("/wss-test/", get(wss_test_page))
-        .route("/grafana/depl/{deployment}", get(grafana_deployment_redirect))
+        .route(
+            "/grafana/depl/{deployment}",
+            get(grafana_deployment_redirect),
+        )
         .route(
             "/grafana/depl/{deployment}/",
             get(grafana_deployment_redirect),

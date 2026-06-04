@@ -399,10 +399,10 @@
     {
       "service": "web-home-rs",
       "language": "rust",
-      "routeCount": 37,
+      "routeCount": 39,
       "routeTypeCounts": {
         "service": 10,
-        "user-generated": 24,
+        "user-generated": 26,
         "runtime-config": 3
       },
       "generated": [

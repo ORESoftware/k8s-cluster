@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use async_graphql::*;
 use axum::{
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response as AxumResponse},
     routing::get,
@@ -280,25 +280,36 @@ pub fn router() -> Router {
         .route("/api/graphql", get(api_graphiql).post(graphql_handler))
         .route("/graphql/schema", get(graphql_schema_sdl))
         .route("/api/graphql/schema", get(graphql_schema_sdl))
+        .layer(DefaultBodyLimit::max(graphql_request_body_limit_bytes()))
         .with_state(schema)
 }
 
 fn build_schema() -> RestApiSchema {
-    Schema::build(QueryRoot, MutationRoot, EmptySubscription).finish()
+    let builder = Schema::build(QueryRoot, MutationRoot, EmptySubscription)
+        .limit_depth(graphql_depth_limit())
+        .limit_complexity(graphql_complexity_limit());
+    if graphql_introspection_enabled() {
+        builder.finish()
+    } else {
+        builder.disable_introspection().finish()
+    }
 }
 
-async fn graphiql() -> AxumResponse {
-    graphiql_for("/graphql")
+async fn graphiql(headers: HeaderMap) -> AxumResponse {
+    graphiql_for("/graphql", &headers)
 }
 
-async fn api_graphiql() -> AxumResponse {
-    graphiql_for("/api/graphql")
+async fn api_graphiql(headers: HeaderMap) -> AxumResponse {
+    graphiql_for("/api/graphql", &headers)
 }
 
-fn graphiql_for(endpoint: &'static str) -> AxumResponse {
+fn graphiql_for(endpoint: &'static str, headers: &HeaderMap) -> AxumResponse {
     super::record_request("GET", endpoint, StatusCode::OK);
-    if !super::env_bool("REST_API_GRAPHQL_IDE_ENABLED", true) {
+    if !graphql_ide_enabled() {
         return StatusCode::NOT_FOUND.into_response();
+    }
+    if graphql_ide_auth_required() && !authorized_graphql_control(headers) {
+        return super::unauthorized_response();
     }
     Html(
         async_graphql::http::GraphiQLSource::build()
@@ -308,8 +319,14 @@ fn graphiql_for(endpoint: &'static str) -> AxumResponse {
     .into_response()
 }
 
-async fn graphql_schema_sdl(State(schema): State<RestApiSchema>) -> AxumResponse {
+async fn graphql_schema_sdl(
+    State(schema): State<RestApiSchema>,
+    headers: HeaderMap,
+) -> AxumResponse {
     super::record_request("GET", "/graphql/schema", StatusCode::OK);
+    if graphql_schema_auth_required() && !authorized_graphql_control(&headers) {
+        return super::unauthorized_response();
+    }
     (
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
         schema.sdl(),
@@ -326,9 +343,7 @@ async fn graphql_handler(
     let request_context = RequestContext {
         authorized_control: authorized_graphql_control(&headers),
     };
-    if super::env_bool("REST_API_GRAPHQL_AUTH_REQUIRED", false)
-        && !request_context.authorized_control
-    {
+    if graphql_auth_required() && !request_context.authorized_control {
         return super::unauthorized_response();
     }
     AxumJson(schema.execute(request.data(request_context)).await).into_response()
@@ -415,7 +430,7 @@ impl QueryRoot {
                         task_id,
                         generated_at_ms: super::now_ms().to_string(),
                         events: Vec::new(),
-                        errors: vec![super::public_data_source_error("postgres events"), error],
+                        errors: graphql_backend_errors("postgres events", error),
                     };
                 }
             }
@@ -448,7 +463,7 @@ impl QueryRoot {
                 Err(error) => super::runtime_thread_context(
                     &thread_id,
                     limit,
-                    vec![super::public_data_source_error("postgres"), error],
+                    graphql_backend_errors("postgres", error),
                 ),
             }
         } else {
@@ -489,7 +504,7 @@ impl QueryRoot {
                 source: "postgres".to_string(),
                 generated_at_ms: super::now_ms().to_string(),
                 repos: Vec::new(),
-                errors: vec![super::public_data_source_error("postgres"), error],
+                errors: graphql_backend_errors("postgres", error),
             },
         }
     }
@@ -532,10 +547,7 @@ impl QueryRoot {
                 source: "postgres".to_string(),
                 generated_at_ms: super::now_ms().to_string(),
                 functions: Vec::new(),
-                errors: vec![
-                    super::public_data_source_error("postgres lambda functions"),
-                    error,
-                ],
+                errors: graphql_backend_errors("postgres lambda functions", error),
             },
         }
     }
@@ -548,10 +560,7 @@ impl QueryRoot {
         match super::fetch_lambda_function_by_identifier(&id_or_slug).await {
             Ok(function) => Ok(Some((&function).into())),
             Err(error) if error.contains("query returned no rows") => Ok(None),
-            Err(error) => Err(Error::new(super::public_data_source_error(
-                "postgres lambda function",
-            ))
-            .extend_with(|_, e| e.set("detail", error))),
+            Err(error) => Err(graphql_backend_error("postgres lambda function", error)),
         }
     }
 
@@ -651,6 +660,11 @@ impl MutationRoot {
             request = apply_worker_auth(request)?;
         }
         if let Some(body) = input.body {
+            validate_json_payload_bytes(
+                "REST subservice body",
+                &body.0,
+                subservice_request_body_limit_bytes(),
+            )?;
             request = request.json(&body.0);
         }
         let response = request
@@ -670,9 +684,7 @@ impl MutationRoot {
         let service = normalize_service_alias(&input.service)?;
         let base_url = resolve_subservice_base_url(&service)?;
         let path = validate_cluster_path(input.path.as_deref().unwrap_or("/graphql"))?;
-        if input.query.trim().is_empty() {
-            return Err(Error::new("query is required"));
-        }
+        validate_subservice_graphql_query(&input.query)?;
         let timeout_ms = input
             .timeout_ms
             .unwrap_or_else(subservice_timeout_ms)
@@ -684,11 +696,17 @@ impl MutationRoot {
         let url = format!("{}{}", base_url.trim_end_matches('/'), path);
         let mut body = json!({ "query": input.query });
         if let Some(operation_name) = input.operation_name {
-            body["operationName"] = Value::String(operation_name);
+            body["operationName"] =
+                Value::String(validate_graphql_operation_name(&operation_name)?);
         }
         if let Some(variables) = input.variables {
             body["variables"] = variables.0;
         }
+        validate_json_payload_bytes(
+            "GraphQL subservice request",
+            &body,
+            subservice_request_body_limit_bytes(),
+        )?;
         let mut request = client.post(url).json(&body);
         request = apply_graphql_headers(request, input.headers.as_deref())?;
         if input.forward_server_auth.unwrap_or(false) {
@@ -997,6 +1015,63 @@ fn subservice_timeout_ms() -> u64 {
     super::env_u64("REST_API_GRAPHQL_SUBSERVICE_TIMEOUT_MS", 3_000).clamp(100, 30_000)
 }
 
+fn graphql_request_body_limit_bytes() -> usize {
+    super::env_usize("REST_API_GRAPHQL_REQUEST_BYTES", 262_144).clamp(4_096, 2_097_152)
+}
+
+fn graphql_depth_limit() -> usize {
+    super::env_usize("REST_API_GRAPHQL_DEPTH_LIMIT", 12).clamp(2, 64)
+}
+
+fn graphql_complexity_limit() -> usize {
+    super::env_usize("REST_API_GRAPHQL_COMPLEXITY_LIMIT", 250).clamp(10, 10_000)
+}
+
+fn graphql_auth_required() -> bool {
+    super::env_bool("REST_API_GRAPHQL_AUTH_REQUIRED", true)
+}
+
+fn graphql_schema_auth_required() -> bool {
+    super::env_bool("REST_API_GRAPHQL_SCHEMA_AUTH_REQUIRED", true)
+}
+
+fn graphql_ide_enabled() -> bool {
+    super::env_bool("REST_API_GRAPHQL_IDE_ENABLED", false)
+}
+
+fn graphql_ide_auth_required() -> bool {
+    super::env_bool("REST_API_GRAPHQL_IDE_AUTH_REQUIRED", true)
+}
+
+fn graphql_introspection_enabled() -> bool {
+    super::env_bool("REST_API_GRAPHQL_INTROSPECTION_ENABLED", false)
+}
+
+fn graphql_backend_errors(source: &str, error: String) -> Vec<String> {
+    let mut errors = vec![super::public_data_source_error(source)];
+    if super::env_bool("REST_API_GRAPHQL_EXPOSE_BACKEND_ERRORS", false) {
+        errors.push(error);
+    }
+    errors
+}
+
+fn graphql_backend_error(source: &str, error: String) -> Error {
+    let public_error = super::public_data_source_error(source);
+    if super::env_bool("REST_API_GRAPHQL_EXPOSE_BACKEND_ERRORS", false) {
+        Error::new(public_error).extend_with(|_, e| e.set("detail", error))
+    } else {
+        Error::new(public_error)
+    }
+}
+
+fn subservice_request_body_limit_bytes() -> usize {
+    super::env_usize("REST_API_GRAPHQL_SUBSERVICE_REQUEST_BYTES", 262_144).clamp(1_024, 2_097_152)
+}
+
+fn subservice_response_body_limit_bytes() -> usize {
+    super::env_usize("REST_API_GRAPHQL_SUBSERVICE_RESPONSE_BYTES", 262_144).clamp(1_024, 2_097_152)
+}
+
 fn cockroach_database_url() -> Option<String> {
     super::first_env(&[
         "COCKROACH_DATABASE_URL",
@@ -1024,11 +1099,11 @@ fn configured_subservices() -> HashMap<String, String> {
             .filter(|item| !item.is_empty())
         {
             if let Some((alias, url)) = item.split_once('=') {
-                if let Ok(alias) = normalize_service_alias(alias) {
-                    let url = url.trim().trim_end_matches('/').to_string();
-                    if url.starts_with("http://") || url.starts_with("https://") {
-                        out.insert(alias, url);
-                    }
+                if let (Ok(alias), Ok(url)) = (
+                    normalize_service_alias(alias),
+                    normalize_subservice_base_url(url),
+                ) {
+                    out.insert(alias, url);
                 }
                 continue;
             }
@@ -1040,8 +1115,9 @@ fn configured_subservices() -> HashMap<String, String> {
         }
     }
     if let Some(url) = super::first_env(&["RUNTIME_CONFIG_BASE_URL"]) {
-        out.entry("runtime-config".to_string())
-            .or_insert_with(|| url.trim_end_matches('/').to_string());
+        if let Ok(url) = normalize_subservice_base_url(&url) {
+            out.entry("runtime-config".to_string()).or_insert(url);
+        }
     }
     out
 }
@@ -1061,16 +1137,45 @@ fn ensure_service_calls_enabled() -> Result<()> {
 }
 
 fn resolve_subservice_base_url(service: &str) -> Result<String> {
-    configured_subservices().remove(service).ok_or_else(|| {
-        Error::new(format!(
-            "service '{service}' is not in the GraphQL allowlist"
-        ))
-    })
+    configured_subservices()
+        .get(service)
+        .cloned()
+        .ok_or_else(|| {
+            Error::new(format!(
+                "service '{service}' is not in the GraphQL allowlist"
+            ))
+        })
 }
 
 fn subservice_url_from_env(alias: &str) -> Option<String> {
     let env_key = format!("REST_API_GRAPHQL_SERVICE_{}_URL", service_env_key(alias));
-    super::first_env(&[&env_key]).map(|value| value.trim_end_matches('/').to_string())
+    super::first_env(&[&env_key]).and_then(|value| normalize_subservice_base_url(&value).ok())
+}
+
+fn normalize_subservice_base_url(input: &str) -> Result<String> {
+    let trimmed = input.trim().trim_end_matches('/');
+    if trimmed.is_empty() || trimmed.len() > 2_048 {
+        return Err(Error::new("service URL must be 1-2048 characters"));
+    }
+    let mut url = reqwest::Url::parse(trimmed)
+        .map_err(|_| Error::new("service URL must be a valid absolute http(s) URL"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(Error::new("service URL must use http or https"));
+    }
+    if url.host_str().is_none() {
+        return Err(Error::new("service URL must include a host"));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(Error::new("service URL must not include user info"));
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err(Error::new(
+            "service URL must not include a query string or fragment",
+        ));
+    }
+    let normalized_path = url.path().trim_end_matches('/').to_string();
+    url.set_path(&normalized_path);
+    Ok(url.as_str().trim_end_matches('/').to_string())
 }
 
 fn service_env_key(alias: &str) -> String {
@@ -1109,9 +1214,13 @@ fn validate_cluster_path(input: &str) -> Result<String> {
             "path must be a relative absolute path like /healthz",
         ));
     }
-    if path.contains("..") || path.contains('\\') || path.chars().any(char::is_control) {
+    if path.contains("..")
+        || path.contains('\\')
+        || path.contains('#')
+        || path.chars().any(|ch| ch.is_control() || ch.is_whitespace())
+    {
         return Err(Error::new(
-            "path contains unsupported traversal or control characters",
+            "path contains unsupported traversal, fragment, whitespace, or control characters",
         ));
     }
     if path.len() > 1024 {
@@ -1136,6 +1245,60 @@ fn validate_rest_method(input: &str) -> Result<reqwest::Method> {
     reqwest::Method::from_bytes(method.as_bytes()).map_err(|error| Error::new(error.to_string()))
 }
 
+fn validate_subservice_graphql_query(query: &str) -> Result<()> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Err(Error::new("query is required"));
+    }
+    let max_bytes =
+        super::env_usize("REST_API_GRAPHQL_SUBSERVICE_QUERY_BYTES", 65_536).clamp(1_024, 262_144);
+    if query.len() > max_bytes {
+        return Err(Error::new(format!(
+            "query must be {max_bytes} bytes or fewer"
+        )));
+    }
+    if query
+        .chars()
+        .any(|ch| ch.is_control() && !matches!(ch, '\n' | '\r' | '\t'))
+    {
+        return Err(Error::new("query contains unsupported control characters"));
+    }
+    Ok(())
+}
+
+fn validate_graphql_operation_name(input: &str) -> Result<String> {
+    let value = input.trim();
+    if value.is_empty() || value.len() > 128 {
+        return Err(Error::new("operationName must be 1-128 characters"));
+    }
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return Err(Error::new("operationName is required"));
+    };
+    if !(first == '_' || first.is_ascii_alphabetic()) {
+        return Err(Error::new(
+            "operationName must start with '_' or an ASCII letter",
+        ));
+    }
+    if !chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric()) {
+        return Err(Error::new(
+            "operationName may contain only ASCII letters, numbers, and '_'",
+        ));
+    }
+    Ok(value.to_string())
+}
+
+fn validate_json_payload_bytes(label: &str, value: &Value, max_bytes: usize) -> Result<()> {
+    let encoded = serde_json::to_vec(value)
+        .map_err(|error| Error::new(format!("failed to encode {label}: {error}")))?;
+    if encoded.len() > max_bytes {
+        return Err(Error::new(format!(
+            "{label} must be {max_bytes} bytes or fewer"
+        )));
+    }
+    Ok(())
+}
+
 fn apply_graphql_headers(
     mut request: reqwest::RequestBuilder,
     headers: Option<&[GraphqlHeaderInput]>,
@@ -1143,15 +1306,46 @@ fn apply_graphql_headers(
     let Some(headers) = headers else {
         return Ok(request);
     };
+    if headers.len() > 16 {
+        return Err(Error::new("at most 16 forwarded headers are allowed"));
+    }
     for header_input in headers {
         let name = header_input.name.trim().to_ascii_lowercase();
+        if name.is_empty() || name.len() > 64 {
+            return Err(Error::new("header names must be 1-64 characters"));
+        }
         if matches!(
             name.as_str(),
-            "authorization" | "auth" | "x-server-auth" | "x-agent-auth" | "cookie"
+            "authorization"
+                | "auth"
+                | "x-server-auth"
+                | "x-agent-auth"
+                | "cookie"
+                | "host"
+                | "connection"
+                | "content-length"
+                | "transfer-encoding"
+                | "upgrade"
+                | "proxy-authorization"
         ) {
             return Err(Error::new(format!(
                 "header '{name}' is managed by the REST API"
             )));
+        }
+        if name.starts_with("x-forwarded-") || name.starts_with("proxy-") {
+            return Err(Error::new(format!(
+                "header '{name}' is managed by the REST API"
+            )));
+        }
+        if header_input.value.len() > 4_096
+            || header_input
+                .value
+                .chars()
+                .any(|ch| ch.is_control() && !matches!(ch, '\t'))
+        {
+            return Err(Error::new(
+                "header values must be 4096 bytes or fewer and contain no control characters",
+            ));
         }
         let header_name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|error| Error::new(error.to_string()))?;
@@ -1184,7 +1378,7 @@ async fn cluster_call_response(
         .bytes()
         .await
         .map_err(|error| Error::new(error.to_string()))?;
-    let max_bytes = super::env_usize("REST_API_GRAPHQL_SUBSERVICE_RESPONSE_BYTES", 262_144);
+    let max_bytes = subservice_response_body_limit_bytes();
     let body_bytes = if bytes.len() > max_bytes {
         &bytes[..max_bytes]
     } else {
@@ -1267,6 +1461,8 @@ mod tests {
         assert!(validate_cluster_path("https://example.com/healthz").is_err());
         assert!(validate_cluster_path("//example.com/healthz").is_err());
         assert!(validate_cluster_path("/../secret").is_err());
+        assert!(validate_cluster_path("/healthz#fragment").is_err());
+        assert!(validate_cluster_path("/healthz bad").is_err());
         assert!(validate_cluster_path("/healthz").is_ok());
     }
 
@@ -1278,5 +1474,67 @@ mod tests {
         );
         assert_eq!(service_env_key("runtime-config"), "RUNTIME_CONFIG");
         assert!(normalize_service_alias("bad/service").is_err());
+    }
+
+    #[test]
+    fn normalizes_subservice_base_urls() {
+        assert_eq!(
+            normalize_subservice_base_url("http://service.default.svc.cluster.local:8080/")
+                .unwrap(),
+            "http://service.default.svc.cluster.local:8080"
+        );
+        assert_eq!(
+            normalize_subservice_base_url("https://service.default.svc/api/").unwrap(),
+            "https://service.default.svc/api"
+        );
+        assert!(normalize_subservice_base_url("file:///tmp/socket").is_err());
+        assert!(normalize_subservice_base_url("https://user:pass@example.com").is_err());
+        assert!(normalize_subservice_base_url("https://example.com?token=1").is_err());
+    }
+
+    #[test]
+    fn validates_subservice_graphql_inputs() {
+        assert!(validate_subservice_graphql_query("query { health { ok } }").is_ok());
+        assert!(validate_subservice_graphql_query("").is_err());
+        assert!(validate_subservice_graphql_query("query\u{0000}").is_err());
+        assert_eq!(
+            validate_graphql_operation_name(" HealthCheck ").unwrap(),
+            "HealthCheck"
+        );
+        assert!(validate_graphql_operation_name("1Bad").is_err());
+        assert!(validate_graphql_operation_name("bad-name").is_err());
+    }
+
+    #[test]
+    fn rejects_managed_or_unsafe_forwarded_headers() {
+        let request = reqwest::Client::new().get("http://service.local/healthz");
+        assert!(apply_graphql_headers(
+            request,
+            Some(&[GraphqlHeaderInput {
+                name: "Authorization".to_string(),
+                value: "secret".to_string(),
+            }])
+        )
+        .is_err());
+
+        let request = reqwest::Client::new().get("http://service.local/healthz");
+        assert!(apply_graphql_headers(
+            request,
+            Some(&[GraphqlHeaderInput {
+                name: "X-Forwarded-Host".to_string(),
+                value: "example.com".to_string(),
+            }])
+        )
+        .is_err());
+
+        let request = reqwest::Client::new().get("http://service.local/healthz");
+        assert!(apply_graphql_headers(
+            request,
+            Some(&[GraphqlHeaderInput {
+                name: "X-Debug".to_string(),
+                value: "ok".to_string(),
+            }])
+        )
+        .is_ok());
     }
 }

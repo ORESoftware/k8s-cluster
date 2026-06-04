@@ -105,6 +105,17 @@ Currently opted-in:
   variable for per-workload panels. Keep `WATCH_NAMESPACES` and
   `WATCH_APPS` aligned with checked-in Deployment, StatefulSet, and
   DaemonSet manifests when adding or removing services.
+- The `Deployment Drilldown` Grafana dashboard (uid
+  `dd-deployment-drilldown`) is the canonical per-service page. The Rust
+  web-home deployment redirects `/grafana/depl/<deployment>` into this
+  dashboard with `var-deployment=<deployment>`, so paths such as
+  `/grafana/depl/dd-dart-server`, `/grafana/depl/dd-billing-server`, and
+  `/grafana/depl/des-rs` land on the same Prometheus/Loki-backed view with
+  that service preselected. Run
+  `node remote/tools/check-observability-coverage.mjs` after adding or
+  removing manifests to verify every checked-in workload is watched, the
+  Grafana route stays provisioned, and deployment dependency manifests do not
+  add forbidden auto-instrumentation or monkey-patching packages.
 - `dd-promtail` tails the stable `/var/log/containers/*.log` symlink
   farm directly via `static_configs` (no Kubernetes API dependency): the
   service-discovery informer once found zero targets in this EC2 cluster

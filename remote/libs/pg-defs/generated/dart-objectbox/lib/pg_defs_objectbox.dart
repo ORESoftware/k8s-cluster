@@ -2655,3 +2655,381 @@ class DesSoccerLearningMergeEventsObjectBox {
     );
   }
 }
+
+@Entity()
+class DesFelElevatorLearningRunsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String runLabel;
+
+  String scenarioSlug;
+
+  String status;
+
+  String dispatchPolicy;
+
+  int seed;
+
+  int floors;
+
+  int shafts;
+
+  int capacity;
+
+  int travelSecondsMicros;
+
+  int dwellSecondsMicros;
+
+  int arrivalRateMicros;
+
+  int horizonSecondsMicros;
+
+  int events;
+
+  int arrivals;
+
+  int boarded;
+
+  int served;
+
+  int meanWaitMicros;
+
+  int dispatchDecisions;
+
+  int pomdpBeliefUpdates;
+
+  int onlineLearningUpdates;
+
+  int? onlineLearningLossLastMicros;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String config;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metrics;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String artifact;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  DesFelElevatorLearningRunsObjectBox({
+    required this.id,
+    required this.runLabel,
+    required this.scenarioSlug,
+    required this.status,
+    required this.dispatchPolicy,
+    required this.seed,
+    required this.floors,
+    required this.shafts,
+    required this.capacity,
+    required this.travelSecondsMicros,
+    required this.dwellSecondsMicros,
+    required this.arrivalRateMicros,
+    required this.horizonSecondsMicros,
+    required this.events,
+    required this.arrivals,
+    required this.boarded,
+    required this.served,
+    required this.meanWaitMicros,
+    required this.dispatchDecisions,
+    required this.pomdpBeliefUpdates,
+    required this.onlineLearningUpdates,
+    this.onlineLearningLossLastMicros,
+    required this.config,
+    required this.metrics,
+    required this.artifact,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "runLabel": runLabel,
+    "scenarioSlug": scenarioSlug,
+    "status": status,
+    "dispatchPolicy": dispatchPolicy,
+    "seed": seed,
+    "floors": floors,
+    "shafts": shafts,
+    "capacity": capacity,
+    "travelSecondsMicros": travelSecondsMicros,
+    "dwellSecondsMicros": dwellSecondsMicros,
+    "arrivalRateMicros": arrivalRateMicros,
+    "horizonSecondsMicros": horizonSecondsMicros,
+    "events": events,
+    "arrivals": arrivals,
+    "boarded": boarded,
+    "served": served,
+    "meanWaitMicros": meanWaitMicros,
+    "dispatchDecisions": dispatchDecisions,
+    "pomdpBeliefUpdates": pomdpBeliefUpdates,
+    "onlineLearningUpdates": onlineLearningUpdates,
+    "onlineLearningLossLastMicros": onlineLearningLossLastMicros,
+    "config": jsonDecode(config),
+    "metrics": jsonDecode(metrics),
+    "artifact": jsonDecode(artifact),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static DesFelElevatorLearningRunsObjectBox fromJson(Map<String, Object?> json) {
+    return DesFelElevatorLearningRunsObjectBox(
+      id: json["id"] as String,
+      runLabel: json["runLabel"] as String,
+      scenarioSlug: json["scenarioSlug"] as String,
+      status: json["status"] as String,
+      dispatchPolicy: json["dispatchPolicy"] as String,
+      seed: (json["seed"] as num).toInt(),
+      floors: (json["floors"] as num).toInt(),
+      shafts: (json["shafts"] as num).toInt(),
+      capacity: (json["capacity"] as num).toInt(),
+      travelSecondsMicros: (json["travelSecondsMicros"] as num).toInt(),
+      dwellSecondsMicros: (json["dwellSecondsMicros"] as num).toInt(),
+      arrivalRateMicros: (json["arrivalRateMicros"] as num).toInt(),
+      horizonSecondsMicros: (json["horizonSecondsMicros"] as num).toInt(),
+      events: (json["events"] as num).toInt(),
+      arrivals: (json["arrivals"] as num).toInt(),
+      boarded: (json["boarded"] as num).toInt(),
+      served: (json["served"] as num).toInt(),
+      meanWaitMicros: (json["meanWaitMicros"] as num).toInt(),
+      dispatchDecisions: (json["dispatchDecisions"] as num).toInt(),
+      pomdpBeliefUpdates: (json["pomdpBeliefUpdates"] as num).toInt(),
+      onlineLearningUpdates: (json["onlineLearningUpdates"] as num).toInt(),
+      onlineLearningLossLastMicros: json["onlineLearningLossLastMicros"] == null ? null : (json["onlineLearningLossLastMicros"] as num).toInt(),
+      config: json["config"] is String ? json["config"] as String : jsonEncode(json["config"]),
+      metrics: json["metrics"] is String ? json["metrics"] as String : jsonEncode(json["metrics"]),
+      artifact: json["artifact"] is String ? json["artifact"] as String : jsonEncode(json["artifact"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class DesFelElevatorPolicyStatesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String runId;
+
+  String policyKind;
+
+  String sourceKind;
+
+  int featureDim;
+
+  int outputDim;
+
+  int parameterCount;
+
+  int onlineLearningUpdates;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String lossHistory;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String state;
+
+  String createdAt;
+
+
+  DesFelElevatorPolicyStatesObjectBox({
+    required this.id,
+    required this.runId,
+    required this.policyKind,
+    required this.sourceKind,
+    required this.featureDim,
+    required this.outputDim,
+    required this.parameterCount,
+    required this.onlineLearningUpdates,
+    required this.lossHistory,
+    required this.state,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "runId": runId,
+    "policyKind": policyKind,
+    "sourceKind": sourceKind,
+    "featureDim": featureDim,
+    "outputDim": outputDim,
+    "parameterCount": parameterCount,
+    "onlineLearningUpdates": onlineLearningUpdates,
+    "lossHistory": jsonDecode(lossHistory),
+    "state": jsonDecode(state),
+    "createdAt": createdAt,
+  };
+
+  static DesFelElevatorPolicyStatesObjectBox fromJson(Map<String, Object?> json) {
+    return DesFelElevatorPolicyStatesObjectBox(
+      id: json["id"] as String,
+      runId: json["runId"] as String,
+      policyKind: json["policyKind"] as String,
+      sourceKind: json["sourceKind"] as String,
+      featureDim: (json["featureDim"] as num).toInt(),
+      outputDim: (json["outputDim"] as num).toInt(),
+      parameterCount: (json["parameterCount"] as num).toInt(),
+      onlineLearningUpdates: (json["onlineLearningUpdates"] as num).toInt(),
+      lossHistory: json["lossHistory"] is String ? json["lossHistory"] as String : jsonEncode(json["lossHistory"]),
+      state: json["state"] is String ? json["state"] as String : jsonEncode(json["state"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class DesFelElevatorDispatchDecisionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String runId;
+
+  int decisionIndex;
+
+  int simTimeMicros;
+
+  int callFloor;
+
+  int carIndex;
+
+  String policyKind;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+
+  DesFelElevatorDispatchDecisionsObjectBox({
+    required this.id,
+    required this.runId,
+    required this.decisionIndex,
+    required this.simTimeMicros,
+    required this.callFloor,
+    required this.carIndex,
+    required this.policyKind,
+    required this.metaData,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "runId": runId,
+    "decisionIndex": decisionIndex,
+    "simTimeMicros": simTimeMicros,
+    "callFloor": callFloor,
+    "carIndex": carIndex,
+    "policyKind": policyKind,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+  };
+
+  static DesFelElevatorDispatchDecisionsObjectBox fromJson(Map<String, Object?> json) {
+    return DesFelElevatorDispatchDecisionsObjectBox(
+      id: json["id"] as String,
+      runId: json["runId"] as String,
+      decisionIndex: (json["decisionIndex"] as num).toInt(),
+      simTimeMicros: (json["simTimeMicros"] as num).toInt(),
+      callFloor: (json["callFloor"] as num).toInt(),
+      carIndex: (json["carIndex"] as num).toInt(),
+      policyKind: json["policyKind"] as String,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class DesFelElevatorPomdpBeliefsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String runId;
+
+  int beliefIndex;
+
+  int simTimeMicros;
+
+  int floor;
+
+  String action;
+
+  String observation;
+
+  int emptyProbMicros;
+
+  int waitingProbMicros;
+
+  int crowdedProbMicros;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String belief;
+
+  String createdAt;
+
+
+  DesFelElevatorPomdpBeliefsObjectBox({
+    required this.id,
+    required this.runId,
+    required this.beliefIndex,
+    required this.simTimeMicros,
+    required this.floor,
+    required this.action,
+    required this.observation,
+    required this.emptyProbMicros,
+    required this.waitingProbMicros,
+    required this.crowdedProbMicros,
+    required this.belief,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "runId": runId,
+    "beliefIndex": beliefIndex,
+    "simTimeMicros": simTimeMicros,
+    "floor": floor,
+    "action": action,
+    "observation": observation,
+    "emptyProbMicros": emptyProbMicros,
+    "waitingProbMicros": waitingProbMicros,
+    "crowdedProbMicros": crowdedProbMicros,
+    "belief": jsonDecode(belief),
+    "createdAt": createdAt,
+  };
+
+  static DesFelElevatorPomdpBeliefsObjectBox fromJson(Map<String, Object?> json) {
+    return DesFelElevatorPomdpBeliefsObjectBox(
+      id: json["id"] as String,
+      runId: json["runId"] as String,
+      beliefIndex: (json["beliefIndex"] as num).toInt(),
+      simTimeMicros: (json["simTimeMicros"] as num).toInt(),
+      floor: (json["floor"] as num).toInt(),
+      action: json["action"] as String,
+      observation: json["observation"] as String,
+      emptyProbMicros: (json["emptyProbMicros"] as num).toInt(),
+      waitingProbMicros: (json["waitingProbMicros"] as num).toInt(),
+      crowdedProbMicros: (json["crowdedProbMicros"] as num).toInt(),
+      belief: json["belief"] is String ? json["belief"] as String : jsonEncode(json["belief"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}

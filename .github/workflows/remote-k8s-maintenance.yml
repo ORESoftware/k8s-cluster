@@ -15,6 +15,7 @@ on:
       - "remote/deployments/mip-solver-node.rs"
       - "remote/deployments/mip-solver-node.rs/**"
       - "remote/ec2/verify-mip-solver-node.sh"
+      - "remote/ec2/verify-rust-network-mutex-raft.sh"
       - "remote/argocd/apps/dd-in-house-mip-solver-node.application.yaml"
       - "remote/deployments/ws-loadtest-rs/**"
       - "remote/deployments/gleamlang-ws-loadtest/**"
@@ -43,6 +44,7 @@ on:
           - sync-agent-gh-pat
           - sync-agent-model-keys
           - verify-mip-solver-node
+          - verify-rust-network-mutex-raft
           - verify-gleam-mcp-server
           - bootstrap-thread-go-services
           - verify-thread-go-services
@@ -971,6 +973,34 @@ jobs:
 
           echo "=== run MIP solver verifier ==="
           TARGET_REVISION="${TARGET_REVISION:-dev}" bash remote/ec2/verify-mip-solver-node.sh
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            verify-rust-network-mutex-raft)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout so verifier script exists ==="
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== run BrokerRaft verifier ==="
+          TARGET_REVISION="${TARGET_REVISION:-dev}" bash remote/ec2/verify-rust-network-mutex-raft.sh
           '''
 
           print(json.dumps({

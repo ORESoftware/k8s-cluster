@@ -1702,3 +1702,244 @@ pub struct DesSoccerLearningMergeEventsDieselInsert {
     pub metrics: Option<Value>,
     pub created_at: Option<DateTime<Utc>>,
 }
+
+diesel::table! {
+    use diesel::sql_types::*;
+    des_fel_elevator_learning_runs (id) {
+        id -> Uuid,
+        run_label -> Varchar,
+        scenario_slug -> Varchar,
+        status -> Varchar,
+        dispatch_policy -> Varchar,
+        seed -> Int8,
+        floors -> Int4,
+        shafts -> Int4,
+        capacity -> Int4,
+        travel_seconds_micros -> Int8,
+        dwell_seconds_micros -> Int8,
+        arrival_rate_micros -> Int8,
+        horizon_seconds_micros -> Int8,
+        events -> Int8,
+        arrivals -> Int8,
+        boarded -> Int8,
+        served -> Int8,
+        mean_wait_micros -> Int8,
+        dispatch_decisions -> Int4,
+        pomdp_belief_updates -> Int4,
+        online_learning_updates -> Int8,
+        online_learning_loss_last_micros -> Nullable<Int8>,
+        config -> Jsonb,
+        metrics -> Jsonb,
+        artifact -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = des_fel_elevator_learning_runs)]
+pub struct DesFelElevatorLearningRunsDieselRow {
+    pub id: Uuid,
+    pub run_label: String,
+    pub scenario_slug: String,
+    pub status: String,
+    pub dispatch_policy: String,
+    pub seed: i64,
+    pub floors: i32,
+    pub shafts: i32,
+    pub capacity: i32,
+    pub travel_seconds_micros: i64,
+    pub dwell_seconds_micros: i64,
+    pub arrival_rate_micros: i64,
+    pub horizon_seconds_micros: i64,
+    pub events: i64,
+    pub arrivals: i64,
+    pub boarded: i64,
+    pub served: i64,
+    pub mean_wait_micros: i64,
+    pub dispatch_decisions: i32,
+    pub pomdp_belief_updates: i32,
+    pub online_learning_updates: i64,
+    pub online_learning_loss_last_micros: Option<i64>,
+    pub config: Value,
+    pub metrics: Value,
+    pub artifact: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = des_fel_elevator_learning_runs)]
+pub struct DesFelElevatorLearningRunsDieselInsert {
+    pub id: Option<Uuid>,
+    pub run_label: Option<String>,
+    pub scenario_slug: Option<String>,
+    pub status: Option<String>,
+    pub dispatch_policy: Option<String>,
+    pub seed: Option<i64>,
+    pub floors: Option<i32>,
+    pub shafts: Option<i32>,
+    pub capacity: Option<i32>,
+    pub travel_seconds_micros: Option<i64>,
+    pub dwell_seconds_micros: Option<i64>,
+    pub arrival_rate_micros: Option<i64>,
+    pub horizon_seconds_micros: Option<i64>,
+    pub events: Option<i64>,
+    pub arrivals: Option<i64>,
+    pub boarded: Option<i64>,
+    pub served: Option<i64>,
+    pub mean_wait_micros: Option<i64>,
+    pub dispatch_decisions: Option<i32>,
+    pub pomdp_belief_updates: Option<i32>,
+    pub online_learning_updates: Option<i64>,
+    pub online_learning_loss_last_micros: Option<i64>,
+    pub config: Option<Value>,
+    pub metrics: Option<Value>,
+    pub artifact: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    des_fel_elevator_policy_states (id) {
+        id -> Uuid,
+        run_id -> Uuid,
+        policy_kind -> Varchar,
+        source_kind -> Varchar,
+        feature_dim -> Int4,
+        output_dim -> Int4,
+        parameter_count -> Int4,
+        online_learning_updates -> Int8,
+        loss_history -> Jsonb,
+        state -> Jsonb,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = des_fel_elevator_policy_states)]
+pub struct DesFelElevatorPolicyStatesDieselRow {
+    pub id: Uuid,
+    pub run_id: Uuid,
+    pub policy_kind: String,
+    pub source_kind: String,
+    pub feature_dim: i32,
+    pub output_dim: i32,
+    pub parameter_count: i32,
+    pub online_learning_updates: i64,
+    pub loss_history: Value,
+    pub state: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = des_fel_elevator_policy_states)]
+pub struct DesFelElevatorPolicyStatesDieselInsert {
+    pub id: Option<Uuid>,
+    pub run_id: Option<Uuid>,
+    pub policy_kind: Option<String>,
+    pub source_kind: Option<String>,
+    pub feature_dim: Option<i32>,
+    pub output_dim: Option<i32>,
+    pub parameter_count: Option<i32>,
+    pub online_learning_updates: Option<i64>,
+    pub loss_history: Option<Value>,
+    pub state: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    des_fel_elevator_dispatch_decisions (id) {
+        id -> Uuid,
+        run_id -> Uuid,
+        decision_index -> Int4,
+        sim_time_micros -> Int8,
+        call_floor -> Int4,
+        car_index -> Int4,
+        policy_kind -> Varchar,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = des_fel_elevator_dispatch_decisions)]
+pub struct DesFelElevatorDispatchDecisionsDieselRow {
+    pub id: Uuid,
+    pub run_id: Uuid,
+    pub decision_index: i32,
+    pub sim_time_micros: i64,
+    pub call_floor: i32,
+    pub car_index: i32,
+    pub policy_kind: String,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = des_fel_elevator_dispatch_decisions)]
+pub struct DesFelElevatorDispatchDecisionsDieselInsert {
+    pub id: Option<Uuid>,
+    pub run_id: Option<Uuid>,
+    pub decision_index: Option<i32>,
+    pub sim_time_micros: Option<i64>,
+    pub call_floor: Option<i32>,
+    pub car_index: Option<i32>,
+    pub policy_kind: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    des_fel_elevator_pomdp_beliefs (id) {
+        id -> Uuid,
+        run_id -> Uuid,
+        belief_index -> Int4,
+        sim_time_micros -> Int8,
+        floor -> Int4,
+        action -> Varchar,
+        observation -> Varchar,
+        empty_prob_micros -> Int4,
+        waiting_prob_micros -> Int4,
+        crowded_prob_micros -> Int4,
+        belief -> Jsonb,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = des_fel_elevator_pomdp_beliefs)]
+pub struct DesFelElevatorPomdpBeliefsDieselRow {
+    pub id: Uuid,
+    pub run_id: Uuid,
+    pub belief_index: i32,
+    pub sim_time_micros: i64,
+    pub floor: i32,
+    pub action: String,
+    pub observation: String,
+    pub empty_prob_micros: i32,
+    pub waiting_prob_micros: i32,
+    pub crowded_prob_micros: i32,
+    pub belief: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = des_fel_elevator_pomdp_beliefs)]
+pub struct DesFelElevatorPomdpBeliefsDieselInsert {
+    pub id: Option<Uuid>,
+    pub run_id: Option<Uuid>,
+    pub belief_index: Option<i32>,
+    pub sim_time_micros: Option<i64>,
+    pub floor: Option<i32>,
+    pub action: Option<String>,
+    pub observation: Option<String>,
+    pub empty_prob_micros: Option<i32>,
+    pub waiting_prob_micros: Option<i32>,
+    pub crowded_prob_micros: Option<i32>,
+    pub belief: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+}

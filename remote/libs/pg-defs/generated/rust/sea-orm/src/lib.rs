@@ -1264,3 +1264,176 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use des_soccer_learning_merge_events::Entity as DesSoccerLearningMergeEventsEntity;
 pub use des_soccer_learning_merge_events::Model as DesSoccerLearningMergeEventsModel;
+
+pub mod des_fel_elevator_learning_runs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_fel_elevator_learning_runs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "run_label")]
+    pub run_label: String,
+    #[sea_orm(column_name = "scenario_slug")]
+    pub scenario_slug: String,
+    pub status: String,
+    #[sea_orm(column_name = "dispatch_policy")]
+    pub dispatch_policy: String,
+    pub seed: i64,
+    pub floors: i32,
+    pub shafts: i32,
+    pub capacity: i32,
+    #[sea_orm(column_name = "travel_seconds_micros")]
+    pub travel_seconds_micros: i64,
+    #[sea_orm(column_name = "dwell_seconds_micros")]
+    pub dwell_seconds_micros: i64,
+    #[sea_orm(column_name = "arrival_rate_micros")]
+    pub arrival_rate_micros: i64,
+    #[sea_orm(column_name = "horizon_seconds_micros")]
+    pub horizon_seconds_micros: i64,
+    pub events: i64,
+    pub arrivals: i64,
+    pub boarded: i64,
+    pub served: i64,
+    #[sea_orm(column_name = "mean_wait_micros")]
+    pub mean_wait_micros: i64,
+    #[sea_orm(column_name = "dispatch_decisions")]
+    pub dispatch_decisions: i32,
+    #[sea_orm(column_name = "pomdp_belief_updates")]
+    pub pomdp_belief_updates: i32,
+    #[sea_orm(column_name = "online_learning_updates")]
+    pub online_learning_updates: i64,
+    #[sea_orm(column_name = "online_learning_loss_last_micros")]
+    pub online_learning_loss_last_micros: Option<i64>,
+    pub config: Json,
+    pub metrics: Json,
+    pub artifact: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_fel_elevator_learning_runs::Entity as DesFelElevatorLearningRunsEntity;
+pub use des_fel_elevator_learning_runs::Model as DesFelElevatorLearningRunsModel;
+
+pub mod des_fel_elevator_policy_states {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_fel_elevator_policy_states")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "run_id")]
+    pub run_id: Uuid,
+    #[sea_orm(column_name = "policy_kind")]
+    pub policy_kind: String,
+    #[sea_orm(column_name = "source_kind")]
+    pub source_kind: String,
+    #[sea_orm(column_name = "feature_dim")]
+    pub feature_dim: i32,
+    #[sea_orm(column_name = "output_dim")]
+    pub output_dim: i32,
+    #[sea_orm(column_name = "parameter_count")]
+    pub parameter_count: i32,
+    #[sea_orm(column_name = "online_learning_updates")]
+    pub online_learning_updates: i64,
+    #[sea_orm(column_name = "loss_history")]
+    pub loss_history: Json,
+    pub state: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_fel_elevator_policy_states::Entity as DesFelElevatorPolicyStatesEntity;
+pub use des_fel_elevator_policy_states::Model as DesFelElevatorPolicyStatesModel;
+
+pub mod des_fel_elevator_dispatch_decisions {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_fel_elevator_dispatch_decisions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "run_id")]
+    pub run_id: Uuid,
+    #[sea_orm(column_name = "decision_index")]
+    pub decision_index: i32,
+    #[sea_orm(column_name = "sim_time_micros")]
+    pub sim_time_micros: i64,
+    #[sea_orm(column_name = "call_floor")]
+    pub call_floor: i32,
+    #[sea_orm(column_name = "car_index")]
+    pub car_index: i32,
+    #[sea_orm(column_name = "policy_kind")]
+    pub policy_kind: String,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_fel_elevator_dispatch_decisions::Entity as DesFelElevatorDispatchDecisionsEntity;
+pub use des_fel_elevator_dispatch_decisions::Model as DesFelElevatorDispatchDecisionsModel;
+
+pub mod des_fel_elevator_pomdp_beliefs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_fel_elevator_pomdp_beliefs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "run_id")]
+    pub run_id: Uuid,
+    #[sea_orm(column_name = "belief_index")]
+    pub belief_index: i32,
+    #[sea_orm(column_name = "sim_time_micros")]
+    pub sim_time_micros: i64,
+    pub floor: i32,
+    pub action: String,
+    pub observation: String,
+    #[sea_orm(column_name = "empty_prob_micros")]
+    pub empty_prob_micros: i32,
+    #[sea_orm(column_name = "waiting_prob_micros")]
+    pub waiting_prob_micros: i32,
+    #[sea_orm(column_name = "crowded_prob_micros")]
+    pub crowded_prob_micros: i32,
+    pub belief: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_fel_elevator_pomdp_beliefs::Entity as DesFelElevatorPomdpBeliefsEntity;
+pub use des_fel_elevator_pomdp_beliefs::Model as DesFelElevatorPomdpBeliefsModel;

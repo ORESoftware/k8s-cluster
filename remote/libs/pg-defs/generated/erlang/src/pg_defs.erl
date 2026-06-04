@@ -3,7 +3,7 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs).
--export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_context_blobs_table/0, agent_context_blobs_columns/0, agent_context_blobs_select_sql/0, agent_context_blobs_status_values/0, validate_agent_context_blobs_status/1, agent_context_embeddings_table/0, agent_context_embeddings_columns/0, agent_context_embeddings_select_sql/0, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_tasks_pr_state_values/0, validate_agent_remote_dev_tasks_pr_state/1, agent_remote_dev_tasks_exit_reason_values/0, validate_agent_remote_dev_tasks_exit_reason/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_breadcrumbs_table/0, agent_remote_dev_breadcrumbs_columns/0, agent_remote_dev_breadcrumbs_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, mip_solver_sessions_table/0, mip_solver_sessions_columns/0, mip_solver_sessions_select_sql/0, mip_solver_solves_table/0, mip_solver_solves_columns/0, mip_solver_solves_select_sql/0, mip_solver_solves_node_role_values/0, validate_mip_solver_solves_node_role/1, mip_solver_jobs_table/0, mip_solver_jobs_columns/0, mip_solver_jobs_select_sql/0, mip_solver_events_table/0, mip_solver_events_columns/0, mip_solver_events_select_sql/0, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1, container_pool_image_revisions_table/0, container_pool_image_revisions_columns/0, container_pool_image_revisions_select_sql/0, container_pool_image_revisions_source_values/0, validate_container_pool_image_revisions_source/1, container_pool_image_revisions_status_values/0, validate_container_pool_image_revisions_status/1, container_pool_build_runs_table/0, container_pool_build_runs_columns/0, container_pool_build_runs_select_sql/0, container_pool_build_runs_build_status_values/0, validate_container_pool_build_runs_build_status/1, container_pool_build_runs_test_status_values/0, validate_container_pool_build_runs_test_status/1, container_pool_build_runs_overall_status_values/0, validate_container_pool_build_runs_overall_status/1, presence_convs_table/0, presence_convs_columns/0, presence_convs_select_sql/0, presence_convs_status_values/0, validate_presence_convs_status/1, presence_conv_members_table/0, presence_conv_members_columns/0, presence_conv_members_select_sql/0, presence_conv_members_role_values/0, validate_presence_conv_members_role/1, presence_conv_members_status_values/0, validate_presence_conv_members_status/1, presence_users_table/0, presence_users_columns/0, presence_users_select_sql/0, presence_events_table/0, presence_events_columns/0, presence_events_select_sql/0, presence_events_op_values/0, validate_presence_events_op/1, presence_consumer_checkpoints_table/0, presence_consumer_checkpoints_columns/0, presence_consumer_checkpoints_select_sql/0, des_soccer_learning_experiments_table/0, des_soccer_learning_experiments_columns/0, des_soccer_learning_experiments_select_sql/0, des_soccer_learning_experiments_status_values/0, validate_des_soccer_learning_experiments_status/1, des_soccer_learning_policy_versions_table/0, des_soccer_learning_policy_versions_columns/0, des_soccer_learning_policy_versions_select_sql/0, des_soccer_learning_policy_versions_source_kind_values/0, validate_des_soccer_learning_policy_versions_source_kind/1, des_soccer_learning_policy_versions_status_values/0, validate_des_soccer_learning_policy_versions_status/1, des_soccer_learning_policy_entries_table/0, des_soccer_learning_policy_entries_columns/0, des_soccer_learning_policy_entries_select_sql/0, des_soccer_learning_policy_entries_team_values/0, validate_des_soccer_learning_policy_entries_team/1, des_soccer_learning_policy_entries_entry_kind_values/0, validate_des_soccer_learning_policy_entries_entry_kind/1, des_soccer_learning_jobs_table/0, des_soccer_learning_jobs_columns/0, des_soccer_learning_jobs_select_sql/0, des_soccer_learning_jobs_spawn_strategy_values/0, validate_des_soccer_learning_jobs_spawn_strategy/1, des_soccer_learning_jobs_status_values/0, validate_des_soccer_learning_jobs_status/1, des_soccer_learning_runs_table/0, des_soccer_learning_runs_columns/0, des_soccer_learning_runs_select_sql/0, des_soccer_learning_runs_status_values/0, validate_des_soccer_learning_runs_status/1, des_soccer_learning_runs_home_outcome_values/0, validate_des_soccer_learning_runs_home_outcome/1, des_soccer_learning_runs_away_outcome_values/0, validate_des_soccer_learning_runs_away_outcome/1, des_soccer_learning_run_deltas_table/0, des_soccer_learning_run_deltas_columns/0, des_soccer_learning_run_deltas_select_sql/0, des_soccer_learning_run_deltas_team_values/0, validate_des_soccer_learning_run_deltas_team/1, des_soccer_learning_run_deltas_entry_kind_values/0, validate_des_soccer_learning_run_deltas_entry_kind/1, des_soccer_learning_merge_events_table/0, des_soccer_learning_merge_events_columns/0, des_soccer_learning_merge_events_select_sql/0, des_soccer_learning_merge_events_strategy_values/0, validate_des_soccer_learning_merge_events_strategy/1]).
+-export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_context_blobs_table/0, agent_context_blobs_columns/0, agent_context_blobs_select_sql/0, agent_context_blobs_status_values/0, validate_agent_context_blobs_status/1, agent_context_embeddings_table/0, agent_context_embeddings_columns/0, agent_context_embeddings_select_sql/0, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_tasks_pr_state_values/0, validate_agent_remote_dev_tasks_pr_state/1, agent_remote_dev_tasks_exit_reason_values/0, validate_agent_remote_dev_tasks_exit_reason/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_breadcrumbs_table/0, agent_remote_dev_breadcrumbs_columns/0, agent_remote_dev_breadcrumbs_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, mip_solver_sessions_table/0, mip_solver_sessions_columns/0, mip_solver_sessions_select_sql/0, mip_solver_solves_table/0, mip_solver_solves_columns/0, mip_solver_solves_select_sql/0, mip_solver_solves_node_role_values/0, validate_mip_solver_solves_node_role/1, mip_solver_jobs_table/0, mip_solver_jobs_columns/0, mip_solver_jobs_select_sql/0, mip_solver_events_table/0, mip_solver_events_columns/0, mip_solver_events_select_sql/0, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1, container_pool_image_revisions_table/0, container_pool_image_revisions_columns/0, container_pool_image_revisions_select_sql/0, container_pool_image_revisions_source_values/0, validate_container_pool_image_revisions_source/1, container_pool_image_revisions_status_values/0, validate_container_pool_image_revisions_status/1, container_pool_build_runs_table/0, container_pool_build_runs_columns/0, container_pool_build_runs_select_sql/0, container_pool_build_runs_build_status_values/0, validate_container_pool_build_runs_build_status/1, container_pool_build_runs_test_status_values/0, validate_container_pool_build_runs_test_status/1, container_pool_build_runs_overall_status_values/0, validate_container_pool_build_runs_overall_status/1, presence_convs_table/0, presence_convs_columns/0, presence_convs_select_sql/0, presence_convs_status_values/0, validate_presence_convs_status/1, presence_conv_members_table/0, presence_conv_members_columns/0, presence_conv_members_select_sql/0, presence_conv_members_role_values/0, validate_presence_conv_members_role/1, presence_conv_members_status_values/0, validate_presence_conv_members_status/1, presence_users_table/0, presence_users_columns/0, presence_users_select_sql/0, presence_events_table/0, presence_events_columns/0, presence_events_select_sql/0, presence_events_op_values/0, validate_presence_events_op/1, presence_consumer_checkpoints_table/0, presence_consumer_checkpoints_columns/0, presence_consumer_checkpoints_select_sql/0, des_soccer_learning_experiments_table/0, des_soccer_learning_experiments_columns/0, des_soccer_learning_experiments_select_sql/0, des_soccer_learning_experiments_status_values/0, validate_des_soccer_learning_experiments_status/1, des_soccer_learning_policy_versions_table/0, des_soccer_learning_policy_versions_columns/0, des_soccer_learning_policy_versions_select_sql/0, des_soccer_learning_policy_versions_source_kind_values/0, validate_des_soccer_learning_policy_versions_source_kind/1, des_soccer_learning_policy_versions_status_values/0, validate_des_soccer_learning_policy_versions_status/1, des_soccer_learning_policy_entries_table/0, des_soccer_learning_policy_entries_columns/0, des_soccer_learning_policy_entries_select_sql/0, des_soccer_learning_policy_entries_team_values/0, validate_des_soccer_learning_policy_entries_team/1, des_soccer_learning_policy_entries_entry_kind_values/0, validate_des_soccer_learning_policy_entries_entry_kind/1, des_soccer_learning_jobs_table/0, des_soccer_learning_jobs_columns/0, des_soccer_learning_jobs_select_sql/0, des_soccer_learning_jobs_spawn_strategy_values/0, validate_des_soccer_learning_jobs_spawn_strategy/1, des_soccer_learning_jobs_status_values/0, validate_des_soccer_learning_jobs_status/1, des_soccer_learning_runs_table/0, des_soccer_learning_runs_columns/0, des_soccer_learning_runs_select_sql/0, des_soccer_learning_runs_status_values/0, validate_des_soccer_learning_runs_status/1, des_soccer_learning_runs_home_outcome_values/0, validate_des_soccer_learning_runs_home_outcome/1, des_soccer_learning_runs_away_outcome_values/0, validate_des_soccer_learning_runs_away_outcome/1, des_soccer_learning_run_deltas_table/0, des_soccer_learning_run_deltas_columns/0, des_soccer_learning_run_deltas_select_sql/0, des_soccer_learning_run_deltas_team_values/0, validate_des_soccer_learning_run_deltas_team/1, des_soccer_learning_run_deltas_entry_kind_values/0, validate_des_soccer_learning_run_deltas_entry_kind/1, des_soccer_learning_merge_events_table/0, des_soccer_learning_merge_events_columns/0, des_soccer_learning_merge_events_select_sql/0, des_soccer_learning_merge_events_strategy_values/0, validate_des_soccer_learning_merge_events_strategy/1, des_fel_elevator_learning_runs_table/0, des_fel_elevator_learning_runs_columns/0, des_fel_elevator_learning_runs_select_sql/0, des_fel_elevator_learning_runs_status_values/0, validate_des_fel_elevator_learning_runs_status/1, des_fel_elevator_learning_runs_dispatch_policy_values/0, validate_des_fel_elevator_learning_runs_dispatch_policy/1, des_fel_elevator_policy_states_table/0, des_fel_elevator_policy_states_columns/0, des_fel_elevator_policy_states_select_sql/0, des_fel_elevator_policy_states_policy_kind_values/0, validate_des_fel_elevator_policy_states_policy_kind/1, des_fel_elevator_policy_states_source_kind_values/0, validate_des_fel_elevator_policy_states_source_kind/1, des_fel_elevator_dispatch_decisions_table/0, des_fel_elevator_dispatch_decisions_columns/0, des_fel_elevator_dispatch_decisions_select_sql/0, des_fel_elevator_dispatch_decisions_policy_kind_values/0, validate_des_fel_elevator_dispatch_decisions_policy_kind/1, des_fel_elevator_pomdp_beliefs_table/0, des_fel_elevator_pomdp_beliefs_columns/0, des_fel_elevator_pomdp_beliefs_select_sql/0, des_fel_elevator_pomdp_beliefs_action_values/0, validate_des_fel_elevator_pomdp_beliefs_action/1, des_fel_elevator_pomdp_beliefs_observation_values/0, validate_des_fel_elevator_pomdp_beliefs_observation/1]).
 
 app_config_table() -> <<"app_config">>.
 
@@ -981,3 +981,160 @@ validate_des_soccer_learning_merge_events_strategy(Value) when is_binary(Value) 
     end;
 validate_des_soccer_learning_merge_events_strategy(Value) when is_list(Value) ->
     validate_des_soccer_learning_merge_events_strategy(unicode:characters_to_binary(Value)).
+
+des_fel_elevator_learning_runs_table() -> <<"des_fel_elevator_learning_runs">>.
+
+des_fel_elevator_learning_runs_columns() -> [<<"id">>, <<"run_label">>, <<"scenario_slug">>, <<"status">>, <<"dispatch_policy">>, <<"seed">>, <<"floors">>, <<"shafts">>, <<"capacity">>, <<"travel_seconds_micros">>, <<"dwell_seconds_micros">>, <<"arrival_rate_micros">>, <<"horizon_seconds_micros">>, <<"events">>, <<"arrivals">>, <<"boarded">>, <<"served">>, <<"mean_wait_micros">>, <<"dispatch_decisions">>, <<"pomdp_belief_updates">>, <<"online_learning_updates">>, <<"online_learning_loss_last_micros">>, <<"config">>, <<"metrics">>, <<"artifact">>, <<"created_at">>, <<"updated_at">>].
+
+des_fel_elevator_learning_runs_select_sql() -> <<"select
+      id::text as id,
+      run_label,
+      scenario_slug,
+      status,
+      dispatch_policy,
+      seed,
+      floors,
+      shafts,
+      capacity,
+      travel_seconds_micros,
+      dwell_seconds_micros,
+      arrival_rate_micros,
+      horizon_seconds_micros,
+      events,
+      arrivals,
+      boarded,
+      served,
+      mean_wait_micros,
+      dispatch_decisions,
+      pomdp_belief_updates,
+      online_learning_updates,
+      online_learning_loss_last_micros,
+      config::text as config_json,
+      metrics::text as metrics_json,
+      artifact::text as artifact_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from des_fel_elevator_learning_runs">>.
+
+des_fel_elevator_learning_runs_status_values() -> [<<"completed">>, <<"failed">>, <<"imported">>].
+
+validate_des_fel_elevator_learning_runs_status(Value) when is_binary(Value) ->
+    case lists:member(Value, des_fel_elevator_learning_runs_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_fel_elevator_learning_runs.status: "/binary, Value/binary>>}
+    end;
+validate_des_fel_elevator_learning_runs_status(Value) when is_list(Value) ->
+    validate_des_fel_elevator_learning_runs_status(unicode:characters_to_binary(Value)).
+
+des_fel_elevator_learning_runs_dispatch_policy_values() -> [<<"look">>, <<"mdp-table">>, <<"neural-scorer">>, <<"pomdp-belief">>, <<"neural-td">>].
+
+validate_des_fel_elevator_learning_runs_dispatch_policy(Value) when is_binary(Value) ->
+    case lists:member(Value, des_fel_elevator_learning_runs_dispatch_policy_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_fel_elevator_learning_runs.dispatch_policy: "/binary, Value/binary>>}
+    end;
+validate_des_fel_elevator_learning_runs_dispatch_policy(Value) when is_list(Value) ->
+    validate_des_fel_elevator_learning_runs_dispatch_policy(unicode:characters_to_binary(Value)).
+
+des_fel_elevator_policy_states_table() -> <<"des_fel_elevator_policy_states">>.
+
+des_fel_elevator_policy_states_columns() -> [<<"id">>, <<"run_id">>, <<"policy_kind">>, <<"source_kind">>, <<"feature_dim">>, <<"output_dim">>, <<"parameter_count">>, <<"online_learning_updates">>, <<"loss_history">>, <<"state">>, <<"created_at">>].
+
+des_fel_elevator_policy_states_select_sql() -> <<"select
+      id::text as id,
+      run_id::text as run_id,
+      policy_kind,
+      source_kind,
+      feature_dim,
+      output_dim,
+      parameter_count,
+      online_learning_updates,
+      loss_history::text as loss_history_json,
+      state::text as state_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+    from des_fel_elevator_policy_states">>.
+
+des_fel_elevator_policy_states_policy_kind_values() -> [<<"look">>, <<"mdp-table">>, <<"neural-scorer">>, <<"pomdp-belief">>, <<"neural-td">>].
+
+validate_des_fel_elevator_policy_states_policy_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, des_fel_elevator_policy_states_policy_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_fel_elevator_policy_states.policy_kind: "/binary, Value/binary>>}
+    end;
+validate_des_fel_elevator_policy_states_policy_kind(Value) when is_list(Value) ->
+    validate_des_fel_elevator_policy_states_policy_kind(unicode:characters_to_binary(Value)).
+
+des_fel_elevator_policy_states_source_kind_values() -> [<<"run-final">>, <<"offline-training">>, <<"import">>, <<"checkpoint">>].
+
+validate_des_fel_elevator_policy_states_source_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, des_fel_elevator_policy_states_source_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_fel_elevator_policy_states.source_kind: "/binary, Value/binary>>}
+    end;
+validate_des_fel_elevator_policy_states_source_kind(Value) when is_list(Value) ->
+    validate_des_fel_elevator_policy_states_source_kind(unicode:characters_to_binary(Value)).
+
+des_fel_elevator_dispatch_decisions_table() -> <<"des_fel_elevator_dispatch_decisions">>.
+
+des_fel_elevator_dispatch_decisions_columns() -> [<<"id">>, <<"run_id">>, <<"decision_index">>, <<"sim_time_micros">>, <<"call_floor">>, <<"car_index">>, <<"policy_kind">>, <<"meta_data">>, <<"created_at">>].
+
+des_fel_elevator_dispatch_decisions_select_sql() -> <<"select
+      id::text as id,
+      run_id::text as run_id,
+      decision_index,
+      sim_time_micros,
+      call_floor,
+      car_index,
+      policy_kind,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+    from des_fel_elevator_dispatch_decisions">>.
+
+des_fel_elevator_dispatch_decisions_policy_kind_values() -> [<<"look">>, <<"mdp-table">>, <<"neural-scorer">>, <<"pomdp-belief">>, <<"neural-td">>].
+
+validate_des_fel_elevator_dispatch_decisions_policy_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, des_fel_elevator_dispatch_decisions_policy_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_fel_elevator_dispatch_decisions.policy_kind: "/binary, Value/binary>>}
+    end;
+validate_des_fel_elevator_dispatch_decisions_policy_kind(Value) when is_list(Value) ->
+    validate_des_fel_elevator_dispatch_decisions_policy_kind(unicode:characters_to_binary(Value)).
+
+des_fel_elevator_pomdp_beliefs_table() -> <<"des_fel_elevator_pomdp_beliefs">>.
+
+des_fel_elevator_pomdp_beliefs_columns() -> [<<"id">>, <<"run_id">>, <<"belief_index">>, <<"sim_time_micros">>, <<"floor">>, <<"action">>, <<"observation">>, <<"empty_prob_micros">>, <<"waiting_prob_micros">>, <<"crowded_prob_micros">>, <<"belief">>, <<"created_at">>].
+
+des_fel_elevator_pomdp_beliefs_select_sql() -> <<"select
+      id::text as id,
+      run_id::text as run_id,
+      belief_index,
+      sim_time_micros,
+      floor,
+      action,
+      observation,
+      empty_prob_micros,
+      waiting_prob_micros,
+      crowded_prob_micros,
+      belief::text as belief_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+    from des_fel_elevator_pomdp_beliefs">>.
+
+des_fel_elevator_pomdp_beliefs_action_values() -> [<<"hold">>, <<"dispatch">>].
+
+validate_des_fel_elevator_pomdp_beliefs_action(Value) when is_binary(Value) ->
+    case lists:member(Value, des_fel_elevator_pomdp_beliefs_action_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_fel_elevator_pomdp_beliefs.action: "/binary, Value/binary>>}
+    end;
+validate_des_fel_elevator_pomdp_beliefs_action(Value) when is_list(Value) ->
+    validate_des_fel_elevator_pomdp_beliefs_action(unicode:characters_to_binary(Value)).
+
+des_fel_elevator_pomdp_beliefs_observation_values() -> [<<"quiet">>, <<"call">>].
+
+validate_des_fel_elevator_pomdp_beliefs_observation(Value) when is_binary(Value) ->
+    case lists:member(Value, des_fel_elevator_pomdp_beliefs_observation_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_fel_elevator_pomdp_beliefs.observation: "/binary, Value/binary>>}
+    end;
+validate_des_fel_elevator_pomdp_beliefs_observation(Value) when is_list(Value) ->
+    validate_des_fel_elevator_pomdp_beliefs_observation(unicode:characters_to_binary(Value)).

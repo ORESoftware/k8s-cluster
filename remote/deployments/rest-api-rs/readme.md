@@ -85,10 +85,19 @@ GraphQL also provides extension points for non-Postgres sources and service-to-s
   `REST_API_GRAPHQL_SERVICE_CALLS_ENABLED=true` and
   `REST_API_GRAPHQL_SERVICE_ALLOWLIST=name=http://service.namespace.svc.cluster.local:port,...`.
   These mutations require `X-Agent-Auth` or `X-Server-Auth` and only call named allowlist entries,
-  never caller-supplied absolute URLs.
-- Set `REST_API_GRAPHQL_AUTH_REQUIRED=true` to require the same internal auth for every GraphQL
-  operation. By default only Redis key reads and subservice call mutations require it; the public
-  gateway should still protect `/api/graphql` before forwarding.
+  never caller-supplied absolute URLs. Forwarded headers, request bodies, response bodies, and
+  subservice GraphQL query text are size-bounded.
+- GraphQL requires the same internal auth for every operation by default
+  (`REST_API_GRAPHQL_AUTH_REQUIRED=true`). Set it to `false` only for trusted local development
+  or after the gateway auth path is proven for the exposed route.
+- GraphiQL is disabled by default (`REST_API_GRAPHQL_IDE_ENABLED=false`). If enabled, it still
+  requires internal auth unless `REST_API_GRAPHQL_IDE_AUTH_REQUIRED=false`.
+- GraphQL introspection is disabled by default (`REST_API_GRAPHQL_INTROSPECTION_ENABLED=false`);
+  use the authenticated SDL route at `/graphql/schema` or `/api/graphql/schema` for schema export.
+- GraphQL request parsing is bounded with `REST_API_GRAPHQL_REQUEST_BYTES`,
+  `REST_API_GRAPHQL_DEPTH_LIMIT`, and `REST_API_GRAPHQL_COMPLEXITY_LIMIT`.
+- Backend database error details are redacted by default. Set
+  `REST_API_GRAPHQL_EXPOSE_BACKEND_ERRORS=true` only in a trusted debugging environment.
 
 Generic database inspection remains an operator-only escape hatch under `/internal/db/*`, disabled
 by default. To mount it for a trusted internal environment, set
