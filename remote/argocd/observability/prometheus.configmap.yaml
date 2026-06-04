@@ -82,6 +82,16 @@ data:
         static_configs:
           - targets:
               - dd-ai-ml-pipeline.ai-ml.svc.cluster.local:8099
+      - job_name: dd-in-house-mip-solver-node-master
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-in-house-mip-solver-node.ai-ml.svc.cluster.local:8117
+      - job_name: dd-in-house-mip-solver-node-slave
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-in-house-mip-solver-node-slave.ai-ml.svc.cluster.local:8117
       - job_name: dd-gleam-lambda-runner
         metrics_path: /metrics
         static_configs:

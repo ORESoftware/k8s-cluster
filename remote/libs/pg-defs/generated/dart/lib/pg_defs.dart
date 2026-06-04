@@ -1002,6 +1002,347 @@ class AgentRemoteDevRuntimeLockRow {
   }
 }
 
+const mipSolverSessionsTable = "mip_solver_sessions";
+const mipSolverSessionsSelectSql = "select\n      session_id,\n      revision,\n      problem::text as problem_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from mip_solver_sessions";
+
+class MipSolverSessionsRow {
+  const MipSolverSessionsRow({
+    required this.sessionId,
+    required this.revision,
+    required this.problem,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String sessionId;
+  final int revision;
+  final Map<String, Object?> problem;
+  final String createdAt;
+  final String updatedAt;
+
+  factory MipSolverSessionsRow.fromJson(Map<String, Object?> json) {
+    return MipSolverSessionsRow(
+      sessionId: _readRequiredString(json, "sessionId"),
+      revision: _readRequiredInt(json, "revision"),
+      problem: _readRequiredObject(json, "problem"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "sessionId": sessionId,
+    "revision": revision,
+    "problem": problem,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(sessionId).length > 200) {
+      errors.add("mip_solver_sessions.session_id exceeds 200 bytes");
+    }
+    if (utf8.encode(sessionId).length < 1) {
+      errors.add("mip_solver_sessions.session_id is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const mipSolverSolvesTable = "mip_solver_solves";
+const mipSolverSolvesSelectSql = "select\n      solve_id,\n      request_id,\n      revision,\n      status,\n      node_id,\n      node_role,\n      problem::text as problem_json,\n      options::text as options_json,\n      response::text as response_json,\n      jobs_expected,\n      jobs_published,\n      jobs_completed,\n      jobs_redelegated,\n      jobs_split,\n      timed_out,\n      distributed,\n      warnings::text as warnings_json,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at\n    from mip_solver_solves";
+
+const mipSolverSolvesNodeRoleValues = <String>["master", "slave"];
+
+class MipSolverSolvesRow {
+  const MipSolverSolvesRow({
+    required this.solveId,
+    required this.requestId,
+    required this.revision,
+    required this.status,
+    required this.nodeId,
+    required this.nodeRole,
+    required this.problem,
+    required this.options,
+    required this.response,
+    required this.jobsExpected,
+    required this.jobsPublished,
+    required this.jobsCompleted,
+    required this.jobsRedelegated,
+    required this.jobsSplit,
+    required this.timedOut,
+    required this.distributed,
+    required this.warnings,
+    required this.startedAt,
+    required this.updatedAt,
+    this.finishedAt,
+  });
+
+  final String solveId;
+  final String requestId;
+  final int revision;
+  final String status;
+  final String nodeId;
+  final String nodeRole;
+  final Map<String, Object?> problem;
+  final Map<String, Object?> options;
+  final Map<String, Object?> response;
+  final int jobsExpected;
+  final int jobsPublished;
+  final int jobsCompleted;
+  final int jobsRedelegated;
+  final int jobsSplit;
+  final bool timedOut;
+  final bool distributed;
+  final List<Object?> warnings;
+  final String startedAt;
+  final String updatedAt;
+  final String? finishedAt;
+
+  factory MipSolverSolvesRow.fromJson(Map<String, Object?> json) {
+    return MipSolverSolvesRow(
+      solveId: _readRequiredString(json, "solveId"),
+      requestId: _readRequiredString(json, "requestId"),
+      revision: _readRequiredInt(json, "revision"),
+      status: _readRequiredString(json, "status"),
+      nodeId: _readRequiredString(json, "nodeId"),
+      nodeRole: _readRequiredString(json, "nodeRole"),
+      problem: _readRequiredObject(json, "problem"),
+      options: _readRequiredObject(json, "options"),
+      response: _readRequiredObject(json, "response"),
+      jobsExpected: _readRequiredInt(json, "jobsExpected"),
+      jobsPublished: _readRequiredInt(json, "jobsPublished"),
+      jobsCompleted: _readRequiredInt(json, "jobsCompleted"),
+      jobsRedelegated: _readRequiredInt(json, "jobsRedelegated"),
+      jobsSplit: _readRequiredInt(json, "jobsSplit"),
+      timedOut: _readRequiredBool(json, "timedOut"),
+      distributed: _readRequiredBool(json, "distributed"),
+      warnings: _readRequiredArray(json, "warnings"),
+      startedAt: _readRequiredString(json, "startedAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      finishedAt: _readOptionalString(json, "finishedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "solveId": solveId,
+    "requestId": requestId,
+    "revision": revision,
+    "status": status,
+    "nodeId": nodeId,
+    "nodeRole": nodeRole,
+    "problem": problem,
+    "options": options,
+    "response": response,
+    "jobsExpected": jobsExpected,
+    "jobsPublished": jobsPublished,
+    "jobsCompleted": jobsCompleted,
+    "jobsRedelegated": jobsRedelegated,
+    "jobsSplit": jobsSplit,
+    "timedOut": timedOut,
+    "distributed": distributed,
+    "warnings": warnings,
+    "startedAt": startedAt,
+    "updatedAt": updatedAt,
+    "finishedAt": finishedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(solveId).length > 160) {
+      errors.add("mip_solver_solves.solve_id exceeds 160 bytes");
+    }
+    if (utf8.encode(solveId).length < 1) {
+      errors.add("mip_solver_solves.solve_id is below 1 bytes");
+    }
+    if (utf8.encode(requestId).length > 200) {
+      errors.add("mip_solver_solves.request_id exceeds 200 bytes");
+    }
+    if (utf8.encode(requestId).length < 1) {
+      errors.add("mip_solver_solves.request_id is below 1 bytes");
+    }
+    if (utf8.encode(status).length > 64) {
+      errors.add("mip_solver_solves.status exceeds 64 bytes");
+    }
+    if (utf8.encode(status).length < 1) {
+      errors.add("mip_solver_solves.status is below 1 bytes");
+    }
+    if (utf8.encode(nodeId).length > 253) {
+      errors.add("mip_solver_solves.node_id exceeds 253 bytes");
+    }
+    if (utf8.encode(nodeId).length < 1) {
+      errors.add("mip_solver_solves.node_id is below 1 bytes");
+    }
+    if (!mipSolverSolvesNodeRoleValues.contains(nodeRole)) {
+      errors.add("unsupported mip_solver_solves.node_role");
+    }
+    if (jobsExpected < 0) {
+      errors.add("mip_solver_solves.jobs_expected is below the minimum");
+    }
+    if (jobsPublished < 0) {
+      errors.add("mip_solver_solves.jobs_published is below the minimum");
+    }
+    if (jobsCompleted < 0) {
+      errors.add("mip_solver_solves.jobs_completed is below the minimum");
+    }
+    if (jobsRedelegated < 0) {
+      errors.add("mip_solver_solves.jobs_redelegated is below the minimum");
+    }
+    if (jobsSplit < 0) {
+      errors.add("mip_solver_solves.jobs_split is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const mipSolverJobsTable = "mip_solver_jobs";
+const mipSolverJobsSelectSql = "select\n      job_id,\n      solve_id,\n      root_job_id,\n      retry_index,\n      depth,\n      status,\n      worker_node,\n      job_payload::text as job_payload_json,\n      result_payload::text as result_payload_json,\n      to_char(submitted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as submitted_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from mip_solver_jobs";
+
+class MipSolverJobsRow {
+  const MipSolverJobsRow({
+    required this.jobId,
+    required this.solveId,
+    required this.rootJobId,
+    required this.retryIndex,
+    required this.depth,
+    required this.status,
+    this.workerNode,
+    required this.jobPayload,
+    required this.resultPayload,
+    required this.submittedAt,
+    this.finishedAt,
+    required this.updatedAt,
+  });
+
+  final String jobId;
+  final String solveId;
+  final String rootJobId;
+  final int retryIndex;
+  final int depth;
+  final String status;
+  final String? workerNode;
+  final Map<String, Object?> jobPayload;
+  final Map<String, Object?> resultPayload;
+  final String submittedAt;
+  final String? finishedAt;
+  final String updatedAt;
+
+  factory MipSolverJobsRow.fromJson(Map<String, Object?> json) {
+    return MipSolverJobsRow(
+      jobId: _readRequiredString(json, "jobId"),
+      solveId: _readRequiredString(json, "solveId"),
+      rootJobId: _readRequiredString(json, "rootJobId"),
+      retryIndex: _readRequiredInt(json, "retryIndex"),
+      depth: _readRequiredInt(json, "depth"),
+      status: _readRequiredString(json, "status"),
+      workerNode: _readOptionalString(json, "workerNode"),
+      jobPayload: _readRequiredObject(json, "jobPayload"),
+      resultPayload: _readRequiredObject(json, "resultPayload"),
+      submittedAt: _readRequiredString(json, "submittedAt"),
+      finishedAt: _readOptionalString(json, "finishedAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "jobId": jobId,
+    "solveId": solveId,
+    "rootJobId": rootJobId,
+    "retryIndex": retryIndex,
+    "depth": depth,
+    "status": status,
+    "workerNode": workerNode,
+    "jobPayload": jobPayload,
+    "resultPayload": resultPayload,
+    "submittedAt": submittedAt,
+    "finishedAt": finishedAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(jobId).length > 240) {
+      errors.add("mip_solver_jobs.job_id exceeds 240 bytes");
+    }
+    if (utf8.encode(jobId).length < 1) {
+      errors.add("mip_solver_jobs.job_id is below 1 bytes");
+    }
+    if (utf8.encode(rootJobId).length > 240) {
+      errors.add("mip_solver_jobs.root_job_id exceeds 240 bytes");
+    }
+    if (utf8.encode(rootJobId).length < 1) {
+      errors.add("mip_solver_jobs.root_job_id is below 1 bytes");
+    }
+    if (retryIndex < 0) {
+      errors.add("mip_solver_jobs.retry_index is below the minimum");
+    }
+    if (depth < 0) {
+      errors.add("mip_solver_jobs.depth is below the minimum");
+    }
+    if (utf8.encode(status).length > 64) {
+      errors.add("mip_solver_jobs.status exceeds 64 bytes");
+    }
+    if (utf8.encode(status).length < 1) {
+      errors.add("mip_solver_jobs.status is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const mipSolverEventsTable = "mip_solver_events";
+const mipSolverEventsSelectSql = "select\n      id,\n      solve_id,\n      session_id,\n      job_id,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from mip_solver_events";
+
+class MipSolverEventsRow {
+  const MipSolverEventsRow({
+    required this.id,
+    this.solveId,
+    this.sessionId,
+    this.jobId,
+    required this.eventKind,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  final int id;
+  final String? solveId;
+  final String? sessionId;
+  final String? jobId;
+  final String eventKind;
+  final Map<String, Object?> payload;
+  final String createdAt;
+
+  factory MipSolverEventsRow.fromJson(Map<String, Object?> json) {
+    return MipSolverEventsRow(
+      id: _readRequiredInt(json, "id"),
+      solveId: _readOptionalString(json, "solveId"),
+      sessionId: _readOptionalString(json, "sessionId"),
+      jobId: _readOptionalString(json, "jobId"),
+      eventKind: _readRequiredString(json, "eventKind"),
+      payload: _readRequiredObject(json, "payload"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "solveId": solveId,
+    "sessionId": sessionId,
+    "jobId": jobId,
+    "eventKind": eventKind,
+    "payload": payload,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:-]{1,80}$').hasMatch(eventKind)) {
+      errors.add("mip_solver_events.event_kind does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
 const lambdaFunctionTable = "lambda_functions";
 const lambdaFunctionSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      status,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_functions";
 

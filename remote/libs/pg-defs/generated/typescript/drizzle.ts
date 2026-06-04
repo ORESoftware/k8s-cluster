@@ -788,6 +788,246 @@ export type AgentRemoteDevRuntimeLockRow = z.infer<typeof agentRemoteDevRuntimeL
 export type AgentRemoteDevRuntimeLockInsert = z.infer<typeof agentRemoteDevRuntimeLockInsertSchema>;
 export type AgentRemoteDevRuntimeLockUpdate = z.infer<typeof agentRemoteDevRuntimeLockUpdateSchema>;
 
+export const mipSolverSessions = pgTable(
+  "mip_solver_sessions",
+  {
+    sessionId: varchar("session_id", { length: 200 }).primaryKey(),
+    revision: bigint("revision", { mode: "number" }).default(sql`0`).notNull(),
+    problem: jsonb("problem").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    mipSolverSessionsSessionIdSizeChk: check("mip_solver_sessions_session_id_size_chk", sql.raw("octet_length(session_id) between 1 and 200")),
+    mipSolverSessionsRevisionChk: check("mip_solver_sessions_revision_chk", sql.raw("revision >= 0")),
+    mipSolverSessionsProblemJsonChk: check("mip_solver_sessions_problem_json_chk", sql.raw("jsonb_typeof(problem) = 'object'")),
+    mipSolverSessionsUpdatedAtIdx: index("mip_solver_sessions_updated_at_idx").on(table.updatedAt.desc()),
+  }),
+);
+
+export const mipSolverSessionsRowSchema = z.object({
+  sessionId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  revision: z.number().int().min(0),
+  problem: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const mipSolverSessionsInsertSchema = z.object({
+  sessionId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  revision: z.number().int().min(0).optional().default(0),
+  problem: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const mipSolverSessionsUpdateSchema = mipSolverSessionsInsertSchema.partial();
+export type MipSolverSessionsRow = z.infer<typeof mipSolverSessionsRowSchema>;
+export type MipSolverSessionsInsert = z.infer<typeof mipSolverSessionsInsertSchema>;
+export type MipSolverSessionsUpdate = z.infer<typeof mipSolverSessionsUpdateSchema>;
+
+export const mipSolverSolvesNodeRoleValues = ["master","slave"] as const;
+export const mipSolverSolvesNodeRoleSchema = z.enum(mipSolverSolvesNodeRoleValues);
+export type MipSolverSolvesNodeRole = z.infer<typeof mipSolverSolvesNodeRoleSchema>;
+
+export const mipSolverSolves = pgTable(
+  "mip_solver_solves",
+  {
+    solveId: varchar("solve_id", { length: 160 }).primaryKey(),
+    requestId: varchar("request_id", { length: 200 }).notNull(),
+    revision: bigint("revision", { mode: "number" }).default(sql`0`).notNull(),
+    status: varchar("status", { length: 64 }).default(sql`'running'`).notNull(),
+    nodeId: varchar("node_id", { length: 253 }).notNull(),
+    nodeRole: varchar("node_role", { length: 32 }).notNull(),
+    problem: jsonb("problem").default(sql`'{}'::jsonb`).notNull(),
+    options: jsonb("options").default(sql`'{}'::jsonb`).notNull(),
+    response: jsonb("response").default(sql`'{}'::jsonb`).notNull(),
+    jobsExpected: integer("jobs_expected").default(sql`0`).notNull(),
+    jobsPublished: integer("jobs_published").default(sql`0`).notNull(),
+    jobsCompleted: integer("jobs_completed").default(sql`0`).notNull(),
+    jobsRedelegated: integer("jobs_redelegated").default(sql`0`).notNull(),
+    jobsSplit: integer("jobs_split").default(sql`0`).notNull(),
+    timedOut: boolean("timed_out").default(sql`false`).notNull(),
+    distributed: boolean("distributed").default(sql`false`).notNull(),
+    warnings: jsonb("warnings").default(sql`'[]'::jsonb`).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+  },
+  (table) => ({
+    mipSolverSolvesSolveIdSizeChk: check("mip_solver_solves_solve_id_size_chk", sql.raw("octet_length(solve_id) between 1 and 160")),
+    mipSolverSolvesRequestIdSizeChk: check("mip_solver_solves_request_id_size_chk", sql.raw("octet_length(request_id) between 1 and 200")),
+    mipSolverSolvesStatusSizeChk: check("mip_solver_solves_status_size_chk", sql.raw("octet_length(status) between 1 and 64")),
+    mipSolverSolvesNodeIdSizeChk: check("mip_solver_solves_node_id_size_chk", sql.raw("octet_length(node_id) between 1 and 253")),
+    mipSolverSolvesNodeRoleChk: check("mip_solver_solves_node_role_chk", sql.raw("node_role in ('master', 'slave')")),
+    mipSolverSolvesCountsChk: check("mip_solver_solves_counts_chk", sql.raw("revision >= 0 and jobs_expected >= 0 and jobs_published >= 0 and jobs_completed >= 0 and jobs_redelegated >= 0 and jobs_split >= 0")),
+    mipSolverSolvesProblemJsonChk: check("mip_solver_solves_problem_json_chk", sql.raw("jsonb_typeof(problem) = 'object'")),
+    mipSolverSolvesOptionsJsonChk: check("mip_solver_solves_options_json_chk", sql.raw("jsonb_typeof(options) = 'object'")),
+    mipSolverSolvesResponseJsonChk: check("mip_solver_solves_response_json_chk", sql.raw("jsonb_typeof(response) = 'object'")),
+    mipSolverSolvesWarningsJsonChk: check("mip_solver_solves_warnings_json_chk", sql.raw("jsonb_typeof(warnings) = 'array'")),
+    mipSolverSolvesRequestIdIdx: index("mip_solver_solves_request_id_idx").on(table.requestId, table.updatedAt.desc()),
+    mipSolverSolvesStatusIdx: index("mip_solver_solves_status_idx").on(table.status, table.updatedAt.desc()),
+  }),
+);
+
+export const mipSolverSolvesRowSchema = z.object({
+  solveId: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes"),
+  requestId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  revision: z.number().int().min(0),
+  status: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  nodeId: z.string().max(253).refine((value) => byteLength(value) <= 253, "Must be at most 253 bytes"),
+  nodeRole: mipSolverSolvesNodeRoleSchema,
+  problem: jsonObjectSchema,
+  options: jsonObjectSchema,
+  response: jsonObjectSchema,
+  jobsExpected: z.number().int().min(0),
+  jobsPublished: z.number().int().min(0),
+  jobsCompleted: z.number().int().min(0),
+  jobsRedelegated: z.number().int().min(0),
+  jobsSplit: z.number().int().min(0),
+  timedOut: z.boolean(),
+  distributed: z.boolean(),
+  warnings: jsonArraySchema,
+  startedAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().nullable(),
+});
+
+export const mipSolverSolvesInsertSchema = z.object({
+  solveId: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes"),
+  requestId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  revision: z.number().int().min(0).optional().default(0),
+  status: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").optional().default("running"),
+  nodeId: z.string().max(253).refine((value) => byteLength(value) <= 253, "Must be at most 253 bytes"),
+  nodeRole: mipSolverSolvesNodeRoleSchema,
+  problem: jsonObjectSchema.optional().default({}),
+  options: jsonObjectSchema.optional().default({}),
+  response: jsonObjectSchema.optional().default({}),
+  jobsExpected: z.number().int().min(0).optional().default(0),
+  jobsPublished: z.number().int().min(0).optional().default(0),
+  jobsCompleted: z.number().int().min(0).optional().default(0),
+  jobsRedelegated: z.number().int().min(0).optional().default(0),
+  jobsSplit: z.number().int().min(0).optional().default(0),
+  timedOut: z.boolean().optional().default(false),
+  distributed: z.boolean().optional().default(false),
+  warnings: jsonArraySchema.optional().default([]),
+  startedAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  finishedAt: z.string().datetime().nullable().optional(),
+});
+
+export const mipSolverSolvesUpdateSchema = mipSolverSolvesInsertSchema.partial();
+export type MipSolverSolvesRow = z.infer<typeof mipSolverSolvesRowSchema>;
+export type MipSolverSolvesInsert = z.infer<typeof mipSolverSolvesInsertSchema>;
+export type MipSolverSolvesUpdate = z.infer<typeof mipSolverSolvesUpdateSchema>;
+
+export const mipSolverJobs = pgTable(
+  "mip_solver_jobs",
+  {
+    jobId: varchar("job_id", { length: 240 }).primaryKey(),
+    solveId: varchar("solve_id", { length: 160 }).notNull(),
+    rootJobId: varchar("root_job_id", { length: 240 }).notNull(),
+    retryIndex: integer("retry_index").default(sql`0`).notNull(),
+    depth: integer("depth").default(sql`0`).notNull(),
+    status: varchar("status", { length: 64 }).default(sql`'submitted'`).notNull(),
+    workerNode: varchar("worker_node", { length: 253 }),
+    jobPayload: jsonb("job_payload").default(sql`'{}'::jsonb`).notNull(),
+    resultPayload: jsonb("result_payload").default(sql`'{}'::jsonb`).notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    mipSolverJobsJobIdSizeChk: check("mip_solver_jobs_job_id_size_chk", sql.raw("octet_length(job_id) between 1 and 240")),
+    mipSolverJobsRootJobIdSizeChk: check("mip_solver_jobs_root_job_id_size_chk", sql.raw("octet_length(root_job_id) between 1 and 240")),
+    mipSolverJobsStatusSizeChk: check("mip_solver_jobs_status_size_chk", sql.raw("octet_length(status) between 1 and 64")),
+    mipSolverJobsCountsChk: check("mip_solver_jobs_counts_chk", sql.raw("retry_index >= 0 and depth >= 0")),
+    mipSolverJobsJobPayloadJsonChk: check("mip_solver_jobs_job_payload_json_chk", sql.raw("jsonb_typeof(job_payload) = 'object'")),
+    mipSolverJobsResultPayloadJsonChk: check("mip_solver_jobs_result_payload_json_chk", sql.raw("jsonb_typeof(result_payload) = 'object'")),
+    mipSolverJobsSolveStatusIdx: index("mip_solver_jobs_solve_status_idx").on(table.solveId, table.status, table.updatedAt.desc()),
+    mipSolverJobsRootIdx: index("mip_solver_jobs_root_idx").on(table.solveId, table.rootJobId, table.retryIndex),
+  }),
+);
+
+export const mipSolverJobsRowSchema = z.object({
+  jobId: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  solveId: z.string().max(160),
+  rootJobId: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  retryIndex: z.number().int().min(0),
+  depth: z.number().int().min(0),
+  status: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  workerNode: z.string().max(253).nullable(),
+  jobPayload: jsonObjectSchema,
+  resultPayload: jsonObjectSchema,
+  submittedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().nullable(),
+  updatedAt: z.string().datetime(),
+});
+
+export const mipSolverJobsInsertSchema = z.object({
+  jobId: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  solveId: z.string().max(160),
+  rootJobId: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  retryIndex: z.number().int().min(0).optional().default(0),
+  depth: z.number().int().min(0).optional().default(0),
+  status: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").optional().default("submitted"),
+  workerNode: z.string().max(253).nullable().optional(),
+  jobPayload: jsonObjectSchema.optional().default({}),
+  resultPayload: jsonObjectSchema.optional().default({}),
+  submittedAt: z.string().datetime().optional(),
+  finishedAt: z.string().datetime().nullable().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const mipSolverJobsUpdateSchema = mipSolverJobsInsertSchema.partial();
+export type MipSolverJobsRow = z.infer<typeof mipSolverJobsRowSchema>;
+export type MipSolverJobsInsert = z.infer<typeof mipSolverJobsInsertSchema>;
+export type MipSolverJobsUpdate = z.infer<typeof mipSolverJobsUpdateSchema>;
+
+export const mipSolverEvents = pgTable(
+  "mip_solver_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    solveId: varchar("solve_id", { length: 160 }),
+    sessionId: varchar("session_id", { length: 200 }),
+    jobId: varchar("job_id", { length: 240 }),
+    eventKind: varchar("event_kind", { length: 80 }).notNull(),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    mipSolverEventsEventKindFormatChk: check("mip_solver_events_event_kind_format_chk", sql.raw("event_kind ~ '^[A-Za-z0-9._:-]{1,80}$'")),
+    mipSolverEventsPayloadJsonChk: check("mip_solver_events_payload_json_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
+    mipSolverEventsSolveCreatedAtIdx: index("mip_solver_events_solve_created_at_idx").on(table.solveId, table.createdAt.desc()).where(sql.raw("solve_id is not null")),
+    mipSolverEventsSessionCreatedAtIdx: index("mip_solver_events_session_created_at_idx").on(table.sessionId, table.createdAt.desc()).where(sql.raw("session_id is not null")),
+  }),
+);
+
+export const mipSolverEventsRowSchema = z.object({
+  id: z.number().int(),
+  solveId: z.string().max(160).nullable(),
+  sessionId: z.string().max(200).nullable(),
+  jobId: z.string().max(240).nullable(),
+  eventKind: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
+  payload: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const mipSolverEventsInsertSchema = z.object({
+  id: z.number().int(),
+  solveId: z.string().max(160).nullable().optional(),
+  sessionId: z.string().max(200).nullable().optional(),
+  jobId: z.string().max(240).nullable().optional(),
+  eventKind: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
+  payload: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const mipSolverEventsUpdateSchema = mipSolverEventsInsertSchema.partial();
+export type MipSolverEventsRow = z.infer<typeof mipSolverEventsRowSchema>;
+export type MipSolverEventsInsert = z.infer<typeof mipSolverEventsInsertSchema>;
+export type MipSolverEventsUpdate = z.infer<typeof mipSolverEventsUpdateSchema>;
+
 export const lambdaFunctionRuntimeValues = ["nodejs","javascript","typescript","python3","python","ruby","bash","shell"] as const;
 export const lambdaFunctionRuntimeSchema = z.enum(lambdaFunctionRuntimeValues);
 export type LambdaFunctionRuntime = z.infer<typeof lambdaFunctionRuntimeSchema>;

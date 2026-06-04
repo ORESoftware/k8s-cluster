@@ -166,6 +166,66 @@ update agent_remote_dev_runtime_locks set thread_id = $2, owner = $3, status = $
 -- name: DeleteAgentRemoteDevRuntimeLocks :exec
 delete from agent_remote_dev_runtime_locks where id = $1;
 
+-- name: ListMipSolverSessions :many
+select session_id, revision, problem, created_at, updated_at from mip_solver_sessions;
+
+-- name: GetMipSolverSessions :one
+select session_id, revision, problem, created_at, updated_at from mip_solver_sessions where session_id = $1 limit 1;
+
+-- name: CreateMipSolverSessions :one
+insert into mip_solver_sessions (session_id, revision, problem, created_at, updated_at) values ($1, $2, $3, $4, $5) returning session_id, revision, problem, created_at, updated_at;
+
+-- name: UpdateMipSolverSessions :one
+update mip_solver_sessions set revision = $2, problem = $3, updated_at = $4 where session_id = $1 returning session_id, revision, problem, created_at, updated_at;
+
+-- name: DeleteMipSolverSessions :exec
+delete from mip_solver_sessions where session_id = $1;
+
+-- name: ListMipSolverSolves :many
+select solve_id, request_id, revision, status, node_id, node_role, problem, options, response, jobs_expected, jobs_published, jobs_completed, jobs_redelegated, jobs_split, timed_out, distributed, warnings, started_at, updated_at, finished_at from mip_solver_solves;
+
+-- name: GetMipSolverSolves :one
+select solve_id, request_id, revision, status, node_id, node_role, problem, options, response, jobs_expected, jobs_published, jobs_completed, jobs_redelegated, jobs_split, timed_out, distributed, warnings, started_at, updated_at, finished_at from mip_solver_solves where solve_id = $1 limit 1;
+
+-- name: CreateMipSolverSolves :one
+insert into mip_solver_solves (solve_id, request_id, revision, status, node_id, node_role, problem, options, response, jobs_expected, jobs_published, jobs_completed, jobs_redelegated, jobs_split, timed_out, distributed, warnings, started_at, updated_at, finished_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning solve_id, request_id, revision, status, node_id, node_role, problem, options, response, jobs_expected, jobs_published, jobs_completed, jobs_redelegated, jobs_split, timed_out, distributed, warnings, started_at, updated_at, finished_at;
+
+-- name: UpdateMipSolverSolves :one
+update mip_solver_solves set request_id = $2, revision = $3, status = $4, node_id = $5, node_role = $6, problem = $7, options = $8, response = $9, jobs_expected = $10, jobs_published = $11, jobs_completed = $12, jobs_redelegated = $13, jobs_split = $14, timed_out = $15, distributed = $16, warnings = $17, started_at = $18, updated_at = $19, finished_at = $20 where solve_id = $1 returning solve_id, request_id, revision, status, node_id, node_role, problem, options, response, jobs_expected, jobs_published, jobs_completed, jobs_redelegated, jobs_split, timed_out, distributed, warnings, started_at, updated_at, finished_at;
+
+-- name: DeleteMipSolverSolves :exec
+delete from mip_solver_solves where solve_id = $1;
+
+-- name: ListMipSolverJobs :many
+select job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, job_payload, result_payload, submitted_at, finished_at, updated_at from mip_solver_jobs;
+
+-- name: GetMipSolverJobs :one
+select job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, job_payload, result_payload, submitted_at, finished_at, updated_at from mip_solver_jobs where job_id = $1 limit 1;
+
+-- name: CreateMipSolverJobs :one
+insert into mip_solver_jobs (job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, job_payload, result_payload, submitted_at, finished_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, job_payload, result_payload, submitted_at, finished_at, updated_at;
+
+-- name: UpdateMipSolverJobs :one
+update mip_solver_jobs set solve_id = $2, root_job_id = $3, retry_index = $4, depth = $5, status = $6, worker_node = $7, job_payload = $8, result_payload = $9, submitted_at = $10, finished_at = $11, updated_at = $12 where job_id = $1 returning job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, job_payload, result_payload, submitted_at, finished_at, updated_at;
+
+-- name: DeleteMipSolverJobs :exec
+delete from mip_solver_jobs where job_id = $1;
+
+-- name: ListMipSolverEvents :many
+select id, solve_id, session_id, job_id, event_kind, payload, created_at from mip_solver_events;
+
+-- name: GetMipSolverEvents :one
+select id, solve_id, session_id, job_id, event_kind, payload, created_at from mip_solver_events where id = $1 limit 1;
+
+-- name: CreateMipSolverEvents :one
+insert into mip_solver_events (id, solve_id, session_id, job_id, event_kind, payload, created_at) values ($1, $2, $3, $4, $5, $6, $7) returning id, solve_id, session_id, job_id, event_kind, payload, created_at;
+
+-- name: UpdateMipSolverEvents :one
+update mip_solver_events set solve_id = $2, session_id = $3, job_id = $4, event_kind = $5, payload = $6 where id = $1 returning id, solve_id, session_id, job_id, event_kind, payload, created_at;
+
+-- name: DeleteMipSolverEvents :exec
+delete from mip_solver_events where id = $1;
+
 -- name: ListLambdaFunctions :many
 select id, slug, display_name, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, status, env, labels, meta_data, last_invoked_at, is_soft_deleted, created_at, updated_at, created_by, updated_by from lambda_functions;
 

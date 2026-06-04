@@ -656,6 +656,141 @@ pub fn validate_agent_remote_dev_runtime_locks_status(value: String) -> Result(S
   }
 }
 
+pub const mip_solver_sessions_table = "mip_solver_sessions"
+pub const mip_solver_sessions_select_sql = "select\n      session_id,\n      revision,\n      problem::text as problem_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from mip_solver_sessions"
+
+pub type MipSolverSessionsRow {
+  MipSolverSessionsRow(
+    session_id: String,
+    revision: Int,
+    problem_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_mip_solver_sessions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("mip_solver_sessions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const mip_solver_solves_table = "mip_solver_solves"
+pub const mip_solver_solves_select_sql = "select\n      solve_id,\n      request_id,\n      revision,\n      status,\n      node_id,\n      node_role,\n      problem::text as problem_json,\n      options::text as options_json,\n      response::text as response_json,\n      jobs_expected,\n      jobs_published,\n      jobs_completed,\n      jobs_redelegated,\n      jobs_split,\n      timed_out,\n      distributed,\n      warnings::text as warnings_json,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at\n    from mip_solver_solves"
+
+pub type MipSolverSolvesNodeRole {
+  MipSolverSolvesNodeRoleMaster
+  MipSolverSolvesNodeRoleSlave
+}
+
+pub fn mip_solver_solves_node_role_to_string(value: MipSolverSolvesNodeRole) -> String {
+  case value {
+    MipSolverSolvesNodeRoleMaster -> "master"
+    MipSolverSolvesNodeRoleSlave -> "slave"
+  }
+}
+
+pub fn parse_mip_solver_solves_node_role(value: String) -> Result(MipSolverSolvesNodeRole, String) {
+  case value {
+    "master" -> Ok(MipSolverSolvesNodeRoleMaster)
+    "slave" -> Ok(MipSolverSolvesNodeRoleSlave)
+    _ -> Error("unsupported mip_solver_solves.node_role: " <> value)
+  }
+}
+
+pub type MipSolverSolvesRow {
+  MipSolverSolvesRow(
+    solve_id: String,
+    request_id: String,
+    revision: Int,
+    status: String,
+    node_id: String,
+    node_role: String,
+    problem_json: String,
+    options_json: String,
+    response_json: String,
+    jobs_expected: Int,
+    jobs_published: Int,
+    jobs_completed: Int,
+    jobs_redelegated: Int,
+    jobs_split: Int,
+    timed_out: Bool,
+    distributed: Bool,
+    warnings_json: String,
+    started_at: String,
+    updated_at: String,
+    finished_at: Option(String),
+  )
+}
+
+pub fn validate_mip_solver_solves_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("mip_solver_solves.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_mip_solver_solves_node_role(value: String) -> Result(String, String) {
+  case list.contains(["master", "slave"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported mip_solver_solves.node_role: " <> value)
+  }
+}
+
+pub const mip_solver_jobs_table = "mip_solver_jobs"
+pub const mip_solver_jobs_select_sql = "select\n      job_id,\n      solve_id,\n      root_job_id,\n      retry_index,\n      depth,\n      status,\n      worker_node,\n      job_payload::text as job_payload_json,\n      result_payload::text as result_payload_json,\n      to_char(submitted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as submitted_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from mip_solver_jobs"
+
+pub type MipSolverJobsRow {
+  MipSolverJobsRow(
+    job_id: String,
+    solve_id: String,
+    root_job_id: String,
+    retry_index: Int,
+    depth: Int,
+    status: String,
+    worker_node: Option(String),
+    job_payload_json: String,
+    result_payload_json: String,
+    submitted_at: String,
+    finished_at: Option(String),
+    updated_at: String,
+  )
+}
+
+pub fn validate_mip_solver_jobs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("mip_solver_jobs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const mip_solver_events_table = "mip_solver_events"
+pub const mip_solver_events_select_sql = "select\n      id,\n      solve_id,\n      session_id,\n      job_id,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from mip_solver_events"
+
+pub type MipSolverEventsRow {
+  MipSolverEventsRow(
+    id: Int,
+    solve_id: Option(String),
+    session_id: Option(String),
+    job_id: Option(String),
+    event_kind: String,
+    payload_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_mip_solver_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("mip_solver_events.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const lambda_functions_table = "lambda_functions"
 pub const lambda_functions_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      status,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_functions"
 

@@ -38,6 +38,7 @@ on:
           - test-container-pool-config
           - sync-agent-gh-pat
           - sync-agent-model-keys
+          - verify-mip-solver-node
           - verify-gleam-mcp-server
           - bootstrap-thread-go-services
           - verify-thread-go-services
@@ -87,7 +88,7 @@ jobs:
       - name: Run maintenance command through SSM
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
-          OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-ssm]') && 'inspect-gcs-ssm') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-bisect]') && 'bisect-gcs-wss') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-recover]') && 'recover-gcs') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-diagnose]') && 'diagnose-gcs-scheduler') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-snapshot]') && 'snapshot-gcs-loadtest') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
+          OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[verify-mip-solver]') && 'verify-mip-solver-node') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-ssm]') && 'inspect-gcs-ssm') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-bisect]') && 'bisect-gcs-wss') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-recover]') && 'recover-gcs') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-diagnose]') && 'diagnose-gcs-scheduler') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-snapshot]') && 'snapshot-gcs-loadtest') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
           SSM_COMMAND_ID: ${{ inputs.ssm_command_id || github.event.head_commit.message || '' }}
           CANCEL_SSM_COMMAND: ${{ inputs.cancel_ssm_command || 'false' }}
@@ -569,20 +570,56 @@ jobs:
           kubectl -n default get deploy/dd-rust-network-mutex -o wide
           echo "template.live-mutex-rs-revision: $(kubectl -n default get deploy/dd-rust-network-mutex -o jsonpath='{.spec.template.metadata.annotations.dd\.dev/live-mutex-rs-revision}')"
           echo "template.LMX_RS_GIT_REF: $(kubectl -n default get deploy/dd-rust-network-mutex -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="LMX_RS_GIT_REF")].value}')"
-          kubectl -n default rollout status deploy/dd-rust-network-mutex --timeout=1800s
+          deadline=$((SECONDS + 1800))
+          jsonpath() {
+            kubectl -n default get deploy/dd-rust-network-mutex -o "jsonpath={$1}" 2>/dev/null || true
+          }
+          num() {
+            case "${1:-}" in
+              ''|*[!0-9]*) echo 0 ;;
+              *) echo "$1" ;;
+            esac
+          }
+          while true; do
+            generation="$(num "$(jsonpath '.metadata.generation')")"
+            observed="$(num "$(jsonpath '.status.observedGeneration')")"
+            desired="$(num "$(jsonpath '.spec.replicas')")"
+            updated="$(num "$(jsonpath '.status.updatedReplicas')")"
+            ready="$(num "$(jsonpath '.status.readyReplicas')")"
+            available="$(num "$(jsonpath '.status.availableReplicas')")"
+            echo "rollout observed=${observed}/${generation} desired=${desired} updated=${updated} ready=${ready} available=${available}"
+            if (( generation > 0 && observed >= generation && desired > 0 && updated >= desired && ready >= desired && available >= desired )); then
+              break
+            fi
+            if (( SECONDS >= deadline )); then
+              echo "dd-rust-network-mutex rollout timed out" >&2
+              kubectl -n default get deploy/dd-rust-network-mutex -o wide || true
+              kubectl -n default describe deploy/dd-rust-network-mutex || true
+              kubectl -n default get rs,pods -l app=dd-rust-network-mutex -o wide || true
+              kubectl -n default logs -l app=dd-rust-network-mutex --all-containers --tail=120 || true
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "dd-rust-network-mutex rollout healthy"
           kubectl -n default get pods -l app=dd-rust-network-mutex -o wide
           '''
           sync_checkout = f'''set -euo pipefail
           cd /home/ec2-user/codes/dd/dd-next-1
           echo "=== sync EC2 checkout ==="
-          git status --short || true
-          if ! git diff --quiet || ! git diff --cached --quiet; then
-            stash_name="remote-k8s-maintenance-pre-merge-$(date -u +%Y%m%dT%H%M%SZ)"
-            echo "stashing local tracked changes before merge: $stash_name"
-            git stash push -m "$stash_name"
-          fi
+          git -c status.showUntrackedFiles=no status --short || true
+          stash_name="remote-k8s-maintenance-pre-merge-$(date -u +%Y%m%dT%H%M%SZ)"
+          echo "stashing tracked/untracked repo content before merge: $stash_name"
+          # Scope the stash to repository content that this workflow mutates.
+          # The EC2 checkout also carries machine-local state such as .kube/,
+          # which can be unreadable to ec2-user and should never be removed by git.
+          git stash push --include-untracked -m "$stash_name" -- remote .github || true
+          echo "stashing submodule worktrees before merge"
+          git submodule foreach --recursive 'git stash push --include-untracked -m remote-k8s-maintenance-pre-merge-submodule || true' || true
+          git submodule update --init --recursive remote/submodules/rust-network-mutex-rs || true
           git fetch origin {rev}
           git merge --ff-only origin/{rev}
+          git submodule update --init --recursive remote/submodules/rust-network-mutex-rs
           git rev-parse --short HEAD
           '''
           commands = [
@@ -875,6 +912,39 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && remote/ec2/verify-gleam-mcp-server.sh'",
           ]
           print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            verify-mip-solver-node)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout so verifier script exists ==="
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git submodule sync --recursive
+          git submodule update --init --recursive \
+            remote/deployments/mip-solver-node.rs \
+            remote/submodules/discrete-event-system.rs
+          git rev-parse --short HEAD
+          git -C remote/deployments/mip-solver-node.rs rev-parse --short HEAD
+
+          echo "=== run MIP solver verifier ==="
+          TARGET_REVISION="${TARGET_REVISION:-dev}" bash remote/ec2/verify-mip-solver-node.sh
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+              ],
+          }))
           PY
               ;;
             sync-agent-model-keys)

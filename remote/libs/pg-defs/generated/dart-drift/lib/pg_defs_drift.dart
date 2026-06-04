@@ -285,6 +285,100 @@ class AgentRemoteDevRuntimeLockTable extends Table {
   };
 }
 
+@DataClassName("MipSolverSessionsData")
+class MipSolverSessionsTable extends Table {
+  @override String get tableName => "mip_solver_sessions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get sessionId => text().named("session_id").withLength(max: 200)();
+  Int64Column get revision => int64().named("revision").clientDefault(() => 0)();
+  TextColumn get problem => text().named("problem").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        sessionId,
+  };
+}
+
+@DataClassName("MipSolverSolvesData")
+class MipSolverSolvesTable extends Table {
+  @override String get tableName => "mip_solver_solves";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get solveId => text().named("solve_id").withLength(max: 160)();
+  TextColumn get requestId => text().named("request_id").withLength(max: 200)();
+  Int64Column get revision => int64().named("revision").clientDefault(() => 0)();
+  TextColumn get status => text().named("status").withLength(max: 64).clientDefault(() => 'running')();
+  TextColumn get nodeId => text().named("node_id").withLength(max: 253)();
+  TextColumn get nodeRole => text().named("node_role")();
+  TextColumn get problem => text().named("problem").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get options => text().named("options").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get response => text().named("response").clientDefault(() => '{}').customConstraint("JSONB")();
+  IntColumn get jobsExpected => integer().named("jobs_expected").clientDefault(() => 0)();
+  IntColumn get jobsPublished => integer().named("jobs_published").clientDefault(() => 0)();
+  IntColumn get jobsCompleted => integer().named("jobs_completed").clientDefault(() => 0)();
+  IntColumn get jobsRedelegated => integer().named("jobs_redelegated").clientDefault(() => 0)();
+  IntColumn get jobsSplit => integer().named("jobs_split").clientDefault(() => 0)();
+  BoolColumn get timedOut => boolean().named("timed_out").clientDefault(() => false)();
+  BoolColumn get distributed => boolean().named("distributed").clientDefault(() => false)();
+  TextColumn get warnings => text().named("warnings").clientDefault(() => '[]').customConstraint("JSONB")();
+  DateTimeColumn get startedAt => dateTime().named("started_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get finishedAt => dateTime().named("finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        solveId,
+  };
+}
+
+@DataClassName("MipSolverJobsData")
+class MipSolverJobsTable extends Table {
+  @override String get tableName => "mip_solver_jobs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get jobId => text().named("job_id").withLength(max: 240)();
+  TextColumn get solveId => text().named("solve_id").withLength(max: 160).customConstraint("REFERENCES mip_solver_solves (solve_id)")();
+  TextColumn get rootJobId => text().named("root_job_id").withLength(max: 240)();
+  IntColumn get retryIndex => integer().named("retry_index").clientDefault(() => 0)();
+  IntColumn get depth => integer().named("depth").clientDefault(() => 0)();
+  TextColumn get status => text().named("status").withLength(max: 64).clientDefault(() => 'submitted')();
+  TextColumn get workerNode => text().named("worker_node").withLength(max: 253).nullable()();
+  TextColumn get jobPayload => text().named("job_payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get resultPayload => text().named("result_payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get submittedAt => dateTime().named("submitted_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get finishedAt => dateTime().named("finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        jobId,
+  };
+}
+
+@DataClassName("MipSolverEventsData")
+class MipSolverEventsTable extends Table {
+  @override String get tableName => "mip_solver_events";
+
+  Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
+  TextColumn get solveId => text().named("solve_id").withLength(max: 160).nullable().customConstraint("REFERENCES mip_solver_solves (solve_id)")();
+  TextColumn get sessionId => text().named("session_id").withLength(max: 200).nullable().customConstraint("REFERENCES mip_solver_sessions (session_id)")();
+  TextColumn get jobId => text().named("job_id").withLength(max: 240).nullable().customConstraint("REFERENCES mip_solver_jobs (job_id)")();
+  TextColumn get eventKind => text().named("event_kind").withLength(max: 80)();
+  TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("LambdaFunctionData")
 class LambdaFunctionTable extends Table {
   @override String get tableName => "lambda_functions";
@@ -714,6 +808,10 @@ const List<Type> registeredDriftTables = <Type>[
   AgentRemoteDevBreadcrumbTable,
   AgentRemoteDevArtifactTable,
   AgentRemoteDevRuntimeLockTable,
+  MipSolverSessionsTable,
+  MipSolverSolvesTable,
+  MipSolverJobsTable,
+  MipSolverEventsTable,
   LambdaFunctionTable,
   ContainerPoolImageRevisionsTable,
   ContainerPoolBuildRunsTable,
