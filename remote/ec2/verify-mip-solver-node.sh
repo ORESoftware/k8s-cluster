@@ -15,9 +15,9 @@ restore_argo_selfheal=false
 restore_slave_keda_pause=false
 restore_capacity_apps=false
 
-mip_capacity_apps="${MIP_SOLVER_CAPACITY_ARGO_APPS:-dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs}"
-mip_capacity_targets="${MIP_SOLVER_CAPACITY_TARGETS:-dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs}"
-mip_capacity_app_manifests="${MIP_SOLVER_CAPACITY_APP_MANIFESTS:-remote/argocd/apps/dd-next-runtime.application.yaml remote/argocd/apps/dd-akka-ws-server.application.yaml remote/argocd/apps/dd-dart-server.application.yaml remote/argocd/apps/dd-fsharp-ws-server.application.yaml remote/argocd/apps/dd-gleamlang-server.application.yaml remote/argocd/apps/dd-ws-loadtest-gleam.application.yaml remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml}"
+mip_capacity_apps="${MIP_SOLVER_CAPACITY_ARGO_APPS:-gcs dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs}"
+mip_capacity_targets="${MIP_SOLVER_CAPACITY_TARGETS:-gcs gcs-router dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs}"
+mip_capacity_app_manifests="${MIP_SOLVER_CAPACITY_APP_MANIFESTS:-remote/argocd/apps/gcs.application.yaml remote/argocd/apps/dd-next-runtime.application.yaml remote/argocd/apps/dd-akka-ws-server.application.yaml remote/argocd/apps/dd-dart-server.application.yaml remote/argocd/apps/dd-fsharp-ws-server.application.yaml remote/argocd/apps/dd-gleamlang-server.application.yaml remote/argocd/apps/dd-ws-loadtest-gleam.application.yaml remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml}"
 
 pod_count_for_phase() {
   local phase="$1"
@@ -519,6 +519,7 @@ python3 - <<PY
 import json
 import math
 import sys
+import urllib.error
 import urllib.request
 
 port = "${local_port}"
@@ -531,8 +532,44 @@ request = urllib.request.Request(
     headers={"content-type": "application/json"},
     method="POST",
 )
-with urllib.request.urlopen(request, timeout=900) as response:
-    body = json.loads(response.read().decode("utf-8"))
+try:
+    with urllib.request.urlopen(request, timeout=900) as response:
+        body = json.loads(response.read().decode("utf-8"))
+except urllib.error.HTTPError as error:
+    error_body = error.read().decode("utf-8", errors="replace")
+    print(
+        json.dumps(
+            {
+                "event": "remote_solve_http_error",
+                "status": error.code,
+                "reason": error.reason,
+                "body": error_body[:5000],
+            },
+            sort_keys=True,
+        ),
+        file=sys.stderr,
+    )
+    for path in ("/mip-solver-cluster/workers", "/mip-solver-cluster/solves"):
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}{path}",
+                timeout=10,
+            ) as response:
+                snapshot = response.read().decode("utf-8", errors="replace")
+        except Exception as snapshot_error:
+            snapshot = json.dumps({"error": str(snapshot_error)})
+        print(
+            json.dumps(
+                {
+                    "event": "remote_solve_failure_snapshot",
+                    "path": path,
+                    "body": snapshot[:5000],
+                },
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+    raise SystemExit(1)
 
 print(json.dumps({
     "ok": body.get("ok"),
