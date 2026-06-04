@@ -935,9 +935,7 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        set $dd_des_rs_upstream dd-des-rs.default.svc.cluster.local:8112;
-        rewrite ^/des-rs/?(.*)$ /$1 break;
-        proxy_pass http://$dd_des_rs_upstream;
+        proxy_pass http://dd-des-rs.default.svc.cluster.local:8112/;
       }
 
       location = /contracts {
