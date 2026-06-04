@@ -4560,13 +4560,30 @@ async fn run_master_control_listener(state: AppState) -> Result<(), Box<dyn Erro
 
 async fn connect_nats() -> Option<async_nats::Client> {
     let url = env::var("NATS_URL").ok()?;
-    match async_nats::connect(url.clone()).await {
-        Ok(client) => Some(client),
-        Err(error) => {
-            eprintln!("failed to connect to NATS at {url}: {error}");
-            None
+    let attempts = env_u64("MIP_SOLVER_NATS_CONNECT_ATTEMPTS", 60).clamp(1, 360);
+    let retry_delay =
+        Duration::from_secs(env_u64("MIP_SOLVER_NATS_CONNECT_RETRY_SECONDS", 2).clamp(1, 60));
+
+    for attempt in 1..=attempts {
+        match async_nats::connect(url.clone()).await {
+            Ok(client) => {
+                if attempt > 1 {
+                    eprintln!("connected to NATS at {url} after {attempt} attempts");
+                }
+                return Some(client);
+            }
+            Err(error) => {
+                eprintln!(
+                    "failed to connect to NATS at {url} on attempt {attempt}/{attempts}: {error}"
+                );
+                if attempt < attempts {
+                    tokio::time::sleep(retry_delay).await;
+                }
+            }
         }
     }
+
+    None
 }
 
 fn connect_redis() -> Option<redis::Client> {
