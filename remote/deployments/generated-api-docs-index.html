@@ -46,8 +46,8 @@
     <h1>dd runtime API docs</h1>
     <p>Central generated index. Each listed HTTP service must also mount <code>/docs/api</code>, <code>/api/docs</code>, and <code>/api/docs.json</code> on its own service port.</p>
     <div class="summary">
-      <span>31 services</span>
-      <span>519 routes</span>
+      <span>32 services</span>
+      <span>540 routes</span>
       <span>central JSON <code>/api-docs.json</code></span>
     </div>
   </header>
@@ -3997,6 +3997,168 @@
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/strategies</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+    </tbody>
+  </table>
+</details>
+<details>
+  <summary>
+    <span><strong>webrtc-media-rs</strong> <span class="muted">rust</span></span>
+    <span>21 routes</span>
+  </summary>
+  <div class="generated">
+    <span>Generated JSON: <code>remote/deployments/webrtc-media-rs/generated/api-docs.json</code></span>
+    <span>Generated HTML: <code>remote/deployments/webrtc-media-rs/generated/api-docs.html</code></span>
+  </div>
+  <table>
+    <thead><tr><th>Service</th><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th></tr></thead>
+    <tbody>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/</code></td>
+  <td data-label="Purpose">Service descriptor, home redirect, or root RPC endpoint.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs.json</code></td>
+  <td data-label="Purpose">Machine-readable generated API route metadata.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/capabilities</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/config</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/docs/api</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/healthz</code></td>
+  <td data-label="Purpose">Health check.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/ice</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge runtime-config">runtime-config</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/internal/runtime-config</code></td>
+  <td data-label="Purpose">Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge runtime-config">runtime-config</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/internal/runtime-config/reset</code></td>
+  <td data-label="Purpose">Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge runtime-config">runtime-config</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/internal/update-runtime-config</code></td>
+  <td data-label="Purpose">Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/metrics</code></td>
+  <td data-label="Purpose">Prometheus metrics.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/webrtc-media</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/webrtc-media/</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/webrtc-media/capabilities</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/webrtc-media/config</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/webrtc-media/healthz</code></td>
+  <td data-label="Purpose">Health check.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/webrtc-media/ice</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/webrtc-media/metrics</code></td>
+  <td data-label="Purpose">Prometheus metrics.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>webrtc-media-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/webrtc-media/readyz</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
     </tbody>

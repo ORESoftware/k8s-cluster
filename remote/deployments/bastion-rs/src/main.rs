@@ -272,6 +272,15 @@ const MANAGED_DEPLOYMENTS: &[ManagedDeployment] = &[
         notes: "Rust WebSocket signaling service and admin runtime event relay.",
     },
     ManagedDeployment {
+        slug: "webrtc-media",
+        title: "Rust WebRTC media config",
+        namespace: "default",
+        deployment: "dd-webrtc-media",
+        service: "dd-webrtc-media.default.svc.cluster.local:8125",
+        access: "public",
+        notes: "HTTP ICE/TURN/SFU/media-relay configuration surface; UDP media paths require a separate data plane.",
+    },
+    ManagedDeployment {
         slug: "mdp-optimizer",
         title: "MDP/POMDP optimizer",
         namespace: "default",

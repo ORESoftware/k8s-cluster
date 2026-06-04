@@ -52,6 +52,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'trading-server-rs',
   'wal-gateway-rs',
   'web-home-rs',
+  'webrtc-media-rs',
   'webrtc-signaling-rs',
 ]);
 
@@ -902,6 +903,16 @@ function renderDocsHtml(docs) {
 </tr>`;
     })
     .join('\n');
+  const optionalSummaryRows = [
+    docs.routeTypeCounts['internal-db']
+      ? `      <span>${docs.routeTypeCounts['internal-db']} internal-db</span>`
+      : null,
+    docs.routeTypeCounts['runtime-config']
+      ? `      <span>${docs.routeTypeCounts['runtime-config']} runtime-config</span>`
+      : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -949,9 +960,7 @@ function renderDocsHtml(docs) {
       <span>${docs.routeCount} routes</span>
       <span>${escapeHtml(docs.language)}</span>
       <span>${docs.routeTypeCounts.service ?? 0} service</span>
-      <span>${docs.routeTypeCounts['user-generated'] ?? 0} user-generated</span>
-      ${docs.routeTypeCounts['internal-db'] ? `<span>${docs.routeTypeCounts['internal-db']} internal-db</span>` : ''}
-      ${docs.routeTypeCounts['runtime-config'] ? `<span>${docs.routeTypeCounts['runtime-config']} runtime-config</span>` : ''}
+      <span>${docs.routeTypeCounts['user-generated'] ?? 0} user-generated</span>${optionalSummaryRows ? `\n${optionalSummaryRows}` : ''}
     </div>
   </header>
   <main>

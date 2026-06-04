@@ -166,6 +166,7 @@ test("otel collector scrapes all remote runtimes and exports traces", async () =
   assert.match(collector, /dd-gleam-lambda-runner\.default\.svc\.cluster\.local:8083/);
   assert.match(collector, /dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090/);
   assert.match(collector, /dd-webrtc-signaling\.default\.svc\.cluster\.local:8095/);
+  assert.match(collector, /dd-webrtc-media\.default\.svc\.cluster\.local:8125/);
   assert.match(collector, /dd-mdp-optimizer\.default\.svc\.cluster\.local:8096/);
   assert.match(collector, /dd-des-simulator\.default\.svc\.cluster\.local:8099/);
   assert.match(collector, /dd-contract-service\.default\.svc\.cluster\.local:8101/);
@@ -208,6 +209,7 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   );
   assert.doesNotMatch(prometheus, /job_name:\s*observability-stack/);
   assert.match(prometheus, /dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090/);
+  assert.match(prometheus, /dd-webrtc-media\.default\.svc\.cluster\.local:8125/);
   assert.match(prometheus, /dd-agent-worker-broker\.default\.svc\.cluster\.local:8098/);
   assert.match(prometheus, /dd-remote-auth\.default\.svc\.cluster\.local:8083/);
   assert.match(prometheus, /dd-billing-server\.default\.svc\.cluster\.local:80/);

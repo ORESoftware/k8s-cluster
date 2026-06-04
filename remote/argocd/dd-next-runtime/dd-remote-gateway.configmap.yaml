@@ -889,6 +889,26 @@ data:
         proxy_pass http://dd-webrtc-signaling.default.svc.cluster.local:8095;
       }
 
+      location = /webrtc-media {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /webrtc-media/;
+      }
+
+      location /webrtc-media/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://dd-webrtc-media.default.svc.cluster.local:8125;
+      }
+
       location = /mdp {
         if ($dd_gateway_auth_ok = 0) {
           return 401;

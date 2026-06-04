@@ -11,6 +11,7 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-gleam-lambda-runner` (Gleam child-process runner for user-defined lambda invocations)
 - `dd-remote-queue-consumer` (Rust NATS queue consumer for UUID-bound workers and explicit pool dispatch)
 - `dd-webrtc-signaling` (Rust WebRTC room signaling over WebSocket)
+- `dd-webrtc-media` (Rust WebRTC ICE/TURN/SFU/media-relay configuration surface)
 - `dd-web-scraper` (Node.js/Fastify scraping worker with browser and DOM strategies)
 - `dd-browser-test-server` (Node.js/Fastify on-demand Playwright + Puppeteer + Selenium runner)
 - `dd-selenium-server` (Java/Vert.x + selenium-java API driving an in-pod Selenium Grid over RemoteWebDriver)
@@ -78,6 +79,8 @@ Gateway path map:
 - `POST /lambdas/invoke/<function-id>` -> `dd-gleam-lambda-runner:8083` directly
 - `/webrtc/`, `/webrtc/healthz`, `/webrtc/metrics`, `/webrtc/signal` ->
   `dd-webrtc-signaling:8095` (gateway auth required)
+- `/webrtc-media/`, `/webrtc-media/config`, `/webrtc-media/ice`, `/webrtc-media/metrics` ->
+  `dd-webrtc-media:8125` (gateway auth required; HTTP config only, no UDP media gatewaying)
 - `/presence/`, `/presence/healthz`, `/presence/ws`, `/presence/conv/*`, `/presence/user/*` ->
   `presence-svc.presence:8081` (gateway auth required)
 - `/fsws/`, `/fsws/healthz`, `/fsws/livez`, `/fsws/ws/*` -> `dd-fsharp-ws-server:8087`

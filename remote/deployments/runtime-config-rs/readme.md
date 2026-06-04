@@ -138,6 +138,7 @@ helper is kept self-contained per-service because `dev-server` pins its tsc
 | `dd-rust-vapi-phone`           | `http://dd-rust-vapi-phone.default.svc.cluster.local:8113/internal/update-runtime-config`                              | Rust   |
 | `dd-trading-server`            | `http://dd-trading-server.default.svc.cluster.local:8103/internal/update-runtime-config`                               | Rust   |
 | `dd-wal-gateway`               | _(deployment yaml pending — receiver crate already merged into the binary)_                                            | Rust   |
+| `dd-webrtc-media`              | `http://dd-webrtc-media.default.svc.cluster.local:8125/internal/update-runtime-config`                                 | Rust   |
 | `dd-webrtc-signaling`          | `http://dd-webrtc-signaling.default.svc.cluster.local:8095/internal/update-runtime-config`                             | Rust   |
 
 The generated API docs for each subscriber surface the three

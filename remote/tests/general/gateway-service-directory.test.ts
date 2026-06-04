@@ -89,6 +89,7 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
     '/mcp',
     '/gcs/',
     '/webrtc/',
+    '/webrtc-media/',
     '/fsws/',
     '/mdp/',
     '/des/',
@@ -235,6 +236,13 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
   assert.match(home, /target: "Rust WebRTC signaling service", access: SERVER_AUTH/);
   assert.match(home, /Rust WebRTC signaling service/);
   assert.match(home, /Media and data channels stay peer-to-peer/);
+  assertPathEntry(home, '/webrtc-media/', '/webrtc-media/');
+  assertPathEntry(home, '/webrtc-media/config', '/webrtc-media/config');
+  assertPathEntry(home, '/webrtc-media/ice', '/webrtc-media/ice');
+  assertPathEntry(home, '/webrtc-media/metrics', '/webrtc-media/metrics');
+  assert.match(home, /target: "Rust WebRTC media config service", access: SERVER_AUTH/);
+  assert.match(home, /dd-webrtc-media:8125/);
+  assert.match(home, /media UDP\/TCP paths require a separate public data-plane route/);
   assert.match(home, /target: "Rust MDP\/POMDP optimizer", access: SERVER_AUTH/);
   assert.match(home, /target: "Rust discrete event simulator", access: SERVER_AUTH/);
   assert.match(home, /target: "dd-fsharp-ws-server", access: SERVER_AUTH/);
@@ -274,6 +282,12 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   );
   const webrtcService = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-webrtc-signaling.service.yaml',
+  );
+  const webrtcMediaDeployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-webrtc-media.deployment.yaml',
+  );
+  const webrtcMediaService = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-webrtc-media.service.yaml',
   );
   const scraperDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml',
@@ -454,6 +468,8 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
     /location \/gcs\/ws\/[\s\S]*?\n      \}/,
     /location = \/webrtc[\s\S]*?\n      \}/,
     /location \/webrtc\/[\s\S]*?\n      \}/,
+    /location = \/webrtc-media[\s\S]*?\n      \}/,
+    /location \/webrtc-media\/[\s\S]*?\n      \}/,
     /location = \/mdp[\s\S]*?\n      \}/,
     /location \/mdp\/[\s\S]*?\n      \}/,
     /location = \/des[\s\S]*?\n      \}/,
@@ -465,6 +481,11 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.match(
     gateway,
     /location\s+\/webrtc\/[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*dd-webrtc-signaling\.default\.svc\.cluster\.local:8095/,
+  );
+  assert.match(gateway, /location = \/webrtc-media[\s\S]*return 302 \/webrtc-media\//);
+  assert.match(
+    gateway,
+    /location\s+\/webrtc-media\/[\s\S]*dd-webrtc-media\.default\.svc\.cluster\.local:8125/,
   );
   assert.match(
     gateway,
@@ -508,6 +529,8 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.match(kustomization, /dd-remote-auth\.service\.yaml/);
   assert.match(kustomization, /dd-webrtc-signaling\.deployment\.yaml/);
   assert.match(kustomization, /dd-webrtc-signaling\.service\.yaml/);
+  assert.match(kustomization, /dd-webrtc-media\.deployment\.yaml/);
+  assert.match(kustomization, /dd-webrtc-media\.service\.yaml/);
   assert.match(kustomization, /dd-web-scraper\.deployment\.yaml/);
   assert.match(kustomization, /dd-web-scraper\.service\.yaml/);
   assert.match(kustomization, /dd-build-server-rbac\.yaml/);
@@ -519,6 +542,12 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.match(webrtcDeployment, /containerPort:\s*8095/);
   assert.match(webrtcService, /name:\s*dd-webrtc-signaling/);
   assert.match(webrtcService, /port:\s*8095/);
+  assert.match(webrtcMediaDeployment, /name:\s*dd-webrtc-media/);
+  assert.match(webrtcMediaDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/webrtc-media-rs/);
+  assert.match(webrtcMediaDeployment, /WEBRTC_MEDIA_MODE[\s\S]*value:\s*disabled/);
+  assert.match(webrtcMediaDeployment, /containerPort:\s*8125/);
+  assert.match(webrtcMediaService, /name:\s*dd-webrtc-media/);
+  assert.match(webrtcMediaService, /port:\s*8125/);
   assert.match(scraperDeployment, /name:\s*dd-web-scraper/);
   assert.match(scraperDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/web-scraper-service/);
   assert.match(scraperDeployment, /containerPort:\s*8097/);

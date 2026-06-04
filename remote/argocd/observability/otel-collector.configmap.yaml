@@ -57,6 +57,12 @@ data:
               static_configs:
                 - targets:
                     - dd-webrtc-signaling.default.svc.cluster.local:8095
+            - job_name: dd-webrtc-media
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-webrtc-media.default.svc.cluster.local:8125
             # dd-dart-server exposes the unified Prometheus exposition on its
             # coordinator (admin) port 8088: per-shard WS gauges plus the MDP
             # isolate-pool autotuner counters/gauges and the adopt /

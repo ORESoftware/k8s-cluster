@@ -424,6 +424,20 @@
       ]
     },
     {
+      "service": "webrtc-media-rs",
+      "language": "rust",
+      "routeCount": 21,
+      "routeTypeCounts": {
+        "service": 9,
+        "user-generated": 9,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/webrtc-media-rs/generated/api-docs.json",
+        "remote/deployments/webrtc-media-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "webrtc-signaling-rs",
       "language": "rust",
       "routeCount": 19,
