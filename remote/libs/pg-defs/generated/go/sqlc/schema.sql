@@ -460,6 +460,143 @@ create unique index if not exists agent_remote_dev_runtime_locks_thread_active_u
 create index if not exists agent_remote_dev_runtime_locks_lease_expires_at_idx
   on agent_remote_dev_runtime_locks (lease_expires_at);
 
+create table if not exists mip_solver_sessions (
+  session_id varchar(200) primary key,
+  revision bigint default 0 not null,
+  problem jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint mip_solver_sessions_session_id_size_chk
+    check (octet_length(session_id) between 1 and 200),
+  constraint mip_solver_sessions_revision_chk
+    check (revision >= 0),
+  constraint mip_solver_sessions_problem_json_chk
+    check (jsonb_typeof(problem) = 'object')
+);
+
+create index if not exists mip_solver_sessions_updated_at_idx
+  on mip_solver_sessions (updated_at desc);
+
+create table if not exists mip_solver_solves (
+  solve_id varchar(160) primary key,
+  request_id varchar(200) not null,
+  revision bigint default 0 not null,
+  status varchar(64) default 'running' not null,
+  node_id varchar(253) not null,
+  node_role varchar(32) not null,
+  problem jsonb default '{}'::jsonb not null,
+  options jsonb default '{}'::jsonb not null,
+  response jsonb default '{}'::jsonb not null,
+  jobs_expected integer default 0 not null,
+  jobs_published integer default 0 not null,
+  jobs_completed integer default 0 not null,
+  jobs_redelegated integer default 0 not null,
+  jobs_split integer default 0 not null,
+  timed_out boolean default false not null,
+  distributed boolean default false not null,
+  warnings jsonb default '[]'::jsonb not null,
+  started_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  finished_at timestamptz,
+  constraint mip_solver_solves_solve_id_size_chk
+    check (octet_length(solve_id) between 1 and 160),
+  constraint mip_solver_solves_request_id_size_chk
+    check (octet_length(request_id) between 1 and 200),
+  constraint mip_solver_solves_status_size_chk
+    check (octet_length(status) between 1 and 64),
+  constraint mip_solver_solves_node_id_size_chk
+    check (octet_length(node_id) between 1 and 253),
+  constraint mip_solver_solves_node_role_chk
+    check (node_role in ('master', 'slave')),
+  constraint mip_solver_solves_counts_chk
+    check (revision >= 0 and jobs_expected >= 0 and jobs_published >= 0 and jobs_completed >= 0 and jobs_redelegated >= 0 and jobs_split >= 0),
+  constraint mip_solver_solves_problem_json_chk
+    check (jsonb_typeof(problem) = 'object'),
+  constraint mip_solver_solves_options_json_chk
+    check (jsonb_typeof(options) = 'object'),
+  constraint mip_solver_solves_response_json_chk
+    check (jsonb_typeof(response) = 'object'),
+  constraint mip_solver_solves_warnings_json_chk
+    check (jsonb_typeof(warnings) = 'array')
+);
+
+create index if not exists mip_solver_solves_request_id_idx
+  on mip_solver_solves (request_id, updated_at desc);
+
+create index if not exists mip_solver_solves_status_idx
+  on mip_solver_solves (status, updated_at desc);
+
+create table if not exists mip_solver_jobs (
+  job_id varchar(240) primary key,
+  solve_id varchar(160) not null,
+  root_job_id varchar(240) not null,
+  retry_index integer default 0 not null,
+  depth integer default 0 not null,
+  status varchar(64) default 'submitted' not null,
+  worker_node varchar(253),
+  job_payload jsonb default '{}'::jsonb not null,
+  result_payload jsonb default '{}'::jsonb not null,
+  submitted_at timestamptz default now() not null,
+  finished_at timestamptz,
+  updated_at timestamptz default now() not null,
+  constraint mip_solver_jobs_job_id_size_chk
+    check (octet_length(job_id) between 1 and 240),
+  constraint mip_solver_jobs_root_job_id_size_chk
+    check (octet_length(root_job_id) between 1 and 240),
+  constraint mip_solver_jobs_status_size_chk
+    check (octet_length(status) between 1 and 64),
+  constraint mip_solver_jobs_counts_chk
+    check (retry_index >= 0 and depth >= 0),
+  constraint mip_solver_jobs_job_payload_json_chk
+    check (jsonb_typeof(job_payload) = 'object'),
+  constraint mip_solver_jobs_result_payload_json_chk
+    check (jsonb_typeof(result_payload) = 'object')
+);
+
+create index if not exists mip_solver_jobs_solve_status_idx
+  on mip_solver_jobs (solve_id, status, updated_at desc);
+
+create index if not exists mip_solver_jobs_root_idx
+  on mip_solver_jobs (solve_id, root_job_id, retry_index);
+
+create table if not exists mip_solver_events (
+  id bigserial primary key,
+  solve_id varchar(160),
+  session_id varchar(200),
+  job_id varchar(240),
+  event_kind varchar(80) not null,
+  payload jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint mip_solver_events_event_kind_format_chk
+    check (event_kind ~ '^[A-Za-z0-9._:-]{1,80}$'),
+  constraint mip_solver_events_payload_json_chk
+    check (jsonb_typeof(payload) = 'object')
+);
+
+create index if not exists mip_solver_events_solve_created_at_idx
+  on mip_solver_events (solve_id, created_at desc)
+  where solve_id is not null;
+
+create index if not exists mip_solver_events_session_created_at_idx
+  on mip_solver_events (session_id, created_at desc)
+  where session_id is not null;
+
+alter table if exists mip_solver_jobs
+  add constraint mip_solver_jobs_solve_fk
+  foreign key (solve_id) references mip_solver_solves(solve_id);
+
+alter table if exists mip_solver_events
+  add constraint mip_solver_events_solve_fk
+  foreign key (solve_id) references mip_solver_solves(solve_id);
+
+alter table if exists mip_solver_events
+  add constraint mip_solver_events_session_fk
+  foreign key (session_id) references mip_solver_sessions(session_id);
+
+alter table if exists mip_solver_events
+  add constraint mip_solver_events_job_fk
+  foreign key (job_id) references mip_solver_jobs(job_id);
+
 create table if not exists lambda_functions (
   id uuid primary key default gen_random_uuid(),
   slug varchar(120) not null,

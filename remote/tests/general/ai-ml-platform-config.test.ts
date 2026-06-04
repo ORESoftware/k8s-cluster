@@ -74,6 +74,9 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   const app = await readRepoFile('remote/argocd/apps/dd-ai-ml-platform.application.yaml');
   const kustomization = await readRepoFile('remote/argocd/ai-ml-platform/kustomization.yaml');
   const namespace = await readRepoFile('remote/argocd/ai-ml-platform/namespace.yaml');
+  const airbyteNamespace = await readRepoFile('remote/argocd/ai-ml-platform/airbyte.namespace.yaml');
+  const kafkaNamespace = await readRepoFile('remote/argocd/ai-ml-platform/kafka.namespace.yaml');
+  const sparkNamespace = await readRepoFile('remote/argocd/ai-ml-platform/spark.namespace.yaml');
   const catalog = await readRepoFile(
     'remote/argocd/ai-ml-platform/dd-ai-ml-tool-catalog.configmap.yaml',
   );
@@ -92,6 +95,15 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   const networkPolicy = await readRepoFile(
     'remote/argocd/ai-ml-platform/dd-ai-ml-pipeline.networkpolicy.yaml',
   );
+  const aiMlBoundary = await readRepoFile(
+    'remote/argocd/ai-ml-platform/dd-ai-ml-namespace-boundary.networkpolicy.yaml',
+  );
+  const kafkaBoundary = await readRepoFile(
+    'remote/argocd/ai-ml-platform/dd-kafka-namespace-boundary.networkpolicy.yaml',
+  );
+  const sparkBoundary = await readRepoFile(
+    'remote/argocd/ai-ml-platform/dd-spark-namespace-boundary.networkpolicy.yaml',
+  );
   const deployment = await readRepoFile(
     'remote/argocd/ai-ml-platform/dd-ai-ml-pipeline.deployment.yaml',
   );
@@ -103,6 +115,16 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   assert.match(app, /path:\s*remote\/argocd\/ai-ml-platform/);
   assert.match(app, /namespace:\s*ai-ml/);
   assert.match(namespace, /name:\s*ai-ml/);
+  assert.match(airbyteNamespace, /name:\s*airbyte/);
+  assert.match(kafkaNamespace, /name:\s*kafka/);
+  assert.match(sparkNamespace, /name:\s*spark/);
+  for (const ns of [namespace, airbyteNamespace, kafkaNamespace, sparkNamespace]) {
+    assert.match(ns, /pod-security\.kubernetes\.io\/audit:\s*restricted/);
+    assert.match(ns, /pod-security\.kubernetes\.io\/warn:\s*restricted/);
+  }
+  assert.match(kustomization, /airbyte\.namespace\.yaml/);
+  assert.match(kustomization, /kafka\.namespace\.yaml/);
+  assert.match(kustomization, /spark\.namespace\.yaml/);
   assert.match(kustomization, /dd-ai-ml-tool-catalog\.configmap\.yaml/);
   assert.match(kustomization, /dd-ai-ml-python-workflow-requirements\.configmap\.yaml/);
   assert.match(kustomization, /dd-ai-ml-agent-secrets\.externalsecret\.yaml/);
@@ -111,6 +133,9 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   assert.match(kustomization, /dd-ai-ml-pipeline\.deployment\.yaml/);
   assert.match(kustomization, /dd-ai-ml-pipeline\.service\.yaml/);
   assert.match(kustomization, /dd-ai-ml-pipeline\.networkpolicy\.yaml/);
+  assert.match(kustomization, /dd-ai-ml-namespace-boundary\.networkpolicy\.yaml/);
+  assert.match(kustomization, /dd-kafka-namespace-boundary\.networkpolicy\.yaml/);
+  assert.match(kustomization, /dd-spark-namespace-boundary\.networkpolicy\.yaml/);
 
   for (const tool of [
     'Dagster',
@@ -170,9 +195,22 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*observability/);
   assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*messaging/);
   assert.match(networkPolicy, /port:\s*4222/);
+  for (const policy of [aiMlBoundary, kafkaBoundary, sparkBoundary]) {
+    assert.match(policy, /kind:\s*NetworkPolicy/);
+    assert.match(policy, /podSelector:\s*\{\}/);
+    assert.match(policy, /policyTypes:[\s\S]*- Ingress/);
+    assert.doesNotMatch(policy, /policyTypes:[\s\S]*- Egress/);
+    assert.match(policy, /podSelector:\s*\{\}[\s\S]*namespaceSelector:/);
+    assert.match(policy, /kubernetes\.io\/metadata\.name:\s*observability/);
+  }
 });
 
 test('open-source ai/ml platform tools have Argo CD entries', async () => {
+  const project = await readRepoFile('remote/argocd/apps/dd-ai-ml-platform.appproject.yaml');
+  const platform = await readRepoFile('remote/argocd/apps/dd-ai-ml-platform.application.yaml');
+  const sparkPipeline = await readRepoFile(
+    'remote/argocd/apps/dd-spark-pipeline-server.application.yaml',
+  );
   const dagster = await readRepoFile('remote/argocd/apps/dd-dagster.application.yaml');
   const airflow = await readRepoFile('remote/argocd/apps/dd-airflow.application.yaml');
   const mlflow = await readRepoFile('remote/argocd/apps/dd-mlflow.application.yaml');
@@ -181,27 +219,115 @@ test('open-source ai/ml platform tools have Argo CD entries', async () => {
   const qdrant = await readRepoFile('remote/argocd/apps/dd-qdrant.application.yaml');
   const airbyte = await readRepoFile('remote/argocd/apps/dd-airbyte.application.yaml');
 
+  for (const manifest of [
+    platform,
+    sparkPipeline,
+    dagster,
+    airflow,
+    mlflow,
+    kafka,
+    spark,
+    qdrant,
+    airbyte,
+  ]) {
+    assert.match(manifest, /project:\s*dd-ai-ml-platform/);
+  }
+  assert.match(project, /kind:\s*AppProject/);
+  assert.match(project, /name:\s*dd-ai-ml-platform/);
+  assert.match(project, /sourceRepos:[\s\S]*https:\/\/airflow\.apache\.org/);
+  assert.match(project, /sourceRepos:[\s\S]*https:\/\/strimzi\.io\/charts\//);
+  assert.match(project, /destinations:[\s\S]*namespace:\s*ai-ml/);
+  assert.match(project, /destinations:[\s\S]*namespace:\s*airbyte/);
+  assert.match(project, /destinations:[\s\S]*namespace:\s*kafka/);
+  assert.match(project, /destinations:[\s\S]*namespace:\s*spark/);
+  assert.match(project, /clusterResourceWhitelist:[\s\S]*kind:\s*CustomResourceDefinition/);
+  assert.match(project, /clusterResourceWhitelist:[\s\S]*kind:\s*ClusterRole/);
+  assert.match(project, /clusterResourceWhitelist:[\s\S]*kind:\s*ClusterRoleBinding/);
+  assert.doesNotMatch(project, /group:\s*"\*"/);
+  assert.match(project, /namespaceResourceWhitelist:[\s\S]*kind:\s*Deployment/);
+  assert.match(project, /namespaceResourceWhitelist:[\s\S]*kind:\s*StatefulSet/);
+  assert.match(project, /namespaceResourceWhitelist:[\s\S]*kind:\s*ExternalSecret/);
+  assert.match(project, /namespaceResourceWhitelist:[\s\S]*kind:\s*NetworkPolicy/);
+  assert.match(project, /namespaceResourceWhitelist:[\s\S]*kind:\s*PodDisruptionBudget/);
+  assert.match(project, /namespaceResourceWhitelist:[\s\S]*kind:\s*RoleBinding/);
   assert.match(dagster, /repoURL:\s*https:\/\/dagster-io\.github\.io\/helm/);
   assert.match(dagster, /chart:\s*dagster/);
   assert.match(dagster, /targetRevision:\s*1\.13\.3/);
   assert.match(airflow, /repoURL:\s*https:\/\/airflow\.apache\.org/);
   assert.match(airflow, /chart:\s*airflow/);
   assert.match(airflow, /targetRevision:\s*1\.21\.0/);
+  assert.match(airflow, /securityContexts:[\s\S]*pod:[\s\S]*seccompProfile:[\s\S]*type:\s*RuntimeDefault/);
+  assert.match(airflow, /dagProcessor:[\s\S]*automountServiceAccountToken:\s*false/);
+  assert.match(airflow, /statsd:[\s\S]*automountServiceAccountToken:\s*false/);
+  assert.match(airflow, /statsd:[\s\S]*securityContexts:[\s\S]*container:[\s\S]*allowPrivilegeEscalation:\s*false/);
   assert.match(mlflow, /repoURL:\s*https:\/\/community-charts\.github\.io\/helm-charts/);
   assert.match(mlflow, /chart:\s*mlflow/);
   assert.match(mlflow, /targetRevision:\s*1\.8\.1/);
+  assert.match(mlflow, /podSecurityContext:[\s\S]*seccompProfile:[\s\S]*type:\s*RuntimeDefault/);
+  assert.match(mlflow, /securityContext:[\s\S]*allowPrivilegeEscalation:\s*false/);
+  assert.match(dagster, /podSecurityContext:[\s\S]*seccompProfile:[\s\S]*type:\s*RuntimeDefault/);
   assert.match(kafka, /repoURL:\s*https:\/\/strimzi\.io\/charts\//);
   assert.match(kafka, /chart:\s*strimzi-kafka-operator/);
   assert.match(kafka, /targetRevision:\s*1\.0\.0/);
+  assert.match(kafka, /watchAnyNamespace:\s*false/);
+  assert.match(kafka, /podSecurityContext:[\s\S]*runAsNonRoot:\s*true/);
+  assert.match(kafka, /securityContext:[\s\S]*allowPrivilegeEscalation:\s*false/);
+  assert.match(kafka, /securityContext:[\s\S]*capabilities:[\s\S]*drop:[\s\S]*- ALL/);
   assert.match(spark, /repoURL:\s*https:\/\/apache\.github\.io\/spark-kubernetes-operator/);
   assert.match(spark, /chart:\s*spark-kubernetes-operator/);
   assert.match(spark, /targetRevision:\s*1\.6\.0/);
+  assert.match(spark, /namespaces:\s*\n\s+create:\s*false/);
+  assert.match(spark, /overrideWatchedNamespaces:\s*true/);
   assert.match(qdrant, /repoURL:\s*https:\/\/qdrant\.github\.io\/qdrant-helm/);
   assert.match(qdrant, /chart:\s*qdrant/);
   assert.match(qdrant, /targetRevision:\s*1\.17\.1/);
+  assert.match(qdrant, /podSecurityContext:[\s\S]*seccompProfile:[\s\S]*type:\s*RuntimeDefault/);
+  assert.match(qdrant, /containerSecurityContext:[\s\S]*capabilities:[\s\S]*drop:[\s\S]*- ALL/);
   assert.match(airbyte, /repoURL:\s*https:\/\/airbytehq\.github\.io\/helm-charts/);
   assert.match(airbyte, /chart:\s*airbyte/);
   assert.match(airbyte, /targetRevision:\s*1\.9\.2/);
+});
+
+test('airbyte chart avoids internal default database and minio paths', async () => {
+  const airbyte = await readRepoFile('remote/argocd/apps/dd-airbyte.application.yaml');
+  const kustomization = await readRepoFile('remote/argocd/ai-ml-platform/kustomization.yaml');
+  const externalSecret = await readRepoFile(
+    'remote/argocd/ai-ml-platform/dd-ai-ml-platform-secrets.externalsecret.yaml',
+  );
+  const postgres = await readRepoFile(
+    'remote/argocd/ai-ml-platform/dd-airbyte-postgresql.statefulset.yaml',
+  );
+  const networkPolicy = await readRepoFile(
+    'remote/argocd/ai-ml-platform/dd-airbyte.networkpolicy.yaml',
+  );
+
+  assert.match(airbyte, /postgresql:\s*\n\s+enabled:\s*false/);
+  assert.match(airbyte, /database:\s*\n\s+type:\s*external/);
+  assert.match(airbyte, /secretName:\s*dd-airbyte-database/);
+  assert.match(airbyte, /host:\s*dd-airbyte-postgresql\.airbyte\.svc\.cluster\.local/);
+  assert.match(airbyte, /storage:\s*\n\s+type:\s*s3/);
+  assert.match(airbyte, /storageSecretName:\s*dd-airbyte-storage/);
+  assert.match(airbyte, /authenticationType:\s*credentials/);
+  assert.doesNotMatch(airbyte, /minio123|keycloak123|postgresqlPassword:\s*airbyte/);
+  assert.match(kustomization, /dd-airbyte-postgresql\.statefulset\.yaml/);
+  assert.match(kustomization, /dd-airbyte\.networkpolicy\.yaml/);
+  assert.match(externalSecret, /name:\s*dd-airbyte-database/);
+  assert.match(externalSecret, /property:\s*AIRBYTE_DATABASE_USER/);
+  assert.match(externalSecret, /property:\s*AIRBYTE_DATABASE_PASSWORD/);
+  assert.match(externalSecret, /name:\s*dd-airbyte-storage/);
+  assert.match(externalSecret, /property:\s*AIRBYTE_S3_ACCESS_KEY_ID/);
+  assert.match(externalSecret, /property:\s*AIRBYTE_S3_SECRET_ACCESS_KEY/);
+  assert.match(postgres, /image:\s*docker\.io\/library\/postgres:17\.6-alpine/);
+  assert.match(postgres, /automountServiceAccountToken:\s*false/);
+  assert.match(postgres, /readOnlyRootFilesystem:\s*true/);
+  assert.match(postgres, /name:\s*POSTGRES_PASSWORD[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-airbyte-database/);
+  assert.match(networkPolicy, /kind:\s*NetworkPolicy/);
+  assert.match(networkPolicy, /namespace:\s*airbyte/);
+  assert.match(networkPolicy, /policyTypes:[\s\S]*- Ingress/);
+  assert.doesNotMatch(networkPolicy, /policyTypes:[\s\S]*- Egress/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*ai-ml/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*default/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*observability/);
 });
 
 test('gateway, observability, and homepage expose the ai/ml pipeline', async () => {

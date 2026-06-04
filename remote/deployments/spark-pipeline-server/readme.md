@@ -83,15 +83,16 @@ to `repo_unresolved` without failing the job.
 | GET    | `/healthz`       | Liveness probe.                                      |
 | GET    | `/readyz`        | Readiness probe.                                     |
 | GET    | `/metrics`       | Prometheus scrape endpoint.                          |
-| POST   | `/v1/jobs`       | Submit a new pipeline job.                           |
-| GET    | `/v1/jobs`       | List all jobs known to this server.                  |
-| GET    | `/v1/jobs/{id}`  | Fetch a single job's state.                          |
-| GET    | `/v1/repos`      | List `known_git_repos` rows (requires Postgres).     |
+| POST   | `/v1/jobs`       | Submit a new pipeline job. Requires `X-Server-Auth` / `Auth`. |
+| GET    | `/v1/jobs`       | List all jobs known to this server. Requires `X-Server-Auth` / `Auth`. |
+| GET    | `/v1/jobs/{id}`  | Fetch a single job's state. Requires `X-Server-Auth` / `Auth`. |
+| GET    | `/v1/repos`      | List `known_git_repos` rows. Requires Postgres and `X-Server-Auth` / `Auth`. |
 
 ### Submit example
 
 ```bash
 curl -s -X POST http://localhost:8085/v1/jobs \
+  -H "X-Server-Auth: $SERVER_AUTH_SECRET" \
   -H 'content-type: application/json' \
   -d '{"kind":"SYNTHETIC_TEST","params":{"stages":5}}'
 ```
@@ -104,6 +105,8 @@ curl -s -X POST http://localhost:8085/v1/jobs \
 | `HTTP_PORT`               | `8085`      | Bind port.                                                        |
 | `PIPELINE_MAX_CONCURRENT` | `4`         | NeoQueue concurrency (server-wide).                               |
 | `JAVA_OPTS`               | G1, 70% RAM | Standard JVM tuning.                                              |
+| `SERVER_AUTH_SECRET`      | _(unset)_   | Shared server secret required by all `/v1/*` routes unless local unauthenticated mode is enabled. |
+| `SPARK_PIPELINE_ALLOW_UNAUTHENTICATED` | `false` | Set to `true` only for local smoke tests without a shared secret. |
 | `RDS_DATABASE_URL`        | _(unset)_   | Postgres URL (libpq or JDBC). If unset, DB endpoints return 503.  |
 | `RDS_DATABASE_USER`       | _(from URL)_| Override Hikari user when URL has no embedded credentials.        |
 | `RDS_DATABASE_PASSWORD`   | _(from URL)_| Override Hikari password when URL has no embedded credentials.    |
@@ -127,4 +130,6 @@ java -jar target/dd-spark-pipeline-server.jar
 
 The EC2 deployment mounts the repo as a hostPath at `/opt/dd-next-1` and runs
 `mvn package` once on container start before booting the shaded jar. The same
-container image (`eclipse-temurin:17-jre`) is used in CI and runtime.
+container image (`eclipse-temurin:17-jre`) is used in CI and runtime. The optional
+`RDS_DATABASE_URL` key is read from `dd-remote-rest-api-secrets` so the manifest reuses the
+existing External Secrets bridge instead of depending on an uncreated service-specific secret.

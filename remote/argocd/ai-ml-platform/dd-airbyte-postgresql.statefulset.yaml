@@ -1,0 +1,125 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-airbyte-postgresql
+  namespace: airbyte
+  labels:
+    app.kubernetes.io/name: dd-airbyte-postgresql
+    app.kubernetes.io/part-of: dd-airbyte
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      protocol: TCP
+      targetPort: postgres
+  selector:
+    app.kubernetes.io/name: dd-airbyte-postgresql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dd-airbyte-postgresql
+  namespace: airbyte
+  labels:
+    app.kubernetes.io/name: dd-airbyte-postgresql
+    app.kubernetes.io/part-of: dd-airbyte
+spec:
+  replicas: 1
+  serviceName: dd-airbyte-postgresql
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dd-airbyte-postgresql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dd-airbyte-postgresql
+        app.kubernetes.io/part-of: dd-airbyte
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: docker.io/library/postgres:17.6-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              value: airbyte
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-airbyte-database
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dd-airbyte-database
+                  key: password
+            - name: POSTGRES_INITDB_ARGS
+              value: --auth-host=scram-sha-256
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsGroup: 999
+            runAsNonRoot: true
+            runAsUser: 999
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: postgres-run
+              mountPath: /var/run/postgresql
+            - name: postgres-tmp
+              mountPath: /tmp
+      volumes:
+        - name: postgres-run
+          emptyDir: {}
+        - name: postgres-tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi

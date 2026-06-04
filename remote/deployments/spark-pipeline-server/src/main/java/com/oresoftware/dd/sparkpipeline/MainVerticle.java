@@ -9,9 +9,11 @@ import com.oresoftware.dd.sparkpipeline.handlers.MetricsHandler;
 import com.oresoftware.dd.sparkpipeline.handlers.SubmitJobHandler;
 import com.oresoftware.dd.sparkpipeline.pipeline.JobService;
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Handler;
 import io.vertx.core.Promise;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,11 +35,10 @@ public final class MainVerticle extends AbstractVerticle {
 
   private static final Logger log = LoggerFactory.getLogger(MainVerticle.class);
 
-  private static final String ENV_HTTP_HOST = "HTTP_HOST";
-  private static final String ENV_HTTP_PORT = "HTTP_PORT";
-
+  private final Config config;
   private final JobService jobService;
   private final PgDb pg;
+  private final Auth auth;
 
   /**
    * Constructed with a pre-built {@link JobService} and an optional {@link PgDb} so a single
@@ -47,16 +48,15 @@ public final class MainVerticle extends AbstractVerticle {
    * @param pg may be {@code null} when {@code RDS_DATABASE_URL} is unset; DB-backed endpoints
    *           respond 503 in that case.
    */
-  public MainVerticle(final JobService jobService, final PgDb pg) {
+  public MainVerticle(final Config config, final JobService jobService, final PgDb pg) {
+    this.config = config;
     this.jobService = jobService;
     this.pg = pg;
+    this.auth = new Auth(config);
   }
 
   @Override
   public void start(final Promise<Void> startPromise) {
-
-    final String host = System.getenv().getOrDefault(ENV_HTTP_HOST, "0.0.0.0");
-    final int port = parsePort(System.getenv(ENV_HTTP_PORT), 8085);
 
     final Router router = Router.router(vertx);
     router.route().handler(BodyHandler.create().setBodyLimit(8L * 1024L * 1024L));
@@ -65,10 +65,21 @@ public final class MainVerticle extends AbstractVerticle {
     router.get("/readyz").handler(HealthHandler.readiness(jobService));
     router.get("/metrics").handler(MetricsHandler.create());
 
-    router.post("/v1/jobs").handler(new SubmitJobHandler(jobService));
-    router.get("/v1/jobs").handler(new ListJobsHandler(jobService));
-    router.get("/v1/jobs/:id").handler(new JobStatusHandler(jobService));
-    router.get("/v1/repos").handler(new ListReposHandler(vertx, pg));
+    final Handler<RoutingContext> authGate = ctx -> {
+      if (auth.isAuthorized(ctx)) {
+        ctx.next();
+      } else {
+        ctx.response()
+            .setStatusCode(401)
+            .putHeader("content-type", "application/json")
+            .end("{\"error\":\"unauthorized\"}");
+      }
+    };
+
+    router.post("/v1/jobs").handler(authGate).handler(new SubmitJobHandler(jobService));
+    router.get("/v1/jobs").handler(authGate).handler(new ListJobsHandler(jobService));
+    router.get("/v1/jobs/:id").handler(authGate).handler(new JobStatusHandler(jobService));
+    router.get("/v1/repos").handler(authGate).handler(new ListReposHandler(vertx, pg));
 
     router.errorHandler(500, ctx -> {
       log.error("Unhandled error on {}: {}", ctx.request().path(), ctx.failure() == null ? "n/a" : ctx.failure().toString(), ctx.failure());
@@ -86,13 +97,13 @@ public final class MainVerticle extends AbstractVerticle {
 
     vertx.createHttpServer(httpOptions)
         .requestHandler(router)
-        .listen(port, host)
+        .listen(config.httpPort, config.httpHost)
         .onSuccess(server -> {
-          log.info("dd-spark-pipeline-server listening on {}:{}", host, server.actualPort());
+          log.info("dd-spark-pipeline-server listening on {}:{}", config.httpHost, server.actualPort());
           startPromise.complete();
         })
         .onFailure(err -> {
-          log.error("dd-spark-pipeline-server failed to bind {}:{}", host, port, err);
+          log.error("dd-spark-pipeline-server failed to bind {}:{}", config.httpHost, config.httpPort, err);
           startPromise.fail(err);
         });
   }
@@ -104,15 +115,4 @@ public final class MainVerticle extends AbstractVerticle {
     stopPromise.complete();
   }
 
-  private static int parsePort(final String raw, final int fallback) {
-    if (raw == null || raw.isBlank()) {
-      return fallback;
-    }
-    try {
-      return Integer.parseInt(raw.trim());
-    } catch (NumberFormatException nfe) {
-      log.warn("invalid HTTP_PORT={}; using {}", raw, fallback);
-      return fallback;
-    }
-  }
 }

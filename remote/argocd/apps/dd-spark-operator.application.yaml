@@ -4,15 +4,26 @@ metadata:
   name: dd-spark-operator
   namespace: argocd
 spec:
-  project: default
+  project: dd-ai-ml-platform
   source:
     repoURL: https://apache.github.io/spark-kubernetes-operator
     chart: spark-kubernetes-operator
     targetRevision: 1.6.0
     helm:
+      skipTests: true
       values: |
         controller:
           replicas: 1
+        workloadResources:
+          namespaces:
+            create: false
+            overrideWatchedNamespaces: true
+            data:
+              - spark
+          role:
+            create: true
+          clusterRole:
+            create: false
   destination:
     server: https://kubernetes.default.svc
     namespace: spark
