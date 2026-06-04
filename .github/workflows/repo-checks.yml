@@ -1,0 +1,168 @@
+name: repo checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - '**'
+    tags:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-checks-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-contracts:
+    name: api docs + static repo contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install remote test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Verify generated API docs are current
+        run: pnpm run check:api-docs
+        working-directory: remote/tests
+
+      - name: Run static repo contract tests
+        run: |
+          set -euo pipefail
+          static_tests=(
+            general/agent-breadcrumb-pipeline.test.ts
+            general/ai-ml-platform-config.test.ts
+            general/bastion-config.test.ts
+            general/browser-job-runner-config.test.ts
+            general/browser-test-server-config.test.ts
+            general/build-server-config.test.ts
+            general/cluster-doctor-cron.test.ts
+            general/cluster-hardening.test.ts
+            general/container-pool-config.test.ts
+            general/contract-service-config.test.ts
+            general/des-simulator-config.test.ts
+            general/dev-server-container-pool-config.test.ts
+            general/fsharp-ws-server-config.test.ts
+            general/gateway-service-directory.test.ts
+            general/gcs-chat-config.test.ts
+            general/gleam-lambda-runner-config.test.ts
+            general/gleam-mcp-server-config.test.ts
+            general/gleam-mcp-server-observability.test.ts
+            general/gleam-websocket-nats-fanout.test.ts
+            general/live-mutex-config.test.ts
+            general/local-k8s-cleanup.test.ts
+            general/mdp-optimizer-config.test.ts
+            general/nats-config.test.ts
+            general/nats-shadow-handoff.test.ts
+            general/observability-config.test.ts
+            general/redis-cache-config.test.ts
+            general/remote-dev-worker-git-hardening.test.ts
+            general/runtime-split-config.test.ts
+            general/selenium-server-config.test.ts
+            general/thread-fleet-exporter-go-config.test.ts
+            general/thread-operator-go-config.test.ts
+            general/trading-server-config.test.ts
+            general/vpn-config.test.ts
+            general/web-home-agents-tasks-links.test.ts
+            general/web-home-agents-threads-container-state.test.ts
+            general/web-home-lambda-highlighter.test.ts
+            general/web-home-shared-header.test.ts
+            general/web-scraper-config.test.ts
+            general/webrtc-signaling-service.test.ts
+            general/ws-loadtest-config.test.ts
+          )
+          pnpm exec tsx --test "${static_tests[@]}"
+        working-directory: remote/tests
+
+  kustomize-render:
+    name: render kustomize overlays
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.32.2
+
+      - name: Render overlays
+        run: |
+          set -euo pipefail
+          overlays=(
+            remote/argocd/ai-ml-platform
+            remote/argocd/dd-next-runtime
+            remote/argocd/headlamp
+            remote/argocd/messaging
+            remote/argocd/observability
+            remote/argocd/secrets
+            remote/argocd/vpn
+            remote/deployments/akka-ws-server/k8s/ec2
+            remote/deployments/billing-server-rs/k8s/ec2
+            remote/deployments/dart-server/k8s/ec2
+            remote/deployments/formal-methods-server-rs/k8s
+            remote/deployments/formal-methods-server-rs/k8s/ec2
+            remote/deployments/formal-methods-service-rs/k8s/ec2
+            remote/deployments/fsharp-ws-server/k8s/ec2
+            remote/deployments/gcs/k8s/ec2
+            remote/deployments/gleam-lambda-runner/k8s/ec2
+            remote/deployments/gleam-mcp-server/k8s/ec2
+            remote/deployments/gleamlang-server/k8s
+            remote/deployments/gleamlang-server/k8s/ec2
+            remote/deployments/gleamlang-ws-loadtest/k8s/akkaws-akkastreams
+            remote/deployments/gleamlang-ws-loadtest/k8s/akkaws-asyncjava
+            remote/deployments/gleamlang-ws-loadtest/k8s/dart
+            remote/deployments/gleamlang-ws-loadtest/k8s/ec2
+            remote/deployments/gleamlang-ws-loadtest/k8s/gcs
+            remote/deployments/gleamlang-ws-loadtest/k8s/gcs-node
+            remote/deployments/gleamlang-ws-server/k8s/ec2
+            remote/deployments/live-mutex-loadtest-node/k8s/ec2
+            remote/deployments/lock-loadtest-gleam/k8s/ec2
+            remote/deployments/lock-loadtest-rs/k8s/ec2
+            remote/deployments/mip-solver-node.rs/k8s
+            remote/deployments/mip-solver-node.rs/k8s-gpu
+            remote/deployments/rust-network-mutex-rs/k8s/ec2
+            remote/deployments/spark-pipeline-server/k8s/ec2
+            remote/deployments/thread-fleet-exporter-go/k8s/ec2
+            remote/deployments/thread-operator-go/k8s/ec2
+            remote/deployments/ws-loadtest-rs/k8s/akkaws-akkastreams
+            remote/deployments/ws-loadtest-rs/k8s/akkaws-asyncjava
+            remote/deployments/ws-loadtest-rs/k8s/dart
+            remote/deployments/ws-loadtest-rs/k8s/ec2
+            remote/deployments/ws-loadtest-rs/k8s/fsharp-rx
+            remote/deployments/ws-loadtest-rs/k8s/gcs
+            remote/deployments/ws-loadtest-rs/k8s/go-wss
+            remote/deployments/ws-loadtest-rs/k8s/rust-wss
+          )
+
+          for overlay in "${overlays[@]}"; do
+            echo "::group::${overlay}"
+            output="${RUNNER_TEMP}/${overlay//\//__}.yaml"
+            kubectl kustomize --load-restrictor=LoadRestrictionsNone "${overlay}" > "${output}"
+            test -s "${output}"
+            echo "::endgroup::"
+          done

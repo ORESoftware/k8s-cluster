@@ -201,7 +201,7 @@ test("gateway-backed stateless services use HA rolling deployment profile", asyn
   const desRs = await readRepoFile("remote/argocd/dd-next-runtime/dd-des-rs.deployment.yaml");
   assert.match(
     desRs,
-    /readinessProbe:[\s\S]*path:\s*\/out\/delivery-planner\.html[\s\S]*port:\s*http/,
+    /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/,
   );
 });
 

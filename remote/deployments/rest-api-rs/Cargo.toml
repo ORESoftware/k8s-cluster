@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 async-nats = "=0.38.0"
+async-graphql = { version = "=7.0.17", default-features = true }
 axum = { version = "0.7", features = ["macros"] }
 # Single source of truth for the shared RDS Postgres contract. Reads /
 # writes against `app_config`, `lambda_functions`, `agent_remote_dev_*`,
@@ -33,6 +34,7 @@ dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
 dd-wal-consumer = { path = "../../libs/wal-consumer-rs" }
 once_cell = "1"
 prometheus = "0.13"
+redis = { version = "=1.2.2", default-features = false, features = ["aio", "tokio-comp"] }
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls", "stream"] }
 rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"] }
 rustls-pemfile = "=2.2.0"

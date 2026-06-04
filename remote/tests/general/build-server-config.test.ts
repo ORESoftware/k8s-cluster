@@ -98,7 +98,7 @@ test('build server is deployed through Argo runtime manifests, gateway, and obse
   assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
   assert.match(deployment, /capabilities:[\s\S]*drop:[\s\S]*- ALL/);
   assert.match(deployment, /seccompProfile:[\s\S]*type:\s*RuntimeDefault/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/build-server-rs/);
+  assert.match(deployment, /cd "\$source_root\/remote\/deployments\/build-server-rs"/);
   assert.match(deployment, /CARGO_TARGET_DIR[\s\S]*\/tmp\/dd-build-server-target/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8100'/);
   assert.match(deployment, /BUILD_SERVER_WORK_ROOT[\s\S]*\/var\/lib\/dd-build-server\/jobs/);

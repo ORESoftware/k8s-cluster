@@ -58,8 +58,7 @@ NATS subject `dd.remote.events.critical` (`NATS_CRITICAL_EVENT_SUBJECT`) in addi
 
 The following commands are blacklisted for agents in this repo: `git checkout`, `git reset`,
 `git stash`, `rm`, and `sed`. Do not run them in local operator work or add them to automation
-scripts. If a checkout has tracked dirty files, stop and surface the dirty state explicitly instead
-of hiding it. Leave untracked runtime files alone unless a human asks for a specific cleanup.
+scripts. Leave untracked runtime files alone unless a human asks for a specific cleanup.
 
 Default branch posture for agent work is `dev`. Agents should not check out or switch to feature
 branches for local operator work unless a human explicitly changes that posture for a specific task.

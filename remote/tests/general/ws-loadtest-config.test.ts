@@ -20,7 +20,7 @@ function yamlScalar(value: string): string {
   return `['"]?${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]?`;
 }
 
-test('ws loadtest manifests configure 5k + 5k clients against websocket endpoint', async () => {
+test('ws loadtest manifests configure rust + gleam clients against websocket endpoint', async () => {
   const rustDeployment = await readRepoFile(
     'remote/deployments/ws-loadtest-rs/k8s/ec2/dd-ws-loadtest-rs.deployment.yaml',
   );
@@ -35,9 +35,9 @@ test('ws loadtest manifests configure 5k + 5k clients against websocket endpoint
   const gleamCount = parseNumericEnv(gleamDeployment, 'CLIENT_COUNT');
   const total = rustCount + gleamCount;
 
-  assert.equal(rustCount, 5_000, 'rust loadtest must open 5k clients');
+  assert.equal(rustCount, 7_500, 'rust loadtest must open 7.5k clients');
   assert.equal(gleamCount, 5_000, 'gleam loadtest must open 5k clients');
-  assert.equal(total, 10_000, 'combined loadtest target must be 10k clients');
+  assert.equal(total, 12_500, 'combined loadtest target must be 12.5k clients');
 
   assert.match(
     rustDeployment,
@@ -56,7 +56,7 @@ test('ws loadtest manifests configure 5k + 5k clients against websocket endpoint
   );
   assert.match(
     rustDeployment,
-    /image:\s*docker\.io\/library\/rust:1\.82-bookworm/,
+    /image:\s*docker\.io\/library\/rust:1\.90-bookworm/,
     'rust loadtest deployment should use the full rust toolchain image for cargo run',
   );
   assert.match(
@@ -72,16 +72,16 @@ test('ws loadtest manifests configure 5k + 5k clients against websocket endpoint
   assert.match(
     gleamServerDeployment,
     new RegExp(
-      `requests:\\s*[\\s\\S]*cpu:\\s*${yamlScalar('1')}[\\s\\S]*memory:\\s*${yamlScalar('1Gi')}`,
+      `requests:\\s*[\\s\\S]*cpu:\\s*${yamlScalar('250m')}[\\s\\S]*memory:\\s*${yamlScalar('2Gi')}`,
     ),
-    'gleam server deployment should request 1 CPU and 1Gi memory for startup compilation',
+    'gleam server deployment should request enough CPU and memory for steady serving',
   );
   assert.match(
     gleamServerDeployment,
     new RegExp(
-      `limits:\\s*[\\s\\S]*cpu:\\s*${yamlScalar('4')}[\\s\\S]*memory:\\s*${yamlScalar('8Gi')}`,
+      `limits:\\s*[\\s\\S]*cpu:\\s*${yamlScalar('6')}[\\s\\S]*memory:\\s*${yamlScalar('8Gi')}`,
     ),
-    'gleam server deployment should reserve the 8Gi startup compile limit',
+    'gleam server deployment should cap benchmark CPU while reserving 8Gi memory',
   );
 });
 
