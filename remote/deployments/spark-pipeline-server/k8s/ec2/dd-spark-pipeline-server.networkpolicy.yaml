@@ -2,7 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: dd-spark-pipeline-server
-  namespace: default
+  namespace: ai-ml
   labels:
     app: dd-spark-pipeline-server
 spec:
@@ -16,6 +16,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: default
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai-ml
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
