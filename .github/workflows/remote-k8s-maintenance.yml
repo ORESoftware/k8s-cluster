@@ -2465,18 +2465,40 @@ jobs:
           sync_app() {
             local app="$1"
             local sync_revision="${ARGO_SYNC_REVISION:-HEAD}"
+            local before_finished patch_status patch_output
             echo "=== Argo CD sync request: $app ==="
             kubectl -n argocd annotate "application/$app" argocd.argoproj.io/refresh=hard --overwrite || true
-            kubectl -n argocd patch "application/$app" --type merge -p "{\"operation\":{\"initiatedBy\":{\"username\":\"gcs-loadtest\"},\"info\":[{\"name\":\"reason\",\"value\":\"gcs-wss-loadtest\"}],\"sync\":{\"revision\":\"$sync_revision\",\"prune\":true}}}" || true
-            for i in $(seq 1 60); do
+            before_finished="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.operationState.finishedAt}' 2>/dev/null || true)"
+            patch_status=0
+            patch_output="$(kubectl -n argocd patch "application/$app" --type merge -p "{\"operation\":{\"initiatedBy\":{\"username\":\"gcs-loadtest\"},\"info\":[{\"name\":\"reason\",\"value\":\"gcs-wss-loadtest\"}],\"sync\":{\"revision\":\"$sync_revision\",\"prune\":true}}}" 2>&1)" || patch_status=$?
+            if [ -n "$patch_output" ]; then
+              printf '%s\n' "$patch_output"
+            fi
+            if [ "$patch_status" -ne 0 ]; then
+              echo "WARNING: Argo CD sync patch for $app returned status=$patch_status; waiting for live state anyway"
+            fi
+            for i in $(seq 1 120); do
               phase="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
               sync="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
               health="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
-              echo "  $app wait=$i phase=${phase:-none} sync=${sync:-unknown} health=${health:-unknown}"
-              case "$phase:$sync" in
-                Succeeded:Synced|:Synced) break ;;
-                Failed:*|Error:*) break ;;
+              revision="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.sync.revision}' 2>/dev/null || true)"
+              result_revision="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.operationState.syncResult.revision}' 2>/dev/null || true)"
+              finished="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.operationState.finishedAt}' 2>/dev/null || true)"
+              echo "  $app wait=$i phase=${phase:-none} sync=${sync:-unknown} health=${health:-unknown} revision=${revision:-none} result_revision=${result_revision:-none} finished=${finished:-none}"
+              case "$phase" in
+                Failed|Error) break ;;
               esac
+              revision_ok=0
+              if [ "$sync_revision" = "HEAD" ] || [ "$revision" = "$sync_revision" ] || [ "$result_revision" = "$sync_revision" ]; then
+                revision_ok=1
+              fi
+              finished_ok=0
+              if [ "$patch_status" -ne 0 ] || [ -z "$before_finished" ] || [ "$finished" != "$before_finished" ]; then
+                finished_ok=1
+              fi
+              if [ "$phase" = "Succeeded" ] && [ "$sync" = "Synced" ] && [ "$revision_ok" -eq 1 ] && [ "$finished_ok" -eq 1 ]; then
+                break
+              fi
               sleep 5
             done
             kubectl -n argocd get "application/$app" -o wide || true
@@ -3109,6 +3131,43 @@ jobs:
             } >&2
           }
 
+          diagnose_loader_control_plane() {
+            local d="$1"
+            {
+              echo "=== loader control-plane diagnostics: $d ==="
+              kubectl -n argocd get "application/$d" -o wide || true
+              kubectl -n argocd get "application/$d" -o jsonpath='phase={.status.operationState.phase} sync={.status.sync.status} health={.status.health.status} syncRevision={.status.sync.revision} resultRevision={.status.operationState.syncResult.revision} operationRevision={.status.operationState.operation.sync.revision} started={.status.operationState.startedAt} finished={.status.operationState.finishedAt} message={.status.operationState.message}{"\n"}' || true
+              kubectl -n argocd get "application/$d" -o jsonpath='syncPolicy={.spec.syncPolicy}{"\n"}' || true
+              kubectl -n default get "deployment/$d" -o jsonpath='deployment replicas={.spec.replicas} ready={.status.readyReplicas} available={.status.availableReplicas} updated={.status.updatedReplicas} observedGeneration={.status.observedGeneration} generation={.metadata.generation}{"\n"}' || true
+              echo "--- deployment owner/managed fields ---"
+              kubectl -n default get "deployment/$d" -o json | jq -r '.metadata.managedFields[]? | [.manager, .operation, .time] | @tsv' | tail -20 || true
+              echo "--- loader events ---"
+              kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started|ScalingReplicaSet|SuccessfulCreate" | tail -120 || true
+            } >&2
+          }
+
+          wait_loader_scale_sticky() {
+            local d="$1"
+            local expected="$2"
+            local actual after
+            for i in $(seq 1 45); do
+              actual="$(kubectl -n default get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+              echo "loader-scale-wait deployment=$d attempt=$i/45 expected=$expected actual=${actual:-unset}"
+              if [ "$actual" = "$expected" ]; then
+                sleep 5
+                after="$(kubectl -n default get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+                echo "loader-scale-sticky-check deployment=$d expected=$expected actual=${after:-unset}"
+                if [ "$after" = "$expected" ]; then
+                  return 0
+                fi
+              fi
+              sleep 2
+            done
+            echo "ERROR: $d did not keep spec.replicas=$expected after scale-up" >&2
+            diagnose_loader_control_plane "$d"
+            return 1
+          }
+
           run_loader() {
             local d="$1"
             local loader_name="$2"
@@ -3128,6 +3187,9 @@ jobs:
               RECONNECT_DELAY_MS=10000 \
               REPORT_INTERVAL_SECONDS=10
             kubectl -n default scale "deployment/$d" --replicas="$loader_replicas"
+            if ! wait_loader_scale_sticky "$d" "$loader_replicas"; then
+              exit 1
+            fi
             if ! kubectl -n default rollout status "deployment/$d" --timeout=240s; then
               echo "ERROR: $d failed to roll out with ${loader_replicas} replicas" >&2
               collect_loader "$d"
