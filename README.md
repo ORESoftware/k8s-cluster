@@ -60,7 +60,9 @@ Redis is the hot cache and coordination layer for solve snapshots, frontier snap
 
 KEDA scales slave pods from NATS JetStream consumer lag. New pods boot with `MIP_SOLVER_NODE_ROLE=slave`, attach to the same durable pull consumer, and start draining pending subproblems.
 
-The Kubernetes startup command runs Cargo from `remote/deployments/mip-solver-node.rs` inside a full `k8s-cluster` source tree, with `CARGO_TARGET_DIR` pointed at `/tmp`. Keep that relative layout intact: the normal manifest depends on generated NATS definitions under `remote/libs/nats/...` and the in-house DES solver under `remote/submodules/discrete-event-system.rs`.
+Argo CD should source this repository directly (`path: k8s`). The Kubernetes startup command still builds inside a full `k8s-cluster` source tree because the normal Cargo manifest depends on generated NATS/Postgres/Redis crates under `remote/libs/...` and the in-house DES solver under `remote/submodules/discrete-event-system.rs`. By default the pod clones `k8s-cluster` from `MIP_SOLVER_CLUSTER_GIT_URL`/`MIP_SOLVER_CLUSTER_GIT_REF`, initializes the DES submodule, then clones this solver repo from `MIP_SOLVER_NODE_GIT_URL`/`MIP_SOLVER_NODE_GIT_REF` into `remote/deployments/mip-solver-node.rs`.
+
+That split is intentional: C owns cluster/shared dependency layout, while A owns the service source and rendered Kubernetes bundle. It also prevents a stale C submodule pointer from making pods build older A code than Argo rendered.
 
 `/healthz` reports process liveness. `/readyz` requires a live NATS connection so Kubernetes does not route traffic to masters or count slaves as ready while they cannot publish or consume distributed work.
 

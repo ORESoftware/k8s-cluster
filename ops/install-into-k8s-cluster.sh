@@ -2,7 +2,7 @@
 set -euo pipefail
 
 cluster_dir="${1:-${K8S_CLUSTER_DIR:-$HOME/codes/ores/k8s-cluster}}"
-repo_url="${MIP_SOLVER_NODE_REPO_URL:-git@github.com:ORESoftware/mip-solver-node.rs.git}"
+repo_url="${MIP_SOLVER_NODE_REPO_URL:-https://github.com/ORESoftware/mip-solver-node.rs.git}"
 submodule_path="remote/deployments/mip-solver-node.rs"
 app_path="remote/argocd/apps/dd-in-house-mip-solver-node.application.yaml"
 
@@ -31,3 +31,4 @@ echo "Installed $submodule_path"
 echo "Copied $app_path"
 echo "Rendered Kustomize output: /tmp/dd-in-house-mip-solver-node.rendered.yaml"
 echo "Next: review git status, commit .gitmodules, $submodule_path, and $app_path."
+echo "Note: the Argo CD app sources the solver repo directly; the submodule is for EC2/local dependency layout."
