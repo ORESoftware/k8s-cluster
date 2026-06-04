@@ -213,6 +213,17 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
   assertPathEntry(home, '/presence/healthz', '/presence/healthz');
   assertPathEntry(home, '/presence/ws');
   assertPathEntry(home, '/presence/user/<id>/broadcast');
+  assert.match(home, /<input id="presence" value="\/presence"/);
+  assert.doesNotMatch(home, /value="http:\/\/localhost:8081"/);
+  assert.match(home, /function isLoopbackHost\(hostname\)/);
+  assert.match(home, /refusing loopback presence base from remote page/);
+  assert.match(home, /async function ensurePresenceReady\(panelLog\)/);
+  assert.match(home, /presence gateway auth required/);
+  assert.match(home, /async function openUserWs\(skipPreflight = false\)/);
+  assert.match(home, /async function openConvWs\(convId, skipPreflight = false\)/);
+  assert.match(home, /if \(!\(await ensurePresenceReady\(\$\("user-log"\)\)\)\) return;/);
+  assert.match(home, /credentials: "same-origin"/);
+  assert.match(home, /cache: "no-store"/);
   assertPathEntry(home, '?preset=gleam', '/wss-test?preset=gleam');
   assertPathEntry(home, '?preset=webrtc', '/wss-test?preset=webrtc');
   assertPathEntry(home, '?preset=gcs', '/wss-test?preset=gcs');

@@ -96,7 +96,7 @@ on:
         default: "2.5"
 
 concurrency:
-  group: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[verify-mip-solver]') && 'remote-k8s-maintenance-mip-verify') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-diagnose]') && 'remote-k8s-maintenance-gcs-diagnose') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'remote-k8s-maintenance-gcs-loadtest') || 'remote-k8s-maintenance' }}
+  group: ${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[verify-mip-solver]') || contains(github.event.head_commit.message, '[gcs-loadtest]')) && 'remote-k8s-maintenance-capacity') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-diagnose]') && 'remote-k8s-maintenance-gcs-diagnose') || 'remote-k8s-maintenance' }}
   cancel-in-progress: false
 
 permissions:
