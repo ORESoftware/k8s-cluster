@@ -176,7 +176,7 @@ test("otel collector scrapes all remote runtimes and exports traces", async () =
   assert.match(collector, /dd-container-pool\.default\.svc\.cluster\.local:8102/);
   assert.match(collector, /dd-akka-ws-server\.default\.svc\.cluster\.local:8086/);
   assert.match(collector, /dd-fsharp-ws-server\.default\.svc\.cluster\.local:8087/);
-  assert.match(collector, /dd-spark-pipeline-server\.default\.svc\.cluster\.local:8085/);
+  assert.match(collector, /dd-spark-pipeline-server\.ai-ml\.svc\.cluster\.local:8085/);
   assert.match(collector, /dd-formal-methods-server\.default\.svc\.cluster\.local:8110/);
   assert.match(collector, /dd-agent-worker-broker\.default\.svc\.cluster\.local:8098/);
   assert.match(collector, /dd-remote-auth\.default\.svc\.cluster\.local:8083/);

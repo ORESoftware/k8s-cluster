@@ -132,7 +132,7 @@ data:
               metrics_path: /metrics
               static_configs:
                 - targets:
-                    - dd-spark-pipeline-server.default.svc.cluster.local:8085
+                    - dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085
             - job_name: dd-formal-methods-server
               scrape_interval: 10s
               metrics_path: /metrics
