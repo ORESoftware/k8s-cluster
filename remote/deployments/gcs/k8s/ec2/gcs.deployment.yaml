@@ -142,7 +142,7 @@ spec:
             - name: GCS_WS_SHED_RSS_BYTES
               value: '2684354560'
             - name: GCS_WS_SHED_GOROUTINES
-              value: '750000'
+              value: '120000'
             - name: GCS_WS_SHED_MESSAGE_LATENCY
               value: '10s'
             - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
