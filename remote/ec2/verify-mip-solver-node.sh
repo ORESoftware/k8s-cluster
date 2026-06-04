@@ -519,6 +519,7 @@ python3 - <<PY
 import json
 import math
 import sys
+import urllib.error
 import urllib.request
 
 port = "${local_port}"
@@ -531,8 +532,44 @@ request = urllib.request.Request(
     headers={"content-type": "application/json"},
     method="POST",
 )
-with urllib.request.urlopen(request, timeout=900) as response:
-    body = json.loads(response.read().decode("utf-8"))
+try:
+    with urllib.request.urlopen(request, timeout=900) as response:
+        body = json.loads(response.read().decode("utf-8"))
+except urllib.error.HTTPError as error:
+    error_body = error.read().decode("utf-8", errors="replace")
+    print(
+        json.dumps(
+            {
+                "event": "remote_solve_http_error",
+                "status": error.code,
+                "reason": error.reason,
+                "body": error_body[:5000],
+            },
+            sort_keys=True,
+        ),
+        file=sys.stderr,
+    )
+    for path in ("/mip-solver-cluster/workers", "/mip-solver-cluster/solves"):
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}{path}",
+                timeout=10,
+            ) as response:
+                snapshot = response.read().decode("utf-8", errors="replace")
+        except Exception as snapshot_error:
+            snapshot = json.dumps({"error": str(snapshot_error)})
+        print(
+            json.dumps(
+                {
+                    "event": "remote_solve_failure_snapshot",
+                    "path": path,
+                    "body": snapshot[:5000],
+                },
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+    raise SystemExit(1)
 
 print(json.dumps({
     "ok": body.get("ok"),
