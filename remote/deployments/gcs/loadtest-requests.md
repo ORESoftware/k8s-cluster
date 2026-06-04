@@ -11,3 +11,4 @@
 - 2026-06-04 diagnose runtime collapse after 10k-light reached correctness but failed sustained WSS load.
 - 2026-06-04 rerun compact runtime-collapse diagnostics with GCS pod logs before router summaries.
 - 2026-06-04 10k-light rerun after websocket side-effect in-flight cap.
+- 2026-06-04 10k-light retry with GCS_WS_SIDE_EFFECT_MAX_IN_FLIGHT=2048: 5 loader replicas x 2000 clients, 1.0 msg/(conn*second), 180s.
