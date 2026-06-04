@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     env,
     error::Error,
     ffi::{c_int, c_void},
@@ -24,20 +24,28 @@ use axum::{
 };
 use dd_nats_subject_defs::{
     DD_REMOTE_MIP_SOLVER_STREAM_NAME, DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS,
-    MIP_SOLVER_EVENTS_SUBJECT, MIP_SOLVER_JOBS_SUBJECT, MIP_SOLVER_RESULTS_SUBJECT,
-    MIP_SOLVER_WORKERS_QUEUE_GROUP,
+    MIP_SOLVER_CONTROL_SUBJECT, MIP_SOLVER_EVENTS_SUBJECT, MIP_SOLVER_JOBS_SUBJECT,
+    MIP_SOLVER_RESULTS_SUBJECT, MIP_SOLVER_WORKERS_QUEUE_GROUP,
+};
+use dd_pg_defs::{
+    MIP_SOLVER_EVENTS_TABLE, MIP_SOLVER_JOBS_TABLE, MIP_SOLVER_SESSIONS_TABLE,
+    MIP_SOLVER_SOLVES_TABLE,
+};
+use dd_redis_interfaces::{
+    container_pool_affinity_lock_key, CONTAINER_POOL_AFFINITY_LOCK_KEY_DEFAULT_PREFIX,
 };
 use des_engine::des::general::{
     ip_mip_des::{
         solve_ipmip_with_des, BranchRule, ConcreteLpRelaxationAlgorithm, IPMIPProblem,
-        IPMIPSolveOptions, IPMIPStatus, LpRelaxationAlgorithm,
+        IPMIPSolution, IPMIPSolveOptions, IPMIPStatus, LpRelaxationAlgorithm,
     },
-    lp::{solve_lp_internal, InternalSimplexOptions, LPProblem, LPStatus, Sense},
+    lp::{solve_lp_internal, InternalSimplexOptions, LPProblem, LPSolution, LPStatus, Sense},
 };
 use futures_util::StreamExt;
 use libloading::Library;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use uuid::Uuid;
 
 const SERVICE_NAME: &str = "dd-in-house-mip-solver-node";
@@ -45,6 +53,7 @@ const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_VARS: usize = 10_000;
 const MAX_CONSTRAINTS: usize = 50_000;
 const MAX_STREAM_COMMANDS: usize = 2_000;
+const MIP_SOLVER_REDIS_PREFIX: &str = "dd:mip-solver";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -77,10 +86,15 @@ struct AppState {
     role: NodeRole,
     node_id: String,
     nats: Option<async_nats::Client>,
+    redis: Option<redis::Client>,
+    pg: Option<PgPool>,
     jobs_subject: String,
     results_subject: String,
+    control_subject: String,
     events_subject: String,
     sessions: Arc<Mutex<HashMap<String, LiveSession>>>,
+    workers: Arc<Mutex<HashMap<String, WorkerNodeStatus>>>,
+    solves: Arc<Mutex<HashMap<String, SolveRegistryEntry>>>,
     metrics: Arc<Metrics>,
 }
 
@@ -91,6 +105,9 @@ struct Metrics {
     solve_requests_total: AtomicU64,
     subproblem_jobs_published_total: AtomicU64,
     subproblem_jobs_completed_total: AtomicU64,
+    subproblem_jobs_redelegated_total: AtomicU64,
+    subproblem_jobs_split_total: AtomicU64,
+    worker_control_messages_total: AtomicU64,
     slave_jobs_processed_total: AtomicU64,
     errors_total: AtomicU64,
 }
@@ -99,6 +116,58 @@ struct Metrics {
 struct LiveSession {
     problem: Option<MipProblemSpec>,
     revision: u64,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerNodeStatus {
+    node_id: String,
+    last_command: String,
+    consumer: Option<String>,
+    jobs_subject: Option<String>,
+    results_subject: Option<String>,
+    last_job_id: Option<String>,
+    last_solve_id: Option<String>,
+    last_status: Option<String>,
+    ready_at_ms: Option<u128>,
+    last_seen_ms: u128,
+    request_count: u64,
+    completed_count: u64,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JobRegistryEntry {
+    job_id: String,
+    root_job_id: String,
+    retry_index: usize,
+    depth: usize,
+    status: String,
+    worker_node: Option<String>,
+    submitted_at_ms: u128,
+    finished_at_ms: Option<u128>,
+    error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SolveRegistryEntry {
+    solve_id: String,
+    request_id: String,
+    revision: u64,
+    status: String,
+    jobs_expected: usize,
+    jobs_published: usize,
+    jobs_completed: usize,
+    jobs_redelegated: usize,
+    jobs_split: usize,
+    timed_out: bool,
+    distributed: bool,
+    started_at_ms: u128,
+    updated_at_ms: u128,
+    finished_at_ms: Option<u128>,
+    warnings: Vec<String>,
+    jobs: HashMap<String, JobRegistryEntry>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -126,7 +195,7 @@ struct MipProblemSpec {
     con_names: Option<Vec<String>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BranchConstraint {
     coefs: Vec<f64>,
@@ -142,6 +211,8 @@ struct SolveOptions {
     lp_max_iters: Option<usize>,
     int_tol: Option<f64>,
     split_depth: Option<usize>,
+    max_subproblems: Option<usize>,
+    max_job_retries: Option<usize>,
     timeout_ms: Option<u64>,
     emit_trace: Option<bool>,
 }
@@ -154,6 +225,8 @@ impl Default for SolveOptions {
             lp_max_iters: Some(5_000),
             int_tol: Some(1e-6),
             split_depth: Some(1),
+            max_subproblems: Some(256),
+            max_job_retries: Some(2),
             timeout_ms: Some(120_000),
             emit_trace: Some(false),
         }
@@ -162,7 +235,10 @@ impl Default for SolveOptions {
 
 impl SolveOptions {
     fn merged(input: Option<SolveOptions>) -> Self {
-        let defaults = SolveOptions::default();
+        Self::merged_with_defaults(input, Self::runtime_defaults())
+    }
+
+    fn merged_with_defaults(input: Option<SolveOptions>, defaults: SolveOptions) -> Self {
         let Some(input) = input else {
             return defaults;
         };
@@ -172,8 +248,52 @@ impl SolveOptions {
             lp_max_iters: input.lp_max_iters.or(defaults.lp_max_iters),
             int_tol: input.int_tol.or(defaults.int_tol),
             split_depth: input.split_depth.or(defaults.split_depth),
+            max_subproblems: input.max_subproblems.or(defaults.max_subproblems),
+            max_job_retries: input.max_job_retries.or(defaults.max_job_retries),
             timeout_ms: input.timeout_ms.or(defaults.timeout_ms),
             emit_trace: input.emit_trace.or(defaults.emit_trace),
+        }
+    }
+
+    fn runtime_defaults() -> Self {
+        let defaults = Self::default();
+        SolveOptions {
+            max_nodes: Some(env_usize(
+                "MIP_SOLVER_MAX_NODES",
+                defaults.max_nodes.unwrap_or(20_000),
+            )),
+            max_ticks: Some(env_usize(
+                "MIP_SOLVER_MAX_TICKS",
+                defaults.max_ticks.unwrap_or(200_000),
+            )),
+            lp_max_iters: Some(env_usize(
+                "MIP_SOLVER_LP_MAX_ITERS",
+                defaults.lp_max_iters.unwrap_or(5_000),
+            )),
+            int_tol: Some(env_f64(
+                "MIP_SOLVER_INT_TOL",
+                defaults.int_tol.unwrap_or(1e-6),
+            )),
+            split_depth: Some(env_usize(
+                "MIP_SOLVER_SPLIT_DEPTH",
+                defaults.split_depth.unwrap_or(1),
+            )),
+            max_subproblems: Some(env_usize(
+                "MIP_SOLVER_MAX_SUBPROBLEMS",
+                defaults.max_subproblems.unwrap_or(256),
+            )),
+            max_job_retries: Some(env_usize_allow_zero(
+                "MIP_SOLVER_MAX_JOB_RETRIES",
+                defaults.max_job_retries.unwrap_or(2),
+            )),
+            timeout_ms: Some(env_u64(
+                "MIP_SOLVER_TIMEOUT_MS",
+                defaults.timeout_ms.unwrap_or(120_000),
+            )),
+            emit_trace: Some(env_bool(
+                "MIP_SOLVER_EMIT_TRACE",
+                defaults.emit_trace.unwrap_or(false),
+            )),
         }
     }
 
@@ -226,6 +346,9 @@ struct SubproblemResult {
     x: Vec<f64>,
     best_bound: Option<f64>,
     gap: Option<f64>,
+    lp: Option<LpSolveReport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    child_jobs: Vec<SubproblemJob>,
     nodes_explored: usize,
     lp_solves: usize,
     elapsed_ms: f64,
@@ -233,6 +356,43 @@ struct SubproblemResult {
     accelerator: AcceleratorReport,
     error: Option<String>,
     finished_at_ms: u128,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LpSolveReport {
+    primal: LpPrimalReport,
+    dual: LpDualReport,
+    basis: LpBasisReport,
+    iterations: Option<usize>,
+    solver: String,
+    elapsed_ms: f64,
+    message: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LpPrimalReport {
+    objective: Option<f64>,
+    x: Vec<f64>,
+    var_names: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LpDualReport {
+    inequality: Option<Vec<f64>>,
+    equality: Option<Vec<f64>>,
+    reduced_costs: Option<Vec<f64>>,
+    row_names: Option<Vec<String>>,
+    var_names: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LpBasisReport {
+    variables: Option<Vec<String>>,
+    rows: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -258,8 +418,12 @@ struct SolveResponse {
     x: Vec<f64>,
     best_bound: Option<f64>,
     gap: Option<f64>,
+    lp: Option<LpSolveReport>,
+    jobs_expected: usize,
     jobs_published: usize,
     jobs_completed: usize,
+    jobs_redelegated: usize,
+    jobs_split: usize,
     timed_out: bool,
     distributed: bool,
     node_id: String,
@@ -277,6 +441,40 @@ struct GpuStatus {
     used: bool,
     mode: String,
     note: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistenceContract {
+    mode: String,
+    postgres: PostgresPersistenceContract,
+    redis: RedisPersistenceContract,
+    in_memory: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PostgresPersistenceContract {
+    enabled: bool,
+    url_env: Option<String>,
+    session_table: &'static str,
+    solve_table: &'static str,
+    job_table: &'static str,
+    event_table: &'static str,
+    journal_kinds: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RedisPersistenceContract {
+    enabled: bool,
+    url_env: Option<String>,
+    key_prefix: String,
+    solve_snapshot_key: String,
+    solve_frontier_key: String,
+    session_model_key: String,
+    session_revision_lock_key: String,
+    generated_mutex_key: String,
 }
 
 #[derive(Debug)]
@@ -297,6 +495,19 @@ struct LpRelaxation {
     x: Vec<f64>,
 }
 
+enum SubproblemSolveOutcome {
+    IpMip(IPMIPSolution),
+    Lp {
+        problem: LPProblem,
+        solution: LPSolution,
+    },
+    Split {
+        children: Vec<SubproblemJob>,
+        reason: String,
+    },
+    Pruned(String),
+}
+
 fn default_sense() -> String {
     "max".to_string()
 }
@@ -314,6 +525,37 @@ fn env_u64(key: &str, fallback: u64) -> u64 {
         .ok()
         .and_then(|value| value.trim().parse::<u64>().ok())
         .filter(|value| *value > 0)
+        .unwrap_or(fallback)
+}
+
+fn env_usize(key: &str, fallback: usize) -> usize {
+    env_u64(key, fallback as u64) as usize
+}
+
+fn env_usize_allow_zero(key: &str, fallback: usize) -> usize {
+    env::var(key)
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or(fallback)
+}
+
+fn env_f64(key: &str, fallback: f64) -> f64 {
+    env::var(key)
+        .ok()
+        .and_then(|value| value.trim().parse::<f64>().ok())
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or(fallback)
+}
+
+fn env_bool(key: &str, fallback: bool) -> bool {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .and_then(|value| match value.as_str() {
+            "1" | "true" | "yes" | "on" => Some(true),
+            "0" | "false" | "no" | "off" => Some(false),
+            _ => None,
+        })
         .unwrap_or(fallback)
 }
 
@@ -346,6 +588,92 @@ fn gpu_available() -> bool {
 
 fn gpu_status() -> GpuStatus {
     gpu_status_from_report(&AcceleratorReport::runtime())
+}
+
+fn first_configured_env(keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find(|key| {
+            env::var(key)
+                .ok()
+                .is_some_and(|value| !value.trim().is_empty())
+        })
+        .map(|key| (*key).to_string())
+}
+
+fn redis_key_prefix() -> String {
+    env_value("MIP_SOLVER_REDIS_KEY_PREFIX", MIP_SOLVER_REDIS_PREFIX)
+}
+
+fn mip_solver_solve_snapshot_key(prefix: &str, solve_id: &str) -> String {
+    format!("{prefix}:solve:{solve_id}:snapshot")
+}
+
+fn mip_solver_solve_frontier_key(prefix: &str, solve_id: &str) -> String {
+    format!("{prefix}:solve:{solve_id}:frontier")
+}
+
+fn mip_solver_session_model_key(prefix: &str, session_id: &str) -> String {
+    format!("{prefix}:session:{session_id}:model")
+}
+
+fn mip_solver_session_revision_lock_key(prefix: &str, session_id: &str) -> String {
+    format!("{prefix}:session:{session_id}:revision-lock")
+}
+
+fn persistence_contract() -> PersistenceContract {
+    let pg_url_env = first_configured_env(&[
+        "MIP_SOLVER_DATABASE_URL",
+        "AGENT_TASKS_RDS_DATABASE_URL",
+        "RDS_DATABASE_URL",
+        "DATABASE_URL",
+        "PG_DATABASE_URL",
+    ]);
+    let redis_url_env = first_configured_env(&["MIP_SOLVER_REDIS_URL", "REDIS_URL"]);
+    let prefix = redis_key_prefix();
+
+    PersistenceContract {
+        mode: if pg_url_env.is_some() || redis_url_env.is_some() {
+            "durable-plus-hot-cache".to_string()
+        } else {
+            "in-memory-only".to_string()
+        },
+        postgres: PostgresPersistenceContract {
+            enabled: pg_url_env.is_some(),
+            url_env: pg_url_env,
+            session_table: MIP_SOLVER_SESSIONS_TABLE,
+            solve_table: MIP_SOLVER_SOLVES_TABLE,
+            job_table: MIP_SOLVER_JOBS_TABLE,
+            event_table: MIP_SOLVER_EVENTS_TABLE,
+            journal_kinds: vec![
+                "mip-solver.solve-started",
+                "mip-solver.model-revision",
+                "mip-solver.subproblem-submitted",
+                "mip-solver.subproblem-finished",
+                "mip-solver.subproblem-split",
+                "mip-solver.solve-finished",
+            ],
+        },
+        redis: RedisPersistenceContract {
+            enabled: redis_url_env.is_some(),
+            url_env: redis_url_env,
+            key_prefix: prefix.clone(),
+            solve_snapshot_key: mip_solver_solve_snapshot_key(&prefix, "{solveId}"),
+            solve_frontier_key: mip_solver_solve_frontier_key(&prefix, "{solveId}"),
+            session_model_key: mip_solver_session_model_key(&prefix, "{sessionId}"),
+            session_revision_lock_key: mip_solver_session_revision_lock_key(&prefix, "{sessionId}"),
+            generated_mutex_key: container_pool_affinity_lock_key(
+                CONTAINER_POOL_AFFINITY_LOCK_KEY_DEFAULT_PREFIX,
+                "mip-solver",
+                "{solveId}",
+            ),
+        },
+        in_memory: vec![
+            "active solve registry".to_string(),
+            "live session problem snapshot".to_string(),
+            "current master-owned frontier".to_string(),
+            "observed worker registry".to_string(),
+        ],
+    }
 }
 
 fn gpu_status_from_report(report: &AcceleratorReport) -> GpuStatus {
@@ -879,6 +1207,16 @@ fn validate_problem(problem: &MipProblemSpec) -> Result<(), String> {
             return Err("ub entries must be non-negative or infinite".to_string());
         }
     }
+    if let Some(names) = &problem.var_names {
+        if names.len() != n {
+            return Err("varNames length must equal len(c)".to_string());
+        }
+    }
+    if let Some(names) = &problem.con_names {
+        if names.len() != problem.a.len() {
+            return Err("conNames length must equal constraint count".to_string());
+        }
+    }
     Ok(())
 }
 
@@ -929,6 +1267,15 @@ fn bool_at(command: &Value, key: &str, fallback: bool) -> bool {
         .unwrap_or(fallback)
 }
 
+fn vec_string(command: &Value, key: &str) -> Option<Vec<String>> {
+    command.get(key)?.as_array().map(|items| {
+        items
+            .iter()
+            .map(|value| value.as_str().unwrap_or_default().to_string())
+            .collect()
+    })
+}
+
 fn str_at(command: &Value, key: &str) -> Option<String> {
     command.get(key).and_then(Value::as_str).map(String::from)
 }
@@ -977,8 +1324,8 @@ fn apply_stream_command(
                     .map(|items| items.iter().map(|v| v.as_bool().unwrap_or(false)).collect())
                     .unwrap_or_default(),
                 ub: vec_f64(command, "ub"),
-                var_names: None,
-                con_names: None,
+                var_names: vec_string(command, "varNames"),
+                con_names: vec_string(command, "conNames"),
             }
         };
         next = normalized_problem(next)?;
@@ -1003,8 +1350,17 @@ fn apply_stream_command(
             }
             p.a.push(coefs);
             p.b.push(rhs);
+            if let Some(names) = p.con_names.as_mut() {
+                names.push(
+                    str_at(command, "name")
+                        .unwrap_or_else(|| format!("constraint{}", p.a.len() - 1)),
+                );
+            }
         }
-        "set_constraint" | "modify_constraint" => {
+        "set_constraint"
+        | "modify_constraint"
+        | "change_constraint_weights"
+        | "set_constraint_weights" => {
             let index = usize_at(command, "index").ok_or("index is required")?;
             if index >= p.a.len() {
                 return Err("constraint index out of range".to_string());
@@ -1022,8 +1378,11 @@ fn apply_stream_command(
                 }
                 p.b[index] = rhs;
             }
+            if let (Some(name), Some(names)) = (str_at(command, "name"), p.con_names.as_mut()) {
+                names[index] = name;
+            }
         }
-        "remove_constraint" => {
+        "remove_constraint" | "rm_constraint" => {
             let index = usize_at(command, "index").ok_or("index is required")?;
             if index >= p.a.len() {
                 return Err("constraint index out of range".to_string());
@@ -1045,7 +1404,7 @@ fn apply_stream_command(
             }
             p.b[index] = rhs;
         }
-        "set_coefficient" => {
+        "set_coefficient" | "set_constraint_weight" | "change_constraint_weight" => {
             let row = usize_at(command, "row").ok_or("row is required")?;
             let col = usize_at(command, "col").ok_or("col is required")?;
             if row >= p.a.len() || col >= p.c.len() {
@@ -1067,6 +1426,10 @@ fn apply_stream_command(
                 let upper = f64_at(command, "ub", f64::INFINITY);
                 p.ub.get_or_insert_with(|| vec![f64::INFINITY; p.c.len() - 1])
                     .push(upper);
+            }
+            if let Some(names) = p.var_names.as_mut() {
+                names
+                    .push(str_at(command, "name").unwrap_or_else(|| format!("x{}", p.c.len() - 1)));
             }
         }
         "set_variable" | "modify_variable" => {
@@ -1092,8 +1455,11 @@ fn apply_stream_command(
                     row[index] = *value;
                 }
             }
+            if let (Some(name), Some(names)) = (str_at(command, "name"), p.var_names.as_mut()) {
+                names[index] = name;
+            }
         }
-        "remove_variable" => {
+        "remove_variable" | "rm_variable" => {
             let index = usize_at(command, "index").ok_or("index is required")?;
             if index >= p.c.len() {
                 return Err("variable index out of range".to_string());
@@ -1108,6 +1474,9 @@ fn apply_stream_command(
             }
             if let Some(ub) = p.ub.as_mut() {
                 ub.remove(index);
+            }
+            if let Some(names) = p.var_names.as_mut() {
+                names.remove(index);
             }
         }
         "set_objective" => {
@@ -1160,6 +1529,7 @@ fn to_ipmip_problem(
     let problem = normalized_problem(problem.clone())?;
     let mut a = problem.a.clone();
     let mut b = problem.b.clone();
+    let mut con_names = problem.con_names.clone();
     for constraint in extra_constraints {
         if constraint.coefs.len() != problem.c.len() {
             return Err(format!(
@@ -1171,6 +1541,9 @@ fn to_ipmip_problem(
         }
         a.push(constraint.coefs.clone());
         b.push(constraint.rhs);
+        if let Some(names) = con_names.as_mut() {
+            names.push(constraint.name.clone());
+        }
     }
     Ok(IPMIPProblem {
         sense: sense_of(&problem.sense),
@@ -1180,7 +1553,7 @@ fn to_ipmip_problem(
         integer_vars: problem.integer_vars,
         ub: problem.ub,
         var_names: problem.var_names,
-        con_names: problem.con_names,
+        con_names,
         lazy_constraints: None,
         variable_nodes: None,
         constraint_nodes: None,
@@ -1194,9 +1567,13 @@ fn to_lp_problem(
     let problem = normalized_problem(problem.clone())?;
     let mut a = problem.a.clone();
     let mut b = problem.b.clone();
+    let mut con_names = problem.con_names.clone();
     for constraint in extra_constraints {
         a.push(constraint.coefs.clone());
         b.push(constraint.rhs);
+        if let Some(names) = con_names.as_mut() {
+            names.push(constraint.name.clone());
+        }
     }
     Ok(LPProblem {
         sense: sense_of(&problem.sense),
@@ -1210,7 +1587,7 @@ fn to_lp_problem(
             .ub
             .map(|ub| ub.into_iter().map(|v| v.is_finite().then_some(v)).collect()),
         var_names: problem.var_names.clone(),
-        con_names: problem.con_names.clone(),
+        con_names,
     })
 }
 
@@ -1231,6 +1608,36 @@ fn solve_lp_relaxation(
         status: sol.status,
         x: sol.x,
     })
+}
+
+fn is_pure_lp(problem: &MipProblemSpec) -> Result<bool, String> {
+    let problem = normalized_problem(problem.clone())?;
+    Ok(!problem.integer_vars.iter().any(|integer| *integer))
+}
+
+fn lp_report_from_solution(lp: &LPProblem, solution: &LPSolution) -> LpSolveReport {
+    LpSolveReport {
+        primal: LpPrimalReport {
+            objective: solution.objective.is_finite().then_some(solution.objective),
+            x: solution.x.clone(),
+            var_names: lp.var_names.clone(),
+        },
+        dual: LpDualReport {
+            inequality: solution.dual_ub.clone(),
+            equality: solution.dual_eq.clone(),
+            reduced_costs: solution.reduced_costs.clone(),
+            row_names: lp.con_names.clone(),
+            var_names: lp.var_names.clone(),
+        },
+        basis: LpBasisReport {
+            variables: solution.var_basis.clone(),
+            rows: solution.row_basis.clone(),
+        },
+        iterations: solution.iters,
+        solver: solution.solver.clone(),
+        elapsed_ms: solution.elapsed_ms,
+        message: solution.message.clone(),
+    }
 }
 
 fn first_fractional(problem: &MipProblemSpec, x: &[f64], int_tol: f64) -> Option<(usize, f64)> {
@@ -1264,6 +1671,66 @@ fn branch_constraints(var: usize, value: f64, n: usize, depth: usize) -> [Branch
     ]
 }
 
+fn split_subproblem_children(
+    job: &SubproblemJob,
+) -> Result<Option<(Vec<SubproblemJob>, String)>, String> {
+    let split_depth = job.options.split_depth.unwrap_or(1).min(8);
+    if job.depth >= split_depth {
+        return Ok(None);
+    }
+    let lp_max_iters = job.options.lp_max_iters.unwrap_or(5_000);
+    let int_tol = job.options.int_tol.unwrap_or(1e-6);
+    let relaxation = solve_lp_relaxation(&job.problem, &job.extra_constraints, lp_max_iters)?;
+    if relaxation.status != LPStatus::Optimal {
+        return Ok(None);
+    }
+    let Some((var, value)) = first_fractional(&job.problem, &relaxation.x, int_tol) else {
+        return Ok(None);
+    };
+
+    let [left, right] = branch_constraints(var, value, job.problem.c.len(), job.depth);
+    let next_depth = job.depth + 1;
+    let mut left_constraints = job.extra_constraints.clone();
+    left_constraints.push(left);
+    let mut right_constraints = job.extra_constraints.clone();
+    right_constraints.push(right);
+    let now = now_ms();
+    let root = job_retry_root(&job.job_id);
+    let children = vec![
+        SubproblemJob {
+            solve_id: job.solve_id.clone(),
+            request_id: job.request_id.clone(),
+            job_id: format!("{root}-split-d{next_depth}-left"),
+            revision: job.revision,
+            depth: next_depth,
+            master_node: job.master_node.clone(),
+            problem: job.problem.clone(),
+            extra_constraints: left_constraints,
+            options: job.options.clone(),
+            submitted_at_ms: now,
+        },
+        SubproblemJob {
+            solve_id: job.solve_id.clone(),
+            request_id: job.request_id.clone(),
+            job_id: format!("{root}-split-d{next_depth}-right"),
+            revision: job.revision,
+            depth: next_depth,
+            master_node: job.master_node.clone(),
+            problem: job.problem.clone(),
+            extra_constraints: right_constraints,
+            options: job.options.clone(),
+            submitted_at_ms: now,
+        },
+    ];
+    Ok(Some((
+        children,
+        format!(
+            "subproblem {} split at depth {} on x{}={value:.6}",
+            job.job_id, job.depth, var
+        ),
+    )))
+}
+
 fn build_frontier_jobs(
     problem: &MipProblemSpec,
     solve_id: &str,
@@ -1275,7 +1742,9 @@ fn build_frontier_jobs(
     let split_depth = options.split_depth.unwrap_or(1).min(8);
     let lp_max_iters = options.lp_max_iters.unwrap_or(5_000);
     let int_tol = options.int_tol.unwrap_or(1e-6);
+    let max_subproblems = options.max_subproblems.unwrap_or(256).clamp(1, 100_000);
     let mut warnings = Vec::new();
+    let mut warned_frontier_cap = false;
     let mut queue = VecDeque::from([FrontierNode {
         depth: 0,
         extra_constraints: Vec::new(),
@@ -1304,20 +1773,28 @@ fn build_frontier_jobs(
 
         if relaxation.status == LPStatus::Optimal && node.depth < split_depth {
             if let Some((var, value)) = first_fractional(problem, &relaxation.x, int_tol) {
-                let [left, right] = branch_constraints(var, value, problem.c.len(), node.depth);
-                let mut left_constraints = node.extra_constraints.clone();
-                left_constraints.push(left);
-                queue.push_back(FrontierNode {
-                    depth: node.depth + 1,
-                    extra_constraints: left_constraints,
-                });
-                let mut right_constraints = node.extra_constraints;
-                right_constraints.push(right);
-                queue.push_back(FrontierNode {
-                    depth: node.depth + 1,
-                    extra_constraints: right_constraints,
-                });
-                continue;
+                if jobs.len() + queue.len() + 2 <= max_subproblems {
+                    let [left, right] = branch_constraints(var, value, problem.c.len(), node.depth);
+                    let mut left_constraints = node.extra_constraints.clone();
+                    left_constraints.push(left);
+                    queue.push_back(FrontierNode {
+                        depth: node.depth + 1,
+                        extra_constraints: left_constraints,
+                    });
+                    let mut right_constraints = node.extra_constraints;
+                    right_constraints.push(right);
+                    queue.push_back(FrontierNode {
+                        depth: node.depth + 1,
+                        extra_constraints: right_constraints,
+                    });
+                    continue;
+                }
+                if !warned_frontier_cap {
+                    warnings.push(format!(
+                        "frontier split capped at {max_subproblems} subproblems; remaining fractional nodes will be delegated as subtree jobs"
+                    ));
+                    warned_frontier_cap = true;
+                }
             }
         }
 
@@ -1342,21 +1819,38 @@ fn build_frontier_jobs(
 fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult {
     let started = Instant::now();
     let mut accelerator = AcceleratorReport::runtime();
-    let mut pruned_reason = None;
     let result = catch_unwind(AssertUnwindSafe(|| {
         let preprocess = preprocess_bounds(&job.problem, &job.extra_constraints)?;
         accelerator = preprocess.accelerator;
         if let Some(reason) = preprocess.infeasible_reason {
-            pruned_reason = Some(reason);
-            return Ok(None);
+            return Ok(SubproblemSolveOutcome::Pruned(reason));
+        }
+        if !is_pure_lp(&job.problem)? {
+            if let Some((children, reason)) = split_subproblem_children(&job)? {
+                return Ok(SubproblemSolveOutcome::Split { children, reason });
+            }
+        }
+        if is_pure_lp(&job.problem)? {
+            let lp = to_lp_problem(&job.problem, &job.extra_constraints)?;
+            let solution = solve_lp_internal(
+                &lp,
+                &InternalSimplexOptions {
+                    max_iter: job.options.lp_max_iters,
+                    tol: Some(1e-9),
+                },
+            );
+            return Ok(SubproblemSolveOutcome::Lp {
+                problem: lp,
+                solution,
+            });
         }
         let problem = to_ipmip_problem(&job.problem, &job.extra_constraints)?;
         let solution = solve_ipmip_with_des(problem, job.options.to_ipmip_options());
-        Ok::<_, String>(Some(solution))
+        Ok::<_, String>(SubproblemSolveOutcome::IpMip(solution))
     }));
 
     match result {
-        Ok(Ok(Some(solution))) => SubproblemResult {
+        Ok(Ok(SubproblemSolveOutcome::IpMip(solution))) => SubproblemResult {
             solve_id: job.solve_id,
             request_id: job.request_id,
             job_id: job.job_id,
@@ -1371,6 +1865,8 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
                 .is_finite()
                 .then_some(solution.best_bound),
             gap: solution.gap.is_finite().then_some(solution.gap),
+            lp: None,
+            child_jobs: Vec::new(),
             nodes_explored: solution.nodes_explored,
             lp_solves: solution.lp_solves,
             elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
@@ -1378,13 +1874,46 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
             error: None,
             finished_at_ms: now_ms(),
         },
-        Ok(Ok(None)) => infeasible_subproblem(
-            job,
-            worker_node,
-            accelerator,
-            pruned_reason.unwrap_or_else(|| "bound preprocessing proved infeasible".to_string()),
-            started,
-        ),
+        Ok(Ok(SubproblemSolveOutcome::Split { children, reason })) => {
+            split_subproblem(job, worker_node, accelerator, children, reason, started)
+        }
+        Ok(Ok(SubproblemSolveOutcome::Lp { problem, solution })) => {
+            let optimal = solution.status == LPStatus::Optimal;
+            let objective = solution.objective.is_finite().then_some(solution.objective);
+            let error = if optimal {
+                None
+            } else {
+                solution
+                    .message
+                    .clone()
+                    .or_else(|| Some(format!("LP solve returned {}", solution.status.as_str())))
+            };
+            let lp = lp_report_from_solution(&problem, &solution);
+            SubproblemResult {
+                solve_id: job.solve_id,
+                request_id: job.request_id,
+                job_id: job.job_id,
+                revision: job.revision,
+                worker_node,
+                ok: optimal,
+                status: solution.status.as_str().to_string(),
+                z: objective,
+                x: solution.x,
+                best_bound: if optimal { objective } else { None },
+                gap: if optimal { Some(0.0) } else { None },
+                lp: Some(lp),
+                child_jobs: Vec::new(),
+                nodes_explored: 1,
+                lp_solves: 1,
+                elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+                accelerator,
+                error,
+                finished_at_ms: now_ms(),
+            }
+        }
+        Ok(Ok(SubproblemSolveOutcome::Pruned(reason))) => {
+            infeasible_subproblem(job, worker_node, accelerator, reason, started)
+        }
         Ok(Err(error)) => failed_subproblem(job, worker_node, accelerator, error, started),
         Err(_) => failed_subproblem(
             job,
@@ -1415,11 +1944,44 @@ fn failed_subproblem(
         x: Vec::new(),
         best_bound: None,
         gap: None,
+        lp: None,
+        child_jobs: Vec::new(),
         nodes_explored: 0,
         lp_solves: 0,
         elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
         accelerator,
         error: Some(error),
+        finished_at_ms: now_ms(),
+    }
+}
+
+fn split_subproblem(
+    job: SubproblemJob,
+    worker_node: String,
+    accelerator: AcceleratorReport,
+    children: Vec<SubproblemJob>,
+    reason: String,
+    started: Instant,
+) -> SubproblemResult {
+    SubproblemResult {
+        solve_id: job.solve_id,
+        request_id: job.request_id,
+        job_id: job.job_id,
+        revision: job.revision,
+        worker_node,
+        ok: false,
+        status: "split".to_string(),
+        z: None,
+        x: Vec::new(),
+        best_bound: None,
+        gap: None,
+        lp: None,
+        child_jobs: children,
+        nodes_explored: 0,
+        lp_solves: 1,
+        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+        accelerator,
+        error: Some(reason),
         finished_at_ms: now_ms(),
     }
 }
@@ -1443,6 +2005,8 @@ fn infeasible_subproblem(
         x: Vec::new(),
         best_bound: None,
         gap: None,
+        lp: None,
+        child_jobs: Vec::new(),
         nodes_explored: 0,
         lp_solves: 0,
         elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
@@ -1452,12 +2016,156 @@ fn infeasible_subproblem(
     }
 }
 
+fn job_retry_root(job_id: &str) -> &str {
+    job_id
+        .split_once("-retry-")
+        .map_or(job_id, |(root, _)| root)
+}
+
+fn job_retry_index(job_id: &str) -> usize {
+    job_id
+        .rsplit_once("-retry-")
+        .and_then(|(_, index)| index.parse::<usize>().ok())
+        .unwrap_or(0)
+}
+
+fn redelegated_job(original: &SubproblemJob, retry_index: usize) -> SubproblemJob {
+    let mut job = original.clone();
+    job.job_id = format!("{}-retry-{retry_index}", job_retry_root(&original.job_id));
+    job.submitted_at_ms = now_ms();
+    job
+}
+
+fn should_redelegate_result(
+    result: &SubproblemResult,
+    retry_index: usize,
+    max_retries: usize,
+) -> bool {
+    result.status == "error" && retry_index < max_retries
+}
+
+fn track_solve_started(
+    state: &AppState,
+    solve_id: &str,
+    request_id: &str,
+    revision: u64,
+    jobs_expected: usize,
+    distributed: bool,
+) {
+    let now = now_ms();
+    state.solves.lock().expect("solves mutex poisoned").insert(
+        solve_id.to_string(),
+        SolveRegistryEntry {
+            solve_id: solve_id.to_string(),
+            request_id: request_id.to_string(),
+            revision,
+            status: "running".to_string(),
+            jobs_expected,
+            distributed,
+            started_at_ms: now,
+            updated_at_ms: now,
+            ..SolveRegistryEntry::default()
+        },
+    );
+}
+
+fn track_job_submitted(state: &AppState, job: &SubproblemJob) {
+    let retry_index = job_retry_index(&job.job_id);
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get_mut(&job.solve_id) else {
+        return;
+    };
+    solve.jobs_published = solve.jobs_published.saturating_add(1);
+    solve.updated_at_ms = now_ms();
+    solve.jobs.insert(
+        job.job_id.clone(),
+        JobRegistryEntry {
+            job_id: job.job_id.clone(),
+            root_job_id: job_retry_root(&job.job_id).to_string(),
+            retry_index,
+            depth: job.depth,
+            status: "submitted".to_string(),
+            submitted_at_ms: job.submitted_at_ms,
+            ..JobRegistryEntry::default()
+        },
+    );
+}
+
+fn track_job_result(state: &AppState, result: &SubproblemResult, terminal: bool) {
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get_mut(&result.solve_id) else {
+        return;
+    };
+    let job = solve
+        .jobs
+        .entry(result.job_id.clone())
+        .or_insert_with(|| JobRegistryEntry {
+            job_id: result.job_id.clone(),
+            root_job_id: job_retry_root(&result.job_id).to_string(),
+            retry_index: job_retry_index(&result.job_id),
+            ..JobRegistryEntry::default()
+        });
+    job.status = if terminal || result.status == "split" {
+        result.status.clone()
+    } else {
+        "retrying".to_string()
+    };
+    job.worker_node = Some(result.worker_node.clone());
+    job.finished_at_ms = Some(result.finished_at_ms);
+    job.error = result.error.clone();
+    solve.updated_at_ms = now_ms();
+    if terminal {
+        solve.jobs_completed = solve.jobs_completed.saturating_add(1);
+    }
+}
+
+fn track_job_redelegated(state: &AppState, solve_id: &str) {
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get_mut(solve_id) else {
+        return;
+    };
+    solve.jobs_redelegated = solve.jobs_redelegated.saturating_add(1);
+    solve.updated_at_ms = now_ms();
+}
+
+fn track_job_split(state: &AppState, solve_id: &str, child_count: usize) {
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get_mut(solve_id) else {
+        return;
+    };
+    solve.jobs_split = solve.jobs_split.saturating_add(1);
+    solve.jobs_expected = solve
+        .jobs_expected
+        .saturating_add(child_count.saturating_sub(1));
+    solve.updated_at_ms = now_ms();
+}
+
+fn track_solve_finished(state: &AppState, response: &SolveResponse) {
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get_mut(&response.solve_id) else {
+        return;
+    };
+    solve.status = response.status.clone();
+    solve.jobs_expected = response.jobs_expected;
+    solve.jobs_published = response.jobs_published;
+    solve.jobs_completed = response.jobs_completed;
+    solve.jobs_redelegated = response.jobs_redelegated;
+    solve.jobs_split = response.jobs_split;
+    solve.timed_out = response.timed_out;
+    solve.warnings = response.warnings.clone();
+    solve.updated_at_ms = response.generated_at_ms;
+    solve.finished_at_ms = Some(response.generated_at_ms);
+}
+
 fn aggregate_results(
     solve_id: String,
     request_id: String,
     revision: u64,
     problem: &MipProblemSpec,
+    jobs_expected: usize,
     jobs_published: usize,
+    jobs_redelegated: usize,
+    jobs_split: usize,
     results: Vec<SubproblemResult>,
     timed_out: bool,
     distributed: bool,
@@ -1492,9 +2200,18 @@ fn aggregate_results(
     if timed_out {
         warnings.push("solve timed out before every subproblem result returned".to_string());
     }
-    let all_finished = results.len() == jobs_published && !timed_out;
-    let all_optimal = all_finished && results.iter().all(|result| result.status == "optimal");
-    let status = if best.is_some() && all_optimal {
+    let all_finished = results.len() == jobs_expected && !timed_out;
+    let all_terminal = all_finished
+        && results
+            .iter()
+            .all(|result| matches!(result.status.as_str(), "optimal" | "infeasible"));
+    let has_error = results.iter().any(|result| {
+        matches!(
+            result.status.as_str(),
+            "error" | "iter-limit" | "numerical-error"
+        )
+    });
+    let status = if best.is_some() && all_terminal {
         "optimal"
     } else if best.is_some() {
         "feasible-partial"
@@ -1502,6 +2219,8 @@ fn aggregate_results(
         "unbounded"
     } else if timed_out {
         "timeout"
+    } else if has_error {
+        "error"
     } else {
         "infeasible"
     };
@@ -1516,8 +2235,12 @@ fn aggregate_results(
         x: best.map(|r| r.x.clone()).unwrap_or_default(),
         best_bound,
         gap,
+        lp: best.and_then(|r| r.lp.clone()),
+        jobs_expected,
         jobs_published,
         jobs_completed: results.len(),
+        jobs_redelegated,
+        jobs_split,
         timed_out,
         distributed,
         node_id: state.node_id.clone(),
@@ -1526,6 +2249,507 @@ fn aggregate_results(
         warnings,
         generated_at_ms: now_ms(),
     }
+}
+
+fn accept_subproblem_result(
+    result: SubproblemResult,
+    solve_id: &str,
+    expected_job_ids: &HashSet<String>,
+    completed_job_ids: &mut HashSet<String>,
+) -> Result<Option<SubproblemResult>, String> {
+    if result.solve_id != solve_id {
+        return Ok(None);
+    }
+    if !expected_job_ids.contains(&result.job_id) {
+        return Err(format!("ignored result for unknown job {}", result.job_id));
+    }
+    if !completed_job_ids.insert(result.job_id.clone()) {
+        return Err(format!(
+            "ignored duplicate result for job {}",
+            result.job_id
+        ));
+    }
+    Ok(Some(result))
+}
+
+fn i32_count(value: usize) -> i32 {
+    value.min(i32::MAX as usize) as i32
+}
+
+fn json_value<T: Serialize>(value: &T) -> Value {
+    serde_json::to_value(value).unwrap_or_else(|_| json!({}))
+}
+
+async fn record_pg_result(
+    state: &AppState,
+    label: &str,
+    result: Result<sqlx::postgres::PgQueryResult, sqlx::Error>,
+) -> bool {
+    match result {
+        Ok(_) => true,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!("mip solver postgres {label} failed: {error}");
+            false
+        }
+    }
+}
+
+async fn persist_event(
+    state: &AppState,
+    event_kind: &str,
+    solve_id: Option<&str>,
+    session_id: Option<&str>,
+    job_id: Option<&str>,
+    payload: Value,
+) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let sql = format!(
+        "insert into {} (solve_id, session_id, job_id, event_kind, payload) values ($1, $2, $3, $4, $5)",
+        MIP_SOLVER_EVENTS_TABLE
+    );
+    record_pg_result(
+        state,
+        "insert event",
+        sqlx::query(&sql)
+            .bind(solve_id.map(str::to_string))
+            .bind(session_id.map(str::to_string))
+            .bind(job_id.map(str::to_string))
+            .bind(event_kind)
+            .bind(payload)
+            .execute(pool)
+            .await,
+    )
+    .await;
+}
+
+async fn persist_solve_started(
+    state: &AppState,
+    solve_id: &str,
+    request_id: &str,
+    revision: u64,
+    problem: &MipProblemSpec,
+    options: &SolveOptions,
+    jobs_expected: usize,
+    distributed: bool,
+) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let problem_json = json_value(problem);
+    let options_json = json_value(options);
+    let sql = format!(
+        concat!(
+            "insert into {} (solve_id, request_id, revision, status, node_id, node_role, problem, options, ",
+            "jobs_expected, distributed, updated_at) values ($1, $2, $3, 'running', $4, $5, $6, $7, $8, $9, now()) ",
+            "on conflict (solve_id) do update set request_id = excluded.request_id, revision = excluded.revision, ",
+            "status = excluded.status, node_id = excluded.node_id, node_role = excluded.node_role, problem = excluded.problem, ",
+            "options = excluded.options, jobs_expected = excluded.jobs_expected, distributed = excluded.distributed, updated_at = now()"
+        ),
+        MIP_SOLVER_SOLVES_TABLE
+    );
+    let wrote = record_pg_result(
+        state,
+        "upsert solve start",
+        sqlx::query(&sql)
+            .bind(solve_id)
+            .bind(request_id)
+            .bind(revision as i64)
+            .bind(&state.node_id)
+            .bind(state.role.as_str())
+            .bind(problem_json)
+            .bind(options_json)
+            .bind(i32_count(jobs_expected))
+            .bind(distributed)
+            .execute(pool)
+            .await,
+    )
+    .await;
+    if wrote {
+        persist_event(
+            state,
+            "mip-solver.solve-started",
+            Some(solve_id),
+            None,
+            None,
+            json!({
+                "requestId": request_id,
+                "revision": revision,
+                "jobsExpected": jobs_expected,
+                "distributed": distributed,
+            }),
+        )
+        .await;
+    }
+}
+
+async fn persist_solve_registry_entry(state: &AppState, solve_id: &str) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let entry = state
+        .solves
+        .lock()
+        .expect("solves mutex poisoned")
+        .get(solve_id)
+        .cloned();
+    let Some(entry) = entry else {
+        return;
+    };
+    let warnings = json_value(&entry.warnings);
+    let sql = format!(
+        concat!(
+            "update {} set status = $2, jobs_expected = $3, jobs_published = $4, jobs_completed = $5, ",
+            "jobs_redelegated = $6, jobs_split = $7, timed_out = $8, distributed = $9, warnings = $10, ",
+            "updated_at = now(), finished_at = case when $11 then coalesce(finished_at, now()) else finished_at end ",
+            "where solve_id = $1"
+        ),
+        MIP_SOLVER_SOLVES_TABLE
+    );
+    record_pg_result(
+        state,
+        "update solve registry",
+        sqlx::query(&sql)
+            .bind(&entry.solve_id)
+            .bind(&entry.status)
+            .bind(i32_count(entry.jobs_expected))
+            .bind(i32_count(entry.jobs_published))
+            .bind(i32_count(entry.jobs_completed))
+            .bind(i32_count(entry.jobs_redelegated))
+            .bind(i32_count(entry.jobs_split))
+            .bind(entry.timed_out)
+            .bind(entry.distributed)
+            .bind(warnings)
+            .bind(entry.finished_at_ms.is_some())
+            .execute(pool)
+            .await,
+    )
+    .await;
+}
+
+async fn persist_solve_response(state: &AppState, response: &SolveResponse) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let response_json = json_value(response);
+    let warnings = json_value(&response.warnings);
+    let sql = format!(
+        concat!(
+            "update {} set status = $2, response = $3, jobs_expected = $4, jobs_published = $5, ",
+            "jobs_completed = $6, jobs_redelegated = $7, jobs_split = $8, timed_out = $9, distributed = $10, ",
+            "warnings = $11, updated_at = now(), finished_at = now() where solve_id = $1"
+        ),
+        MIP_SOLVER_SOLVES_TABLE
+    );
+    let wrote = record_pg_result(
+        state,
+        "update solve response",
+        sqlx::query(&sql)
+            .bind(&response.solve_id)
+            .bind(&response.status)
+            .bind(response_json)
+            .bind(i32_count(response.jobs_expected))
+            .bind(i32_count(response.jobs_published))
+            .bind(i32_count(response.jobs_completed))
+            .bind(i32_count(response.jobs_redelegated))
+            .bind(i32_count(response.jobs_split))
+            .bind(response.timed_out)
+            .bind(response.distributed)
+            .bind(warnings)
+            .execute(pool)
+            .await,
+    )
+    .await;
+    if wrote {
+        persist_event(
+            state,
+            "mip-solver.solve-finished",
+            Some(&response.solve_id),
+            None,
+            None,
+            json!({
+                "requestId": response.request_id,
+                "status": response.status,
+                "jobsExpected": response.jobs_expected,
+                "jobsCompleted": response.jobs_completed,
+                "jobsRedelegated": response.jobs_redelegated,
+                "jobsSplit": response.jobs_split,
+                "timedOut": response.timed_out,
+            }),
+        )
+        .await;
+    }
+}
+
+async fn persist_job_submitted(state: &AppState, job: &SubproblemJob) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let job_payload = json_value(job);
+    let sql = format!(
+        concat!(
+            "insert into {} (job_id, solve_id, root_job_id, retry_index, depth, status, job_payload, updated_at) ",
+            "values ($1, $2, $3, $4, $5, 'submitted', $6, now()) ",
+            "on conflict (job_id) do update set status = excluded.status, job_payload = excluded.job_payload, ",
+            "updated_at = now()"
+        ),
+        MIP_SOLVER_JOBS_TABLE
+    );
+    let wrote = record_pg_result(
+        state,
+        "upsert job submitted",
+        sqlx::query(&sql)
+            .bind(&job.job_id)
+            .bind(&job.solve_id)
+            .bind(job_retry_root(&job.job_id))
+            .bind(i32_count(job_retry_index(&job.job_id)))
+            .bind(i32_count(job.depth))
+            .bind(job_payload)
+            .execute(pool)
+            .await,
+    )
+    .await;
+    if wrote {
+        persist_event(
+            state,
+            "mip-solver.subproblem-submitted",
+            Some(&job.solve_id),
+            None,
+            Some(&job.job_id),
+            json!({
+                "requestId": job.request_id,
+                "depth": job.depth,
+                "retryIndex": job_retry_index(&job.job_id),
+                "rootJobId": job_retry_root(&job.job_id),
+            }),
+        )
+        .await;
+    }
+}
+
+async fn persist_job_result(state: &AppState, result: &SubproblemResult, terminal: bool) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let status = if terminal || result.status == "split" {
+        result.status.clone()
+    } else {
+        "retrying".to_string()
+    };
+    let result_payload = json_value(result);
+    let sql = format!(
+        concat!(
+            "insert into {} (job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, result_payload, finished_at, updated_at) ",
+            "values ($1, $2, $3, $4, 0, $5, $6, $7, now(), now()) ",
+            "on conflict (job_id) do update set status = excluded.status, worker_node = excluded.worker_node, ",
+            "result_payload = excluded.result_payload, finished_at = excluded.finished_at, updated_at = now()"
+        ),
+        MIP_SOLVER_JOBS_TABLE
+    );
+    let wrote = record_pg_result(
+        state,
+        "upsert job result",
+        sqlx::query(&sql)
+            .bind(&result.job_id)
+            .bind(&result.solve_id)
+            .bind(job_retry_root(&result.job_id))
+            .bind(i32_count(job_retry_index(&result.job_id)))
+            .bind(&status)
+            .bind(&result.worker_node)
+            .bind(result_payload)
+            .execute(pool)
+            .await,
+    )
+    .await;
+    if wrote {
+        let event_kind = if result.status == "split" {
+            "mip-solver.subproblem-split"
+        } else if terminal {
+            "mip-solver.subproblem-finished"
+        } else {
+            "mip-solver.subproblem-retrying"
+        };
+        persist_event(
+            state,
+            event_kind,
+            Some(&result.solve_id),
+            None,
+            Some(&result.job_id),
+            json!({
+                "requestId": result.request_id,
+                "status": result.status,
+                "terminal": terminal,
+                "workerNode": result.worker_node,
+                "error": result.error,
+                "childJobCount": result.child_jobs.len(),
+            }),
+        )
+        .await;
+    }
+}
+
+async fn persist_session_model(state: &AppState, session_id: &str, session: &LiveSession) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let problem = session
+        .problem
+        .as_ref()
+        .map(json_value)
+        .unwrap_or_else(|| json!({}));
+    let sql = format!(
+        concat!(
+            "insert into {} (session_id, revision, problem, updated_at) values ($1, $2, $3, now()) ",
+            "on conflict (session_id) do update set revision = excluded.revision, problem = excluded.problem, updated_at = now()"
+        ),
+        MIP_SOLVER_SESSIONS_TABLE
+    );
+    let wrote = record_pg_result(
+        state,
+        "upsert session model",
+        sqlx::query(&sql)
+            .bind(session_id)
+            .bind(session.revision as i64)
+            .bind(problem)
+            .execute(pool)
+            .await,
+    )
+    .await;
+    if wrote {
+        persist_event(
+            state,
+            "mip-solver.model-revision",
+            None,
+            Some(session_id),
+            None,
+            json!({"revision": session.revision}),
+        )
+        .await;
+    }
+}
+
+async fn redis_set_json(state: &AppState, key: String, value: Value) {
+    let Some(client) = &state.redis else {
+        return;
+    };
+    let ttl_seconds = env_u64("MIP_SOLVER_REDIS_TTL_SECONDS", 86_400);
+    let payload = match serde_json::to_string(&value) {
+        Ok(payload) => payload,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!("mip solver redis payload serialization failed for {key}: {error}");
+            return;
+        }
+    };
+    let mut connection = match client.get_multiplexed_async_connection().await {
+        Ok(connection) => connection,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!("mip solver redis connection failed for {key}: {error}");
+            return;
+        }
+    };
+    let result: redis::RedisResult<()> = redis::cmd("SET")
+        .arg(&key)
+        .arg(payload)
+        .arg("EX")
+        .arg(ttl_seconds)
+        .query_async(&mut connection)
+        .await;
+    if let Err(error) = result {
+        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+        eprintln!("mip solver redis SET failed for {key}: {error}");
+    }
+}
+
+async fn cache_solve_registry_entry(state: &AppState, solve_id: &str) {
+    let entry = state
+        .solves
+        .lock()
+        .expect("solves mutex poisoned")
+        .get(solve_id)
+        .cloned();
+    let Some(entry) = entry else {
+        return;
+    };
+    let prefix = redis_key_prefix();
+    redis_set_json(
+        state,
+        mip_solver_solve_snapshot_key(&prefix, solve_id),
+        json!({
+            "schema": "dd.mip-solver.solve-snapshot.v1",
+            "service": SERVICE_NAME,
+            "solve": entry,
+            "generatedAtMs": now_ms(),
+        }),
+    )
+    .await;
+}
+
+async fn cache_solve_frontier(state: &AppState, solve_id: &str, jobs: &[SubproblemJob]) {
+    let prefix = redis_key_prefix();
+    redis_set_json(
+        state,
+        mip_solver_solve_frontier_key(&prefix, solve_id),
+        json!({
+            "schema": "dd.mip-solver.frontier.v1",
+            "service": SERVICE_NAME,
+            "solveId": solve_id,
+            "jobs": jobs,
+            "generatedAtMs": now_ms(),
+        }),
+    )
+    .await;
+}
+
+async fn snapshot_solve_state(state: &AppState, solve_id: &str) {
+    cache_solve_registry_entry(state, solve_id).await;
+    persist_solve_registry_entry(state, solve_id).await;
+}
+
+async fn snapshot_solve_frontier(state: &AppState, solve_id: &str, jobs: &[SubproblemJob]) {
+    cache_solve_frontier(state, solve_id, jobs).await;
+}
+
+async fn finalize_solve_state(state: &AppState, response: &SolveResponse) {
+    cache_solve_registry_entry(state, &response.solve_id).await;
+    persist_solve_response(state, response).await;
+}
+
+async fn cache_session_model(state: &AppState, session_id: &str, session: LiveSession) {
+    let prefix = redis_key_prefix();
+    redis_set_json(
+        state,
+        mip_solver_session_model_key(&prefix, session_id),
+        json!({
+            "schema": "dd.mip-solver.session-model.v1",
+            "service": SERVICE_NAME,
+            "sessionId": session_id,
+            "revision": session.revision,
+            "problem": session.problem,
+            "generatedAtMs": now_ms(),
+        }),
+    )
+    .await;
+}
+
+async fn snapshot_session_model(state: &AppState, session_id: &str, session: LiveSession) {
+    cache_session_model(state, session_id, session.clone()).await;
+    persist_session_model(state, session_id, &session).await;
+}
+
+async fn record_job_submitted(state: &AppState, job: &SubproblemJob) {
+    track_job_submitted(state, job);
+    persist_job_submitted(state, job).await;
+    persist_solve_registry_entry(state, &job.solve_id).await;
+}
+
+async fn record_job_result(state: &AppState, result: &SubproblemResult, terminal: bool) {
+    track_job_result(state, result, terminal);
+    persist_job_result(state, result, terminal).await;
+    persist_solve_registry_entry(state, &result.solve_id).await;
 }
 
 async fn publish_event(state: &AppState, event_name: &str, payload: Value) {
@@ -1548,6 +2772,197 @@ async fn publish_event(state: &AppState, event_name: &str, payload: Value) {
     }
 }
 
+async fn publish_control(state: &AppState, command_name: &str, payload: Value) {
+    let Some(nats) = &state.nats else {
+        return;
+    };
+    let command = json!({
+        "schema":"dd.mip-solver.control.v1",
+        "service": SERVICE_NAME,
+        "nodeId": state.node_id,
+        "role": state.role.as_str(),
+        "commandName": command_name,
+        "payload": payload,
+        "timeMs": now_ms(),
+    });
+    if let Ok(bytes) = serde_json::to_vec(&command) {
+        let _ = nats
+            .publish(state.control_subject.clone(), bytes.into())
+            .await;
+    }
+}
+
+fn value_str(value: &Value, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(|s| s.to_string())
+}
+
+fn record_worker_control_frame(state: &AppState, frame: &Value) -> Result<(), String> {
+    if frame.get("service").and_then(Value::as_str) != Some(SERVICE_NAME) {
+        return Ok(());
+    }
+    let node_id =
+        value_str(frame, "nodeId").ok_or_else(|| "control frame missing nodeId".to_string())?;
+    let command = value_str(frame, "commandName")
+        .ok_or_else(|| "control frame missing commandName".to_string())?;
+    let payload = frame.get("payload").unwrap_or(&Value::Null);
+    let seen_at = frame
+        .get("timeMs")
+        .and_then(Value::as_u64)
+        .map(u128::from)
+        .unwrap_or_else(now_ms);
+
+    let mut workers = state.workers.lock().expect("workers mutex poisoned");
+    let worker = workers
+        .entry(node_id.clone())
+        .or_insert_with(|| WorkerNodeStatus {
+            node_id: node_id.clone(),
+            ..WorkerNodeStatus::default()
+        });
+    worker.last_command = command.clone();
+    worker.last_seen_ms = seen_at;
+
+    if let Some(consumer) = value_str(payload, "consumer") {
+        worker.consumer = Some(consumer);
+    }
+    if let Some(jobs_subject) = value_str(payload, "jobsSubject") {
+        worker.jobs_subject = Some(jobs_subject);
+    }
+    if let Some(results_subject) = value_str(payload, "resultsSubject") {
+        worker.results_subject = Some(results_subject);
+    }
+
+    match command.as_str() {
+        "worker-ready" => {
+            worker.ready_at_ms.get_or_insert(seen_at);
+        }
+        "request-work" => {
+            worker.request_count = worker.request_count.saturating_add(1);
+        }
+        "worker-completed" => {
+            worker.completed_count = worker.completed_count.saturating_add(1);
+            worker.last_job_id = value_str(payload, "jobId");
+            worker.last_solve_id = value_str(payload, "solveId");
+            worker.last_status = value_str(payload, "status");
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn mip_stream_config() -> async_nats::jetstream::stream::Config {
+    async_nats::jetstream::stream::Config {
+        name: DD_REMOTE_MIP_SOLVER_STREAM_NAME.to_string(),
+        subjects: DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS
+            .iter()
+            .map(|subject| subject.to_string())
+            .collect(),
+        retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+        max_age: Duration::from_secs(60 * 60 * 24 * 7),
+        max_message_size: 8 * 1024 * 1024,
+        ..Default::default()
+    }
+}
+
+async fn ensure_mip_stream(
+    client: async_nats::Client,
+) -> Result<async_nats::jetstream::stream::Stream, Box<dyn Error + Send + Sync>> {
+    let jetstream = async_nats::jetstream::new(client);
+    Ok(jetstream.get_or_create_stream(mip_stream_config()).await?)
+}
+
+async fn jetstream_publish_ack(
+    client: &async_nats::Client,
+    subject: &str,
+    payload: Vec<u8>,
+) -> Result<u64, String> {
+    let jetstream = async_nats::jetstream::new(client.clone());
+    jetstream
+        .get_or_create_stream(mip_stream_config())
+        .await
+        .map_err(|err| format!("ensure JetStream stream: {err}"))?;
+    let ack = jetstream
+        .publish(subject.to_string(), payload.into())
+        .await
+        .map_err(|err| format!("JetStream publish {subject}: {err}"))?
+        .await
+        .map_err(|err| format!("JetStream publish ack {subject}: {err}"))?;
+    if ack.stream != DD_REMOTE_MIP_SOLVER_STREAM_NAME {
+        return Err(format!(
+            "JetStream ack for {subject} landed in stream {}, expected {}",
+            ack.stream, DD_REMOTE_MIP_SOLVER_STREAM_NAME
+        ));
+    }
+    Ok(ack.sequence)
+}
+
+async fn publish_subproblem_job(
+    client: &async_nats::Client,
+    jobs_subject: &str,
+    job: &SubproblemJob,
+) -> Result<u64, String> {
+    let payload = serde_json::to_vec(job).map_err(|err| format!("serialize job: {err}"))?;
+    jetstream_publish_ack(client, jobs_subject, payload).await
+}
+
+fn result_consumer_name(solve_id: &str) -> String {
+    format!("{solve_id}-results")
+}
+
+fn result_consumer_config(
+    consumer_name: &str,
+    result_subject: &str,
+    start_sequence: u64,
+) -> async_nats::jetstream::consumer::pull::Config {
+    async_nats::jetstream::consumer::pull::Config {
+        name: Some(consumer_name.to_string()),
+        deliver_policy: async_nats::jetstream::consumer::DeliverPolicy::ByStartSequence {
+            start_sequence,
+        },
+        filter_subject: result_subject.to_string(),
+        ack_wait: Duration::from_secs(60),
+        max_deliver: 1,
+        max_ack_pending: 1024,
+        inactive_threshold: Duration::from_secs(120),
+        ..Default::default()
+    }
+}
+
+fn worker_consumer_config(
+    consumer_name: &str,
+    jobs_subject: &str,
+    ack_wait: Duration,
+    max_ack_pending: i64,
+    max_deliver: i64,
+) -> async_nats::jetstream::consumer::pull::Config {
+    async_nats::jetstream::consumer::pull::Config {
+        durable_name: Some(consumer_name.to_string()),
+        filter_subject: jobs_subject.to_string(),
+        ack_wait,
+        max_ack_pending,
+        max_deliver,
+        ..Default::default()
+    }
+}
+
+async fn build_result_consumer(
+    client: async_nats::Client,
+    consumer_name: &str,
+    result_subject: &str,
+    start_sequence: u64,
+) -> Result<async_nats::jetstream::consumer::PullConsumer, Box<dyn Error + Send + Sync>> {
+    let stream = ensure_mip_stream(client).await?;
+    let config = result_consumer_config(consumer_name, result_subject, start_sequence);
+    Ok(stream
+        .get_or_create_consumer::<async_nats::jetstream::consumer::pull::Config>(
+            consumer_name,
+            config,
+        )
+        .await?)
+}
+
 async fn solve_problem_distributed(
     state: AppState,
     request_id: String,
@@ -1565,48 +2980,129 @@ async fn solve_problem_distributed(
         &state.node_id,
         &options,
     )?;
+    track_solve_started(
+        &state,
+        &solve_id,
+        &request_id,
+        revision,
+        jobs.len(),
+        state.nats.is_some(),
+    );
+    persist_solve_started(
+        &state,
+        &solve_id,
+        &request_id,
+        revision,
+        &problem,
+        &options,
+        jobs.len(),
+        state.nats.is_some(),
+    )
+    .await;
+    snapshot_solve_state(&state, &solve_id).await;
+    snapshot_solve_frontier(&state, &solve_id, &jobs).await;
     if jobs.is_empty() {
-        return Ok(aggregate_results(
+        let response = aggregate_results(
             solve_id,
             request_id,
             revision,
             &problem,
+            0,
+            0,
+            0,
             0,
             Vec::new(),
             false,
             false,
             &state,
             warnings,
-        ));
+        );
+        track_solve_finished(&state, &response);
+        finalize_solve_state(&state, &response).await;
+        return Ok(response);
     }
 
     let Some(nats) = state.nats.clone() else {
         let mut results = Vec::new();
-        for job in jobs {
-            let node = state.node_id.clone();
-            let result = tokio::task::spawn_blocking(move || solve_subproblem(job, node))
-                .await
-                .map_err(|err| format!("local solve task failed: {err}"))?;
-            results.push(result);
+        let mut jobs_published = 0usize;
+        let mut jobs_redelegated = 0usize;
+        let mut jobs_split = 0usize;
+        let mut jobs_expected = jobs.len();
+        let max_retries = options.max_job_retries.unwrap_or(2);
+        let mut pending: VecDeque<SubproblemJob> = jobs.iter().cloned().collect();
+        while let Some(initial_job) = pending.pop_front() {
+            let mut job = initial_job;
+            let mut retry_index = job_retry_index(&job.job_id);
+            loop {
+                jobs_published += 1;
+                record_job_submitted(&state, &job).await;
+                let node = state.node_id.clone();
+                let attempt_job = job.clone();
+                let result =
+                    tokio::task::spawn_blocking(move || solve_subproblem(attempt_job, node))
+                        .await
+                        .map_err(|err| format!("local solve task failed: {err}"))?;
+                if result.status == "split" && !result.child_jobs.is_empty() {
+                    let child_count = result.child_jobs.len();
+                    let child_jobs = result.child_jobs.clone();
+                    record_job_result(&state, &result, false).await;
+                    track_job_split(&state, &solve_id, child_count);
+                    state
+                        .metrics
+                        .subproblem_jobs_split_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    jobs_split += 1;
+                    jobs_expected = jobs_expected.saturating_add(child_count.saturating_sub(1));
+                    snapshot_solve_state(&state, &solve_id).await;
+                    snapshot_solve_frontier(&state, &solve_id, &child_jobs).await;
+                    warnings.push(format!(
+                        "local job {} split into {} child subproblems",
+                        result.job_id, child_count
+                    ));
+                    for child in child_jobs {
+                        pending.push_back(child);
+                    }
+                    break;
+                }
+                if should_redelegate_result(&result, retry_index, max_retries) {
+                    record_job_result(&state, &result, false).await;
+                    warnings.push(format!(
+                        "local job {} failed; re-delegating retry {} of {}",
+                        result.job_id,
+                        retry_index + 1,
+                        max_retries
+                    ));
+                    retry_index += 1;
+                    job = redelegated_job(&job, retry_index);
+                    jobs_redelegated += 1;
+                    track_job_redelegated(&state, &solve_id);
+                    snapshot_solve_state(&state, &solve_id).await;
+                    continue;
+                }
+                record_job_result(&state, &result, true).await;
+                results.push(result);
+                break;
+            }
         }
-        return Ok(aggregate_results(
+        let response = aggregate_results(
             solve_id,
             request_id,
             revision,
             &problem,
-            results.len(),
+            jobs_expected,
+            jobs_published,
+            jobs_redelegated,
+            jobs_split,
             results,
             false,
             false,
             &state,
             warnings,
-        ));
+        );
+        track_solve_finished(&state, &response);
+        finalize_solve_state(&state, &response).await;
+        return Ok(response);
     };
-
-    let mut result_sub = nats
-        .subscribe(state.results_subject.clone())
-        .await
-        .map_err(|err| format!("subscribe results: {err}"))?;
 
     publish_event(
         &state,
@@ -1615,40 +3111,218 @@ async fn solve_problem_distributed(
     )
     .await;
 
+    let mut first_job_sequence = None;
     for job in &jobs {
-        let payload = serde_json::to_vec(job).map_err(|err| format!("serialize job: {err}"))?;
-        nats.publish(state.jobs_subject.clone(), payload.into())
-            .await
-            .map_err(|err| format!("publish subproblem job: {err}"))?;
+        let sequence = publish_subproblem_job(&nats, &state.jobs_subject, job).await?;
+        first_job_sequence.get_or_insert(sequence);
+        record_job_submitted(&state, job).await;
         state
             .metrics
             .subproblem_jobs_published_total
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    let result_consumer = build_result_consumer(
+        nats.clone(),
+        &result_consumer_name(&solve_id),
+        &state.results_subject,
+        first_job_sequence.unwrap_or(1),
+    )
+    .await
+    .map_err(|err| format!("create result consumer: {err}"))?;
+    let mut result_sub = result_consumer
+        .messages()
+        .await
+        .map_err(|err| format!("open result consumer: {err}"))?;
+
     let timeout = Duration::from_millis(options.timeout_ms.unwrap_or(120_000));
     let deadline = Instant::now() + timeout;
     let mut results = Vec::new();
+    let mut jobs_expected = jobs.len();
+    let mut jobs_published = jobs.len();
+    let mut jobs_redelegated = 0usize;
+    let mut jobs_split = 0usize;
+    let max_retries = options.max_job_retries.unwrap_or(2);
+    let mut jobs_by_id: HashMap<String, SubproblemJob> = jobs
+        .iter()
+        .cloned()
+        .map(|job| (job.job_id.clone(), job))
+        .collect();
+    let mut retry_index_by_job_id: HashMap<String, usize> =
+        jobs.iter().map(|job| (job.job_id.clone(), 0)).collect();
+    let mut expected_job_ids: HashSet<String> = jobs.iter().map(|job| job.job_id.clone()).collect();
+    let mut completed_job_ids = HashSet::new();
     let mut timed_out = false;
-    while results.len() < jobs.len() {
+    while results.len() < jobs_expected {
         let now = Instant::now();
         if now >= deadline {
             timed_out = true;
             break;
         }
         match tokio::time::timeout(deadline - now, result_sub.next()).await {
-            Ok(Some(message)) => {
+            Ok(Some(Ok(message))) => {
                 let parsed = serde_json::from_slice::<SubproblemResult>(&message.payload).ok();
-                if let Some(result) = parsed.filter(|result| result.solve_id == solve_id) {
-                    results.push(result);
-                    state
-                        .metrics
-                        .subproblem_jobs_completed_total
-                        .fetch_add(1, Ordering::Relaxed);
+                if let Some(result) = parsed {
+                    match accept_subproblem_result(
+                        result,
+                        &solve_id,
+                        &expected_job_ids,
+                        &mut completed_job_ids,
+                    ) {
+                        Ok(Some(result)) => {
+                            state
+                                .metrics
+                                .subproblem_jobs_completed_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            let retry_index = retry_index_by_job_id
+                                .get(&result.job_id)
+                                .copied()
+                                .unwrap_or(0);
+                            if result.status == "split" && !result.child_jobs.is_empty() {
+                                let child_count = result.child_jobs.len();
+                                let child_jobs = result.child_jobs.clone();
+                                let mut published_children = Vec::with_capacity(child_count);
+                                let mut publish_error = None;
+                                for child in child_jobs {
+                                    match publish_subproblem_job(&nats, &state.jobs_subject, &child)
+                                        .await
+                                    {
+                                        Ok(_) => {
+                                            record_job_submitted(&state, &child).await;
+                                            expected_job_ids.insert(child.job_id.clone());
+                                            retry_index_by_job_id.insert(child.job_id.clone(), 0);
+                                            jobs_by_id.insert(child.job_id.clone(), child.clone());
+                                            published_children.push(child.job_id);
+                                            jobs_published += 1;
+                                            state
+                                                .metrics
+                                                .subproblem_jobs_published_total
+                                                .fetch_add(1, Ordering::Relaxed);
+                                        }
+                                        Err(error) => {
+                                            publish_error = Some(error);
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if let Some(error) = publish_error {
+                                    warnings.push(format!(
+                                        "failed to publish split children for job {}: {error}",
+                                        result.job_id
+                                    ));
+                                    let mut terminal_error = result.clone();
+                                    terminal_error.status = "error".to_string();
+                                    terminal_error.error =
+                                        Some(format!("failed to publish split children: {error}"));
+                                    record_job_result(&state, &terminal_error, true).await;
+                                    results.push(terminal_error);
+                                    continue;
+                                }
+
+                                record_job_result(&state, &result, false).await;
+                                track_job_split(&state, &solve_id, child_count);
+                                jobs_expected =
+                                    jobs_expected.saturating_add(child_count.saturating_sub(1));
+                                jobs_split += 1;
+                                snapshot_solve_state(&state, &solve_id).await;
+                                snapshot_solve_frontier(&state, &solve_id, &result.child_jobs)
+                                    .await;
+                                state
+                                    .metrics
+                                    .subproblem_jobs_split_total
+                                    .fetch_add(1, Ordering::Relaxed);
+                                publish_event(
+                                    &state,
+                                    "subproblem-split",
+                                    json!({
+                                        "solveId": &solve_id,
+                                        "requestId": &request_id,
+                                        "parentJobId": &result.job_id,
+                                        "childJobIds": published_children,
+                                        "childCount": child_count,
+                                        "workerNode": &result.worker_node,
+                                        "reason": &result.error,
+                                    }),
+                                )
+                                .await;
+                                continue;
+                            }
+                            if should_redelegate_result(&result, retry_index, max_retries) {
+                                record_job_result(&state, &result, false).await;
+                                let Some(original_job) = jobs_by_id.get(&result.job_id).cloned()
+                                else {
+                                    warnings.push(format!(
+                                        "cannot re-delegate {}; original job payload not found",
+                                        result.job_id
+                                    ));
+                                    results.push(result);
+                                    continue;
+                                };
+                                let next_retry_index = retry_index + 1;
+                                let retry_job = redelegated_job(&original_job, next_retry_index);
+                                match publish_subproblem_job(&nats, &state.jobs_subject, &retry_job)
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        record_job_submitted(&state, &retry_job).await;
+                                        track_job_redelegated(&state, &solve_id);
+                                        snapshot_solve_state(&state, &solve_id).await;
+                                        publish_event(
+                                            &state,
+                                            "subproblem-redelegated",
+                                            json!({
+                                                "solveId": &solve_id,
+                                                "requestId": &request_id,
+                                                "failedJobId": &result.job_id,
+                                                "retryJobId": &retry_job.job_id,
+                                                "retryIndex": next_retry_index,
+                                                "maxRetries": max_retries,
+                                                "workerNode": &result.worker_node,
+                                                "error": &result.error,
+                                            }),
+                                        )
+                                        .await;
+                                        expected_job_ids.insert(retry_job.job_id.clone());
+                                        retry_index_by_job_id
+                                            .insert(retry_job.job_id.clone(), next_retry_index);
+                                        jobs_by_id.insert(retry_job.job_id.clone(), retry_job);
+                                        jobs_published += 1;
+                                        jobs_redelegated += 1;
+                                        state
+                                            .metrics
+                                            .subproblem_jobs_published_total
+                                            .fetch_add(1, Ordering::Relaxed);
+                                        state
+                                            .metrics
+                                            .subproblem_jobs_redelegated_total
+                                            .fetch_add(1, Ordering::Relaxed);
+                                    }
+                                    Err(error) => {
+                                        warnings.push(format!(
+                                            "failed to re-delegate job {}: {error}",
+                                            result.job_id
+                                        ));
+                                        record_job_result(&state, &result, true).await;
+                                        results.push(result);
+                                    }
+                                }
+                            } else {
+                                record_job_result(&state, &result, true).await;
+                                results.push(result);
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(warning) => warnings.push(warning),
+                    }
                 }
+                let _ = message.ack().await;
+            }
+            Ok(Some(Err(error))) => {
+                warnings.push(format!("JetStream result consumer error: {error}"));
             }
             Ok(None) => {
-                warnings.push("NATS result subscription closed".to_string());
+                warnings.push("JetStream result consumer closed".to_string());
                 timed_out = true;
                 break;
             }
@@ -1664,13 +3338,18 @@ async fn solve_problem_distributed(
         request_id,
         revision,
         &problem,
-        jobs.len(),
+        jobs_expected,
+        jobs_published,
+        jobs_redelegated,
+        jobs_split,
         results,
         timed_out,
         true,
         &state,
         warnings,
     );
+    track_solve_finished(&state, &response);
+    finalize_solve_state(&state, &response).await;
     publish_event(
         &state,
         "solve-finished",
@@ -1680,6 +3359,8 @@ async fn solve_problem_distributed(
             "status": &response.status,
             "jobsPublished": response.jobs_published,
             "jobsCompleted": response.jobs_completed,
+            "jobsRedelegated": response.jobs_redelegated,
+            "jobsSplit": response.jobs_split,
             "timedOut": response.timed_out,
         }),
     )
@@ -1699,10 +3380,14 @@ async fn root(State(state): State<AppState>) -> impl IntoResponse {
         "subjects": {
             "jobs": state.jobs_subject,
             "results": state.results_subject,
+            "control": state.control_subject,
             "events": state.events_subject,
         },
         "stream": DD_REMOTE_MIP_SOLVER_STREAM_NAME,
         "queueGroup": MIP_SOLVER_WORKERS_QUEUE_GROUP,
+        "workersKnown": state.workers.lock().expect("workers mutex poisoned").len(),
+        "solvesTracked": state.solves.lock().expect("solves mutex poisoned").len(),
+        "persistence": persistence_contract(),
         "gpu": gpu_status(),
     }))
 }
@@ -1711,31 +3396,107 @@ async fn healthz() -> impl IntoResponse {
     Json(json!({"ok": true, "service": SERVICE_NAME}))
 }
 
-async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
-    Json(json!({
-        "ok": true,
-        "role": state.role.as_str(),
-        "nats": state.nats.is_some(),
-    }))
+async fn readyz(State(state): State<AppState>) -> Response {
+    let nats_ready = state.nats.is_some();
+    let status = if nats_ready {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    response_json(
+        status,
+        json!({
+            "ok": nats_ready,
+            "role": state.role.as_str(),
+            "nats": nats_ready,
+            "reason": if nats_ready { Value::Null } else { json!("NATS connection is required for distributed solver readiness") },
+        }),
+    )
+}
+
+fn prometheus_label_value(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
 }
 
 async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     let m = &state.metrics;
+    let published = m.subproblem_jobs_published_total.load(Ordering::Relaxed);
+    let completed = m.subproblem_jobs_completed_total.load(Ordering::Relaxed);
+    let in_flight = published.saturating_sub(completed);
+    let solves = state.solves.lock().expect("solves mutex poisoned");
+    let solves_tracked = solves.len();
+    let active_solves = solves
+        .values()
+        .filter(|solve| solve.finished_at_ms.is_none())
+        .count();
+    drop(solves);
+    let node_id = prometheus_label_value(&state.node_id);
+    let role = prometheus_label_value(state.role.as_str());
     let body = format!(
         concat!(
+            "# HELP dd_mip_solver_node_info Static solver node metadata.\n",
+            "# TYPE dd_mip_solver_node_info gauge\n",
+            "dd_mip_solver_node_info{{role=\"{}\",node_id=\"{}\"}} 1\n",
+            "# HELP dd_mip_solver_http_requests_total Total HTTP requests handled by this node.\n",
+            "# TYPE dd_mip_solver_http_requests_total counter\n",
             "dd_mip_solver_http_requests_total {}\n",
+            "# HELP dd_mip_solver_stream_events_total Total live model stream events applied by this node.\n",
+            "# TYPE dd_mip_solver_stream_events_total counter\n",
             "dd_mip_solver_stream_events_total {}\n",
+            "# HELP dd_mip_solver_solve_requests_total Total solve requests handled by this node.\n",
+            "# TYPE dd_mip_solver_solve_requests_total counter\n",
             "dd_mip_solver_solve_requests_total {}\n",
+            "# HELP dd_mip_solver_subproblem_jobs_published_total Total NATS subproblem jobs published by masters.\n",
+            "# TYPE dd_mip_solver_subproblem_jobs_published_total counter\n",
             "dd_mip_solver_subproblem_jobs_published_total {}\n",
+            "# HELP dd_mip_solver_subproblem_jobs_completed_total Total expected NATS subproblem results accepted by masters.\n",
+            "# TYPE dd_mip_solver_subproblem_jobs_completed_total counter\n",
             "dd_mip_solver_subproblem_jobs_completed_total {}\n",
+            "# HELP dd_mip_solver_subproblem_jobs_in_flight Current master-observed subproblem jobs awaiting accepted results.\n",
+            "# TYPE dd_mip_solver_subproblem_jobs_in_flight gauge\n",
+            "dd_mip_solver_subproblem_jobs_in_flight {}\n",
+            "# HELP dd_mip_solver_subproblem_jobs_redelegated_total Total errored subproblem jobs re-published by masters.\n",
+            "# TYPE dd_mip_solver_subproblem_jobs_redelegated_total counter\n",
+            "dd_mip_solver_subproblem_jobs_redelegated_total {}\n",
+            "# HELP dd_mip_solver_subproblem_jobs_split_total Total accepted subproblem attempts split into child jobs by masters.\n",
+            "# TYPE dd_mip_solver_subproblem_jobs_split_total counter\n",
+            "dd_mip_solver_subproblem_jobs_split_total {}\n",
+            "# HELP dd_mip_solver_workers_known Current worker nodes observed through NATS control messages.\n",
+            "# TYPE dd_mip_solver_workers_known gauge\n",
+            "dd_mip_solver_workers_known {}\n",
+            "# HELP dd_mip_solver_worker_control_messages_total Total worker control messages received by master nodes.\n",
+            "# TYPE dd_mip_solver_worker_control_messages_total counter\n",
+            "dd_mip_solver_worker_control_messages_total {}\n",
+            "# HELP dd_mip_solver_solves_tracked Current solve records retained in master memory.\n",
+            "# TYPE dd_mip_solver_solves_tracked gauge\n",
+            "dd_mip_solver_solves_tracked {}\n",
+            "# HELP dd_mip_solver_active_solves Current solves without a terminal aggregate response.\n",
+            "# TYPE dd_mip_solver_active_solves gauge\n",
+            "dd_mip_solver_active_solves {}\n",
+            "# HELP dd_mip_solver_slave_jobs_processed_total Total subproblem jobs processed by slave nodes.\n",
+            "# TYPE dd_mip_solver_slave_jobs_processed_total counter\n",
             "dd_mip_solver_slave_jobs_processed_total {}\n",
+            "# HELP dd_mip_solver_errors_total Total errors observed by this node.\n",
+            "# TYPE dd_mip_solver_errors_total counter\n",
             "dd_mip_solver_errors_total {}\n"
         ),
+        role,
+        node_id,
         m.http_requests_total.load(Ordering::Relaxed),
         m.stream_events_total.load(Ordering::Relaxed),
         m.solve_requests_total.load(Ordering::Relaxed),
-        m.subproblem_jobs_published_total.load(Ordering::Relaxed),
-        m.subproblem_jobs_completed_total.load(Ordering::Relaxed),
+        published,
+        completed,
+        in_flight,
+        m.subproblem_jobs_redelegated_total.load(Ordering::Relaxed),
+        m.subproblem_jobs_split_total.load(Ordering::Relaxed),
+        state.workers.lock().expect("workers mutex poisoned").len(),
+        m.worker_control_messages_total.load(Ordering::Relaxed),
+        solves_tracked,
+        active_solves,
         m.slave_jobs_processed_total.load(Ordering::Relaxed),
         m.errors_total.load(Ordering::Relaxed),
     );
@@ -1827,34 +3588,38 @@ async fn stream_session(
             json!({"ok":false,"error":"too many stream commands"}),
         );
     }
-    let mut sessions = state.sessions.lock().expect("sessions mutex poisoned");
-    let session = sessions.entry(session_id.clone()).or_insert(LiveSession {
-        problem: None,
-        revision: 0,
-    });
     let mut frames = Vec::new();
-    for command in &commands {
-        if let Err(error) = apply_stream_command(
-            &mut session.problem,
-            &mut session.revision,
-            command,
-            &mut frames,
-        ) {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            frames.push(json!({"event":"error","message":error,"revision":session.revision}));
-        } else {
-            state
-                .metrics
-                .stream_events_total
-                .fetch_add(1, Ordering::Relaxed);
+    let (revision, session_snapshot) = {
+        let mut sessions = state.sessions.lock().expect("sessions mutex poisoned");
+        let session = sessions.entry(session_id.clone()).or_insert(LiveSession {
+            problem: None,
+            revision: 0,
+        });
+        for command in &commands {
+            if let Err(error) = apply_stream_command(
+                &mut session.problem,
+                &mut session.revision,
+                command,
+                &mut frames,
+            ) {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                frames.push(json!({"event":"error","message":error,"revision":session.revision}));
+            } else {
+                state
+                    .metrics
+                    .stream_events_total
+                    .fetch_add(1, Ordering::Relaxed);
+            }
         }
-    }
+        (session.revision, session.clone())
+    };
+    snapshot_session_model(&state, &session_id, session_snapshot).await;
     response_json(
         StatusCode::OK,
         json!({
             "ok": true,
             "sessionId": session_id,
-            "revision": session.revision,
+            "revision": revision,
             "frames": frames,
         }),
     )
@@ -1880,6 +3645,56 @@ async fn get_session(
             json!({"ok":false,"error":"session not found"}),
         ),
     }
+}
+
+async fn workers(State(state): State<AppState>) -> Response {
+    let mut workers: Vec<WorkerNodeStatus> = state
+        .workers
+        .lock()
+        .expect("workers mutex poisoned")
+        .values()
+        .cloned()
+        .collect();
+    workers.sort_by(|left, right| left.node_id.cmp(&right.node_id));
+    response_json(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "role": state.role.as_str(),
+            "count": workers.len(),
+            "workers": workers,
+        }),
+    )
+}
+
+async fn cluster_solves(State(state): State<AppState>) -> Response {
+    let mut solves: Vec<SolveRegistryEntry> = state
+        .solves
+        .lock()
+        .expect("solves mutex poisoned")
+        .values()
+        .cloned()
+        .collect();
+    solves.sort_by(|left, right| {
+        right
+            .started_at_ms
+            .cmp(&left.started_at_ms)
+            .then_with(|| left.solve_id.cmp(&right.solve_id))
+    });
+    let active = solves
+        .iter()
+        .filter(|solve| solve.finished_at_ms.is_none())
+        .count();
+    response_json(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "role": state.role.as_str(),
+            "count": solves.len(),
+            "active": active,
+            "solves": solves,
+        }),
+    )
 }
 
 async fn solve_session(
@@ -1931,34 +3746,23 @@ async fn solve_session(
 async fn build_jetstream_consumer(
     client: async_nats::Client,
     consumer_name: &str,
+    jobs_subject: &str,
     ack_wait: Duration,
     max_ack_pending: i64,
+    max_deliver: i64,
 ) -> Result<async_nats::jetstream::consumer::PullConsumer, Box<dyn Error + Send + Sync>> {
-    let jetstream = async_nats::jetstream::new(client);
-    let stream = jetstream
-        .get_or_create_stream(async_nats::jetstream::stream::Config {
-            name: DD_REMOTE_MIP_SOLVER_STREAM_NAME.to_string(),
-            subjects: DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS
-                .iter()
-                .map(|subject| subject.to_string())
-                .collect(),
-            retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
-            max_age: Duration::from_secs(60 * 60 * 24 * 7),
-            max_message_size: 8 * 1024 * 1024,
-            ..Default::default()
-        })
-        .await?;
+    let stream = ensure_mip_stream(client).await?;
+    let config = worker_consumer_config(
+        consumer_name,
+        jobs_subject,
+        ack_wait,
+        max_ack_pending,
+        max_deliver,
+    );
     let consumer = stream
         .get_or_create_consumer::<async_nats::jetstream::consumer::pull::Config>(
             consumer_name,
-            async_nats::jetstream::consumer::pull::Config {
-                durable_name: Some(consumer_name.to_string()),
-                filter_subject: MIP_SOLVER_JOBS_SUBJECT.to_string(),
-                ack_wait,
-                max_ack_pending,
-                max_deliver: 5,
-                ..Default::default()
-            },
+            config,
         )
         .await?;
     Ok(consumer)
@@ -1972,17 +3776,41 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
     let consumer_name = env_value("MIP_SOLVER_NATS_CONSUMER", MIP_SOLVER_WORKERS_QUEUE_GROUP);
     let ack_wait = Duration::from_secs(env_u64("MIP_SOLVER_ACK_WAIT_SECONDS", 600));
     let max_ack_pending = env_u64("MIP_SOLVER_MAX_ACK_PENDING", 32) as i64;
-    let consumer =
-        build_jetstream_consumer(nats.clone(), &consumer_name, ack_wait, max_ack_pending).await?;
+    let max_deliver = env_u64("MIP_SOLVER_MAX_DELIVER", 5) as i64;
+    let consumer = build_jetstream_consumer(
+        nats.clone(),
+        &consumer_name,
+        &state.jobs_subject,
+        ack_wait,
+        max_ack_pending,
+        max_deliver,
+    )
+    .await?;
     let mut messages = consumer.messages().await?;
     publish_event(
         &state,
         "slave-started",
-        json!({"consumer": consumer_name, "jobsSubject": state.jobs_subject}),
+        json!({"consumer": &consumer_name, "jobsSubject": &state.jobs_subject}),
+    )
+    .await;
+    publish_control(
+        &state,
+        "worker-ready",
+        json!({
+            "consumer": &consumer_name,
+            "jobsSubject": &state.jobs_subject,
+            "resultsSubject": &state.results_subject,
+        }),
     )
     .await;
 
     while let Some(message) = messages.next().await {
+        publish_control(
+            &state,
+            "request-work",
+            json!({"consumer": &consumer_name, "jobsSubject": &state.jobs_subject}),
+        )
+        .await;
         let message = match message {
             Ok(message) => message,
             Err(error) => {
@@ -2013,14 +3841,65 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                 }
             };
         let payload = serde_json::to_vec(&result)?;
-        nats.publish(state.results_subject.clone(), payload.into())
-            .await?;
+        jetstream_publish_ack(&nats, &state.results_subject, payload)
+            .await
+            .map_err(|err| -> Box<dyn Error + Send + Sync> {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("publish subproblem result: {err}"),
+                ))
+            })?;
+        publish_control(
+            &state,
+            "worker-completed",
+            json!({
+                "consumer": &consumer_name,
+                "jobId": &result.job_id,
+                "solveId": &result.solve_id,
+                "status": &result.status,
+                "resultsSubject": &state.results_subject,
+            }),
+        )
+        .await;
         state
             .metrics
             .slave_jobs_processed_total
             .fetch_add(1, Ordering::Relaxed);
         if let Err(error) = message.ack().await {
             eprintln!("mip solver job ack failed: {error}");
+        }
+    }
+    Ok(())
+}
+
+async fn run_master_control_listener(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let Some(nats) = state.nats.clone() else {
+        return Ok(());
+    };
+    let mut messages = nats.subscribe(state.control_subject.clone()).await?;
+    publish_event(
+        &state,
+        "master-control-listener-started",
+        json!({"controlSubject": &state.control_subject}),
+    )
+    .await;
+    while let Some(message) = messages.next().await {
+        match serde_json::from_slice::<Value>(&message.payload) {
+            Ok(frame) => {
+                if let Err(error) = record_worker_control_frame(&state, &frame) {
+                    state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                    eprintln!("mip solver control frame ignored: {error}");
+                } else {
+                    state
+                        .metrics
+                        .worker_control_messages_total
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            Err(error) => {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                eprintln!("invalid mip solver control payload: {error}");
+            }
         }
     }
     Ok(())
@@ -2037,6 +3916,91 @@ async fn connect_nats() -> Option<async_nats::Client> {
     }
 }
 
+fn connect_redis() -> Option<redis::Client> {
+    let env_key = first_configured_env(&["MIP_SOLVER_REDIS_URL", "REDIS_URL"])?;
+    let url = env::var(&env_key).ok()?;
+    match redis::Client::open(url.clone()) {
+        Ok(client) => Some(client),
+        Err(error) => {
+            eprintln!("failed to configure Redis client from {env_key}: {error}");
+            None
+        }
+    }
+}
+
+async fn connect_postgres() -> Option<PgPool> {
+    let env_key = first_configured_env(&[
+        "MIP_SOLVER_DATABASE_URL",
+        "AGENT_TASKS_RDS_DATABASE_URL",
+        "RDS_DATABASE_URL",
+        "DATABASE_URL",
+        "PG_DATABASE_URL",
+    ])?;
+    let url = env::var(&env_key).ok()?;
+    let max_connections = env_usize("MIP_SOLVER_PG_POOL_SIZE", 4).clamp(1, 32) as u32;
+    match PgPoolOptions::new()
+        .max_connections(max_connections)
+        .connect(&url)
+        .await
+    {
+        Ok(pool) => Some(pool),
+        Err(error) => {
+            eprintln!("failed to connect to Postgres from {env_key}: {error}");
+            None
+        }
+    }
+}
+
+fn app_router(state: AppState) -> Router {
+    Router::new()
+        .route("/", get(root))
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
+        .route("/metrics", get(metrics))
+        .route("/mip-solver-cluster/workers", get(workers))
+        .route("/mip-solver-cluster/solves", get(cluster_solves))
+        .route("/workers", get(workers))
+        .route("/model/example", get(example))
+        .route("/solve", post(solve_http))
+        .route("/sessions/:session_id", get(get_session))
+        .route("/sessions/:session_id/events", post(stream_session))
+        .route("/sessions/:session_id/solve", post(solve_session))
+        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
+        .with_state(state)
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            eprintln!("failed to install Ctrl-C signal handler: {error}");
+        }
+    };
+
+    #[cfg(unix)]
+    {
+        let terminate = async {
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(mut signal) => {
+                    signal.recv().await;
+                }
+                Err(error) => {
+                    eprintln!("failed to install SIGTERM signal handler: {error}");
+                    std::future::pending::<()>().await;
+                }
+            }
+        };
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = terminate => {},
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        ctrl_c.await;
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let role = NodeRole::from_env();
@@ -2044,14 +4008,21 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .or_else(|_| env::var("HOSTNAME"))
         .unwrap_or_else(|_| format!("{}-{}", SERVICE_NAME, Uuid::new_v4()));
     let nats = connect_nats().await;
+    let redis = connect_redis();
+    let pg = connect_postgres().await;
     let state = AppState {
         role,
         node_id,
         nats,
+        redis,
+        pg,
         jobs_subject: env_value("MIP_SOLVER_JOBS_SUBJECT", MIP_SOLVER_JOBS_SUBJECT),
         results_subject: env_value("MIP_SOLVER_RESULTS_SUBJECT", MIP_SOLVER_RESULTS_SUBJECT),
+        control_subject: env_value("MIP_SOLVER_CONTROL_SUBJECT", MIP_SOLVER_CONTROL_SUBJECT),
         events_subject: env_value("MIP_SOLVER_EVENTS_SUBJECT", MIP_SOLVER_EVENTS_SUBJECT),
         sessions: Arc::new(Mutex::new(HashMap::new())),
+        workers: Arc::new(Mutex::new(HashMap::new())),
+        solves: Arc::new(Mutex::new(HashMap::new())),
         metrics: Arc::new(Metrics::default()),
     };
 
@@ -2062,20 +4033,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 eprintln!("mip solver slave loop stopped: {error}");
             }
         });
+    } else {
+        let control_state = state.clone();
+        tokio::spawn(async move {
+            if let Err(error) = run_master_control_listener(control_state).await {
+                eprintln!("mip solver master control listener stopped: {error}");
+            }
+        });
     }
 
-    let app = Router::new()
-        .route("/", get(root))
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
-        .route("/metrics", get(metrics))
-        .route("/model/example", get(example))
-        .route("/solve", post(solve_http))
-        .route("/sessions/:session_id", get(get_session))
-        .route("/sessions/:session_id/events", post(stream_session))
-        .route("/sessions/:session_id/solve", post(solve_session))
-        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
-        .with_state(state);
+    let app = app_router(state);
 
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8097");
@@ -2083,9 +4050,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("{SERVICE_NAME} listening on {addr}");
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
+        .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
 }
@@ -2093,7 +4058,178 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        body::{to_bytes, Body},
+        http::{Method, Request},
+    };
     use serde_json::json;
+    use tower::ServiceExt;
+
+    fn test_state(role: NodeRole) -> AppState {
+        AppState {
+            role,
+            node_id: "test-node".to_string(),
+            nats: None,
+            redis: None,
+            pg: None,
+            jobs_subject: MIP_SOLVER_JOBS_SUBJECT.to_string(),
+            results_subject: MIP_SOLVER_RESULTS_SUBJECT.to_string(),
+            control_subject: MIP_SOLVER_CONTROL_SUBJECT.to_string(),
+            events_subject: MIP_SOLVER_EVENTS_SUBJECT.to_string(),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            workers: Arc::new(Mutex::new(HashMap::new())),
+            solves: Arc::new(Mutex::new(HashMap::new())),
+            metrics: Arc::new(Metrics::default()),
+        }
+    }
+
+    fn binary_knapsack_problem() -> MipProblemSpec {
+        MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![10.0, 40.0, 30.0, 50.0],
+            a: vec![vec![5.0, 4.0, 6.0, 3.0]],
+            b: vec![10.0],
+            integer_vars: vec![true, true, true, true],
+            ub: Some(vec![1.0, 1.0, 1.0, 1.0]),
+            var_names: None,
+            con_names: None,
+        }
+    }
+
+    fn pure_lp_problem() -> MipProblemSpec {
+        MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![3.0, 2.0],
+            a: vec![vec![1.0, 1.0], vec![1.0, 0.0], vec![0.0, 1.0]],
+            b: vec![4.0, 2.0, 3.0],
+            integer_vars: vec![false, false],
+            ub: None,
+            var_names: Some(vec!["x0".to_string(), "x1".to_string()]),
+            con_names: Some(vec![
+                "shared".to_string(),
+                "x0_cap".to_string(),
+                "x1_cap".to_string(),
+            ]),
+        }
+    }
+
+    fn general_integer_problem() -> MipProblemSpec {
+        MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![1.0, 1.0],
+            a: vec![vec![1.0, 1.0]],
+            b: vec![3.5],
+            integer_vars: vec![true, true],
+            ub: Some(vec![10.0, 10.0]),
+            var_names: None,
+            con_names: None,
+        }
+    }
+
+    fn hundred_variable_two_hundred_constraint_mip() -> MipProblemSpec {
+        let mut c = vec![0.0; 100];
+        c[0] = 1.0;
+        c[1] = 1.0;
+        c[2] = 1.0;
+
+        let mut a = Vec::with_capacity(200);
+        let mut b = Vec::with_capacity(200);
+        let mut con_names = Vec::with_capacity(200);
+
+        let mut knapsack = vec![0.0; 100];
+        knapsack[0] = 2.0;
+        knapsack[1] = 2.0;
+        knapsack[2] = 2.0;
+        a.push(knapsack);
+        b.push(5.0);
+        con_names.push("three_item_capacity".to_string());
+
+        for var in 0..99 {
+            let mut row = vec![0.0; 100];
+            row[var] = 1.0;
+            a.push(row);
+            b.push(1.0);
+            con_names.push(format!("x{var}_upper"));
+        }
+
+        for var in 0..100 {
+            let mut row = vec![0.0; 100];
+            row[var] = -1.0;
+            a.push(row);
+            b.push(0.0);
+            con_names.push(format!("x{var}_lower"));
+        }
+
+        assert_eq!(a.len(), 200);
+        assert_eq!(b.len(), 200);
+        assert_eq!(con_names.len(), 200);
+
+        MipProblemSpec {
+            sense: "max".to_string(),
+            c,
+            a,
+            b,
+            integer_vars: vec![true; 100],
+            ub: Some(vec![1.0; 100]),
+            var_names: Some((0..100).map(|index| format!("x{index}")).collect()),
+            con_names: Some(con_names),
+        }
+    }
+
+    fn test_job(problem: MipProblemSpec) -> SubproblemJob {
+        SubproblemJob {
+            solve_id: "solve-test".to_string(),
+            request_id: "request-test".to_string(),
+            job_id: "job-test".to_string(),
+            revision: 0,
+            depth: 0,
+            master_node: "master-test".to_string(),
+            problem,
+            extra_constraints: Vec::new(),
+            options: SolveOptions {
+                split_depth: Some(0),
+                ..SolveOptions::default()
+            },
+            submitted_at_ms: now_ms(),
+        }
+    }
+
+    async fn post_json(app: Router, path: &str, payload: Value) -> (StatusCode, Value) {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(path)
+            .header("content-type", "application/json")
+            .body(Body::from(payload.to_string()))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), MAX_HTTP_BODY_BYTES)
+            .await
+            .unwrap();
+        let value = serde_json::from_slice(&body).unwrap();
+        (status, value)
+    }
+
+    async fn get_text(app: Router, path: &str) -> (StatusCode, String) {
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri(path)
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), MAX_HTTP_BODY_BYTES)
+            .await
+            .unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+        (status, text)
+    }
+
+    async fn get_json(app: Router, path: &str) -> (StatusCode, Value) {
+        let (status, text) = get_text(app, path).await;
+        let value = serde_json::from_str(&text).unwrap();
+        (status, value)
+    }
 
     #[test]
     fn streaming_edits_update_live_problem_revision() {
@@ -2154,6 +4290,119 @@ mod tests {
     }
 
     #[test]
+    fn solve_options_merge_request_values_over_runtime_defaults() {
+        let defaults = SolveOptions {
+            max_nodes: Some(111),
+            max_ticks: Some(222),
+            lp_max_iters: Some(333),
+            int_tol: Some(1e-4),
+            split_depth: Some(2),
+            max_subproblems: Some(12),
+            max_job_retries: Some(4),
+            timeout_ms: Some(444),
+            emit_trace: Some(false),
+        };
+        let input = SolveOptions {
+            max_nodes: Some(999),
+            max_ticks: None,
+            lp_max_iters: Some(777),
+            int_tol: None,
+            split_depth: Some(5),
+            max_subproblems: Some(3),
+            max_job_retries: Some(9),
+            timeout_ms: None,
+            emit_trace: Some(true),
+        };
+
+        let merged = SolveOptions::merged_with_defaults(Some(input), defaults);
+
+        assert_eq!(merged.max_nodes, Some(999));
+        assert_eq!(merged.max_ticks, Some(222));
+        assert_eq!(merged.lp_max_iters, Some(777));
+        assert_eq!(merged.int_tol, Some(1e-4));
+        assert_eq!(merged.split_depth, Some(5));
+        assert_eq!(merged.max_subproblems, Some(3));
+        assert_eq!(merged.max_job_retries, Some(9));
+        assert_eq!(merged.timeout_ms, Some(444));
+        assert_eq!(merged.emit_trace, Some(true));
+    }
+
+    #[test]
+    fn frontier_builder_caps_presplit_subproblem_count() {
+        let problem = normalized_problem(MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![1.0],
+            a: vec![vec![1.0]],
+            b: vec![1.5],
+            integer_vars: vec![true],
+            ub: None,
+            var_names: None,
+            con_names: None,
+        })
+        .unwrap();
+        let options = SolveOptions {
+            split_depth: Some(4),
+            max_subproblems: Some(1),
+            ..SolveOptions::default()
+        };
+
+        let (jobs, warnings) = build_frontier_jobs(
+            &problem,
+            "solve-test",
+            "request-test",
+            7,
+            "master-a",
+            &options,
+        )
+        .unwrap();
+
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].depth, 0);
+        assert!(jobs[0].extra_constraints.is_empty());
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("frontier split capped at 1 subproblems")));
+    }
+
+    #[test]
+    fn branch_constraints_extend_named_constraint_metadata() {
+        let problem = normalized_problem(MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![1.0],
+            a: vec![vec![1.0]],
+            b: vec![1.5],
+            integer_vars: vec![true],
+            ub: Some(vec![3.0]),
+            var_names: Some(vec!["x0".to_string()]),
+            con_names: Some(vec!["capacity".to_string()]),
+        })
+        .unwrap();
+        let extra = vec![BranchConstraint {
+            coefs: vec![1.0],
+            rhs: 1.0,
+            name: "branch_d0_x0_le_1".to_string(),
+        }];
+
+        let ipmip = to_ipmip_problem(&problem, &extra).unwrap();
+        let lp = to_lp_problem(&problem, &extra).unwrap();
+
+        assert_eq!(
+            ipmip.con_names,
+            Some(vec![
+                "capacity".to_string(),
+                "branch_d0_x0_le_1".to_string()
+            ])
+        );
+        assert_eq!(
+            lp.con_names,
+            Some(vec![
+                "capacity".to_string(),
+                "branch_d0_x0_le_1".to_string()
+            ])
+        );
+    }
+
+    #[test]
     fn bound_preprocess_prunes_rows_impossible_under_lower_bounds() {
         let problem = MipProblemSpec {
             sense: "max".to_string(),
@@ -2198,5 +4447,954 @@ mod tests {
             .notes
             .iter()
             .any(|note| note.contains("rows always satisfied by variable bounds")));
+    }
+
+    #[test]
+    fn solve_options_force_in_house_lp_and_mip_engines() {
+        let options = SolveOptions::default().to_ipmip_options();
+
+        assert_eq!(options.allow_external_solvers, Some(false));
+        assert!(matches!(
+            options.lp_algorithm,
+            Some(LpRelaxationAlgorithm::Concrete(
+                ConcreteLpRelaxationAlgorithm::InternalSimplex
+            ))
+        ));
+        assert!(matches!(
+            options.branch_rule,
+            Some(BranchRule::MostFractional)
+        ));
+    }
+
+    #[test]
+    fn nats_subjects_are_generated_mip_solver_namespace() {
+        let subjects = [
+            MIP_SOLVER_JOBS_SUBJECT,
+            MIP_SOLVER_RESULTS_SUBJECT,
+            MIP_SOLVER_CONTROL_SUBJECT,
+            MIP_SOLVER_EVENTS_SUBJECT,
+        ];
+        for subject in subjects {
+            assert!(subject.starts_with("dd.remote.mip_solver."));
+            assert!(DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS.contains(&subject));
+        }
+
+        let mut unique = subjects.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), subjects.len());
+        assert_eq!(DD_REMOTE_MIP_SOLVER_STREAM_NAME, "DD_REMOTE_MIP_SOLVER");
+        assert_eq!(
+            MIP_SOLVER_WORKERS_QUEUE_GROUP,
+            "dd-in-house-mip-solver-node-workers"
+        );
+    }
+
+    #[test]
+    fn persistence_contract_uses_generated_mip_pg_defs_and_redis_namespace() {
+        let contract = persistence_contract();
+
+        assert_eq!(contract.postgres.session_table, MIP_SOLVER_SESSIONS_TABLE);
+        assert_eq!(contract.postgres.solve_table, MIP_SOLVER_SOLVES_TABLE);
+        assert_eq!(contract.postgres.job_table, MIP_SOLVER_JOBS_TABLE);
+        assert_eq!(contract.postgres.event_table, MIP_SOLVER_EVENTS_TABLE);
+        assert!(contract
+            .postgres
+            .journal_kinds
+            .contains(&"mip-solver.subproblem-split"));
+        assert_eq!(
+            mip_solver_solve_snapshot_key("dd:mip-solver", "solve-a"),
+            "dd:mip-solver:solve:solve-a:snapshot"
+        );
+        assert_eq!(
+            mip_solver_session_model_key("dd:mip-solver", "session-a"),
+            "dd:mip-solver:session:session-a:model"
+        );
+        assert!(contract
+            .redis
+            .generated_mutex_key
+            .contains("dd:container-pool:affinity:mip-solver"));
+    }
+
+    #[test]
+    fn jetstream_stream_config_contains_generated_subjects() {
+        let config = mip_stream_config();
+
+        assert_eq!(config.name, DD_REMOTE_MIP_SOLVER_STREAM_NAME);
+        for subject in DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS {
+            assert!(config
+                .subjects
+                .iter()
+                .any(|configured| configured == subject));
+        }
+        assert_eq!(
+            config.subjects.len(),
+            DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS.len()
+        );
+    }
+
+    #[test]
+    fn result_consumer_config_reads_persisted_results_from_job_sequence() {
+        let name = result_consumer_name("solve-test");
+        let config = result_consumer_config(&name, MIP_SOLVER_RESULTS_SUBJECT, 42);
+
+        assert_eq!(config.name.as_deref(), Some(name.as_str()));
+        assert_eq!(config.filter_subject, MIP_SOLVER_RESULTS_SUBJECT);
+        assert_eq!(config.durable_name, None);
+        assert_eq!(config.max_deliver, 1);
+        assert_eq!(config.inactive_threshold, Duration::from_secs(120));
+        assert!(matches!(
+            config.deliver_policy,
+            async_nats::jetstream::consumer::DeliverPolicy::ByStartSequence { start_sequence: 42 }
+        ));
+    }
+
+    #[test]
+    fn worker_consumer_config_uses_runtime_jobs_subject_and_delivery_limits() {
+        let config = worker_consumer_config(
+            MIP_SOLVER_WORKERS_QUEUE_GROUP,
+            "dd.remote.mip_solver.jobs.custom",
+            Duration::from_secs(900),
+            64,
+            7,
+        );
+
+        assert_eq!(
+            config.durable_name.as_deref(),
+            Some(MIP_SOLVER_WORKERS_QUEUE_GROUP)
+        );
+        assert_eq!(config.filter_subject, "dd.remote.mip_solver.jobs.custom");
+        assert_eq!(config.ack_wait, Duration::from_secs(900));
+        assert_eq!(config.max_ack_pending, 64);
+        assert_eq!(config.max_deliver, 7);
+    }
+
+    #[test]
+    fn worker_control_frames_update_master_registry() {
+        let state = test_state(NodeRole::Master);
+
+        record_worker_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"worker-a",
+                "role":"slave",
+                "commandName":"worker-ready",
+                "payload":{
+                    "consumer":"dd-in-house-mip-solver-node-workers",
+                    "jobsSubject": MIP_SOLVER_JOBS_SUBJECT,
+                    "resultsSubject": MIP_SOLVER_RESULTS_SUBJECT
+                },
+                "timeMs": 1000
+            }),
+        )
+        .unwrap();
+        record_worker_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"worker-a",
+                "role":"slave",
+                "commandName":"request-work",
+                "payload":{"consumer":"dd-in-house-mip-solver-node-workers"},
+                "timeMs": 1100
+            }),
+        )
+        .unwrap();
+        record_worker_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"worker-a",
+                "role":"slave",
+                "commandName":"worker-completed",
+                "payload":{
+                    "consumer":"dd-in-house-mip-solver-node-workers",
+                    "jobId":"solve-test-0",
+                    "solveId":"solve-test",
+                    "status":"optimal",
+                    "resultsSubject": MIP_SOLVER_RESULTS_SUBJECT
+                },
+                "timeMs": 1200
+            }),
+        )
+        .unwrap();
+
+        let workers = state.workers.lock().expect("workers mutex poisoned");
+        let worker = workers.get("worker-a").expect("worker-a");
+        assert_eq!(worker.ready_at_ms, Some(1000));
+        assert_eq!(worker.last_seen_ms, 1200);
+        assert_eq!(worker.request_count, 1);
+        assert_eq!(worker.completed_count, 1);
+        assert_eq!(worker.last_command, "worker-completed");
+        assert_eq!(worker.last_job_id.as_deref(), Some("solve-test-0"));
+        assert_eq!(worker.last_solve_id.as_deref(), Some("solve-test"));
+        assert_eq!(worker.last_status.as_deref(), Some("optimal"));
+    }
+
+    #[test]
+    fn solve_subproblem_solves_binary_mip_with_in_house_solver() {
+        let result = solve_subproblem(
+            test_job(binary_knapsack_problem()),
+            "worker-test".to_string(),
+        );
+
+        assert!(result.ok, "subproblem error: {:?}", result.error);
+        assert_eq!(result.status, "optimal");
+        assert_eq!(result.z, Some(90.0));
+        assert_eq!(result.x.len(), 4);
+        assert!((result.x[1] - 1.0).abs() < 1e-6);
+        assert!((result.x[3] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn solve_subproblem_can_split_fractional_delegated_subtree() {
+        let problem = normalized_problem(MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![1.0],
+            a: vec![vec![1.0]],
+            b: vec![1.5],
+            integer_vars: vec![true],
+            ub: None,
+            var_names: None,
+            con_names: None,
+        })
+        .unwrap();
+        let mut job = test_job(problem);
+        job.options.split_depth = Some(1);
+
+        let result = solve_subproblem(job, "worker-test".to_string());
+
+        assert!(!result.ok);
+        assert_eq!(result.status, "split");
+        assert_eq!(result.child_jobs.len(), 2);
+        assert_eq!(result.lp_solves, 1);
+        assert!(result
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("split"));
+        assert!(result
+            .child_jobs
+            .iter()
+            .all(|child| child.depth == 1 && child.extra_constraints.len() == 1));
+    }
+
+    #[test]
+    fn solve_subproblem_solves_lp_with_in_house_solver() {
+        let result = solve_subproblem(test_job(pure_lp_problem()), "worker-test".to_string());
+
+        assert!(result.ok, "subproblem error: {:?}", result.error);
+        assert_eq!(result.status, "optimal");
+        assert_eq!(result.x.len(), 2);
+        assert!(result.z.is_some_and(|z| (z - 10.0).abs() < 1e-6));
+        assert!((result.x[0] - 2.0).abs() < 1e-6);
+        assert!((result.x[1] - 2.0).abs() < 1e-6);
+        let lp = result.lp.as_ref().expect("LP solve report");
+        assert_eq!(
+            lp.dual.row_names.as_ref().unwrap(),
+            &vec![
+                "shared".to_string(),
+                "x0_cap".to_string(),
+                "x1_cap".to_string()
+            ]
+        );
+        let dual = lp.dual.inequality.as_ref().expect("row duals");
+        assert_eq!(dual.len(), 3);
+        assert!((dual[0] - 2.0).abs() < 1e-6, "dual = {dual:?}");
+        assert!((dual[1] - 1.0).abs() < 1e-6, "dual = {dual:?}");
+        assert!(dual[2].abs() < 1e-6, "dual = {dual:?}");
+        assert_eq!(
+            lp.basis.variables.as_ref().unwrap(),
+            &vec!["basic".to_string(), "basic".to_string()]
+        );
+    }
+
+    #[test]
+    fn solve_subproblem_solves_general_integer_program_with_in_house_solver() {
+        let result = solve_subproblem(
+            test_job(general_integer_problem()),
+            "worker-test".to_string(),
+        );
+
+        assert!(result.ok, "subproblem error: {:?}", result.error);
+        assert_eq!(result.status, "optimal");
+        assert_eq!(result.x.len(), 2);
+        assert!(result.z.is_some_and(|z| (z - 3.0).abs() < 1e-6));
+        assert!(result
+            .x
+            .iter()
+            .all(|value| { *value >= -1e-6 && (*value - value.round()).abs() < 1e-6 }));
+        assert!(result.x.iter().sum::<f64>() <= 3.0 + 1e-6);
+    }
+
+    #[test]
+    fn solve_subproblem_accepts_named_constraints_with_branch_rows() {
+        let mut problem = binary_knapsack_problem();
+        problem.var_names = Some(vec![
+            "item0".to_string(),
+            "item1".to_string(),
+            "item2".to_string(),
+            "item3".to_string(),
+        ]);
+        problem.con_names = Some(vec!["capacity".to_string()]);
+        let mut job = test_job(problem);
+        job.extra_constraints.push(BranchConstraint {
+            coefs: vec![1.0, 0.0, 0.0, 0.0],
+            rhs: 0.0,
+            name: "branch_d0_x0_le_0".to_string(),
+        });
+
+        let result = solve_subproblem(job, "worker-test".to_string());
+
+        assert!(result.ok, "subproblem error: {:?}", result.error);
+        assert_eq!(result.status, "optimal");
+    }
+
+    #[tokio::test]
+    async fn master_local_fallback_solves_binary_mip() {
+        let state = test_state(NodeRole::Master);
+        let options = SolveOptions {
+            split_depth: Some(2),
+            max_nodes: Some(10_000),
+            ..SolveOptions::default()
+        };
+
+        let response = solve_problem_distributed(
+            state,
+            "request-test".to_string(),
+            3,
+            binary_knapsack_problem(),
+            options,
+        )
+        .await
+        .unwrap();
+
+        assert!(response.ok, "warnings: {:?}", response.warnings);
+        assert_eq!(response.status, "optimal");
+        assert_eq!(response.revision, 3);
+        assert_eq!(response.z, Some(90.0));
+        assert!(!response.distributed);
+        assert_eq!(response.jobs_expected, response.jobs_completed);
+        assert_eq!(response.jobs_redelegated, 0);
+        assert!(response.jobs_published >= response.jobs_completed);
+        assert!(response.jobs_published > 0);
+    }
+
+    #[test]
+    fn simulated_three_slave_delegation_solves_100_by_200_mip() {
+        let state = test_state(NodeRole::Master);
+        let problem = normalized_problem(hundred_variable_two_hundred_constraint_mip()).unwrap();
+        let options = SolveOptions {
+            split_depth: Some(2),
+            max_subproblems: Some(8),
+            max_nodes: Some(10_000),
+            max_ticks: Some(10_000),
+            ..SolveOptions::default()
+        };
+        assert_eq!(problem.c.len(), 100);
+        assert_eq!(problem.a.len(), 200);
+
+        let (jobs, warnings) = build_frontier_jobs(
+            &problem,
+            "solve-large-test",
+            "request-large-test",
+            11,
+            "master-test",
+            &options,
+        )
+        .unwrap();
+        assert!(
+            jobs.len() >= 3,
+            "expected at least three delegated subproblems, got {} with warnings {:?}",
+            jobs.len(),
+            warnings
+        );
+
+        let workers = ["slave-a", "slave-b", "slave-c"];
+        let mut pending: VecDeque<SubproblemJob> = jobs.into_iter().collect();
+        let mut results = Vec::new();
+        let mut used_workers = HashSet::new();
+        let mut jobs_expected = pending.len();
+        let mut jobs_published = pending.len();
+        let mut jobs_split = 0usize;
+        let mut next_worker = 0usize;
+
+        while let Some(job) = pending.pop_front() {
+            let worker = workers[next_worker % workers.len()].to_string();
+            next_worker += 1;
+            used_workers.insert(worker.clone());
+            let result = solve_subproblem(job, worker);
+            if result.status == "split" && !result.child_jobs.is_empty() {
+                jobs_split += 1;
+                jobs_expected =
+                    jobs_expected.saturating_add(result.child_jobs.len().saturating_sub(1));
+                jobs_published = jobs_published.saturating_add(result.child_jobs.len());
+                for child in result.child_jobs {
+                    pending.push_back(child);
+                }
+            } else {
+                results.push(result);
+            }
+        }
+
+        let response = aggregate_results(
+            "solve-large-test".to_string(),
+            "request-large-test".to_string(),
+            11,
+            &problem,
+            jobs_expected,
+            jobs_published,
+            0,
+            jobs_split,
+            results,
+            false,
+            true,
+            &state,
+            warnings,
+        );
+
+        assert_eq!(used_workers.len(), 3, "used workers: {used_workers:?}");
+        assert!(response.ok, "response warnings: {:?}", response.warnings);
+        assert_eq!(response.status, "optimal");
+        assert_eq!(response.revision, 11);
+        assert_eq!(response.jobs_expected, response.jobs_completed);
+        assert!(response.jobs_published >= 3);
+        assert!(response.distributed);
+        assert_eq!(response.z, Some(2.0));
+        assert_eq!(response.x.len(), 100);
+        assert_eq!(
+            response
+                .x
+                .iter()
+                .take(3)
+                .filter(|value| **value > 0.5)
+                .count(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn http_solve_endpoint_solves_binary_mip() {
+        let app = app_router(test_state(NodeRole::Master));
+        let payload = json!({
+            "requestId": "http-test",
+            "problem": binary_knapsack_problem(),
+            "options": {
+                "splitDepth": 2,
+                "maxNodes": 10000
+            }
+        });
+
+        let (status, body) = post_json(app, "/solve", payload).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("ok"), Some(&json!(true)));
+        assert_eq!(body.get("status"), Some(&json!("optimal")));
+        assert_eq!(body.get("z"), Some(&json!(90.0)));
+        assert_eq!(body.get("distributed"), Some(&json!(false)));
+        assert_eq!(body.pointer("/role"), Some(&json!("master")));
+    }
+
+    #[tokio::test]
+    async fn metrics_endpoint_exposes_prometheus_node_and_inflight_metrics() {
+        let state = test_state(NodeRole::Master);
+        state
+            .metrics
+            .subproblem_jobs_published_total
+            .store(7, Ordering::Relaxed);
+        state
+            .metrics
+            .subproblem_jobs_completed_total
+            .store(3, Ordering::Relaxed);
+        state
+            .metrics
+            .subproblem_jobs_redelegated_total
+            .store(2, Ordering::Relaxed);
+        state
+            .metrics
+            .subproblem_jobs_split_total
+            .store(4, Ordering::Relaxed);
+        state
+            .metrics
+            .worker_control_messages_total
+            .store(5, Ordering::Relaxed);
+        state
+            .workers
+            .lock()
+            .expect("workers mutex poisoned")
+            .insert(
+                "worker-a".to_string(),
+                WorkerNodeStatus {
+                    node_id: "worker-a".to_string(),
+                    last_command: "worker-ready".to_string(),
+                    last_seen_ms: 1000,
+                    ..WorkerNodeStatus::default()
+                },
+            );
+        state.solves.lock().expect("solves mutex poisoned").insert(
+            "solve-a".to_string(),
+            SolveRegistryEntry {
+                solve_id: "solve-a".to_string(),
+                request_id: "request-a".to_string(),
+                status: "running".to_string(),
+                jobs_expected: 2,
+                started_at_ms: 1000,
+                updated_at_ms: 1000,
+                ..SolveRegistryEntry::default()
+            },
+        );
+        let app = app_router(state);
+
+        let (status, body) = get_text(app, "/metrics").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("# TYPE dd_mip_solver_node_info gauge"));
+        assert!(body.contains("dd_mip_solver_node_info{role=\"master\",node_id=\"test-node\"} 1"));
+        assert!(body.contains("# TYPE dd_mip_solver_subproblem_jobs_in_flight gauge"));
+        assert!(body.contains("dd_mip_solver_subproblem_jobs_in_flight 4"));
+        assert!(body.contains("# TYPE dd_mip_solver_subproblem_jobs_redelegated_total counter"));
+        assert!(body.contains("dd_mip_solver_subproblem_jobs_redelegated_total 2"));
+        assert!(body.contains("# TYPE dd_mip_solver_subproblem_jobs_split_total counter"));
+        assert!(body.contains("dd_mip_solver_subproblem_jobs_split_total 4"));
+        assert!(body.contains("# TYPE dd_mip_solver_workers_known gauge"));
+        assert!(body.contains("dd_mip_solver_workers_known 1"));
+        assert!(body.contains("# TYPE dd_mip_solver_worker_control_messages_total counter"));
+        assert!(body.contains("dd_mip_solver_worker_control_messages_total 5"));
+        assert!(body.contains("# TYPE dd_mip_solver_solves_tracked gauge"));
+        assert!(body.contains("dd_mip_solver_solves_tracked 1"));
+        assert!(body.contains("# TYPE dd_mip_solver_active_solves gauge"));
+        assert!(body.contains("dd_mip_solver_active_solves 1"));
+    }
+
+    #[tokio::test]
+    async fn mip_solver_cluster_workers_endpoint_reports_master_observed_slaves() {
+        let state = test_state(NodeRole::Master);
+        record_worker_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"worker-b",
+                "role":"slave",
+                "commandName":"worker-ready",
+                "payload":{
+                    "consumer":"dd-in-house-mip-solver-node-workers",
+                    "jobsSubject": MIP_SOLVER_JOBS_SUBJECT,
+                    "resultsSubject": MIP_SOLVER_RESULTS_SUBJECT
+                },
+                "timeMs": 2000
+            }),
+        )
+        .unwrap();
+        let app = app_router(state);
+
+        let (status, body) = get_json(app, "/mip-solver-cluster/workers").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("ok"), Some(&json!(true)));
+        assert_eq!(body.get("count"), Some(&json!(1)));
+        assert_eq!(body.pointer("/workers/0/nodeId"), Some(&json!("worker-b")));
+        assert_eq!(
+            body.pointer("/workers/0/consumer"),
+            Some(&json!("dd-in-house-mip-solver-node-workers"))
+        );
+    }
+
+    #[tokio::test]
+    async fn mip_solver_cluster_solves_endpoint_reports_tracked_jobs() {
+        let state = test_state(NodeRole::Master);
+        let app = app_router(state.clone());
+        let response = solve_problem_distributed(
+            state.clone(),
+            "tracked-solve".to_string(),
+            9,
+            pure_lp_problem(),
+            SolveOptions::default(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response.status, "optimal");
+        let (status, body) = get_json(app, "/mip-solver-cluster/solves").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("ok"), Some(&json!(true)));
+        assert_eq!(body.get("count"), Some(&json!(1)));
+        assert_eq!(body.get("active"), Some(&json!(0)));
+        assert_eq!(
+            body.pointer("/solves/0/requestId"),
+            Some(&json!("tracked-solve"))
+        );
+        assert_eq!(body.pointer("/solves/0/status"), Some(&json!("optimal")));
+        assert_eq!(body.pointer("/solves/0/jobsExpected"), Some(&json!(1)));
+        assert_eq!(body.pointer("/solves/0/jobsCompleted"), Some(&json!(1)));
+        let jobs = body
+            .pointer("/solves/0/jobs")
+            .and_then(Value::as_object)
+            .expect("jobs object");
+        assert_eq!(jobs.len(), 1);
+        let job = jobs.values().next().expect("one job");
+        assert_eq!(job.get("status"), Some(&json!("optimal")));
+    }
+
+    #[tokio::test]
+    async fn readyz_requires_nats_connection_for_cluster_readiness() {
+        let app = app_router(test_state(NodeRole::Slave));
+
+        let (status, body) = get_json(app, "/readyz").await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body.get("ok"), Some(&json!(false)));
+        assert_eq!(body.get("nats"), Some(&json!(false)));
+        assert!(body
+            .get("reason")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .contains("NATS connection is required"));
+    }
+
+    #[tokio::test]
+    async fn http_slave_rejects_master_solve_endpoint() {
+        let app = app_router(test_state(NodeRole::Slave));
+        let payload = json!({
+            "requestId": "slave-test",
+            "problem": binary_knapsack_problem()
+        });
+
+        let (status, body) = post_json(app, "/solve", payload).await;
+
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body.get("ok"), Some(&json!(false)));
+        assert!(body
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .contains("booted as slave"));
+    }
+
+    #[tokio::test]
+    async fn http_session_streams_dynamic_edits_then_solves() {
+        let app = app_router(test_state(NodeRole::Master));
+        let commands = json!([
+            {
+                "op": "init",
+                "sense": "max",
+                "c": [10.0, 40.0, 30.0, 50.0],
+                "a": [[5.0, 4.0, 6.0, 3.0]],
+                "b": [7.0],
+                "integerVars": [true, true, true, true],
+                "ub": [1.0, 1.0, 1.0, 1.0]
+            },
+            {
+                "op": "set_rhs",
+                "index": 0,
+                "rhs": 10.0
+            },
+            {
+                "op": "snapshot"
+            }
+        ]);
+
+        let (events_status, events_body) =
+            post_json(app.clone(), "/sessions/live-mip/events", commands).await;
+        assert_eq!(events_status, StatusCode::OK);
+        assert_eq!(events_body.get("ok"), Some(&json!(true)));
+        assert_eq!(events_body.get("revision"), Some(&json!(2)));
+        assert!(events_body
+            .get("frames")
+            .and_then(Value::as_array)
+            .is_some_and(|frames| frames
+                .iter()
+                .any(|frame| frame.get("event") == Some(&json!("model")))));
+
+        let solve_payload = json!({
+            "requestId": "live-mip",
+            "options": {
+                "splitDepth": 2,
+                "maxNodes": 10000
+            }
+        });
+        let (solve_status, solve_body) =
+            post_json(app, "/sessions/live-mip/solve", solve_payload).await;
+
+        assert_eq!(solve_status, StatusCode::OK);
+        assert_eq!(solve_body.get("ok"), Some(&json!(true)));
+        assert_eq!(solve_body.get("status"), Some(&json!("optimal")));
+        assert_eq!(solve_body.get("revision"), Some(&json!(2)));
+        assert_eq!(solve_body.get("z"), Some(&json!(90.0)));
+    }
+
+    #[tokio::test]
+    async fn http_session_streams_lp_edits_and_returns_primal_dual_certificate() {
+        let app = app_router(test_state(NodeRole::Master));
+        let commands = json!([
+            {
+                "op": "init",
+                "sense": "max",
+                "c": [3.0, 2.0],
+                "a": [[1.0, 1.0], [1.0, 0.0]],
+                "b": [4.0, 2.0],
+                "integerVars": [false, false],
+                "varNames": ["x0", "x1"],
+                "conNames": ["shared", "x0_cap"]
+            },
+            {
+                "op": "add_constraint",
+                "coefs": [0.0, 1.0],
+                "rhs": 3.0,
+                "name": "x1_cap"
+            },
+            {
+                "op": "change_constraint_weight",
+                "row": 2,
+                "col": 1,
+                "value": 1.0
+            },
+            {
+                "op": "snapshot"
+            }
+        ]);
+
+        let (events_status, events_body) =
+            post_json(app.clone(), "/sessions/live-lp/events", commands).await;
+        assert_eq!(events_status, StatusCode::OK);
+        assert_eq!(events_body.get("ok"), Some(&json!(true)));
+        assert_eq!(events_body.get("revision"), Some(&json!(3)));
+
+        let (solve_status, solve_body) = post_json(
+            app,
+            "/sessions/live-lp/solve",
+            json!({"requestId":"live-lp"}),
+        )
+        .await;
+
+        assert_eq!(solve_status, StatusCode::OK);
+        assert_eq!(solve_body.get("ok"), Some(&json!(true)));
+        assert_eq!(solve_body.get("status"), Some(&json!("optimal")));
+        assert_eq!(solve_body.get("distributed"), Some(&json!(false)));
+        assert_eq!(
+            solve_body.pointer("/lp/primal/objective"),
+            Some(&json!(10.0))
+        );
+        assert_eq!(solve_body.pointer("/lp/primal/x"), Some(&json!([2.0, 2.0])));
+        let dual = solve_body
+            .pointer("/lp/dual/inequality")
+            .and_then(Value::as_array)
+            .expect("LP inequality duals");
+        assert_eq!(dual.len(), 3);
+        assert!((dual[0].as_f64().unwrap() - 2.0).abs() < 1e-6);
+        assert!((dual[1].as_f64().unwrap() - 1.0).abs() < 1e-6);
+        assert!(dual[2].as_f64().unwrap().abs() < 1e-6);
+        assert_eq!(
+            solve_body.pointer("/lp/dual/rowNames"),
+            Some(&json!(["shared", "x0_cap", "x1_cap"]))
+        );
+    }
+
+    #[test]
+    fn aggregate_results_counts_infeasible_subtrees_as_complete() {
+        let problem = binary_knapsack_problem();
+        let state = test_state(NodeRole::Master);
+        let optimal = SubproblemResult {
+            solve_id: "solve-test".to_string(),
+            request_id: "request-test".to_string(),
+            job_id: "job-0".to_string(),
+            revision: 0,
+            worker_node: "worker-a".to_string(),
+            ok: true,
+            status: "optimal".to_string(),
+            z: Some(90.0),
+            x: vec![0.0, 1.0, 0.0, 1.0],
+            best_bound: Some(90.0),
+            gap: Some(0.0),
+            lp: None,
+            child_jobs: Vec::new(),
+            nodes_explored: 1,
+            lp_solves: 1,
+            elapsed_ms: 1.0,
+            accelerator: AcceleratorReport::default(),
+            error: None,
+            finished_at_ms: now_ms(),
+        };
+        let infeasible = SubproblemResult {
+            solve_id: "solve-test".to_string(),
+            request_id: "request-test".to_string(),
+            job_id: "job-1".to_string(),
+            revision: 0,
+            worker_node: "worker-b".to_string(),
+            ok: false,
+            status: "infeasible".to_string(),
+            z: None,
+            x: Vec::new(),
+            best_bound: None,
+            gap: None,
+            lp: None,
+            child_jobs: Vec::new(),
+            nodes_explored: 0,
+            lp_solves: 0,
+            elapsed_ms: 1.0,
+            accelerator: AcceleratorReport::default(),
+            error: Some("pruned".to_string()),
+            finished_at_ms: now_ms(),
+        };
+
+        let response = aggregate_results(
+            "solve-test".to_string(),
+            "request-test".to_string(),
+            0,
+            &problem,
+            2,
+            2,
+            0,
+            0,
+            vec![optimal, infeasible],
+            false,
+            true,
+            &state,
+            Vec::new(),
+        );
+
+        assert!(response.ok);
+        assert_eq!(response.status, "optimal");
+        assert_eq!(response.jobs_completed, 2);
+        assert_eq!(response.jobs_expected, 2);
+        assert_eq!(response.jobs_redelegated, 0);
+        assert_eq!(response.jobs_split, 0);
+        assert_eq!(response.z, Some(90.0));
+    }
+
+    #[test]
+    fn redelegated_job_preserves_payload_and_advances_retry_id() {
+        let mut job = test_job(binary_knapsack_problem());
+        job.job_id = "solve-test-0".to_string();
+        job.extra_constraints.push(BranchConstraint {
+            coefs: vec![1.0, 0.0, 0.0, 0.0],
+            rhs: 0.0,
+            name: "branch_x0_le_0".to_string(),
+        });
+
+        let retry = redelegated_job(&job, 2);
+
+        assert_eq!(retry.job_id, "solve-test-0-retry-2");
+        assert_eq!(retry.solve_id, job.solve_id);
+        assert_eq!(retry.request_id, job.request_id);
+        assert_eq!(retry.revision, job.revision);
+        assert_eq!(retry.problem.c, job.problem.c);
+        assert_eq!(retry.extra_constraints, job.extra_constraints);
+        assert!(retry.submitted_at_ms >= job.submitted_at_ms);
+    }
+
+    #[test]
+    fn aggregate_results_treats_redelegated_attempt_as_complete() {
+        let problem = binary_knapsack_problem();
+        let state = test_state(NodeRole::Master);
+        let optimal_retry = SubproblemResult {
+            solve_id: "solve-test".to_string(),
+            request_id: "request-test".to_string(),
+            job_id: "job-0-retry-1".to_string(),
+            revision: 0,
+            worker_node: "worker-b".to_string(),
+            ok: true,
+            status: "optimal".to_string(),
+            z: Some(90.0),
+            x: vec![0.0, 1.0, 0.0, 1.0],
+            best_bound: Some(90.0),
+            gap: Some(0.0),
+            lp: None,
+            child_jobs: Vec::new(),
+            nodes_explored: 1,
+            lp_solves: 1,
+            elapsed_ms: 1.0,
+            accelerator: AcceleratorReport::default(),
+            error: None,
+            finished_at_ms: now_ms(),
+        };
+
+        let response = aggregate_results(
+            "solve-test".to_string(),
+            "request-test".to_string(),
+            0,
+            &problem,
+            1,
+            2,
+            1,
+            0,
+            vec![optimal_retry],
+            false,
+            true,
+            &state,
+            Vec::new(),
+        );
+
+        assert!(response.ok);
+        assert_eq!(response.status, "optimal");
+        assert_eq!(response.jobs_expected, 1);
+        assert_eq!(response.jobs_published, 2);
+        assert_eq!(response.jobs_completed, 1);
+        assert_eq!(response.jobs_redelegated, 1);
+        assert_eq!(response.jobs_split, 0);
+        assert_eq!(response.z, Some(90.0));
+    }
+
+    #[test]
+    fn result_acceptance_ignores_duplicate_and_unknown_jobs() {
+        let mut expected = HashSet::new();
+        expected.insert("job-0".to_string());
+        expected.insert("job-1".to_string());
+        let mut completed = HashSet::new();
+        let result = SubproblemResult {
+            solve_id: "solve-test".to_string(),
+            request_id: "request-test".to_string(),
+            job_id: "job-0".to_string(),
+            revision: 0,
+            worker_node: "worker-a".to_string(),
+            ok: true,
+            status: "optimal".to_string(),
+            z: Some(90.0),
+            x: vec![0.0, 1.0],
+            best_bound: Some(90.0),
+            gap: Some(0.0),
+            lp: None,
+            child_jobs: Vec::new(),
+            nodes_explored: 1,
+            lp_solves: 1,
+            elapsed_ms: 1.0,
+            accelerator: AcceleratorReport::default(),
+            error: None,
+            finished_at_ms: now_ms(),
+        };
+
+        assert!(
+            accept_subproblem_result(result.clone(), "solve-test", &expected, &mut completed)
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(completed.len(), 1);
+
+        let duplicate =
+            accept_subproblem_result(result.clone(), "solve-test", &expected, &mut completed)
+                .unwrap_err();
+        assert!(duplicate.contains("duplicate"));
+        assert_eq!(completed.len(), 1);
+
+        let mut unknown = result.clone();
+        unknown.job_id = "job-missing".to_string();
+        let warning =
+            accept_subproblem_result(unknown, "solve-test", &expected, &mut completed).unwrap_err();
+        assert!(warning.contains("unknown job"));
+        assert_eq!(completed.len(), 1);
+
+        let mut other_solve = result;
+        other_solve.solve_id = "solve-other".to_string();
+        assert!(
+            accept_subproblem_result(other_solve, "solve-test", &expected, &mut completed)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(completed.len(), 1);
     }
 }

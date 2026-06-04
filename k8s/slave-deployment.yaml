@@ -67,11 +67,8 @@ spec:
                 echo "solver source not found at ${solver_src}" >&2
                 exit 1
               fi
-              rm -rf /tmp/mip-solver-node.rs
-              mkdir -p /tmp/mip-solver-node.rs
-              cp -a "${solver_src}/." /tmp/mip-solver-node.rs/
-              cd /tmp/mip-solver-node.rs
-              exec /usr/local/cargo/bin/cargo run --release
+              cd "${solver_src}"
+              exec /usr/local/cargo/bin/cargo run --release --locked
           env:
             - name: HOST
               value: 0.0.0.0
@@ -89,6 +86,24 @@ spec:
               value: slave
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: REDIS_URL
+              value: redis://dd-redis-cache.default.svc.cluster.local:6379/0
+            - name: MIP_SOLVER_REDIS_KEY_PREFIX
+              value: dd:mip-solver
+            - name: RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-mip-solver-node-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: AGENT_TASKS_RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-mip-solver-node-secrets
+                  key: AGENT_TASKS_RDS_DATABASE_URL
+                  optional: true
+            - name: MIP_SOLVER_PG_POOL_SIZE
+              value: '4'
             - name: MIP_SOLVER_CLUSTER_GIT_URL
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: MIP_SOLVER_CLUSTER_GIT_REF

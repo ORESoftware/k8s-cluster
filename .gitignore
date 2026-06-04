@@ -1,4 +1,5 @@
 target/
+local/Cargo.lock
 Cargo.lock.bak
 *.log
 .DS_Store

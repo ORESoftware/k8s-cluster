@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-in-house-mip-solver-node-slave
+  namespace: ai-ml
+  labels:
+    app: dd-in-house-mip-solver-node-slave
+    app.kubernetes.io/component: slave
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-in-house-mip-solver-node-slave
+  ports:
+    - name: http
+      port: 8117
+      targetPort: http
