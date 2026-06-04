@@ -11,10 +11,7 @@ spec:
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 4
-      maxUnavailable: 0
+    type: Recreate
   selector:
     matchLabels:
       app: dd-in-house-mip-solver-node-slave
@@ -133,11 +130,11 @@ spec:
               containerPort: 8117
           resources:
             requests:
-              cpu: 250m
-              memory: 1Gi
+              cpu: 100m
+              memory: 512Mi
             limits:
-              cpu: '8'
-              memory: 24Gi
+              cpu: '4'
+              memory: 8Gi
           startupProbe:
             httpGet:
               path: /healthz
