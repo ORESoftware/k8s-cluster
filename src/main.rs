@@ -16,7 +16,7 @@ use std::{
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, Path as AxumPath, State},
+    extract::{DefaultBodyLimit, Path as AxumPath, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::{delete, get, post},
@@ -45,7 +45,8 @@ use futures_util::StreamExt;
 use libloading::Library;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{postgres::PgPoolOptions, PgPool, Row};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
 const SERVICE_NAME: &str = "dd-in-house-mip-solver-node";
@@ -91,6 +92,7 @@ struct AppState {
     nats: Option<async_nats::Client>,
     redis: Option<redis::Client>,
     pg: Option<PgPool>,
+    coordination: CoordinationConfig,
     jobs_subject: String,
     results_subject: String,
     control_subject: String,
@@ -98,8 +100,100 @@ struct AppState {
     sessions: Arc<Mutex<HashMap<String, LiveSession>>>,
     workers: Arc<Mutex<HashMap<String, WorkerNodeStatus>>>,
     solves: Arc<Mutex<HashMap<String, SolveRegistryEntry>>>,
+    tasks: Arc<Mutex<HashMap<String, RuntimeTaskRecord>>>,
     cancelled_solves: Arc<Mutex<HashMap<String, CancelInfo>>>,
     metrics: Arc<Metrics>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum CoordinationBackend {
+    Redis,
+    LiveMutex,
+}
+
+impl CoordinationBackend {
+    fn as_str(self) -> &'static str {
+        match self {
+            CoordinationBackend::Redis => "redis",
+            CoordinationBackend::LiveMutex => "live-mutex",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct LiveMutexConfig {
+    base_url: String,
+    auth_token: Option<String>,
+    request_timeout_ms: u64,
+    max_response_bytes: u64,
+}
+
+#[derive(Clone, Debug)]
+struct CoordinationConfig {
+    backends: Vec<CoordinationBackend>,
+    redis_lock_prefix: String,
+    ttl_ms: u64,
+    wait_ms: u64,
+    live_mutex: Option<LiveMutexConfig>,
+}
+
+#[derive(Clone, Debug)]
+struct CoordinationGuard {
+    key: String,
+    holders: Vec<CoordinationHolder>,
+}
+
+#[derive(Clone, Debug)]
+enum CoordinationHolder {
+    Redis { token: String },
+    LiveMutex { lock_uuid: String },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveMutexLockResponse {
+    acquired: bool,
+    lock_uuid: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveMutexUnlockResponse {
+    unlocked: bool,
+    error: Option<String>,
+}
+
+#[derive(Debug)]
+struct HttpEndpoint {
+    addr: String,
+    host_header: String,
+    path_prefix: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeTaskEntry {
+    task_id: String,
+    kind: String,
+    node_id: String,
+    role: NodeRole,
+    status: String,
+    problem_id: Option<String>,
+    solve_id: Option<String>,
+    request_id: Option<String>,
+    job_id: Option<String>,
+    job_uuid: Option<String>,
+    abortable: bool,
+    started_at_ms: u128,
+    updated_at_ms: u128,
+    finished_at_ms: Option<u128>,
+}
+
+struct RuntimeTaskRecord {
+    entry: RuntimeTaskEntry,
+    abort_handle: Option<tokio::task::AbortHandle>,
 }
 
 #[derive(Default)]
@@ -144,6 +238,8 @@ struct WorkerNodeStatus {
 #[serde(rename_all = "camelCase")]
 struct JobRegistryEntry {
     job_id: String,
+    job_uuid: Option<String>,
+    problem_id: Option<String>,
     root_job_id: String,
     retry_index: usize,
     depth: usize,
@@ -159,6 +255,7 @@ struct JobRegistryEntry {
 struct SolveRegistryEntry {
     solve_id: String,
     request_id: String,
+    problem_id: Option<String>,
     revision: u64,
     status: String,
     jobs_expected: usize,
@@ -183,6 +280,7 @@ struct SolveRegistryEntry {
 struct CancelInfo {
     solve_id: String,
     request_id: Option<String>,
+    problem_id: Option<String>,
     reason: String,
     requested_by: String,
     requested_at_ms: u128,
@@ -192,6 +290,7 @@ struct CancelInfo {
 #[serde(rename_all = "camelCase")]
 struct SolveHttpRequest {
     request_id: Option<String>,
+    problem_id: Option<String>,
     problem: Option<MipProblemSpec>,
     commands: Option<Vec<Value>>,
     options: Option<SolveOptions>,
@@ -202,6 +301,12 @@ struct SolveHttpRequest {
 struct CancelSolveRequest {
     reason: Option<String>,
     requested_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClusterSolvesQuery {
+    problem: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -348,6 +453,10 @@ struct SubproblemJob {
     solve_id: String,
     request_id: String,
     job_id: String,
+    #[serde(default = "new_uuid_string")]
+    job_uuid: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    problem_id: Option<String>,
     revision: u64,
     depth: usize,
     master_node: String,
@@ -363,6 +472,10 @@ struct SubproblemResult {
     solve_id: String,
     request_id: String,
     job_id: String,
+    #[serde(default = "new_uuid_string")]
+    job_uuid: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    problem_id: Option<String>,
     revision: u64,
     worker_node: String,
     ok: bool,
@@ -437,6 +550,7 @@ struct SolveResponse {
     ok: bool,
     solve_id: String,
     request_id: String,
+    problem_id: Option<String>,
     status: String,
     revision: u64,
     z: Option<f64>,
@@ -474,6 +588,7 @@ struct PersistenceContract {
     mode: String,
     postgres: PostgresPersistenceContract,
     redis: RedisPersistenceContract,
+    coordination: CoordinationPersistenceContract,
     in_memory: Vec<String>,
 }
 
@@ -500,6 +615,19 @@ struct RedisPersistenceContract {
     session_model_key: String,
     session_revision_lock_key: String,
     generated_mutex_key: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CoordinationPersistenceContract {
+    enabled: bool,
+    backends: Vec<&'static str>,
+    redis_lock_prefix: String,
+    live_mutex_url_env: Option<String>,
+    lock_ttl_ms: u64,
+    lock_wait_ms: u64,
+    session_revision_lock_key: String,
+    solve_request_lock_key: String,
 }
 
 #[derive(Debug)]
@@ -605,6 +733,29 @@ fn request_id(input: Option<String>) -> String {
         .unwrap_or_else(|| format!("mip-{}", Uuid::new_v4()))
 }
 
+fn new_uuid_string() -> String {
+    Uuid::new_v4().to_string()
+}
+
+fn problem_id(input: Option<String>, request_id: &str) -> Result<String, String> {
+    if let Some(value) = input {
+        let value = value.trim();
+        if value.is_empty() {
+            return Err("problemId must be a UUID".to_string());
+        }
+        return Uuid::parse_str(value)
+            .map(|uuid| uuid.to_string())
+            .map_err(|_| "problemId must be a UUID".to_string());
+    }
+    Ok(Uuid::parse_str(request_id)
+        .map(|uuid| uuid.to_string())
+        .unwrap_or_else(|_| Uuid::new_v4().to_string()))
+}
+
+fn cancel_poll_interval() -> Duration {
+    Duration::from_secs(env_u64("MIP_SOLVER_CANCEL_POLL_SECONDS", 10).max(1))
+}
+
 fn gpu_mode() -> String {
     env_value("MIP_SOLVER_GPU_MODE", "auto").to_ascii_lowercase()
 }
@@ -632,6 +783,106 @@ fn first_configured_env(keys: &[&str]) -> Option<String> {
         .map(|key| (*key).to_string())
 }
 
+fn first_configured_env_value(keys: &[&str]) -> Option<String> {
+    first_configured_env(keys)
+        .and_then(|key| env::var(key).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn parse_coordination_backends(
+    requested: &str,
+    redis_available: bool,
+    live_mutex_available: bool,
+) -> Vec<CoordinationBackend> {
+    let requested = requested.trim().to_ascii_lowercase();
+    let mut backends = Vec::new();
+    let mut push_backend = |backend: CoordinationBackend| {
+        if !backends.contains(&backend) {
+            backends.push(backend);
+        }
+    };
+
+    if requested.is_empty() || requested == "auto" {
+        if redis_available {
+            push_backend(CoordinationBackend::Redis);
+        }
+        if live_mutex_available {
+            push_backend(CoordinationBackend::LiveMutex);
+        }
+        return backends;
+    }
+
+    for part in requested.split(',').map(str::trim) {
+        match part {
+            "off" | "none" | "disabled" | "false" | "0" => return Vec::new(),
+            "both" | "all" => {
+                if redis_available {
+                    push_backend(CoordinationBackend::Redis);
+                }
+                if live_mutex_available {
+                    push_backend(CoordinationBackend::LiveMutex);
+                }
+            }
+            "redis" => {
+                if redis_available {
+                    push_backend(CoordinationBackend::Redis);
+                }
+            }
+            "live-mutex" | "live_mutex" | "livemutex" | "lmx" => {
+                if live_mutex_available {
+                    push_backend(CoordinationBackend::LiveMutex);
+                }
+            }
+            _ => {}
+        }
+    }
+    backends
+}
+
+impl CoordinationConfig {
+    fn from_env(redis_available: bool) -> Self {
+        let live_mutex_url = first_configured_env_value(&[
+            "MIP_SOLVER_LIVE_MUTEX_URL",
+            "LIVE_MUTEX_URL",
+            "LMX_HTTP_URL",
+        ]);
+        let live_mutex = live_mutex_url.map(|base_url| LiveMutexConfig {
+            base_url,
+            auth_token: first_configured_env_value(&[
+                "MIP_SOLVER_LIVE_MUTEX_AUTH_TOKEN",
+                "LIVE_MUTEX_AUTH_TOKEN",
+                "LMX_AUTH_TOKEN",
+            ]),
+            request_timeout_ms: env_u64("MIP_SOLVER_LIVE_MUTEX_REQUEST_TIMEOUT_MS", 10_000),
+            max_response_bytes: env_u64("MIP_SOLVER_LIVE_MUTEX_MAX_RESPONSE_BYTES", 1_048_576),
+        });
+        let requested = env_value("MIP_SOLVER_COORDINATION_BACKENDS", "auto");
+        let backends =
+            parse_coordination_backends(&requested, redis_available, live_mutex.is_some());
+
+        CoordinationConfig {
+            backends,
+            redis_lock_prefix: env_value("MIP_SOLVER_REDIS_LOCK_PREFIX", &redis_key_prefix()),
+            ttl_ms: env_u64("MIP_SOLVER_COORDINATION_LOCK_TTL_MS", 30_000),
+            wait_ms: env_u64("MIP_SOLVER_COORDINATION_WAIT_MS", 5_000),
+            live_mutex,
+        }
+    }
+
+    fn enabled(&self) -> bool {
+        !self.backends.is_empty()
+    }
+
+    fn backend_names(&self) -> Vec<&'static str> {
+        self.backends
+            .iter()
+            .copied()
+            .map(CoordinationBackend::as_str)
+            .collect()
+    }
+}
+
 fn redis_key_prefix() -> String {
     env_value("MIP_SOLVER_REDIS_KEY_PREFIX", MIP_SOLVER_REDIS_PREFIX)
 }
@@ -652,6 +903,10 @@ fn mip_solver_session_revision_lock_key(prefix: &str, session_id: &str) -> Strin
     format!("{prefix}:session:{session_id}:revision-lock")
 }
 
+fn mip_solver_solve_request_lock_key(prefix: &str, problem_id: &str) -> String {
+    format!("{prefix}:solve-request:{problem_id}:lock")
+}
+
 fn persistence_contract() -> PersistenceContract {
     let pg_url_env = first_configured_env(&[
         "MIP_SOLVER_DATABASE_URL",
@@ -661,7 +916,13 @@ fn persistence_contract() -> PersistenceContract {
         "PG_DATABASE_URL",
     ]);
     let redis_url_env = first_configured_env(&["MIP_SOLVER_REDIS_URL", "REDIS_URL"]);
+    let live_mutex_url_env = first_configured_env(&[
+        "MIP_SOLVER_LIVE_MUTEX_URL",
+        "LIVE_MUTEX_URL",
+        "LMX_HTTP_URL",
+    ]);
     let prefix = redis_key_prefix();
+    let coordination = CoordinationConfig::from_env(redis_url_env.is_some());
 
     PersistenceContract {
         mode: if pg_url_env.is_some() || redis_url_env.is_some() {
@@ -697,6 +958,22 @@ fn persistence_contract() -> PersistenceContract {
                 CONTAINER_POOL_AFFINITY_LOCK_KEY_DEFAULT_PREFIX,
                 "mip-solver",
                 "{solveId}",
+            ),
+        },
+        coordination: CoordinationPersistenceContract {
+            enabled: coordination.enabled(),
+            backends: coordination.backend_names(),
+            redis_lock_prefix: coordination.redis_lock_prefix.clone(),
+            live_mutex_url_env,
+            lock_ttl_ms: coordination.ttl_ms,
+            lock_wait_ms: coordination.wait_ms,
+            session_revision_lock_key: mip_solver_session_revision_lock_key(
+                &coordination.redis_lock_prefix,
+                "{sessionId}",
+            ),
+            solve_request_lock_key: mip_solver_solve_request_lock_key(
+                &coordination.redis_lock_prefix,
+                "{problemId}",
             ),
         },
         in_memory: vec![
@@ -1733,6 +2010,8 @@ fn split_subproblem_children(
             solve_id: job.solve_id.clone(),
             request_id: job.request_id.clone(),
             job_id: format!("{root}-split-d{next_depth}-left"),
+            job_uuid: new_uuid_string(),
+            problem_id: job.problem_id.clone(),
             revision: job.revision,
             depth: next_depth,
             master_node: job.master_node.clone(),
@@ -1745,6 +2024,8 @@ fn split_subproblem_children(
             solve_id: job.solve_id.clone(),
             request_id: job.request_id.clone(),
             job_id: format!("{root}-split-d{next_depth}-right"),
+            job_uuid: new_uuid_string(),
+            problem_id: job.problem_id.clone(),
             revision: job.revision,
             depth: next_depth,
             master_node: job.master_node.clone(),
@@ -1767,6 +2048,7 @@ fn build_frontier_jobs(
     problem: &MipProblemSpec,
     solve_id: &str,
     request_id: &str,
+    problem_id: &str,
     revision: u64,
     master_node: &str,
     options: &SolveOptions,
@@ -1835,6 +2117,8 @@ fn build_frontier_jobs(
             solve_id: solve_id.to_string(),
             request_id: request_id.to_string(),
             job_id,
+            job_uuid: new_uuid_string(),
+            problem_id: Some(problem_id.to_string()),
             revision,
             depth: node.depth,
             master_node: master_node.to_string(),
@@ -1886,6 +2170,8 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
             solve_id: job.solve_id,
             request_id: job.request_id,
             job_id: job.job_id,
+            job_uuid: job.job_uuid,
+            problem_id: job.problem_id,
             revision: job.revision,
             worker_node,
             ok: solution.status == IPMIPStatus::Optimal || !solution.x.is_empty(),
@@ -1925,6 +2211,8 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
                 solve_id: job.solve_id,
                 request_id: job.request_id,
                 job_id: job.job_id,
+                job_uuid: job.job_uuid,
+                problem_id: job.problem_id,
                 revision: job.revision,
                 worker_node,
                 ok: optimal,
@@ -1968,6 +2256,8 @@ fn failed_subproblem(
         solve_id: job.solve_id,
         request_id: job.request_id,
         job_id: job.job_id,
+        job_uuid: job.job_uuid,
+        problem_id: job.problem_id,
         revision: job.revision,
         worker_node,
         ok: false,
@@ -1999,6 +2289,8 @@ fn split_subproblem(
         solve_id: job.solve_id,
         request_id: job.request_id,
         job_id: job.job_id,
+        job_uuid: job.job_uuid,
+        problem_id: job.problem_id,
         revision: job.revision,
         worker_node,
         ok: false,
@@ -2029,6 +2321,8 @@ fn infeasible_subproblem(
         solve_id: job.solve_id,
         request_id: job.request_id,
         job_id: job.job_id,
+        job_uuid: job.job_uuid,
+        problem_id: job.problem_id,
         revision: job.revision,
         worker_node,
         ok: false,
@@ -2064,6 +2358,7 @@ fn job_retry_index(job_id: &str) -> usize {
 fn redelegated_job(original: &SubproblemJob, retry_index: usize) -> SubproblemJob {
     let mut job = original.clone();
     job.job_id = format!("{}-retry-{retry_index}", job_retry_root(&original.job_id));
+    job.job_uuid = new_uuid_string();
     job.submitted_at_ms = now_ms();
     job
 }
@@ -2087,9 +2382,35 @@ fn resolve_solve_id(solves: &HashMap<String, SolveRegistryEntry>, key: &str) -> 
     if solves.contains_key(key) {
         return Some(key.to_string());
     }
+    newest_matching_solve_id(solves, |solve| solve.request_id == key).or_else(|| {
+        let key_uuid = Uuid::parse_str(key).ok()?.to_string();
+        newest_matching_solve_id(solves, |solve| {
+            solve.problem_id.as_deref() == Some(key_uuid.as_str())
+                || Uuid::parse_str(&solve.request_id)
+                    .map(|request_uuid| request_uuid.to_string() == key_uuid)
+                    .unwrap_or(false)
+        })
+    })
+}
+
+fn newest_matching_solve_id<F>(
+    solves: &HashMap<String, SolveRegistryEntry>,
+    mut matches: F,
+) -> Option<String>
+where
+    F: FnMut(&SolveRegistryEntry) -> bool,
+{
     solves
         .values()
-        .find(|solve| solve.request_id == key)
+        .filter(|solve| matches(solve))
+        .max_by(|left, right| {
+            let left_active = left.finished_at_ms.is_none();
+            let right_active = right.finished_at_ms.is_none();
+            left_active
+                .cmp(&right_active)
+                .then_with(|| left.started_at_ms.cmp(&right.started_at_ms))
+                .then_with(|| left.solve_id.cmp(&right.solve_id))
+        })
         .map(|solve| solve.solve_id.clone())
 }
 
@@ -2104,6 +2425,19 @@ fn solve_cancel_info(state: &AppState, solve_id: &str) -> Option<CancelInfo> {
 
 fn solve_cancel_requested(state: &AppState, solve_id: &str) -> bool {
     solve_cancel_info(state, solve_id).is_some()
+}
+
+fn solve_cancel_info_for(
+    state: &AppState,
+    solve_id: &str,
+    problem_id: Option<&str>,
+) -> Option<CancelInfo> {
+    solve_cancel_info(state, solve_id)
+        .or_else(|| problem_id.and_then(|problem_id| solve_cancel_info(state, problem_id)))
+}
+
+fn solve_cancel_requested_for(state: &AppState, solve_id: &str, problem_id: Option<&str>) -> bool {
+    solve_cancel_info_for(state, solve_id, problem_id).is_some()
 }
 
 fn request_solve_cancel(
@@ -2136,6 +2470,7 @@ fn request_solve_cancel(
     let info = CancelInfo {
         solve_id: solve.solve_id.clone(),
         request_id: Some(solve.request_id.clone()),
+        problem_id: solve.problem_id.clone(),
         reason,
         requested_by,
         requested_at_ms: now,
@@ -2209,6 +2544,7 @@ fn cancelled_solve_response(
     state: &AppState,
     solve_id: String,
     request_id: String,
+    problem_id: Option<String>,
     revision: u64,
     distributed: bool,
     mut warnings: Vec<String>,
@@ -2232,6 +2568,7 @@ fn cancelled_solve_response(
         ok: false,
         solve_id,
         request_id,
+        problem_id,
         status: "cancelled".to_string(),
         revision,
         z: None,
@@ -2258,16 +2595,27 @@ fn track_solve_started(
     state: &AppState,
     solve_id: &str,
     request_id: &str,
+    problem_id: &str,
     revision: u64,
     jobs_expected: usize,
     distributed: bool,
-) {
+) -> Result<(), String> {
     let now = now_ms();
-    state.solves.lock().expect("solves mutex poisoned").insert(
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    if let Some(active) = solves.values().find(|solve| {
+        solve.finished_at_ms.is_none() && solve.problem_id.as_deref() == Some(problem_id)
+    }) {
+        return Err(format!(
+            "problemId {problem_id} already has running solve {}",
+            active.solve_id
+        ));
+    }
+    solves.insert(
         solve_id.to_string(),
         SolveRegistryEntry {
             solve_id: solve_id.to_string(),
             request_id: request_id.to_string(),
+            problem_id: Some(problem_id.to_string()),
             revision,
             status: "running".to_string(),
             jobs_expected,
@@ -2277,6 +2625,7 @@ fn track_solve_started(
             ..SolveRegistryEntry::default()
         },
     );
+    Ok(())
 }
 
 fn track_job_submitted(state: &AppState, job: &SubproblemJob) {
@@ -2291,6 +2640,8 @@ fn track_job_submitted(state: &AppState, job: &SubproblemJob) {
         job.job_id.clone(),
         JobRegistryEntry {
             job_id: job.job_id.clone(),
+            job_uuid: Some(job.job_uuid.clone()),
+            problem_id: job.problem_id.clone(),
             root_job_id: job_retry_root(&job.job_id).to_string(),
             retry_index,
             depth: job.depth,
@@ -2311,10 +2662,14 @@ fn track_job_result(state: &AppState, result: &SubproblemResult, terminal: bool)
         .entry(result.job_id.clone())
         .or_insert_with(|| JobRegistryEntry {
             job_id: result.job_id.clone(),
+            job_uuid: Some(result.job_uuid.clone()),
+            problem_id: result.problem_id.clone(),
             root_job_id: job_retry_root(&result.job_id).to_string(),
             retry_index: job_retry_index(&result.job_id),
             ..JobRegistryEntry::default()
         });
+    job.job_uuid = Some(result.job_uuid.clone());
+    job.problem_id = result.problem_id.clone();
     job.status = if terminal || result.status == "split" {
         result.status.clone()
     } else {
@@ -2356,6 +2711,9 @@ fn track_solve_finished(state: &AppState, response: &SolveResponse) {
         return;
     };
     solve.status = response.status.clone();
+    if response.problem_id.is_some() {
+        solve.problem_id = response.problem_id.clone();
+    }
     solve.jobs_expected = response.jobs_expected;
     solve.jobs_published = response.jobs_published;
     solve.jobs_completed = response.jobs_completed;
@@ -2367,9 +2725,170 @@ fn track_solve_finished(state: &AppState, response: &SolveResponse) {
     solve.finished_at_ms = Some(response.generated_at_ms);
 }
 
+fn runtime_task_retention_ms() -> u128 {
+    u128::from(env_u64("MIP_SOLVER_TASK_RETENTION_SECONDS", 3_600)) * 1_000
+}
+
+fn prune_runtime_tasks_locked(tasks: &mut HashMap<String, RuntimeTaskRecord>) {
+    let now = now_ms();
+    let retention_ms = runtime_task_retention_ms();
+    tasks.retain(|_, record| {
+        record
+            .entry
+            .finished_at_ms
+            .map(|finished| now.saturating_sub(finished) <= retention_ms)
+            .unwrap_or(true)
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn track_runtime_task_started(
+    state: &AppState,
+    task_id: String,
+    kind: &str,
+    problem_id: Option<String>,
+    solve_id: Option<String>,
+    request_id: Option<String>,
+    job_id: Option<String>,
+    job_uuid: Option<String>,
+    abort_handle: Option<tokio::task::AbortHandle>,
+) {
+    let now = now_ms();
+    let mut tasks = state.tasks.lock().expect("runtime tasks mutex poisoned");
+    prune_runtime_tasks_locked(&mut tasks);
+    let abortable = abort_handle.is_some();
+    tasks.insert(
+        task_id.clone(),
+        RuntimeTaskRecord {
+            entry: RuntimeTaskEntry {
+                task_id,
+                kind: kind.to_string(),
+                node_id: state.node_id.clone(),
+                role: state.role,
+                status: "running".to_string(),
+                problem_id,
+                solve_id,
+                request_id,
+                job_id,
+                job_uuid,
+                abortable,
+                started_at_ms: now,
+                updated_at_ms: now,
+                finished_at_ms: None,
+            },
+            abort_handle,
+        },
+    );
+}
+
+fn track_runtime_task_solve(state: &AppState, task_id: &str, solve_id: &str) {
+    let mut tasks = state.tasks.lock().expect("runtime tasks mutex poisoned");
+    if let Some(record) = tasks.get_mut(task_id) {
+        record.entry.solve_id = Some(solve_id.to_string());
+        record.entry.updated_at_ms = now_ms();
+    }
+}
+
+fn track_runtime_task_abort_handle(
+    state: &AppState,
+    task_id: &str,
+    abort_handle: tokio::task::AbortHandle,
+) {
+    let mut tasks = state.tasks.lock().expect("runtime tasks mutex poisoned");
+    if let Some(record) = tasks.get_mut(task_id) {
+        record.abort_handle = Some(abort_handle);
+        record.entry.abortable = true;
+        record.entry.updated_at_ms = now_ms();
+    }
+}
+
+fn track_runtime_task_finished(state: &AppState, task_id: &str, status: &str) {
+    let mut tasks = state.tasks.lock().expect("runtime tasks mutex poisoned");
+    if let Some(record) = tasks.get_mut(task_id) {
+        let now = now_ms();
+        record.entry.status = status.to_string();
+        record.entry.updated_at_ms = now;
+        record.entry.finished_at_ms.get_or_insert(now);
+        record.abort_handle = None;
+        record.entry.abortable = false;
+    }
+}
+
+fn track_runtime_task_finished_if_open(state: &AppState, task_id: &str, status: &str) {
+    let mut tasks = state.tasks.lock().expect("runtime tasks mutex poisoned");
+    if let Some(record) = tasks.get_mut(task_id) {
+        if record.entry.finished_at_ms.is_some() {
+            return;
+        }
+        let now = now_ms();
+        record.entry.status = status.to_string();
+        record.entry.updated_at_ms = now;
+        record.entry.finished_at_ms = Some(now);
+        record.abort_handle = None;
+        record.entry.abortable = false;
+    }
+}
+
+fn runtime_task_matches(entry: &RuntimeTaskEntry, key: &str) -> bool {
+    entry.task_id == key
+        || entry.problem_id.as_deref() == Some(key)
+        || entry.solve_id.as_deref() == Some(key)
+        || entry.request_id.as_deref() == Some(key)
+        || entry.job_id.as_deref() == Some(key)
+        || entry.job_uuid.as_deref() == Some(key)
+}
+
+fn runtime_task_entries(state: &AppState) -> Vec<RuntimeTaskEntry> {
+    let mut tasks = state.tasks.lock().expect("runtime tasks mutex poisoned");
+    prune_runtime_tasks_locked(&mut tasks);
+    let mut entries: Vec<_> = tasks.values().map(|record| record.entry.clone()).collect();
+    entries.sort_by(|left, right| {
+        right
+            .updated_at_ms
+            .cmp(&left.updated_at_ms)
+            .then_with(|| left.task_id.cmp(&right.task_id))
+    });
+    entries
+}
+
+fn runtime_task_lookup(state: &AppState, key: &str) -> Option<RuntimeTaskEntry> {
+    let mut tasks = state.tasks.lock().expect("runtime tasks mutex poisoned");
+    prune_runtime_tasks_locked(&mut tasks);
+    if let Some(record) = tasks.get(key) {
+        return Some(record.entry.clone());
+    }
+    tasks
+        .values()
+        .find(|record| runtime_task_matches(&record.entry, key))
+        .map(|record| record.entry.clone())
+}
+
+struct RuntimeTaskFinishGuard {
+    state: AppState,
+    task_id: String,
+    default_status: &'static str,
+}
+
+impl RuntimeTaskFinishGuard {
+    fn new(state: AppState, task_id: String, default_status: &'static str) -> Self {
+        RuntimeTaskFinishGuard {
+            state,
+            task_id,
+            default_status,
+        }
+    }
+}
+
+impl Drop for RuntimeTaskFinishGuard {
+    fn drop(&mut self) {
+        track_runtime_task_finished_if_open(&self.state, &self.task_id, self.default_status);
+    }
+}
+
 fn aggregate_results(
     solve_id: String,
     request_id: String,
+    problem_id: Option<String>,
     revision: u64,
     problem: &MipProblemSpec,
     jobs_expected: usize,
@@ -2439,6 +2958,7 @@ fn aggregate_results(
         ok: best.is_some() || status == "infeasible",
         solve_id,
         request_id,
+        problem_id,
         status: status.to_string(),
         revision,
         z,
@@ -2800,6 +3320,137 @@ async fn persist_job_result(state: &AppState, result: &SubproblemResult, termina
     }
 }
 
+fn session_problem_from_json(problem: Value) -> Option<MipProblemSpec> {
+    serde_json::from_value::<MipProblemSpec>(problem).ok()
+}
+
+async fn load_pg_session_model(
+    state: &AppState,
+    session_id: &str,
+) -> Result<Option<LiveSession>, String> {
+    let Some(pool) = &state.pg else {
+        return Ok(None);
+    };
+    let sql = format!(
+        "select revision, problem from {} where session_id = $1",
+        MIP_SOLVER_SESSIONS_TABLE
+    );
+    let row = sqlx::query(&sql)
+        .bind(session_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|error| format!("load session model from Postgres: {error}"))?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let revision: i64 = row
+        .try_get("revision")
+        .map_err(|error| format!("read session revision: {error}"))?;
+    let problem: Value = row
+        .try_get("problem")
+        .map_err(|error| format!("read session problem: {error}"))?;
+    Ok(Some(LiveSession {
+        revision: revision.max(0) as u64,
+        problem: session_problem_from_json(problem),
+    }))
+}
+
+fn remember_session_model(state: &AppState, session_id: &str, session: LiveSession) -> LiveSession {
+    state
+        .sessions
+        .lock()
+        .expect("sessions mutex poisoned")
+        .insert(session_id.to_string(), session.clone());
+    session
+}
+
+async fn load_redis_session_model(state: &AppState, session_id: &str) -> Option<LiveSession> {
+    let prefix = redis_key_prefix();
+    let value = redis_get_json(state, mip_solver_session_model_key(&prefix, session_id)).await?;
+    let revision = value.get("revision").and_then(Value::as_u64).unwrap_or(0);
+    let problem = value
+        .get("problem")
+        .cloned()
+        .and_then(session_problem_from_json);
+    Some(LiveSession { problem, revision })
+}
+
+async fn load_session_model(state: &AppState, session_id: &str) -> Option<LiveSession> {
+    match load_pg_session_model(state, session_id).await {
+        Ok(Some(session)) => Some(remember_session_model(state, session_id, session)),
+        Ok(None) => {
+            if let Some(session) = load_redis_session_model(state, session_id).await {
+                return Some(remember_session_model(state, session_id, session));
+            }
+            state
+                .sessions
+                .lock()
+                .expect("sessions mutex poisoned")
+                .get(session_id)
+                .cloned()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!("mip solver session load failed for {session_id}: {error}");
+            if let Some(session) = load_redis_session_model(state, session_id).await {
+                return Some(remember_session_model(state, session_id, session));
+            }
+            state
+                .sessions
+                .lock()
+                .expect("sessions mutex poisoned")
+                .get(session_id)
+                .cloned()
+        }
+    }
+}
+
+async fn persist_session_model_checked(
+    state: &AppState,
+    session_id: &str,
+    session: &LiveSession,
+    expected_revision: u64,
+) -> Result<bool, String> {
+    let Some(pool) = &state.pg else {
+        return Ok(true);
+    };
+    let problem = session
+        .problem
+        .as_ref()
+        .map(json_value)
+        .unwrap_or_else(|| json!({}));
+    let sql = format!(
+        concat!(
+            "insert into {} (session_id, revision, problem, updated_at) values ($1, $2, $3, now()) ",
+            "on conflict (session_id) do update set revision = excluded.revision, problem = excluded.problem, updated_at = now() ",
+            "where {}.revision = $4"
+        ),
+        MIP_SOLVER_SESSIONS_TABLE,
+        MIP_SOLVER_SESSIONS_TABLE
+    );
+    let result = sqlx::query(&sql)
+        .bind(session_id)
+        .bind(session.revision as i64)
+        .bind(problem)
+        .bind(expected_revision as i64)
+        .execute(pool)
+        .await
+        .map_err(|error| format!("persist session model: {error}"))?;
+    if result.rows_affected() == 0 {
+        return Ok(false);
+    }
+    persist_event(
+        state,
+        "mip-solver.model-revision",
+        None,
+        Some(session_id),
+        None,
+        json!({"revision": session.revision}),
+    )
+    .await;
+    Ok(true)
+}
+
 async fn persist_session_model(state: &AppState, session_id: &str, session: &LiveSession) {
     let Some(pool) = &state.pg else {
         return;
@@ -2871,6 +3522,416 @@ async fn redis_set_json(state: &AppState, key: String, value: Value) {
     if let Err(error) = result {
         state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
         eprintln!("mip solver redis SET failed for {key}: {error}");
+    }
+}
+
+async fn redis_get_json(state: &AppState, key: String) -> Option<Value> {
+    let Some(client) = &state.redis else {
+        return None;
+    };
+    let mut connection = match client.get_multiplexed_async_connection().await {
+        Ok(connection) => connection,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!("mip solver redis connection failed for {key}: {error}");
+            return None;
+        }
+    };
+    let result: redis::RedisResult<Option<String>> = redis::cmd("GET")
+        .arg(&key)
+        .query_async(&mut connection)
+        .await;
+    let payload = match result {
+        Ok(Some(payload)) => payload,
+        Ok(None) => return None,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!("mip solver redis GET failed for {key}: {error}");
+            return None;
+        }
+    };
+    match serde_json::from_str(&payload) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!("mip solver redis payload parse failed for {key}: {error}");
+            None
+        }
+    }
+}
+
+fn parse_http_endpoint(base_url: &str) -> Result<HttpEndpoint, String> {
+    let Some(rest) = base_url
+        .trim()
+        .trim_end_matches('/')
+        .strip_prefix("http://")
+    else {
+        return Err("live-mutex URL must start with http://".to_string());
+    };
+    let (authority, path_prefix) = match rest.find('/') {
+        Some(index) => (
+            &rest[..index],
+            rest[index..].trim_end_matches('/').to_string(),
+        ),
+        None => (rest, String::new()),
+    };
+    if authority.is_empty() {
+        return Err("live-mutex URL is missing a host".to_string());
+    }
+    if authority.contains(['\r', '\n']) || path_prefix.contains(['\r', '\n']) {
+        return Err("live-mutex URL must not contain CRLF characters".to_string());
+    }
+    let addr = if authority.starts_with('[') || authority.contains(':') {
+        authority.to_string()
+    } else {
+        format!("{authority}:80")
+    };
+    Ok(HttpEndpoint {
+        addr,
+        host_header: authority.to_string(),
+        path_prefix,
+    })
+}
+
+fn http_path(prefix: &str, path: &str) -> String {
+    if prefix.is_empty() {
+        path.to_string()
+    } else {
+        format!("{prefix}{path}")
+    }
+}
+
+fn decode_chunked_body(body: &[u8]) -> Result<Vec<u8>, String> {
+    let mut decoded = Vec::new();
+    let mut index = 0usize;
+    loop {
+        let Some(line_end) = body[index..]
+            .windows(2)
+            .position(|window| window == b"\r\n")
+            .map(|position| index + position)
+        else {
+            return Err("chunked response missing chunk header terminator".to_string());
+        };
+        let size_text = std::str::from_utf8(&body[index..line_end])
+            .map_err(|error| format!("invalid chunk header utf8: {error}"))?;
+        let size_hex = size_text
+            .split_once(';')
+            .map(|(size, _)| size)
+            .unwrap_or(size_text)
+            .trim();
+        let size = usize::from_str_radix(size_hex, 16)
+            .map_err(|error| format!("invalid chunk size {size_text:?}: {error}"))?;
+        index = line_end + 2;
+        if size == 0 {
+            return Ok(decoded);
+        }
+        let chunk_end = index.saturating_add(size);
+        if chunk_end + 2 > body.len() {
+            return Err("chunked response ended before declared chunk size".to_string());
+        }
+        if &body[chunk_end..chunk_end + 2] != b"\r\n" {
+            return Err("chunked response missing chunk data terminator".to_string());
+        }
+        decoded.extend_from_slice(&body[index..chunk_end]);
+        index = chunk_end + 2;
+    }
+}
+
+async fn live_mutex_post_json(
+    config: &LiveMutexConfig,
+    path: &str,
+    body: Value,
+) -> Result<Value, String> {
+    let endpoint = parse_http_endpoint(&config.base_url)?;
+    let body = serde_json::to_vec(&body).map_err(|error| format!("serialize request: {error}"))?;
+    if config
+        .auth_token
+        .as_ref()
+        .is_some_and(|token| token.contains(['\r', '\n']))
+    {
+        return Err("live-mutex auth token must not contain CRLF characters".to_string());
+    }
+    let auth_header = config
+        .auth_token
+        .as_ref()
+        .map(|token| format!("Authorization: Bearer {token}\r\n"))
+        .unwrap_or_default();
+    let request = format!(
+        concat!(
+            "POST {} HTTP/1.1\r\n",
+            "Host: {}\r\n",
+            "Content-Type: application/json\r\n",
+            "Accept: application/json\r\n",
+            "{}",
+            "Connection: close\r\n",
+            "Content-Length: {}\r\n",
+            "\r\n"
+        ),
+        http_path(&endpoint.path_prefix, path),
+        endpoint.host_header,
+        auth_header,
+        body.len()
+    );
+    let timeout = Duration::from_millis(config.request_timeout_ms.max(1));
+    let response = tokio::time::timeout(timeout, async {
+        let mut stream = tokio::net::TcpStream::connect(&endpoint.addr)
+            .await
+            .map_err(|error| format!("connect {}: {error}", endpoint.addr))?;
+        stream
+            .write_all(request.as_bytes())
+            .await
+            .map_err(|error| format!("write request: {error}"))?;
+        stream
+            .write_all(&body)
+            .await
+            .map_err(|error| format!("write request body: {error}"))?;
+        let _ = stream.shutdown().await;
+        let max_response_bytes = config.max_response_bytes.clamp(1, 16 * 1024 * 1024);
+        let mut response = Vec::new();
+        let mut limited = stream.take(max_response_bytes.saturating_add(1));
+        limited
+            .read_to_end(&mut response)
+            .await
+            .map_err(|error| format!("read response: {error}"))?;
+        if response.len() as u64 > max_response_bytes {
+            return Err(format!(
+                "live-mutex response exceeded {} bytes",
+                max_response_bytes
+            ));
+        }
+        Ok::<Vec<u8>, String>(response)
+    })
+    .await
+    .map_err(|_| format!("live-mutex request to {path} timed out"))??;
+
+    let Some(header_end) = response.windows(4).position(|window| window == b"\r\n\r\n") else {
+        return Err("live-mutex response missing HTTP headers".to_string());
+    };
+    let headers = std::str::from_utf8(&response[..header_end])
+        .map_err(|error| format!("live-mutex response headers are not utf8: {error}"))?;
+    let status = headers
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .ok_or_else(|| "live-mutex response missing status code".to_string())?;
+    let mut response_body = response[header_end + 4..].to_vec();
+    if headers.lines().any(|line| {
+        line.to_ascii_lowercase()
+            .starts_with("transfer-encoding: chunked")
+    }) {
+        response_body = decode_chunked_body(&response_body)?;
+    }
+    if !(200..300).contains(&status) {
+        let message = String::from_utf8_lossy(&response_body);
+        return Err(format!(
+            "live-mutex {path} returned HTTP {status}: {message}"
+        ));
+    }
+    serde_json::from_slice(&response_body)
+        .map_err(|error| format!("parse live-mutex {path} response: {error}"))
+}
+
+async fn acquire_redis_coordination_lock(
+    state: &AppState,
+    key: &str,
+    ttl_ms: u64,
+    wait_ms: u64,
+) -> Result<String, String> {
+    let Some(client) = &state.redis else {
+        return Err("Redis coordination requested but Redis is not configured".to_string());
+    };
+    let token = format!("{}:{}", state.node_id, Uuid::new_v4());
+    let mut connection = client
+        .get_multiplexed_async_connection()
+        .await
+        .map_err(|error| format!("Redis coordination connection failed: {error}"))?;
+    let deadline = Instant::now() + Duration::from_millis(wait_ms);
+    loop {
+        let result: redis::RedisResult<Option<String>> = redis::cmd("SET")
+            .arg(key)
+            .arg(&token)
+            .arg("NX")
+            .arg("PX")
+            .arg(ttl_ms.max(1))
+            .query_async(&mut connection)
+            .await;
+        match result {
+            Ok(Some(response)) if response == "OK" => return Ok(token),
+            Ok(_) => {}
+            Err(error) => return Err(format!("Redis coordination SET NX failed: {error}")),
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Err(format!("coordination lock busy: {key}"));
+        }
+        let remaining = deadline.saturating_duration_since(now);
+        tokio::time::sleep(remaining.min(Duration::from_millis(50))).await;
+    }
+}
+
+async fn release_redis_coordination_lock(state: &AppState, key: &str, token: &str) -> bool {
+    let Some(client) = &state.redis else {
+        return false;
+    };
+    let mut connection = match client.get_multiplexed_async_connection().await {
+        Ok(connection) => connection,
+        Err(error) => {
+            eprintln!("mip solver redis coordination release connection failed for {key}: {error}");
+            return false;
+        }
+    };
+    let script = concat!(
+        "if redis.call('GET', KEYS[1]) == ARGV[1] then ",
+        "return redis.call('DEL', KEYS[1]) else return 0 end"
+    );
+    let result: redis::RedisResult<i64> = redis::cmd("EVAL")
+        .arg(script)
+        .arg(1)
+        .arg(key)
+        .arg(token)
+        .query_async(&mut connection)
+        .await;
+    match result {
+        Ok(deleted) => deleted == 1,
+        Err(error) => {
+            eprintln!("mip solver redis coordination release failed for {key}: {error}");
+            false
+        }
+    }
+}
+
+async fn acquire_live_mutex_coordination_lock(
+    state: &AppState,
+    key: &str,
+    ttl_ms: u64,
+    wait_ms: u64,
+) -> Result<String, String> {
+    let Some(config) = &state.coordination.live_mutex else {
+        return Err(
+            "live-mutex coordination requested but no live-mutex URL is configured".to_string(),
+        );
+    };
+    let value = live_mutex_post_json(
+        config,
+        "/v1/lock",
+        json!({
+            "key": key,
+            "ttlMs": ttl_ms.max(1),
+            "waitMs": wait_ms,
+        }),
+    )
+    .await?;
+    let response: LiveMutexLockResponse = serde_json::from_value(value)
+        .map_err(|error| format!("parse live-mutex lock response: {error}"))?;
+    if !response.acquired {
+        let detail = response.error.unwrap_or_else(|| "not acquired".to_string());
+        return Err(format!("coordination lock busy: {key}: {detail}"));
+    }
+    response
+        .lock_uuid
+        .ok_or_else(|| "live-mutex lock response missing lockUuid".to_string())
+}
+
+async fn release_live_mutex_coordination_lock(
+    state: &AppState,
+    key: &str,
+    lock_uuid: &str,
+) -> bool {
+    let Some(config) = &state.coordination.live_mutex else {
+        return false;
+    };
+    let value = match live_mutex_post_json(
+        config,
+        "/v1/unlock",
+        json!({
+            "key": key,
+            "lockUuid": lock_uuid,
+        }),
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("mip solver live-mutex release failed for {key}: {error}");
+            return false;
+        }
+    };
+    let response: LiveMutexUnlockResponse = match serde_json::from_value(value) {
+        Ok(response) => response,
+        Err(error) => {
+            eprintln!("mip solver live-mutex release parse failed for {key}: {error}");
+            return false;
+        }
+    };
+    if response.unlocked {
+        true
+    } else {
+        let detail = response.error.unwrap_or_else(|| "not unlocked".to_string());
+        eprintln!("mip solver live-mutex release failed for {key}: {detail}");
+        false
+    }
+}
+
+async fn acquire_coordination_lock(
+    state: &AppState,
+    key: String,
+    ttl_ms: u64,
+) -> Result<Option<CoordinationGuard>, String> {
+    if !state.coordination.enabled() {
+        return Ok(None);
+    }
+    let mut holders = Vec::new();
+    for backend in state.coordination.backends.iter().copied() {
+        let holder_result = match backend {
+            CoordinationBackend::Redis => {
+                acquire_redis_coordination_lock(state, &key, ttl_ms, state.coordination.wait_ms)
+                    .await
+                    .map(|token| CoordinationHolder::Redis { token })
+            }
+            CoordinationBackend::LiveMutex => acquire_live_mutex_coordination_lock(
+                state,
+                &key,
+                ttl_ms,
+                state.coordination.wait_ms,
+            )
+            .await
+            .map(|lock_uuid| CoordinationHolder::LiveMutex { lock_uuid }),
+        };
+        match holder_result {
+            Ok(holder) => holders.push(holder),
+            Err(error) => {
+                release_coordination_guard(
+                    state,
+                    Some(CoordinationGuard {
+                        key: key.clone(),
+                        holders,
+                    }),
+                )
+                .await;
+                return Err(error);
+            }
+        }
+    }
+    Ok(Some(CoordinationGuard { key, holders }))
+}
+
+async fn release_coordination_guard(state: &AppState, guard: Option<CoordinationGuard>) {
+    let Some(guard) = guard else {
+        return;
+    };
+    for holder in guard.holders.into_iter().rev() {
+        let released = match holder {
+            CoordinationHolder::Redis { token } => {
+                release_redis_coordination_lock(state, &guard.key, &token).await
+            }
+            CoordinationHolder::LiveMutex { lock_uuid } => {
+                release_live_mutex_coordination_lock(state, &guard.key, &lock_uuid).await
+            }
+        };
+        if !released {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -3017,8 +4078,36 @@ fn record_cancel_control_frame(state: &AppState, frame: &Value) -> Result<bool, 
         return Ok(false);
     }
     let payload = frame.get("payload").unwrap_or(&Value::Null);
-    let solve_id =
-        value_str(payload, "solveId").ok_or_else(|| "cancel frame missing solveId".to_string())?;
+    let mut request_id = value_str(payload, "requestId");
+    let mut problem_id = match value_str(payload, "problemId") {
+        Some(value) if value.trim().is_empty() => {
+            return Err("cancel frame problemId must be a UUID".to_string());
+        }
+        Some(value) => Some(
+            Uuid::parse_str(value.trim())
+                .map(|uuid| uuid.to_string())
+                .map_err(|_| "cancel frame problemId must be a UUID".to_string())?,
+        ),
+        None => None,
+    };
+    let solve_id = match value_str(payload, "solveId") {
+        Some(solve_id) => solve_id,
+        None => {
+            let lookup_key = problem_id
+                .as_deref()
+                .or(request_id.as_deref())
+                .ok_or_else(|| {
+                    "cancel frame missing solveId, problemId, or requestId".to_string()
+                })?;
+            let solves = state.solves.lock().expect("solves mutex poisoned");
+            match resolve_solve_id(&solves, lookup_key) {
+                Some(solve_id) => solve_id,
+                None => problem_id
+                    .clone()
+                    .ok_or_else(|| format!("cancel frame target not found: {lookup_key}"))?,
+            }
+        }
+    };
     let reason = value_str(payload, "reason").unwrap_or_else(|| "cancel requested".to_string());
     let requested_by = value_str(payload, "requestedBy")
         .or_else(|| value_str(frame, "nodeId"))
@@ -3029,10 +4118,26 @@ fn record_cancel_control_frame(state: &AppState, frame: &Value) -> Result<bool, 
         .map(u128::from)
         .or_else(|| frame.get("timeMs").and_then(Value::as_u64).map(u128::from))
         .unwrap_or_else(now_ms);
-    let request_id = value_str(payload, "requestId");
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    if let Some(solve) = solves.get_mut(&solve_id) {
+        request_id.get_or_insert_with(|| solve.request_id.clone());
+        if problem_id.is_none() {
+            problem_id = solve.problem_id.clone();
+        }
+        solve.cancel_requested = true;
+        solve.cancel_requested_at_ms.get_or_insert(requested_at_ms);
+        solve.cancel_reason.get_or_insert_with(|| reason.clone());
+        if solve.finished_at_ms.is_none() {
+            solve.status = "cancelling".to_string();
+        }
+        solve.updated_at_ms = now_ms();
+    }
+    drop(solves);
+
     let info = CancelInfo {
         solve_id: solve_id.clone(),
         request_id,
+        problem_id,
         reason: reason.clone(),
         requested_by,
         requested_at_ms,
@@ -3042,17 +4147,6 @@ fn record_cancel_control_frame(state: &AppState, frame: &Value) -> Result<bool, 
         .lock()
         .expect("cancelled solves mutex poisoned")
         .insert(solve_id.clone(), info);
-
-    let mut solves = state.solves.lock().expect("solves mutex poisoned");
-    if let Some(solve) = solves.get_mut(&solve_id) {
-        solve.cancel_requested = true;
-        solve.cancel_requested_at_ms.get_or_insert(requested_at_ms);
-        solve.cancel_reason.get_or_insert(reason);
-        if solve.finished_at_ms.is_none() {
-            solve.status = "cancelling".to_string();
-        }
-        solve.updated_at_ms = now_ms();
-    }
     Ok(true)
 }
 
@@ -3224,6 +4318,7 @@ async fn finish_cancelled_solve(
     state: &AppState,
     solve_id: String,
     request_id: String,
+    problem_id: Option<String>,
     revision: u64,
     distributed: bool,
     warnings: Vec<String>,
@@ -3233,6 +4328,7 @@ async fn finish_cancelled_solve(
         state,
         solve_id,
         request_id,
+        problem_id,
         revision,
         distributed,
         warnings,
@@ -3256,6 +4352,7 @@ async fn finish_cancelled_solve(
 async fn solve_problem_distributed(
     state: AppState,
     request_id: String,
+    problem_id: String,
     revision: u64,
     problem: MipProblemSpec,
     options: SolveOptions,
@@ -3266,6 +4363,7 @@ async fn solve_problem_distributed(
         &problem,
         &solve_id,
         &request_id,
+        &problem_id,
         revision,
         &state.node_id,
         &options,
@@ -3274,10 +4372,12 @@ async fn solve_problem_distributed(
         &state,
         &solve_id,
         &request_id,
+        &problem_id,
         revision,
         jobs.len(),
         state.nats.is_some(),
-    );
+    )?;
+    track_runtime_task_solve(&state, &problem_id, &solve_id);
     persist_solve_started(
         &state,
         &solve_id,
@@ -3291,11 +4391,13 @@ async fn solve_problem_distributed(
     .await;
     snapshot_solve_state(&state, &solve_id).await;
     snapshot_solve_frontier(&state, &solve_id, &jobs).await;
+    let cancel_poll = cancel_poll_interval();
     if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
         let response = finish_cancelled_solve(
             &state,
             solve_id,
             request_id,
+            Some(problem_id.clone()),
             revision,
             state.nats.is_some(),
             warnings,
@@ -3308,6 +4410,7 @@ async fn solve_problem_distributed(
         let response = aggregate_results(
             solve_id,
             request_id,
+            Some(problem_id.clone()),
             revision,
             &problem,
             0,
@@ -3339,6 +4442,7 @@ async fn solve_problem_distributed(
                     &state,
                     solve_id,
                     request_id,
+                    Some(problem_id.clone()),
                     revision,
                     false,
                     warnings,
@@ -3355,6 +4459,7 @@ async fn solve_problem_distributed(
                         &state,
                         solve_id,
                         request_id,
+                        Some(problem_id.clone()),
                         revision,
                         false,
                         warnings,
@@ -3367,21 +4472,69 @@ async fn solve_problem_distributed(
                 record_job_submitted(&state, &job).await;
                 let node = state.node_id.clone();
                 let attempt_job = job.clone();
-                let result =
-                    tokio::task::spawn_blocking(move || solve_subproblem(attempt_job, node))
-                        .await
-                        .map_err(|err| format!("local solve task failed: {err}"))?;
+                let task_id = attempt_job.job_uuid.clone();
+                let job_id = attempt_job.job_id.clone();
+                let job_problem_id = attempt_job.problem_id.clone();
+                track_runtime_task_started(
+                    &state,
+                    task_id.clone(),
+                    "local-subproblem",
+                    job_problem_id,
+                    Some(solve_id.clone()),
+                    Some(request_id.clone()),
+                    Some(job_id),
+                    Some(task_id.clone()),
+                    None,
+                );
+                let mut solve_task =
+                    tokio::task::spawn_blocking(move || solve_subproblem(attempt_job, node));
+                track_runtime_task_abort_handle(&state, &task_id, solve_task.abort_handle());
+                let _task_guard =
+                    RuntimeTaskFinishGuard::new(state.clone(), task_id.clone(), "finished");
+                let result = loop {
+                    tokio::select! {
+                        joined = &mut solve_task => {
+                            break match joined {
+                                Ok(result) => result,
+                                Err(err) => {
+                                    track_runtime_task_finished(&state, &task_id, "error");
+                                    return Err(format!("local solve task failed: {err}"));
+                                }
+                            };
+                        }
+                        _ = tokio::time::sleep(cancel_poll) => {
+                            if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+                                let response = finish_cancelled_solve(
+                                    &state,
+                                    solve_id,
+                                    request_id,
+                                    Some(problem_id.clone()),
+                                    revision,
+                                    false,
+                                    warnings,
+                                    cancel.reason,
+                                )
+                                .await;
+                                track_runtime_task_finished(&state, &task_id, "cancelled");
+                                return Ok(response);
+                            }
+                        }
+                    }
+                };
+                track_runtime_task_finished(&state, &task_id, &result.status);
                 if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
                     let response = finish_cancelled_solve(
                         &state,
                         solve_id,
                         request_id,
+                        Some(problem_id.clone()),
                         revision,
                         false,
                         warnings,
                         cancel.reason,
                     )
                     .await;
+                    track_runtime_task_finished(&state, &task_id, "cancelled");
                     return Ok(response);
                 }
                 if result.status == "split" && !result.child_jobs.is_empty() {
@@ -3429,6 +4582,7 @@ async fn solve_problem_distributed(
         let response = aggregate_results(
             solve_id,
             request_id,
+            Some(problem_id.clone()),
             revision,
             &problem,
             jobs_expected,
@@ -3460,6 +4614,7 @@ async fn solve_problem_distributed(
                 &state,
                 solve_id,
                 request_id,
+                Some(problem_id.clone()),
                 revision,
                 true,
                 warnings,
@@ -3514,6 +4669,7 @@ async fn solve_problem_distributed(
                 &state,
                 solve_id,
                 request_id,
+                Some(problem_id.clone()),
                 revision,
                 true,
                 warnings,
@@ -3527,7 +4683,9 @@ async fn solve_problem_distributed(
             timed_out = true;
             break;
         }
-        match tokio::time::timeout(deadline - now, result_sub.next()).await {
+        let remaining = deadline - now;
+        let wait_for = remaining.min(cancel_poll);
+        match tokio::time::timeout(wait_for, result_sub.next()).await {
             Ok(Some(Ok(message))) => {
                 let parsed = serde_json::from_slice::<SubproblemResult>(&message.payload).ok();
                 if let Some(result) = parsed {
@@ -3548,6 +4706,7 @@ async fn solve_problem_distributed(
                                     &state,
                                     solve_id,
                                     request_id,
+                                    Some(problem_id.clone()),
                                     revision,
                                     true,
                                     warnings,
@@ -3572,6 +4731,7 @@ async fn solve_problem_distributed(
                                             &state,
                                             solve_id,
                                             request_id,
+                                            Some(problem_id.clone()),
                                             revision,
                                             true,
                                             warnings,
@@ -3663,6 +4823,7 @@ async fn solve_problem_distributed(
                                         &state,
                                         solve_id,
                                         request_id,
+                                        Some(problem_id.clone()),
                                         revision,
                                         true,
                                         warnings,
@@ -3736,6 +4897,9 @@ async fn solve_problem_distributed(
                 timed_out = true;
                 break;
             }
+            Err(_) if wait_for < remaining => {
+                continue;
+            }
             Err(_) => {
                 timed_out = true;
                 break;
@@ -3746,6 +4910,7 @@ async fn solve_problem_distributed(
     let response = aggregate_results(
         solve_id,
         request_id,
+        Some(problem_id.clone()),
         revision,
         &problem,
         jobs_expected,
@@ -3778,8 +4943,91 @@ async fn solve_problem_distributed(
     Ok(response)
 }
 
+async fn run_problem_task(
+    state: AppState,
+    request_id: String,
+    problem_id: String,
+    revision: u64,
+    problem: MipProblemSpec,
+    options: SolveOptions,
+) -> Result<SolveResponse, String> {
+    let task_id = problem_id.clone();
+    track_runtime_task_started(
+        &state,
+        task_id.clone(),
+        "problem",
+        Some(problem_id.clone()),
+        None,
+        Some(request_id.clone()),
+        None,
+        None,
+        None,
+    );
+    let solve_task = tokio::spawn(solve_problem_distributed(
+        state.clone(),
+        request_id.clone(),
+        problem_id.clone(),
+        revision,
+        problem,
+        options,
+    ));
+    track_runtime_task_abort_handle(&state, &task_id, solve_task.abort_handle());
+    let result = solve_task
+        .await
+        .map_err(|err| format!("problem task failed: {err}"))?;
+    match &result {
+        Ok(response) => track_runtime_task_finished(&state, &task_id, &response.status),
+        Err(_) => track_runtime_task_finished(&state, &task_id, "error"),
+    }
+    result
+}
+
+async fn run_problem_task_with_coordination(
+    state: AppState,
+    request_id: String,
+    problem_id: String,
+    revision: u64,
+    problem: MipProblemSpec,
+    options: SolveOptions,
+) -> Result<SolveResponse, String> {
+    let ttl_ms = options
+        .timeout_ms
+        .unwrap_or(120_000)
+        .saturating_add(env_u64(
+            "MIP_SOLVER_COORDINATION_SOLVE_LOCK_MARGIN_MS",
+            60_000,
+        ));
+    let lock_key =
+        mip_solver_solve_request_lock_key(&state.coordination.redis_lock_prefix, &problem_id);
+    let guard = acquire_coordination_lock(&state, lock_key, ttl_ms).await?;
+    let result = run_problem_task(
+        state.clone(),
+        request_id,
+        problem_id,
+        revision,
+        problem,
+        options,
+    )
+    .await;
+    release_coordination_guard(&state, guard).await;
+    result
+}
+
 fn response_json<T: Serialize>(status: StatusCode, value: T) -> Response {
     (status, Json(value)).into_response()
+}
+
+fn solve_error_status(error: &str) -> StatusCode {
+    if error.contains("already has running solve") || error.contains("coordination lock busy") {
+        StatusCode::CONFLICT
+    } else if error.contains("coordination")
+        || error.contains("live-mutex")
+        || error.contains("Redis")
+    {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::BAD_REQUEST
+    }
 }
 
 fn build_info_document() -> Value {
@@ -4084,6 +5332,11 @@ async fn nats_status(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn root(State(state): State<AppState>) -> impl IntoResponse {
+    let tasks = runtime_task_entries(&state);
+    let active_tasks = tasks
+        .iter()
+        .filter(|task| task.finished_at_ms.is_none())
+        .count();
     Json(json!({
         "ok": true,
         "service": SERVICE_NAME,
@@ -4095,6 +5348,8 @@ async fn root(State(state): State<AppState>) -> impl IntoResponse {
         "stream": DD_REMOTE_MIP_SOLVER_STREAM_NAME,
         "queueGroup": MIP_SOLVER_WORKERS_QUEUE_GROUP,
         "workersKnown": state.workers.lock().expect("workers mutex poisoned").len(),
+        "tasksTracked": tasks.len(),
+        "activeTasks": active_tasks,
         "solvesTracked": state.solves.lock().expect("solves mutex poisoned").len(),
         "nats": nats_status_document(&state),
         "build": build_info_document(),
@@ -4268,6 +5523,13 @@ async fn solve_http(
         );
     }
     let request_id = request_id(input.request_id);
+    let problem_id = match problem_id(input.problem_id, &request_id) {
+        Ok(problem_id) => problem_id,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return response_json(StatusCode::BAD_REQUEST, json!({"ok":false,"error":error}));
+        }
+    };
     let options = SolveOptions::merged(input.options);
     let (problem, revision) = if let Some(problem) = input.problem {
         (problem, 0)
@@ -4286,11 +5548,23 @@ async fn solve_http(
         );
     };
 
-    match solve_problem_distributed(state.clone(), request_id, revision, problem, options).await {
+    match run_problem_task_with_coordination(
+        state.clone(),
+        request_id,
+        problem_id,
+        revision,
+        problem,
+        options,
+    )
+    .await
+    {
         Ok(response) => response_json(StatusCode::OK, response),
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            response_json(StatusCode::BAD_REQUEST, json!({"ok":false,"error":error}))
+            response_json(
+                solve_error_status(&error),
+                json!({"ok":false,"error":error}),
+            )
         }
     }
 }
@@ -4314,49 +5588,130 @@ async fn stream_session(
             json!({"ok":false,"error":"too many stream commands"}),
         );
     }
+
+    if !state.coordination.enabled() && state.pg.is_none() {
+        let mut frames = Vec::new();
+        let (revision, session_snapshot) = {
+            let mut sessions = state.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.entry(session_id.clone()).or_insert(LiveSession {
+                problem: None,
+                revision: 0,
+            });
+            for command in &commands {
+                if let Err(error) = apply_stream_command(
+                    &mut session.problem,
+                    &mut session.revision,
+                    command,
+                    &mut frames,
+                ) {
+                    state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                    frames
+                        .push(json!({"event":"error","message":error,"revision":session.revision}));
+                } else {
+                    state
+                        .metrics
+                        .stream_events_total
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            (session.revision, session.clone())
+        };
+        snapshot_session_model(&state, &session_id, session_snapshot).await;
+        return response_json(
+            StatusCode::OK,
+            json!({
+                "ok": true,
+                "sessionId": session_id,
+                "revision": revision,
+                "frames": frames,
+            }),
+        );
+    }
+
+    let lock_key =
+        mip_solver_session_revision_lock_key(&state.coordination.redis_lock_prefix, &session_id);
+    let guard = match acquire_coordination_lock(&state, lock_key, state.coordination.ttl_ms).await {
+        Ok(guard) => guard,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return response_json(
+                solve_error_status(&error),
+                json!({"ok":false,"error":error}),
+            );
+        }
+    };
+
     let mut frames = Vec::new();
-    let (revision, session_snapshot) = {
-        let mut sessions = state.sessions.lock().expect("sessions mutex poisoned");
-        let session = sessions.entry(session_id.clone()).or_insert(LiveSession {
+    let mut session = load_session_model(&state, &session_id)
+        .await
+        .unwrap_or(LiveSession {
             problem: None,
             revision: 0,
         });
-        for command in &commands {
-            if let Err(error) = apply_stream_command(
-                &mut session.problem,
-                &mut session.revision,
-                command,
-                &mut frames,
-            ) {
-                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                frames.push(json!({"event":"error","message":error,"revision":session.revision}));
-            } else {
-                state
-                    .metrics
-                    .stream_events_total
-                    .fetch_add(1, Ordering::Relaxed);
-            }
+    let expected_revision = session.revision;
+    for command in &commands {
+        if let Err(error) = apply_stream_command(
+            &mut session.problem,
+            &mut session.revision,
+            command,
+            &mut frames,
+        ) {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            frames.push(json!({"event":"error","message":error,"revision":session.revision}));
+        } else {
+            state
+                .metrics
+                .stream_events_total
+                .fetch_add(1, Ordering::Relaxed);
         }
-        (session.revision, session.clone())
-    };
-    snapshot_session_model(&state, &session_id, session_snapshot).await;
-    response_json(
-        StatusCode::OK,
-        json!({
-            "ok": true,
-            "sessionId": session_id,
-            "revision": revision,
-            "frames": frames,
-        }),
+    }
+
+    let response = match persist_session_model_checked(
+        &state,
+        &session_id,
+        &session,
+        expected_revision,
     )
+    .await
+    {
+        Ok(true) => {
+            state
+                .sessions
+                .lock()
+                .expect("sessions mutex poisoned")
+                .insert(session_id.clone(), session.clone());
+            cache_session_model(&state, &session_id, session.clone()).await;
+            response_json(
+                StatusCode::OK,
+                json!({
+                    "ok": true,
+                    "sessionId": session_id,
+                    "revision": session.revision,
+                    "frames": frames,
+                }),
+            )
+        }
+        Ok(false) => response_json(
+            StatusCode::CONFLICT,
+            json!({"ok":false,"error":"session revision changed before this update could be persisted"}),
+        ),
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            response_json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                json!({"ok":false,"error":error}),
+            )
+        }
+    };
+    release_coordination_guard(&state, guard).await;
+    response
 }
 
 async fn get_session(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
 ) -> Response {
-    let sessions = state.sessions.lock().expect("sessions mutex poisoned");
-    match sessions.get(&session_id) {
+    match load_session_model(&state, &session_id).await {
         Some(session) => response_json(
             StatusCode::OK,
             json!({
@@ -4393,7 +5748,68 @@ async fn workers(State(state): State<AppState>) -> Response {
     )
 }
 
-async fn cluster_solves(State(state): State<AppState>) -> Response {
+async fn runtime_tasks(State(state): State<AppState>) -> Response {
+    let tasks = runtime_task_entries(&state);
+    let active = tasks
+        .iter()
+        .filter(|task| task.finished_at_ms.is_none())
+        .count();
+    response_json(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "role": state.role.as_str(),
+            "nodeId": state.node_id,
+            "count": tasks.len(),
+            "active": active,
+            "tasks": tasks,
+        }),
+    )
+}
+
+async fn runtime_task(
+    State(state): State<AppState>,
+    AxumPath(task_id): AxumPath<String>,
+) -> Response {
+    match runtime_task_lookup(&state, task_id.trim()) {
+        Some(task) => response_json(
+            StatusCode::OK,
+            json!({
+                "ok": true,
+                "role": state.role.as_str(),
+                "nodeId": state.node_id,
+                "task": task,
+            }),
+        ),
+        None => response_json(
+            StatusCode::NOT_FOUND,
+            json!({"ok":false,"error":format!("runtime task not found: {task_id}")}),
+        ),
+    }
+}
+
+async fn cluster_solves(
+    State(state): State<AppState>,
+    Query(query): Query<ClusterSolvesQuery>,
+) -> Response {
+    let problem_filter = match query.problem.as_deref() {
+        Some(problem) if problem.trim().is_empty() => {
+            return response_json(
+                StatusCode::BAD_REQUEST,
+                json!({"ok":false,"error":"problem query parameter must be a UUID"}),
+            );
+        }
+        Some(problem) => match Uuid::parse_str(problem.trim()) {
+            Ok(uuid) => Some(uuid),
+            Err(_) => {
+                return response_json(
+                    StatusCode::BAD_REQUEST,
+                    json!({"ok":false,"error":"problem query parameter must be a UUID"}),
+                );
+            }
+        },
+        None => None,
+    };
     let mut solves: Vec<SolveRegistryEntry> = state
         .solves
         .lock()
@@ -4401,6 +5817,17 @@ async fn cluster_solves(State(state): State<AppState>) -> Response {
         .values()
         .cloned()
         .collect();
+    if let Some(problem_uuid) = problem_filter.as_ref() {
+        solves.retain(|solve| {
+            solve
+                .problem_id
+                .as_deref()
+                .or(Some(solve.request_id.as_str()))
+                .and_then(|id| Uuid::parse_str(id).ok())
+                .map(|request_uuid| request_uuid == *problem_uuid)
+                .unwrap_or(false)
+        });
+    }
     solves.sort_by(|left, right| {
         right
             .started_at_ms
@@ -4416,6 +5843,7 @@ async fn cluster_solves(State(state): State<AppState>) -> Response {
         json!({
             "ok": true,
             "role": state.role.as_str(),
+            "problem": problem_filter.map(|uuid| uuid.to_string()),
             "count": solves.len(),
             "active": active,
             "solves": solves,
@@ -4430,6 +5858,7 @@ async fn publish_solve_cancel(state: &AppState, info: &CancelInfo) {
         json!({
             "solveId": &info.solve_id,
             "requestId": &info.request_id,
+            "problemId": &info.problem_id,
             "reason": &info.reason,
             "requestedBy": &info.requested_by,
             "requestedAtMs": info.requested_at_ms,
@@ -4442,6 +5871,7 @@ async fn publish_solve_cancel(state: &AppState, info: &CancelInfo) {
         json!({
             "solveId": &info.solve_id,
             "requestId": &info.request_id,
+            "problemId": &info.problem_id,
             "reason": &info.reason,
             "requestedBy": &info.requested_by,
         }),
@@ -4475,6 +5905,7 @@ async fn cancel_solve_key(state: AppState, key: String, input: CancelSolveReques
                     "status": "cancelling",
                     "solveId": info.solve_id,
                     "requestId": info.request_id,
+                    "problemId": info.problem_id,
                     "reason": info.reason,
                     "requestedBy": info.requested_by,
                     "requestedAtMs": info.requested_at_ms,
@@ -4529,6 +5960,20 @@ async fn cancel_request(
     cancel_solve_key(state, request_id, input).await
 }
 
+async fn cancel_problem(
+    State(state): State<AppState>,
+    AxumPath(problem_id): AxumPath<String>,
+    Json(input): Json<CancelSolveRequest>,
+) -> Response {
+    match Uuid::parse_str(problem_id.trim()) {
+        Ok(uuid) => cancel_solve_key(state, uuid.to_string(), input).await,
+        Err(_) => response_json(
+            StatusCode::BAD_REQUEST,
+            json!({"ok":false,"error":"problem id must be a UUID"}),
+        ),
+    }
+}
+
 async fn solve_session(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
@@ -4548,29 +5993,64 @@ async fn solve_session(
             json!({"ok":false,"error":"this pod booted as slave and will not act as master"}),
         );
     }
-    let (problem, revision) = {
-        let sessions = state.sessions.lock().expect("sessions mutex poisoned");
-        let Some(session) = sessions.get(&session_id) else {
+
+    let lock_key =
+        mip_solver_session_revision_lock_key(&state.coordination.redis_lock_prefix, &session_id);
+    let guard = match acquire_coordination_lock(&state, lock_key, state.coordination.ttl_ms).await {
+        Ok(guard) => guard,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             return response_json(
-                StatusCode::NOT_FOUND,
-                json!({"ok":false,"error":"session not found"}),
+                solve_error_status(&error),
+                json!({"ok":false,"error":error}),
             );
-        };
-        let Some(problem) = session.problem.clone() else {
-            return response_json(
+        }
+    };
+    let snapshot = match load_session_model(&state, &session_id).await {
+        Some(session) => match session.problem.clone() {
+            Some(problem) => Ok((problem, session.revision)),
+            None => Err(response_json(
                 StatusCode::BAD_REQUEST,
                 json!({"ok":false,"error":"session has no initialized problem"}),
-            );
-        };
-        (problem, session.revision)
+            )),
+        },
+        None => Err(response_json(
+            StatusCode::NOT_FOUND,
+            json!({"ok":false,"error":"session not found"}),
+        )),
     };
+    release_coordination_guard(&state, guard).await;
+    let (problem, revision) = match snapshot {
+        Ok(snapshot) => snapshot,
+        Err(response) => return response,
+    };
+
     let request_id = request_id(input.request_id.or(Some(session_id)));
+    let problem_id = match problem_id(input.problem_id, &request_id) {
+        Ok(problem_id) => problem_id,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return response_json(StatusCode::BAD_REQUEST, json!({"ok":false,"error":error}));
+        }
+    };
     let options = SolveOptions::merged(input.options);
-    match solve_problem_distributed(state.clone(), request_id, revision, problem, options).await {
+    match run_problem_task_with_coordination(
+        state.clone(),
+        request_id,
+        problem_id,
+        revision,
+        problem,
+        options,
+    )
+    .await
+    {
         Ok(response) => response_json(StatusCode::OK, response),
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            response_json(StatusCode::BAD_REQUEST, json!({"ok":false,"error":error}))
+            response_json(
+                solve_error_status(&error),
+                json!({"ok":false,"error":error}),
+            )
         }
     }
 }
@@ -4665,6 +6145,7 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
         worker_heartbeat_interval,
     ));
     let worker_slots = Arc::new(tokio::sync::Semaphore::new(max_in_flight));
+    let cancel_poll = cancel_poll_interval();
 
     while let Some(message) = messages.next().await {
         let message = match message {
@@ -4682,7 +6163,7 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                 continue;
             }
         };
-        if solve_cancel_requested(&state, &job.solve_id) {
+        if solve_cancel_requested_for(&state, &job.solve_id, job.problem_id.as_deref()) {
             publish_control(
                 &state,
                 "worker-skipped-cancelled",
@@ -4696,6 +6177,7 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
             let _ = message.ack().await;
             continue;
         }
+        let job_problem_id_for_cancel = job.problem_id.clone();
         let permit = match worker_slots.clone().try_acquire_owned() {
             Ok(permit) => permit,
             Err(_) => {
@@ -4719,10 +6201,33 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
         };
         let worker_node = state.node_id.clone();
         let state_for_task = state.clone();
+        let state_for_registry = state.clone();
         let nats_for_task = nats.clone();
         let consumer_name_for_task = consumer_name.clone();
-        tokio::spawn(async move {
+        let task_id = job.job_uuid.clone();
+        let task_problem_id = job.problem_id.clone();
+        let task_solve_id = job.solve_id.clone();
+        let task_request_id = job.request_id.clone();
+        let task_job_id = job.job_id.clone();
+        track_runtime_task_started(
+            &state_for_registry,
+            task_id.clone(),
+            "worker-subproblem",
+            task_problem_id,
+            Some(task_solve_id),
+            Some(task_request_id),
+            Some(task_job_id),
+            Some(task_id.clone()),
+            None,
+        );
+        let task_id_for_task = task_id.clone();
+        let worker_task = tokio::spawn(async move {
             let _permit = permit;
+            let _task_guard = RuntimeTaskFinishGuard::new(
+                state_for_task.clone(),
+                task_id_for_task.clone(),
+                "finished",
+            );
             publish_control(
                 &state_for_task,
                 "request-work",
@@ -4733,7 +6238,8 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                 }),
             )
             .await;
-            if solve_cancel_requested(&state_for_task, &job.solve_id) {
+            if solve_cancel_requested_for(&state_for_task, &job.solve_id, job.problem_id.as_deref())
+            {
                 publish_control(
                     &state_for_task,
                     "worker-skipped-cancelled",
@@ -4744,24 +6250,68 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                     }),
                 )
                 .await;
+                track_runtime_task_finished(&state_for_task, &task_id_for_task, "cancelled");
                 let _ = message.ack().await;
                 return;
             }
-            let result =
-                match tokio::task::spawn_blocking(move || solve_subproblem(job, worker_node)).await
-                {
-                    Ok(result) => result,
-                    Err(error) => {
-                        eprintln!("mip solver worker task failed: {error}");
-                        let _ = message
-                            .ack_with(async_nats::jetstream::AckKind::Nak(Some(
-                                Duration::from_secs(5),
-                            )))
-                            .await;
-                        return;
+            let job_id_for_cancel = job.job_id.clone();
+            let solve_id_for_cancel = job.solve_id.clone();
+            let problem_id_for_cancel = job_problem_id_for_cancel.clone();
+            let mut solve_task =
+                tokio::task::spawn_blocking(move || solve_subproblem(job, worker_node));
+            let result = loop {
+                tokio::select! {
+                    joined = &mut solve_task => {
+                        break match joined {
+                            Ok(result) => result,
+                            Err(error) => {
+                                eprintln!("mip solver worker task failed: {error}");
+                                    let _ = message
+                                        .ack_with(async_nats::jetstream::AckKind::Nak(Some(
+                                            Duration::from_secs(5),
+                                        )))
+                                        .await;
+                                    track_runtime_task_finished(
+                                        &state_for_task,
+                                        &task_id_for_task,
+                                        "error",
+                                    );
+                                    return;
+                                }
+                        };
                     }
-                };
-            if solve_cancel_requested(&state_for_task, &result.solve_id) {
+                    _ = tokio::time::sleep(cancel_poll) => {
+                        if solve_cancel_requested_for(
+                            &state_for_task,
+                            &solve_id_for_cancel,
+                            problem_id_for_cancel.as_deref(),
+                        ) {
+                            publish_control(
+                                &state_for_task,
+                                "worker-stopped-cancelled",
+                                json!({
+                                    "consumer": &consumer_name_for_task,
+                                    "jobId": &job_id_for_cancel,
+                                    "solveId": &solve_id_for_cancel,
+                                }),
+                                )
+                                .await;
+                                track_runtime_task_finished(
+                                    &state_for_task,
+                                    &task_id_for_task,
+                                    "cancelled",
+                                );
+                                let _ = message.ack().await;
+                                return;
+                            }
+                    }
+                }
+            };
+            if solve_cancel_requested_for(
+                &state_for_task,
+                &result.solve_id,
+                result.problem_id.as_deref(),
+            ) {
                 publish_control(
                     &state_for_task,
                     "worker-discarded-cancelled-result",
@@ -4773,6 +6323,7 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                     }),
                 )
                 .await;
+                track_runtime_task_finished(&state_for_task, &task_id_for_task, "cancelled");
                 let _ = message.ack().await;
                 return;
             }
@@ -4789,6 +6340,7 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                             Duration::from_secs(5),
                         )))
                         .await;
+                    track_runtime_task_finished(&state_for_task, &task_id_for_task, "error");
                     return;
                 }
             };
@@ -4806,6 +6358,7 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                         Duration::from_secs(5),
                     )))
                     .await;
+                track_runtime_task_finished(&state_for_task, &task_id_for_task, "error");
                 return;
             }
             publish_control(
@@ -4824,10 +6377,12 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                 .metrics
                 .slave_jobs_processed_total
                 .fetch_add(1, Ordering::Relaxed);
+            track_runtime_task_finished(&state_for_task, &task_id_for_task, &result.status);
             if let Err(error) = message.ack().await {
                 eprintln!("mip solver job ack failed: {error}");
             }
         });
+        track_runtime_task_abort_handle(&state, &task_id, worker_task.abort_handle());
     }
     Ok(())
 }
@@ -4882,13 +6437,30 @@ async fn run_master_control_listener(state: AppState) -> Result<(), Box<dyn Erro
 
 async fn connect_nats() -> Option<async_nats::Client> {
     let url = env::var("NATS_URL").ok()?;
-    match async_nats::connect(url.clone()).await {
-        Ok(client) => Some(client),
-        Err(error) => {
-            eprintln!("failed to connect to NATS at {url}: {error}");
-            None
+    let attempts = env_u64("MIP_SOLVER_NATS_CONNECT_ATTEMPTS", 60).clamp(1, 360);
+    let retry_delay =
+        Duration::from_secs(env_u64("MIP_SOLVER_NATS_CONNECT_RETRY_SECONDS", 2).clamp(1, 60));
+
+    for attempt in 1..=attempts {
+        match async_nats::connect(url.clone()).await {
+            Ok(client) => {
+                if attempt > 1 {
+                    eprintln!("connected to NATS at {url} after {attempt} attempts");
+                }
+                return Some(client);
+            }
+            Err(error) => {
+                eprintln!(
+                    "failed to connect to NATS at {url} on attempt {attempt}/{attempts}: {error}"
+                );
+                if attempt < attempts {
+                    tokio::time::sleep(retry_delay).await;
+                }
+            }
         }
     }
+
+    None
 }
 
 fn connect_redis() -> Option<redis::Client> {
@@ -4944,7 +6516,13 @@ fn app_router(state: AppState) -> Router {
         .route("/metrics", get(metrics))
         .route("/mip-solver-cluster/nats", get(nats_status))
         .route("/nats", get(nats_status))
+        .route("/workers", get(workers))
+        .route("/tasks", get(runtime_tasks))
+        .route("/tasks/:task_id", get(runtime_task))
+        .route("/solves", get(cluster_solves))
         .route("/mip-solver-cluster/workers", get(workers))
+        .route("/mip-solver-cluster/tasks", get(runtime_tasks))
+        .route("/mip-solver-cluster/tasks/:task_id", get(runtime_task))
         .route("/mip-solver-cluster/solves", get(cluster_solves))
         .route(
             "/mip-solver-cluster/solves/:solve_id",
@@ -4958,7 +6536,7 @@ fn app_router(state: AppState) -> Router {
             "/mip-solver-cluster/requests/:request_id/cancel",
             post(cancel_request),
         )
-        .route("/workers", get(workers))
+        .route("/problems/:problem_id/cancel", post(cancel_problem))
         .route("/model/example", get(example))
         .route("/solve", post(solve_http))
         .route("/sessions/:session_id", get(get_session))
@@ -5009,12 +6587,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let nats = connect_nats().await;
     let redis = connect_redis();
     let pg = connect_postgres().await;
+    let coordination = CoordinationConfig::from_env(redis.is_some());
     let state = AppState {
         role,
         node_id,
         nats,
         redis,
         pg,
+        coordination,
         jobs_subject: env_value("MIP_SOLVER_JOBS_SUBJECT", MIP_SOLVER_JOBS_SUBJECT),
         results_subject: env_value("MIP_SOLVER_RESULTS_SUBJECT", MIP_SOLVER_RESULTS_SUBJECT),
         control_subject: env_value("MIP_SOLVER_CONTROL_SUBJECT", MIP_SOLVER_CONTROL_SUBJECT),
@@ -5022,6 +6602,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         sessions: Arc::new(Mutex::new(HashMap::new())),
         workers: Arc::new(Mutex::new(HashMap::new())),
         solves: Arc::new(Mutex::new(HashMap::new())),
+        tasks: Arc::new(Mutex::new(HashMap::new())),
         cancelled_solves: Arc::new(Mutex::new(HashMap::new())),
         metrics: Arc::new(Metrics::default()),
     };
@@ -5072,6 +6653,13 @@ mod tests {
             nats: None,
             redis: None,
             pg: None,
+            coordination: CoordinationConfig {
+                backends: Vec::new(),
+                redis_lock_prefix: redis_key_prefix(),
+                ttl_ms: 30_000,
+                wait_ms: 0,
+                live_mutex: None,
+            },
             jobs_subject: MIP_SOLVER_JOBS_SUBJECT.to_string(),
             results_subject: MIP_SOLVER_RESULTS_SUBJECT.to_string(),
             control_subject: MIP_SOLVER_CONTROL_SUBJECT.to_string(),
@@ -5079,6 +6667,7 @@ mod tests {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             workers: Arc::new(Mutex::new(HashMap::new())),
             solves: Arc::new(Mutex::new(HashMap::new())),
+            tasks: Arc::new(Mutex::new(HashMap::new())),
             cancelled_solves: Arc::new(Mutex::new(HashMap::new())),
             metrics: Arc::new(Metrics::default()),
         }
@@ -5182,6 +6771,8 @@ mod tests {
             solve_id: "solve-test".to_string(),
             request_id: "request-test".to_string(),
             job_id: "job-test".to_string(),
+            job_uuid: new_uuid_string(),
+            problem_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
             revision: 0,
             depth: 0,
             master_node: "master-test".to_string(),
@@ -5329,6 +6920,7 @@ mod tests {
             &problem,
             "solve-test",
             "request-test",
+            "33333333-3333-4333-8333-333333333333",
             7,
             "master-a",
             &options,
@@ -5337,6 +6929,12 @@ mod tests {
         assert!(warnings.is_empty());
         assert_eq!(jobs.len(), 1);
         assert!(jobs.iter().all(|job| job.revision == 7));
+        assert!(jobs
+            .iter()
+            .all(|job| job.problem_id.as_deref() == Some("33333333-3333-4333-8333-333333333333")));
+        assert!(jobs
+            .iter()
+            .all(|job| Uuid::parse_str(&job.job_uuid).is_ok()));
         assert!(jobs.iter().all(|job| job.extra_constraints.len() == 1));
         assert_eq!(jobs[0].extra_constraints[0].coefs, vec![1.0]);
         assert_eq!(jobs[0].extra_constraints[0].rhs, 1.0);
@@ -5404,6 +7002,7 @@ mod tests {
             &problem,
             "solve-test",
             "request-test",
+            "44444444-4444-4444-8444-444444444444",
             7,
             "master-a",
             &options,
@@ -5568,6 +7167,65 @@ mod tests {
             .redis
             .generated_mutex_key
             .contains("dd:container-pool:affinity:mip-solver"));
+    }
+
+    #[test]
+    fn coordination_backend_parser_supports_auto_and_explicit_both() {
+        assert_eq!(
+            parse_coordination_backends("auto", true, true),
+            vec![CoordinationBackend::Redis, CoordinationBackend::LiveMutex]
+        );
+        assert_eq!(
+            parse_coordination_backends("redis,live-mutex", true, true),
+            vec![CoordinationBackend::Redis, CoordinationBackend::LiveMutex]
+        );
+        assert_eq!(
+            parse_coordination_backends("both", true, false),
+            vec![CoordinationBackend::Redis]
+        );
+        assert!(parse_coordination_backends("none", true, true).is_empty());
+    }
+
+    #[test]
+    fn live_mutex_http_endpoint_parser_preserves_base_path() {
+        let endpoint =
+            parse_http_endpoint("http://dd-rust-network-mutex.default.svc.cluster.local:6971/api")
+                .unwrap();
+
+        assert_eq!(
+            endpoint.addr,
+            "dd-rust-network-mutex.default.svc.cluster.local:6971"
+        );
+        assert_eq!(
+            endpoint.host_header,
+            "dd-rust-network-mutex.default.svc.cluster.local:6971"
+        );
+        assert_eq!(http_path(&endpoint.path_prefix, "/v1/lock"), "/api/v1/lock");
+        assert!(parse_http_endpoint("https://example.com").is_err());
+        assert!(parse_http_endpoint("http://example.com\r\nX-Bad: yes").is_err());
+    }
+
+    #[test]
+    fn chunked_decoder_accepts_chunk_extensions() {
+        let decoded = decode_chunked_body(b"4;foo=bar\r\nrust\r\n0\r\n\r\n").unwrap();
+
+        assert_eq!(decoded, b"rust");
+    }
+
+    #[tokio::test]
+    async fn live_mutex_rejects_crlf_auth_token_before_network() {
+        let config = LiveMutexConfig {
+            base_url: "http://127.0.0.1:1".to_string(),
+            auth_token: Some("bad\r\nAuthorization: nope".to_string()),
+            request_timeout_ms: 1,
+            max_response_bytes: 1024,
+        };
+
+        let error = live_mutex_post_json(&config, "/v1/lock", json!({}))
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("CRLF"));
     }
 
     #[test]
@@ -5866,6 +7524,7 @@ mod tests {
         let response = solve_problem_distributed(
             state,
             "request-test".to_string(),
+            "33333333-3333-4333-8333-333333333333".to_string(),
             3,
             binary_knapsack_problem(),
             options,
@@ -5902,6 +7561,7 @@ mod tests {
             &problem,
             "solve-large-test",
             "request-large-test",
+            "55555555-5555-4555-8555-555555555555",
             11,
             "master-test",
             &options,
@@ -5944,6 +7604,7 @@ mod tests {
         let response = aggregate_results(
             "solve-large-test".to_string(),
             "request-large-test".to_string(),
+            None,
             11,
             &problem,
             jobs_expected,
@@ -5980,8 +7641,10 @@ mod tests {
     #[tokio::test]
     async fn http_solve_endpoint_solves_binary_mip() {
         let app = app_router(test_state(NodeRole::Master));
+        let problem_id = "33333333-3333-4333-8333-333333333333";
         let payload = json!({
             "requestId": "http-test",
+            "problemId": problem_id,
             "problem": binary_knapsack_problem(),
             "options": {
                 "splitDepth": 2,
@@ -5996,7 +7659,43 @@ mod tests {
         assert_eq!(body.get("status"), Some(&json!("optimal")));
         assert_eq!(body.get("z"), Some(&json!(90.0)));
         assert_eq!(body.get("distributed"), Some(&json!(false)));
+        assert_eq!(body.get("problemId"), Some(&json!(problem_id)));
         assert_eq!(body.pointer("/role"), Some(&json!("master")));
+    }
+
+    #[tokio::test]
+    async fn http_solve_rejects_duplicate_running_problem_uuid() {
+        let state = test_state(NodeRole::Master);
+        let problem_id = "55555555-5555-4555-8555-555555555555";
+        state.solves.lock().expect("solves mutex poisoned").insert(
+            "solve-active-problem".to_string(),
+            SolveRegistryEntry {
+                solve_id: "solve-active-problem".to_string(),
+                request_id: "request-active-problem".to_string(),
+                problem_id: Some(problem_id.to_string()),
+                status: "running".to_string(),
+                jobs_expected: 1,
+                started_at_ms: 1000,
+                updated_at_ms: 1000,
+                ..SolveRegistryEntry::default()
+            },
+        );
+        let app = app_router(state);
+        let payload = json!({
+            "requestId": "duplicate-problem",
+            "problemId": problem_id,
+            "problem": binary_knapsack_problem()
+        });
+
+        let (status, body) = post_json(app, "/solve", payload).await;
+
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body.get("ok"), Some(&json!(false)));
+        assert!(body
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .contains("already has running solve"));
     }
 
     #[tokio::test]
@@ -6092,15 +7791,56 @@ mod tests {
         .unwrap();
         let app = app_router(state);
 
-        let (status, body) = get_json(app, "/mip-solver-cluster/workers").await;
+        let (status, body) = get_json(app.clone(), "/workers").await;
+        let (compat_status, compat_body) = get_json(app, "/mip-solver-cluster/workers").await;
 
         assert_eq!(status, StatusCode::OK);
+        assert_eq!(compat_status, StatusCode::OK);
         assert_eq!(body.get("ok"), Some(&json!(true)));
         assert_eq!(body.get("count"), Some(&json!(1)));
+        assert_eq!(compat_body.get("count"), Some(&json!(1)));
         assert_eq!(body.pointer("/workers/0/nodeId"), Some(&json!("worker-b")));
         assert_eq!(
             body.pointer("/workers/0/consumer"),
             Some(&json!("dd-in-house-mip-solver-node-workers"))
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_tasks_endpoint_reports_live_problem_threads() {
+        let state = test_state(NodeRole::Master);
+        let problem_id = "12121212-1212-4212-8212-121212121212";
+        track_runtime_task_started(
+            &state,
+            "problem-task-a".to_string(),
+            "problem",
+            Some(problem_id.to_string()),
+            Some("solve-task-a".to_string()),
+            Some("request-task-a".to_string()),
+            None,
+            None,
+            None,
+        );
+        let app = app_router(state);
+
+        let (status, body) = get_json(app.clone(), "/tasks").await;
+        let (compat_status, compat_body) = get_json(app.clone(), "/mip-solver-cluster/tasks").await;
+        let (lookup_status, lookup_body) = get_json(app, &format!("/tasks/{problem_id}")).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(compat_status, StatusCode::OK);
+        assert_eq!(lookup_status, StatusCode::OK);
+        assert_eq!(body.get("count"), Some(&json!(1)));
+        assert_eq!(body.get("active"), Some(&json!(1)));
+        assert_eq!(compat_body.get("count"), Some(&json!(1)));
+        assert_eq!(lookup_body.pointer("/task/kind"), Some(&json!("problem")));
+        assert_eq!(
+            lookup_body.pointer("/task/problemId"),
+            Some(&json!(problem_id))
+        );
+        assert_eq!(
+            lookup_body.pointer("/task/solveId"),
+            Some(&json!("solve-task-a"))
         );
     }
 
@@ -6111,6 +7851,7 @@ mod tests {
         let response = solve_problem_distributed(
             state.clone(),
             "tracked-solve".to_string(),
+            "44444444-4444-4444-8444-444444444444".to_string(),
             9,
             pure_lp_problem(),
             SolveOptions::default(),
@@ -6119,12 +7860,15 @@ mod tests {
         .unwrap();
 
         assert_eq!(response.status, "optimal");
-        let (status, body) = get_json(app, "/mip-solver-cluster/solves").await;
+        let (status, body) = get_json(app.clone(), "/solves").await;
+        let (compat_status, compat_body) = get_json(app, "/mip-solver-cluster/solves").await;
 
         assert_eq!(status, StatusCode::OK);
+        assert_eq!(compat_status, StatusCode::OK);
         assert_eq!(body.get("ok"), Some(&json!(true)));
         assert_eq!(body.get("count"), Some(&json!(1)));
         assert_eq!(body.get("active"), Some(&json!(0)));
+        assert_eq!(compat_body.get("count"), Some(&json!(1)));
         assert_eq!(
             body.pointer("/solves/0/requestId"),
             Some(&json!("tracked-solve"))
@@ -6142,13 +7886,123 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn solves_endpoint_filters_by_problem_uuid_query() {
+        let state = test_state(NodeRole::Master);
+        let problem_id = Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap();
+        let other_problem_id = Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap();
+        state.solves.lock().expect("solves mutex poisoned").extend([
+            (
+                "solve-problem-a".to_string(),
+                SolveRegistryEntry {
+                    solve_id: "solve-problem-a".to_string(),
+                    request_id: "request-problem-a".to_string(),
+                    problem_id: Some(problem_id.to_string()),
+                    status: "running".to_string(),
+                    jobs_expected: 2,
+                    jobs_published: 2,
+                    jobs_completed: 1,
+                    started_at_ms: 2000,
+                    updated_at_ms: 2100,
+                    ..SolveRegistryEntry::default()
+                },
+            ),
+            (
+                "solve-problem-b".to_string(),
+                SolveRegistryEntry {
+                    solve_id: "solve-problem-b".to_string(),
+                    request_id: "request-problem-b".to_string(),
+                    problem_id: Some(other_problem_id.to_string()),
+                    status: "running".to_string(),
+                    jobs_expected: 3,
+                    jobs_published: 3,
+                    jobs_completed: 0,
+                    started_at_ms: 3000,
+                    updated_at_ms: 3100,
+                    ..SolveRegistryEntry::default()
+                },
+            ),
+        ]);
+        let app = app_router(state);
+
+        let (status, body) = get_json(app.clone(), &format!("/solves?problem={problem_id}")).await;
+        let (compat_status, compat_body) = get_json(
+            app.clone(),
+            &format!("/mip-solver-cluster/solves?problem={problem_id}"),
+        )
+        .await;
+        let (invalid_status, invalid_body) = get_json(app, "/solves?problem=not-a-uuid").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(compat_status, StatusCode::OK);
+        assert_eq!(body.get("problem"), Some(&json!(problem_id.to_string())));
+        assert_eq!(body.get("count"), Some(&json!(1)));
+        assert_eq!(body.get("active"), Some(&json!(1)));
+        assert_eq!(
+            body.pointer("/solves/0/solveId"),
+            Some(&json!("solve-problem-a"))
+        );
+        assert_eq!(compat_body.get("count"), Some(&json!(1)));
+        assert_eq!(invalid_status, StatusCode::BAD_REQUEST);
+        assert_eq!(invalid_body.get("ok"), Some(&json!(false)));
+    }
+
+    #[tokio::test]
+    async fn tasks_endpoint_reports_problem_and_job_uuid_lookups() {
+        let state = test_state(NodeRole::Master);
+        let problem_id = "99999999-9999-4999-8999-999999999999".to_string();
+        let job_uuid = new_uuid_string();
+        track_runtime_task_started(
+            &state,
+            problem_id.clone(),
+            "problem",
+            Some(problem_id.clone()),
+            Some("solve-task-test".to_string()),
+            Some("request-task-test".to_string()),
+            None,
+            None,
+            None,
+        );
+        track_runtime_task_started(
+            &state,
+            job_uuid.clone(),
+            "local-subproblem",
+            Some(problem_id.clone()),
+            Some("solve-task-test".to_string()),
+            Some("request-task-test".to_string()),
+            Some("job-task-test".to_string()),
+            Some(job_uuid.clone()),
+            None,
+        );
+        let app = app_router(state);
+
+        let (list_status, list_body) = get_json(app.clone(), "/tasks").await;
+        let (problem_status, problem_body) =
+            get_json(app.clone(), &format!("/tasks/{problem_id}")).await;
+        let (job_status, job_body) = get_json(app, &format!("/tasks/{job_uuid}")).await;
+
+        assert_eq!(list_status, StatusCode::OK);
+        assert_eq!(list_body.get("count"), Some(&json!(2)));
+        assert_eq!(list_body.get("active"), Some(&json!(2)));
+        assert_eq!(problem_status, StatusCode::OK);
+        assert_eq!(problem_body.pointer("/task/kind"), Some(&json!("problem")));
+        assert_eq!(job_status, StatusCode::OK);
+        assert_eq!(
+            job_body.pointer("/task/jobId"),
+            Some(&json!("job-task-test"))
+        );
+        assert_eq!(job_body.pointer("/task/jobUuid"), Some(&json!(job_uuid)));
+    }
+
+    #[tokio::test]
     async fn cancel_endpoint_marks_running_solve_by_request_id() {
         let state = test_state(NodeRole::Master);
+        let problem_id = "77777777-7777-4777-8777-777777777777";
         state.solves.lock().expect("solves mutex poisoned").insert(
             "solve-cancel-test".to_string(),
             SolveRegistryEntry {
                 solve_id: "solve-cancel-test".to_string(),
                 request_id: "request-cancel-test".to_string(),
+                problem_id: Some(problem_id.to_string()),
                 status: "running".to_string(),
                 jobs_expected: 4,
                 jobs_published: 2,
@@ -6170,6 +8024,7 @@ mod tests {
         assert_eq!(body.get("ok"), Some(&json!(true)));
         assert_eq!(body.get("status"), Some(&json!("cancelling")));
         assert_eq!(body.get("solveId"), Some(&json!("solve-cancel-test")));
+        assert_eq!(body.get("problemId"), Some(&json!(problem_id)));
         assert!(solve_cancel_requested(&state, "solve-cancel-test"));
         let solves = state.solves.lock().expect("solves mutex poisoned");
         let solve = solves.get("solve-cancel-test").unwrap();
@@ -6179,6 +8034,41 @@ mod tests {
             solve.cancel_reason.as_deref(),
             Some("client changed the model")
         );
+    }
+
+    #[tokio::test]
+    async fn cancel_endpoint_marks_running_solve_by_problem_id() {
+        let state = test_state(NodeRole::Master);
+        let problem_id = "88888888-8888-4888-8888-888888888888";
+        state.solves.lock().expect("solves mutex poisoned").insert(
+            "solve-cancel-problem-test".to_string(),
+            SolveRegistryEntry {
+                solve_id: "solve-cancel-problem-test".to_string(),
+                request_id: "request-cancel-problem-test".to_string(),
+                problem_id: Some(problem_id.to_string()),
+                status: "running".to_string(),
+                jobs_expected: 2,
+                started_at_ms: 1000,
+                updated_at_ms: 1000,
+                ..SolveRegistryEntry::default()
+            },
+        );
+        let app = app_router(state.clone());
+
+        let (status, body) = post_json(
+            app,
+            &format!("/problems/{problem_id}/cancel"),
+            json!({"reason":"problem cancelled","requestedBy":"unit-test"}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::ACCEPTED);
+        assert_eq!(
+            body.get("solveId"),
+            Some(&json!("solve-cancel-problem-test"))
+        );
+        assert_eq!(body.get("problemId"), Some(&json!(problem_id)));
+        assert!(solve_cancel_requested(&state, "solve-cancel-problem-test"));
     }
 
     #[tokio::test]
@@ -6220,6 +8110,7 @@ mod tests {
                 CancelInfo {
                     solve_id: "solve-clean-test".to_string(),
                     request_id: Some("request-clean-test".to_string()),
+                    problem_id: None,
                     reason: "test cleanup".to_string(),
                     requested_by: "unit-test".to_string(),
                     requested_at_ms: 1100,
@@ -6273,6 +8164,89 @@ mod tests {
         assert_eq!(info.request_id.as_deref(), Some("request-cancel-broadcast"));
         assert_eq!(info.reason, "client cancelled");
         assert_eq!(info.requested_at_ms, 3000);
+    }
+
+    #[test]
+    fn cancel_control_frame_resolves_problem_id_to_running_solve() {
+        let state = test_state(NodeRole::Master);
+        let problem_id = "99999999-9999-4999-8999-999999999999";
+        state.solves.lock().expect("solves mutex poisoned").insert(
+            "solve-problem-cancel".to_string(),
+            SolveRegistryEntry {
+                solve_id: "solve-problem-cancel".to_string(),
+                request_id: "request-problem-cancel".to_string(),
+                problem_id: Some(problem_id.to_string()),
+                status: "running".to_string(),
+                jobs_expected: 1,
+                started_at_ms: 1000,
+                updated_at_ms: 1000,
+                ..SolveRegistryEntry::default()
+            },
+        );
+
+        let handled = record_cancel_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"master-a",
+                "role":"master",
+                "commandName":"cancel-solve",
+                "payload":{
+                    "problemId": problem_id,
+                    "reason":"nats problem cancel",
+                    "requestedBy":"master-a",
+                    "requestedAtMs": 4000
+                },
+                "timeMs": 4001
+            }),
+        )
+        .unwrap();
+
+        assert!(handled);
+        let info = solve_cancel_info(&state, "solve-problem-cancel").unwrap();
+        assert_eq!(info.request_id.as_deref(), Some("request-problem-cancel"));
+        assert_eq!(info.problem_id.as_deref(), Some(problem_id));
+        assert_eq!(info.reason, "nats problem cancel");
+        let solves = state.solves.lock().expect("solves mutex poisoned");
+        let solve = solves.get("solve-problem-cancel").unwrap();
+        assert_eq!(solve.status, "cancelling");
+        assert!(solve.cancel_requested);
+    }
+
+    #[test]
+    fn cancel_control_frame_records_problem_id_for_workers_without_registry() {
+        let state = test_state(NodeRole::Slave);
+        let problem_id = "abababab-abab-4bab-8bab-abababababab";
+
+        let handled = record_cancel_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"master-a",
+                "role":"master",
+                "commandName":"cancel-solve",
+                "payload":{
+                    "problemId": problem_id,
+                    "reason":"nats problem cancel",
+                    "requestedBy":"master-a",
+                    "requestedAtMs": 5000
+                },
+                "timeMs": 5001
+            }),
+        )
+        .unwrap();
+
+        assert!(handled);
+        let info = solve_cancel_info(&state, problem_id).unwrap();
+        assert_eq!(info.problem_id.as_deref(), Some(problem_id));
+        assert_eq!(info.reason, "nats problem cancel");
+        assert!(solve_cancel_requested_for(
+            &state,
+            "solve-worker-local",
+            Some(problem_id)
+        ));
     }
 
     #[tokio::test]
@@ -6437,6 +8411,8 @@ mod tests {
             solve_id: "solve-test".to_string(),
             request_id: "request-test".to_string(),
             job_id: "job-0".to_string(),
+            job_uuid: new_uuid_string(),
+            problem_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
             revision: 0,
             worker_node: "worker-a".to_string(),
             ok: true,
@@ -6458,6 +8434,8 @@ mod tests {
             solve_id: "solve-test".to_string(),
             request_id: "request-test".to_string(),
             job_id: "job-1".to_string(),
+            job_uuid: new_uuid_string(),
+            problem_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
             revision: 0,
             worker_node: "worker-b".to_string(),
             ok: false,
@@ -6479,6 +8457,7 @@ mod tests {
         let response = aggregate_results(
             "solve-test".to_string(),
             "request-test".to_string(),
+            None,
             0,
             &problem,
             2,
@@ -6519,6 +8498,8 @@ mod tests {
         assert_eq!(retry.revision, job.revision);
         assert_eq!(retry.problem.c, job.problem.c);
         assert_eq!(retry.extra_constraints, job.extra_constraints);
+        assert_ne!(retry.job_uuid, job.job_uuid);
+        assert_eq!(retry.problem_id, job.problem_id);
         assert!(retry.submitted_at_ms >= job.submitted_at_ms);
     }
 
@@ -6530,6 +8511,8 @@ mod tests {
             solve_id: "solve-test".to_string(),
             request_id: "request-test".to_string(),
             job_id: "job-0-retry-1".to_string(),
+            job_uuid: new_uuid_string(),
+            problem_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
             revision: 0,
             worker_node: "worker-b".to_string(),
             ok: true,
@@ -6551,6 +8534,7 @@ mod tests {
         let response = aggregate_results(
             "solve-test".to_string(),
             "request-test".to_string(),
+            None,
             0,
             &problem,
             1,
@@ -6584,6 +8568,8 @@ mod tests {
             solve_id: "solve-test".to_string(),
             request_id: "request-test".to_string(),
             job_id: "job-0".to_string(),
+            job_uuid: new_uuid_string(),
+            problem_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
             revision: 0,
             worker_node: "worker-a".to_string(),
             ok: true,

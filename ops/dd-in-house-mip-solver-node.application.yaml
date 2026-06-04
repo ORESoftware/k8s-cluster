@@ -6,9 +6,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
-    targetRevision: dev
-    path: remote/deployments/mip-solver-node.rs/k8s
+    repoURL: https://github.com/ORESoftware/mip-solver-node.rs.git
+    targetRevision: main
+    path: k8s
   destination:
     server: https://kubernetes.default.svc
     namespace: ai-ml

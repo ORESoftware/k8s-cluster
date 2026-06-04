@@ -7,7 +7,7 @@ cd ~/codes/ores/k8s-cluster
 git submodule add https://github.com/ORESoftware/mip-solver-node.rs.git remote/deployments/mip-solver-node.rs
 ```
 
-Then add an Argo CD Application pointing at the submodule's k8s bundle:
+Then add an Argo CD Application pointing directly at this repository's k8s bundle:
 
 `remote/argocd/apps/dd-in-house-mip-solver-node.application.yaml`
 
@@ -22,9 +22,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
-    targetRevision: dev
-    path: remote/deployments/mip-solver-node.rs/k8s
+    repoURL: https://github.com/ORESoftware/mip-solver-node.rs.git
+    targetRevision: main
+    path: k8s
   destination:
     server: https://kubernetes.default.svc
     namespace: ai-ml
@@ -36,7 +36,9 @@ spec:
       - CreateNamespace=true
 ```
 
-Argo CD supports git submodules automatically unless `ARGOCD_GIT_MODULES_ENABLED=false` is set on repo-server.
+The submodule remains useful for EC2/local verification and for pinning a deployable revision in `k8s-cluster`, but Argo CD should not render through the submodule path. Some repo-server configurations expose gitlinks without checking out nested submodules, which makes `remote/deployments/mip-solver-node.rs/k8s` look like a missing path.
+
+At runtime the pod still clones `k8s-cluster` because the Cargo manifest expects generated crates under `remote/libs/...` and the DES library under `remote/submodules/discrete-event-system.rs`. The manifests then clone this solver repo into `remote/deployments/mip-solver-node.rs` from `MIP_SOLVER_NODE_GIT_URL`/`MIP_SOLVER_NODE_GIT_REF`, so the running code follows the solver repo rather than a stale cluster submodule pointer.
 
 ## Helper script
 
@@ -46,7 +48,7 @@ From this repository checkout, a writable shell can run:
 ./ops/install-into-k8s-cluster.sh ~/codes/ores/k8s-cluster
 ```
 
-The script adds or updates the submodule, copies the Argo CD Application manifest into `remote/argocd/apps/`, and validates the submodule's `k8s/` bundle with `kubectl kustomize`.
+The script adds or updates the submodule, copies the Argo CD Application manifest into `remote/argocd/apps/`, and validates the checked-out `k8s/` bundle with `kubectl kustomize`.
 
 ## GPU worker overlay
 
@@ -58,7 +60,7 @@ falls back to in-house CPU matrix preprocessing.
 For a GPU-backed worker pool, point Argo CD at:
 
 ```yaml
-path: remote/deployments/mip-solver-node.rs/k8s-gpu
+path: k8s-gpu
 ```
 
 That overlay requests one `nvidia.com/gpu` for each slave pod and sets
