@@ -3768,12 +3768,42 @@ async fn build_jetstream_consumer(
     Ok(consumer)
 }
 
+fn worker_ready_payload(state: &AppState, consumer_name: &str) -> Value {
+    json!({
+        "consumer": consumer_name,
+        "jobsSubject": &state.jobs_subject,
+        "resultsSubject": &state.results_subject,
+    })
+}
+
+async fn publish_worker_ready(state: &AppState, consumer_name: &str) {
+    publish_control(
+        state,
+        "worker-ready",
+        worker_ready_payload(state, consumer_name),
+    )
+    .await;
+}
+
+async fn run_worker_heartbeat(
+    state: AppState,
+    consumer_name: String,
+    heartbeat_interval: Duration,
+) {
+    loop {
+        tokio::time::sleep(heartbeat_interval).await;
+        publish_worker_ready(&state, &consumer_name).await;
+    }
+}
+
 async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> {
     let Some(nats) = state.nats.clone() else {
         eprintln!("slave role requires NATS_URL");
         return Ok(());
     };
     let consumer_name = env_value("MIP_SOLVER_NATS_CONSUMER", MIP_SOLVER_WORKERS_QUEUE_GROUP);
+    let worker_heartbeat_interval =
+        Duration::from_secs(env_u64("MIP_SOLVER_WORKER_HEARTBEAT_SECONDS", 10).max(1));
     let ack_wait = Duration::from_secs(env_u64("MIP_SOLVER_ACK_WAIT_SECONDS", 600));
     let max_ack_pending = env_u64("MIP_SOLVER_MAX_ACK_PENDING", 32) as i64;
     let max_deliver = env_u64("MIP_SOLVER_MAX_DELIVER", 5) as i64;
@@ -3793,16 +3823,12 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
         json!({"consumer": &consumer_name, "jobsSubject": &state.jobs_subject}),
     )
     .await;
-    publish_control(
-        &state,
-        "worker-ready",
-        json!({
-            "consumer": &consumer_name,
-            "jobsSubject": &state.jobs_subject,
-            "resultsSubject": &state.results_subject,
-        }),
-    )
-    .await;
+    publish_worker_ready(&state, &consumer_name).await;
+    tokio::spawn(run_worker_heartbeat(
+        state.clone(),
+        consumer_name.clone(),
+        worker_heartbeat_interval,
+    ));
 
     while let Some(message) = messages.next().await {
         publish_control(

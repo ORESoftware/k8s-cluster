@@ -116,6 +116,8 @@ spec:
               value: '32'
             - name: MIP_SOLVER_MAX_DELIVER
               value: '5'
+            - name: MIP_SOLVER_WORKER_HEARTBEAT_SECONDS
+              value: '5'
             - name: MIP_SOLVER_GPU_MODE
               value: auto
           ports:
