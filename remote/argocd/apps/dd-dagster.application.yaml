@@ -4,21 +4,72 @@ metadata:
   name: dd-dagster
   namespace: argocd
 spec:
-  project: default
+  project: dd-ai-ml-platform
   source:
     repoURL: https://dagster-io.github.io/helm
     chart: dagster
     targetRevision: 1.13.3
     helm:
+      skipTests: true
       values: |
+        global:
+          postgresqlSecretName: dd-dagster-postgresql
         dagsterDaemon:
           enabled: true
+          podSecurityContext:
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 2Gi
         dagsterWebserver:
           replicaCount: 1
+          podSecurityContext:
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 2Gi
         dagster-user-deployments:
           enabled: false
+          enableSubchart: false
+        serviceAccount:
+          create: true
         postgresql:
           enabled: true
+          postgresqlUsername: dagster
+          postgresqlDatabase: dagster
+          existingSecret: dd-dagster-postgresql
   destination:
     server: https://kubernetes.default.svc
     namespace: ai-ml

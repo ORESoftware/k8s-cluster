@@ -22,7 +22,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-03-soccer-videogame-index-0f96996'
+        dd.dev/telemetry-revision: '2026-06-03-des-rs-route-healthz-engine-0f96996'
         dd.dev/des-engine-revision: '0f96996384feeb3d5ac16f1494948e6d58799aab'
       labels:
         app: dd-des-rs
@@ -141,7 +141,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: 4c96bd66fb059da1085240a70feaf4a5bac3624f
+              value: 0f96996384feeb3d5ac16f1494948e6d58799aab
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
@@ -195,9 +195,11 @@ spec:
             # before the startup probe gives up (5s * 180).
             periodSeconds: 5
             failureThreshold: 180
+          # The landing page is available as soon as the server binds; rendered
+          # /out artifacts warm in the background and should not remove routing.
           readinessProbe:
             httpGet:
-              path: /out/delivery-planner.html
+              path: /healthz
               port: http
             periodSeconds: 5
             timeoutSeconds: 3

@@ -41,6 +41,7 @@ public final class App {
     // endpoints respond 503 instead of crash-looping. Shared across MainVerticle replicas so
     // we only open one HikariCP pool per process.
     final Optional<PgDb> pg = PgDb.fromEnv();
+    final Config config = Config.fromEnv();
 
     // JobService owns the in-memory job state and the NeoQueue. It is shared across all
     // MainVerticle replicas so that POST/GET requests routed to different event loops still see
@@ -51,7 +52,7 @@ public final class App {
     final DeploymentOptions opts = new DeploymentOptions()
         .setInstances(Math.max(1, Runtime.getRuntime().availableProcessors()));
 
-    vertx.deployVerticle(() -> new MainVerticle(jobService, pg.orElse(null)), opts).onComplete(ar -> {
+    vertx.deployVerticle(() -> new MainVerticle(config, jobService, pg.orElse(null)), opts).onComplete(ar -> {
       if (ar.succeeded()) {
         log.info("dd-spark-pipeline-server deployed verticles, deployment id={}", ar.result());
       } else {

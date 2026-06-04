@@ -24,6 +24,12 @@ spec:
         app: dd-spark-pipeline-server
     spec:
       automountServiceAccountToken: false
+      securityContext:
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       terminationGracePeriodSeconds: 30
       containers:
         - name: spark-pipeline-server
@@ -31,6 +37,13 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            privileged: false
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
             seccompProfile:
               type: RuntimeDefault
           # `set -o pipefail` is bash-only. The maven base image ships dash as /bin/sh, which
@@ -56,6 +69,13 @@ spec:
               value: '4'
             - name: JAVA_OPTS
               value: -XX:+UseG1GC -XX:MaxRAMPercentage=70 -Dfile.encoding=UTF-8
+            - name: SPARK_PIPELINE_ALLOW_UNAUTHENTICATED
+              value: 'false'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
             # Optional Postgres connection (consumed by PgDb via HikariCP + jOOQ for the
             # generated pg-defs Tables). If the secret is absent the service still boots and
             # serves /healthz, /readyz, /metrics, /v1/jobs; only /v1/repos and the
@@ -64,7 +84,7 @@ spec:
             - name: RDS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: dd-spark-pipeline-server-secrets
+                  name: dd-remote-rest-api-secrets
                   key: RDS_DATABASE_URL
                   optional: true
             - name: PG_POOL_SIZE

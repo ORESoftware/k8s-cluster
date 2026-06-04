@@ -4,7 +4,7 @@ metadata:
   name: dd-spark-pipeline-server
   namespace: argocd
 spec:
-  project: default
+  project: dd-ai-ml-platform
   source:
     repoURL: git@github.com:ORESoftware/k8s-cluster.git
     targetRevision: dev

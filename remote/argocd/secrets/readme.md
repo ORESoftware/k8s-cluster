@@ -21,6 +21,10 @@ Required AWS secret names:
 - `dd/remote-dev/mcp-secrets` -> creates `dd-gleam-mcp-server-secrets`
 - `dd/remote-dev/gleamlang-server-secrets` -> creates `dd-gleamlang-server-secrets`
 - `dd/remote-dev/lmx-admin-token` -> creates `dd-lmx-admin-token`
+- `dd/remote-dev/ai-ml-platform-secrets` -> consumed by the optional AI/ML chart
+  `ExternalSecret`s in `remote/argocd/ai-ml-platform`
+- `dd/remote-dev/big-data-secrets` -> consumed by the optional
+  `remote/submodules/discrete-event-system.rs/k8s/big-data` ExternalSecrets for Airflow and MinIO
 
 `dd/remote-dev/lmx-admin-token` must include `LMX_ADMIN_TOKEN`. Both broker
 deployments (`dd-rust-network-mutex` and `dd-live-mutex`) consume it through
@@ -85,6 +89,17 @@ definitions by UUID without inheriting the REST API secret bundle.
 `AGENT_TASKS_RDS_DATABASE_URL`; the Gleam MCP server consumes those keys through explicit
 `secretKeyRef`s so read-only MCP tools can inspect database-backed contracts without inheriting the
 broader REST API or agent secret bundles.
+
+`dd/remote-dev/big-data-secrets` must include `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`,
+`AIRFLOW_ADMIN_USERNAME`, and `AIRFLOW_ADMIN_PASSWORD` before applying the optional
+`k8s/big-data` bundle. Keep those values rotation-friendly in AWS Secrets Manager; do not restore
+literal fallback credentials to the manifests or docs.
+
+`dd/remote-dev/ai-ml-platform-secrets` must include the chart-owned Airbyte auth, Airbyte
+database/storage, Airflow, Dagster, MLflow, and Qdrant keys listed in
+`remote/argocd/ai-ml-platform/readme.md`. Those chart apps should consume generated Kubernetes
+secrets through `existingSecret`, `existingAdminSecret`, or `secretKeyRef` values; do not commit
+fallback chart credentials such as `admin/admin`, `postgres`, `minio123`, or `test`.
 
 ## Updating Values
 
