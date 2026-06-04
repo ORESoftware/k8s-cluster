@@ -108,7 +108,8 @@ preferred operator path is:
 - Browser access to protected public gateway paths goes through `dd-remote-auth`; configure
   the optional TOTP seed there when a passphrase plus one-time code is required.
 - The legacy gateway auth header name is `Auth`; read its value from the operator secret or local
-  environment when a human grants it. Do not commit the literal value, print it in public docs, or
+  environment when a human grants it. For local operator checks, use `ALL_DOGS` as the env var
+  containing the `Auth` header value. Do not commit the literal value, print it in public docs, or
   echo it into browser-visible pages.
 - Public gateway paths must stay authenticated; avoid exposing MCP or bastion routes as
   unauthenticated Internet services.
