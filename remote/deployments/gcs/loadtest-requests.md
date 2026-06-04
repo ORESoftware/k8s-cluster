@@ -24,3 +24,4 @@
 - 2026-06-04 20k-medium goroutine-fix validation after 20k-light pass: 5 loader replicas x 4000 clients, 2.5 msg/(conn*second), 180s.
 - 2026-06-04 20k-medium goroutine-fix retry with fewer loader pods: 4 loader replicas x 5000 clients, 2.5 msg/(conn*second), 180s.
 - 2026-06-04 20k-medium goroutine-fix retry after Argo sync/scale guard: 4 loader replicas x 5000 clients, 2.5 msg/(conn*second), 180s.
+- 2026-06-04 20k-medium goroutine-fix retry after freeing MIP solver pods: 4 loader replicas x 5000 clients, 2.5 msg/(conn*second), 180s.
