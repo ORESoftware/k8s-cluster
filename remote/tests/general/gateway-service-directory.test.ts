@@ -432,7 +432,7 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.match(gateway, /location = \/presence[\s\S]*return 302 \/presence\//);
   assert.match(
     gateway,
-    /location\s+\/presence\/[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header Connection \$connection_upgrade[\s\S]*presence-svc\.presence\.svc\.cluster\.local:8081\//,
+    /location\s+\/presence\/[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header Connection \$connection_upgrade[\s\S]*set \$dd_presence_upstream presence-svc\.presence\.svc\.cluster\.local:8081;[\s\S]*rewrite \^\/presence\/\?\(\.\*\)\$ \/\$1 break;[\s\S]*proxy_pass http:\/\/\$dd_presence_upstream/,
   );
   assert.match(
     gateway,
