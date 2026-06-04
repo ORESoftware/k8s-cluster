@@ -52,20 +52,30 @@ spec:
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
               source_root=/opt/dd-next-1
+              solver_src="${source_root}/remote/deployments/mip-solver-node.rs"
               if [ -n "${MIP_SOLVER_CLUSTER_GIT_URL:-}" ]; then
-                rm -rf /tmp/k8s-source
-                if git clone --depth 1 --branch "${MIP_SOLVER_CLUSTER_GIT_REF:-dev}" "${MIP_SOLVER_CLUSTER_GIT_URL}" /tmp/k8s-source; then
-                  git -C /tmp/k8s-source config url.https://github.com/.insteadOf git@github.com:
-                  git -C /tmp/k8s-source config url.https://github.com/.insteadOf ssh://git@github.com/
-                  git -C /tmp/k8s-source submodule sync --recursive remote/deployments/mip-solver-node.rs remote/submodules/discrete-event-system.rs
-                  git -C /tmp/k8s-source submodule update --init --depth 1 remote/deployments/mip-solver-node.rs remote/submodules/discrete-event-system.rs
-                  source_root=/tmp/k8s-source
+                clone_root="/tmp/k8s-source-${HOSTNAME:-pod}-$(date +%s)"
+                if git clone --depth 1 --branch "${MIP_SOLVER_CLUSTER_GIT_REF:-dev}" "${MIP_SOLVER_CLUSTER_GIT_URL}" "${clone_root}"; then
+                  git -C "${clone_root}" config url.https://github.com/.insteadOf git@github.com:
+                  git -C "${clone_root}" config url.https://github.com/.insteadOf ssh://git@github.com/
+                  git -C "${clone_root}" submodule sync --recursive remote/deployments/mip-solver-node.rs remote/submodules/discrete-event-system.rs
+                  git -C "${clone_root}" submodule update --init --depth 1 remote/deployments/mip-solver-node.rs remote/submodules/discrete-event-system.rs
+                  source_root="${clone_root}"
+                  solver_src="${source_root}/remote/deployments/mip-solver-node.rs"
                   echo "[dd-in-house-mip-solver-node] source: cloned ${MIP_SOLVER_CLUSTER_GIT_URL}@${MIP_SOLVER_CLUSTER_GIT_REF:-dev}"
+                  if [ -n "${MIP_SOLVER_NODE_GIT_URL:-}" ]; then
+                    live_solver_src="${source_root}/remote/deployments/mip-solver-node-live.rs"
+                    if git clone --depth 1 --branch "${MIP_SOLVER_NODE_GIT_REF:-main}" "${MIP_SOLVER_NODE_GIT_URL}" "${live_solver_src}"; then
+                      solver_src="${live_solver_src}"
+                      echo "[dd-in-house-mip-solver-node] solver source: cloned ${MIP_SOLVER_NODE_GIT_URL}@${MIP_SOLVER_NODE_GIT_REF:-main}"
+                    else
+                      echo "[dd-in-house-mip-solver-node] solver source clone failed; using ${solver_src}" >&2
+                    fi
+                  fi
                 else
                   echo "[dd-in-house-mip-solver-node] source clone failed; using mounted source at ${source_root}" >&2
                 fi
               fi
-              solver_src="${source_root}/remote/deployments/mip-solver-node.rs"
               if [ ! -f "${solver_src}/Cargo.toml" ]; then
                 echo "solver source not found at ${solver_src}" >&2
                 exit 1
@@ -111,6 +121,10 @@ spec:
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: MIP_SOLVER_CLUSTER_GIT_REF
               value: dev
+            - name: MIP_SOLVER_NODE_GIT_URL
+              value: https://github.com/ORESoftware/mip-solver-node.rs.git
+            - name: MIP_SOLVER_NODE_GIT_REF
+              value: main
             - name: MIP_SOLVER_LP_MAX_ITERS
               value: '10000'
             - name: MIP_SOLVER_ACK_WAIT_SECONDS

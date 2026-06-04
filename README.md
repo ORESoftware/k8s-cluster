@@ -60,13 +60,15 @@ Redis is the hot cache and coordination layer for solve snapshots, frontier snap
 
 KEDA scales slave pods from NATS JetStream consumer lag. New pods boot with `MIP_SOLVER_NODE_ROLE=slave`, attach to the same durable pull consumer, and start draining pending subproblems.
 
-The Kubernetes startup command runs Cargo from `remote/deployments/mip-solver-node.rs` inside a full `k8s-cluster` source tree, with `CARGO_TARGET_DIR` pointed at `/tmp`. Keep that relative layout intact: the normal manifest depends on generated NATS definitions under `remote/libs/nats/...` and the in-house DES solver under `remote/submodules/discrete-event-system.rs`.
+The Kubernetes startup command first clones the configured `k8s-cluster` ref for generated libs and submodules. It then clones `MIP_SOLVER_NODE_GIT_URL` at `MIP_SOLVER_NODE_GIT_REF` into `remote/deployments/mip-solver-node-live.rs` and runs Cargo from there, with `CARGO_TARGET_DIR` pointed at `/tmp`. That live clone keeps A's deployed code aligned with the Argo source ref while preserving the C-relative dependency layout: the normal manifest still depends on generated NATS definitions under `remote/libs/nats/...` and the in-house DES solver under `remote/submodules/discrete-event-system.rs`.
+
+`/home` serves the human-readable service home page. `/docs/api` and `/api/docs` serve the API docs page; `/api/docs.json` and `/api-docs.json` serve the machine-readable route inventory. `/version` and `/version.json` report the package version plus git commit/ref/build metadata captured by `build.rs`.
 
 `/healthz` reports process liveness. `/readyz` requires a live NATS connection so Kubernetes does not route traffic to masters or count slaves as ready while they cannot publish or consume distributed work.
 
 Masters subscribe to the generated MIP solver control subject and track live slave control frames (`worker-ready`, `request-work`, `worker-completed`) in memory. `GET /mip-solver-cluster/workers` reports the workers a master has observed (`/workers` is kept as a short compatibility alias).
 
-Masters also keep an in-memory solve registry. `GET /mip-solver-cluster/solves` reports tracked solves, expected/published/completed/re-delegated/split job counts, and per-attempt job status. `/metrics` exposes worker-control, solve-registry, active-solve, split, and re-delegation counters for operational debugging.
+`GET /mip-solver-cluster/nats` reports the active NATS connection flag, generated JetStream stream, jobs/results/control/events subjects, durable worker consumer, and master-observed slave frames. Masters also keep an in-memory solve registry. `GET /mip-solver-cluster/solves` reports tracked solves, expected/published/completed/re-delegated/split job counts, and per-attempt job status. `/metrics` exposes worker-control, solve-registry, active-solve, split, and re-delegation counters for operational debugging.
 
 The server handles both Ctrl-C and Kubernetes SIGTERM for graceful HTTP shutdown during rolling updates and KEDA scale-down.
 

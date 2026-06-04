@@ -18,7 +18,7 @@ use std::{
 use axum::{
     extract::{DefaultBodyLimit, Path as AxumPath, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     routing::{delete, get, post},
     Json, Router,
 };
@@ -49,6 +49,9 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 use uuid::Uuid;
 
 const SERVICE_NAME: &str = "dd-in-house-mip-solver-node";
+const SERVICE_DESCRIPTION: &str =
+    "Distributed in-house LP/MIP/IP solver node with NATS JetStream master/slave execution.";
+const API_DOCS_SCHEMA: &str = "dd.service-docs.v1";
 const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_VARS: usize = 10_000;
 const MAX_CONSTRAINTS: usize = 50_000;
@@ -540,6 +543,13 @@ fn env_value(key: &str, fallback: &str) -> String {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| fallback.to_string())
+}
+
+fn optional_env_value(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn env_u64(key: &str, fallback: u64) -> u64 {
@@ -3772,28 +3782,335 @@ fn response_json<T: Serialize>(status: StatusCode, value: T) -> Response {
     (status, Json(value)).into_response()
 }
 
-async fn root(State(state): State<AppState>) -> impl IntoResponse {
-    Json(json!({
+fn build_info_document() -> Value {
+    json!({
+        "packageVersion": env!("CARGO_PKG_VERSION"),
+        "gitCommit": option_env!("DD_GIT_COMMIT").unwrap_or("unknown"),
+        "gitCommitShort": option_env!("DD_GIT_COMMIT_SHORT").unwrap_or("unknown"),
+        "gitRef": option_env!("DD_GIT_REF").unwrap_or("unknown"),
+        "gitDirty": option_env!("DD_GIT_DIRTY").unwrap_or("unknown"),
+        "builtAt": option_env!("DD_BUILD_TIME_UTC").unwrap_or("unknown"),
+    })
+}
+
+fn runtime_source_document() -> Value {
+    json!({
+        "clusterGitUrl": optional_env_value("MIP_SOLVER_CLUSTER_GIT_URL"),
+        "clusterGitRef": optional_env_value("MIP_SOLVER_CLUSTER_GIT_REF"),
+        "natsUrlConfigured": optional_env_value("NATS_URL").is_some(),
+        "postgresEnv": first_configured_env(&[
+            "MIP_SOLVER_DATABASE_URL",
+            "AGENT_TASKS_RDS_DATABASE_URL",
+            "RDS_DATABASE_URL",
+            "DATABASE_URL",
+            "PG_DATABASE_URL",
+        ]),
+        "redisEnv": first_configured_env(&["MIP_SOLVER_REDIS_URL", "REDIS_URL"]),
+    })
+}
+
+fn subjects_document(state: &AppState) -> Value {
+    json!({
+        "jobs": &state.jobs_subject,
+        "results": &state.results_subject,
+        "control": &state.control_subject,
+        "events": &state.events_subject,
+    })
+}
+
+fn links_document() -> Value {
+    json!({
+        "home": "/home",
+        "healthz": "/healthz",
+        "readyz": "/readyz",
+        "version": "/version",
+        "versionJson": "/version.json",
+        "apiDocs": "/docs/api",
+        "apiDocsJson": "/api/docs.json",
+        "natsStatus": "/mip-solver-cluster/nats",
+        "workers": "/mip-solver-cluster/workers",
+        "solves": "/mip-solver-cluster/solves",
+        "metrics": "/metrics",
+        "exampleModel": "/model/example",
+        "solve": "/solve",
+    })
+}
+
+fn version_document(state: &AppState) -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "description": SERVICE_DESCRIPTION,
+        "version": env!("CARGO_PKG_VERSION"),
+        "role": state.role.as_str(),
+        "nodeId": &state.node_id,
+        "build": build_info_document(),
+        "runtime": runtime_source_document(),
+    })
+}
+
+fn nats_status_document(state: &AppState) -> Value {
+    let connected = state.nats.is_some();
+    let workers: Vec<WorkerNodeStatus> = state
+        .workers
+        .lock()
+        .expect("workers mutex poisoned")
+        .values()
+        .cloned()
+        .collect();
+    json!({
+        "ok": connected,
         "service": SERVICE_NAME,
         "role": state.role.as_str(),
-        "nodeId": state.node_id,
-        "subjects": {
-            "jobs": state.jobs_subject,
-            "results": state.results_subject,
-            "control": state.control_subject,
-            "events": state.events_subject,
+        "nodeId": &state.node_id,
+        "connected": connected,
+        "readyForDistributedWork": connected,
+        "stream": {
+            "name": DD_REMOTE_MIP_SOLVER_STREAM_NAME,
+            "subjects": DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS,
         },
+        "subjects": subjects_document(state),
+        "workerConsumer": env_value("MIP_SOLVER_NATS_CONSUMER", MIP_SOLVER_WORKERS_QUEUE_GROUP),
+        "workerQueueGroup": MIP_SOLVER_WORKERS_QUEUE_GROUP,
+        "workersKnown": workers.len(),
+        "workers": workers,
+        "notes": [
+            "masters publish subproblem jobs to the jobs subject using JetStream publish acks",
+            "slaves pull from the shared durable worker consumer and publish results to the results subject",
+            "slaves also publish worker-ready/request-work/worker-completed control frames that masters observe"
+        ],
+    })
+}
+
+fn api_docs_document(state: &AppState) -> Value {
+    json!({
+        "schema": API_DOCS_SCHEMA,
+        "service": {
+            "name": SERVICE_NAME,
+            "version": env!("CARGO_PKG_VERSION"),
+            "description": SERVICE_DESCRIPTION,
+        },
+        "build": build_info_document(),
+        "nats": nats_status_document(state),
+        "links": links_document(),
+        "endpoints": [
+            {"method": "GET", "path": "/", "kind": "json", "description": "Service descriptor with runtime subjects, persistence, GPU status, and links."},
+            {"method": "GET", "path": "/home", "kind": "html", "description": "Human-readable service home page."},
+            {"method": "GET", "path": "/healthz", "kind": "json", "description": "Process liveness. Does not require NATS."},
+            {"method": "GET", "path": "/readyz", "kind": "json", "description": "Readiness. Requires an active NATS connection for distributed solver work."},
+            {"method": "GET", "path": "/version", "kind": "html", "description": "Build and runtime version page with git commit metadata."},
+            {"method": "GET", "path": "/version.json", "kind": "json", "description": "Build and runtime version metadata."},
+            {"method": "GET", "path": "/docs/api", "kind": "html", "description": "Human-readable API documentation."},
+            {"method": "GET", "path": "/api/docs", "kind": "html", "description": "Compatibility alias for the API documentation page."},
+            {"method": "GET", "path": "/api/docs.json", "kind": "json", "description": "Machine-readable API documentation."},
+            {"method": "GET", "path": "/mip-solver-cluster/nats", "kind": "json", "description": "NATS stream, subject, durable worker consumer, and observed worker status."},
+            {"method": "GET", "path": "/mip-solver-cluster/workers", "kind": "json", "description": "Slave workers the master has observed through NATS control frames."},
+            {"method": "GET", "path": "/mip-solver-cluster/solves", "kind": "json", "description": "Master solve registry with job counts and per-attempt status."},
+            {"method": "DELETE", "path": "/mip-solver-cluster/solves/:solve_id", "kind": "json", "description": "Cancel a running solve by solve id."},
+            {"method": "POST", "path": "/mip-solver-cluster/solves/:solve_id/cancel", "kind": "json", "description": "Cancel a running solve by solve id."},
+            {"method": "POST", "path": "/mip-solver-cluster/requests/:request_id/cancel", "kind": "json", "description": "Cancel a running solve by request id."},
+            {"method": "GET", "path": "/workers", "kind": "json", "description": "Compatibility alias for /mip-solver-cluster/workers."},
+            {"method": "GET", "path": "/model/example", "kind": "json", "description": "Example knapsack MIP request payload."},
+            {"method": "POST", "path": "/solve", "kind": "json", "description": "Submit a MIP/IP/LP solve request to a master node."},
+            {"method": "GET", "path": "/sessions/:session_id", "kind": "json", "description": "Read a live session model snapshot."},
+            {"method": "POST", "path": "/sessions/:session_id/events", "kind": "json", "description": "Apply live model editing events to a session."},
+            {"method": "POST", "path": "/sessions/:session_id/solve", "kind": "json", "description": "Solve the current live session model snapshot."},
+            {"method": "GET", "path": "/metrics", "kind": "text", "description": "Prometheus metrics for HTTP, NATS jobs/results, worker control, solve registry, and errors."}
+        ],
+    })
+}
+
+fn html_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+fn service_page(title: &str, subtitle: &str, body: String) -> Html<String> {
+    Html(format!(
+        concat!(
+            "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">",
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
+            "<title>{title}</title>",
+            "<style>",
+            "body{{margin:0;background:#f7f8fb;color:#18202f;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;}}",
+            "main{{max-width:980px;margin:0 auto;padding:32px 20px 48px;}}",
+            "h1{{font-size:2rem;line-height:1.15;margin:0 0 8px;letter-spacing:0;}}",
+            "h2{{font-size:1rem;margin:28px 0 10px;color:#30405c;}}",
+            "p{{line-height:1.55;color:#4d5b73;}}",
+            "a{{color:#0b5cab;text-decoration:none;}}a:hover{{text-decoration:underline;}}",
+            ".nav{{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 28px;}}",
+            ".nav a,.pill{{border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;background:#fff;color:#23324a;}}",
+            ".grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}}",
+            ".card{{border:1px solid #d8dee8;border-radius:8px;background:#fff;padding:14px;}}",
+            "code,pre{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}}",
+            "pre{{overflow:auto;background:#101827;color:#e5edf7;border-radius:8px;padding:14px;}}",
+            "table{{width:100%;border-collapse:collapse;background:#fff;border:1px solid #d8dee8;border-radius:8px;overflow:hidden;}}",
+            "th,td{{text-align:left;border-bottom:1px solid #e7ebf2;padding:9px 10px;vertical-align:top;}}",
+            "th{{font-size:.8rem;text-transform:uppercase;color:#5a6780;background:#f0f3f8;}}",
+            ".ok{{color:#067647;}}.warn{{color:#b54708;}}",
+            "</style></head><body><main>",
+            "<h1>{title}</h1><p>{subtitle}</p>",
+            "<nav class=\"nav\"><a href=\"/home\">Home</a><a href=\"/docs/api\">API Docs</a>",
+            "<a href=\"/version\">Version</a><a href=\"/mip-solver-cluster/nats\">NATS</a>",
+            "<a href=\"/healthz\">Health</a><a href=\"/readyz\">Readiness</a><a href=\"/metrics\">Metrics</a></nav>",
+            "{body}</main></body></html>"
+        ),
+        title = html_escape(title),
+        subtitle = html_escape(subtitle),
+        body = body
+    ))
+}
+
+async fn home(State(state): State<AppState>) -> Html<String> {
+    let connected = state.nats.is_some();
+    let nats_class = if connected { "ok" } else { "warn" };
+    let nats_text = if connected {
+        "connected"
+    } else {
+        "not connected"
+    };
+    service_page(
+        SERVICE_NAME,
+        SERVICE_DESCRIPTION,
+        format!(
+            concat!(
+                "<section class=\"grid\">",
+                "<div class=\"card\"><h2>Node</h2><p><strong>Role:</strong> {role}<br><strong>Node:</strong> <code>{node}</code><br><strong>Version:</strong> {version}</p></div>",
+                "<div class=\"card\"><h2>NATS</h2><p><strong>Status:</strong> <span class=\"{nats_class}\">{nats_text}</span><br><strong>Stream:</strong> <code>{stream}</code><br><strong>Worker consumer:</strong> <code>{consumer}</code></p></div>",
+                "<div class=\"card\"><h2>Cluster</h2><p><strong>Workers observed:</strong> {workers}<br><strong>Solves tracked:</strong> {solves}</p></div>",
+                "</section>",
+                "<h2>Common Routes</h2>",
+                "<p><a href=\"/model/example\"><code>/model/example</code></a> gives a sample solve request. ",
+                "<a href=\"/mip-solver-cluster/workers\"><code>/mip-solver-cluster/workers</code></a> shows slave heartbeats observed by the master. ",
+                "<a href=\"/api/docs.json\"><code>/api/docs.json</code></a> is the machine-readable API contract.</p>"
+            ),
+            role = html_escape(state.role.as_str()),
+            node = html_escape(&state.node_id),
+            version = html_escape(env!("CARGO_PKG_VERSION")),
+            nats_class = nats_class,
+            nats_text = nats_text,
+            stream = html_escape(DD_REMOTE_MIP_SOLVER_STREAM_NAME),
+            consumer = html_escape(&env_value(
+                "MIP_SOLVER_NATS_CONSUMER",
+                MIP_SOLVER_WORKERS_QUEUE_GROUP,
+            )),
+            workers = state.workers.lock().expect("workers mutex poisoned").len(),
+            solves = state.solves.lock().expect("solves mutex poisoned").len(),
+        ),
+    )
+}
+
+async fn version_json(State(state): State<AppState>) -> impl IntoResponse {
+    Json(version_document(&state))
+}
+
+async fn version_page(State(state): State<AppState>) -> Html<String> {
+    let doc = serde_json::to_string_pretty(&version_document(&state)).unwrap_or_default();
+    service_page(
+        "Version",
+        "Build and runtime metadata for the solver node.",
+        format!("<pre>{}</pre>", html_escape(&doc)),
+    )
+}
+
+async fn api_docs_json(State(state): State<AppState>) -> impl IntoResponse {
+    (
+        [("content-type", "application/json; charset=utf-8")],
+        Json(api_docs_document(&state)),
+    )
+}
+
+async fn api_docs_html(State(state): State<AppState>) -> Html<String> {
+    let docs = api_docs_document(&state);
+    let rows = docs
+        .get("endpoints")
+        .and_then(Value::as_array)
+        .map(|endpoints| {
+            endpoints
+                .iter()
+                .map(|endpoint| {
+                    let method = endpoint
+                        .get("method")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let path = endpoint.get("path").and_then(Value::as_str).unwrap_or("");
+                    let kind = endpoint.get("kind").and_then(Value::as_str).unwrap_or("");
+                    let description = endpoint
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    format!(
+                        "<tr><td><code>{}</code></td><td><a href=\"{}\"><code>{}</code></a></td><td>{}</td><td>{}</td></tr>",
+                        html_escape(method),
+                        html_escape(path),
+                        html_escape(path),
+                        html_escape(kind),
+                        html_escape(description),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .unwrap_or_default();
+    service_page(
+        "API Docs",
+        "Canonical HTTP surface for the distributed MIP solver node.",
+        format!(
+            concat!(
+                "<p><span class=\"pill\">schema {schema}</span><span class=\"pill\">version {version}</span>",
+                "<span class=\"pill\">stream {stream}</span></p>",
+                "<table><thead><tr><th>Method</th><th>Path</th><th>Kind</th><th>Description</th></tr></thead><tbody>{rows}</tbody></table>"
+            ),
+            schema = html_escape(API_DOCS_SCHEMA),
+            version = html_escape(env!("CARGO_PKG_VERSION")),
+            stream = html_escape(DD_REMOTE_MIP_SOLVER_STREAM_NAME),
+            rows = rows,
+        ),
+    )
+}
+
+async fn nats_status(State(state): State<AppState>) -> impl IntoResponse {
+    Json(nats_status_document(&state))
+}
+
+async fn root(State(state): State<AppState>) -> impl IntoResponse {
+    Json(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "description": SERVICE_DESCRIPTION,
+        "version": env!("CARGO_PKG_VERSION"),
+        "role": state.role.as_str(),
+        "nodeId": &state.node_id,
+        "subjects": subjects_document(&state),
         "stream": DD_REMOTE_MIP_SOLVER_STREAM_NAME,
         "queueGroup": MIP_SOLVER_WORKERS_QUEUE_GROUP,
         "workersKnown": state.workers.lock().expect("workers mutex poisoned").len(),
         "solvesTracked": state.solves.lock().expect("solves mutex poisoned").len(),
+        "nats": nats_status_document(&state),
+        "build": build_info_document(),
+        "links": links_document(),
         "persistence": persistence_contract(),
         "gpu": gpu_status(),
     }))
 }
 
 async fn healthz() -> impl IntoResponse {
-    Json(json!({"ok": true, "service": SERVICE_NAME}))
+    Json(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "version": env!("CARGO_PKG_VERSION"),
+        "gitCommit": option_env!("DD_GIT_COMMIT_SHORT").unwrap_or("unknown"),
+    }))
 }
 
 async fn readyz(State(state): State<AppState>) -> Response {
@@ -3807,8 +4124,13 @@ async fn readyz(State(state): State<AppState>) -> Response {
         status,
         json!({
             "ok": nats_ready,
+            "service": SERVICE_NAME,
+            "version": env!("CARGO_PKG_VERSION"),
             "role": state.role.as_str(),
+            "nodeId": &state.node_id,
             "nats": nats_ready,
+            "subjects": subjects_document(&state),
+            "stream": DD_REMOTE_MIP_SOLVER_STREAM_NAME,
             "reason": if nats_ready { Value::Null } else { json!("NATS connection is required for distributed solver readiness") },
         }),
     )
@@ -4607,9 +4929,21 @@ async fn connect_postgres() -> Option<PgPool> {
 fn app_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(root))
+        .route("/home", get(home))
+        .route("/home/", get(home))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
+        .route("/version", get(version_page))
+        .route("/version.json", get(version_json))
+        .route("/docs/api", get(api_docs_html))
+        .route("/api/docs", get(api_docs_html))
+        .route("/api/docs.json", get(api_docs_json))
+        .route("/api-docs", get(api_docs_html))
+        .route("/api-docs/", get(api_docs_html))
+        .route("/api-docs.json", get(api_docs_json))
         .route("/metrics", get(metrics))
+        .route("/mip-solver-cluster/nats", get(nats_status))
+        .route("/nats", get(nats_status))
         .route("/mip-solver-cluster/workers", get(workers))
         .route("/mip-solver-cluster/solves", get(cluster_solves))
         .route(
@@ -4911,6 +5245,44 @@ mod tests {
         let (status, text) = get_text(app, path).await;
         let value = serde_json::from_str(&text).unwrap();
         (status, value)
+    }
+
+    #[tokio::test]
+    async fn metadata_pages_and_api_docs_are_served() {
+        let app = app_router(test_state(NodeRole::Master));
+
+        let (status, home) = get_text(app.clone(), "/home").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(home.contains(SERVICE_NAME));
+        assert!(home.contains(DD_REMOTE_MIP_SOLVER_STREAM_NAME));
+
+        let (status, version_page) = get_text(app.clone(), "/version").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(version_page.contains("gitCommit"));
+        assert!(version_page.contains(env!("CARGO_PKG_VERSION")));
+
+        let (status, version_json) = get_json(app.clone(), "/version.json").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(version_json.get("service"), Some(&json!(SERVICE_NAME)));
+        assert_eq!(
+            version_json.pointer("/build/packageVersion"),
+            Some(&json!(env!("CARGO_PKG_VERSION")))
+        );
+
+        let (status, docs_html) = get_text(app.clone(), "/docs/api").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(docs_html.contains("/mip-solver-cluster/nats"));
+        assert!(docs_html.contains("/api/docs.json"));
+
+        let (status, docs_json) = get_json(app, "/api/docs.json").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(docs_json.get("schema"), Some(&json!(API_DOCS_SCHEMA)));
+        assert!(docs_json
+            .get("endpoints")
+            .and_then(Value::as_array)
+            .is_some_and(|endpoints| endpoints.iter().any(|endpoint| {
+                endpoint.get("path").and_then(Value::as_str) == Some("/mip-solver-cluster/nats")
+            })));
     }
 
     #[test]
@@ -5249,6 +5621,52 @@ mod tests {
         assert_eq!(config.ack_wait, Duration::from_secs(900));
         assert_eq!(config.max_ack_pending, 64);
         assert_eq!(config.max_deliver, 7);
+    }
+
+    #[tokio::test]
+    async fn nats_status_route_reports_master_slave_wiring() {
+        let state = test_state(NodeRole::Master);
+        record_worker_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"worker-route-test",
+                "role":"slave",
+                "commandName":"worker-ready",
+                "payload":{
+                    "consumer": MIP_SOLVER_WORKERS_QUEUE_GROUP,
+                    "jobsSubject": MIP_SOLVER_JOBS_SUBJECT,
+                    "resultsSubject": MIP_SOLVER_RESULTS_SUBJECT
+                },
+                "timeMs": 1000
+            }),
+        )
+        .unwrap();
+        let app = app_router(state);
+
+        let (status, body) = get_json(app, "/mip-solver-cluster/nats").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("ok"), Some(&json!(false)));
+        assert_eq!(body.get("connected"), Some(&json!(false)));
+        assert_eq!(
+            body.pointer("/stream/name"),
+            Some(&json!(DD_REMOTE_MIP_SOLVER_STREAM_NAME))
+        );
+        assert_eq!(
+            body.pointer("/subjects/jobs"),
+            Some(&json!(MIP_SOLVER_JOBS_SUBJECT))
+        );
+        assert_eq!(
+            body.get("workerConsumer"),
+            Some(&json!(MIP_SOLVER_WORKERS_QUEUE_GROUP))
+        );
+        assert_eq!(body.get("workersKnown"), Some(&json!(1)));
+        assert_eq!(
+            body.pointer("/workers/0/nodeId"),
+            Some(&json!("worker-route-test"))
+        );
     }
 
     #[test]
