@@ -2884,6 +2884,437 @@ class DesSoccerLearningMergeEventsRow {
   }
 }
 
+const desFelElevatorLearningRunsTable = "des_fel_elevator_learning_runs";
+const desFelElevatorLearningRunsSelectSql = "select\n      id::text as id,\n      run_label,\n      scenario_slug,\n      status,\n      dispatch_policy,\n      seed,\n      floors,\n      shafts,\n      capacity,\n      travel_seconds_micros,\n      dwell_seconds_micros,\n      arrival_rate_micros,\n      horizon_seconds_micros,\n      events,\n      arrivals,\n      boarded,\n      served,\n      mean_wait_micros,\n      dispatch_decisions,\n      pomdp_belief_updates,\n      online_learning_updates,\n      online_learning_loss_last_micros,\n      config::text as config_json,\n      metrics::text as metrics_json,\n      artifact::text as artifact_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_fel_elevator_learning_runs";
+
+const desFelElevatorLearningRunsStatusValues = <String>["completed", "failed", "imported"];
+const desFelElevatorLearningRunsDispatchPolicyValues = <String>["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"];
+
+class DesFelElevatorLearningRunsRow {
+  const DesFelElevatorLearningRunsRow({
+    required this.id,
+    required this.runLabel,
+    required this.scenarioSlug,
+    required this.status,
+    required this.dispatchPolicy,
+    required this.seed,
+    required this.floors,
+    required this.shafts,
+    required this.capacity,
+    required this.travelSecondsMicros,
+    required this.dwellSecondsMicros,
+    required this.arrivalRateMicros,
+    required this.horizonSecondsMicros,
+    required this.events,
+    required this.arrivals,
+    required this.boarded,
+    required this.served,
+    required this.meanWaitMicros,
+    required this.dispatchDecisions,
+    required this.pomdpBeliefUpdates,
+    required this.onlineLearningUpdates,
+    this.onlineLearningLossLastMicros,
+    required this.config,
+    required this.metrics,
+    required this.artifact,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String runLabel;
+  final String scenarioSlug;
+  final String status;
+  final String dispatchPolicy;
+  final int seed;
+  final int floors;
+  final int shafts;
+  final int capacity;
+  final int travelSecondsMicros;
+  final int dwellSecondsMicros;
+  final int arrivalRateMicros;
+  final int horizonSecondsMicros;
+  final int events;
+  final int arrivals;
+  final int boarded;
+  final int served;
+  final int meanWaitMicros;
+  final int dispatchDecisions;
+  final int pomdpBeliefUpdates;
+  final int onlineLearningUpdates;
+  final int? onlineLearningLossLastMicros;
+  final Map<String, Object?> config;
+  final Map<String, Object?> metrics;
+  final Map<String, Object?> artifact;
+  final String createdAt;
+  final String updatedAt;
+
+  factory DesFelElevatorLearningRunsRow.fromJson(Map<String, Object?> json) {
+    return DesFelElevatorLearningRunsRow(
+      id: _readRequiredString(json, "id"),
+      runLabel: _readRequiredString(json, "runLabel"),
+      scenarioSlug: _readRequiredString(json, "scenarioSlug"),
+      status: _readRequiredString(json, "status"),
+      dispatchPolicy: _readRequiredString(json, "dispatchPolicy"),
+      seed: _readRequiredInt(json, "seed"),
+      floors: _readRequiredInt(json, "floors"),
+      shafts: _readRequiredInt(json, "shafts"),
+      capacity: _readRequiredInt(json, "capacity"),
+      travelSecondsMicros: _readRequiredInt(json, "travelSecondsMicros"),
+      dwellSecondsMicros: _readRequiredInt(json, "dwellSecondsMicros"),
+      arrivalRateMicros: _readRequiredInt(json, "arrivalRateMicros"),
+      horizonSecondsMicros: _readRequiredInt(json, "horizonSecondsMicros"),
+      events: _readRequiredInt(json, "events"),
+      arrivals: _readRequiredInt(json, "arrivals"),
+      boarded: _readRequiredInt(json, "boarded"),
+      served: _readRequiredInt(json, "served"),
+      meanWaitMicros: _readRequiredInt(json, "meanWaitMicros"),
+      dispatchDecisions: _readRequiredInt(json, "dispatchDecisions"),
+      pomdpBeliefUpdates: _readRequiredInt(json, "pomdpBeliefUpdates"),
+      onlineLearningUpdates: _readRequiredInt(json, "onlineLearningUpdates"),
+      onlineLearningLossLastMicros: _readOptionalInt(json, "onlineLearningLossLastMicros"),
+      config: _readRequiredObject(json, "config"),
+      metrics: _readRequiredObject(json, "metrics"),
+      artifact: _readRequiredObject(json, "artifact"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "runLabel": runLabel,
+    "scenarioSlug": scenarioSlug,
+    "status": status,
+    "dispatchPolicy": dispatchPolicy,
+    "seed": seed,
+    "floors": floors,
+    "shafts": shafts,
+    "capacity": capacity,
+    "travelSecondsMicros": travelSecondsMicros,
+    "dwellSecondsMicros": dwellSecondsMicros,
+    "arrivalRateMicros": arrivalRateMicros,
+    "horizonSecondsMicros": horizonSecondsMicros,
+    "events": events,
+    "arrivals": arrivals,
+    "boarded": boarded,
+    "served": served,
+    "meanWaitMicros": meanWaitMicros,
+    "dispatchDecisions": dispatchDecisions,
+    "pomdpBeliefUpdates": pomdpBeliefUpdates,
+    "onlineLearningUpdates": onlineLearningUpdates,
+    "onlineLearningLossLastMicros": onlineLearningLossLastMicros,
+    "config": config,
+    "metrics": metrics,
+    "artifact": artifact,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(runLabel).length > 200) {
+      errors.add("des_fel_elevator_learning_runs.run_label exceeds 200 bytes");
+    }
+    if (utf8.encode(runLabel).length < 1) {
+      errors.add("des_fel_elevator_learning_runs.run_label is below 1 bytes");
+    }
+    if (!RegExp(r'^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$').hasMatch(scenarioSlug)) {
+      errors.add("des_fel_elevator_learning_runs.scenario_slug must be a lowercase slug");
+    }
+    if (!desFelElevatorLearningRunsStatusValues.contains(status)) {
+      errors.add("unsupported des_fel_elevator_learning_runs.status");
+    }
+    if (!desFelElevatorLearningRunsDispatchPolicyValues.contains(dispatchPolicy)) {
+      errors.add("unsupported des_fel_elevator_learning_runs.dispatch_policy");
+    }
+    if (floors < 2) {
+      errors.add("des_fel_elevator_learning_runs.floors is below the minimum");
+    }
+    if (floors > 256) {
+      errors.add("des_fel_elevator_learning_runs.floors is above the maximum");
+    }
+    if (shafts < 1) {
+      errors.add("des_fel_elevator_learning_runs.shafts is below the minimum");
+    }
+    if (shafts > 128) {
+      errors.add("des_fel_elevator_learning_runs.shafts is above the maximum");
+    }
+    if (capacity < 1) {
+      errors.add("des_fel_elevator_learning_runs.capacity is below the minimum");
+    }
+    if (capacity > 10000) {
+      errors.add("des_fel_elevator_learning_runs.capacity is above the maximum");
+    }
+    if (dispatchDecisions < 0) {
+      errors.add("des_fel_elevator_learning_runs.dispatch_decisions is below the minimum");
+    }
+    if (pomdpBeliefUpdates < 0) {
+      errors.add("des_fel_elevator_learning_runs.pomdp_belief_updates is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const desFelElevatorPolicyStatesTable = "des_fel_elevator_policy_states";
+const desFelElevatorPolicyStatesSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      policy_kind,\n      source_kind,\n      feature_dim,\n      output_dim,\n      parameter_count,\n      online_learning_updates,\n      loss_history::text as loss_history_json,\n      state::text as state_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_fel_elevator_policy_states";
+
+const desFelElevatorPolicyStatesPolicyKindValues = <String>["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"];
+const desFelElevatorPolicyStatesSourceKindValues = <String>["run-final", "offline-training", "import", "checkpoint"];
+
+class DesFelElevatorPolicyStatesRow {
+  const DesFelElevatorPolicyStatesRow({
+    required this.id,
+    required this.runId,
+    required this.policyKind,
+    required this.sourceKind,
+    required this.featureDim,
+    required this.outputDim,
+    required this.parameterCount,
+    required this.onlineLearningUpdates,
+    required this.lossHistory,
+    required this.state,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String runId;
+  final String policyKind;
+  final String sourceKind;
+  final int featureDim;
+  final int outputDim;
+  final int parameterCount;
+  final int onlineLearningUpdates;
+  final List<Object?> lossHistory;
+  final Map<String, Object?> state;
+  final String createdAt;
+
+  factory DesFelElevatorPolicyStatesRow.fromJson(Map<String, Object?> json) {
+    return DesFelElevatorPolicyStatesRow(
+      id: _readRequiredString(json, "id"),
+      runId: _readRequiredString(json, "runId"),
+      policyKind: _readRequiredString(json, "policyKind"),
+      sourceKind: _readRequiredString(json, "sourceKind"),
+      featureDim: _readRequiredInt(json, "featureDim"),
+      outputDim: _readRequiredInt(json, "outputDim"),
+      parameterCount: _readRequiredInt(json, "parameterCount"),
+      onlineLearningUpdates: _readRequiredInt(json, "onlineLearningUpdates"),
+      lossHistory: _readRequiredArray(json, "lossHistory"),
+      state: _readRequiredObject(json, "state"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "runId": runId,
+    "policyKind": policyKind,
+    "sourceKind": sourceKind,
+    "featureDim": featureDim,
+    "outputDim": outputDim,
+    "parameterCount": parameterCount,
+    "onlineLearningUpdates": onlineLearningUpdates,
+    "lossHistory": lossHistory,
+    "state": state,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!desFelElevatorPolicyStatesPolicyKindValues.contains(policyKind)) {
+      errors.add("unsupported des_fel_elevator_policy_states.policy_kind");
+    }
+    if (!desFelElevatorPolicyStatesSourceKindValues.contains(sourceKind)) {
+      errors.add("unsupported des_fel_elevator_policy_states.source_kind");
+    }
+    if (featureDim < 0) {
+      errors.add("des_fel_elevator_policy_states.feature_dim is below the minimum");
+    }
+    if (outputDim < 0) {
+      errors.add("des_fel_elevator_policy_states.output_dim is below the minimum");
+    }
+    if (parameterCount < 0) {
+      errors.add("des_fel_elevator_policy_states.parameter_count is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const desFelElevatorDispatchDecisionsTable = "des_fel_elevator_dispatch_decisions";
+const desFelElevatorDispatchDecisionsSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      decision_index,\n      sim_time_micros,\n      call_floor,\n      car_index,\n      policy_kind,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_fel_elevator_dispatch_decisions";
+
+const desFelElevatorDispatchDecisionsPolicyKindValues = <String>["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"];
+
+class DesFelElevatorDispatchDecisionsRow {
+  const DesFelElevatorDispatchDecisionsRow({
+    required this.id,
+    required this.runId,
+    required this.decisionIndex,
+    required this.simTimeMicros,
+    required this.callFloor,
+    required this.carIndex,
+    required this.policyKind,
+    required this.metaData,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String runId;
+  final int decisionIndex;
+  final int simTimeMicros;
+  final int callFloor;
+  final int carIndex;
+  final String policyKind;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+
+  factory DesFelElevatorDispatchDecisionsRow.fromJson(Map<String, Object?> json) {
+    return DesFelElevatorDispatchDecisionsRow(
+      id: _readRequiredString(json, "id"),
+      runId: _readRequiredString(json, "runId"),
+      decisionIndex: _readRequiredInt(json, "decisionIndex"),
+      simTimeMicros: _readRequiredInt(json, "simTimeMicros"),
+      callFloor: _readRequiredInt(json, "callFloor"),
+      carIndex: _readRequiredInt(json, "carIndex"),
+      policyKind: _readRequiredString(json, "policyKind"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "runId": runId,
+    "decisionIndex": decisionIndex,
+    "simTimeMicros": simTimeMicros,
+    "callFloor": callFloor,
+    "carIndex": carIndex,
+    "policyKind": policyKind,
+    "metaData": metaData,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (decisionIndex < 0) {
+      errors.add("des_fel_elevator_dispatch_decisions.decision_index is below the minimum");
+    }
+    if (callFloor < 0) {
+      errors.add("des_fel_elevator_dispatch_decisions.call_floor is below the minimum");
+    }
+    if (carIndex < 0) {
+      errors.add("des_fel_elevator_dispatch_decisions.car_index is below the minimum");
+    }
+    if (!desFelElevatorDispatchDecisionsPolicyKindValues.contains(policyKind)) {
+      errors.add("unsupported des_fel_elevator_dispatch_decisions.policy_kind");
+    }
+    return errors;
+  }
+}
+
+const desFelElevatorPomdpBeliefsTable = "des_fel_elevator_pomdp_beliefs";
+const desFelElevatorPomdpBeliefsSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      belief_index,\n      sim_time_micros,\n      floor,\n      action,\n      observation,\n      empty_prob_micros,\n      waiting_prob_micros,\n      crowded_prob_micros,\n      belief::text as belief_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_fel_elevator_pomdp_beliefs";
+
+const desFelElevatorPomdpBeliefsActionValues = <String>["hold", "dispatch"];
+const desFelElevatorPomdpBeliefsObservationValues = <String>["quiet", "call"];
+
+class DesFelElevatorPomdpBeliefsRow {
+  const DesFelElevatorPomdpBeliefsRow({
+    required this.id,
+    required this.runId,
+    required this.beliefIndex,
+    required this.simTimeMicros,
+    required this.floor,
+    required this.action,
+    required this.observation,
+    required this.emptyProbMicros,
+    required this.waitingProbMicros,
+    required this.crowdedProbMicros,
+    required this.belief,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String runId;
+  final int beliefIndex;
+  final int simTimeMicros;
+  final int floor;
+  final String action;
+  final String observation;
+  final int emptyProbMicros;
+  final int waitingProbMicros;
+  final int crowdedProbMicros;
+  final Map<String, Object?> belief;
+  final String createdAt;
+
+  factory DesFelElevatorPomdpBeliefsRow.fromJson(Map<String, Object?> json) {
+    return DesFelElevatorPomdpBeliefsRow(
+      id: _readRequiredString(json, "id"),
+      runId: _readRequiredString(json, "runId"),
+      beliefIndex: _readRequiredInt(json, "beliefIndex"),
+      simTimeMicros: _readRequiredInt(json, "simTimeMicros"),
+      floor: _readRequiredInt(json, "floor"),
+      action: _readRequiredString(json, "action"),
+      observation: _readRequiredString(json, "observation"),
+      emptyProbMicros: _readRequiredInt(json, "emptyProbMicros"),
+      waitingProbMicros: _readRequiredInt(json, "waitingProbMicros"),
+      crowdedProbMicros: _readRequiredInt(json, "crowdedProbMicros"),
+      belief: _readRequiredObject(json, "belief"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "runId": runId,
+    "beliefIndex": beliefIndex,
+    "simTimeMicros": simTimeMicros,
+    "floor": floor,
+    "action": action,
+    "observation": observation,
+    "emptyProbMicros": emptyProbMicros,
+    "waitingProbMicros": waitingProbMicros,
+    "crowdedProbMicros": crowdedProbMicros,
+    "belief": belief,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (beliefIndex < 0) {
+      errors.add("des_fel_elevator_pomdp_beliefs.belief_index is below the minimum");
+    }
+    if (floor < 0) {
+      errors.add("des_fel_elevator_pomdp_beliefs.floor is below the minimum");
+    }
+    if (!desFelElevatorPomdpBeliefsActionValues.contains(action)) {
+      errors.add("unsupported des_fel_elevator_pomdp_beliefs.action");
+    }
+    if (!desFelElevatorPomdpBeliefsObservationValues.contains(observation)) {
+      errors.add("unsupported des_fel_elevator_pomdp_beliefs.observation");
+    }
+    if (emptyProbMicros < 0) {
+      errors.add("des_fel_elevator_pomdp_beliefs.empty_prob_micros is below the minimum");
+    }
+    if (emptyProbMicros > 1000000) {
+      errors.add("des_fel_elevator_pomdp_beliefs.empty_prob_micros is above the maximum");
+    }
+    if (waitingProbMicros < 0) {
+      errors.add("des_fel_elevator_pomdp_beliefs.waiting_prob_micros is below the minimum");
+    }
+    if (waitingProbMicros > 1000000) {
+      errors.add("des_fel_elevator_pomdp_beliefs.waiting_prob_micros is above the maximum");
+    }
+    if (crowdedProbMicros < 0) {
+      errors.add("des_fel_elevator_pomdp_beliefs.crowded_prob_micros is below the minimum");
+    }
+    if (crowdedProbMicros > 1000000) {
+      errors.add("des_fel_elevator_pomdp_beliefs.crowded_prob_micros is above the maximum");
+    }
+    return errors;
+  }
+}
+
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is String) return value;

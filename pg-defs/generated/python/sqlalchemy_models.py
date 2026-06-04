@@ -2660,3 +2660,298 @@ class DesSoccerLearningMergeEventsInsert(BaseModel):
     decayMicros: int | None = 1000000
     metrics: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
+
+DesFelElevatorLearningRunsStatus = Literal["completed", "failed", "imported"]
+DesFelElevatorLearningRunsDispatchPolicy = Literal["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"]
+
+class DesFelElevatorLearningRuns(Base):
+    __tablename__ = "des_fel_elevator_learning_runs"
+    __table_args__ = (
+        CheckConstraint("octet_length(run_label) between 1 and 200", name="des_fel_elevator_learning_runs_label_size_chk"),
+        CheckConstraint("scenario_slug ~ '^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$'", name="des_fel_elevator_learning_runs_scenario_format_chk"),
+        CheckConstraint("status in ('completed', 'failed', 'imported')", name="des_fel_elevator_learning_runs_status_chk"),
+        CheckConstraint("dispatch_policy in ('look', 'mdp-table', 'neural-scorer', 'pomdp-belief', 'neural-td')", name="des_fel_elevator_learning_runs_policy_chk"),
+        CheckConstraint("seed >= 0", name="des_fel_elevator_learning_runs_seed_chk"),
+        CheckConstraint("floors between 2 and 256 and shafts between 1 and 128 and capacity between 1 and 10000", name="des_fel_elevator_learning_runs_dimensions_chk"),
+        CheckConstraint("travel_seconds_micros >= 0\n      and dwell_seconds_micros >= 0\n      and arrival_rate_micros >= 0\n      and horizon_seconds_micros >= 0", name="des_fel_elevator_learning_runs_time_chk"),
+        CheckConstraint("events >= 0\n      and arrivals >= 0\n      and boarded >= 0\n      and served >= 0\n      and mean_wait_micros >= 0\n      and dispatch_decisions >= 0\n      and pomdp_belief_updates >= 0\n      and online_learning_updates >= 0", name="des_fel_elevator_learning_runs_counts_chk"),
+        CheckConstraint("online_learning_loss_last_micros is null or online_learning_loss_last_micros >= 0", name="des_fel_elevator_learning_runs_loss_chk"),
+        CheckConstraint("jsonb_typeof(config) = 'object'", name="des_fel_elevator_learning_runs_config_object_chk"),
+        CheckConstraint("jsonb_typeof(metrics) = 'object'", name="des_fel_elevator_learning_runs_metrics_object_chk"),
+        CheckConstraint("jsonb_typeof(artifact) = 'object'", name="des_fel_elevator_learning_runs_artifact_object_chk"),
+        Index("des_fel_elevator_learning_runs_scenario_idx", "scenario_slug", text("created_at desc")),
+        Index("des_fel_elevator_learning_runs_policy_idx", "dispatch_policy", text("created_at desc")),
+        Index("des_fel_elevator_learning_runs_mean_wait_idx", "scenario_slug", text("mean_wait_micros asc"), text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    run_label: Mapped[str] = mapped_column(String(200), nullable=False)
+    scenario_slug: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'completed'"))
+    dispatch_policy: Mapped[str] = mapped_column(String(40), nullable=False)
+    seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    floors: Mapped[int] = mapped_column(Integer(), nullable=False)
+    shafts: Mapped[int] = mapped_column(Integer(), nullable=False)
+    capacity: Mapped[int] = mapped_column(Integer(), nullable=False)
+    travel_seconds_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    dwell_seconds_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    arrival_rate_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    horizon_seconds_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    events: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    arrivals: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    boarded: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    served: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    mean_wait_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    dispatch_decisions: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    pomdp_belief_updates: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    online_learning_updates: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    online_learning_loss_last_micros: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    artifact: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesFelElevatorLearningRunsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    runLabel: str = Field(..., max_length=200)
+    scenarioSlug: str = Field(..., max_length=160, pattern="^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$")
+    status: DesFelElevatorLearningRunsStatus
+    dispatchPolicy: DesFelElevatorLearningRunsDispatchPolicy
+    seed: int
+    floors: int = Field(..., ge=2, le=256)
+    shafts: int = Field(..., ge=1, le=128)
+    capacity: int = Field(..., ge=1, le=10000)
+    travelSecondsMicros: int
+    dwellSecondsMicros: int
+    arrivalRateMicros: int
+    horizonSecondsMicros: int
+    events: int
+    arrivals: int
+    boarded: int
+    served: int
+    meanWaitMicros: int
+    dispatchDecisions: int = Field(..., ge=0)
+    pomdpBeliefUpdates: int = Field(..., ge=0)
+    onlineLearningUpdates: int
+    onlineLearningLossLastMicros: int | None = None
+    config: dict[str, Any]
+    metrics: dict[str, Any]
+    artifact: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("runLabel")
+    @classmethod
+    def validate_run_label(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("des_fel_elevator_learning_runs.run_label exceeds 200 bytes")
+        return value
+
+class DesFelElevatorLearningRunsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    runLabel: str = Field(..., max_length=200)
+    scenarioSlug: str = Field(..., max_length=160, pattern="^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$")
+    status: DesFelElevatorLearningRunsStatus | None = "completed"
+    dispatchPolicy: DesFelElevatorLearningRunsDispatchPolicy
+    seed: int
+    floors: int = Field(..., ge=2, le=256)
+    shafts: int = Field(..., ge=1, le=128)
+    capacity: int = Field(..., ge=1, le=10000)
+    travelSecondsMicros: int | None = 0
+    dwellSecondsMicros: int | None = 0
+    arrivalRateMicros: int | None = 0
+    horizonSecondsMicros: int | None = 0
+    events: int | None = 0
+    arrivals: int | None = 0
+    boarded: int | None = 0
+    served: int | None = 0
+    meanWaitMicros: int | None = 0
+    dispatchDecisions: int | None = Field(0, ge=0)
+    pomdpBeliefUpdates: int | None = Field(0, ge=0)
+    onlineLearningUpdates: int | None = 0
+    onlineLearningLossLastMicros: int | None = None
+    config: dict[str, Any] | None = Field(default_factory=dict)
+    metrics: dict[str, Any] | None = Field(default_factory=dict)
+    artifact: dict[str, Any]
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("runLabel")
+    @classmethod
+    def validate_run_label(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("des_fel_elevator_learning_runs.run_label exceeds 200 bytes")
+        return value
+
+DesFelElevatorPolicyStatesPolicyKind = Literal["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"]
+DesFelElevatorPolicyStatesSourceKind = Literal["run-final", "offline-training", "import", "checkpoint"]
+
+class DesFelElevatorPolicyStates(Base):
+    __tablename__ = "des_fel_elevator_policy_states"
+    __table_args__ = (
+        CheckConstraint("policy_kind in ('look', 'mdp-table', 'neural-scorer', 'pomdp-belief', 'neural-td')", name="des_fel_elevator_policy_states_policy_chk"),
+        CheckConstraint("source_kind in ('run-final', 'offline-training', 'import', 'checkpoint')", name="des_fel_elevator_policy_states_source_chk"),
+        CheckConstraint("feature_dim >= 0 and output_dim >= 0 and parameter_count >= 0 and online_learning_updates >= 0", name="des_fel_elevator_policy_states_dims_chk"),
+        CheckConstraint("jsonb_typeof(loss_history) = 'array'", name="des_fel_elevator_policy_states_loss_array_chk"),
+        CheckConstraint("jsonb_typeof(state) = 'object'", name="des_fel_elevator_policy_states_state_object_chk"),
+        Index("des_fel_elevator_policy_states_run_source_uq", "run_id", "source_kind", "policy_kind", unique=True),
+        Index("des_fel_elevator_policy_states_policy_idx", "policy_kind", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    policy_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'run-final'"))
+    feature_dim: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    output_dim: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    parameter_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    online_learning_updates: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    loss_history: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    state: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesFelElevatorPolicyStatesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    runId: UUID
+    policyKind: DesFelElevatorPolicyStatesPolicyKind
+    sourceKind: DesFelElevatorPolicyStatesSourceKind
+    featureDim: int = Field(..., ge=0)
+    outputDim: int = Field(..., ge=0)
+    parameterCount: int = Field(..., ge=0)
+    onlineLearningUpdates: int
+    lossHistory: list[Any]
+    state: dict[str, Any]
+    createdAt: datetime
+
+class DesFelElevatorPolicyStatesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    runId: UUID
+    policyKind: DesFelElevatorPolicyStatesPolicyKind
+    sourceKind: DesFelElevatorPolicyStatesSourceKind | None = "run-final"
+    featureDim: int | None = Field(0, ge=0)
+    outputDim: int | None = Field(0, ge=0)
+    parameterCount: int | None = Field(0, ge=0)
+    onlineLearningUpdates: int | None = 0
+    lossHistory: list[Any] | None = Field(default_factory=list)
+    state: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+
+DesFelElevatorDispatchDecisionsPolicyKind = Literal["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"]
+
+class DesFelElevatorDispatchDecisions(Base):
+    __tablename__ = "des_fel_elevator_dispatch_decisions"
+    __table_args__ = (
+        CheckConstraint("policy_kind in ('look', 'mdp-table', 'neural-scorer', 'pomdp-belief', 'neural-td')", name="des_fel_elevator_dispatch_decisions_policy_chk"),
+        CheckConstraint("decision_index >= 0", name="des_fel_elevator_dispatch_decisions_index_chk"),
+        CheckConstraint("sim_time_micros >= 0", name="des_fel_elevator_dispatch_decisions_time_chk"),
+        CheckConstraint("call_floor >= 0 and car_index >= 0", name="des_fel_elevator_dispatch_decisions_floor_car_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="des_fel_elevator_dispatch_decisions_meta_object_chk"),
+        Index("des_fel_elevator_dispatch_decisions_run_index_uq", "run_id", "decision_index", unique=True),
+        Index("des_fel_elevator_dispatch_decisions_time_idx", "run_id", "sim_time_micros"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    decision_index: Mapped[int] = mapped_column(Integer(), nullable=False)
+    sim_time_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    call_floor: Mapped[int] = mapped_column(Integer(), nullable=False)
+    car_index: Mapped[int] = mapped_column(Integer(), nullable=False)
+    policy_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesFelElevatorDispatchDecisionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    runId: UUID
+    decisionIndex: int = Field(..., ge=0)
+    simTimeMicros: int
+    callFloor: int = Field(..., ge=0)
+    carIndex: int = Field(..., ge=0)
+    policyKind: DesFelElevatorDispatchDecisionsPolicyKind
+    metaData: dict[str, Any]
+    createdAt: datetime
+
+class DesFelElevatorDispatchDecisionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    runId: UUID
+    decisionIndex: int = Field(..., ge=0)
+    simTimeMicros: int | None = 0
+    callFloor: int = Field(..., ge=0)
+    carIndex: int = Field(..., ge=0)
+    policyKind: DesFelElevatorDispatchDecisionsPolicyKind
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+
+DesFelElevatorPomdpBeliefsAction = Literal["hold", "dispatch"]
+DesFelElevatorPomdpBeliefsObservation = Literal["quiet", "call"]
+
+class DesFelElevatorPomdpBeliefs(Base):
+    __tablename__ = "des_fel_elevator_pomdp_beliefs"
+    __table_args__ = (
+        CheckConstraint("belief_index >= 0", name="des_fel_elevator_pomdp_beliefs_index_chk"),
+        CheckConstraint("sim_time_micros >= 0 and floor >= 0", name="des_fel_elevator_pomdp_beliefs_time_floor_chk"),
+        CheckConstraint("action in ('hold', 'dispatch')", name="des_fel_elevator_pomdp_beliefs_action_chk"),
+        CheckConstraint("observation in ('quiet', 'call')", name="des_fel_elevator_pomdp_beliefs_observation_chk"),
+        CheckConstraint("empty_prob_micros between 0 and 1000000\n      and waiting_prob_micros between 0 and 1000000\n      and crowded_prob_micros between 0 and 1000000", name="des_fel_elevator_pomdp_beliefs_prob_chk"),
+        CheckConstraint("jsonb_typeof(belief) = 'object'", name="des_fel_elevator_pomdp_beliefs_belief_object_chk"),
+        Index("des_fel_elevator_pomdp_beliefs_run_index_uq", "run_id", "belief_index", unique=True),
+        Index("des_fel_elevator_pomdp_beliefs_floor_time_idx", "run_id", "floor", "sim_time_micros"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    belief_index: Mapped[int] = mapped_column(Integer(), nullable=False)
+    sim_time_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    floor: Mapped[int] = mapped_column(Integer(), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    observation: Mapped[str] = mapped_column(String(32), nullable=False)
+    empty_prob_micros: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    waiting_prob_micros: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    crowded_prob_micros: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    belief: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesFelElevatorPomdpBeliefsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    runId: UUID
+    beliefIndex: int = Field(..., ge=0)
+    simTimeMicros: int
+    floor: int = Field(..., ge=0)
+    action: DesFelElevatorPomdpBeliefsAction
+    observation: DesFelElevatorPomdpBeliefsObservation
+    emptyProbMicros: int = Field(..., ge=0, le=1000000)
+    waitingProbMicros: int = Field(..., ge=0, le=1000000)
+    crowdedProbMicros: int = Field(..., ge=0, le=1000000)
+    belief: dict[str, Any]
+    createdAt: datetime
+
+class DesFelElevatorPomdpBeliefsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    runId: UUID
+    beliefIndex: int = Field(..., ge=0)
+    simTimeMicros: int | None = 0
+    floor: int = Field(..., ge=0)
+    action: DesFelElevatorPomdpBeliefsAction
+    observation: DesFelElevatorPomdpBeliefsObservation
+    emptyProbMicros: int | None = Field(0, ge=0, le=1000000)
+    waitingProbMicros: int | None = Field(0, ge=0, le=1000000)
+    crowdedProbMicros: int | None = Field(0, ge=0, le=1000000)
+    belief: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None

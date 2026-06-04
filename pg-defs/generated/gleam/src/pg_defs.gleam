@@ -2084,6 +2084,354 @@ pub fn validate_des_soccer_learning_merge_events_strategy(value: String) -> Resu
   }
 }
 
+pub const des_fel_elevator_learning_runs_table = "des_fel_elevator_learning_runs"
+pub const des_fel_elevator_learning_runs_select_sql = "select\n      id::text as id,\n      run_label,\n      scenario_slug,\n      status,\n      dispatch_policy,\n      seed,\n      floors,\n      shafts,\n      capacity,\n      travel_seconds_micros,\n      dwell_seconds_micros,\n      arrival_rate_micros,\n      horizon_seconds_micros,\n      events,\n      arrivals,\n      boarded,\n      served,\n      mean_wait_micros,\n      dispatch_decisions,\n      pomdp_belief_updates,\n      online_learning_updates,\n      online_learning_loss_last_micros,\n      config::text as config_json,\n      metrics::text as metrics_json,\n      artifact::text as artifact_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_fel_elevator_learning_runs"
+
+pub type DesFelElevatorLearningRunsStatus {
+  DesFelElevatorLearningRunsStatusCompleted
+  DesFelElevatorLearningRunsStatusFailed
+  DesFelElevatorLearningRunsStatusImported
+}
+
+pub fn des_fel_elevator_learning_runs_status_to_string(value: DesFelElevatorLearningRunsStatus) -> String {
+  case value {
+    DesFelElevatorLearningRunsStatusCompleted -> "completed"
+    DesFelElevatorLearningRunsStatusFailed -> "failed"
+    DesFelElevatorLearningRunsStatusImported -> "imported"
+  }
+}
+
+pub fn parse_des_fel_elevator_learning_runs_status(value: String) -> Result(DesFelElevatorLearningRunsStatus, String) {
+  case value {
+    "completed" -> Ok(DesFelElevatorLearningRunsStatusCompleted)
+    "failed" -> Ok(DesFelElevatorLearningRunsStatusFailed)
+    "imported" -> Ok(DesFelElevatorLearningRunsStatusImported)
+    _ -> Error("unsupported des_fel_elevator_learning_runs.status: " <> value)
+  }
+}
+
+pub type DesFelElevatorLearningRunsDispatchPolicy {
+  DesFelElevatorLearningRunsDispatchPolicyLook
+  DesFelElevatorLearningRunsDispatchPolicyMdpTable
+  DesFelElevatorLearningRunsDispatchPolicyNeuralScorer
+  DesFelElevatorLearningRunsDispatchPolicyPomdpBelief
+  DesFelElevatorLearningRunsDispatchPolicyNeuralTd
+}
+
+pub fn des_fel_elevator_learning_runs_dispatch_policy_to_string(value: DesFelElevatorLearningRunsDispatchPolicy) -> String {
+  case value {
+    DesFelElevatorLearningRunsDispatchPolicyLook -> "look"
+    DesFelElevatorLearningRunsDispatchPolicyMdpTable -> "mdp-table"
+    DesFelElevatorLearningRunsDispatchPolicyNeuralScorer -> "neural-scorer"
+    DesFelElevatorLearningRunsDispatchPolicyPomdpBelief -> "pomdp-belief"
+    DesFelElevatorLearningRunsDispatchPolicyNeuralTd -> "neural-td"
+  }
+}
+
+pub fn parse_des_fel_elevator_learning_runs_dispatch_policy(value: String) -> Result(DesFelElevatorLearningRunsDispatchPolicy, String) {
+  case value {
+    "look" -> Ok(DesFelElevatorLearningRunsDispatchPolicyLook)
+    "mdp-table" -> Ok(DesFelElevatorLearningRunsDispatchPolicyMdpTable)
+    "neural-scorer" -> Ok(DesFelElevatorLearningRunsDispatchPolicyNeuralScorer)
+    "pomdp-belief" -> Ok(DesFelElevatorLearningRunsDispatchPolicyPomdpBelief)
+    "neural-td" -> Ok(DesFelElevatorLearningRunsDispatchPolicyNeuralTd)
+    _ -> Error("unsupported des_fel_elevator_learning_runs.dispatch_policy: " <> value)
+  }
+}
+
+pub type DesFelElevatorLearningRunsRow {
+  DesFelElevatorLearningRunsRow(
+    id: String,
+    run_label: String,
+    scenario_slug: String,
+    status: String,
+    dispatch_policy: String,
+    seed: Int,
+    floors: Int,
+    shafts: Int,
+    capacity: Int,
+    travel_seconds_micros: Int,
+    dwell_seconds_micros: Int,
+    arrival_rate_micros: Int,
+    horizon_seconds_micros: Int,
+    events: Int,
+    arrivals: Int,
+    boarded: Int,
+    served: Int,
+    mean_wait_micros: Int,
+    dispatch_decisions: Int,
+    pomdp_belief_updates: Int,
+    online_learning_updates: Int,
+    online_learning_loss_last_micros: Option(Int),
+    config_json: String,
+    metrics_json: String,
+    artifact_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_des_fel_elevator_learning_runs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_fel_elevator_learning_runs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_fel_elevator_learning_runs_status(value: String) -> Result(String, String) {
+  case list.contains(["completed", "failed", "imported"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_fel_elevator_learning_runs.status: " <> value)
+  }
+}
+
+pub fn validate_des_fel_elevator_learning_runs_dispatch_policy(value: String) -> Result(String, String) {
+  case list.contains(["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_fel_elevator_learning_runs.dispatch_policy: " <> value)
+  }
+}
+
+pub const des_fel_elevator_policy_states_table = "des_fel_elevator_policy_states"
+pub const des_fel_elevator_policy_states_select_sql = "select\n      id::text as id,\n      run_id::text as run_id,\n      policy_kind,\n      source_kind,\n      feature_dim,\n      output_dim,\n      parameter_count,\n      online_learning_updates,\n      loss_history::text as loss_history_json,\n      state::text as state_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_fel_elevator_policy_states"
+
+pub type DesFelElevatorPolicyStatesPolicyKind {
+  DesFelElevatorPolicyStatesPolicyKindLook
+  DesFelElevatorPolicyStatesPolicyKindMdpTable
+  DesFelElevatorPolicyStatesPolicyKindNeuralScorer
+  DesFelElevatorPolicyStatesPolicyKindPomdpBelief
+  DesFelElevatorPolicyStatesPolicyKindNeuralTd
+}
+
+pub fn des_fel_elevator_policy_states_policy_kind_to_string(value: DesFelElevatorPolicyStatesPolicyKind) -> String {
+  case value {
+    DesFelElevatorPolicyStatesPolicyKindLook -> "look"
+    DesFelElevatorPolicyStatesPolicyKindMdpTable -> "mdp-table"
+    DesFelElevatorPolicyStatesPolicyKindNeuralScorer -> "neural-scorer"
+    DesFelElevatorPolicyStatesPolicyKindPomdpBelief -> "pomdp-belief"
+    DesFelElevatorPolicyStatesPolicyKindNeuralTd -> "neural-td"
+  }
+}
+
+pub fn parse_des_fel_elevator_policy_states_policy_kind(value: String) -> Result(DesFelElevatorPolicyStatesPolicyKind, String) {
+  case value {
+    "look" -> Ok(DesFelElevatorPolicyStatesPolicyKindLook)
+    "mdp-table" -> Ok(DesFelElevatorPolicyStatesPolicyKindMdpTable)
+    "neural-scorer" -> Ok(DesFelElevatorPolicyStatesPolicyKindNeuralScorer)
+    "pomdp-belief" -> Ok(DesFelElevatorPolicyStatesPolicyKindPomdpBelief)
+    "neural-td" -> Ok(DesFelElevatorPolicyStatesPolicyKindNeuralTd)
+    _ -> Error("unsupported des_fel_elevator_policy_states.policy_kind: " <> value)
+  }
+}
+
+pub type DesFelElevatorPolicyStatesSourceKind {
+  DesFelElevatorPolicyStatesSourceKindRunFinal
+  DesFelElevatorPolicyStatesSourceKindOfflineTraining
+  DesFelElevatorPolicyStatesSourceKindImport
+  DesFelElevatorPolicyStatesSourceKindCheckpoint
+}
+
+pub fn des_fel_elevator_policy_states_source_kind_to_string(value: DesFelElevatorPolicyStatesSourceKind) -> String {
+  case value {
+    DesFelElevatorPolicyStatesSourceKindRunFinal -> "run-final"
+    DesFelElevatorPolicyStatesSourceKindOfflineTraining -> "offline-training"
+    DesFelElevatorPolicyStatesSourceKindImport -> "import"
+    DesFelElevatorPolicyStatesSourceKindCheckpoint -> "checkpoint"
+  }
+}
+
+pub fn parse_des_fel_elevator_policy_states_source_kind(value: String) -> Result(DesFelElevatorPolicyStatesSourceKind, String) {
+  case value {
+    "run-final" -> Ok(DesFelElevatorPolicyStatesSourceKindRunFinal)
+    "offline-training" -> Ok(DesFelElevatorPolicyStatesSourceKindOfflineTraining)
+    "import" -> Ok(DesFelElevatorPolicyStatesSourceKindImport)
+    "checkpoint" -> Ok(DesFelElevatorPolicyStatesSourceKindCheckpoint)
+    _ -> Error("unsupported des_fel_elevator_policy_states.source_kind: " <> value)
+  }
+}
+
+pub type DesFelElevatorPolicyStatesRow {
+  DesFelElevatorPolicyStatesRow(
+    id: String,
+    run_id: String,
+    policy_kind: String,
+    source_kind: String,
+    feature_dim: Int,
+    output_dim: Int,
+    parameter_count: Int,
+    online_learning_updates: Int,
+    loss_history_json: String,
+    state_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_des_fel_elevator_policy_states_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_fel_elevator_policy_states.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_fel_elevator_policy_states_policy_kind(value: String) -> Result(String, String) {
+  case list.contains(["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_fel_elevator_policy_states.policy_kind: " <> value)
+  }
+}
+
+pub fn validate_des_fel_elevator_policy_states_source_kind(value: String) -> Result(String, String) {
+  case list.contains(["run-final", "offline-training", "import", "checkpoint"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_fel_elevator_policy_states.source_kind: " <> value)
+  }
+}
+
+pub const des_fel_elevator_dispatch_decisions_table = "des_fel_elevator_dispatch_decisions"
+pub const des_fel_elevator_dispatch_decisions_select_sql = "select\n      id::text as id,\n      run_id::text as run_id,\n      decision_index,\n      sim_time_micros,\n      call_floor,\n      car_index,\n      policy_kind,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_fel_elevator_dispatch_decisions"
+
+pub type DesFelElevatorDispatchDecisionsPolicyKind {
+  DesFelElevatorDispatchDecisionsPolicyKindLook
+  DesFelElevatorDispatchDecisionsPolicyKindMdpTable
+  DesFelElevatorDispatchDecisionsPolicyKindNeuralScorer
+  DesFelElevatorDispatchDecisionsPolicyKindPomdpBelief
+  DesFelElevatorDispatchDecisionsPolicyKindNeuralTd
+}
+
+pub fn des_fel_elevator_dispatch_decisions_policy_kind_to_string(value: DesFelElevatorDispatchDecisionsPolicyKind) -> String {
+  case value {
+    DesFelElevatorDispatchDecisionsPolicyKindLook -> "look"
+    DesFelElevatorDispatchDecisionsPolicyKindMdpTable -> "mdp-table"
+    DesFelElevatorDispatchDecisionsPolicyKindNeuralScorer -> "neural-scorer"
+    DesFelElevatorDispatchDecisionsPolicyKindPomdpBelief -> "pomdp-belief"
+    DesFelElevatorDispatchDecisionsPolicyKindNeuralTd -> "neural-td"
+  }
+}
+
+pub fn parse_des_fel_elevator_dispatch_decisions_policy_kind(value: String) -> Result(DesFelElevatorDispatchDecisionsPolicyKind, String) {
+  case value {
+    "look" -> Ok(DesFelElevatorDispatchDecisionsPolicyKindLook)
+    "mdp-table" -> Ok(DesFelElevatorDispatchDecisionsPolicyKindMdpTable)
+    "neural-scorer" -> Ok(DesFelElevatorDispatchDecisionsPolicyKindNeuralScorer)
+    "pomdp-belief" -> Ok(DesFelElevatorDispatchDecisionsPolicyKindPomdpBelief)
+    "neural-td" -> Ok(DesFelElevatorDispatchDecisionsPolicyKindNeuralTd)
+    _ -> Error("unsupported des_fel_elevator_dispatch_decisions.policy_kind: " <> value)
+  }
+}
+
+pub type DesFelElevatorDispatchDecisionsRow {
+  DesFelElevatorDispatchDecisionsRow(
+    id: String,
+    run_id: String,
+    decision_index: Int,
+    sim_time_micros: Int,
+    call_floor: Int,
+    car_index: Int,
+    policy_kind: String,
+    meta_data_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_des_fel_elevator_dispatch_decisions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_fel_elevator_dispatch_decisions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_fel_elevator_dispatch_decisions_policy_kind(value: String) -> Result(String, String) {
+  case list.contains(["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_fel_elevator_dispatch_decisions.policy_kind: " <> value)
+  }
+}
+
+pub const des_fel_elevator_pomdp_beliefs_table = "des_fel_elevator_pomdp_beliefs"
+pub const des_fel_elevator_pomdp_beliefs_select_sql = "select\n      id::text as id,\n      run_id::text as run_id,\n      belief_index,\n      sim_time_micros,\n      floor,\n      action,\n      observation,\n      empty_prob_micros,\n      waiting_prob_micros,\n      crowded_prob_micros,\n      belief::text as belief_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_fel_elevator_pomdp_beliefs"
+
+pub type DesFelElevatorPomdpBeliefsAction {
+  DesFelElevatorPomdpBeliefsActionHold
+  DesFelElevatorPomdpBeliefsActionDispatch
+}
+
+pub fn des_fel_elevator_pomdp_beliefs_action_to_string(value: DesFelElevatorPomdpBeliefsAction) -> String {
+  case value {
+    DesFelElevatorPomdpBeliefsActionHold -> "hold"
+    DesFelElevatorPomdpBeliefsActionDispatch -> "dispatch"
+  }
+}
+
+pub fn parse_des_fel_elevator_pomdp_beliefs_action(value: String) -> Result(DesFelElevatorPomdpBeliefsAction, String) {
+  case value {
+    "hold" -> Ok(DesFelElevatorPomdpBeliefsActionHold)
+    "dispatch" -> Ok(DesFelElevatorPomdpBeliefsActionDispatch)
+    _ -> Error("unsupported des_fel_elevator_pomdp_beliefs.action: " <> value)
+  }
+}
+
+pub type DesFelElevatorPomdpBeliefsObservation {
+  DesFelElevatorPomdpBeliefsObservationQuiet
+  DesFelElevatorPomdpBeliefsObservationCall
+}
+
+pub fn des_fel_elevator_pomdp_beliefs_observation_to_string(value: DesFelElevatorPomdpBeliefsObservation) -> String {
+  case value {
+    DesFelElevatorPomdpBeliefsObservationQuiet -> "quiet"
+    DesFelElevatorPomdpBeliefsObservationCall -> "call"
+  }
+}
+
+pub fn parse_des_fel_elevator_pomdp_beliefs_observation(value: String) -> Result(DesFelElevatorPomdpBeliefsObservation, String) {
+  case value {
+    "quiet" -> Ok(DesFelElevatorPomdpBeliefsObservationQuiet)
+    "call" -> Ok(DesFelElevatorPomdpBeliefsObservationCall)
+    _ -> Error("unsupported des_fel_elevator_pomdp_beliefs.observation: " <> value)
+  }
+}
+
+pub type DesFelElevatorPomdpBeliefsRow {
+  DesFelElevatorPomdpBeliefsRow(
+    id: String,
+    run_id: String,
+    belief_index: Int,
+    sim_time_micros: Int,
+    floor: Int,
+    action: String,
+    observation: String,
+    empty_prob_micros: Int,
+    waiting_prob_micros: Int,
+    crowded_prob_micros: Int,
+    belief_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_des_fel_elevator_pomdp_beliefs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_fel_elevator_pomdp_beliefs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_fel_elevator_pomdp_beliefs_action(value: String) -> Result(String, String) {
+  case list.contains(["hold", "dispatch"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_fel_elevator_pomdp_beliefs.action: " <> value)
+  }
+}
+
+pub fn validate_des_fel_elevator_pomdp_beliefs_observation(value: String) -> Result(String, String) {
+  case list.contains(["quiet", "call"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_fel_elevator_pomdp_beliefs.observation: " <> value)
+  }
+}
+
 fn is_slug_text(value: String) -> Bool {
   let chars = string.to_graphemes(value)
   case chars {

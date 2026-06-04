@@ -39,6 +39,7 @@ var desSoccerLearningExperimentsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0
 var desSoccerLearningPolicyVersionsVersionLabelPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,160}$`)
 var desSoccerLearningPolicyEntriesStateHashPattern = regexp.MustCompile(`^[a-f0-9]{16,32}$`)
 var desSoccerLearningRunDeltasStateHashPattern = regexp.MustCompile(`^[a-f0-9]{16,32}$`)
+var desFelElevatorLearningRunsScenarioSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -1557,6 +1558,243 @@ func (value DesSoccerLearningMergeEventsGorm) Validate() error {
 	if value.DecayMicros < 0 { return errors.New("des_soccer_learning_merge_events.decay_micros is below the minimum") }
 	if value.DecayMicros > 1000000 { return errors.New("des_soccer_learning_merge_events.decay_micros is above the maximum") }
 	if !validateJSONString(value.Metrics) { return errors.New("des_soccer_learning_merge_events.metrics must be valid JSON") }
+	return nil
+}
+
+const DesFelElevatorLearningRunsTable = "des_fel_elevator_learning_runs"
+const DesFelElevatorLearningRunsSelectSQL = `select
+      id::text as id,
+      run_label,
+      scenario_slug,
+      status,
+      dispatch_policy,
+      seed,
+      floors,
+      shafts,
+      capacity,
+      travel_seconds_micros,
+      dwell_seconds_micros,
+      arrival_rate_micros,
+      horizon_seconds_micros,
+      events,
+      arrivals,
+      boarded,
+      served,
+      mean_wait_micros,
+      dispatch_decisions,
+      pomdp_belief_updates,
+      online_learning_updates,
+      online_learning_loss_last_micros,
+      config,
+      metrics,
+      artifact,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_fel_elevator_learning_runs`
+
+var DesFelElevatorLearningRunsStatusValues = []string{"completed", "failed", "imported"}
+var DesFelElevatorLearningRunsDispatchPolicyValues = []string{"look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"}
+
+type DesFelElevatorLearningRunsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	RunLabel string `gorm:"column:run_label;type:varchar(200);not null" json:"runLabel"`
+	ScenarioSlug string `gorm:"column:scenario_slug;type:varchar(160);not null" json:"scenarioSlug"`
+	Status string `gorm:"column:status;type:varchar(32);default:'completed';not null" json:"status"`
+	DispatchPolicy string `gorm:"column:dispatch_policy;type:varchar(40);not null" json:"dispatchPolicy"`
+	Seed int64 `gorm:"column:seed;type:bigint;not null" json:"seed"`
+	Floors int32 `gorm:"column:floors;type:integer;not null" json:"floors"`
+	Shafts int32 `gorm:"column:shafts;type:integer;not null" json:"shafts"`
+	Capacity int32 `gorm:"column:capacity;type:integer;not null" json:"capacity"`
+	TravelSecondsMicros int64 `gorm:"column:travel_seconds_micros;type:bigint;default:0;not null" json:"travelSecondsMicros"`
+	DwellSecondsMicros int64 `gorm:"column:dwell_seconds_micros;type:bigint;default:0;not null" json:"dwellSecondsMicros"`
+	ArrivalRateMicros int64 `gorm:"column:arrival_rate_micros;type:bigint;default:0;not null" json:"arrivalRateMicros"`
+	HorizonSecondsMicros int64 `gorm:"column:horizon_seconds_micros;type:bigint;default:0;not null" json:"horizonSecondsMicros"`
+	Events int64 `gorm:"column:events;type:bigint;default:0;not null" json:"events"`
+	Arrivals int64 `gorm:"column:arrivals;type:bigint;default:0;not null" json:"arrivals"`
+	Boarded int64 `gorm:"column:boarded;type:bigint;default:0;not null" json:"boarded"`
+	Served int64 `gorm:"column:served;type:bigint;default:0;not null" json:"served"`
+	MeanWaitMicros int64 `gorm:"column:mean_wait_micros;type:bigint;default:0;not null" json:"meanWaitMicros"`
+	DispatchDecisions int32 `gorm:"column:dispatch_decisions;type:integer;default:0;not null" json:"dispatchDecisions"`
+	PomdpBeliefUpdates int32 `gorm:"column:pomdp_belief_updates;type:integer;default:0;not null" json:"pomdpBeliefUpdates"`
+	OnlineLearningUpdates int64 `gorm:"column:online_learning_updates;type:bigint;default:0;not null" json:"onlineLearningUpdates"`
+	OnlineLearningLossLastMicros *int64 `gorm:"column:online_learning_loss_last_micros;type:bigint" json:"onlineLearningLossLastMicros,omitempty"`
+	Config datatypes.JSON `gorm:"column:config;type:jsonb;default:'{}'::jsonb;not null" json:"config"`
+	Metrics datatypes.JSON `gorm:"column:metrics;type:jsonb;default:'{}'::jsonb;not null" json:"metrics"`
+	Artifact datatypes.JSON `gorm:"column:artifact;type:jsonb;not null" json:"artifact"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (DesFelElevatorLearningRunsGorm) TableName() string { return DesFelElevatorLearningRunsTable }
+
+func (value DesFelElevatorLearningRunsGorm) Validate() error {
+	if len([]byte(value.RunLabel)) > 200 { return errors.New("des_fel_elevator_learning_runs.run_label exceeds 200 bytes") }
+	if len([]byte(value.RunLabel)) < 1 { return errors.New("des_fel_elevator_learning_runs.run_label is below 1 bytes") }
+	if !desFelElevatorLearningRunsScenarioSlugPattern.MatchString(value.ScenarioSlug) { return errors.New("des_fel_elevator_learning_runs.scenario_slug does not match the required pattern") }
+	if !containsString(DesFelElevatorLearningRunsStatusValues, value.Status) { return errors.New("unsupported des_fel_elevator_learning_runs.status") }
+	if !containsString(DesFelElevatorLearningRunsDispatchPolicyValues, value.DispatchPolicy) { return errors.New("unsupported des_fel_elevator_learning_runs.dispatch_policy") }
+	if value.Seed < 0 { return errors.New("des_fel_elevator_learning_runs.seed is below the minimum") }
+	if value.Floors < 2 { return errors.New("des_fel_elevator_learning_runs.floors is below the minimum") }
+	if value.Floors > 256 { return errors.New("des_fel_elevator_learning_runs.floors is above the maximum") }
+	if value.Shafts < 1 { return errors.New("des_fel_elevator_learning_runs.shafts is below the minimum") }
+	if value.Shafts > 128 { return errors.New("des_fel_elevator_learning_runs.shafts is above the maximum") }
+	if value.Capacity < 1 { return errors.New("des_fel_elevator_learning_runs.capacity is below the minimum") }
+	if value.Capacity > 10000 { return errors.New("des_fel_elevator_learning_runs.capacity is above the maximum") }
+	if value.TravelSecondsMicros < 0 { return errors.New("des_fel_elevator_learning_runs.travel_seconds_micros is below the minimum") }
+	if value.DwellSecondsMicros < 0 { return errors.New("des_fel_elevator_learning_runs.dwell_seconds_micros is below the minimum") }
+	if value.ArrivalRateMicros < 0 { return errors.New("des_fel_elevator_learning_runs.arrival_rate_micros is below the minimum") }
+	if value.HorizonSecondsMicros < 0 { return errors.New("des_fel_elevator_learning_runs.horizon_seconds_micros is below the minimum") }
+	if value.Events < 0 { return errors.New("des_fel_elevator_learning_runs.events is below the minimum") }
+	if value.Arrivals < 0 { return errors.New("des_fel_elevator_learning_runs.arrivals is below the minimum") }
+	if value.Boarded < 0 { return errors.New("des_fel_elevator_learning_runs.boarded is below the minimum") }
+	if value.Served < 0 { return errors.New("des_fel_elevator_learning_runs.served is below the minimum") }
+	if value.MeanWaitMicros < 0 { return errors.New("des_fel_elevator_learning_runs.mean_wait_micros is below the minimum") }
+	if value.DispatchDecisions < 0 { return errors.New("des_fel_elevator_learning_runs.dispatch_decisions is below the minimum") }
+	if value.PomdpBeliefUpdates < 0 { return errors.New("des_fel_elevator_learning_runs.pomdp_belief_updates is below the minimum") }
+	if value.OnlineLearningUpdates < 0 { return errors.New("des_fel_elevator_learning_runs.online_learning_updates is below the minimum") }
+	if value.OnlineLearningLossLastMicros != nil {
+		if *value.OnlineLearningLossLastMicros < 0 { return errors.New("des_fel_elevator_learning_runs.online_learning_loss_last_micros is below the minimum") }
+	}
+	if !validateJSONString(value.Config) { return errors.New("des_fel_elevator_learning_runs.config must be valid JSON") }
+	if !validateJSONString(value.Metrics) { return errors.New("des_fel_elevator_learning_runs.metrics must be valid JSON") }
+	if !validateJSONString(value.Artifact) { return errors.New("des_fel_elevator_learning_runs.artifact must be valid JSON") }
+	return nil
+}
+
+const DesFelElevatorPolicyStatesTable = "des_fel_elevator_policy_states"
+const DesFelElevatorPolicyStatesSelectSQL = `select
+      id::text as id,
+      run_id::text as run_id,
+      policy_kind,
+      source_kind,
+      feature_dim,
+      output_dim,
+      parameter_count,
+      online_learning_updates,
+      loss_history,
+      state,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_fel_elevator_policy_states`
+
+var DesFelElevatorPolicyStatesPolicyKindValues = []string{"look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"}
+var DesFelElevatorPolicyStatesSourceKindValues = []string{"run-final", "offline-training", "import", "checkpoint"}
+
+type DesFelElevatorPolicyStatesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	RunId uuid.UUID `gorm:"column:run_id;type:uuid;not null" json:"runId"`
+	PolicyKind string `gorm:"column:policy_kind;type:varchar(40);not null" json:"policyKind"`
+	SourceKind string `gorm:"column:source_kind;type:varchar(40);default:'run-final';not null" json:"sourceKind"`
+	FeatureDim int32 `gorm:"column:feature_dim;type:integer;default:0;not null" json:"featureDim"`
+	OutputDim int32 `gorm:"column:output_dim;type:integer;default:0;not null" json:"outputDim"`
+	ParameterCount int32 `gorm:"column:parameter_count;type:integer;default:0;not null" json:"parameterCount"`
+	OnlineLearningUpdates int64 `gorm:"column:online_learning_updates;type:bigint;default:0;not null" json:"onlineLearningUpdates"`
+	LossHistory datatypes.JSON `gorm:"column:loss_history;type:jsonb;default:'[]'::jsonb;not null" json:"lossHistory"`
+	State datatypes.JSON `gorm:"column:state;type:jsonb;default:'{}'::jsonb;not null" json:"state"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (DesFelElevatorPolicyStatesGorm) TableName() string { return DesFelElevatorPolicyStatesTable }
+
+func (value DesFelElevatorPolicyStatesGorm) Validate() error {
+	if !containsString(DesFelElevatorPolicyStatesPolicyKindValues, value.PolicyKind) { return errors.New("unsupported des_fel_elevator_policy_states.policy_kind") }
+	if !containsString(DesFelElevatorPolicyStatesSourceKindValues, value.SourceKind) { return errors.New("unsupported des_fel_elevator_policy_states.source_kind") }
+	if value.FeatureDim < 0 { return errors.New("des_fel_elevator_policy_states.feature_dim is below the minimum") }
+	if value.OutputDim < 0 { return errors.New("des_fel_elevator_policy_states.output_dim is below the minimum") }
+	if value.ParameterCount < 0 { return errors.New("des_fel_elevator_policy_states.parameter_count is below the minimum") }
+	if value.OnlineLearningUpdates < 0 { return errors.New("des_fel_elevator_policy_states.online_learning_updates is below the minimum") }
+	if !validateJSONString(value.LossHistory) { return errors.New("des_fel_elevator_policy_states.loss_history must be valid JSON") }
+	if !validateJSONString(value.State) { return errors.New("des_fel_elevator_policy_states.state must be valid JSON") }
+	return nil
+}
+
+const DesFelElevatorDispatchDecisionsTable = "des_fel_elevator_dispatch_decisions"
+const DesFelElevatorDispatchDecisionsSelectSQL = `select
+      id::text as id,
+      run_id::text as run_id,
+      decision_index,
+      sim_time_micros,
+      call_floor,
+      car_index,
+      policy_kind,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_fel_elevator_dispatch_decisions`
+
+var DesFelElevatorDispatchDecisionsPolicyKindValues = []string{"look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"}
+
+type DesFelElevatorDispatchDecisionsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	RunId uuid.UUID `gorm:"column:run_id;type:uuid;not null" json:"runId"`
+	DecisionIndex int32 `gorm:"column:decision_index;type:integer;not null" json:"decisionIndex"`
+	SimTimeMicros int64 `gorm:"column:sim_time_micros;type:bigint;default:0;not null" json:"simTimeMicros"`
+	CallFloor int32 `gorm:"column:call_floor;type:integer;not null" json:"callFloor"`
+	CarIndex int32 `gorm:"column:car_index;type:integer;not null" json:"carIndex"`
+	PolicyKind string `gorm:"column:policy_kind;type:varchar(40);not null" json:"policyKind"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (DesFelElevatorDispatchDecisionsGorm) TableName() string { return DesFelElevatorDispatchDecisionsTable }
+
+func (value DesFelElevatorDispatchDecisionsGorm) Validate() error {
+	if value.DecisionIndex < 0 { return errors.New("des_fel_elevator_dispatch_decisions.decision_index is below the minimum") }
+	if value.SimTimeMicros < 0 { return errors.New("des_fel_elevator_dispatch_decisions.sim_time_micros is below the minimum") }
+	if value.CallFloor < 0 { return errors.New("des_fel_elevator_dispatch_decisions.call_floor is below the minimum") }
+	if value.CarIndex < 0 { return errors.New("des_fel_elevator_dispatch_decisions.car_index is below the minimum") }
+	if !containsString(DesFelElevatorDispatchDecisionsPolicyKindValues, value.PolicyKind) { return errors.New("unsupported des_fel_elevator_dispatch_decisions.policy_kind") }
+	if !validateJSONString(value.MetaData) { return errors.New("des_fel_elevator_dispatch_decisions.meta_data must be valid JSON") }
+	return nil
+}
+
+const DesFelElevatorPomdpBeliefsTable = "des_fel_elevator_pomdp_beliefs"
+const DesFelElevatorPomdpBeliefsSelectSQL = `select
+      id::text as id,
+      run_id::text as run_id,
+      belief_index,
+      sim_time_micros,
+      floor,
+      action,
+      observation,
+      empty_prob_micros,
+      waiting_prob_micros,
+      crowded_prob_micros,
+      belief,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_fel_elevator_pomdp_beliefs`
+
+var DesFelElevatorPomdpBeliefsActionValues = []string{"hold", "dispatch"}
+var DesFelElevatorPomdpBeliefsObservationValues = []string{"quiet", "call"}
+
+type DesFelElevatorPomdpBeliefsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	RunId uuid.UUID `gorm:"column:run_id;type:uuid;not null" json:"runId"`
+	BeliefIndex int32 `gorm:"column:belief_index;type:integer;not null" json:"beliefIndex"`
+	SimTimeMicros int64 `gorm:"column:sim_time_micros;type:bigint;default:0;not null" json:"simTimeMicros"`
+	Floor int32 `gorm:"column:floor;type:integer;not null" json:"floor"`
+	Action string `gorm:"column:action;type:varchar(32);not null" json:"action"`
+	Observation string `gorm:"column:observation;type:varchar(32);not null" json:"observation"`
+	EmptyProbMicros int32 `gorm:"column:empty_prob_micros;type:integer;default:0;not null" json:"emptyProbMicros"`
+	WaitingProbMicros int32 `gorm:"column:waiting_prob_micros;type:integer;default:0;not null" json:"waitingProbMicros"`
+	CrowdedProbMicros int32 `gorm:"column:crowded_prob_micros;type:integer;default:0;not null" json:"crowdedProbMicros"`
+	Belief datatypes.JSON `gorm:"column:belief;type:jsonb;default:'{}'::jsonb;not null" json:"belief"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (DesFelElevatorPomdpBeliefsGorm) TableName() string { return DesFelElevatorPomdpBeliefsTable }
+
+func (value DesFelElevatorPomdpBeliefsGorm) Validate() error {
+	if value.BeliefIndex < 0 { return errors.New("des_fel_elevator_pomdp_beliefs.belief_index is below the minimum") }
+	if value.SimTimeMicros < 0 { return errors.New("des_fel_elevator_pomdp_beliefs.sim_time_micros is below the minimum") }
+	if value.Floor < 0 { return errors.New("des_fel_elevator_pomdp_beliefs.floor is below the minimum") }
+	if !containsString(DesFelElevatorPomdpBeliefsActionValues, value.Action) { return errors.New("unsupported des_fel_elevator_pomdp_beliefs.action") }
+	if !containsString(DesFelElevatorPomdpBeliefsObservationValues, value.Observation) { return errors.New("unsupported des_fel_elevator_pomdp_beliefs.observation") }
+	if value.EmptyProbMicros < 0 { return errors.New("des_fel_elevator_pomdp_beliefs.empty_prob_micros is below the minimum") }
+	if value.EmptyProbMicros > 1000000 { return errors.New("des_fel_elevator_pomdp_beliefs.empty_prob_micros is above the maximum") }
+	if value.WaitingProbMicros < 0 { return errors.New("des_fel_elevator_pomdp_beliefs.waiting_prob_micros is below the minimum") }
+	if value.WaitingProbMicros > 1000000 { return errors.New("des_fel_elevator_pomdp_beliefs.waiting_prob_micros is above the maximum") }
+	if value.CrowdedProbMicros < 0 { return errors.New("des_fel_elevator_pomdp_beliefs.crowded_prob_micros is below the minimum") }
+	if value.CrowdedProbMicros > 1000000 { return errors.New("des_fel_elevator_pomdp_beliefs.crowded_prob_micros is above the maximum") }
+	if !validateJSONString(value.Belief) { return errors.New("des_fel_elevator_pomdp_beliefs.belief must be valid JSON") }
 	return nil
 }
 

@@ -1425,3 +1425,205 @@ export class DesSoccerLearningMergeEventsEntity {
   createdAt!: Date;
 
 }
+
+// des_fel_elevator_learning_runs_scenario_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// des_fel_elevator_learning_runs_policy_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// des_fel_elevator_learning_runs_mean_wait_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "des_fel_elevator_learning_runs" })
+export class DesFelElevatorLearningRunsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "run_label", type: "varchar", length: 200 })
+  runLabel!: string;
+
+  @Column({ name: "scenario_slug", type: "varchar", length: 160 })
+  scenarioSlug!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'completed'" })
+  status!: string;
+
+  @Column({ name: "dispatch_policy", type: "varchar", length: 40 })
+  dispatchPolicy!: string;
+
+  @Column({ name: "seed", type: "bigint" })
+  seed!: number;
+
+  @Column({ name: "floors", type: "integer" })
+  floors!: number;
+
+  @Column({ name: "shafts", type: "integer" })
+  shafts!: number;
+
+  @Column({ name: "capacity", type: "integer" })
+  capacity!: number;
+
+  @Column({ name: "travel_seconds_micros", type: "bigint", default: () => "0" })
+  travelSecondsMicros!: number;
+
+  @Column({ name: "dwell_seconds_micros", type: "bigint", default: () => "0" })
+  dwellSecondsMicros!: number;
+
+  @Column({ name: "arrival_rate_micros", type: "bigint", default: () => "0" })
+  arrivalRateMicros!: number;
+
+  @Column({ name: "horizon_seconds_micros", type: "bigint", default: () => "0" })
+  horizonSecondsMicros!: number;
+
+  @Column({ name: "events", type: "bigint", default: () => "0" })
+  events!: number;
+
+  @Column({ name: "arrivals", type: "bigint", default: () => "0" })
+  arrivals!: number;
+
+  @Column({ name: "boarded", type: "bigint", default: () => "0" })
+  boarded!: number;
+
+  @Column({ name: "served", type: "bigint", default: () => "0" })
+  served!: number;
+
+  @Column({ name: "mean_wait_micros", type: "bigint", default: () => "0" })
+  meanWaitMicros!: number;
+
+  @Column({ name: "dispatch_decisions", type: "integer", default: () => "0" })
+  dispatchDecisions!: number;
+
+  @Column({ name: "pomdp_belief_updates", type: "integer", default: () => "0" })
+  pomdpBeliefUpdates!: number;
+
+  @Column({ name: "online_learning_updates", type: "bigint", default: () => "0" })
+  onlineLearningUpdates!: number;
+
+  @Column({ name: "online_learning_loss_last_micros", type: "bigint", nullable: true })
+  onlineLearningLossLastMicros!: number | null;
+
+  @Column({ name: "config", type: "jsonb", default: () => "'{}'::jsonb" })
+  config!: Record<string, unknown>;
+
+  @Column({ name: "metrics", type: "jsonb", default: () => "'{}'::jsonb" })
+  metrics!: Record<string, unknown>;
+
+  @Column({ name: "artifact", type: "jsonb" })
+  artifact!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("des_fel_elevator_policy_states_run_source_uq", ["runId", "sourceKind", "policyKind"], { unique: true })
+// des_fel_elevator_policy_states_policy_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "des_fel_elevator_policy_states" })
+export class DesFelElevatorPolicyStatesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "run_id", type: "uuid" })
+  runId!: string;
+
+  @Column({ name: "policy_kind", type: "varchar", length: 40 })
+  policyKind!: string;
+
+  @Column({ name: "source_kind", type: "varchar", length: 40, default: () => "'run-final'" })
+  sourceKind!: string;
+
+  @Column({ name: "feature_dim", type: "integer", default: () => "0" })
+  featureDim!: number;
+
+  @Column({ name: "output_dim", type: "integer", default: () => "0" })
+  outputDim!: number;
+
+  @Column({ name: "parameter_count", type: "integer", default: () => "0" })
+  parameterCount!: number;
+
+  @Column({ name: "online_learning_updates", type: "bigint", default: () => "0" })
+  onlineLearningUpdates!: number;
+
+  @Column({ name: "loss_history", type: "jsonb", default: () => "'[]'::jsonb" })
+  lossHistory!: unknown[];
+
+  @Column({ name: "state", type: "jsonb", default: () => "'{}'::jsonb" })
+  state!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("des_fel_elevator_dispatch_decisions_run_index_uq", ["runId", "decisionIndex"], { unique: true })
+@Index("des_fel_elevator_dispatch_decisions_time_idx", ["runId", "simTimeMicros"])
+@Entity({ name: "des_fel_elevator_dispatch_decisions" })
+export class DesFelElevatorDispatchDecisionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "run_id", type: "uuid" })
+  runId!: string;
+
+  @Column({ name: "decision_index", type: "integer" })
+  decisionIndex!: number;
+
+  @Column({ name: "sim_time_micros", type: "bigint", default: () => "0" })
+  simTimeMicros!: number;
+
+  @Column({ name: "call_floor", type: "integer" })
+  callFloor!: number;
+
+  @Column({ name: "car_index", type: "integer" })
+  carIndex!: number;
+
+  @Column({ name: "policy_kind", type: "varchar", length: 40 })
+  policyKind!: string;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("des_fel_elevator_pomdp_beliefs_run_index_uq", ["runId", "beliefIndex"], { unique: true })
+@Index("des_fel_elevator_pomdp_beliefs_floor_time_idx", ["runId", "floor", "simTimeMicros"])
+@Entity({ name: "des_fel_elevator_pomdp_beliefs" })
+export class DesFelElevatorPomdpBeliefsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "run_id", type: "uuid" })
+  runId!: string;
+
+  @Column({ name: "belief_index", type: "integer" })
+  beliefIndex!: number;
+
+  @Column({ name: "sim_time_micros", type: "bigint", default: () => "0" })
+  simTimeMicros!: number;
+
+  @Column({ name: "floor", type: "integer" })
+  floor!: number;
+
+  @Column({ name: "action", type: "varchar", length: 32 })
+  action!: string;
+
+  @Column({ name: "observation", type: "varchar", length: 32 })
+  observation!: string;
+
+  @Column({ name: "empty_prob_micros", type: "integer", default: () => "0" })
+  emptyProbMicros!: number;
+
+  @Column({ name: "waiting_prob_micros", type: "integer", default: () => "0" })
+  waitingProbMicros!: number;
+
+  @Column({ name: "crowded_prob_micros", type: "integer", default: () => "0" })
+  crowdedProbMicros!: number;
+
+  @Column({ name: "belief", type: "jsonb", default: () => "'{}'::jsonb" })
+  belief!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}

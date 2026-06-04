@@ -41,6 +41,10 @@ defmodule DdPgDefs do
     DdPgDefs.DesSoccerLearningRuns,
     DdPgDefs.DesSoccerLearningRunDeltas,
     DdPgDefs.DesSoccerLearningMergeEvents,
+    DdPgDefs.DesFelElevatorLearningRuns,
+    DdPgDefs.DesFelElevatorPolicyStates,
+    DdPgDefs.DesFelElevatorDispatchDecisions,
+    DdPgDefs.DesFelElevatorPomdpBeliefs,
   ]
 
   @spec tables() :: [module()]

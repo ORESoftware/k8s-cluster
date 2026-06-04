@@ -1589,6 +1589,189 @@ create index if not exists des_soccer_learning_merge_events_experiment_idx
   on des_soccer_learning_merge_events (experiment_id, created_at desc);
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- DES FEL elevator dispatch learning.
+--
+-- Durable storage for next-event elevator learning runs. Full run/policy
+-- payloads stay in JSONB so the animation and non-HTML renderers can replay
+-- exact artifacts, while fixed-point summary columns make RDS querying cheap
+-- and generated adapters portable.
+-- Values that represent seconds, rates, probabilities, or losses use a 1e6
+-- scale.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create table if not exists des_fel_elevator_learning_runs (
+  id uuid primary key default gen_random_uuid(),
+  run_label varchar(200) not null,
+  scenario_slug varchar(160) not null,
+  status varchar(32) default 'completed' not null,
+  dispatch_policy varchar(40) not null,
+  seed bigint not null,
+  floors integer not null,
+  shafts integer not null,
+  capacity integer not null,
+  travel_seconds_micros bigint default 0 not null,
+  dwell_seconds_micros bigint default 0 not null,
+  arrival_rate_micros bigint default 0 not null,
+  horizon_seconds_micros bigint default 0 not null,
+  events bigint default 0 not null,
+  arrivals bigint default 0 not null,
+  boarded bigint default 0 not null,
+  served bigint default 0 not null,
+  mean_wait_micros bigint default 0 not null,
+  dispatch_decisions integer default 0 not null,
+  pomdp_belief_updates integer default 0 not null,
+  online_learning_updates bigint default 0 not null,
+  online_learning_loss_last_micros bigint,
+  config jsonb default '{}'::jsonb not null,
+  metrics jsonb default '{}'::jsonb not null,
+  artifact jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint des_fel_elevator_learning_runs_label_size_chk
+    check (octet_length(run_label) between 1 and 200),
+  constraint des_fel_elevator_learning_runs_scenario_format_chk
+    check (scenario_slug ~ '^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$'),
+  constraint des_fel_elevator_learning_runs_status_chk
+    check (status in ('completed', 'failed', 'imported')),
+  constraint des_fel_elevator_learning_runs_policy_chk
+    check (dispatch_policy in ('look', 'mdp-table', 'neural-scorer', 'pomdp-belief', 'neural-td')),
+  constraint des_fel_elevator_learning_runs_seed_chk
+    check (seed >= 0),
+  constraint des_fel_elevator_learning_runs_dimensions_chk
+    check (floors between 2 and 256 and shafts between 1 and 128 and capacity between 1 and 10000),
+  constraint des_fel_elevator_learning_runs_time_chk
+    check (
+      travel_seconds_micros >= 0
+      and dwell_seconds_micros >= 0
+      and arrival_rate_micros >= 0
+      and horizon_seconds_micros >= 0
+    ),
+  constraint des_fel_elevator_learning_runs_counts_chk
+    check (
+      events >= 0
+      and arrivals >= 0
+      and boarded >= 0
+      and served >= 0
+      and mean_wait_micros >= 0
+      and dispatch_decisions >= 0
+      and pomdp_belief_updates >= 0
+      and online_learning_updates >= 0
+    ),
+  constraint des_fel_elevator_learning_runs_loss_chk
+    check (online_learning_loss_last_micros is null or online_learning_loss_last_micros >= 0),
+  constraint des_fel_elevator_learning_runs_config_object_chk
+    check (jsonb_typeof(config) = 'object'),
+  constraint des_fel_elevator_learning_runs_metrics_object_chk
+    check (jsonb_typeof(metrics) = 'object'),
+  constraint des_fel_elevator_learning_runs_artifact_object_chk
+    check (jsonb_typeof(artifact) = 'object')
+);
+
+create index if not exists des_fel_elevator_learning_runs_scenario_idx
+  on des_fel_elevator_learning_runs (scenario_slug, created_at desc);
+
+create index if not exists des_fel_elevator_learning_runs_policy_idx
+  on des_fel_elevator_learning_runs (dispatch_policy, created_at desc);
+
+create index if not exists des_fel_elevator_learning_runs_mean_wait_idx
+  on des_fel_elevator_learning_runs (scenario_slug, mean_wait_micros asc, created_at desc);
+
+create table if not exists des_fel_elevator_policy_states (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references des_fel_elevator_learning_runs(id),
+  policy_kind varchar(40) not null,
+  source_kind varchar(40) default 'run-final' not null,
+  feature_dim integer default 0 not null,
+  output_dim integer default 0 not null,
+  parameter_count integer default 0 not null,
+  online_learning_updates bigint default 0 not null,
+  loss_history jsonb default '[]'::jsonb not null,
+  state jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint des_fel_elevator_policy_states_policy_chk
+    check (policy_kind in ('look', 'mdp-table', 'neural-scorer', 'pomdp-belief', 'neural-td')),
+  constraint des_fel_elevator_policy_states_source_chk
+    check (source_kind in ('run-final', 'offline-training', 'import', 'checkpoint')),
+  constraint des_fel_elevator_policy_states_dims_chk
+    check (feature_dim >= 0 and output_dim >= 0 and parameter_count >= 0 and online_learning_updates >= 0),
+  constraint des_fel_elevator_policy_states_loss_array_chk
+    check (jsonb_typeof(loss_history) = 'array'),
+  constraint des_fel_elevator_policy_states_state_object_chk
+    check (jsonb_typeof(state) = 'object')
+);
+
+create unique index if not exists des_fel_elevator_policy_states_run_source_uq
+  on des_fel_elevator_policy_states (run_id, source_kind, policy_kind);
+
+create index if not exists des_fel_elevator_policy_states_policy_idx
+  on des_fel_elevator_policy_states (policy_kind, created_at desc);
+
+create table if not exists des_fel_elevator_dispatch_decisions (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references des_fel_elevator_learning_runs(id),
+  decision_index integer not null,
+  sim_time_micros bigint default 0 not null,
+  call_floor integer not null,
+  car_index integer not null,
+  policy_kind varchar(40) not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint des_fel_elevator_dispatch_decisions_policy_chk
+    check (policy_kind in ('look', 'mdp-table', 'neural-scorer', 'pomdp-belief', 'neural-td')),
+  constraint des_fel_elevator_dispatch_decisions_index_chk
+    check (decision_index >= 0),
+  constraint des_fel_elevator_dispatch_decisions_time_chk
+    check (sim_time_micros >= 0),
+  constraint des_fel_elevator_dispatch_decisions_floor_car_chk
+    check (call_floor >= 0 and car_index >= 0),
+  constraint des_fel_elevator_dispatch_decisions_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists des_fel_elevator_dispatch_decisions_run_index_uq
+  on des_fel_elevator_dispatch_decisions (run_id, decision_index);
+
+create index if not exists des_fel_elevator_dispatch_decisions_time_idx
+  on des_fel_elevator_dispatch_decisions (run_id, sim_time_micros);
+
+create table if not exists des_fel_elevator_pomdp_beliefs (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references des_fel_elevator_learning_runs(id),
+  belief_index integer not null,
+  sim_time_micros bigint default 0 not null,
+  floor integer not null,
+  action varchar(32) not null,
+  observation varchar(32) not null,
+  empty_prob_micros integer default 0 not null,
+  waiting_prob_micros integer default 0 not null,
+  crowded_prob_micros integer default 0 not null,
+  belief jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint des_fel_elevator_pomdp_beliefs_index_chk
+    check (belief_index >= 0),
+  constraint des_fel_elevator_pomdp_beliefs_time_floor_chk
+    check (sim_time_micros >= 0 and floor >= 0),
+  constraint des_fel_elevator_pomdp_beliefs_action_chk
+    check (action in ('hold', 'dispatch')),
+  constraint des_fel_elevator_pomdp_beliefs_observation_chk
+    check (observation in ('quiet', 'call')),
+  constraint des_fel_elevator_pomdp_beliefs_prob_chk
+    check (
+      empty_prob_micros between 0 and 1000000
+      and waiting_prob_micros between 0 and 1000000
+      and crowded_prob_micros between 0 and 1000000
+    ),
+  constraint des_fel_elevator_pomdp_beliefs_belief_object_chk
+    check (jsonb_typeof(belief) = 'object')
+);
+
+create unique index if not exists des_fel_elevator_pomdp_beliefs_run_index_uq
+  on des_fel_elevator_pomdp_beliefs (run_id, belief_index);
+
+create index if not exists des_fel_elevator_pomdp_beliefs_floor_time_idx
+  on des_fel_elevator_pomdp_beliefs (run_id, floor, sim_time_micros);
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Generic CDC gateway publication.
 --
 -- The `wal-gateway-rs` service runs ONE logical replication slot per cluster

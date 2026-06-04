@@ -794,6 +794,117 @@ class DesSoccerLearningMergeEventsTable extends Table {
   };
 }
 
+@DataClassName("DesFelElevatorLearningRunsData")
+class DesFelElevatorLearningRunsTable extends Table {
+  @override String get tableName => "des_fel_elevator_learning_runs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get runLabel => text().named("run_label").withLength(max: 200)();
+  TextColumn get scenarioSlug => text().named("scenario_slug").withLength(max: 160)();
+  TextColumn get status => text().named("status").clientDefault(() => 'completed')();
+  TextColumn get dispatchPolicy => text().named("dispatch_policy")();
+  Int64Column get seed => int64().named("seed")();
+  IntColumn get floors => integer().named("floors")();
+  IntColumn get shafts => integer().named("shafts")();
+  IntColumn get capacity => integer().named("capacity")();
+  Int64Column get travelSecondsMicros => int64().named("travel_seconds_micros").clientDefault(() => 0)();
+  Int64Column get dwellSecondsMicros => int64().named("dwell_seconds_micros").clientDefault(() => 0)();
+  Int64Column get arrivalRateMicros => int64().named("arrival_rate_micros").clientDefault(() => 0)();
+  Int64Column get horizonSecondsMicros => int64().named("horizon_seconds_micros").clientDefault(() => 0)();
+  Int64Column get events => int64().named("events").clientDefault(() => 0)();
+  Int64Column get arrivals => int64().named("arrivals").clientDefault(() => 0)();
+  Int64Column get boarded => int64().named("boarded").clientDefault(() => 0)();
+  Int64Column get served => int64().named("served").clientDefault(() => 0)();
+  Int64Column get meanWaitMicros => int64().named("mean_wait_micros").clientDefault(() => 0)();
+  IntColumn get dispatchDecisions => integer().named("dispatch_decisions").clientDefault(() => 0)();
+  IntColumn get pomdpBeliefUpdates => integer().named("pomdp_belief_updates").clientDefault(() => 0)();
+  Int64Column get onlineLearningUpdates => int64().named("online_learning_updates").clientDefault(() => 0)();
+  Int64Column get onlineLearningLossLastMicros => int64().named("online_learning_loss_last_micros").nullable()();
+  TextColumn get config => text().named("config").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get metrics => text().named("metrics").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get artifact => text().named("artifact").customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesFelElevatorPolicyStatesData")
+class DesFelElevatorPolicyStatesTable extends Table {
+  @override String get tableName => "des_fel_elevator_policy_states";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get runId => text().named("run_id").customConstraint("UUID")();
+  TextColumn get policyKind => text().named("policy_kind")();
+  TextColumn get sourceKind => text().named("source_kind").clientDefault(() => 'run-final')();
+  IntColumn get featureDim => integer().named("feature_dim").clientDefault(() => 0)();
+  IntColumn get outputDim => integer().named("output_dim").clientDefault(() => 0)();
+  IntColumn get parameterCount => integer().named("parameter_count").clientDefault(() => 0)();
+  Int64Column get onlineLearningUpdates => int64().named("online_learning_updates").clientDefault(() => 0)();
+  TextColumn get lossHistory => text().named("loss_history").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get state => text().named("state").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesFelElevatorDispatchDecisionsData")
+class DesFelElevatorDispatchDecisionsTable extends Table {
+  @override String get tableName => "des_fel_elevator_dispatch_decisions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get runId => text().named("run_id").customConstraint("UUID")();
+  IntColumn get decisionIndex => integer().named("decision_index")();
+  Int64Column get simTimeMicros => int64().named("sim_time_micros").clientDefault(() => 0)();
+  IntColumn get callFloor => integer().named("call_floor")();
+  IntColumn get carIndex => integer().named("car_index")();
+  TextColumn get policyKind => text().named("policy_kind")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesFelElevatorPomdpBeliefsData")
+class DesFelElevatorPomdpBeliefsTable extends Table {
+  @override String get tableName => "des_fel_elevator_pomdp_beliefs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get runId => text().named("run_id").customConstraint("UUID")();
+  IntColumn get beliefIndex => integer().named("belief_index")();
+  Int64Column get simTimeMicros => int64().named("sim_time_micros").clientDefault(() => 0)();
+  IntColumn get floor => integer().named("floor")();
+  TextColumn get action => text().named("action")();
+  TextColumn get observation => text().named("observation")();
+  IntColumn get emptyProbMicros => integer().named("empty_prob_micros").clientDefault(() => 0)();
+  IntColumn get waitingProbMicros => integer().named("waiting_prob_micros").clientDefault(() => 0)();
+  IntColumn get crowdedProbMicros => integer().named("crowded_prob_micros").clientDefault(() => 0)();
+  TextColumn get belief => text().named("belief").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -827,4 +938,8 @@ const List<Type> registeredDriftTables = <Type>[
   DesSoccerLearningRunsTable,
   DesSoccerLearningRunDeltasTable,
   DesSoccerLearningMergeEventsTable,
+  DesFelElevatorLearningRunsTable,
+  DesFelElevatorPolicyStatesTable,
+  DesFelElevatorDispatchDecisionsTable,
+  DesFelElevatorPomdpBeliefsTable,
 ];

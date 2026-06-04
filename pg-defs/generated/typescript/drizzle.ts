@@ -2219,3 +2219,321 @@ export const desSoccerLearningMergeEventsUpdateSchema = desSoccerLearningMergeEv
 export type DesSoccerLearningMergeEventsRow = z.infer<typeof desSoccerLearningMergeEventsRowSchema>;
 export type DesSoccerLearningMergeEventsInsert = z.infer<typeof desSoccerLearningMergeEventsInsertSchema>;
 export type DesSoccerLearningMergeEventsUpdate = z.infer<typeof desSoccerLearningMergeEventsUpdateSchema>;
+
+export const desFelElevatorLearningRunsStatusValues = ["completed","failed","imported"] as const;
+export const desFelElevatorLearningRunsStatusSchema = z.enum(desFelElevatorLearningRunsStatusValues);
+export type DesFelElevatorLearningRunsStatus = z.infer<typeof desFelElevatorLearningRunsStatusSchema>;
+
+export const desFelElevatorLearningRunsDispatchPolicyValues = ["look","mdp-table","neural-scorer","pomdp-belief","neural-td"] as const;
+export const desFelElevatorLearningRunsDispatchPolicySchema = z.enum(desFelElevatorLearningRunsDispatchPolicyValues);
+export type DesFelElevatorLearningRunsDispatchPolicy = z.infer<typeof desFelElevatorLearningRunsDispatchPolicySchema>;
+
+export const desFelElevatorLearningRuns = pgTable(
+  "des_fel_elevator_learning_runs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    runLabel: varchar("run_label", { length: 200 }).notNull(),
+    scenarioSlug: varchar("scenario_slug", { length: 160 }).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'completed'`).notNull(),
+    dispatchPolicy: varchar("dispatch_policy", { length: 40 }).notNull(),
+    seed: bigint("seed", { mode: "number" }).notNull(),
+    floors: integer("floors").notNull(),
+    shafts: integer("shafts").notNull(),
+    capacity: integer("capacity").notNull(),
+    travelSecondsMicros: bigint("travel_seconds_micros", { mode: "number" }).default(sql`0`).notNull(),
+    dwellSecondsMicros: bigint("dwell_seconds_micros", { mode: "number" }).default(sql`0`).notNull(),
+    arrivalRateMicros: bigint("arrival_rate_micros", { mode: "number" }).default(sql`0`).notNull(),
+    horizonSecondsMicros: bigint("horizon_seconds_micros", { mode: "number" }).default(sql`0`).notNull(),
+    events: bigint("events", { mode: "number" }).default(sql`0`).notNull(),
+    arrivals: bigint("arrivals", { mode: "number" }).default(sql`0`).notNull(),
+    boarded: bigint("boarded", { mode: "number" }).default(sql`0`).notNull(),
+    served: bigint("served", { mode: "number" }).default(sql`0`).notNull(),
+    meanWaitMicros: bigint("mean_wait_micros", { mode: "number" }).default(sql`0`).notNull(),
+    dispatchDecisions: integer("dispatch_decisions").default(sql`0`).notNull(),
+    pomdpBeliefUpdates: integer("pomdp_belief_updates").default(sql`0`).notNull(),
+    onlineLearningUpdates: bigint("online_learning_updates", { mode: "number" }).default(sql`0`).notNull(),
+    onlineLearningLossLastMicros: bigint("online_learning_loss_last_micros", { mode: "number" }),
+    config: jsonb("config").default(sql`'{}'::jsonb`).notNull(),
+    metrics: jsonb("metrics").default(sql`'{}'::jsonb`).notNull(),
+    artifact: jsonb("artifact").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desFelElevatorLearningRunsLabelSizeChk: check("des_fel_elevator_learning_runs_label_size_chk", sql.raw("octet_length(run_label) between 1 and 200")),
+    desFelElevatorLearningRunsScenarioFormatChk: check("des_fel_elevator_learning_runs_scenario_format_chk", sql.raw("scenario_slug ~ '^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$'")),
+    desFelElevatorLearningRunsStatusChk: check("des_fel_elevator_learning_runs_status_chk", sql.raw("status in ('completed', 'failed', 'imported')")),
+    desFelElevatorLearningRunsPolicyChk: check("des_fel_elevator_learning_runs_policy_chk", sql.raw("dispatch_policy in ('look', 'mdp-table', 'neural-scorer', 'pomdp-belief', 'neural-td')")),
+    desFelElevatorLearningRunsSeedChk: check("des_fel_elevator_learning_runs_seed_chk", sql.raw("seed >= 0")),
+    desFelElevatorLearningRunsDimensionsChk: check("des_fel_elevator_learning_runs_dimensions_chk", sql.raw("floors between 2 and 256 and shafts between 1 and 128 and capacity between 1 and 10000")),
+    desFelElevatorLearningRunsTimeChk: check("des_fel_elevator_learning_runs_time_chk", sql.raw("travel_seconds_micros >= 0\n      and dwell_seconds_micros >= 0\n      and arrival_rate_micros >= 0\n      and horizon_seconds_micros >= 0")),
+    desFelElevatorLearningRunsCountsChk: check("des_fel_elevator_learning_runs_counts_chk", sql.raw("events >= 0\n      and arrivals >= 0\n      and boarded >= 0\n      and served >= 0\n      and mean_wait_micros >= 0\n      and dispatch_decisions >= 0\n      and pomdp_belief_updates >= 0\n      and online_learning_updates >= 0")),
+    desFelElevatorLearningRunsLossChk: check("des_fel_elevator_learning_runs_loss_chk", sql.raw("online_learning_loss_last_micros is null or online_learning_loss_last_micros >= 0")),
+    desFelElevatorLearningRunsConfigObjectChk: check("des_fel_elevator_learning_runs_config_object_chk", sql.raw("jsonb_typeof(config) = 'object'")),
+    desFelElevatorLearningRunsMetricsObjectChk: check("des_fel_elevator_learning_runs_metrics_object_chk", sql.raw("jsonb_typeof(metrics) = 'object'")),
+    desFelElevatorLearningRunsArtifactObjectChk: check("des_fel_elevator_learning_runs_artifact_object_chk", sql.raw("jsonb_typeof(artifact) = 'object'")),
+    desFelElevatorLearningRunsScenarioIdx: index("des_fel_elevator_learning_runs_scenario_idx").on(table.scenarioSlug, table.createdAt.desc()),
+    desFelElevatorLearningRunsPolicyIdx: index("des_fel_elevator_learning_runs_policy_idx").on(table.dispatchPolicy, table.createdAt.desc()),
+    desFelElevatorLearningRunsMeanWaitIdx: index("des_fel_elevator_learning_runs_mean_wait_idx").on(table.scenarioSlug, table.meanWaitMicros, table.createdAt.desc()),
+  }),
+);
+
+export const desFelElevatorLearningRunsRowSchema = z.object({
+  id: z.string().uuid(),
+  runLabel: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  scenarioSlug: z.string().max(160).regex(new RegExp("^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$")),
+  status: desFelElevatorLearningRunsStatusSchema,
+  dispatchPolicy: desFelElevatorLearningRunsDispatchPolicySchema,
+  seed: z.number().int().min(0),
+  floors: z.number().int().min(2).max(256),
+  shafts: z.number().int().min(1).max(128),
+  capacity: z.number().int().min(1).max(10000),
+  travelSecondsMicros: z.number().int().min(0),
+  dwellSecondsMicros: z.number().int().min(0),
+  arrivalRateMicros: z.number().int().min(0),
+  horizonSecondsMicros: z.number().int().min(0),
+  events: z.number().int().min(0),
+  arrivals: z.number().int().min(0),
+  boarded: z.number().int().min(0),
+  served: z.number().int().min(0),
+  meanWaitMicros: z.number().int().min(0),
+  dispatchDecisions: z.number().int().min(0),
+  pomdpBeliefUpdates: z.number().int().min(0),
+  onlineLearningUpdates: z.number().int().min(0),
+  onlineLearningLossLastMicros: z.number().int().min(0).nullable(),
+  config: jsonObjectSchema,
+  metrics: jsonObjectSchema,
+  artifact: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const desFelElevatorLearningRunsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  runLabel: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  scenarioSlug: z.string().max(160).regex(new RegExp("^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$")),
+  status: desFelElevatorLearningRunsStatusSchema.optional().default("completed"),
+  dispatchPolicy: desFelElevatorLearningRunsDispatchPolicySchema,
+  seed: z.number().int().min(0),
+  floors: z.number().int().min(2).max(256),
+  shafts: z.number().int().min(1).max(128),
+  capacity: z.number().int().min(1).max(10000),
+  travelSecondsMicros: z.number().int().min(0).optional().default(0),
+  dwellSecondsMicros: z.number().int().min(0).optional().default(0),
+  arrivalRateMicros: z.number().int().min(0).optional().default(0),
+  horizonSecondsMicros: z.number().int().min(0).optional().default(0),
+  events: z.number().int().min(0).optional().default(0),
+  arrivals: z.number().int().min(0).optional().default(0),
+  boarded: z.number().int().min(0).optional().default(0),
+  served: z.number().int().min(0).optional().default(0),
+  meanWaitMicros: z.number().int().min(0).optional().default(0),
+  dispatchDecisions: z.number().int().min(0).optional().default(0),
+  pomdpBeliefUpdates: z.number().int().min(0).optional().default(0),
+  onlineLearningUpdates: z.number().int().min(0).optional().default(0),
+  onlineLearningLossLastMicros: z.number().int().min(0).nullable().optional(),
+  config: jsonObjectSchema.optional().default({}),
+  metrics: jsonObjectSchema.optional().default({}),
+  artifact: jsonObjectSchema,
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const desFelElevatorLearningRunsUpdateSchema = desFelElevatorLearningRunsInsertSchema.partial();
+export type DesFelElevatorLearningRunsRow = z.infer<typeof desFelElevatorLearningRunsRowSchema>;
+export type DesFelElevatorLearningRunsInsert = z.infer<typeof desFelElevatorLearningRunsInsertSchema>;
+export type DesFelElevatorLearningRunsUpdate = z.infer<typeof desFelElevatorLearningRunsUpdateSchema>;
+
+export const desFelElevatorPolicyStatesPolicyKindValues = ["look","mdp-table","neural-scorer","pomdp-belief","neural-td"] as const;
+export const desFelElevatorPolicyStatesPolicyKindSchema = z.enum(desFelElevatorPolicyStatesPolicyKindValues);
+export type DesFelElevatorPolicyStatesPolicyKind = z.infer<typeof desFelElevatorPolicyStatesPolicyKindSchema>;
+
+export const desFelElevatorPolicyStatesSourceKindValues = ["run-final","offline-training","import","checkpoint"] as const;
+export const desFelElevatorPolicyStatesSourceKindSchema = z.enum(desFelElevatorPolicyStatesSourceKindValues);
+export type DesFelElevatorPolicyStatesSourceKind = z.infer<typeof desFelElevatorPolicyStatesSourceKindSchema>;
+
+export const desFelElevatorPolicyStates = pgTable(
+  "des_fel_elevator_policy_states",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    runId: uuid("run_id").notNull(),
+    policyKind: varchar("policy_kind", { length: 40 }).notNull(),
+    sourceKind: varchar("source_kind", { length: 40 }).default(sql`'run-final'`).notNull(),
+    featureDim: integer("feature_dim").default(sql`0`).notNull(),
+    outputDim: integer("output_dim").default(sql`0`).notNull(),
+    parameterCount: integer("parameter_count").default(sql`0`).notNull(),
+    onlineLearningUpdates: bigint("online_learning_updates", { mode: "number" }).default(sql`0`).notNull(),
+    lossHistory: jsonb("loss_history").default(sql`'[]'::jsonb`).notNull(),
+    state: jsonb("state").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desFelElevatorPolicyStatesPolicyChk: check("des_fel_elevator_policy_states_policy_chk", sql.raw("policy_kind in ('look', 'mdp-table', 'neural-scorer', 'pomdp-belief', 'neural-td')")),
+    desFelElevatorPolicyStatesSourceChk: check("des_fel_elevator_policy_states_source_chk", sql.raw("source_kind in ('run-final', 'offline-training', 'import', 'checkpoint')")),
+    desFelElevatorPolicyStatesDimsChk: check("des_fel_elevator_policy_states_dims_chk", sql.raw("feature_dim >= 0 and output_dim >= 0 and parameter_count >= 0 and online_learning_updates >= 0")),
+    desFelElevatorPolicyStatesLossArrayChk: check("des_fel_elevator_policy_states_loss_array_chk", sql.raw("jsonb_typeof(loss_history) = 'array'")),
+    desFelElevatorPolicyStatesStateObjectChk: check("des_fel_elevator_policy_states_state_object_chk", sql.raw("jsonb_typeof(state) = 'object'")),
+    desFelElevatorPolicyStatesRunSourceUq: uniqueIndex("des_fel_elevator_policy_states_run_source_uq").on(table.runId, table.sourceKind, table.policyKind),
+    desFelElevatorPolicyStatesPolicyIdx: index("des_fel_elevator_policy_states_policy_idx").on(table.policyKind, table.createdAt.desc()),
+  }),
+);
+
+export const desFelElevatorPolicyStatesRowSchema = z.object({
+  id: z.string().uuid(),
+  runId: z.string().uuid(),
+  policyKind: desFelElevatorPolicyStatesPolicyKindSchema,
+  sourceKind: desFelElevatorPolicyStatesSourceKindSchema,
+  featureDim: z.number().int().min(0),
+  outputDim: z.number().int().min(0),
+  parameterCount: z.number().int().min(0),
+  onlineLearningUpdates: z.number().int().min(0),
+  lossHistory: jsonArraySchema,
+  state: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const desFelElevatorPolicyStatesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  runId: z.string().uuid(),
+  policyKind: desFelElevatorPolicyStatesPolicyKindSchema,
+  sourceKind: desFelElevatorPolicyStatesSourceKindSchema.optional().default("run-final"),
+  featureDim: z.number().int().min(0).optional().default(0),
+  outputDim: z.number().int().min(0).optional().default(0),
+  parameterCount: z.number().int().min(0).optional().default(0),
+  onlineLearningUpdates: z.number().int().min(0).optional().default(0),
+  lossHistory: jsonArraySchema.optional().default([]),
+  state: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const desFelElevatorPolicyStatesUpdateSchema = desFelElevatorPolicyStatesInsertSchema.partial();
+export type DesFelElevatorPolicyStatesRow = z.infer<typeof desFelElevatorPolicyStatesRowSchema>;
+export type DesFelElevatorPolicyStatesInsert = z.infer<typeof desFelElevatorPolicyStatesInsertSchema>;
+export type DesFelElevatorPolicyStatesUpdate = z.infer<typeof desFelElevatorPolicyStatesUpdateSchema>;
+
+export const desFelElevatorDispatchDecisionsPolicyKindValues = ["look","mdp-table","neural-scorer","pomdp-belief","neural-td"] as const;
+export const desFelElevatorDispatchDecisionsPolicyKindSchema = z.enum(desFelElevatorDispatchDecisionsPolicyKindValues);
+export type DesFelElevatorDispatchDecisionsPolicyKind = z.infer<typeof desFelElevatorDispatchDecisionsPolicyKindSchema>;
+
+export const desFelElevatorDispatchDecisions = pgTable(
+  "des_fel_elevator_dispatch_decisions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    runId: uuid("run_id").notNull(),
+    decisionIndex: integer("decision_index").notNull(),
+    simTimeMicros: bigint("sim_time_micros", { mode: "number" }).default(sql`0`).notNull(),
+    callFloor: integer("call_floor").notNull(),
+    carIndex: integer("car_index").notNull(),
+    policyKind: varchar("policy_kind", { length: 40 }).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desFelElevatorDispatchDecisionsPolicyChk: check("des_fel_elevator_dispatch_decisions_policy_chk", sql.raw("policy_kind in ('look', 'mdp-table', 'neural-scorer', 'pomdp-belief', 'neural-td')")),
+    desFelElevatorDispatchDecisionsIndexChk: check("des_fel_elevator_dispatch_decisions_index_chk", sql.raw("decision_index >= 0")),
+    desFelElevatorDispatchDecisionsTimeChk: check("des_fel_elevator_dispatch_decisions_time_chk", sql.raw("sim_time_micros >= 0")),
+    desFelElevatorDispatchDecisionsFloorCarChk: check("des_fel_elevator_dispatch_decisions_floor_car_chk", sql.raw("call_floor >= 0 and car_index >= 0")),
+    desFelElevatorDispatchDecisionsMetaObjectChk: check("des_fel_elevator_dispatch_decisions_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    desFelElevatorDispatchDecisionsRunIndexUq: uniqueIndex("des_fel_elevator_dispatch_decisions_run_index_uq").on(table.runId, table.decisionIndex),
+    desFelElevatorDispatchDecisionsTimeIdx: index("des_fel_elevator_dispatch_decisions_time_idx").on(table.runId, table.simTimeMicros),
+  }),
+);
+
+export const desFelElevatorDispatchDecisionsRowSchema = z.object({
+  id: z.string().uuid(),
+  runId: z.string().uuid(),
+  decisionIndex: z.number().int().min(0),
+  simTimeMicros: z.number().int().min(0),
+  callFloor: z.number().int().min(0),
+  carIndex: z.number().int().min(0),
+  policyKind: desFelElevatorDispatchDecisionsPolicyKindSchema,
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const desFelElevatorDispatchDecisionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  runId: z.string().uuid(),
+  decisionIndex: z.number().int().min(0),
+  simTimeMicros: z.number().int().min(0).optional().default(0),
+  callFloor: z.number().int().min(0),
+  carIndex: z.number().int().min(0),
+  policyKind: desFelElevatorDispatchDecisionsPolicyKindSchema,
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const desFelElevatorDispatchDecisionsUpdateSchema = desFelElevatorDispatchDecisionsInsertSchema.partial();
+export type DesFelElevatorDispatchDecisionsRow = z.infer<typeof desFelElevatorDispatchDecisionsRowSchema>;
+export type DesFelElevatorDispatchDecisionsInsert = z.infer<typeof desFelElevatorDispatchDecisionsInsertSchema>;
+export type DesFelElevatorDispatchDecisionsUpdate = z.infer<typeof desFelElevatorDispatchDecisionsUpdateSchema>;
+
+export const desFelElevatorPomdpBeliefsActionValues = ["hold","dispatch"] as const;
+export const desFelElevatorPomdpBeliefsActionSchema = z.enum(desFelElevatorPomdpBeliefsActionValues);
+export type DesFelElevatorPomdpBeliefsAction = z.infer<typeof desFelElevatorPomdpBeliefsActionSchema>;
+
+export const desFelElevatorPomdpBeliefsObservationValues = ["quiet","call"] as const;
+export const desFelElevatorPomdpBeliefsObservationSchema = z.enum(desFelElevatorPomdpBeliefsObservationValues);
+export type DesFelElevatorPomdpBeliefsObservation = z.infer<typeof desFelElevatorPomdpBeliefsObservationSchema>;
+
+export const desFelElevatorPomdpBeliefs = pgTable(
+  "des_fel_elevator_pomdp_beliefs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    runId: uuid("run_id").notNull(),
+    beliefIndex: integer("belief_index").notNull(),
+    simTimeMicros: bigint("sim_time_micros", { mode: "number" }).default(sql`0`).notNull(),
+    floor: integer("floor").notNull(),
+    action: varchar("action", { length: 32 }).notNull(),
+    observation: varchar("observation", { length: 32 }).notNull(),
+    emptyProbMicros: integer("empty_prob_micros").default(sql`0`).notNull(),
+    waitingProbMicros: integer("waiting_prob_micros").default(sql`0`).notNull(),
+    crowdedProbMicros: integer("crowded_prob_micros").default(sql`0`).notNull(),
+    belief: jsonb("belief").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desFelElevatorPomdpBeliefsIndexChk: check("des_fel_elevator_pomdp_beliefs_index_chk", sql.raw("belief_index >= 0")),
+    desFelElevatorPomdpBeliefsTimeFloorChk: check("des_fel_elevator_pomdp_beliefs_time_floor_chk", sql.raw("sim_time_micros >= 0 and floor >= 0")),
+    desFelElevatorPomdpBeliefsActionChk: check("des_fel_elevator_pomdp_beliefs_action_chk", sql.raw("action in ('hold', 'dispatch')")),
+    desFelElevatorPomdpBeliefsObservationChk: check("des_fel_elevator_pomdp_beliefs_observation_chk", sql.raw("observation in ('quiet', 'call')")),
+    desFelElevatorPomdpBeliefsProbChk: check("des_fel_elevator_pomdp_beliefs_prob_chk", sql.raw("empty_prob_micros between 0 and 1000000\n      and waiting_prob_micros between 0 and 1000000\n      and crowded_prob_micros between 0 and 1000000")),
+    desFelElevatorPomdpBeliefsBeliefObjectChk: check("des_fel_elevator_pomdp_beliefs_belief_object_chk", sql.raw("jsonb_typeof(belief) = 'object'")),
+    desFelElevatorPomdpBeliefsRunIndexUq: uniqueIndex("des_fel_elevator_pomdp_beliefs_run_index_uq").on(table.runId, table.beliefIndex),
+    desFelElevatorPomdpBeliefsFloorTimeIdx: index("des_fel_elevator_pomdp_beliefs_floor_time_idx").on(table.runId, table.floor, table.simTimeMicros),
+  }),
+);
+
+export const desFelElevatorPomdpBeliefsRowSchema = z.object({
+  id: z.string().uuid(),
+  runId: z.string().uuid(),
+  beliefIndex: z.number().int().min(0),
+  simTimeMicros: z.number().int().min(0),
+  floor: z.number().int().min(0),
+  action: desFelElevatorPomdpBeliefsActionSchema,
+  observation: desFelElevatorPomdpBeliefsObservationSchema,
+  emptyProbMicros: z.number().int().min(0).max(1000000),
+  waitingProbMicros: z.number().int().min(0).max(1000000),
+  crowdedProbMicros: z.number().int().min(0).max(1000000),
+  belief: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const desFelElevatorPomdpBeliefsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  runId: z.string().uuid(),
+  beliefIndex: z.number().int().min(0),
+  simTimeMicros: z.number().int().min(0).optional().default(0),
+  floor: z.number().int().min(0),
+  action: desFelElevatorPomdpBeliefsActionSchema,
+  observation: desFelElevatorPomdpBeliefsObservationSchema,
+  emptyProbMicros: z.number().int().min(0).max(1000000).optional().default(0),
+  waitingProbMicros: z.number().int().min(0).max(1000000).optional().default(0),
+  crowdedProbMicros: z.number().int().min(0).max(1000000).optional().default(0),
+  belief: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const desFelElevatorPomdpBeliefsUpdateSchema = desFelElevatorPomdpBeliefsInsertSchema.partial();
+export type DesFelElevatorPomdpBeliefsRow = z.infer<typeof desFelElevatorPomdpBeliefsRowSchema>;
+export type DesFelElevatorPomdpBeliefsInsert = z.infer<typeof desFelElevatorPomdpBeliefsInsertSchema>;
+export type DesFelElevatorPomdpBeliefsUpdate = z.infer<typeof desFelElevatorPomdpBeliefsUpdateSchema>;

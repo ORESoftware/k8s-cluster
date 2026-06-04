@@ -647,3 +647,91 @@ model DesSoccerLearningMergeEvents {
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("des_soccer_learning_merge_events")
 }
+
+model DesFelElevatorLearningRuns {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runLabel String @map("run_label") @db.VarChar(200)
+  scenarioSlug String @map("scenario_slug") @db.VarChar(160)
+  status String @default("completed") @db.VarChar(32)
+  dispatchPolicy String @map("dispatch_policy") @db.VarChar(40)
+  seed BigInt @db.BigInt
+  floors Int
+  shafts Int
+  capacity Int
+  travelSecondsMicros BigInt @map("travel_seconds_micros") @default(0) @db.BigInt
+  dwellSecondsMicros BigInt @map("dwell_seconds_micros") @default(0) @db.BigInt
+  arrivalRateMicros BigInt @map("arrival_rate_micros") @default(0) @db.BigInt
+  horizonSecondsMicros BigInt @map("horizon_seconds_micros") @default(0) @db.BigInt
+  events BigInt @default(0) @db.BigInt
+  arrivals BigInt @default(0) @db.BigInt
+  boarded BigInt @default(0) @db.BigInt
+  served BigInt @default(0) @db.BigInt
+  meanWaitMicros BigInt @map("mean_wait_micros") @default(0) @db.BigInt
+  dispatchDecisions Int @map("dispatch_decisions") @default(0)
+  pomdpBeliefUpdates Int @map("pomdp_belief_updates") @default(0)
+  onlineLearningUpdates BigInt @map("online_learning_updates") @default(0) @db.BigInt
+  onlineLearningLossLastMicros BigInt? @map("online_learning_loss_last_micros") @db.BigInt
+  config Json @default("{}")
+  metrics Json @default("{}")
+  artifact Json
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([scenarioSlug, createdAt], map: "des_fel_elevator_learning_runs_scenario_idx")
+  @@index([dispatchPolicy, createdAt], map: "des_fel_elevator_learning_runs_policy_idx")
+  @@index([scenarioSlug, meanWaitMicros, createdAt], map: "des_fel_elevator_learning_runs_mean_wait_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_fel_elevator_learning_runs")
+}
+
+model DesFelElevatorPolicyStates {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId String @map("run_id") @db.Uuid
+  policyKind String @map("policy_kind") @db.VarChar(40)
+  sourceKind String @map("source_kind") @default("run-final") @db.VarChar(40)
+  featureDim Int @map("feature_dim") @default(0)
+  outputDim Int @map("output_dim") @default(0)
+  parameterCount Int @map("parameter_count") @default(0)
+  onlineLearningUpdates BigInt @map("online_learning_updates") @default(0) @db.BigInt
+  lossHistory Json @map("loss_history") @default("[]")
+  state Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([runId, sourceKind, policyKind], map: "des_fel_elevator_policy_states_run_source_uq")
+  @@index([policyKind, createdAt], map: "des_fel_elevator_policy_states_policy_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_fel_elevator_policy_states")
+}
+
+model DesFelElevatorDispatchDecisions {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId String @map("run_id") @db.Uuid
+  decisionIndex Int @map("decision_index")
+  simTimeMicros BigInt @map("sim_time_micros") @default(0) @db.BigInt
+  callFloor Int @map("call_floor")
+  carIndex Int @map("car_index")
+  policyKind String @map("policy_kind") @db.VarChar(40)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([runId, decisionIndex], map: "des_fel_elevator_dispatch_decisions_run_index_uq")
+  @@index([runId, simTimeMicros], map: "des_fel_elevator_dispatch_decisions_time_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_fel_elevator_dispatch_decisions")
+}
+
+model DesFelElevatorPomdpBeliefs {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId String @map("run_id") @db.Uuid
+  beliefIndex Int @map("belief_index")
+  simTimeMicros BigInt @map("sim_time_micros") @default(0) @db.BigInt
+  floor Int
+  action String @db.VarChar(32)
+  observation String @db.VarChar(32)
+  emptyProbMicros Int @map("empty_prob_micros") @default(0)
+  waitingProbMicros Int @map("waiting_prob_micros") @default(0)
+  crowdedProbMicros Int @map("crowded_prob_micros") @default(0)
+  belief Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([runId, beliefIndex], map: "des_fel_elevator_pomdp_beliefs_run_index_uq")
+  @@index([runId, floor, simTimeMicros], map: "des_fel_elevator_pomdp_beliefs_floor_time_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_fel_elevator_pomdp_beliefs")
+}
