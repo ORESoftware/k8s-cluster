@@ -7,7 +7,7 @@ use dd_nats_subject_defs::{
 };
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     http::{header, HeaderValue},
     response::{Html, IntoResponse, Response},
@@ -84,6 +84,71 @@ async fn root() -> impl IntoResponse {
 async fn home(State(state): State<AppState>) -> impl IntoResponse {
     record_request("GET", "/home", StatusCode::OK);
     home_document(&state)
+}
+
+fn canonical_grafana_deployment_name(deployment: &str) -> Option<String> {
+    let value = deployment.trim();
+    if value.is_empty() || value.len() > 128 {
+        return None;
+    }
+    if !value
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return None;
+    }
+
+    Some(
+        match value {
+            "billing-server" => "dd-billing-server",
+            "dart-server" => "dd-dart-server",
+            "des-rs" => "dd-des-rs",
+            other => other,
+        }
+        .to_string(),
+    )
+}
+
+fn grafana_deployment_path(deployment: &str) -> String {
+    format!("/grafana/depl/{deployment}")
+}
+
+fn grafana_deployment_dashboard_path(deployment: &str) -> String {
+    format!("/telemetry/d/dd-deployment-drilldown/deployment-drilldown?orgId=1&var-deployment={deployment}")
+}
+
+async fn grafana_deployment_redirect(Path(deployment): Path<String>) -> Response {
+    match canonical_grafana_deployment_name(&deployment) {
+        Some(deployment) => {
+            record_request("GET", "/grafana/depl/{deployment}", StatusCode::FOUND);
+            let location = grafana_deployment_dashboard_path(&deployment);
+            let mut response = Response::new(axum::body::Body::empty());
+            *response.status_mut() = StatusCode::FOUND;
+            if let Ok(value) = HeaderValue::from_str(&location) {
+                response.headers_mut().insert(header::LOCATION, value);
+                response
+            } else {
+                record_request(
+                    "GET",
+                    "/grafana/depl/{deployment}",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to build Grafana deployment URL",
+                )
+                    .into_response()
+            }
+        }
+        None => {
+            record_request("GET", "/grafana/depl/{deployment}", StatusCode::BAD_REQUEST);
+            (
+                StatusCode::BAD_REQUEST,
+                "deployment must be a Kubernetes-safe name",
+            )
+                .into_response()
+        }
+    }
 }
 
 async fn api_docs_html() -> Html<&'static str> {
@@ -340,7 +405,19 @@ fn deployments_section() -> Markup {
 fn deployment_row(row: &DeploymentRow) -> Markup {
     html! {
         tr {
-            td { (code_list(row.deployments)) }
+            td {
+                (code_list(row.deployments))
+                div class="grafana-links" {
+                    @for deployment in row.deployments {
+                        a href=(grafana_deployment_path(deployment)) {
+                            "Grafana"
+                            @if row.deployments.len() > 1 {
+                                " " code { (deployment) }
+                            }
+                        }
+                    }
+                }
+            }
             td {
                 (code_list(row.service))
                 @if let Some(note) = row.service_note {
@@ -541,6 +618,7 @@ static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "POST /scrape", href: Some("/scrape") }, PathEntry { label: "/scrape/strategies", href: Some("/scrape/strategies") }, PathEntry { label: "/scrape/healthz", href: Some("/scrape/healthz") }, PathEntry { label: "/scrape/metrics", href: Some("/scrape/metrics") }], target: "dd-web-scraper Fastify deployment", access: SERVER_AUTH, notes: "Long-running strategy router for native fetch, Cheerio, JSDOM, LinkeDOM, Playwright, Puppeteer, and Browserless scraping." },
     PathRow { paths: &[PathEntry { label: "POST /builds", href: Some("/builds") }, PathEntry { label: "/builds/<jobId>", href: Some("/builds/example-job") }, PathEntry { label: "/builds/<jobId>/logs", href: Some("/builds/example-job/logs") }], target: "dd-build-server Rust CI/CD deployment", access: SERVER_AUTH, notes: "Authenticated repo build queue. Jobs are build-server.v1 JSON, push only to allowlisted ECR prefixes, and deploy only allowlisted manifests/namespaces." },
     PathRow { paths: &[PathEntry { label: "/telemetry/", href: Some("/telemetry/") }], target: "Grafana", access: INTERNAL_ACCESS, notes: "Primary HTML dashboard for Prometheus metrics, Loki logs, Tempo traces, and NATS metrics." },
+    PathRow { paths: &[PathEntry { label: "/grafana/depl/<deployment>", href: Some("/grafana/depl/dd-remote-web-home") }, PathEntry { label: "/grafana/depl/dd-dart-server", href: Some("/grafana/depl/dd-dart-server") }, PathEntry { label: "/grafana/depl/des-rs", href: Some("/grafana/depl/des-rs") }], target: "Grafana deployment drilldown", access: INTERNAL_ACCESS, notes: "Rust web-home redirect into the canonical per-deployment Grafana page, backed by Kubernetes resource metrics plus Loki logs." },
     PathRow { paths: &[PathEntry { label: "/prometheus/", href: Some("/prometheus/") }], target: "Prometheus", access: INTERNAL_ACCESS, notes: "Low-level metrics UI and query surface." },
     PathRow { paths: &[PathEntry { label: "/nats/", href: Some("/nats/") }, PathEntry { label: "/nats-metrics/metrics", href: Some("/nats-metrics/metrics") }], target: "NATS monitor and exporter", access: INTERNAL_ACCESS, notes: "NATS should usually be inspected through Grafana; these paths expose raw health and metrics." },
     PathRow { paths: &[PathEntry { label: "/reaper/", href: Some("/reaper/") }, PathEntry { label: "/cron/", href: Some("/cron/") }], target: "Runtime service status", access: INTERNAL_ACCESS, notes: "Gateway status surfaces for idle reaper and cron scheduler deployments." },
@@ -1001,6 +1079,19 @@ code {
 .path-links a:focus-visible code {
   border-color: rgba(94, 234, 212, 0.62);
   background: rgba(94, 234, 212, 0.1);
+}
+.grafana-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+  font-size: 12px;
+}
+.grafana-links a {
+  color: var(--accent);
+}
+.grafana-links code {
+  font-size: 11px;
 }
 .pill {
   display: inline-flex;
@@ -9948,6 +10039,11 @@ async fn main() {
         .route("/presence-test/", get(presence_test_page))
         .route("/wss-test", get(wss_test_page))
         .route("/wss-test/", get(wss_test_page))
+        .route("/grafana/depl/{deployment}", get(grafana_deployment_redirect))
+        .route(
+            "/grafana/depl/{deployment}/",
+            get(grafana_deployment_redirect),
+        )
         .route("/healthz", get(healthz))
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))

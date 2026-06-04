@@ -16,8 +16,8 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-03-rust-network-mutex-0.1.127-jsonl-rw-regressions'
-        dd.dev/live-mutex-rs-revision: '0c368a11e3b6a972da34c37ff66d897aa75d598d'
+        dd.dev/telemetry-revision: '2026-06-04-rust-network-mutex-broker-client'
+        dd.dev/live-mutex-rs-revision: '7f104183811170694b0e55fa6771b035fb09ea83'
       labels:
         app: dd-rust-network-mutex
     spec:
@@ -82,7 +82,7 @@ spec:
             - name: LMX_RS_GIT_URL
               value: https://github.com/ORESoftware/live-mutex-rs.git
             - name: LMX_RS_GIT_REF
-              value: 0c368a11e3b6a972da34c37ff66d897aa75d598d
+              value: 7f104183811170694b0e55fa6771b035fb09ea83
             - name: HOME
               value: /tmp
             - name: CARGO_HOME

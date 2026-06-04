@@ -1120,6 +1120,230 @@ data:
       "version": 1,
       "weekStart": ""
     }
+  deployment-drilldown.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [
+        {
+          "asDropdown": false,
+          "icon": "external link",
+          "includeVars": true,
+          "keepTime": true,
+          "targetBlank": false,
+          "title": "Workload Fleet",
+          "tooltip": "Open the fleet dashboard with the same selected deployment.",
+          "type": "link",
+          "url": "/telemetry/d/dd-kubernetes-workload-fleet/kubernetes-workload-fleet?var-workload=${deployment}"
+        }
+      ],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "id": 1,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [
+            { "expr": "sum(dd_k8s_workload_available_replicas{workload=\"$deployment\"})", "legendFormat": "available", "refId": "A" },
+            { "expr": "sum(dd_k8s_workload_desired_replicas{workload=\"$deployment\"})", "legendFormat": "desired", "refId": "B" }
+          ],
+          "title": "Available / Desired",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "id": 2,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(dd_k8s_workload_unavailable_replicas{workload=\"$deployment\"})", "refId": "A" } ],
+          "title": "Unavailable Replicas",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "id": 3,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(dd_k8s_event_count{app=\"$deployment\",type=\"Warning\"})", "refId": "A" } ],
+          "title": "Warning Events",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "id": 4,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(up{job=\"$deployment\"})", "refId": "A" } ],
+          "title": "Direct Scrape Up",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": false }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 4 },
+          "id": 5,
+          "options": { "cellHeight": "sm", "footer": { "countRows": false, "fields": "", "reducer": [ "sum" ], "show": false }, "showHeader": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "dd_k8s_workload_desired_replicas{workload=\"$deployment\"}", "format": "table", "instant": true, "refId": "A" } ],
+          "title": "Workload Inventory",
+          "type": "table"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 11 },
+          "id": 6,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_desired_replicas{workload=\"$deployment\"})", "legendFormat": "desired {{namespace}}/{{kind}}/{{workload}}", "refId": "A" },
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_available_replicas{workload=\"$deployment\"})", "legendFormat": "available {{namespace}}/{{kind}}/{{workload}}", "refId": "B" },
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_ready_replicas{workload=\"$deployment\"})", "legendFormat": "ready {{namespace}}/{{kind}}/{{workload}}", "refId": "C" }
+          ],
+          "title": "Desired, Available, Ready",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 11 },
+          "id": 7,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, app, container) (dd_k8s_pod_container_restarts_total{app=\"$deployment\"})", "legendFormat": "restarts {{namespace}}/{{app}}/{{container}}", "refId": "A" },
+            { "expr": "sum by (namespace, app, container, reason) (dd_k8s_pod_container_waiting{app=\"$deployment\"})", "legendFormat": "waiting {{namespace}}/{{app}}/{{container}} {{reason}}", "refId": "B" }
+          ],
+          "title": "Restarts and Waiting Containers",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "cores" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+          "id": 8,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, app, container) (dd_k8s_pod_container_cpu_usage_cores{app=\"$deployment\"})", "legendFormat": "usage {{namespace}}/{{app}}/{{container}}", "refId": "A" },
+            { "expr": "sum by (namespace, app, container) (dd_k8s_pod_container_cpu_limit_cores{app=\"$deployment\"})", "legendFormat": "limit {{namespace}}/{{app}}/{{container}}", "refId": "B" }
+          ],
+          "title": "CPU Usage vs Limit",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "bytes" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
+          "id": 9,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, app, container) (dd_k8s_pod_container_memory_usage_bytes{app=\"$deployment\"})", "legendFormat": "usage {{namespace}}/{{app}}/{{container}}", "refId": "A" },
+            { "expr": "sum by (namespace, app, container) (dd_k8s_pod_container_memory_limit_bytes{app=\"$deployment\"})", "legendFormat": "limit {{namespace}}/{{app}}/{{container}}", "refId": "B" }
+          ],
+          "title": "Memory Usage vs Limit",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+          "id": 10,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, pod) (dd_k8s_pod_condition{app=\"$deployment\",condition=\"Ready\"})", "legendFormat": "ready {{namespace}}/{{pod}}", "refId": "A" },
+            { "expr": "sum by (namespace, pod, phase) (dd_k8s_pod_phase{app=\"$deployment\"})", "legendFormat": "{{namespace}}/{{pod}} {{phase}}", "refId": "B" }
+          ],
+          "title": "Pod Ready State and Phase",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+          "id": 11,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, app, involved_kind, type, reason) (dd_k8s_event_count{app=\"$deployment\"})", "legendFormat": "{{namespace}}/{{app}} {{type}} {{reason}}", "refId": "A" },
+            { "expr": "sum by (namespace, app, container, reason, exit_code) (dd_k8s_pod_container_last_terminated{app=\"$deployment\"})", "legendFormat": "last terminated {{namespace}}/{{app}}/{{container}} {{reason}} {{exit_code}}", "refId": "B" }
+          ],
+          "title": "Kubernetes Events and Last Terminations",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 35 },
+          "id": 12,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [ { "expr": "{deployment=\"$deployment\"}", "refId": "A" } ],
+          "title": "Recent Logs",
+          "type": "logs"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 35 },
+          "id": 13,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [
+            { "expr": "{deployment=\"$deployment\"} |~ \"(?i)(critical|fatal|panic|error|oom|killed|timeout|refused|reset)\"", "refId": "A" },
+            { "expr": "{log_schema=\"dd.log.v1\",deployment=\"$deployment\",severity=~\"WARN|ERROR|FATAL\"}", "refId": "B" }
+          ],
+          "title": "Warning and Error Logs",
+          "type": "logs"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 39,
+      "tags": [ "kubernetes", "deployment", "loki", "prometheus" ],
+      "templating": {
+        "list": [
+          {
+            "current": { "selected": true, "text": "dd-remote-web-home", "value": "dd-remote-web-home" },
+            "datasource": { "type": "prometheus", "uid": "Prometheus" },
+            "definition": "label_values(dd_k8s_workload_desired_replicas, workload)",
+            "hide": 0,
+            "includeAll": false,
+            "multi": false,
+            "name": "deployment",
+            "options": [],
+            "query": "label_values(dd_k8s_workload_desired_replicas, workload)",
+            "refresh": 1,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "time": { "from": "now-30m", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Deployment Drilldown",
+      "uid": "dd-deployment-drilldown",
+      "version": 1,
+      "weekStart": ""
+    }
   kubernetes-workload-fleet.json: |
     {
       "annotations": {
