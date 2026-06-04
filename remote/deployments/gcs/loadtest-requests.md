@@ -21,3 +21,5 @@
 - 2026-06-04 diagnose active 10k-light retry-pressure loadtest while SSM output is still pending.
 - 2026-06-04 snapshot active 10k-light retry-pressure loadtest metrics while proof run is still pending.
 - 2026-06-04 20k-light goroutine-fix validation: 5 loader replicas x 4000 clients, 1.0 msg/(conn*second), 180s.
+- 2026-06-04 20k-medium goroutine-fix validation after 20k-light pass: 5 loader replicas x 4000 clients, 2.5 msg/(conn*second), 180s.
+- 2026-06-04 20k-medium goroutine-fix retry with fewer loader pods: 4 loader replicas x 5000 clients, 2.5 msg/(conn*second), 180s.
