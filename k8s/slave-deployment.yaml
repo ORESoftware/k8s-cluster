@@ -87,6 +87,10 @@ spec:
               value: slave
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: MIP_SOLVER_NATS_CONNECT_ATTEMPTS
+              value: '90'
+            - name: MIP_SOLVER_NATS_CONNECT_RETRY_SECONDS
+              value: '2'
             - name: REDIS_URL
               value: redis://dd-redis-cache.default.svc.cluster.local:6379/0
             - name: MIP_SOLVER_REDIS_KEY_PREFIX
