@@ -45,7 +45,7 @@ data:
         "dd-remote-rest-api,dd-remote-web-home,dd-runtime-config,dd-rust-network-mutex,"
         "dd-rust-vapi-phone,dd-rust-wss-server,dd-selenium-server,dd-spark-pipeline-server,"
         "dd-tempo,dd-thread-fleet-exporter,dd-thread-operator,dd-trading-server,dd-vpn,"
-        "dd-web-scraper,dd-webrtc-signaling,dd-ws-loadtest-rs,"
+        "dd-web-scraper,dd-webrtc-media,dd-webrtc-signaling,dd-ws-loadtest-rs,"
         "dd-ws-loadtest-rs-akkaws-akkastreams,dd-ws-loadtest-rs-akkaws-asyncjava,"
         "dd-ws-loadtest-rs-dart,dd-ws-loadtest-rs-fsharp-rx,dd-ws-loadtest-rs-gcs,"
         "dd-ws-loadtest-rs-go-wss,dd-ws-loadtest-rs-rust-wss,gcs,gcs-kafka,"

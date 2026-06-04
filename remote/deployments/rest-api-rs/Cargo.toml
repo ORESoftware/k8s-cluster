@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 async-nats = "=0.38.0"
-async-graphql = { version = "=7.0.17", default-features = true }
+async-graphql = { version = "=7.2.1", default-features = true }
 axum = { version = "0.7", features = ["macros"] }
 # Single source of truth for the shared RDS Postgres contract. Reads /
 # writes against `app_config`, `lambda_functions`, `agent_remote_dev_*`,

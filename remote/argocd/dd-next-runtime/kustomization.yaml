@@ -60,6 +60,8 @@ resources:
   - dd-remote-web-home.service.yaml
   - dd-webrtc-signaling.deployment.yaml
   - dd-webrtc-signaling.service.yaml
+  - dd-webrtc-media.deployment.yaml
+  - dd-webrtc-media.service.yaml
   - dd-rust-wss-server.deployment.yaml
   - dd-rust-wss-server.service.yaml
   - dd-go-wss-server.deployment.yaml

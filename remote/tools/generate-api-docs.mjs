@@ -25,6 +25,8 @@ const SERVICE_ROUTE_PATHS = new Set([
   '/docs/api',
   '/api/docs',
   '/api/docs.json',
+  '/graphql/schema',
+  '/api/graphql/schema',
   '/api-docs',
   '/api-docs/',
   '/api-docs.json',
@@ -52,6 +54,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'trading-server-rs',
   'wal-gateway-rs',
   'web-home-rs',
+  'webrtc-media-rs',
   'webrtc-signaling-rs',
 ]);
 
@@ -488,12 +491,18 @@ function routePurpose(routeType, route) {
   if (route.path === '/docs/api' || route.path === '/api/docs') {
     return 'Human-readable generated API documentation.';
   }
-  if (route.path === '/api/docs.json') {
-    return 'Machine-readable generated API route metadata.';
-  }
-  if (route.path === '/api-docs' || route.path === '/api-docs/') {
-    return 'Central generated API documentation index.';
-  }
+    if (route.path === '/api/docs.json') {
+      return 'Machine-readable generated API route metadata.';
+    }
+    if (route.path === '/graphql' || route.path === '/api/graphql') {
+      return 'GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.';
+    }
+    if (route.path === '/graphql/schema' || route.path === '/api/graphql/schema') {
+      return 'Machine-readable GraphQL SDL schema for the remote REST API service.';
+    }
+    if (route.path === '/api-docs' || route.path === '/api-docs/') {
+      return 'Central generated API documentation index.';
+    }
   if (route.path === '/api-docs.json') {
     return 'Machine-readable central generated API documentation index.';
   }
@@ -541,12 +550,14 @@ function routeAuth(routeType, route) {
     return 'public';
   }
   if (
-    route.path === '/docs/api' ||
-    route.path === '/api/docs' ||
-    route.path === '/api/docs.json' ||
-    route.path === '/api-docs' ||
-    route.path === '/api-docs/' ||
-    route.path === '/api-docs.json'
+      route.path === '/docs/api' ||
+      route.path === '/api/docs' ||
+      route.path === '/api/docs.json' ||
+      route.path === '/graphql/schema' ||
+      route.path === '/api/graphql/schema' ||
+      route.path === '/api-docs' ||
+      route.path === '/api-docs/' ||
+      route.path === '/api-docs.json'
   ) {
     return 'public';
   }
@@ -682,14 +693,18 @@ async function discoverRustServices() {
       continue;
     }
     const rawRoutes = extractAxumRoutesFromSource(source, main);
-    if (entry.name === 'rest-api-rs') {
-      const dbRoutes = join(deploymentDir, 'src/db_routes.rs');
-      if ((await pathExists(dbRoutes)) && source.includes('/internal/db')) {
-        // Internal DB tooling is intentionally not part of the public REST
-        // docs unless the main router exposes its private mount point.
-        rawRoutes.push(...extractAxumRoutesFromSource(await readUtf8(dbRoutes), dbRoutes, '/internal/db'));
+      if (entry.name === 'rest-api-rs') {
+        const dbRoutes = join(deploymentDir, 'src/db_routes.rs');
+        if ((await pathExists(dbRoutes)) && source.includes('/internal/db')) {
+          // Internal DB tooling is intentionally not part of the public REST
+          // docs unless the main router exposes its private mount point.
+          rawRoutes.push(...extractAxumRoutesFromSource(await readUtf8(dbRoutes), dbRoutes, '/internal/db'));
+        }
+        const graphqlRoutes = join(deploymentDir, 'src/graphql_routes.rs');
+        if ((await pathExists(graphqlRoutes)) && source.includes('graphql_routes::router()')) {
+          rawRoutes.push(...extractAxumRoutesFromSource(await readUtf8(graphqlRoutes), graphqlRoutes));
+        }
       }
-    }
     if (await rustDependsOnRuntimeConfigClient(deploymentDir)) {
       injectRuntimeConfigRoutes(rawRoutes, join(repoRoot, 'remote/libs/runtime-config-client-rs/src/lib.rs'));
     }
@@ -902,6 +917,16 @@ function renderDocsHtml(docs) {
 </tr>`;
     })
     .join('\n');
+  const optionalSummaryRows = [
+    docs.routeTypeCounts['internal-db']
+      ? `      <span>${docs.routeTypeCounts['internal-db']} internal-db</span>`
+      : null,
+    docs.routeTypeCounts['runtime-config']
+      ? `      <span>${docs.routeTypeCounts['runtime-config']} runtime-config</span>`
+      : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -949,9 +974,7 @@ function renderDocsHtml(docs) {
       <span>${docs.routeCount} routes</span>
       <span>${escapeHtml(docs.language)}</span>
       <span>${docs.routeTypeCounts.service ?? 0} service</span>
-      <span>${docs.routeTypeCounts['user-generated'] ?? 0} user-generated</span>
-      ${docs.routeTypeCounts['internal-db'] ? `<span>${docs.routeTypeCounts['internal-db']} internal-db</span>` : ''}
-      ${docs.routeTypeCounts['runtime-config'] ? `<span>${docs.routeTypeCounts['runtime-config']} runtime-config</span>` : ''}
+      <span>${docs.routeTypeCounts['user-generated'] ?? 0} user-generated</span>${optionalSummaryRows ? `\n${optionalSummaryRows}` : ''}
     </div>
   </header>
   <main>

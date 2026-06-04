@@ -32,6 +32,7 @@ default_subscribers=(
   "default|dd-remote-rest-api|http://dd-remote-rest-api.default.svc.cluster.local:8082"
   "default|dd-remote-web-home|http://dd-remote-web-home.default.svc.cluster.local:8080"
   "default|dd-trading-server|http://dd-trading-server.default.svc.cluster.local:8103"
+  "default|dd-webrtc-media|http://dd-webrtc-media.default.svc.cluster.local:8125"
   "default|dd-webrtc-signaling|http://dd-webrtc-signaling.default.svc.cluster.local:8095"
 )
 

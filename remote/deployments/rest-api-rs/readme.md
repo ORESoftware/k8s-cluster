@@ -23,6 +23,9 @@ README is narrative context, not the route inventory source of truth. HTML is av
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `GET /healthz`                                       | liveness/readiness check                                                                                            |
 | `GET /metrics`                                       | Prometheus metrics                                                                                                  |
+| `GET /graphql` / `GET /api/graphql`                  | optional GraphiQL IDE for the typed GraphQL surface                                                                 |
+| `POST /graphql` / `POST /api/graphql`                | GraphQL endpoint for code-first REST API data, data-source health, and guarded cluster subservice calls             |
+| `GET /graphql/schema` / `GET /api/graphql/schema`    | GraphQL SDL schema                                                                                                  |
 | `GET /api/agents/tasks?limit=50`                     | agent threads/tasks/PR snapshot                                                                                     |
 | `GET /api/agents/git-repos?limit=100`                | known git repos registered for remote-dev threads                                                                   |
 | `POST /api/agents/git-repos`                         | upsert a known git repo URL/default branch before launching a thread                                                |
@@ -65,6 +68,27 @@ The public REST API is intentionally domain/code-first:
 - Code-first routes (`/api/agents/*`, `/api/lambdas/*`) keep hand-shaped product behavior,
   validation, fan-out, orchestration, aggregation, and domain joins.
 - There is no generic table-shaped `/api/db/*` product surface.
+- GraphQL follows the same rule: the default schema exposes typed domain queries for tasks,
+  threads, task events, known repos, lambda definitions, and data-source status. It does not expose
+  arbitrary SQL or generic table CRUD.
+
+GraphQL also provides extension points for non-Postgres sources and service-to-service composition:
+
+- Postgres queries reuse the same `AGENT_TASKS_RDS_DATABASE_URL` / `RDS_DATABASE_URL` /
+  `AGENT_TASKS_DATABASE_URL` / `DATABASE_URL` order as the REST routes.
+- CockroachDB status uses the Postgres wire protocol from `COCKROACH_DATABASE_URL`,
+  `COCKROACHDB_DATABASE_URL`, or `CRDB_DATABASE_URL`.
+- Redis status uses `REDIS_URL`, `REDIS_CACHE_URL`, or `DD_REDIS_CACHE_URL`. Set
+  `REST_API_GRAPHQL_REDIS_READS_ENABLED=true` and `REST_API_GRAPHQL_REDIS_KEY_PREFIXES` to enable
+  authenticated `redisGet` reads for explicit key prefixes.
+- Cluster REST/GraphQL subservice calls are disabled by default. To enable them, set
+  `REST_API_GRAPHQL_SERVICE_CALLS_ENABLED=true` and
+  `REST_API_GRAPHQL_SERVICE_ALLOWLIST=name=http://service.namespace.svc.cluster.local:port,...`.
+  These mutations require `X-Agent-Auth` or `X-Server-Auth` and only call named allowlist entries,
+  never caller-supplied absolute URLs.
+- Set `REST_API_GRAPHQL_AUTH_REQUIRED=true` to require the same internal auth for every GraphQL
+  operation. By default only Redis key reads and subservice call mutations require it; the public
+  gateway should still protect `/api/graphql` before forwarding.
 
 Generic database inspection remains an operator-only escape hatch under `/internal/db/*`, disabled
 by default. To mount it for a trusted internal environment, set

@@ -14,6 +14,7 @@ use std::{
 mod api_docs;
 mod container_pool_routes;
 mod db_routes;
+mod graphql_routes;
 mod pg_contract;
 
 use axum::{
@@ -2651,6 +2652,10 @@ async fn fetch_agents_snapshot(limit: i64) -> AgentsSnapshot {
 async fn connect_postgres() -> Result<tokio_postgres::Client, String> {
     let database_url = postgres_database_url()
         .ok_or_else(|| "postgres database URL not configured".to_string())?;
+    connect_postgres_with_url(&database_url).await
+}
+
+async fn connect_postgres_with_url(database_url: &str) -> Result<tokio_postgres::Client, String> {
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     add_rds_root_certificates(&mut root_store)?;
@@ -2658,7 +2663,7 @@ async fn connect_postgres() -> Result<tokio_postgres::Client, String> {
         .with_root_certificates(root_store)
         .with_no_client_auth();
     let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
-    let (client, connection) = tokio_postgres::connect(&database_url, tls)
+    let (client, connection) = tokio_postgres::connect(database_url, tls)
         .await
         .map_err(|error| error.to_string())?;
 
@@ -4996,7 +5001,11 @@ async fn run_cdc_fanout_subscriptions() {
         let result = dd_wal_consumer::Subscription::builder()
             .stream(stream.clone())
             .durable_name(durable.clone())
-            .filter_subject(cdc_table_filter_subject("cdc", "public", "lambda_functions"))
+            .filter_subject(cdc_table_filter_subject(
+                "cdc",
+                "public",
+                "lambda_functions",
+            ))
             .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
                 let nats = nats_for_handler.clone();
                 async move {
@@ -5097,7 +5106,11 @@ async fn run_cdc_fanout_subscriptions() {
         let result = dd_wal_consumer::Subscription::builder()
             .stream(stream.clone())
             .durable_name(durable.clone())
-            .filter_subject(cdc_table_filter_subject("cdc", "public", "agent_remote_dev_events"))
+            .filter_subject(cdc_table_filter_subject(
+                "cdc",
+                "public",
+                "agent_remote_dev_events",
+            ))
             .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
                 let nats = nats_for_handler.clone();
                 async move {
@@ -6551,6 +6564,7 @@ fn app_router() -> Router {
         .route("/docs/api", get(api_docs::html))
         .route("/api/docs", get(api_docs::html))
         .route("/api/docs.json", get(api_docs::json))
+        .merge(graphql_routes::router())
         .merge(code_first_router())
         .merge(dd_runtime_config_client::router())
         .route("/metrics", get(metrics));

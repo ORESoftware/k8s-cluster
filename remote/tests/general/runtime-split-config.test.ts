@@ -221,6 +221,7 @@ test("single-owner runtime workloads stay intentionally recreate", async () => {
     { name: "dd-runtime-config", file: "dd-runtime-config.deployment.yaml" },
     { name: "dd-rust-network-mutex", file: "dd-rust-network-mutex.deployment.yaml" },
     { name: "dd-rust-wss-server", file: "dd-rust-wss-server.deployment.yaml" },
+    { name: "dd-webrtc-media", file: "dd-webrtc-media.deployment.yaml" },
     { name: "dd-webrtc-signaling", file: "dd-webrtc-signaling.deployment.yaml" },
   ];
 

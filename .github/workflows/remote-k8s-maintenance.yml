@@ -94,7 +94,7 @@ on:
         default: "2.5"
 
 concurrency:
-  group: remote-k8s-maintenance
+  group: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-diagnose]') && 'remote-k8s-maintenance-gcs-diagnose') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'remote-k8s-maintenance-gcs-loadtest') || 'remote-k8s-maintenance' }}
   cancel-in-progress: false
 
 permissions:
@@ -2139,11 +2139,28 @@ jobs:
           echo "=== compact GCS pod state and logs ==="
           kubectl -n default get deploy gcs gcs-router -o wide || true
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide || true
+          echo "=== current GCS pod last states ==="
           for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+            echo "--- gcs pod $pod state ---"
+            kubectl -n default get pod "$pod" -o jsonpath='phase={.status.phase} {range .status.containerStatuses[*]}container={.name} ready={.ready} restarts={.restartCount} waiting={.state.waiting.reason} terminated={.state.terminated.reason}:{.state.terminated.exitCode}:{.state.terminated.signal} last={.lastState.terminated.reason}:{.lastState.terminated.exitCode}:{.lastState.terminated.signal} {end}{"\n"}' || true
             echo "--- current logs for pod/$pod ---"
-            kubectl -n default logs "$pod" --all-containers --tail=120 --prefix=true || true
+            kubectl -n default logs "$pod" --all-containers --tail=80 --prefix=true || true
             echo "--- previous logs for pod/$pod ---"
-            kubectl -n default logs "$pod" --all-containers --previous --tail=120 --prefix=true || true
+            kubectl -n default logs "$pod" --all-containers --previous --tail=160 --prefix=true || true
+            echo "--- recent events for pod/$pod ---"
+            kubectl -n default get events --field-selector "involvedObject.name=$pod" --sort-by=.lastTimestamp || true
+          done
+          echo "=== compact router state and upstream summaries ==="
+          for pod in $(kubectl -n default get pods -l app=gcs-router -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+            echo "--- router pod $pod state ---"
+            kubectl -n default get pod "$pod" -o jsonpath='phase={.status.phase} {range .status.containerStatuses[*]}container={.name} ready={.ready} restarts={.restartCount} waiting={.state.waiting.reason} terminated={.state.terminated.reason}:{.state.terminated.exitCode}:{.state.terminated.signal} last={.lastState.terminated.reason}:{.lastState.terminated.exitCode}:{.lastState.terminated.signal} {end}{"\n"}' || true
+            echo "--- router pod $pod upstream summary ---"
+            kubectl -n default logs "$pod" --all-containers --tail=600 --prefix=true 2>/dev/null \
+              | awk '/upstream error/ {n++; if ($0 ~ /connect: connection refused/) refused++; if ($0 ~ /connection reset by peer/) reset++; if (match($0, /peer=[^ ]+/)) peers[substr($0, RSTART, RLENGTH)]++} /peers changed/ {changes++; last=$0} END {printf("upstream_errors=%d refused=%d reset=%d peer_changes=%d\n", n+0, refused+0, reset+0, changes+0); for (p in peers) printf("peer_error_count %s %d\n", p, peers[p]); if (last != "") print "last_peer_change " last}' || true
+            echo "--- router pod $pod recent upstream tail ---"
+            kubectl -n default logs "$pod" --all-containers --tail=600 --prefix=true 2>/dev/null \
+              | grep -E 'upstream error|peers changed|overloaded|rejected|max active|listening|starting' \
+              | tail -30 || true
             echo "--- recent events for pod/$pod ---"
             kubectl -n default get events --field-selector "involvedObject.name=$pod" --sort-by=.lastTimestamp || true
           done
@@ -3278,8 +3295,17 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add remote/ec2/mip-solver-node-last-verification.json
-            git commit -m "Record MIP solver verification result [skip ci]" || true
-            git push origin "HEAD:${GITHUB_REF_NAME:-dev}" || true
+            if git commit -m "Record MIP solver verification result [skip ci]"; then
+              result_branch="${GITHUB_REF_NAME:-dev}"
+              for attempt in 1 2 3; do
+                if git push origin "HEAD:${result_branch}"; then
+                  break
+                fi
+                echo "MIP result push failed; rebasing on origin/${result_branch} attempt ${attempt}/3"
+                git fetch origin "${result_branch}"
+                git rebase "origin/${result_branch}"
+              done
+            fi
           fi
           status="$(jq -r '.Status' /tmp/ssm-invocation.json)"
           test "$status" = "Success"

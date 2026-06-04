@@ -44,6 +44,11 @@ data:
         static_configs:
           - targets:
               - dd-webrtc-signaling.default.svc.cluster.local:8095
+      - job_name: dd-webrtc-media
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-webrtc-media.default.svc.cluster.local:8125
       # dd-dart-server: coordinator (admin) port 8088 serves the unified
       # exposition including the MDP isolate-pool autotuner metrics and the
       # WS adopt / first-frame latency histograms.
