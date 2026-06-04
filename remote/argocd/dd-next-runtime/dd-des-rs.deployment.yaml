@@ -22,8 +22,8 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-03-des-rs-route-healthz-engine-0f96996'
-        dd.dev/des-engine-revision: '0f96996384feeb3d5ac16f1494948e6d58799aab'
+        dd.dev/telemetry-revision: '2026-06-04-soccer-learning-k8s-engine-9ce9838'
+        dd.dev/des-engine-revision: '9ce98383669d11bcc0ebfb0984d3df39bfe180c7'
       labels:
         app: dd-des-rs
     spec:
@@ -141,7 +141,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: 0f96996384feeb3d5ac16f1494948e6d58799aab
+              value: codex/soccer-learning-k8s
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
