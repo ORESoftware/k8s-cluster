@@ -2388,14 +2388,28 @@ jobs:
               python3 - <<'PY' > /tmp/remote-k8s-commands.json
           import json
           import os
+          import re
           import shlex
 
+          push_message = os.environ.get("SSM_COMMAND_ID", "") or ""
+
+          def loadtest_param(name, default):
+              candidates = [name, name.upper()]
+              if name.startswith("loadtest_"):
+                  tail = name[len("loadtest_"):]
+                  candidates.extend([tail, tail.upper()])
+              for candidate in candidates:
+                  match = re.search(r"(?<!\S)" + re.escape(candidate) + r"=([^\s]+)", push_message)
+                  if match:
+                      return match.group(1)
+              return default
+
           rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
-          duration = os.environ.get("LOADTEST_DURATION_SECONDS", "180") or "180"
-          load_label = os.environ.get("LOADTEST_LABEL", "medium") or "medium"
-          loader_replicas = os.environ.get("LOADTEST_LOADER_REPLICAS", "6") or "6"
-          clients_per_replica = os.environ.get("LOADTEST_CLIENTS_PER_REPLICA", "5000") or "5000"
-          messages_per_second = os.environ.get("LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT", "2.5") or "2.5"
+          duration = loadtest_param("loadtest_duration_seconds", os.environ.get("LOADTEST_DURATION_SECONDS", "180") or "180")
+          load_label = loadtest_param("loadtest_label", os.environ.get("LOADTEST_LABEL", "medium") or "medium")
+          loader_replicas = loadtest_param("loadtest_loader_replicas", os.environ.get("LOADTEST_LOADER_REPLICAS", "6") or "6")
+          clients_per_replica = loadtest_param("loadtest_clients_per_replica", os.environ.get("LOADTEST_CLIENTS_PER_REPLICA", "5000") or "5000")
+          messages_per_second = loadtest_param("loadtest_messages_per_second_per_client", os.environ.get("LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT", "2.5") or "2.5")
           script = r'''set -euo pipefail
           proof_log="/tmp/gcs-loadtest-proof-$(date -u +%Y%m%dT%H%M%SZ).log"
           if [ "${LOADTEST_COMPACT_OUTPUT:-true}" = "true" ]; then
