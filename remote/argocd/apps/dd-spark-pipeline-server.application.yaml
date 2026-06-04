@@ -11,10 +11,10 @@ spec:
     path: remote/deployments/spark-pipeline-server/k8s/ec2
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: ai-ml
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
+      - ServerSideApply=true

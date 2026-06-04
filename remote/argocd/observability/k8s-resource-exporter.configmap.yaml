@@ -25,10 +25,10 @@ data:
     PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
     BASE_URL = "https://%s:%s" % (HOST, PORT)
     SCRAPE_TIMEOUT = float(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "5"))
-    DEFAULT_WATCH_NAMESPACES = "ai-ml,default,headlamp,messaging,observability,presence,vpn"
+    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,default,headlamp,kafka,messaging,observability,presence,spark,vpn"
     DEFAULT_WATCH_APPS = (
         "dd-agent-worker-broker,dd-ai-ml-pipeline,dd-akka-ws-server,dd-bastion,"
-        "dd-billing-server,dd-browser-job-runner,dd-browser-test-server,dd-build-server,"
+        "dd-airbyte-postgresql,dd-billing-server,dd-browser-job-runner,dd-browser-test-server,dd-build-server,"
         "dd-container-pool,dd-contract-service,dd-dart-server,dd-des-rs,dd-des-simulator,"
         "dd-dev-server-api,dd-formal-methods-server,dd-formal-methods-service,"
         "dd-fsharp-ws-server,dd-gleam-lambda-runner,dd-gleam-mcp-server,"

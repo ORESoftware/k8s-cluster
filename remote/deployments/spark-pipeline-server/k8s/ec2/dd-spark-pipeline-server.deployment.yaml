@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dd-spark-pipeline-server
-  namespace: default
+  namespace: ai-ml
   labels:
     app: dd-spark-pipeline-server
 spec:
@@ -25,6 +25,8 @@ spec:
     spec:
       automountServiceAccountToken: false
       securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
         runAsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
@@ -38,6 +40,7 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
+            readOnlyRootFilesystem: true
             runAsGroup: 1000
             runAsNonRoot: true
             runAsUser: 1000
@@ -54,12 +57,20 @@ spec:
           args:
             - |
               set -euo pipefail
-              cd /opt/dd-next-1/remote/deployments/spark-pipeline-server
+              work_root=/work/dd-next-1
+              module_dir="${work_root}/remote/deployments/spark-pipeline-server"
+              mkdir -p "${work_root}/remote/deployments" \
+                "${work_root}/remote/libs/pg-defs/generated/jvm" \
+                /work/.m2/repository \
+                /work/tmp
+              cp -R /opt/dd-next-1/remote/deployments/spark-pipeline-server "${work_root}/remote/deployments/"
+              cp -R /opt/dd-next-1/remote/libs/pg-defs/generated/jvm/jooq "${work_root}/remote/libs/pg-defs/generated/jvm/"
+              cd "${module_dir}"
               if [ ! -f target/dd-spark-pipeline-server.jar ]; then
-                echo "Building dd-spark-pipeline-server with Maven..."
-                mvn -B -e -DskipTests package
+                echo "Building dd-spark-pipeline-server with Maven in emptyDir workspace..."
+                mvn -B -e -DskipTests -Dmaven.repo.local=/work/.m2/repository package
               fi
-              exec java $JAVA_OPTS -jar target/dd-spark-pipeline-server.jar
+              exec java $JAVA_OPTS -Djava.io.tmpdir=/work/tmp -jar target/dd-spark-pipeline-server.jar
           env:
             - name: HTTP_HOST
               value: 0.0.0.0
@@ -69,6 +80,10 @@ spec:
               value: '4'
             - name: JAVA_OPTS
               value: -XX:+UseG1GC -XX:MaxRAMPercentage=70 -Dfile.encoding=UTF-8
+            - name: HOME
+              value: /work
+            - name: MAVEN_CONFIG
+              value: /work/.m2
             - name: SPARK_PIPELINE_ALLOW_UNAUTHENTICATED
               value: 'false'
             - name: SERVER_AUTH_SECRET
@@ -127,8 +142,17 @@ spec:
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: workspace
+              mountPath: /work
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
+        - name: workspace
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
