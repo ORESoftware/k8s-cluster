@@ -148,7 +148,7 @@ spec:
             - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
               value: '30s'
             - name: GCS_WS_SIDE_EFFECT_MAX_IN_FLIGHT
-              value: '2048'
+              value: '512'
             # The router pins a conversation to one GCS pod, so local fanout covers
             # hot-path conversation delivery without one RMQ subscriber per socket.
             - name: GCS_WS_ENABLE_RMQ_SUBSCRIPTIONS
