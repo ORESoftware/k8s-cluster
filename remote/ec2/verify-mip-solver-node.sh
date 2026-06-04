@@ -33,12 +33,6 @@ dump_rollout_state() {
           }
         | @json
       ' || true
-  for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o name 2>/dev/null || true); do
-    echo "=== LOGS ${pod} ==="
-    kubectl -n "${namespace}" logs "${pod}" --all-containers --tail=120 || true
-    echo "=== PREV_LOGS ${pod} ==="
-    kubectl -n "${namespace}" logs "${pod}" --all-containers --previous --tail=120 2>/dev/null || true
-  done
   kubectl -n "${namespace}" get deploy,rs,pods,svc,scaledobject,hpa \
     -l app.kubernetes.io/name=dd-in-house-mip-solver-node \
     -o wide || true
@@ -48,6 +42,12 @@ dump_rollout_state() {
   for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o name 2>/dev/null || true); do
     echo "=== DESCRIBE ${pod} ==="
     kubectl -n "${namespace}" describe "${pod}" | tail -100 || true
+  done
+  for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o name 2>/dev/null || true); do
+    echo "=== LOGS ${pod} ==="
+    kubectl -n "${namespace}" logs "${pod}" --all-containers --tail=40 || true
+    echo "=== PREV_LOGS ${pod} ==="
+    kubectl -n "${namespace}" logs "${pod}" --all-containers --previous --tail=40 2>/dev/null || true
   done
 }
 
