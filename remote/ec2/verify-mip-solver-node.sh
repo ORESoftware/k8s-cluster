@@ -15,9 +15,9 @@ restore_argo_selfheal=false
 restore_slave_keda_pause=false
 restore_capacity_apps=false
 
-mip_capacity_apps="${MIP_SOLVER_CAPACITY_ARGO_APPS:-dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs}"
-mip_capacity_targets="${MIP_SOLVER_CAPACITY_TARGETS:-dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs}"
-mip_capacity_app_manifests="${MIP_SOLVER_CAPACITY_APP_MANIFESTS:-remote/argocd/apps/dd-next-runtime.application.yaml remote/argocd/apps/dd-akka-ws-server.application.yaml remote/argocd/apps/dd-dart-server.application.yaml remote/argocd/apps/dd-fsharp-ws-server.application.yaml remote/argocd/apps/dd-gleamlang-server.application.yaml remote/argocd/apps/dd-ws-loadtest-gleam.application.yaml remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml}"
+mip_capacity_apps="${MIP_SOLVER_CAPACITY_ARGO_APPS:-gcs dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs}"
+mip_capacity_targets="${MIP_SOLVER_CAPACITY_TARGETS:-gcs gcs-router dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs}"
+mip_capacity_app_manifests="${MIP_SOLVER_CAPACITY_APP_MANIFESTS:-remote/argocd/apps/gcs.application.yaml remote/argocd/apps/dd-next-runtime.application.yaml remote/argocd/apps/dd-akka-ws-server.application.yaml remote/argocd/apps/dd-dart-server.application.yaml remote/argocd/apps/dd-fsharp-ws-server.application.yaml remote/argocd/apps/dd-gleamlang-server.application.yaml remote/argocd/apps/dd-ws-loadtest-gleam.application.yaml remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml}"
 
 pod_count_for_phase() {
   local phase="$1"
