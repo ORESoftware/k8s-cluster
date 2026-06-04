@@ -98,6 +98,43 @@ echo
 curl -fsS "http://127.0.0.1:${local_port}/readyz"
 echo
 
+echo "=== wait for master to observe 3 slave workers ==="
+python3 - <<PY
+import json
+import sys
+import time
+import urllib.request
+
+port = "${local_port}"
+last = None
+for attempt in range(180):
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/mip-solver-cluster/workers",
+            timeout=5,
+        ) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except Exception as error:
+        last = {"error": str(error)}
+    else:
+        workers = body.get("workers") or []
+        last = {
+            "count": body.get("count", len(workers)),
+            "workers": [worker.get("nodeId") for worker in workers],
+        }
+        if len(workers) >= 3:
+            print(json.dumps(last, sort_keys=True))
+            print("PROOF remote_mip_solver_master_observed_three_slaves=passed")
+            break
+    if attempt < 5 or attempt % 15 == 0:
+        print(json.dumps({"attempt": attempt + 1, "last": last}, sort_keys=True))
+    time.sleep(2)
+else:
+    print("master did not observe 3 slave workers over NATS", file=sys.stderr)
+    print(json.dumps(last, sort_keys=True), file=sys.stderr)
+    raise SystemExit(1)
+PY
+
 echo "=== generate 100 variable / 200 constraint MIP payload ==="
 python3 - <<'PY' >/tmp/dd-mip-solver-100x200.json
 import json
