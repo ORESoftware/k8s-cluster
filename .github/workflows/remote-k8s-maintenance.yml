@@ -74,7 +74,7 @@ concurrency:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   maintenance:
@@ -3193,5 +3193,43 @@ jobs:
             --instance-id "$INSTANCE_ID" \
             --query "{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}" \
             --output json | tee /tmp/ssm-invocation.json
+          if [ "${OPERATION:-}" = "verify-mip-solver-node" ]; then
+            SSM_COMMAND_ID_CAPTURE="$command_id" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          source = Path("/tmp/ssm-invocation.json")
+          output = Path("remote/ec2/mip-solver-node-last-verification.json")
+          data = json.loads(source.read_text())
+
+          def tail(value, limit=16000):
+              value = value or ""
+              return value[-limit:]
+
+          output.write_text(
+              json.dumps(
+                  {
+                      "operation": os.environ.get("OPERATION"),
+                      "runId": os.environ.get("GITHUB_RUN_ID"),
+                      "runAttempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+                      "headSha": os.environ.get("GITHUB_SHA"),
+                      "commandId": os.environ.get("SSM_COMMAND_ID_CAPTURE", ""),
+                      "status": data.get("Status"),
+                      "stdoutTail": tail(data.get("Stdout")),
+                      "stderrTail": tail(data.get("Stderr")),
+                  },
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n"
+          )
+          PY
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add remote/ec2/mip-solver-node-last-verification.json
+            git commit -m "Record MIP solver verification result [skip ci]" || true
+            git push origin "HEAD:${GITHUB_REF_NAME:-dev}" || true
+          fi
           status="$(jq -r '.Status' /tmp/ssm-invocation.json)"
           test "$status" = "Success"
