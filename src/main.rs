@@ -19,7 +19,7 @@ use axum::{
     extract::{DefaultBodyLimit, Path as AxumPath, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use dd_nats_subject_defs::{
@@ -95,6 +95,7 @@ struct AppState {
     sessions: Arc<Mutex<HashMap<String, LiveSession>>>,
     workers: Arc<Mutex<HashMap<String, WorkerNodeStatus>>>,
     solves: Arc<Mutex<HashMap<String, SolveRegistryEntry>>>,
+    cancelled_solves: Arc<Mutex<HashMap<String, CancelInfo>>>,
     metrics: Arc<Metrics>,
 }
 
@@ -108,6 +109,7 @@ struct Metrics {
     subproblem_jobs_redelegated_total: AtomicU64,
     subproblem_jobs_split_total: AtomicU64,
     worker_control_messages_total: AtomicU64,
+    solve_cancel_requests_total: AtomicU64,
     slave_jobs_processed_total: AtomicU64,
     errors_total: AtomicU64,
 }
@@ -166,8 +168,21 @@ struct SolveRegistryEntry {
     started_at_ms: u128,
     updated_at_ms: u128,
     finished_at_ms: Option<u128>,
+    cancel_requested: bool,
+    cancel_requested_at_ms: Option<u128>,
+    cancel_reason: Option<String>,
     warnings: Vec<String>,
     jobs: HashMap<String, JobRegistryEntry>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CancelInfo {
+    solve_id: String,
+    request_id: Option<String>,
+    reason: String,
+    requested_by: String,
+    requested_at_ms: u128,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -177,6 +192,13 @@ struct SolveHttpRequest {
     problem: Option<MipProblemSpec>,
     commands: Option<Vec<Value>>,
     options: Option<SolveOptions>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CancelSolveRequest {
+    reason: Option<String>,
+    requested_by: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -2044,6 +2066,184 @@ fn should_redelegate_result(
     result.status == "error" && retry_index < max_retries
 }
 
+fn terminal_solve_status(status: &str) -> bool {
+    matches!(
+        status,
+        "optimal" | "infeasible" | "unbounded" | "timeout" | "error" | "cancelled"
+    )
+}
+
+fn resolve_solve_id(solves: &HashMap<String, SolveRegistryEntry>, key: &str) -> Option<String> {
+    if solves.contains_key(key) {
+        return Some(key.to_string());
+    }
+    solves
+        .values()
+        .find(|solve| solve.request_id == key)
+        .map(|solve| solve.solve_id.clone())
+}
+
+fn solve_cancel_info(state: &AppState, solve_id: &str) -> Option<CancelInfo> {
+    state
+        .cancelled_solves
+        .lock()
+        .expect("cancelled solves mutex poisoned")
+        .get(solve_id)
+        .cloned()
+}
+
+fn solve_cancel_requested(state: &AppState, solve_id: &str) -> bool {
+    solve_cancel_info(state, solve_id).is_some()
+}
+
+fn request_solve_cancel(
+    state: &AppState,
+    key: &str,
+    reason: String,
+    requested_by: String,
+) -> Result<CancelInfo, String> {
+    let now = now_ms();
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let solve_id = resolve_solve_id(&solves, key)
+        .ok_or_else(|| format!("solve or request id not found: {key}"))?;
+    let Some(solve) = solves.get_mut(&solve_id) else {
+        return Err(format!("solve not found after lookup: {solve_id}"));
+    };
+    if terminal_solve_status(&solve.status) && solve.status != "cancelled" {
+        return Err(format!(
+            "solve {} is already terminal with status {}",
+            solve.solve_id, solve.status
+        ));
+    }
+
+    solve.cancel_requested = true;
+    solve.cancel_requested_at_ms.get_or_insert(now);
+    solve.cancel_reason.get_or_insert_with(|| reason.clone());
+    if solve.finished_at_ms.is_none() {
+        solve.status = "cancelling".to_string();
+    }
+    solve.updated_at_ms = now;
+    let info = CancelInfo {
+        solve_id: solve.solve_id.clone(),
+        request_id: Some(solve.request_id.clone()),
+        reason,
+        requested_by,
+        requested_at_ms: now,
+    };
+    drop(solves);
+
+    state
+        .cancelled_solves
+        .lock()
+        .expect("cancelled solves mutex poisoned")
+        .insert(solve_id, info.clone());
+    state
+        .metrics
+        .solve_cancel_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(info)
+}
+
+fn cleanup_finished_solve(
+    state: &AppState,
+    key: &str,
+) -> Result<Option<SolveRegistryEntry>, String> {
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve_id) = resolve_solve_id(&solves, key) else {
+        return Err(format!("solve or request id not found: {key}"));
+    };
+    let finished = solves
+        .get(&solve_id)
+        .and_then(|solve| solve.finished_at_ms)
+        .is_some();
+    if !finished {
+        return Ok(None);
+    }
+    let removed = solves.remove(&solve_id);
+    drop(solves);
+    state
+        .cancelled_solves
+        .lock()
+        .expect("cancelled solves mutex poisoned")
+        .remove(&solve_id);
+    Ok(removed)
+}
+
+fn track_solve_cancelled(
+    state: &AppState,
+    solve_id: &str,
+    reason: &str,
+) -> Option<SolveRegistryEntry> {
+    let now = now_ms();
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let solve = solves.get_mut(solve_id)?;
+    solve.status = "cancelled".to_string();
+    solve.cancel_requested = true;
+    solve.cancel_requested_at_ms.get_or_insert(now);
+    solve
+        .cancel_reason
+        .get_or_insert_with(|| reason.to_string());
+    solve.updated_at_ms = now;
+    solve.finished_at_ms = Some(now);
+    for job in solve.jobs.values_mut() {
+        if job.finished_at_ms.is_none() {
+            job.status = "cancelled".to_string();
+            job.finished_at_ms = Some(now);
+            job.error.get_or_insert_with(|| reason.to_string());
+        }
+    }
+    Some(solve.clone())
+}
+
+fn cancelled_solve_response(
+    state: &AppState,
+    solve_id: String,
+    request_id: String,
+    revision: u64,
+    distributed: bool,
+    mut warnings: Vec<String>,
+    reason: String,
+) -> SolveResponse {
+    warnings.push(format!("solve cancelled: {reason}"));
+    let entry = track_solve_cancelled(state, &solve_id, &reason);
+    let (jobs_expected, jobs_published, jobs_completed, jobs_redelegated, jobs_split) = entry
+        .as_ref()
+        .map(|entry| {
+            (
+                entry.jobs_expected,
+                entry.jobs_published,
+                entry.jobs_completed,
+                entry.jobs_redelegated,
+                entry.jobs_split,
+            )
+        })
+        .unwrap_or_default();
+    SolveResponse {
+        ok: false,
+        solve_id,
+        request_id,
+        status: "cancelled".to_string(),
+        revision,
+        z: None,
+        x: Vec::new(),
+        best_bound: None,
+        gap: None,
+        lp: None,
+        jobs_expected,
+        jobs_published,
+        jobs_completed,
+        jobs_redelegated,
+        jobs_split,
+        timed_out: false,
+        distributed,
+        node_id: state.node_id.clone(),
+        role: state.role,
+        gpu: aggregate_gpu_status(&[]),
+        warnings,
+        generated_at_ms: now_ms(),
+    }
+}
+
 fn track_solve_started(
     state: &AppState,
     solve_id: &str,
@@ -2799,6 +2999,53 @@ fn value_str(value: &Value, key: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+fn record_cancel_control_frame(state: &AppState, frame: &Value) -> Result<bool, String> {
+    if frame.get("service").and_then(Value::as_str) != Some(SERVICE_NAME) {
+        return Ok(false);
+    }
+    if frame.get("commandName").and_then(Value::as_str) != Some("cancel-solve") {
+        return Ok(false);
+    }
+    let payload = frame.get("payload").unwrap_or(&Value::Null);
+    let solve_id =
+        value_str(payload, "solveId").ok_or_else(|| "cancel frame missing solveId".to_string())?;
+    let reason = value_str(payload, "reason").unwrap_or_else(|| "cancel requested".to_string());
+    let requested_by = value_str(payload, "requestedBy")
+        .or_else(|| value_str(frame, "nodeId"))
+        .unwrap_or_else(|| "unknown".to_string());
+    let requested_at_ms = payload
+        .get("requestedAtMs")
+        .and_then(Value::as_u64)
+        .map(u128::from)
+        .or_else(|| frame.get("timeMs").and_then(Value::as_u64).map(u128::from))
+        .unwrap_or_else(now_ms);
+    let request_id = value_str(payload, "requestId");
+    let info = CancelInfo {
+        solve_id: solve_id.clone(),
+        request_id,
+        reason: reason.clone(),
+        requested_by,
+        requested_at_ms,
+    };
+    state
+        .cancelled_solves
+        .lock()
+        .expect("cancelled solves mutex poisoned")
+        .insert(solve_id.clone(), info);
+
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    if let Some(solve) = solves.get_mut(&solve_id) {
+        solve.cancel_requested = true;
+        solve.cancel_requested_at_ms.get_or_insert(requested_at_ms);
+        solve.cancel_reason.get_or_insert(reason);
+        if solve.finished_at_ms.is_none() {
+            solve.status = "cancelling".to_string();
+        }
+        solve.updated_at_ms = now_ms();
+    }
+    Ok(true)
+}
+
 fn record_worker_control_frame(state: &AppState, frame: &Value) -> Result<(), String> {
     if frame.get("service").and_then(Value::as_str) != Some(SERVICE_NAME) {
         return Ok(());
@@ -2963,6 +3210,39 @@ async fn build_result_consumer(
         .await?)
 }
 
+async fn finish_cancelled_solve(
+    state: &AppState,
+    solve_id: String,
+    request_id: String,
+    revision: u64,
+    distributed: bool,
+    warnings: Vec<String>,
+    reason: String,
+) -> SolveResponse {
+    let response = cancelled_solve_response(
+        state,
+        solve_id,
+        request_id,
+        revision,
+        distributed,
+        warnings,
+        reason,
+    );
+    finalize_solve_state(state, &response).await;
+    publish_event(
+        state,
+        "solve-cancelled",
+        json!({
+            "solveId": &response.solve_id,
+            "requestId": &response.request_id,
+            "jobsPublished": response.jobs_published,
+            "jobsCompleted": response.jobs_completed,
+        }),
+    )
+    .await;
+    response
+}
+
 async fn solve_problem_distributed(
     state: AppState,
     request_id: String,
@@ -3001,6 +3281,19 @@ async fn solve_problem_distributed(
     .await;
     snapshot_solve_state(&state, &solve_id).await;
     snapshot_solve_frontier(&state, &solve_id, &jobs).await;
+    if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+        let response = finish_cancelled_solve(
+            &state,
+            solve_id,
+            request_id,
+            revision,
+            state.nats.is_some(),
+            warnings,
+            cancel.reason,
+        )
+        .await;
+        return Ok(response);
+    }
     if jobs.is_empty() {
         let response = aggregate_results(
             solve_id,
@@ -3031,9 +3324,35 @@ async fn solve_problem_distributed(
         let max_retries = options.max_job_retries.unwrap_or(2);
         let mut pending: VecDeque<SubproblemJob> = jobs.iter().cloned().collect();
         while let Some(initial_job) = pending.pop_front() {
+            if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+                let response = finish_cancelled_solve(
+                    &state,
+                    solve_id,
+                    request_id,
+                    revision,
+                    false,
+                    warnings,
+                    cancel.reason,
+                )
+                .await;
+                return Ok(response);
+            }
             let mut job = initial_job;
             let mut retry_index = job_retry_index(&job.job_id);
             loop {
+                if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+                    let response = finish_cancelled_solve(
+                        &state,
+                        solve_id,
+                        request_id,
+                        revision,
+                        false,
+                        warnings,
+                        cancel.reason,
+                    )
+                    .await;
+                    return Ok(response);
+                }
                 jobs_published += 1;
                 record_job_submitted(&state, &job).await;
                 let node = state.node_id.clone();
@@ -3042,6 +3361,19 @@ async fn solve_problem_distributed(
                     tokio::task::spawn_blocking(move || solve_subproblem(attempt_job, node))
                         .await
                         .map_err(|err| format!("local solve task failed: {err}"))?;
+                if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+                    let response = finish_cancelled_solve(
+                        &state,
+                        solve_id,
+                        request_id,
+                        revision,
+                        false,
+                        warnings,
+                        cancel.reason,
+                    )
+                    .await;
+                    return Ok(response);
+                }
                 if result.status == "split" && !result.child_jobs.is_empty() {
                     let child_count = result.child_jobs.len();
                     let child_jobs = result.child_jobs.clone();
@@ -3113,6 +3445,19 @@ async fn solve_problem_distributed(
 
     let mut first_job_sequence = None;
     for job in &jobs {
+        if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+            let response = finish_cancelled_solve(
+                &state,
+                solve_id,
+                request_id,
+                revision,
+                true,
+                warnings,
+                cancel.reason,
+            )
+            .await;
+            return Ok(response);
+        }
         let sequence = publish_subproblem_job(&nats, &state.jobs_subject, job).await?;
         first_job_sequence.get_or_insert(sequence);
         record_job_submitted(&state, job).await;
@@ -3154,6 +3499,19 @@ async fn solve_problem_distributed(
     let mut completed_job_ids = HashSet::new();
     let mut timed_out = false;
     while results.len() < jobs_expected {
+        if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+            let response = finish_cancelled_solve(
+                &state,
+                solve_id,
+                request_id,
+                revision,
+                true,
+                warnings,
+                cancel.reason,
+            )
+            .await;
+            return Ok(response);
+        }
         let now = Instant::now();
         if now >= deadline {
             timed_out = true;
@@ -3174,6 +3532,20 @@ async fn solve_problem_distributed(
                                 .metrics
                                 .subproblem_jobs_completed_total
                                 .fetch_add(1, Ordering::Relaxed);
+                            if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+                                let _ = message.ack().await;
+                                let response = finish_cancelled_solve(
+                                    &state,
+                                    solve_id,
+                                    request_id,
+                                    revision,
+                                    true,
+                                    warnings,
+                                    cancel.reason,
+                                )
+                                .await;
+                                return Ok(response);
+                            }
                             let retry_index = retry_index_by_job_id
                                 .get(&result.job_id)
                                 .copied()
@@ -3184,6 +3556,20 @@ async fn solve_problem_distributed(
                                 let mut published_children = Vec::with_capacity(child_count);
                                 let mut publish_error = None;
                                 for child in child_jobs {
+                                    if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+                                        let _ = message.ack().await;
+                                        let response = finish_cancelled_solve(
+                                            &state,
+                                            solve_id,
+                                            request_id,
+                                            revision,
+                                            true,
+                                            warnings,
+                                            cancel.reason,
+                                        )
+                                        .await;
+                                        return Ok(response);
+                                    }
                                     match publish_subproblem_job(&nats, &state.jobs_subject, &child)
                                         .await
                                     {
@@ -3261,6 +3647,20 @@ async fn solve_problem_distributed(
                                 };
                                 let next_retry_index = retry_index + 1;
                                 let retry_job = redelegated_job(&original_job, next_retry_index);
+                                if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+                                    let _ = message.ack().await;
+                                    let response = finish_cancelled_solve(
+                                        &state,
+                                        solve_id,
+                                        request_id,
+                                        revision,
+                                        true,
+                                        warnings,
+                                        cancel.reason,
+                                    )
+                                    .await;
+                                    return Ok(response);
+                                }
                                 match publish_subproblem_job(&nats, &state.jobs_subject, &retry_job)
                                     .await
                                 {
@@ -3449,6 +3849,9 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
             "# HELP dd_mip_solver_solve_requests_total Total solve requests handled by this node.\n",
             "# TYPE dd_mip_solver_solve_requests_total counter\n",
             "dd_mip_solver_solve_requests_total {}\n",
+            "# HELP dd_mip_solver_solve_cancel_requests_total Total top-level solve cancellation requests accepted by this node.\n",
+            "# TYPE dd_mip_solver_solve_cancel_requests_total counter\n",
+            "dd_mip_solver_solve_cancel_requests_total {}\n",
             "# HELP dd_mip_solver_subproblem_jobs_published_total Total NATS subproblem jobs published by masters.\n",
             "# TYPE dd_mip_solver_subproblem_jobs_published_total counter\n",
             "dd_mip_solver_subproblem_jobs_published_total {}\n",
@@ -3488,6 +3891,7 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         m.http_requests_total.load(Ordering::Relaxed),
         m.stream_events_total.load(Ordering::Relaxed),
         m.solve_requests_total.load(Ordering::Relaxed),
+        m.solve_cancel_requests_total.load(Ordering::Relaxed),
         published,
         completed,
         in_flight,
@@ -3697,6 +4101,112 @@ async fn cluster_solves(State(state): State<AppState>) -> Response {
     )
 }
 
+async fn publish_solve_cancel(state: &AppState, info: &CancelInfo) {
+    publish_control(
+        state,
+        "cancel-solve",
+        json!({
+            "solveId": &info.solve_id,
+            "requestId": &info.request_id,
+            "reason": &info.reason,
+            "requestedBy": &info.requested_by,
+            "requestedAtMs": info.requested_at_ms,
+        }),
+    )
+    .await;
+    publish_event(
+        state,
+        "solve-cancel-requested",
+        json!({
+            "solveId": &info.solve_id,
+            "requestId": &info.request_id,
+            "reason": &info.reason,
+            "requestedBy": &info.requested_by,
+        }),
+    )
+    .await;
+}
+
+async fn cancel_solve_key(state: AppState, key: String, input: CancelSolveRequest) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if state.role != NodeRole::Master {
+        return response_json(
+            StatusCode::CONFLICT,
+            json!({"ok":false,"error":"this pod booted as slave and will not cancel master solves"}),
+        );
+    }
+    let reason = input
+        .reason
+        .unwrap_or_else(|| "cancel requested by client".to_string());
+    let requested_by = input.requested_by.unwrap_or_else(|| state.node_id.clone());
+    match request_solve_cancel(&state, &key, reason, requested_by) {
+        Ok(info) => {
+            snapshot_solve_state(&state, &info.solve_id).await;
+            publish_solve_cancel(&state, &info).await;
+            response_json(
+                StatusCode::ACCEPTED,
+                json!({
+                    "ok": true,
+                    "status": "cancelling",
+                    "solveId": info.solve_id,
+                    "requestId": info.request_id,
+                    "reason": info.reason,
+                    "requestedBy": info.requested_by,
+                    "requestedAtMs": info.requested_at_ms,
+                }),
+            )
+        }
+        Err(error) => response_json(StatusCode::NOT_FOUND, json!({"ok":false,"error":error})),
+    }
+}
+
+async fn cancel_solve(
+    State(state): State<AppState>,
+    AxumPath(solve_id): AxumPath<String>,
+    Json(input): Json<CancelSolveRequest>,
+) -> Response {
+    cancel_solve_key(state, solve_id, input).await
+}
+
+async fn cancel_solve_default(
+    State(state): State<AppState>,
+    AxumPath(solve_id): AxumPath<String>,
+) -> Response {
+    match cleanup_finished_solve(&state, &solve_id) {
+        Ok(Some(entry)) => {
+            state
+                .metrics
+                .http_requests_total
+                .fetch_add(1, Ordering::Relaxed);
+            return response_json(
+                StatusCode::OK,
+                json!({
+                    "ok": true,
+                    "status": "cleaned",
+                    "solveId": entry.solve_id,
+                    "requestId": entry.request_id,
+                    "previousStatus": entry.status,
+                    "jobsRemoved": entry.jobs.len(),
+                }),
+            );
+        }
+        Ok(None) => {}
+        Err(_) => {}
+    }
+    cancel_solve_key(state, solve_id, CancelSolveRequest::default()).await
+}
+
+async fn cancel_request(
+    State(state): State<AppState>,
+    AxumPath(request_id): AxumPath<String>,
+    Json(input): Json<CancelSolveRequest>,
+) -> Response {
+    cancel_solve_key(state, request_id, input).await
+}
+
 async fn solve_session(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
@@ -3804,6 +4314,9 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
     let consumer_name = env_value("MIP_SOLVER_NATS_CONSUMER", MIP_SOLVER_WORKERS_QUEUE_GROUP);
     let worker_heartbeat_interval =
         Duration::from_secs(env_u64("MIP_SOLVER_WORKER_HEARTBEAT_SECONDS", 10).max(1));
+    let max_in_flight = env_usize("MIP_SOLVER_WORKER_MAX_IN_FLIGHT", 5).clamp(1, 128);
+    let saturation_retry =
+        Duration::from_secs(env_u64("MIP_SOLVER_WORKER_SATURATION_RETRY_SECONDS", 180).max(1));
     let ack_wait = Duration::from_secs(env_u64("MIP_SOLVER_ACK_WAIT_SECONDS", 600));
     let max_ack_pending = env_u64("MIP_SOLVER_MAX_ACK_PENDING", 32) as i64;
     let max_deliver = env_u64("MIP_SOLVER_MAX_DELIVER", 5) as i64;
@@ -3829,14 +4342,9 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
         consumer_name.clone(),
         worker_heartbeat_interval,
     ));
+    let worker_slots = Arc::new(tokio::sync::Semaphore::new(max_in_flight));
 
     while let Some(message) = messages.next().await {
-        publish_control(
-            &state,
-            "request-work",
-            json!({"consumer": &consumer_name, "jobsSubject": &state.jobs_subject}),
-        )
-        .await;
         let message = match message {
             Ok(message) => message,
             Err(error) => {
@@ -3852,48 +4360,152 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                 continue;
             }
         };
+        if solve_cancel_requested(&state, &job.solve_id) {
+            publish_control(
+                &state,
+                "worker-skipped-cancelled",
+                json!({
+                    "consumer": &consumer_name,
+                    "jobId": &job.job_id,
+                    "solveId": &job.solve_id,
+                }),
+            )
+            .await;
+            let _ = message.ack().await;
+            continue;
+        }
+        let permit = match worker_slots.clone().try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => {
+                publish_control(
+                    &state,
+                    "worker-saturated",
+                    json!({
+                        "consumer": &consumer_name,
+                        "jobId": &job.job_id,
+                        "solveId": &job.solve_id,
+                        "maxInFlight": max_in_flight,
+                        "retryAfterSeconds": saturation_retry.as_secs(),
+                    }),
+                )
+                .await;
+                let _ = message
+                    .ack_with(async_nats::jetstream::AckKind::Nak(Some(saturation_retry)))
+                    .await;
+                continue;
+            }
+        };
         let worker_node = state.node_id.clone();
-        let result =
-            match tokio::task::spawn_blocking(move || solve_subproblem(job, worker_node)).await {
-                Ok(result) => result,
+        let state_for_task = state.clone();
+        let nats_for_task = nats.clone();
+        let consumer_name_for_task = consumer_name.clone();
+        tokio::spawn(async move {
+            let _permit = permit;
+            publish_control(
+                &state_for_task,
+                "request-work",
+                json!({
+                    "consumer": &consumer_name_for_task,
+                    "jobsSubject": &state_for_task.jobs_subject,
+                    "maxInFlight": max_in_flight,
+                }),
+            )
+            .await;
+            if solve_cancel_requested(&state_for_task, &job.solve_id) {
+                publish_control(
+                    &state_for_task,
+                    "worker-skipped-cancelled",
+                    json!({
+                        "consumer": &consumer_name_for_task,
+                        "jobId": &job.job_id,
+                        "solveId": &job.solve_id,
+                    }),
+                )
+                .await;
+                let _ = message.ack().await;
+                return;
+            }
+            let result =
+                match tokio::task::spawn_blocking(move || solve_subproblem(job, worker_node)).await
+                {
+                    Ok(result) => result,
+                    Err(error) => {
+                        eprintln!("mip solver worker task failed: {error}");
+                        let _ = message
+                            .ack_with(async_nats::jetstream::AckKind::Nak(Some(
+                                Duration::from_secs(5),
+                            )))
+                            .await;
+                        return;
+                    }
+                };
+            if solve_cancel_requested(&state_for_task, &result.solve_id) {
+                publish_control(
+                    &state_for_task,
+                    "worker-discarded-cancelled-result",
+                    json!({
+                        "consumer": &consumer_name_for_task,
+                        "jobId": &result.job_id,
+                        "solveId": &result.solve_id,
+                        "status": &result.status,
+                    }),
+                )
+                .await;
+                let _ = message.ack().await;
+                return;
+            }
+            let payload = match serde_json::to_vec(&result) {
+                Ok(payload) => payload,
                 Err(error) => {
-                    eprintln!("mip solver worker task failed: {error}");
+                    state_for_task
+                        .metrics
+                        .errors_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    eprintln!("mip solver result serialization failed: {error}");
                     let _ = message
                         .ack_with(async_nats::jetstream::AckKind::Nak(Some(
                             Duration::from_secs(5),
                         )))
                         .await;
-                    continue;
+                    return;
                 }
             };
-        let payload = serde_json::to_vec(&result)?;
-        jetstream_publish_ack(&nats, &state.results_subject, payload)
-            .await
-            .map_err(|err| -> Box<dyn Error + Send + Sync> {
-                Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("publish subproblem result: {err}"),
-                ))
-            })?;
-        publish_control(
-            &state,
-            "worker-completed",
-            json!({
-                "consumer": &consumer_name,
-                "jobId": &result.job_id,
-                "solveId": &result.solve_id,
-                "status": &result.status,
-                "resultsSubject": &state.results_subject,
-            }),
-        )
-        .await;
-        state
-            .metrics
-            .slave_jobs_processed_total
-            .fetch_add(1, Ordering::Relaxed);
-        if let Err(error) = message.ack().await {
-            eprintln!("mip solver job ack failed: {error}");
-        }
+            if let Err(error) =
+                jetstream_publish_ack(&nats_for_task, &state_for_task.results_subject, payload)
+                    .await
+            {
+                state_for_task
+                    .metrics
+                    .errors_total
+                    .fetch_add(1, Ordering::Relaxed);
+                eprintln!("publish subproblem result failed: {error}");
+                let _ = message
+                    .ack_with(async_nats::jetstream::AckKind::Nak(Some(
+                        Duration::from_secs(5),
+                    )))
+                    .await;
+                return;
+            }
+            publish_control(
+                &state_for_task,
+                "worker-completed",
+                json!({
+                    "consumer": &consumer_name_for_task,
+                    "jobId": &result.job_id,
+                    "solveId": &result.solve_id,
+                    "status": &result.status,
+                    "resultsSubject": &state_for_task.results_subject,
+                }),
+            )
+            .await;
+            state_for_task
+                .metrics
+                .slave_jobs_processed_total
+                .fetch_add(1, Ordering::Relaxed);
+            if let Err(error) = message.ack().await {
+                eprintln!("mip solver job ack failed: {error}");
+            }
+        });
     }
     Ok(())
 }
@@ -3912,6 +4524,21 @@ async fn run_master_control_listener(state: AppState) -> Result<(), Box<dyn Erro
     while let Some(message) = messages.next().await {
         match serde_json::from_slice::<Value>(&message.payload) {
             Ok(frame) => {
+                match record_cancel_control_frame(&state, &frame) {
+                    Ok(true) => {
+                        state
+                            .metrics
+                            .worker_control_messages_total
+                            .fetch_add(1, Ordering::Relaxed);
+                        continue;
+                    }
+                    Ok(false) => {}
+                    Err(error) => {
+                        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                        eprintln!("mip solver cancel control frame ignored: {error}");
+                        continue;
+                    }
+                }
                 if let Err(error) = record_worker_control_frame(&state, &frame) {
                     state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
                     eprintln!("mip solver control frame ignored: {error}");
@@ -3985,6 +4612,18 @@ fn app_router(state: AppState) -> Router {
         .route("/metrics", get(metrics))
         .route("/mip-solver-cluster/workers", get(workers))
         .route("/mip-solver-cluster/solves", get(cluster_solves))
+        .route(
+            "/mip-solver-cluster/solves/:solve_id",
+            delete(cancel_solve_default),
+        )
+        .route(
+            "/mip-solver-cluster/solves/:solve_id/cancel",
+            post(cancel_solve),
+        )
+        .route(
+            "/mip-solver-cluster/requests/:request_id/cancel",
+            post(cancel_request),
+        )
         .route("/workers", get(workers))
         .route("/model/example", get(example))
         .route("/solve", post(solve_http))
@@ -4049,21 +4688,22 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         sessions: Arc::new(Mutex::new(HashMap::new())),
         workers: Arc::new(Mutex::new(HashMap::new())),
         solves: Arc::new(Mutex::new(HashMap::new())),
+        cancelled_solves: Arc::new(Mutex::new(HashMap::new())),
         metrics: Arc::new(Metrics::default()),
     };
+
+    let control_state = state.clone();
+    tokio::spawn(async move {
+        if let Err(error) = run_master_control_listener(control_state).await {
+            eprintln!("mip solver control listener stopped: {error}");
+        }
+    });
 
     if state.role == NodeRole::Slave {
         let worker_state = state.clone();
         tokio::spawn(async move {
             if let Err(error) = run_slave(worker_state).await {
                 eprintln!("mip solver slave loop stopped: {error}");
-            }
-        });
-    } else {
-        let control_state = state.clone();
-        tokio::spawn(async move {
-            if let Err(error) = run_master_control_listener(control_state).await {
-                eprintln!("mip solver master control listener stopped: {error}");
             }
         });
     }
@@ -4105,6 +4745,7 @@ mod tests {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             workers: Arc::new(Mutex::new(HashMap::new())),
             solves: Arc::new(Mutex::new(HashMap::new())),
+            cancelled_solves: Arc::new(Mutex::new(HashMap::new())),
             metrics: Arc::new(Metrics::default()),
         }
     }
@@ -4226,6 +4867,21 @@ mod tests {
             .uri(path)
             .header("content-type", "application/json")
             .body(Body::from(payload.to_string()))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), MAX_HTTP_BODY_BYTES)
+            .await
+            .unwrap();
+        let value = serde_json::from_slice(&body).unwrap();
+        (status, value)
+    }
+
+    async fn delete_json(app: Router, path: &str) -> (StatusCode, Value) {
+        let request = Request::builder()
+            .method(Method::DELETE)
+            .uri(path)
+            .body(Body::empty())
             .unwrap();
         let response = app.oneshot(request).await.unwrap();
         let status = response.status();
@@ -5065,6 +5721,140 @@ mod tests {
         assert_eq!(jobs.len(), 1);
         let job = jobs.values().next().expect("one job");
         assert_eq!(job.get("status"), Some(&json!("optimal")));
+    }
+
+    #[tokio::test]
+    async fn cancel_endpoint_marks_running_solve_by_request_id() {
+        let state = test_state(NodeRole::Master);
+        state.solves.lock().expect("solves mutex poisoned").insert(
+            "solve-cancel-test".to_string(),
+            SolveRegistryEntry {
+                solve_id: "solve-cancel-test".to_string(),
+                request_id: "request-cancel-test".to_string(),
+                status: "running".to_string(),
+                jobs_expected: 4,
+                jobs_published: 2,
+                started_at_ms: 1000,
+                updated_at_ms: 1000,
+                ..SolveRegistryEntry::default()
+            },
+        );
+        let app = app_router(state.clone());
+
+        let (status, body) = post_json(
+            app,
+            "/mip-solver-cluster/requests/request-cancel-test/cancel",
+            json!({"reason":"client changed the model","requestedBy":"unit-test"}),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::ACCEPTED);
+        assert_eq!(body.get("ok"), Some(&json!(true)));
+        assert_eq!(body.get("status"), Some(&json!("cancelling")));
+        assert_eq!(body.get("solveId"), Some(&json!("solve-cancel-test")));
+        assert!(solve_cancel_requested(&state, "solve-cancel-test"));
+        let solves = state.solves.lock().expect("solves mutex poisoned");
+        let solve = solves.get("solve-cancel-test").unwrap();
+        assert_eq!(solve.status, "cancelling");
+        assert!(solve.cancel_requested);
+        assert_eq!(
+            solve.cancel_reason.as_deref(),
+            Some("client changed the model")
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_endpoint_cleans_finished_solve_from_memory() {
+        let state = test_state(NodeRole::Master);
+        state.solves.lock().expect("solves mutex poisoned").insert(
+            "solve-clean-test".to_string(),
+            SolveRegistryEntry {
+                solve_id: "solve-clean-test".to_string(),
+                request_id: "request-clean-test".to_string(),
+                status: "cancelled".to_string(),
+                jobs_expected: 1,
+                jobs_published: 1,
+                started_at_ms: 1000,
+                updated_at_ms: 1200,
+                finished_at_ms: Some(1200),
+                cancel_requested: true,
+                cancel_requested_at_ms: Some(1100),
+                cancel_reason: Some("test cleanup".to_string()),
+                jobs: HashMap::from([(
+                    "job-clean-test".to_string(),
+                    JobRegistryEntry {
+                        job_id: "job-clean-test".to_string(),
+                        status: "cancelled".to_string(),
+                        submitted_at_ms: 1000,
+                        finished_at_ms: Some(1200),
+                        ..JobRegistryEntry::default()
+                    },
+                )]),
+                ..SolveRegistryEntry::default()
+            },
+        );
+        state
+            .cancelled_solves
+            .lock()
+            .expect("cancelled solves mutex poisoned")
+            .insert(
+                "solve-clean-test".to_string(),
+                CancelInfo {
+                    solve_id: "solve-clean-test".to_string(),
+                    request_id: Some("request-clean-test".to_string()),
+                    reason: "test cleanup".to_string(),
+                    requested_by: "unit-test".to_string(),
+                    requested_at_ms: 1100,
+                },
+            );
+        let app = app_router(state.clone());
+
+        let (status, body) = delete_json(app, "/mip-solver-cluster/solves/solve-clean-test").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("status"), Some(&json!("cleaned")));
+        assert_eq!(body.get("jobsRemoved"), Some(&json!(1)));
+        assert!(!state
+            .solves
+            .lock()
+            .expect("solves mutex poisoned")
+            .contains_key("solve-clean-test"));
+        assert!(!state
+            .cancelled_solves
+            .lock()
+            .expect("cancelled solves mutex poisoned")
+            .contains_key("solve-clean-test"));
+    }
+
+    #[test]
+    fn cancel_control_frames_update_local_cancel_map_without_solve_registry() {
+        let state = test_state(NodeRole::Slave);
+
+        let handled = record_cancel_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"master-a",
+                "role":"master",
+                "commandName":"cancel-solve",
+                "payload":{
+                    "solveId":"solve-cancel-broadcast",
+                    "requestId":"request-cancel-broadcast",
+                    "reason":"client cancelled",
+                    "requestedBy":"master-a",
+                    "requestedAtMs": 3000
+                },
+                "timeMs": 3001
+            }),
+        )
+        .unwrap();
+
+        assert!(handled);
+        let info = solve_cancel_info(&state, "solve-cancel-broadcast").unwrap();
+        assert_eq!(info.request_id.as_deref(), Some("request-cancel-broadcast"));
+        assert_eq!(info.reason, "client cancelled");
+        assert_eq!(info.requested_at_ms, 3000);
     }
 
     #[tokio::test]

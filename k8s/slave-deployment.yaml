@@ -55,7 +55,10 @@ spec:
               if [ -n "${MIP_SOLVER_CLUSTER_GIT_URL:-}" ]; then
                 rm -rf /tmp/k8s-source
                 if git clone --depth 1 --branch "${MIP_SOLVER_CLUSTER_GIT_REF:-dev}" "${MIP_SOLVER_CLUSTER_GIT_URL}" /tmp/k8s-source; then
-                  git -C /tmp/k8s-source submodule update --init --depth 1 remote/deployments/mip-solver-node.rs remote/submodules/discrete-event-system.rs || true
+                  git -C /tmp/k8s-source config url.https://github.com/.insteadOf git@github.com:
+                  git -C /tmp/k8s-source config url.https://github.com/.insteadOf ssh://git@github.com/
+                  git -C /tmp/k8s-source submodule sync --recursive remote/deployments/mip-solver-node.rs remote/submodules/discrete-event-system.rs
+                  git -C /tmp/k8s-source submodule update --init --depth 1 remote/deployments/mip-solver-node.rs remote/submodules/discrete-event-system.rs
                   source_root=/tmp/k8s-source
                   echo "[dd-in-house-mip-solver-node] source: cloned ${MIP_SOLVER_CLUSTER_GIT_URL}@${MIP_SOLVER_CLUSTER_GIT_REF:-dev}"
                 else
@@ -118,6 +121,10 @@ spec:
               value: '5'
             - name: MIP_SOLVER_WORKER_HEARTBEAT_SECONDS
               value: '5'
+            - name: MIP_SOLVER_WORKER_MAX_IN_FLIGHT
+              value: '5'
+            - name: MIP_SOLVER_WORKER_SATURATION_RETRY_SECONDS
+              value: '180'
             - name: MIP_SOLVER_GPU_MODE
               value: auto
           ports:
