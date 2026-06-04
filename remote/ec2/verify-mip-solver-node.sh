@@ -11,16 +11,23 @@ slave_scaledobject="${MIP_SOLVER_SLAVE_SCALEDOBJECT:-dd-in-house-mip-solver-node
 service_name="${MIP_SOLVER_SERVICE:-dd-in-house-mip-solver-node}"
 local_port="${MIP_SOLVER_LOCAL_PORT:-18117}"
 port_forward_pid=""
-restore_slave_min_replicas=false
+restore_argo_selfheal=false
+restore_slave_keda_pause=false
 
 cleanup() {
   if [ -n "${port_forward_pid}" ]; then
     kill "${port_forward_pid}" >/dev/null 2>&1 || true
   fi
-  if [ "${restore_slave_min_replicas}" = true ]; then
-    kubectl -n "${namespace}" patch "scaledobject/${slave_scaledobject}" --type merge \
-      -p '{"spec":{"minReplicaCount":1}}' >/dev/null 2>&1 || true
+  if [ "${restore_slave_keda_pause}" = true ]; then
+    kubectl -n "${namespace}" annotate "scaledobject/${slave_scaledobject}" \
+      autoscaling.keda.sh/paused-replicas- \
+      autoscaling.keda.sh/paused- \
+      --overwrite >/dev/null 2>&1 || true
     kubectl -n "${namespace}" scale "deployment/${slave_deployment}" --replicas=1 >/dev/null 2>&1 || true
+  fi
+  if [ "${restore_argo_selfheal}" = true ]; then
+    kubectl -n argocd patch "application/${app_name}" --type merge \
+      -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}' >/dev/null 2>&1 || true
   fi
 }
 
@@ -175,10 +182,15 @@ wait_for_rollout "${master_deployment}"
 wait_for_rollout "${slave_deployment}"
 
 echo "=== scale slaves to 3 for distributed smoke ==="
-# Keep KEDA from reconciling the smoke-test scale-down before the 3-slave proof.
-kubectl -n "${namespace}" patch "scaledobject/${slave_scaledobject}" --type merge \
-  -p '{"spec":{"minReplicaCount":3}}'
-restore_slave_min_replicas=true
+# Pause KEDA during the forced 3-slave smoke; otherwise zero lag reconciles the
+# deployment back to minReplicaCount=1 before the worker proof can run.
+kubectl -n argocd patch "application/${app_name}" --type merge \
+  -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":false}}}}'
+restore_argo_selfheal=true
+kubectl -n "${namespace}" annotate "scaledobject/${slave_scaledobject}" \
+  autoscaling.keda.sh/paused-replicas="3" \
+  --overwrite
+restore_slave_keda_pause=true
 kubectl -n "${namespace}" scale "deployment/${slave_deployment}" --replicas=3
 wait_for_rollout "${slave_deployment}"
 wait_for_ready_replicas "${master_deployment}" 1
