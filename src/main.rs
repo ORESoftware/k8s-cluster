@@ -4624,7 +4624,6 @@ fn app_router(state: AppState) -> Router {
             "/mip-solver-cluster/requests/:request_id/cancel",
             post(cancel_request),
         )
-        .route("/workers", get(workers))
         .route("/model/example", get(example))
         .route("/solve", post(solve_http))
         .route("/sessions/:session_id", get(get_session))
@@ -5674,9 +5673,11 @@ mod tests {
         .unwrap();
         let app = app_router(state);
 
-        let (status, body) = get_json(app, "/mip-solver-cluster/workers").await;
+        let (status, body) = get_json(app.clone(), "/mip-solver-cluster/workers").await;
+        let (alias_status, _) = get_text(app, "/workers").await;
 
         assert_eq!(status, StatusCode::OK);
+        assert_eq!(alias_status, StatusCode::NOT_FOUND);
         assert_eq!(body.get("ok"), Some(&json!(true)));
         assert_eq!(body.get("count"), Some(&json!(1)));
         assert_eq!(body.pointer("/workers/0/nodeId"), Some(&json!("worker-b")));
