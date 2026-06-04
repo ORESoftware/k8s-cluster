@@ -2430,7 +2430,7 @@ jobs:
           script = r'''set -euo pipefail
           proof_log="/tmp/gcs-loadtest-proof-$(date -u +%Y%m%dT%H%M%SZ).log"
           if [ "${LOADTEST_COMPACT_OUTPUT:-true}" = "true" ]; then
-            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|gcs-summary|loader-warmup|gcs_router_(active_total|routed_total|upstream_errors_total|active_conns))') 2> >(tee -a "$proof_log" >&2)
+            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|capacity-not-free|capacity targets are all scaled down|loader-scale|gcs-summary|loader-warmup|gcs_router_(active_total|routed_total|upstream_errors_total|active_conns))') 2> >(tee -a "$proof_log" >&2)
           fi
           echo "PROOF remote_log=$proof_log compact_output=${LOADTEST_COMPACT_OUTPUT:-true}"
           repo=/home/ec2-user/codes/dd/dd-next-1
@@ -2454,8 +2454,9 @@ jobs:
           apps="dd-observability gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loadtest_apps="dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loaders="dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs"
-          capacity_apps="dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam dd-in-house-mip-solver-node"
+          capacity_apps="dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam"
           capacity_targets="dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server"
+          mip_capacity_app="dd-in-house-mip-solver-node"
           mip_capacity_namespace="ai-ml"
           mip_capacity_targets="dd-in-house-mip-solver-node-master dd-in-house-mip-solver-node-slave"
           mip_capacity_scaledobject="dd-in-house-mip-solver-node-slave-nats-jetstream"
@@ -2532,6 +2533,9 @@ jobs:
             for app in $capacity_apps; do
               sync_app "$app"
             done
+            kubectl -n argocd annotate "application/$mip_capacity_app" argocd.argoproj.io/refresh=hard --overwrite || true
+            kubectl -n argocd patch "application/$mip_capacity_app" --type merge \
+              -p '{"operation":{"initiatedBy":{"username":"gcs-loadtest"},"info":[{"name":"reason","value":"restore-after-gcs-loadtest"}],"sync":{"revision":"HEAD","prune":true}}}' || true
           }
 
           disable_loadtest_autosync() {
@@ -2567,11 +2571,13 @@ jobs:
           free_gcs_capacity() {
             local capacity_app capacity_target attempt
             echo "=== free memory, CPU, and pod slots for GCS loadtest ==="
-            echo "temporarily disabling Argo auto-sync for capacity owners: $capacity_apps"
+            echo "temporarily disabling Argo auto-sync for capacity owners: $capacity_apps $mip_capacity_app"
             for capacity_app in $capacity_apps; do
               kubectl -n argocd patch "application/$capacity_app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
               kubectl -n argocd get "application/$capacity_app" -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
             done
+            kubectl -n argocd patch "application/$mip_capacity_app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
+            kubectl -n argocd get "application/$mip_capacity_app" -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
             echo "scaling down comparison workloads: $capacity_targets"
             kubectl -n default get deploy $capacity_targets -o wide || true
             kubectl -n "$mip_capacity_namespace" annotate "scaledobject/$mip_capacity_scaledobject" \
@@ -2600,7 +2606,7 @@ jobs:
             kubectl -n default get pods -l 'app in (dd-akka-ws-server,dd-go-wss-server,dd-rust-wss-server,dd-gleamlang-ws-loadtest,dd-dart-server,dd-fsharp-ws-server,dd-gleamlang-server)' -o wide || true
             kubectl -n "$mip_capacity_namespace" get deploy $mip_capacity_targets -o wide || true
             kubectl -n "$mip_capacity_namespace" get pods -l 'app in (dd-in-house-mip-solver-node-master,dd-in-house-mip-solver-node-slave)' -o wide || true
-            kubectl -n argocd get application $capacity_apps -o wide || true
+            kubectl -n argocd get application $capacity_apps "$mip_capacity_app" -o wide || true
             exit 1
           }
 
