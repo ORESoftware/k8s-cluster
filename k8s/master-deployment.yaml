@@ -58,6 +58,7 @@ spec:
                   git -C /tmp/k8s-source config url.https://github.com/.insteadOf git@github.com:
                   git -C /tmp/k8s-source config url.https://github.com/.insteadOf ssh://git@github.com/
                   git -C /tmp/k8s-source submodule sync --recursive remote/deployments/mip-solver-node.rs remote/submodules/discrete-event-system.rs
+                  git -C /tmp/k8s-source submodule set-url remote/deployments/mip-solver-node.rs https://github.com/ORESoftware/mip-solver-node.rs.git
                   git -C /tmp/k8s-source submodule update --init --depth 1 remote/deployments/mip-solver-node.rs remote/submodules/discrete-event-system.rs
                   source_root=/tmp/k8s-source
                   echo "[dd-in-house-mip-solver-node] source: cloned ${MIP_SOLVER_CLUSTER_GIT_URL}@${MIP_SOLVER_CLUSTER_GIT_REF:-dev}"
