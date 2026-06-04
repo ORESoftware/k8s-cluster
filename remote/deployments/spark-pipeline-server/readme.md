@@ -128,8 +128,9 @@ java -jar target/dd-spark-pipeline-server.jar
 * `k8s/ec2/kustomization.yaml` — EC2 overlay consumed by Argo CD via
   `remote/argocd/apps/dd-spark-pipeline-server.application.yaml`.
 
-The EC2 deployment mounts the repo as a hostPath at `/opt/dd-next-1` and runs
-`mvn package` once on container start before booting the shaded jar. The same
-container image (`eclipse-temurin:17-jre`) is used in CI and runtime. The optional
-`RDS_DATABASE_URL` key is read from `dd-remote-rest-api-secrets` so the manifest reuses the
-existing External Secrets bridge instead of depending on an uncreated service-specific secret.
+The EC2 deployment runs in the `ai-ml` namespace, mounts the repo hostPath read-only at
+`/opt/dd-next-1`, copies the Spark module plus generated pg-defs sources into an `emptyDir`
+workspace, and runs `mvn package` there before booting the shaded jar. The optional
+`RDS_DATABASE_URL` key is read from `dd-remote-rest-api-secrets`, mirrored into `ai-ml` by the
+AI/ML seed layer, so the manifest reuses the existing External Secrets bridge instead of depending
+on an uncreated service-specific secret.
