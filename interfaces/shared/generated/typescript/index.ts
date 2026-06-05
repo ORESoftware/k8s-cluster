@@ -42,6 +42,322 @@ export type AgentTaskQueueMessage = {
   createdAtMs?: number;
 };
 
+// A release or conversion blocker reported by a planner or worker.
+export type FabricationDesignConversionBlocker = {
+  /** Stable blocker code, e.g. supported-native-cad-translator-required, ambiguous-native-extension, missing-units, non-manifold-mesh, or exporter-license-unavailable. */
+  code: string;
+  /** Human-readable blocker summary safe for operator logs. */
+  message: string;
+  /** Design input id associated with this blocker when applicable. */
+  inputId?: string | null;
+  /** Requested target id associated with this blocker when applicable. */
+  targetId?: string | null;
+  /** Effect on release posture, e.g. blocks-machine-ready, needs-operator-review, or warning-only. */
+  machineReadyImpact?: string | null;
+};
+
+// Body published on dd.remote.fabrication.design.conversion.requests for external CAD, mesh, slicer, CAM setup, and neutral-export workers.
+export type FabricationDesignConversionRequest = {
+  /** Envelope schema id. Producers should emit dd.fabrication.design-conversion.request.v1. */
+  schema: string;
+  /** Unique id for this conversion job, suitable for dedupe and result correlation. */
+  requestId: string;
+  /** Fabrication planning request id that spawned this conversion job. */
+  planRequestId: string;
+  /** Optional fabrication job id when the planner has already persisted one. */
+  jobId?: string | null;
+  /** Unix epoch milliseconds when the planner published this request. */
+  emittedAtMs: number;
+  /** Producer service instance or deployment name. */
+  producer?: string | null;
+  /** Subject workers should publish the result to; defaults to dd.remote.fabrication.design.conversion.results. */
+  resultSubject?: string | null;
+  /** Reviewed source inputs that need conversion, export, repair, or review evidence. */
+  designInputs: FabricationDesignInputRef[];
+  /** Requested STEP/STL/3MF/DXF/CAM setup/sheet nesting targets, slicer projects, mesh reports, and assembly graphs requested from workers. */
+  targets: FabricationDesignConversionTarget[];
+  /** Planner-known blockers that workers may clear by returning verified artifacts or evidence. */
+  blockers?: FabricationDesignConversionBlocker[];
+  /** Optional scheduling hint. Higher values mean more urgent conversion work. */
+  priority?: number | null;
+  /** Non-secret planning notes for the worker. */
+  notes?: string[];
+};
+
+// Body published on dd.remote.fabrication.design.conversion.results with generated artifacts, translator evidence, blockers, and machine-ready posture.
+export type FabricationDesignConversionResult = {
+  /** Envelope schema id. Workers should emit dd.fabrication.design-conversion.result.v1. */
+  schema: string;
+  /** Conversion request id this result answers. */
+  requestId: string;
+  /** Fabrication planning request id from the original conversion job. */
+  planRequestId: string;
+  /** Optional persisted fabrication job id from the original request. */
+  jobId?: string | null;
+  /** Unix epoch milliseconds when the worker published this result. */
+  emittedAtMs: number;
+  /** Worker id, pod name, or adapter instance that produced this result. */
+  workerId: string;
+  /** Translator, exporter, slicer, mesh repair, or CAM adapter used. */
+  translator?: string | null;
+  /** Translator or adapter version used for repeatability and learning attribution. */
+  translatorVersion?: string | null;
+  /** True when the worker completed its requested conversion or review work. */
+  success: boolean;
+  /** True only when the returned artifacts and evidence are sufficient for the planner to consider the conversion lane releasable. */
+  machineReady: boolean;
+  /** Generated artifacts and review evidence returned by the worker. */
+  artifacts: FabricationNeutralExportArtifact[];
+  /** Remaining blockers or new worker-discovered blockers. */
+  blockers?: FabricationDesignConversionBlocker[];
+  /** Non-blocking warnings that should be retained with the design evidence. */
+  warnings?: string[];
+  /** Free-form non-secret metadata such as source configuration, Onshape document/version/element ids, exporter settings, repair statistics, or CAM/slicer profile names. */
+  reviewMetadata?: unknown;
+};
+
+// One neutral-export or review artifact requested from conversion workers.
+export type FabricationDesignConversionTarget = {
+  /** Stable target id used to correlate worker outputs with requested artifacts. */
+  targetId: string;
+  /** Design input id this target should be generated from, when the target is input-specific. */
+  sourceInputId?: string | null;
+  /** Requested output or evidence format such as STEP, STL, 3MF, DXF, CAM_SETUP_JSON, SHEET_NESTING_JSON, SLICER_PROJECT, MESH_REPAIR_REPORT, or ASSEMBLY_GRAPH_JSON. */
+  format: string;
+  /** Why this target is needed, e.g. additive slicing, subtractive CAM, sheet nesting, assembly planning, simulation, or learning replay. */
+  purpose?: string | null;
+  /** Requested unit system when known, e.g. mm or inch. */
+  units?: string | null;
+  /** Requested export tolerance in millimeters when the planner needs bounded geometry. */
+  toleranceMm?: number | null;
+  /** Optional target machine class such as additive-fdm, additive-resin, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, or plasma. */
+  machineClass?: string | null;
+  /** Evidence labels that must be returned before the planner can consider this artifact releasable. */
+  evidenceRequired?: string[];
+};
+
+// One reviewed design input handed to an external conversion worker. URIs should already be sanitized for logs and artifacts; proprietary source files remain operator-controlled references.
+export type FabricationDesignInputRef = {
+  /** Stable designInputs id from the fabrication planning request, or a generated id when the original input was anonymous. */
+  inputId: string;
+  /** Original or normalized source filename, e.g. housing.sldprt, bracket.step, sculpt.blend, or setup.json. */
+  fileName?: string | null;
+  /** Sanitized source location. Userinfo, query strings, and fragments must be removed before publishing this payload. */
+  sourceUri?: string | null;
+  /** Declared or inferred source format token such as SLDPRT, SLDASM, PRT, ASM, STEP, STL, 3MF, DXF, FCStd, SCAD, BLEND, ZTL, or CAM_SETUP_JSON. */
+  format?: string | null;
+  /** Declared or inferred authoring system, e.g. SOLIDWORKS, PTC Creo, Siemens NX, CATIA, Fusion, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, PrusaSlicer, OrcaSlicer, Cura, or Bambu Studio. */
+  sourceSystem?: string | null;
+  /** Planning role for this input, for example editable native source CAD, verified neutral export candidate, slicer project evidence, or CAM setup evidence. */
+  role?: string | null;
+  /** Supplemental operator or planner notes retained as non-secret evidence. */
+  notes?: string[];
+  /** Optional SHA-256 of the referenced source object when the producer has already resolved the content. */
+  sourceSha256?: string | null;
+};
+
+// Generated machine code, setup sheet, inspection plan, simulation report, postprocess plan, or operator instruction returned by a worker.
+export type FabricationGeneratedInstructionArtifact = {
+  /** Stable generated artifact id retained by the planner. */
+  artifactId: string;
+  /** Requested target id this artifact satisfies. */
+  targetId: string;
+  /** Operation id this artifact belongs to. */
+  operationId: string;
+  /** Machine id this artifact targets when machine-specific. */
+  machineId?: string | null;
+  /** Generated instruction format such as GCODE, NC, TAP, SETUP_SHEET_MD, TOOL_LIST_JSON, INSPECTION_PLAN_JSON, POSTPROCESS_PLAN_MD, or SIMULATION_REPORT_JSON. */
+  format: string;
+  /** Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments. */
+  uri?: string | null;
+  /** SHA-256 of the generated instruction artifact when available. */
+  sha256?: string | null;
+  /** MIME type or controlled media label for the artifact. */
+  mediaType?: string | null;
+  /** Controller dialect or slicer/postprocessor target used for this artifact. */
+  controllerDialect?: string | null;
+  /** Estimated runtime in seconds when the worker can provide it. */
+  estimatedRuntimeSec?: number | null;
+  /** Evidence labels attached to this instruction artifact, such as toolpath-simulated, collision-check-passed, slicer-profile-verified, tool-list-verified, workholding-reviewed, or human-intervention-boundary-marked. */
+  evidence?: string[];
+  /** Short sanitized preview lines for operator review. Do not include full programs here. */
+  previewLines?: string[];
+};
+
+// A release or instruction-generation blocker reported by a planner or worker.
+export type FabricationInstructionBlocker = {
+  /** Stable blocker code, e.g. missing-postprocessor, toolpath-simulation-required, workholding-release-required, printer-profile-release-required, material-conditioning-required, tool-list-required, or human-intervention-required. */
+  code: string;
+  /** Human-readable blocker summary safe for operator logs. */
+  message: string;
+  /** Operation id associated with this blocker when applicable. */
+  operationId?: string | null;
+  /** Instruction target id associated with this blocker when applicable. */
+  targetId?: string | null;
+  /** Machine id associated with this blocker when applicable. */
+  machineId?: string | null;
+  /** Effect on release posture, e.g. blocks-machine-ready, needs-operator-review, warning-only, or can-run-with-supervision. */
+  machineReadyImpact?: string | null;
+};
+
+// Body published on dd.remote.fabrication.instructions.generation.requests for slicer, CAM, postprocess, setup-sheet, inspection, and machine-code workers.
+export type FabricationInstructionGenerationRequest = {
+  /** Envelope schema id. Producers should emit dd.fabrication.instruction-generation.request.v1. */
+  schema: string;
+  /** Unique id for this instruction generation job, suitable for dedupe and result correlation. */
+  requestId: string;
+  /** Fabrication planning request id that spawned this instruction generation job. */
+  planRequestId: string;
+  /** Optional fabrication job id when the planner has already persisted one. */
+  jobId?: string | null;
+  /** Unix epoch milliseconds when the planner published this request. */
+  emittedAtMs: number;
+  /** Producer service instance or deployment name. */
+  producer?: string | null;
+  /** Subject workers should publish the result to; defaults to dd.remote.fabrication.instructions.generation.results. */
+  resultSubject?: string | null;
+  /** Verified geometry, slicer, CAM, nesting, mesh, or assembly artifacts that instruction workers can consume. */
+  sourceArtifacts: FabricationInstructionSourceArtifact[];
+  /** Machine profiles, controller dialects, postprocessors, slicer profiles, materials, and release evidence requested for generation. */
+  machineProfiles: FabricationInstructionMachineProfile[];
+  /** Operations that need machine code, setup sheets, inspection instructions, postprocess plans, or assembly instructions. */
+  operations: FabricationInstructionOperation[];
+  /** Requested printer jobs, G-code, NC programs, lathe cycles, sheet-cutting files, setup sheets, tool lists, inspection plans, simulation reports, postprocess plans, and operator instructions. */
+  targets: FabricationInstructionGenerationTarget[];
+  /** Planner-known blockers that workers may clear by returning verified instruction artifacts or evidence. */
+  blockers?: FabricationInstructionBlocker[];
+  /** Optional scheduling hint. Higher values mean more urgent generation work. */
+  priority?: number | null;
+  /** Non-secret planning notes for the worker. */
+  notes?: string[];
+};
+
+// Body published on dd.remote.fabrication.instructions.generation.results with generated machine code, setup/operator instructions, simulation evidence, blockers, and machine-ready posture.
+export type FabricationInstructionGenerationResult = {
+  /** Envelope schema id. Workers should emit dd.fabrication.instruction-generation.result.v1. */
+  schema: string;
+  /** Instruction generation request id this result answers. */
+  requestId: string;
+  /** Fabrication planning request id from the original instruction generation job. */
+  planRequestId: string;
+  /** Optional persisted fabrication job id from the original request. */
+  jobId?: string | null;
+  /** Unix epoch milliseconds when the worker published this result. */
+  emittedAtMs: number;
+  /** Worker id, pod name, or adapter instance that produced this result. */
+  workerId: string;
+  /** Slicer, CAM, postprocessor, simulator, setup-sheet, inspection-plan, or operator-instruction adapter used. */
+  generator?: string | null;
+  /** Generator or adapter version used for repeatability and learning attribution. */
+  generatorVersion?: string | null;
+  /** True when the worker completed its requested instruction generation or review work. */
+  success: boolean;
+  /** True only when returned instructions and evidence are sufficient for the planner to consider the instruction lane releasable. */
+  machineReady: boolean;
+  /** Generated machine-code, setup, simulation, inspection, postprocess, or operator-instruction artifacts returned by the worker. */
+  artifacts: FabricationGeneratedInstructionArtifact[];
+  /** Remaining blockers or new worker-discovered blockers. */
+  blockers?: FabricationInstructionBlocker[];
+  /** Non-blocking warnings that should be retained with the instruction evidence. */
+  warnings?: string[];
+  /** Free-form non-secret metadata such as postprocessor settings, slicer profile names, simulation summaries, machine envelope checks, tool libraries, fixture ids, or detected human-intervention boundaries. */
+  reviewMetadata?: unknown;
+};
+
+// One machine-code, setup, inspection, postprocess, or operator-instruction artifact requested from a worker.
+export type FabricationInstructionGenerationTarget = {
+  /** Stable target id used to correlate generated outputs with requested instruction artifacts. */
+  targetId: string;
+  /** Operation id this target belongs to. */
+  operationId: string;
+  /** Machine profile id this target should use when machine-specific output is requested. */
+  machineId?: string | null;
+  /** Requested instruction format such as GCODE, NC, TAP, 3MF, BAMBUPROJECT, SETUP_SHEET_MD, TOOL_LIST_JSON, INSPECTION_PLAN_JSON, POSTPROCESS_PLAN_MD, WORKHOLDING_PLAN_JSON, or SIMULATION_REPORT_JSON. */
+  format: string;
+  /** Why this artifact is needed, e.g. printer job, mill roughing, lathe finishing, sheet cutting, setup verification, inspection release, postprocess, or assembly. */
+  purpose?: string | null;
+  /** Evidence labels that must be returned before the planner can consider this instruction artifact releasable. */
+  evidenceRequired?: string[];
+};
+
+// Machine, controller, slicer, or postprocessor profile requested for instruction generation.
+export type FabricationInstructionMachineProfile = {
+  /** Planner-local or fleet machine id, e.g. prusa-mk4-01, haas-vf2-03, okuma-lathe-02, waterjet-01. */
+  machineId: string;
+  /** Machine class such as additive-fdm, additive-resin, powder-bed, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, plasma, or postprocess-station. */
+  machineClass: string;
+  /** Controller or dialect target such as Marlin, RepRap, Klipper, Haas NGC, Fanuc, LinuxCNC, GRBL, Heidenhain, Okuma, PrusaSlicer, OrcaSlicer, Cura, Bambu Studio, or vendor-specific profile. */
+  controllerDialect?: string | null;
+  /** Postprocessor, slicer, CAM template, or adapter id used to generate instructions. */
+  postProcessor?: string | null;
+  /** Requested material or stock profile, e.g. PETG, 6061-T6 aluminum, 316 stainless, acrylic sheet, resin, nylon powder. */
+  material?: string | null;
+  /** Human-readable work envelope or build volume summary retained for review. */
+  workEnvelope?: string | null;
+  /** Evidence labels required before generated instructions can be considered for release on this machine. */
+  requiredEvidence?: string[];
+};
+
+// One additive, subtractive, sheet-cutting, inspection, postprocess, or assembly operation for instruction generation.
+export type FabricationInstructionOperation = {
+  /** Stable operation id used to correlate generated machine code and setup evidence. */
+  operationId: string;
+  /** Part, subassembly, or stock id affected by this operation. */
+  partId?: string | null;
+  /** Process label such as fdm-print, resin-print, powder-bed-print, vertical-mill-roughing, horizontal-mill-indexing, lathe-turning, router-profile, laser-cut, waterjet-cut, deburr, heat-set-inserts, inspection, or assembly. */
+  process: string;
+  /** Machine class required for this operation. */
+  machineClass: string;
+  /** Operator-readable operation summary. */
+  description?: string | null;
+  /** Source artifact ids consumed by this operation. */
+  sourceArtifactIds?: string[];
+  /** Operation-specific release requirements such as verified workholding, tool list, coolant, material conditioning, support media, simulation, inspection datum, or operator resume evidence. */
+  requirements?: string[];
+};
+
+// Verified geometry, slicer project, CAM setup, sheet nesting, mesh report, or assembly graph artifact that an instruction-generation worker can consume.
+export type FabricationInstructionSourceArtifact = {
+  /** Stable artifact id, usually returned by a design conversion worker or retained by the Rust planner. */
+  artifactId: string;
+  /** Original design input id when the artifact traces back to a specific CAD, mesh, slicer, or CAM source. */
+  sourceInputId?: string | null;
+  /** Artifact format such as STEP, STL, 3MF, DXF, CAM_SETUP_JSON, SHEET_NESTING_JSON, SLICER_PROJECT, MESH_REPAIR_REPORT, or ASSEMBLY_GRAPH_JSON. */
+  format: string;
+  /** Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments. */
+  uri?: string | null;
+  /** SHA-256 of the source artifact when available. */
+  sha256?: string | null;
+  /** Artifact units when known. */
+  units?: string | null;
+  /** Evidence labels already attached to this artifact, such as units-verified, mesh-manifold, profile-closed, cam-setup-reviewed, or slicer-profile-verified. */
+  evidence?: string[];
+};
+
+// One generated neutral export, slicer project, CAM setup, sheet nesting file, mesh report, or review artifact returned by a conversion worker.
+export type FabricationNeutralExportArtifact = {
+  /** Stable generated artifact id retained by the planner. */
+  artifactId: string;
+  /** Requested target id this artifact satisfies when known. */
+  targetId?: string | null;
+  /** Design input id used to create this artifact when known. */
+  sourceInputId?: string | null;
+  /** Generated format token such as STEP, STL, 3MF, DXF, CAM_SETUP_JSON, SHEET_NESTING_JSON, SLICER_PROJECT, MESH_REPAIR_REPORT, or ASSEMBLY_GRAPH_JSON. */
+  format: string;
+  /** Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments. */
+  uri?: string | null;
+  /** SHA-256 of the generated artifact when available. */
+  sha256?: string | null;
+  /** MIME type or controlled media label for the artifact. */
+  mediaType?: string | null;
+  /** Artifact units when the format does not prove them unambiguously. */
+  units?: string | null;
+  /** Measured or exporter-declared tolerance in millimeters. */
+  toleranceMm?: number | null;
+  /** Evidence labels attached to this artifact, such as units-verified, mesh-manifold, watertight, profile-closed, slicer-profile-verified, or cam-setup-reviewed. */
+  evidence?: string[];
+};
+
 // Why this push happened. 'cron' = periodic sweep, 'admin' = on-demand UI button, 'register' = subscriber just joined, 'manual' = explicit API call, 'initial' = subscriber boot-time pull.
 export type RuntimeConfigApplyReason = "cron" | "admin" | "register" | "manual" | "initial";
 

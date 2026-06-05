@@ -20,6 +20,12 @@
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
+    fabrication_design_conversion_requests_subject/0,
+    fabrication_design_conversion_requests_queue_group/0,
+    fabrication_design_conversion_results_subject/0,
+    fabrication_instruction_generation_requests_subject/0,
+    fabrication_instruction_generation_requests_queue_group/0,
+    fabrication_instruction_generation_results_subject/0,
     fabrication_requests_subject/0,
     fabrication_requests_queue_group/0,
     fabrication_results_subject/0,
@@ -109,6 +115,12 @@ cron_prompts_stream() -> <<"DD_REMOTE_CRON"/utf8>>.
 des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
 des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
+fabrication_design_conversion_requests_subject() -> <<"dd.remote.fabrication.design.conversion.requests"/utf8>>.
+fabrication_design_conversion_requests_queue_group() -> <<"dd-fabrication-design-converters"/utf8>>.
+fabrication_design_conversion_results_subject() -> <<"dd.remote.fabrication.design.conversion.results"/utf8>>.
+fabrication_instruction_generation_requests_subject() -> <<"dd.remote.fabrication.instructions.generation.requests"/utf8>>.
+fabrication_instruction_generation_requests_queue_group() -> <<"dd-fabrication-instruction-generators"/utf8>>.
+fabrication_instruction_generation_results_subject() -> <<"dd.remote.fabrication.instructions.generation.results"/utf8>>.
 fabrication_requests_subject() -> <<"dd.remote.fabrication.requests"/utf8>>.
 fabrication_requests_queue_group() -> <<"dd-fabrication-server"/utf8>>.
 fabrication_results_subject() -> <<"dd.remote.fabrication.results"/utf8>>.

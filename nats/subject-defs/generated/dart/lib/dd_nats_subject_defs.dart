@@ -35,6 +35,24 @@ const String desResultsSubject = "dd.remote.des.results";
 const String desSimulateSubject = "dd.remote.des.simulate";
 const String desSimulateQueueGroup = "dd-des-simulator";
 
+/// Design input conversion requests for CAD, mesh, slicer, CAM setup, and neutral export workers.
+/// Service: dd-fabrication-server
+const String fabricationDesignConversionRequestsSubject = "dd.remote.fabrication.design.conversion.requests";
+const String fabricationDesignConversionRequestsQueueGroup = "dd-fabrication-design-converters";
+
+/// Design input conversion results carrying neutral exports, translator evidence, blockers, and review metadata.
+/// Service: dd-fabrication-server
+const String fabricationDesignConversionResultsSubject = "dd.remote.fabrication.design.conversion.results";
+
+/// Instruction generation requests for slicer, CAM, postprocess, setup-sheet, and machine-code workers.
+/// Service: dd-fabrication-server
+const String fabricationInstructionGenerationRequestsSubject = "dd.remote.fabrication.instructions.generation.requests";
+const String fabricationInstructionGenerationRequestsQueueGroup = "dd-fabrication-instruction-generators";
+
+/// Instruction generation results carrying machine code, setup sheets, simulation evidence, blockers, and release metadata.
+/// Service: dd-fabrication-server
+const String fabricationInstructionGenerationResultsSubject = "dd.remote.fabrication.instructions.generation.results";
+
 /// Fabrication planning requests. Default for FABRICATION_REQUEST_SUBJECT.
 /// Service: dd-fabrication-server
 const String fabricationRequestsSubject = "dd.remote.fabrication.requests";

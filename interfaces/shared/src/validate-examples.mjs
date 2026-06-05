@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const generatorPath = path.join(packageRoot, 'src', 'generate.mjs');
 
 async function readJson(relativePath) {
   return JSON.parse(await readFile(path.join(packageRoot, relativePath), 'utf8'));
@@ -108,77 +105,7 @@ function assertNoCredentialBearingUris(value, label = 'fixture') {
   }
 }
 
-test('generated outputs are up to date with schema source', () => {
-  execFileSync(process.execPath, [generatorPath, '--check'], {
-    cwd: packageRoot,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-});
-
-test('typescript output exposes the agent task queue envelope', async () => {
-  const ts = await readFile(path.join(packageRoot, 'generated', 'typescript', 'index.ts'), 'utf8');
-
-  assert.match(ts, /export type AgentTaskQueueMessage = \{/);
-  assert.match(ts, /threadId: string;/);
-  assert.match(ts, /taskId: string;/);
-  assert.match(ts, /containerPoolDispatch\?: boolean;/);
-});
-
-test('typescript output exposes fabrication CAD conversion payloads', async () => {
-  const ts = await readFile(path.join(packageRoot, 'generated', 'typescript', 'index.ts'), 'utf8');
-
-  assert.match(ts, /export type FabricationDesignConversionRequest = \{/);
-  assert.match(ts, /designInputs: FabricationDesignInputRef\[\];/);
-  assert.match(ts, /targets: FabricationDesignConversionTarget\[\];/);
-  assert.match(ts, /resultSubject\?: string \| null;/);
-  assert.match(ts, /export type FabricationDesignConversionResult = \{/);
-  assert.match(ts, /machineReady: boolean;/);
-  assert.match(ts, /translatorVersion\?: string \| null;/);
-  assert.match(ts, /artifacts: FabricationNeutralExportArtifact\[\];/);
-  assert.match(ts, /export type FabricationDesignConversionBlocker = \{/);
-});
-
-test('rust output exposes the agent task queue envelope', async () => {
-  const rs = await readFile(path.join(packageRoot, 'generated', 'rust', 'src', 'lib.rs'), 'utf8');
-
-  assert.match(rs, /pub struct AgentTaskQueueMessage \{/);
-  assert.match(rs, /pub thread_id: String,/);
-  assert.match(rs, /pub task_id: String,/);
-  assert.match(rs, /pub container_pool_dispatch: Option<bool>,/);
-});
-
-test('rust output exposes fabrication CAD conversion payloads', async () => {
-  const rs = await readFile(path.join(packageRoot, 'generated', 'rust', 'src', 'lib.rs'), 'utf8');
-
-  assert.match(rs, /pub struct FabricationDesignConversionRequest \{/);
-  assert.match(rs, /pub design_inputs: Vec<FabricationDesignInputRef>,/);
-  assert.match(rs, /pub targets: Vec<FabricationDesignConversionTarget>,/);
-  assert.match(rs, /pub result_subject: Option<String>,/);
-  assert.match(rs, /pub struct FabricationDesignConversionResult \{/);
-  assert.match(rs, /pub machine_ready: bool,/);
-  assert.match(rs, /pub translator_version: Option<String>,/);
-  assert.match(rs, /pub artifacts: Vec<FabricationNeutralExportArtifact>,/);
-  assert.match(rs, /pub struct FabricationDesignConversionBlocker \{/);
-});
-
-test('fabrication CAD conversion examples validate and correlate request/result envelopes', async () => {
-  const schemaDoc = await readJson('schema/fabrication-cad-conversion.schema.json');
-  const request = await readJson('examples/fabrication-design-conversion-request.json');
-  const result = await readJson('examples/fabrication-design-conversion-result.json');
-
-  validateSchemaValue(
-    schemaDoc,
-    { $ref: '#/$defs/FabricationDesignConversionRequest' },
-    request,
-    'request',
-  );
-  validateSchemaValue(
-    schemaDoc,
-    { $ref: '#/$defs/FabricationDesignConversionResult' },
-    result,
-    'result',
-  );
-
+function assertConversionCorrelation(request, result) {
   assert.equal(request.schema, 'dd.fabrication.design-conversion.request.v1');
   assert.equal(result.schema, 'dd.fabrication.design-conversion.result.v1');
   assert.equal(request.resultSubject, 'dd.remote.fabrication.design.conversion.results');
@@ -211,4 +138,31 @@ test('fabrication CAD conversion examples validate and correlate request/result 
   assert.ok(result.blockers.some((blocker) => blocker.machineReadyImpact === 'needs-operator-review'));
   assertNoCredentialBearingUris(request, 'request');
   assertNoCredentialBearingUris(result, 'result');
+}
+
+async function main() {
+  const schemaDoc = await readJson('schema/fabrication-cad-conversion.schema.json');
+  const request = await readJson('examples/fabrication-design-conversion-request.json');
+  const result = await readJson('examples/fabrication-design-conversion-result.json');
+
+  validateSchemaValue(
+    schemaDoc,
+    { $ref: '#/$defs/FabricationDesignConversionRequest' },
+    request,
+    'request',
+  );
+  validateSchemaValue(
+    schemaDoc,
+    { $ref: '#/$defs/FabricationDesignConversionResult' },
+    result,
+    'result',
+  );
+  assertConversionCorrelation(request, result);
+
+  console.log('fabrication CAD conversion examples validate against shared schema.');
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
 });

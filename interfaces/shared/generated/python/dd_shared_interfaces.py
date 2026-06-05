@@ -49,6 +49,336 @@ class AgentTaskQueueMessage:
     # Unix epoch milliseconds when the producer created the envelope.
     createdAtMs: Optional[int] = None
 
+# A release or conversion blocker reported by a planner or worker.
+@dataclass
+class FabricationDesignConversionBlocker:
+    """A release or conversion blocker reported by a planner or worker."""
+    # Stable blocker code, e.g. supported-native-cad-translator-required, ambiguous-native-extension, missing-units, non-manifold-mesh, or exporter-license-unavailable.
+    code: str
+    # Human-readable blocker summary safe for operator logs.
+    message: str
+    # Design input id associated with this blocker when applicable.
+    inputId: Optional[str] = None
+    # Requested target id associated with this blocker when applicable.
+    targetId: Optional[str] = None
+    # Effect on release posture, e.g. blocks-machine-ready, needs-operator-review, or warning-only.
+    machineReadyImpact: Optional[str] = None
+
+# Body published on dd.remote.fabrication.design.conversion.requests for external CAD, mesh, slicer, CAM setup, and neutral-export workers.
+@dataclass
+class FabricationDesignConversionRequest:
+    """Body published on dd.remote.fabrication.design.conversion.requests for external CAD, mesh, slicer, CAM setup, and neutral-export workers."""
+    # Envelope schema id. Producers should emit dd.fabrication.design-conversion.request.v1.
+    schema: str
+    # Unique id for this conversion job, suitable for dedupe and result correlation.
+    requestId: str
+    # Fabrication planning request id that spawned this conversion job.
+    planRequestId: str
+    # Unix epoch milliseconds when the planner published this request.
+    emittedAtMs: int
+    # Reviewed source inputs that need conversion, export, repair, or review evidence.
+    designInputs: List['FabricationDesignInputRef']
+    # Requested STEP/STL/3MF/DXF/CAM setup/sheet nesting targets, slicer projects, mesh reports, and assembly graphs requested from workers.
+    targets: List['FabricationDesignConversionTarget']
+    # Optional fabrication job id when the planner has already persisted one.
+    jobId: Optional[str] = None
+    # Producer service instance or deployment name.
+    producer: Optional[str] = None
+    # Subject workers should publish the result to; defaults to dd.remote.fabrication.design.conversion.results.
+    resultSubject: Optional[str] = None
+    # Planner-known blockers that workers may clear by returning verified artifacts or evidence.
+    blockers: Optional[List['FabricationDesignConversionBlocker']] = field(default_factory=list)
+    # Optional scheduling hint. Higher values mean more urgent conversion work.
+    priority: Optional[int] = None
+    # Non-secret planning notes for the worker.
+    notes: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.design.conversion.results with generated artifacts, translator evidence, blockers, and machine-ready posture.
+@dataclass
+class FabricationDesignConversionResult:
+    """Body published on dd.remote.fabrication.design.conversion.results with generated artifacts, translator evidence, blockers, and machine-ready posture."""
+    # Envelope schema id. Workers should emit dd.fabrication.design-conversion.result.v1.
+    schema: str
+    # Conversion request id this result answers.
+    requestId: str
+    # Fabrication planning request id from the original conversion job.
+    planRequestId: str
+    # Unix epoch milliseconds when the worker published this result.
+    emittedAtMs: int
+    # Worker id, pod name, or adapter instance that produced this result.
+    workerId: str
+    # True when the worker completed its requested conversion or review work.
+    success: bool
+    # True only when the returned artifacts and evidence are sufficient for the planner to consider the conversion lane releasable.
+    machineReady: bool
+    # Generated artifacts and review evidence returned by the worker.
+    artifacts: List['FabricationNeutralExportArtifact']
+    # Optional persisted fabrication job id from the original request.
+    jobId: Optional[str] = None
+    # Translator, exporter, slicer, mesh repair, or CAM adapter used.
+    translator: Optional[str] = None
+    # Translator or adapter version used for repeatability and learning attribution.
+    translatorVersion: Optional[str] = None
+    # Remaining blockers or new worker-discovered blockers.
+    blockers: Optional[List['FabricationDesignConversionBlocker']] = field(default_factory=list)
+    # Non-blocking warnings that should be retained with the design evidence.
+    warnings: Optional[List[str]] = field(default_factory=list)
+    # Free-form non-secret metadata such as source configuration, Onshape document/version/element ids, exporter settings, repair statistics, or CAM/slicer profile names.
+    reviewMetadata: Optional[Any] = None
+
+# One neutral-export or review artifact requested from conversion workers.
+@dataclass
+class FabricationDesignConversionTarget:
+    """One neutral-export or review artifact requested from conversion workers."""
+    # Stable target id used to correlate worker outputs with requested artifacts.
+    targetId: str
+    # Requested output or evidence format such as STEP, STL, 3MF, DXF, CAM_SETUP_JSON, SHEET_NESTING_JSON, SLICER_PROJECT, MESH_REPAIR_REPORT, or ASSEMBLY_GRAPH_JSON.
+    format: str
+    # Design input id this target should be generated from, when the target is input-specific.
+    sourceInputId: Optional[str] = None
+    # Why this target is needed, e.g. additive slicing, subtractive CAM, sheet nesting, assembly planning, simulation, or learning replay.
+    purpose: Optional[str] = None
+    # Requested unit system when known, e.g. mm or inch.
+    units: Optional[str] = None
+    # Requested export tolerance in millimeters when the planner needs bounded geometry.
+    toleranceMm: Optional[float] = None
+    # Optional target machine class such as additive-fdm, additive-resin, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, or plasma.
+    machineClass: Optional[str] = None
+    # Evidence labels that must be returned before the planner can consider this artifact releasable.
+    evidenceRequired: Optional[List[str]] = field(default_factory=list)
+
+# One reviewed design input handed to an external conversion worker. URIs should already be sanitized for logs and artifacts; proprietary source files remain operator-controlled references.
+@dataclass
+class FabricationDesignInputRef:
+    """One reviewed design input handed to an external conversion worker. URIs should already be sanitized for logs and artifacts; proprietary source files remain operator-controlled references."""
+    # Stable designInputs id from the fabrication planning request, or a generated id when the original input was anonymous.
+    inputId: str
+    # Original or normalized source filename, e.g. housing.sldprt, bracket.step, sculpt.blend, or setup.json.
+    fileName: Optional[str] = None
+    # Sanitized source location. Userinfo, query strings, and fragments must be removed before publishing this payload.
+    sourceUri: Optional[str] = None
+    # Declared or inferred source format token such as SLDPRT, SLDASM, PRT, ASM, STEP, STL, 3MF, DXF, FCStd, SCAD, BLEND, ZTL, or CAM_SETUP_JSON.
+    format: Optional[str] = None
+    # Declared or inferred authoring system, e.g. SOLIDWORKS, PTC Creo, Siemens NX, CATIA, Fusion, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, PrusaSlicer, OrcaSlicer, Cura, or Bambu Studio.
+    sourceSystem: Optional[str] = None
+    # Planning role for this input, for example editable native source CAD, verified neutral export candidate, slicer project evidence, or CAM setup evidence.
+    role: Optional[str] = None
+    # Supplemental operator or planner notes retained as non-secret evidence.
+    notes: Optional[List[str]] = field(default_factory=list)
+    # Optional SHA-256 of the referenced source object when the producer has already resolved the content.
+    sourceSha256: Optional[str] = None
+
+# Generated machine code, setup sheet, inspection plan, simulation report, postprocess plan, or operator instruction returned by a worker.
+@dataclass
+class FabricationGeneratedInstructionArtifact:
+    """Generated machine code, setup sheet, inspection plan, simulation report, postprocess plan, or operator instruction returned by a worker."""
+    # Stable generated artifact id retained by the planner.
+    artifactId: str
+    # Requested target id this artifact satisfies.
+    targetId: str
+    # Operation id this artifact belongs to.
+    operationId: str
+    # Generated instruction format such as GCODE, NC, TAP, SETUP_SHEET_MD, TOOL_LIST_JSON, INSPECTION_PLAN_JSON, POSTPROCESS_PLAN_MD, or SIMULATION_REPORT_JSON.
+    format: str
+    # Machine id this artifact targets when machine-specific.
+    machineId: Optional[str] = None
+    # Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments.
+    uri: Optional[str] = None
+    # SHA-256 of the generated instruction artifact when available.
+    sha256: Optional[str] = None
+    # MIME type or controlled media label for the artifact.
+    mediaType: Optional[str] = None
+    # Controller dialect or slicer/postprocessor target used for this artifact.
+    controllerDialect: Optional[str] = None
+    # Estimated runtime in seconds when the worker can provide it.
+    estimatedRuntimeSec: Optional[int] = None
+    # Evidence labels attached to this instruction artifact, such as toolpath-simulated, collision-check-passed, slicer-profile-verified, tool-list-verified, workholding-reviewed, or human-intervention-boundary-marked.
+    evidence: Optional[List[str]] = field(default_factory=list)
+    # Short sanitized preview lines for operator review. Do not include full programs here.
+    previewLines: Optional[List[str]] = field(default_factory=list)
+
+# A release or instruction-generation blocker reported by a planner or worker.
+@dataclass
+class FabricationInstructionBlocker:
+    """A release or instruction-generation blocker reported by a planner or worker."""
+    # Stable blocker code, e.g. missing-postprocessor, toolpath-simulation-required, workholding-release-required, printer-profile-release-required, material-conditioning-required, tool-list-required, or human-intervention-required.
+    code: str
+    # Human-readable blocker summary safe for operator logs.
+    message: str
+    # Operation id associated with this blocker when applicable.
+    operationId: Optional[str] = None
+    # Instruction target id associated with this blocker when applicable.
+    targetId: Optional[str] = None
+    # Machine id associated with this blocker when applicable.
+    machineId: Optional[str] = None
+    # Effect on release posture, e.g. blocks-machine-ready, needs-operator-review, warning-only, or can-run-with-supervision.
+    machineReadyImpact: Optional[str] = None
+
+# Body published on dd.remote.fabrication.instructions.generation.requests for slicer, CAM, postprocess, setup-sheet, inspection, and machine-code workers.
+@dataclass
+class FabricationInstructionGenerationRequest:
+    """Body published on dd.remote.fabrication.instructions.generation.requests for slicer, CAM, postprocess, setup-sheet, inspection, and machine-code workers."""
+    # Envelope schema id. Producers should emit dd.fabrication.instruction-generation.request.v1.
+    schema: str
+    # Unique id for this instruction generation job, suitable for dedupe and result correlation.
+    requestId: str
+    # Fabrication planning request id that spawned this instruction generation job.
+    planRequestId: str
+    # Unix epoch milliseconds when the planner published this request.
+    emittedAtMs: int
+    # Verified geometry, slicer, CAM, nesting, mesh, or assembly artifacts that instruction workers can consume.
+    sourceArtifacts: List['FabricationInstructionSourceArtifact']
+    # Machine profiles, controller dialects, postprocessors, slicer profiles, materials, and release evidence requested for generation.
+    machineProfiles: List['FabricationInstructionMachineProfile']
+    # Operations that need machine code, setup sheets, inspection instructions, postprocess plans, or assembly instructions.
+    operations: List['FabricationInstructionOperation']
+    # Requested printer jobs, G-code, NC programs, lathe cycles, sheet-cutting files, setup sheets, tool lists, inspection plans, simulation reports, postprocess plans, and operator instructions.
+    targets: List['FabricationInstructionGenerationTarget']
+    # Optional fabrication job id when the planner has already persisted one.
+    jobId: Optional[str] = None
+    # Producer service instance or deployment name.
+    producer: Optional[str] = None
+    # Subject workers should publish the result to; defaults to dd.remote.fabrication.instructions.generation.results.
+    resultSubject: Optional[str] = None
+    # Planner-known blockers that workers may clear by returning verified instruction artifacts or evidence.
+    blockers: Optional[List['FabricationInstructionBlocker']] = field(default_factory=list)
+    # Optional scheduling hint. Higher values mean more urgent generation work.
+    priority: Optional[int] = None
+    # Non-secret planning notes for the worker.
+    notes: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.instructions.generation.results with generated machine code, setup/operator instructions, simulation evidence, blockers, and machine-ready posture.
+@dataclass
+class FabricationInstructionGenerationResult:
+    """Body published on dd.remote.fabrication.instructions.generation.results with generated machine code, setup/operator instructions, simulation evidence, blockers, and machine-ready posture."""
+    # Envelope schema id. Workers should emit dd.fabrication.instruction-generation.result.v1.
+    schema: str
+    # Instruction generation request id this result answers.
+    requestId: str
+    # Fabrication planning request id from the original instruction generation job.
+    planRequestId: str
+    # Unix epoch milliseconds when the worker published this result.
+    emittedAtMs: int
+    # Worker id, pod name, or adapter instance that produced this result.
+    workerId: str
+    # True when the worker completed its requested instruction generation or review work.
+    success: bool
+    # True only when returned instructions and evidence are sufficient for the planner to consider the instruction lane releasable.
+    machineReady: bool
+    # Generated machine-code, setup, simulation, inspection, postprocess, or operator-instruction artifacts returned by the worker.
+    artifacts: List['FabricationGeneratedInstructionArtifact']
+    # Optional persisted fabrication job id from the original request.
+    jobId: Optional[str] = None
+    # Slicer, CAM, postprocessor, simulator, setup-sheet, inspection-plan, or operator-instruction adapter used.
+    generator: Optional[str] = None
+    # Generator or adapter version used for repeatability and learning attribution.
+    generatorVersion: Optional[str] = None
+    # Remaining blockers or new worker-discovered blockers.
+    blockers: Optional[List['FabricationInstructionBlocker']] = field(default_factory=list)
+    # Non-blocking warnings that should be retained with the instruction evidence.
+    warnings: Optional[List[str]] = field(default_factory=list)
+    # Free-form non-secret metadata such as postprocessor settings, slicer profile names, simulation summaries, machine envelope checks, tool libraries, fixture ids, or detected human-intervention boundaries.
+    reviewMetadata: Optional[Any] = None
+
+# One machine-code, setup, inspection, postprocess, or operator-instruction artifact requested from a worker.
+@dataclass
+class FabricationInstructionGenerationTarget:
+    """One machine-code, setup, inspection, postprocess, or operator-instruction artifact requested from a worker."""
+    # Stable target id used to correlate generated outputs with requested instruction artifacts.
+    targetId: str
+    # Operation id this target belongs to.
+    operationId: str
+    # Requested instruction format such as GCODE, NC, TAP, 3MF, BAMBUPROJECT, SETUP_SHEET_MD, TOOL_LIST_JSON, INSPECTION_PLAN_JSON, POSTPROCESS_PLAN_MD, WORKHOLDING_PLAN_JSON, or SIMULATION_REPORT_JSON.
+    format: str
+    # Machine profile id this target should use when machine-specific output is requested.
+    machineId: Optional[str] = None
+    # Why this artifact is needed, e.g. printer job, mill roughing, lathe finishing, sheet cutting, setup verification, inspection release, postprocess, or assembly.
+    purpose: Optional[str] = None
+    # Evidence labels that must be returned before the planner can consider this instruction artifact releasable.
+    evidenceRequired: Optional[List[str]] = field(default_factory=list)
+
+# Machine, controller, slicer, or postprocessor profile requested for instruction generation.
+@dataclass
+class FabricationInstructionMachineProfile:
+    """Machine, controller, slicer, or postprocessor profile requested for instruction generation."""
+    # Planner-local or fleet machine id, e.g. prusa-mk4-01, haas-vf2-03, okuma-lathe-02, waterjet-01.
+    machineId: str
+    # Machine class such as additive-fdm, additive-resin, powder-bed, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, plasma, or postprocess-station.
+    machineClass: str
+    # Controller or dialect target such as Marlin, RepRap, Klipper, Haas NGC, Fanuc, LinuxCNC, GRBL, Heidenhain, Okuma, PrusaSlicer, OrcaSlicer, Cura, Bambu Studio, or vendor-specific profile.
+    controllerDialect: Optional[str] = None
+    # Postprocessor, slicer, CAM template, or adapter id used to generate instructions.
+    postProcessor: Optional[str] = None
+    # Requested material or stock profile, e.g. PETG, 6061-T6 aluminum, 316 stainless, acrylic sheet, resin, nylon powder.
+    material: Optional[str] = None
+    # Human-readable work envelope or build volume summary retained for review.
+    workEnvelope: Optional[str] = None
+    # Evidence labels required before generated instructions can be considered for release on this machine.
+    requiredEvidence: Optional[List[str]] = field(default_factory=list)
+
+# One additive, subtractive, sheet-cutting, inspection, postprocess, or assembly operation for instruction generation.
+@dataclass
+class FabricationInstructionOperation:
+    """One additive, subtractive, sheet-cutting, inspection, postprocess, or assembly operation for instruction generation."""
+    # Stable operation id used to correlate generated machine code and setup evidence.
+    operationId: str
+    # Process label such as fdm-print, resin-print, powder-bed-print, vertical-mill-roughing, horizontal-mill-indexing, lathe-turning, router-profile, laser-cut, waterjet-cut, deburr, heat-set-inserts, inspection, or assembly.
+    process: str
+    # Machine class required for this operation.
+    machineClass: str
+    # Part, subassembly, or stock id affected by this operation.
+    partId: Optional[str] = None
+    # Operator-readable operation summary.
+    description: Optional[str] = None
+    # Source artifact ids consumed by this operation.
+    sourceArtifactIds: Optional[List[str]] = field(default_factory=list)
+    # Operation-specific release requirements such as verified workholding, tool list, coolant, material conditioning, support media, simulation, inspection datum, or operator resume evidence.
+    requirements: Optional[List[str]] = field(default_factory=list)
+
+# Verified geometry, slicer project, CAM setup, sheet nesting, mesh report, or assembly graph artifact that an instruction-generation worker can consume.
+@dataclass
+class FabricationInstructionSourceArtifact:
+    """Verified geometry, slicer project, CAM setup, sheet nesting, mesh report, or assembly graph artifact that an instruction-generation worker can consume."""
+    # Stable artifact id, usually returned by a design conversion worker or retained by the Rust planner.
+    artifactId: str
+    # Artifact format such as STEP, STL, 3MF, DXF, CAM_SETUP_JSON, SHEET_NESTING_JSON, SLICER_PROJECT, MESH_REPAIR_REPORT, or ASSEMBLY_GRAPH_JSON.
+    format: str
+    # Original design input id when the artifact traces back to a specific CAD, mesh, slicer, or CAM source.
+    sourceInputId: Optional[str] = None
+    # Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments.
+    uri: Optional[str] = None
+    # SHA-256 of the source artifact when available.
+    sha256: Optional[str] = None
+    # Artifact units when known.
+    units: Optional[str] = None
+    # Evidence labels already attached to this artifact, such as units-verified, mesh-manifold, profile-closed, cam-setup-reviewed, or slicer-profile-verified.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# One generated neutral export, slicer project, CAM setup, sheet nesting file, mesh report, or review artifact returned by a conversion worker.
+@dataclass
+class FabricationNeutralExportArtifact:
+    """One generated neutral export, slicer project, CAM setup, sheet nesting file, mesh report, or review artifact returned by a conversion worker."""
+    # Stable generated artifact id retained by the planner.
+    artifactId: str
+    # Generated format token such as STEP, STL, 3MF, DXF, CAM_SETUP_JSON, SHEET_NESTING_JSON, SLICER_PROJECT, MESH_REPAIR_REPORT, or ASSEMBLY_GRAPH_JSON.
+    format: str
+    # Requested target id this artifact satisfies when known.
+    targetId: Optional[str] = None
+    # Design input id used to create this artifact when known.
+    sourceInputId: Optional[str] = None
+    # Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments.
+    uri: Optional[str] = None
+    # SHA-256 of the generated artifact when available.
+    sha256: Optional[str] = None
+    # MIME type or controlled media label for the artifact.
+    mediaType: Optional[str] = None
+    # Artifact units when the format does not prove them unambiguously.
+    units: Optional[str] = None
+    # Measured or exporter-declared tolerance in millimeters.
+    toleranceMm: Optional[float] = None
+    # Evidence labels attached to this artifact, such as units-verified, mesh-manifold, watertight, profile-closed, slicer-profile-verified, or cam-setup-reviewed.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
 # Why this push happened. 'cron' = periodic sweep, 'admin' = on-demand UI button, 'register' = subscriber just joined, 'manual' = explicit API call, 'initial' = subscriber boot-time pull.
 RuntimeConfigApplyReason = Literal["cron", "admin", "register", "manual", "initial"]
 

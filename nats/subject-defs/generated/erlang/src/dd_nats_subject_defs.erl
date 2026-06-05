@@ -13,6 +13,12 @@
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
+    fabrication_design_conversion_requests_subject/0,
+    fabrication_design_conversion_requests_queue_group/0,
+    fabrication_design_conversion_results_subject/0,
+    fabrication_instruction_generation_requests_subject/0,
+    fabrication_instruction_generation_requests_queue_group/0,
+    fabrication_instruction_generation_results_subject/0,
     fabrication_requests_subject/0,
     fabrication_requests_queue_group/0,
     fabrication_results_subject/0,
@@ -174,6 +180,24 @@ des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 %% Service: dd-ai-ml-pipeline
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
 des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
+
+%% Design input conversion requests for CAD, mesh, slicer, CAM setup, and neutral export workers.
+%% Service: dd-fabrication-server
+fabrication_design_conversion_requests_subject() -> <<"dd.remote.fabrication.design.conversion.requests"/utf8>>.
+fabrication_design_conversion_requests_queue_group() -> <<"dd-fabrication-design-converters"/utf8>>.
+
+%% Design input conversion results carrying neutral exports, translator evidence, blockers, and review metadata.
+%% Service: dd-fabrication-server
+fabrication_design_conversion_results_subject() -> <<"dd.remote.fabrication.design.conversion.results"/utf8>>.
+
+%% Instruction generation requests for slicer, CAM, postprocess, setup-sheet, and machine-code workers.
+%% Service: dd-fabrication-server
+fabrication_instruction_generation_requests_subject() -> <<"dd.remote.fabrication.instructions.generation.requests"/utf8>>.
+fabrication_instruction_generation_requests_queue_group() -> <<"dd-fabrication-instruction-generators"/utf8>>.
+
+%% Instruction generation results carrying machine code, setup sheets, simulation evidence, blockers, and release metadata.
+%% Service: dd-fabrication-server
+fabrication_instruction_generation_results_subject() -> <<"dd.remote.fabrication.instructions.generation.results"/utf8>>.
 
 %% Fabrication planning requests. Default for FABRICATION_REQUEST_SUBJECT.
 %% Service: dd-fabrication-server

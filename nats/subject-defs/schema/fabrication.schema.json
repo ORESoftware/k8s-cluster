@@ -22,6 +22,36 @@
         "kind": "static",
         "subject": "dd.remote.fabrication.results",
         "direction": "both"
+      },
+      {
+        "name": "FabricationDesignConversionRequests",
+        "description": "Design input conversion requests for CAD, mesh, slicer, CAM setup, and neutral export workers.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.design.conversion.requests",
+        "queueGroup": "dd-fabrication-design-converters",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationDesignConversionResults",
+        "description": "Design input conversion results carrying neutral exports, translator evidence, blockers, and review metadata.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.design.conversion.results",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationInstructionGenerationRequests",
+        "description": "Instruction generation requests for slicer, CAM, postprocess, setup-sheet, and machine-code workers.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.instructions.generation.requests",
+        "queueGroup": "dd-fabrication-instruction-generators",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationInstructionGenerationResults",
+        "description": "Instruction generation results carrying machine code, setup sheets, simulation evidence, blockers, and release metadata.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.instructions.generation.results",
+        "direction": "both"
       }
     ]
   }
