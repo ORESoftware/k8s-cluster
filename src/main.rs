@@ -205,6 +205,7 @@ struct FabricationPlanResponse {
     process_plan: Vec<ProcessStep>,
     generated_programs: Vec<GeneratedProgram>,
     validation: ValidationReport,
+    simulation: SimulationReport,
     assembly: AssemblyPlan,
     learning: LearningPlan,
     warnings: Vec<String>,
@@ -219,6 +220,7 @@ struct InstructionAnalysisResponse {
     request_id: String,
     programs: Vec<AnalyzedProgram>,
     validation: ValidationReport,
+    simulation: SimulationReport,
     improvements: Vec<InstructionImprovement>,
     improved_programs: Vec<ImprovedInstructionProgram>,
     generated_at_ms: u128,
@@ -398,6 +400,40 @@ struct ValidationReport {
     severity: String,
     findings: Vec<ValidationFinding>,
     failure_boundaries: Vec<FailureBoundary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SimulationReport {
+    ok: bool,
+    severity: String,
+    programs: Vec<SimulationProgramTrace>,
+    findings: Vec<ValidationFinding>,
+    failure_boundaries: Vec<FailureBoundary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SimulationProgramTrace {
+    program_id: String,
+    machine_id: Option<String>,
+    machine_kind: String,
+    language: String,
+    motion_line_count: usize,
+    work_envelope_mm: Option<Vec<f64>>,
+    axis_extents: Vec<SimulationAxisExtent>,
+    safe_clearance_observed: bool,
+    spindle_or_heatup_observed: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SimulationAxisExtent {
+    axis: String,
+    min_mm: f64,
+    max_mm: f64,
+    limit_mm: Option<f64>,
+    exceeds_limit: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1006,6 +1042,23 @@ fn is_router_material(material: &MaterialSpec) -> bool {
         )
 }
 
+fn is_horizontal_mill_kind(kind: &str) -> bool {
+    let token = normalize_token(kind);
+    token.contains("horizontal-mill")
+        || token.contains("horizontal-machining")
+        || (token.contains("horizontal") && token.contains("mill"))
+}
+
+fn wants_horizontal_milling(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("horizontal")
+        || token.contains("side-mill")
+        || token.contains("side-milling")
+        || token.contains("keyway")
+        || token.contains("slot")
+        || token.contains("slitting")
+}
+
 fn machine_class(kind: &str) -> MachineClass {
     let token = normalize_token(kind);
     if token.contains("printer")
@@ -1242,12 +1295,14 @@ fn infer_requested_parts(
         || objective_token.contains("bearing")
         || objective_token.contains("cylind")
         || objective_token.contains("thread");
+    let needs_horizontal_milled_part = wants_horizontal_milling(&objective_token);
     let needs_milled_part = objective_token.contains("bracket")
         || objective_token.contains("plate")
         || objective_token.contains("pocket")
         || objective_token.contains("housing")
         || objective_token.contains("fixture")
         || objective_token.contains("datum")
+        || needs_horizontal_milled_part
         || tolerance_mm <= 0.08
         || is_metal(material);
     let needs_routed_part = objective_token.contains("router")
@@ -1287,7 +1342,16 @@ fn infer_requested_parts(
             tolerance_mm: Some(tolerance_mm.max(0.12)),
         });
     }
-    if needs_milled_part {
+    if needs_horizontal_milled_part {
+        parts.push(RequestedPart {
+            id: "horizontal-slotted-feature".to_string(),
+            description: "horizontal-milled side slot, keyway, spline, or heavy side feature"
+                .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("horizontal-milling".to_string()),
+            tolerance_mm: Some(tolerance_mm),
+        });
+    } else if needs_milled_part {
         parts.push(RequestedPart {
             id: "milled-datum".to_string(),
             description: "machined datum, pocket, flat, or tight-tolerance feature".to_string(),
@@ -1350,6 +1414,19 @@ fn choose_machine<'a>(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+
+    let wants_horizontal_mill = preferred.as_deref().is_some_and(wants_horizontal_milling)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_horizontal_milling(value));
+
+    if wants_horizontal_mill {
+        if let Some(machine) = machines.iter().find(|machine| {
+            is_horizontal_mill_kind(&machine.kind) && material_supported(machine, material)
+        }) {
+            return machine;
+        }
+    }
 
     let wants_class = if preferred
         .as_deref()
@@ -1439,6 +1516,9 @@ fn part_method(class: MachineClass) -> &'static str {
 fn operation_for_part(part: &PartPlan) -> &'static str {
     match machine_class(&part.machine_kind) {
         MachineClass::Additive => "slice, support, and print",
+        MachineClass::Mill if is_horizontal_mill_kind(&part.machine_kind) => {
+            "index fixture, side-mill slots, and finish horizontal features"
+        }
         MachineClass::Mill => "face, rough, contour, and finish critical features",
         MachineClass::Lathe => "face, rough turn, finish turn, and bore/thread if needed",
         MachineClass::Router => "profile, pocket, and tab-cut",
@@ -1496,6 +1576,38 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: slice against the actual mesh, nozzle, filament, and bed profile before running."
                     .to_string(),
                 "Human signoff is required for temperatures, supports, bed adhesion, and collision clearance."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Mill if is_horizontal_mill_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "iso-gcode".to_string()),
+            vec![
+                "(draft horizontal milling program generated by dd-fabrication-server)".to_string(),
+                "G21 G90 G17 ; millimeters, absolute, XY plane".to_string(),
+                "G54 ; operator-verified tombstone or fixture offset".to_string(),
+                "T3 M6 ; side-and-face cutter or slab mill".to_string(),
+                "S6500 M3 ; horizontal spindle on clockwise".to_string(),
+                "G0 X0 Y0 Z25 ; clear fixture and arbor".to_string(),
+                "M0 ; verify arbor, overarm, guards, and side-clearance before slotting".to_string(),
+                "G0 X-5 Y0 Z5".to_string(),
+                "G1 Z-6.0 F80 ; conservative slot depth".to_string(),
+                "G1 X120 F260 ; side slot roughing pass".to_string(),
+                "G0 Z20".to_string(),
+                "M0 ; index fixture or inspect keyway before finish pass".to_string(),
+                "G0 X-5 Y0 Z4".to_string(),
+                "G1 Z-6.4 F60 ; finish side feature".to_string(),
+                "G1 X120 F180".to_string(),
+                "G0 Z30".to_string(),
+                "M5".to_string(),
+                "M30".to_string(),
+            ],
+            vec![
+                "Draft only: verify arbor support, side cutter width, fixture indexing, overarm clearance, and chip evacuation before running."
+                    .to_string(),
+                "Horizontal mill operations need inspection at each programmed stop before index or finish passes."
                     .to_string(),
             ],
         ),
@@ -1724,6 +1836,247 @@ fn is_machine_code_language(language: &str) -> bool {
                 | "heidenhain"
                 | "mazatrol"
         )
+}
+
+fn program_id_at(program: &InstructionProgram, index: usize) -> String {
+    program
+        .id
+        .clone()
+        .unwrap_or_else(|| format!("program-{}", index + 1))
+}
+
+fn machine_for_program<'a>(
+    program: &InstructionProgram,
+    machines: &'a [MachineProfile],
+) -> Option<&'a MachineProfile> {
+    if let Some(machine_id) = program.machine_id.as_deref() {
+        if let Some(machine) = machines.iter().find(|machine| machine.id == machine_id) {
+            return Some(machine);
+        }
+    }
+    if let Some(machine_kind) = program.machine_kind.as_deref() {
+        if let Some(machine) = machines.iter().find(|machine| machine.kind == machine_kind) {
+            return Some(machine);
+        }
+        let class = machine_class(machine_kind);
+        if class != MachineClass::Other {
+            return machines
+                .iter()
+                .find(|machine| machine_class(&machine.kind) == class);
+        }
+    }
+    None
+}
+
+fn axis_limit(class: MachineClass, envelope: &[f64], axis: char) -> Option<f64> {
+    match class {
+        MachineClass::Lathe => match axis {
+            'X' => envelope.first().copied(),
+            'Z' => envelope.get(1).copied(),
+            _ => None,
+        },
+        _ => match axis {
+            'X' => envelope.first().copied(),
+            'Y' => envelope.get(1).copied(),
+            'Z' => envelope.get(2).copied(),
+            _ => None,
+        },
+    }
+}
+
+fn coordinate_exceeds_limit(class: MachineClass, axis: char, value: f64, limit: f64) -> bool {
+    let tolerance = 0.001;
+    match axis {
+        'X' | 'Y' => value < -tolerance || value > limit + tolerance,
+        'Z' if class == MachineClass::Additive => value < -tolerance || value > limit + tolerance,
+        'Z' => value.abs() > limit + tolerance,
+        _ => false,
+    }
+}
+
+fn simulate_instruction_programs(
+    programs: &[InstructionProgram],
+    machines: &[MachineProfile],
+) -> SimulationReport {
+    let mut traces = Vec::with_capacity(programs.len());
+    let mut findings = Vec::new();
+    let mut boundaries = Vec::new();
+
+    for (program_index, program) in programs.iter().enumerate() {
+        let program_id = program_id_at(program, program_index);
+        let machine_kind = program
+            .machine_kind
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        let language = program
+            .language
+            .clone()
+            .unwrap_or_else(|| "gcode".to_string());
+        let machine = machine_for_program(program, machines);
+        let class = machine_class(
+            machine
+                .map(|machine| machine.kind.as_str())
+                .unwrap_or(machine_kind.as_str()),
+        );
+        let work_envelope_mm = machine.and_then(|machine| machine.work_envelope_mm.clone());
+        let mut absolute = true;
+        let mut unit_scale = 1.0;
+        let mut current = BTreeMap::<char, f64>::new();
+        let mut min_axis = BTreeMap::<char, f64>::new();
+        let mut max_axis = BTreeMap::<char, f64>::new();
+        let mut motion_line_count = 0_usize;
+        let mut safe_clearance_observed = false;
+        let mut spindle_or_heatup_observed = false;
+        let mut reported_axes = BTreeSet::<char>::new();
+
+        if !is_machine_code_language(&language) {
+            traces.push(SimulationProgramTrace {
+                program_id,
+                machine_id: program.machine_id.clone(),
+                machine_kind,
+                language,
+                motion_line_count,
+                work_envelope_mm,
+                axis_extents: Vec::new(),
+                safe_clearance_observed,
+                spindle_or_heatup_observed,
+            });
+            continue;
+        }
+
+        for (line_index, raw_line) in program.instructions.iter().enumerate() {
+            let line_number = line_index + 1;
+            let stripped = strip_comment(raw_line);
+            if stripped.is_empty() {
+                continue;
+            }
+            if has_any_code(&stripped, &["G20"]) {
+                unit_scale = 25.4;
+            }
+            if has_any_code(&stripped, &["G21"]) {
+                unit_scale = 1.0;
+            }
+            if has_any_code(&stripped, &["G90"]) {
+                absolute = true;
+            }
+            if has_any_code(&stripped, &["G91"]) {
+                absolute = false;
+            }
+            if has_any_code(
+                &stripped,
+                &["M3", "M4", "M03", "M04", "M104", "M109", "M140", "M190"],
+            ) {
+                spindle_or_heatup_observed = true;
+            }
+            if number_after(&stripped, 'Z').is_some_and(|z| z * unit_scale > 0.0)
+                && has_any_code(&stripped, &["G0", "G00"])
+            {
+                safe_clearance_observed = true;
+            }
+            if !has_any_code(
+                &stripped,
+                &["G0", "G00", "G1", "G01", "G2", "G02", "G3", "G03"],
+            ) {
+                continue;
+            }
+
+            motion_line_count += 1;
+            for axis in ['X', 'Y', 'Z', 'E'] {
+                let Some(raw_value) = number_after(&stripped, axis) else {
+                    continue;
+                };
+                let scaled = raw_value * unit_scale;
+                let next = if absolute {
+                    scaled
+                } else {
+                    current.get(&axis).copied().unwrap_or_default() + scaled
+                };
+                current.insert(axis, next);
+                min_axis
+                    .entry(axis)
+                    .and_modify(|value| *value = value.min(next))
+                    .or_insert(next);
+                max_axis
+                    .entry(axis)
+                    .and_modify(|value| *value = value.max(next))
+                    .or_insert(next);
+
+                let Some(envelope) = work_envelope_mm.as_ref() else {
+                    continue;
+                };
+                let Some(limit) = axis_limit(class, envelope, axis) else {
+                    continue;
+                };
+                if coordinate_exceeds_limit(class, axis, next, limit) && reported_axes.insert(axis)
+                {
+                    findings.push(ValidationFinding {
+                        severity: "error".to_string(),
+                        code: "simulated-axis-envelope-exceeded".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message: format!(
+                            "simulated {axis} position {next:.3} mm exceeds machine envelope limit {limit:.3} mm"
+                        ),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "simulated-machine-envelope".to_string(),
+                        severity: "error".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason: format!(
+                            "toolpath simulation places axis {axis} at {next:.3} mm outside the retained machine envelope"
+                        ),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "choose a larger machine, split/reorient the part, revise work offsets, or regenerate CAM with verified travel limits"
+                                .to_string(),
+                    });
+                }
+            }
+        }
+
+        let axis_extents = ['X', 'Y', 'Z', 'E']
+            .into_iter()
+            .filter_map(|axis| {
+                let min = min_axis.get(&axis).copied()?;
+                let max = max_axis.get(&axis).copied()?;
+                let limit = work_envelope_mm
+                    .as_ref()
+                    .and_then(|envelope| axis_limit(class, envelope, axis));
+                let exceeds_limit = limit.is_some_and(|limit| {
+                    coordinate_exceeds_limit(class, axis, min, limit)
+                        || coordinate_exceeds_limit(class, axis, max, limit)
+                });
+                Some(SimulationAxisExtent {
+                    axis: axis.to_string(),
+                    min_mm: min,
+                    max_mm: max,
+                    limit_mm: limit,
+                    exceeds_limit,
+                })
+            })
+            .collect::<Vec<_>>();
+        traces.push(SimulationProgramTrace {
+            program_id,
+            machine_id: program.machine_id.clone(),
+            machine_kind,
+            language,
+            motion_line_count,
+            work_envelope_mm,
+            axis_extents,
+            safe_clearance_observed,
+            spindle_or_heatup_observed,
+        });
+    }
+
+    let severity = report_severity(&findings, &boundaries);
+    SimulationReport {
+        ok: severity != "error",
+        severity,
+        programs: traces,
+        findings,
+        failure_boundaries: boundaries,
+    }
 }
 
 fn text_has_any(line: &str, needles: &[&str]) -> bool {
@@ -2504,6 +2857,12 @@ fn design_primitive_for_part(part: &PartPlan) -> Value {
             "supportStrategy": "generated-review-required",
             "datums": ["build-plate-z", "front-left-origin"],
         }),
+        MachineClass::Mill if is_horizontal_mill_kind(&part.machine_kind) => json!({
+            "primitive": "horizontal-subtractive-feature",
+            "operation": "side-slot-keyway-index-finish",
+            "stockAllowanceMm": 1.8,
+            "datums": ["G54-tombstone-face", "arbor-clearance-plane", "indexed-side-face"],
+        }),
         MachineClass::Mill => json!({
             "primitive": "subtractive-prismatic-body",
             "operation": "face-rough-contour-finish",
@@ -2620,6 +2979,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             response.generated_at_ms,
         ),
         json_artifact(
+            "simulation-report".to_string(),
+            "simulation-report",
+            json!(response.simulation),
+            response.generated_at_ms,
+        ),
+        json_artifact(
             "learning-plan".to_string(),
             "learning-plan",
             json!(response.learning),
@@ -2664,6 +3029,12 @@ fn analysis_artifacts(response: &InstructionAnalysisResponse) -> Vec<Fabrication
             "analysis-validation-report".to_string(),
             "analysis-validation-report",
             json!(response.validation),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "analysis-simulation-report".to_string(),
+            "analysis-simulation-report",
+            json!(response.simulation),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -2972,7 +3343,12 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         .chain(existing_programs.clone())
         .collect::<Vec<_>>();
     let (_, mut validation, improvements) = analyze_instruction_programs(&generated_as_input);
+    let simulation = simulate_instruction_programs(&generated_as_input, &machines);
+    validation.findings.extend(simulation.findings.clone());
     validation.failure_boundaries.extend(plan_boundaries);
+    validation
+        .failure_boundaries
+        .extend(simulation.failure_boundaries.clone());
     validation.severity = report_severity(&validation.findings, &validation.failure_boundaries);
     validation.ok = validation.severity != "error";
 
@@ -3010,6 +3386,7 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         process_plan,
         generated_programs,
         validation,
+        simulation,
         assembly,
         learning,
         warnings,
@@ -4225,8 +4602,9 @@ async fn analyze_http(
                 .into_response();
         }
     };
-    if let Some(machines) = request.machines {
-        if let Err(error) = validate_machines(Some(machines)) {
+    let machines = match validate_machines(request.machines) {
+        Ok(machines) => machines,
+        Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             return (
                 StatusCode::BAD_REQUEST,
@@ -4234,7 +4612,7 @@ async fn analyze_http(
             )
                 .into_response();
         }
-    }
+    };
     if let Some(material) = request.material {
         if let Err(error) = material_or_default(Some(material)) {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -4246,7 +4624,14 @@ async fn analyze_http(
         }
     }
 
-    let (analyzed, validation, improvements) = analyze_instruction_programs(&programs);
+    let (analyzed, mut validation, improvements) = analyze_instruction_programs(&programs);
+    let simulation = simulate_instruction_programs(&programs, &machines);
+    validation.findings.extend(simulation.findings.clone());
+    validation
+        .failure_boundaries
+        .extend(simulation.failure_boundaries.clone());
+    validation.severity = report_severity(&validation.findings, &validation.failure_boundaries);
+    validation.ok = validation.severity != "error";
     let improved_programs = improve_instruction_programs(&programs, &validation, &improvements);
     state
         .metrics
@@ -4263,6 +4648,7 @@ async fn analyze_http(
         request_id,
         programs: analyzed,
         validation,
+        simulation,
         improvements,
         improved_programs,
         generated_at_ms,
@@ -4543,6 +4929,77 @@ mod tests {
     }
 
     #[test]
+    fn horizontal_mill_plan_generates_side_slot_program_and_artifact_metadata() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-horizontal-mill".to_string()),
+            objective: "steel fixture rail with horizontal keyway and deep side slot".to_string(),
+            material: Some(material("steel", "metal")),
+            stock: Some(StockSpec {
+                form: "bar".to_string(),
+                dimensions_mm: Some(vec![220.0, 70.0, 45.0]),
+            }),
+            tolerance_mm: Some(0.04),
+            quantity: Some(1),
+            machines: None,
+            constraints: Some(FabricationConstraints {
+                max_setups: Some(3),
+                allow_human_intervention: Some(true),
+                allow_multi_part_assembly: Some(true),
+                require_dry_run: Some(true),
+                preferred_methods: Some(vec!["horizontal-milling".to_string()]),
+            }),
+            parts: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("horizontal mill plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "horizontal-slotted-feature"
+                && part.machine_kind == "horizontal-mill"
+                && part.manufacturing_method == "subtractive-milling"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("side-mill slots")));
+        let horizontal_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "horizontal-mill")
+            .expect("horizontal mill program should be generated");
+        assert_eq!(horizontal_program.language, "iso-gcode");
+        assert!(horizontal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft horizontal milling program")));
+        assert!(horizontal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("index fixture")));
+        assert!(horizontal_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("arbor support")));
+
+        let job = stored_plan_job(&response);
+        let parametric_design = job
+            .artifacts
+            .get("parametric-design")
+            .expect("parametric design artifact should be retained");
+        assert!(parametric_design
+            .content
+            .get("parts")
+            .and_then(Value::as_array)
+            .is_some_and(|parts| parts.iter().any(|part| {
+                part.get("primitive")
+                    .and_then(|primitive| primitive.get("primitive"))
+                    .and_then(Value::as_str)
+                    == Some("horizontal-subtractive-feature")
+            })));
+    }
+
+    #[test]
     fn router_plan_uses_default_cnc_router_and_tabbed_profile_program() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-router".to_string()),
@@ -4652,6 +5109,55 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.contains("boundary machine-safety-gate")));
+    }
+
+    #[test]
+    fn simulation_flags_submitted_toolpath_outside_machine_envelope() {
+        let programs = vec![InstructionProgram {
+            id: Some("oversize-router".to_string()),
+            machine_id: Some("tiny-router".to_string()),
+            machine_kind: Some("cnc-router".to_string()),
+            language: Some("grbl-gcode".to_string()),
+            instructions: vec![
+                "G21 G90 G54".to_string(),
+                "S18000 M3".to_string(),
+                "G0 X0 Y0 Z8".to_string(),
+                "G1 X150 Y20 Z-2 F800".to_string(),
+                "M30".to_string(),
+            ],
+        }];
+        let machines = vec![MachineProfile {
+            id: "tiny-router".to_string(),
+            kind: "cnc-router".to_string(),
+            controller: Some("grbl-gcode".to_string()),
+            materials: Some(vec!["wood".to_string()]),
+            work_envelope_mm: Some(vec![100.0, 80.0, 50.0]),
+            axes: Some(3),
+            operations: Some(vec!["profile".to_string()]),
+        }];
+
+        let simulation = simulate_instruction_programs(&programs, &machines);
+
+        assert!(!simulation.ok);
+        assert_eq!(simulation.severity, "error");
+        assert!(simulation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "simulated-axis-envelope-exceeded"));
+        assert!(simulation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| boundary.kind == "simulated-machine-envelope"));
+        let trace = simulation
+            .programs
+            .first()
+            .expect("simulation should keep a program trace");
+        assert_eq!(trace.machine_id.as_deref(), Some("tiny-router"));
+        assert!(trace.safe_clearance_observed);
+        assert!(trace.spindle_or_heatup_observed);
+        assert!(trace.axis_extents.iter().any(|axis| {
+            axis.axis == "X" && axis.limit_mm == Some(100.0) && axis.exceeds_limit
+        }));
     }
 
     #[test]
@@ -4994,6 +5500,8 @@ mod tests {
         assert!(job.artifacts.contains_key("design-summary"));
         assert!(job.artifacts.contains_key("parametric-design"));
         assert!(job.artifacts.contains_key("mdp-request"));
+        assert!(job.artifacts.contains_key("simulation-report"));
+        assert!(response.simulation.ok);
         assert!(job
             .artifacts
             .keys()
@@ -5081,6 +5589,7 @@ mod tests {
             &["G21", "G90", "G1 X10 Y10 E2.0 F900"],
         )];
         let (analyzed, validation, improvements) = analyze_instruction_programs(&programs);
+        let simulation = simulate_instruction_programs(&programs, &default_machines());
         let improved_programs = improve_instruction_programs(&programs, &validation, &improvements);
         let generated_at_ms = now_ms();
         let response = InstructionAnalysisResponse {
@@ -5089,6 +5598,7 @@ mod tests {
             request_id: "unit-analysis-artifacts".to_string(),
             programs: analyzed,
             validation,
+            simulation,
             improvements,
             improved_programs,
             generated_at_ms,
@@ -5097,6 +5607,7 @@ mod tests {
         let job = stored_analysis_job(&response);
         assert_eq!(job.record.kind, "instruction-analysis");
         assert!(job.artifacts.contains_key("analysis-validation-report"));
+        assert!(job.artifacts.contains_key("analysis-simulation-report"));
         assert!(job
             .artifacts
             .keys()
