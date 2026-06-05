@@ -226,6 +226,7 @@ struct FabricationPlanResponse {
     material: MaterialSpec,
     quantity: u32,
     design: DesignSummary,
+    machine_selection: Vec<MachineSelectionTrace>,
     manufacturing_handoff: ManufacturingHandoff,
     process_plan: Vec<ProcessStep>,
     process_graph: ProcessGraph,
@@ -455,6 +456,37 @@ struct ProcessGraphGate {
     action: String,
     requires_human_intervention: bool,
     next_state: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineSelectionTrace {
+    part_id: String,
+    material: MaterialSpec,
+    tolerance_mm: f64,
+    preferred_method: Option<String>,
+    required_class: Option<String>,
+    selected_machine_id: String,
+    selected_machine_kind: String,
+    selected_reason: String,
+    candidates: Vec<MachineSelectionCandidate>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineSelectionCandidate {
+    machine_id: String,
+    machine_kind: String,
+    controller: Option<String>,
+    material_supported: bool,
+    class_match: bool,
+    special_process_match: bool,
+    operation_match: bool,
+    envelope_known: bool,
+    score: f64,
+    status: String,
+    reasons: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1953,6 +1985,263 @@ fn material_supported(machine: &MachineProfile, material: &MaterialSpec) -> bool
             })
         })
         .unwrap_or(true)
+}
+
+fn machine_class_label(class: MachineClass) -> &'static str {
+    match class {
+        MachineClass::Additive => "additive",
+        MachineClass::Mill => "milling",
+        MachineClass::Lathe => "turning",
+        MachineClass::Router => "routing",
+        MachineClass::SheetCut => "sheet-cutting",
+        MachineClass::Other => "other",
+    }
+}
+
+fn selection_preference_tokens(
+    part: &RequestedPart,
+    constraints: Option<&FabricationConstraints>,
+) -> Vec<String> {
+    let mut tokens = Vec::new();
+    if let Some(method) = part.preferred_method.as_ref() {
+        tokens.push(normalize_token(method));
+    }
+    if let Some(methods) = constraints.and_then(|constraints| constraints.preferred_methods.as_ref())
+    {
+        tokens.extend(methods.iter().map(|method| normalize_token(method)));
+    }
+    tokens.sort();
+    tokens.dedup();
+    tokens
+}
+
+fn preferred_machine_class_from_tokens(tokens: &[String]) -> Option<MachineClass> {
+    if tokens.iter().any(|value| {
+        wants_sheet_cutting(value)
+            || wants_laser_cutting(value)
+            || wants_waterjet_cutting(value)
+            || wants_plasma_cutting(value)
+    }) {
+        Some(MachineClass::SheetCut)
+    } else if tokens
+        .iter()
+        .any(|value| value.contains("turn") || value.contains("lathe"))
+    {
+        Some(MachineClass::Lathe)
+    } else if tokens.iter().any(|value| {
+        value.contains("router") || value.contains("routing") || value.contains("rout")
+    }) {
+        Some(MachineClass::Router)
+    } else if tokens.iter().any(|value| {
+        wants_horizontal_milling(value)
+            || value.contains("mill")
+            || value.contains("machin")
+            || value.contains("datum")
+    }) {
+        Some(MachineClass::Mill)
+    } else if tokens.iter().any(|value| {
+        wants_resin_printing(value)
+            || wants_powder_bed_printing(value)
+            || value.contains("print")
+            || value.contains("additive")
+    }) {
+        Some(MachineClass::Additive)
+    } else {
+        None
+    }
+}
+
+fn special_process_matches(tokens: &[String], machine: &MachineProfile) -> bool {
+    let wants_horizontal = tokens.iter().any(|value| wants_horizontal_milling(value));
+    let wants_resin = tokens.iter().any(|value| wants_resin_printing(value));
+    let wants_powder = tokens.iter().any(|value| wants_powder_bed_printing(value));
+    let wants_laser = tokens.iter().any(|value| wants_laser_cutting(value));
+    let wants_waterjet = tokens.iter().any(|value| wants_waterjet_cutting(value));
+    let wants_plasma = tokens.iter().any(|value| wants_plasma_cutting(value));
+    let has_special =
+        wants_horizontal || wants_resin || wants_powder || wants_laser || wants_waterjet || wants_plasma;
+    if !has_special {
+        return true;
+    }
+    (!wants_horizontal || is_horizontal_mill_kind(&machine.kind))
+        && (!wants_resin || is_resin_printer_kind(&machine.kind))
+        && (!wants_powder || is_powder_bed_printer_kind(&machine.kind))
+        && (!wants_laser || is_laser_cutter_kind(&machine.kind))
+        && (!wants_waterjet || is_waterjet_cutter_kind(&machine.kind))
+        && (!wants_plasma || is_plasma_cutter_kind(&machine.kind))
+}
+
+fn operation_token_matches(preference: &str, operation: &str) -> bool {
+    operation.contains(preference)
+        || preference.contains(operation)
+        || (preference.contains("print") && operation.contains("print"))
+        || (preference.contains("mill") && operation.contains("mill"))
+        || (preference.contains("turn") && operation.contains("turn"))
+        || (preference.contains("route") && operation.contains("profile"))
+        || (preference.contains("sheet") && operation.contains("cut"))
+        || (preference.contains("laser") && operation.contains("laser"))
+        || (preference.contains("waterjet") && operation.contains("waterjet"))
+        || (preference.contains("plasma") && operation.contains("plasma"))
+}
+
+fn operation_matches(tokens: &[String], machine: &MachineProfile) -> bool {
+    if tokens.is_empty() {
+        return true;
+    }
+    let Some(operations) = machine.operations.as_ref() else {
+        return true;
+    };
+    let operation_tokens = operations
+        .iter()
+        .map(|operation| normalize_token(operation))
+        .collect::<Vec<_>>();
+    tokens.iter().any(|preference| {
+        operation_tokens
+            .iter()
+            .any(|operation| operation_token_matches(preference, operation))
+    })
+}
+
+fn machine_selection_trace(
+    part: &RequestedPart,
+    machines: &[MachineProfile],
+    material: &MaterialSpec,
+    tolerance_mm: f64,
+    constraints: Option<&FabricationConstraints>,
+    selected_machine: &MachineProfile,
+) -> MachineSelectionTrace {
+    let preference_tokens = selection_preference_tokens(part, constraints);
+    let required_class = preferred_machine_class_from_tokens(&preference_tokens).or_else(|| {
+        if tolerance_mm <= 0.08 || is_metal(material) {
+            Some(MachineClass::Mill)
+        } else {
+            None
+        }
+    });
+    let mut candidates = machines
+        .iter()
+        .map(|machine| {
+            let material_ok = material_supported(machine, material);
+            let class_match = required_class
+                .map(|class| machine_class(&machine.kind) == class)
+                .unwrap_or(true);
+            let special_match = special_process_matches(&preference_tokens, machine);
+            let operation_match = operation_matches(&preference_tokens, machine);
+            let envelope_known = machine.work_envelope_mm.is_some();
+            let selected = machine.id == selected_machine.id;
+            let mut reasons = Vec::new();
+            if material_ok {
+                reasons.push("material-compatible-or-unspecified".to_string());
+            } else {
+                reasons.push("material-not-listed-for-machine".to_string());
+            }
+            if class_match {
+                reasons.push("process-class-match".to_string());
+            } else if let Some(class) = required_class {
+                reasons.push(format!(
+                    "process-class-mismatch-required-{}",
+                    machine_class_label(class)
+                ));
+            }
+            if special_match {
+                reasons.push("special-process-match".to_string());
+            } else {
+                reasons.push("special-process-mismatch".to_string());
+            }
+            if operation_match {
+                reasons.push("operation-match-or-unspecified".to_string());
+            } else {
+                reasons.push("operation-not-declared-for-preference".to_string());
+            }
+            if envelope_known {
+                reasons.push("work-envelope-known".to_string());
+            } else {
+                reasons.push("work-envelope-unknown".to_string());
+            }
+            let score = rounded_score(
+                if material_ok { 0.35 } else { -0.35 }
+                    + if class_match { 0.20 } else { -0.10 }
+                    + if special_match { 0.20 } else { -0.20 }
+                    + if operation_match { 0.15 } else { -0.05 }
+                    + if envelope_known { 0.05 } else { 0.0 }
+                    + if selected { 0.05 } else { 0.0 },
+            );
+            let status = if selected {
+                "selected"
+            } else if !material_ok {
+                "rejected-material"
+            } else if !class_match || !special_match {
+                "rejected-process"
+            } else if !operation_match {
+                "review-operation-gap"
+            } else {
+                "viable-alternative"
+            };
+            MachineSelectionCandidate {
+                machine_id: machine.id.clone(),
+                machine_kind: machine.kind.clone(),
+                controller: machine.controller.clone(),
+                material_supported: material_ok,
+                class_match,
+                special_process_match: special_match,
+                operation_match,
+                envelope_known,
+                score,
+                status: status.to_string(),
+                reasons,
+            }
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.machine_id.cmp(&right.machine_id))
+    });
+
+    let selected_candidate = candidates
+        .iter()
+        .find(|candidate| candidate.machine_id == selected_machine.id);
+    let mut warnings = Vec::new();
+    if selected_candidate.is_some_and(|candidate| !candidate.material_supported) {
+        warnings.push("selected machine does not explicitly list requested material".to_string());
+    }
+    if selected_candidate.is_some_and(|candidate| !candidate.envelope_known) {
+        warnings.push("selected machine has no declared work envelope".to_string());
+    }
+    if selected_candidate.is_some_and(|candidate| !candidate.operation_match) {
+        warnings.push("selected machine does not declare the preferred operation".to_string());
+    }
+    if selected_candidate.is_some_and(|candidate| !candidate.special_process_match) {
+        warnings.push("selected machine is a fallback for the requested special process".to_string());
+    }
+
+    let selected_reason = if selected_candidate.is_some_and(|candidate| {
+        candidate.material_supported
+            && candidate.class_match
+            && candidate.special_process_match
+            && candidate.operation_match
+    }) {
+        "selected as material-compatible process and operation match"
+    } else if tolerance_mm <= 0.08 || is_metal(material) {
+        "selected as tight-tolerance or metal-capable fallback"
+    } else {
+        "selected by fallback process/material heuristic"
+    };
+
+    MachineSelectionTrace {
+        part_id: part.id.clone(),
+        material: material.clone(),
+        tolerance_mm,
+        preferred_method: part.preferred_method.clone(),
+        required_class: required_class.map(machine_class_label).map(str::to_string),
+        selected_machine_id: selected_machine.id.clone(),
+        selected_machine_kind: selected_machine.kind.clone(),
+        selected_reason: selected_reason.to_string(),
+        candidates,
+        warnings,
+    }
 }
 
 fn choose_machine<'a>(
