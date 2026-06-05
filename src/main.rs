@@ -1751,6 +1751,189 @@ fn generate_router_or_cut_gcode(
     )
 }
 
+fn fdm_primitive_toolpath(part: &PartSpec) -> String {
+    let bbox = bounded_bbox(part);
+    let origin_x = 8.0;
+    let origin_y = 8.0;
+    let width = bbox.x.clamp(5.0, 160.0);
+    let depth = bbox.y.clamp(5.0, 160.0);
+    let height = bbox.z.clamp(0.6, 12.0);
+    let layer_height = 0.28;
+    let layers = representative_depths(height, layer_height, 6);
+    let mut extrusion = 8.0;
+    let mut output = String::new();
+    output.push_str("; Primitive FDM path: perimeter plus sparse diagonal infill for the normalized part envelope.\n");
+    output.push_str("; Replace with controller-specific slicer output for complex meshes or production hardware.\n");
+    for (index, z) in layers.iter().enumerate() {
+        let inset = (index as f64 * 0.16).min(width.min(depth) * 0.12);
+        let x0 = origin_x + inset;
+        let y0 = origin_y + inset;
+        let x1 = origin_x + width - inset;
+        let y1 = origin_y + depth - inset;
+        output.push_str(&format!("; layer {} z={z:.3}\n", index + 1));
+        output.push_str(&format!("G1 Z{z:.3} F900\n"));
+        output.push_str(&format!("G1 X{x0:.3} Y{y0:.3} F3000\n"));
+        for (x, y) in [(x1, y0), (x1, y1), (x0, y1), (x0, y0)] {
+            extrusion += ((x - x0).abs() + (y - y0).abs()).max(1.0) * 0.035;
+            output.push_str(&format!("G1 X{x:.3} Y{y:.3} E{extrusion:.4} F1200\n"));
+        }
+        let infill_y = y0 + (y1 - y0) * 0.5;
+        extrusion += width.max(1.0) * 0.028;
+        output.push_str(&format!(
+            "G1 X{x1:.3} Y{infill_y:.3} E{extrusion:.4} F1500 ; envelope infill pass\n"
+        ));
+        extrusion += width.max(1.0) * 0.028;
+        output.push_str(&format!(
+            "G1 X{x0:.3} Y{infill_y:.3} E{extrusion:.4} F1500 ; return infill pass\n"
+        ));
+    }
+    output
+}
+
+fn mill_primitive_toolpath(part: &PartSpec, process: FabricationProcess, feed: f64) -> String {
+    let bbox = bounded_bbox(part);
+    let width = bbox.x.clamp(5.0, 180.0);
+    let depth = bbox.y.clamp(5.0, 180.0);
+    let cut_depth = bbox.z.clamp(0.5, 8.0);
+    let step = if process == FabricationProcess::MillFinishing {
+        cut_depth
+    } else {
+        2.0
+    };
+    let depths = representative_depths(cut_depth, step, 5);
+    let finish_allowance = if process == FabricationProcess::MillFinishing {
+        0.0
+    } else {
+        0.35
+    };
+    let mut output = String::new();
+    output.push_str(
+        "(Primitive mill path: rectangular pocket/profile based on normalized part envelope)\n",
+    );
+    output.push_str("(Simulate and repost for cutter compensation, entry strategy, and fixture-specific clearance)\n");
+    for (index, depth_z) in depths.iter().enumerate() {
+        let x1 = (width - finish_allowance).max(1.0);
+        let y1 = (depth - finish_allowance).max(1.0);
+        output.push_str(&format!(
+            "(rough/finish pass {} depth -{depth_z:.3})\n",
+            index + 1
+        ));
+        output.push_str("G0 X0 Y0\n");
+        output.push_str(&format!("G1 Z-{depth_z:.3} F180\n"));
+        output.push_str(&format!("G1 X{x1:.3} Y0 F{feed:.0}\n"));
+        output.push_str(&format!("G1 X{x1:.3} Y{y1:.3}\n"));
+        output.push_str(&format!("G1 X0 Y{y1:.3}\n"));
+        output.push_str("G1 X0 Y0\n");
+        if process != FabricationProcess::MillFinishing {
+            let pocket_x = x1 * 0.5;
+            output.push_str(&format!("G1 X{pocket_x:.3} Y0\n"));
+            output.push_str(&format!("G1 X{pocket_x:.3} Y{y1:.3} ; clearing raster\n"));
+        }
+        output.push_str("G0 Z5\n");
+    }
+    if process != FabricationProcess::MillFinishing {
+        output.push_str("(finish allowance left for a downstream finishing operation)\n");
+    } else {
+        output.push_str("(finish contour complete for datum envelope)\n");
+    }
+    output
+}
+
+fn lathe_primitive_toolpath(part: &PartSpec) -> String {
+    let bbox = bounded_bbox(part);
+    let target_diameter = bbox.x.min(bbox.y).clamp(2.0, 160.0);
+    let stock_diameter = (target_diameter + 4.0).min(180.0);
+    let length = bbox.z.clamp(5.0, 250.0);
+    let rough_step = ((stock_diameter - target_diameter) / 3.0).max(0.5);
+    let mut output = String::new();
+    output.push_str("(Primitive lathe path: rough OD passes, face, and finish diameter)\n");
+    output.push_str(
+        "(Controller post must verify diameter/radius mode, tool nose comp, and workholding)\n",
+    );
+    let mut diameter = stock_diameter;
+    let mut pass_index = 1;
+    while diameter - rough_step > target_diameter {
+        diameter -= rough_step;
+        output.push_str(&format!("(rough OD pass {pass_index} X{diameter:.3})\n"));
+        output.push_str(&format!("G0 X{:.3} Z2\n", diameter + 1.0));
+        output.push_str(&format!("G1 X{diameter:.3} F0.12\n"));
+        output.push_str(&format!("G1 Z-{length:.3} F0.18\n"));
+        output.push_str(&format!("G0 X{:.3}\n", stock_diameter + 2.0));
+        output.push_str("G0 Z2\n");
+        pass_index += 1;
+    }
+    output.push_str("(face and finish pass)\n");
+    output.push_str(&format!("G0 X{:.3} Z0.5\n", stock_diameter + 2.0));
+    output.push_str("G1 Z0 F0.10\n");
+    output.push_str("G1 X0 F0.08\n");
+    output.push_str(&format!("G0 X{:.3} Z1\n", target_diameter + 1.0));
+    output.push_str(&format!("G1 X{target_diameter:.3} F0.08\n"));
+    output.push_str(&format!("G1 Z-{length:.3} F0.12\n"));
+    output
+}
+
+fn router_or_cut_primitive_toolpath(part: &PartSpec, process: FabricationProcess) -> String {
+    let bbox = bounded_bbox(part);
+    let width = bbox.x.clamp(5.0, 240.0);
+    let depth = bbox.y.clamp(5.0, 240.0);
+    let cut_depth = bbox.z.clamp(0.5, 9.0);
+    let feed = if process == FabricationProcess::Cut {
+        420.0
+    } else {
+        650.0
+    };
+    let depths = representative_depths(cut_depth, 2.5, 5);
+    let mut output = String::new();
+    output.push_str("(Primitive profile path: nested rectangle with tab-lift boundaries)\n");
+    output.push_str(
+        "(Review kerf, cutter diameter, tabs, clamps, and sheet hold-down before production)\n",
+    );
+    for (index, depth_z) in depths.iter().enumerate() {
+        output.push_str(&format!(
+            "(profile pass {} depth -{depth_z:.3})\n",
+            index + 1
+        ));
+        output.push_str("G0 X0 Y0 Z5\n");
+        output.push_str(&format!("G1 Z-{depth_z:.3} F120\n"));
+        output.push_str(&format!("G1 X{:.3} Y0 F{feed:.0}\n", width * 0.45));
+        output.push_str("G0 Z1.5 (tab lift)\n");
+        output.push_str(&format!("G0 X{:.3} Y0\n", width * 0.55));
+        output.push_str(&format!("G1 Z-{depth_z:.3} F120\n"));
+        output.push_str(&format!("G1 X{width:.3} Y0 F{feed:.0}\n"));
+        output.push_str(&format!("G1 X{width:.3} Y{depth:.3}\n"));
+        output.push_str(&format!("G1 X0 Y{depth:.3}\n"));
+        output.push_str("G1 X0 Y0\n");
+    }
+    output
+}
+
+fn bounded_bbox(part: &PartSpec) -> BoundingBoxMm {
+    part.bounding_box_mm.clone().unwrap_or(BoundingBoxMm {
+        x: 25.0,
+        y: 25.0,
+        z: 10.0,
+    })
+}
+
+fn representative_depths(total: f64, step: f64, max_steps: usize) -> Vec<f64> {
+    let total = total.max(0.001);
+    let step = step.max(0.001);
+    let mut values = Vec::new();
+    let mut current = step.min(total);
+    while current < total && values.len() + 1 < max_steps {
+        values.push(current);
+        current += step;
+    }
+    if values
+        .last()
+        .map(|value| (total - *value).abs() > 0.0001)
+        .unwrap_or(true)
+    {
+        values.push(total);
+    }
+    values
+}
+
 fn analyze_instruction(
     instruction: &ExistingInstruction,
     machine: Option<&Machine>,
@@ -3612,6 +3795,16 @@ mod tests {
             .actions
             .iter()
             .any(|item| item.contains("FdmPrint")));
+        let generated_content = response
+            .instructions
+            .iter()
+            .map(|instruction| instruction.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let placeholder_marker = format!("{}_{}", "TODO", "CAM");
+        assert!(!generated_content.contains(&placeholder_marker));
+        assert!(generated_content.contains("; layer 1 z="));
+        assert!(generated_content.contains("Primitive mill path"));
         let mdp_request = response
             .learning
             .mdp_request
@@ -3705,6 +3898,13 @@ mod tests {
             .operations
             .iter()
             .any(|operation| operation.process == FabricationProcess::Turn));
+        assert!(response
+            .instructions
+            .iter()
+            .any(|instruction| instruction.content.contains("Primitive lathe path")));
+        assert!(response.instructions.iter().all(|instruction| !instruction
+            .content
+            .contains(&format!("{}_{}", "TODO", "CAM"))));
     }
 
     #[test]
