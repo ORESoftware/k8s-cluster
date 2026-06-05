@@ -204,6 +204,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"designInputReview": response\.design_input_review/);
   assert.match(source, /struct DesignInputFile/);
   assert.match(source, /struct DesignInputReview/);
+  assert.match(source, /struct DesignInputConversionStep/);
+  assert.match(source, /conversion_plan: Vec<DesignInputConversionStep>/);
+  assert.match(source, /fn design_input_conversion_step/);
+  assert.match(source, /fn design_input_conversion_required_evidence/);
+  assert.match(source, /FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT/);
+  assert.match(source, /dd\.remote\.fabrication\.design\.conversion\.requests/);
+  assert.match(source, /professional-cad-converter/);
+  assert.match(source, /slicer-profile-reviewer/);
   assert.match(source, /const DESIGN_FORMAT_SPECS/);
   assert.match(source, /ptc-creo-pro-engineer-native/);
   assert.match(source, /solidworks-native/);
@@ -410,6 +418,13 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /surface-finishing-evidence-missing/);
   assert.match(source, /surface-finishing-boundary/);
   assert.match(source, /add-surface-finishing-evidence/);
+  assert.match(source, /has_text_indexed_setup_context/);
+  assert.match(source, /has_text_indexed_setup_evidence/);
+  assert.match(source, /fn has_text_indexed_setup_context/);
+  assert.match(source, /fn has_text_indexed_setup_evidence/);
+  assert.match(source, /indexed-setup-evidence-missing/);
+  assert.match(source, /indexed-setup-boundary/);
+  assert.match(source, /add-indexed-setup-evidence/);
   assert.match(
     source,
     /text_resin_and_powder_jobs_require_process_evidence_before_release/,
@@ -443,6 +458,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(
     source,
     /text_surface_finishing_jobs_require_chemistry_masking_and_inspection_evidence/,
+  );
+  assert.match(
+    source,
+    /text_indexed_setup_jobs_require_clamp_clearance_and_datum_evidence/,
   );
   assert.match(source, /machine\.axes must be at least 1/);
   assert.match(source, /machine_profile_validation_rejects_zero_axis_machine/);
@@ -483,6 +502,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /incremental-positioning-not-reset-before-end/);
   assert.match(source, /incremental-positioning-boundary/);
   assert.match(source, /cnc_analysis_requires_absolute_positioning_before_program_end/);
+  assert.match(source, /fn has_coordinate_transform_start/);
+  assert.match(source, /fn has_coordinate_transform_cancel/);
+  assert.match(source, /fn has_coordinate_transform_evidence/);
+  assert.match(source, /coordinate_transform_active/);
+  assert.match(source, /coordinate-transform-not-verified/);
+  assert.match(source, /coordinate-transform-not-cancelled-before-end/);
+  assert.match(source, /coordinate-transform-boundary/);
+  assert.match(source, /cnc_analysis_requires_coordinate_transform_review_and_cancel/);
   assert.match(source, /fn has_additive_relative_positioning_evidence/);
   assert.match(source, /additive_relative_positioning_verified/);
   assert.match(source, /additive-relative-positioning-extrusion-not-verified/);
@@ -1031,6 +1058,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`designPackage`/);
   assert.match(readme, /`designExports` bundle/);
   assert.match(readme, /`designInputReview`/);
+  assert.match(readme, /Its `conversionPlan` lists per-input CAD\/model\/slicer conversion worker lanes/);
+  assert.match(readme, /design-conversion NATS request\/result subjects/);
+  assert.match(readme, /per-input `conversionPlan` worker handoffs/);
+  assert.match(readme, /`dd\.remote\.fabrication\.design\.conversion\.requests`/);
+  assert.match(readme, /per-input conversion worker\s+lanes, required evidence, review gates, and release blockers/);
   assert.match(readme, /generated design export payloads/);
   assert.match(readme, /3MF\/STL\/STEP\/DXF\/CAM setup\/nesting\/assembly payloads/);
   assert.match(readme, /neutral export targets/);
@@ -1158,6 +1190,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /machine-ready release/);
   assert.match(readme, /nonzero axis counts/);
   assert.match(readme, /positioning-mode reset state/);
+  assert.match(readme, /coordinate transform rotation\/scaling\/mirroring review and cancel state/);
+  assert.match(
+    readme,
+    /unreviewed `G51` scaling\/mirroring or `G68` coordinate rotation and missing `G50\.1`\/`G69` transform cancellation/,
+  );
   assert.match(
     readme,
     /CNC program end while still in `G91` incremental positioning without `G90` reset/,
@@ -1273,6 +1310,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /unattended\/batch monitoring and recovery evidence/);
   assert.match(readme, /thermal postprocess temperature\/fixture\/cooldown evidence/);
   assert.match(readme, /surface\/chemical finishing media\/masking\/PPE\/waste evidence/);
+  assert.match(readme, /indexed setup clamp\/index\/clearance\/re-probe evidence/);
   assert.match(readme, /assembly\s+dry-fit\/metrology\/datum\/torque\/cure controls/);
   assert.match(readme, /missing assembly fit\/metrology evidence/);
   assert.match(readme, /missing precision tolerance\/surface-finish metrology evidence/);
@@ -1284,6 +1322,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(
     readme,
     /missing surface\/chemical finishing media\/masking\/PPE\/waste\/thickness\/inspection evidence/,
+  );
+  assert.match(
+    readme,
+    /missing indexed setup clamp\/brake\/index-angle\/clearance\/re-probe evidence/,
   );
   assert.match(
     readme,
