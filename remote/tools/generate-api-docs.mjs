@@ -500,7 +500,7 @@ function routePurpose(routeType, route) {
     return 'GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.';
   }
   if (route.path === '/graphql/schema' || route.path === '/api/graphql/schema') {
-    return 'Machine-readable GraphQL SDL schema for the remote REST API service.';
+    return 'Machine-readable GraphQL SDL schema for the remote REST API service; protected by internal auth by default.';
   }
   if (route.path === '/api-docs' || route.path === '/api-docs/') {
     return 'Central generated API documentation index.';
@@ -542,6 +542,9 @@ function routeAuth(routeType, route) {
   if (route.path.includes('/webhooks/')) {
     return 'webhook signature';
   }
+  if (route.path === '/graphql/schema' || route.path === '/api/graphql/schema') {
+    return 'operator secret by default';
+  }
   if (
     route.path === '/healthz' ||
     route.path === '/livez' ||
@@ -555,8 +558,6 @@ function routeAuth(routeType, route) {
     route.path === '/docs/api' ||
     route.path === '/api/docs' ||
     route.path === '/api/docs.json' ||
-    route.path === '/graphql/schema' ||
-    route.path === '/api/graphql/schema' ||
     route.path === '/api-docs' ||
     route.path === '/api-docs/' ||
     route.path === '/api-docs.json'

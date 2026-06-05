@@ -43,17 +43,17 @@ README is narrative context, not the route inventory source of truth. HTML is av
 | `GET /api/lambdas/functions/:idOrSlug`               | fetch one lambda definition over HTTP so non-REST deployments do not need direct RDS TCP credentials                |
 | `GET /api/container-pool/images`                     | catalog of warm-pool images + latest revision/build status (backs `/container-pool/config`)                         |
 | `GET /api/container-pool/images/:slug`               | per-image detail including current revision text and last build run                                                 |
-
-Through `dd-remote-gateway`, `/api/agents/*` requires the operator `dd_auth` cookie or legacy
-`Auth` header before nginx injects `X-Server-Auth` / `X-Agent-Auth`. Cluster-local callers that
-address `dd-remote-rest-api.default.svc.cluster.local:8082` directly must still provide the
-route-specific internal headers for ingest and lifecycle mutation routes.
 | `GET /api/container-pool/images/:slug/dockerfile`    | current Dockerfile text; `?source=disk-default` returns the on-disk default, `?revisionId=` returns a saved one     |
 | `PUT /api/container-pool/images/:slug/dockerfile`    | save a new Dockerfile revision (content-addressed; duplicate saves coalesce)                                        |
 | `GET /api/container-pool/images/:slug/revisions`     | last N saved revisions for an image                                                                                 |
 | `GET /api/container-pool/images/:slug/builds`        | last N build+test runs for an image                                                                                 |
 | `POST /api/container-pool/images/:slug/build-test`   | enqueue a `nerdctl build` + smoke-run for the editor contents or a saved revision; returns the build run id         |
 | `GET /api/container-pool/builds/:buildId`            | full status + logs for a specific build run                                                                         |
+
+Through `dd-remote-gateway`, `/api/agents/*` requires the operator `dd_auth` cookie or legacy
+`Auth` header before nginx injects `X-Server-Auth` / `X-Agent-Auth`. Cluster-local callers that
+address `dd-remote-rest-api.default.svc.cluster.local:8082` directly must still provide the
+route-specific internal headers for ingest and lifecycle mutation routes.
 
 `/api/container-pool/*` is an operator surface. The gateway gates it with the `dd_auth` operator
 cookie and forwards `X-Server-Auth`; the REST API also verifies that header by default
@@ -80,13 +80,23 @@ GraphQL also provides extension points for non-Postgres sources and service-to-s
   `COCKROACHDB_DATABASE_URL`, or `CRDB_DATABASE_URL`.
 - Redis status uses `REDIS_URL`, `REDIS_CACHE_URL`, or `DD_REDIS_CACHE_URL`. Set
   `REST_API_GRAPHQL_REDIS_READS_ENABLED=true` and `REST_API_GRAPHQL_REDIS_KEY_PREFIXES` to enable
-  authenticated `redisGet` reads for explicit key prefixes.
+  authenticated `redisGet` reads for explicit key prefixes. Values are returned as bounded previews
+  with byte counts and truncation metadata; tune the preview cap with
+  `REST_API_GRAPHQL_REDIS_VALUE_BYTES`.
 - Cluster REST/GraphQL subservice calls are disabled by default. To enable them, set
   `REST_API_GRAPHQL_SERVICE_CALLS_ENABLED=true` and
   `REST_API_GRAPHQL_SERVICE_ALLOWLIST=name=http://service.namespace.svc.cluster.local:port,...`.
-  These mutations require `X-Agent-Auth` or `X-Server-Auth` and only call named allowlist entries,
-  never caller-supplied absolute URLs. Forwarded headers, request bodies, response bodies, and
-  subservice GraphQL query text are size-bounded.
+  These resolvers require `X-Agent-Auth` or `X-Server-Auth` and only call named allowlist entries,
+  never caller-supplied absolute URLs. By default, allowlist URLs must be cluster-local, localhost,
+  or private/link-local IP addresses; set `REST_API_GRAPHQL_ALLOW_EXTERNAL_SERVICES=true` only for
+  a trusted operator environment that intentionally calls external services.
+- Subservice GraphQL calls reject introspection queries by default. Set
+  `REST_API_GRAPHQL_SUBSERVICE_INTROSPECTION_ENABLED=true` only when the target service and caller
+  are both trusted.
+- Forwarded headers, request bodies, response bodies, subservice GraphQL query text, and whole
+  GraphQL execution are bounded with `REST_API_GRAPHQL_SUBSERVICE_REQUEST_BYTES`,
+  `REST_API_GRAPHQL_SUBSERVICE_RESPONSE_BYTES`, `REST_API_GRAPHQL_SUBSERVICE_QUERY_BYTES`, and
+  `REST_API_GRAPHQL_EXECUTION_TIMEOUT_MS`.
 - GraphQL requires the same internal auth for every operation by default
   (`REST_API_GRAPHQL_AUTH_REQUIRED=true`). Set it to `false` only for trusted local development
   or after the gateway auth path is proven for the exposed route.
