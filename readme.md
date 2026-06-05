@@ -88,9 +88,10 @@ is supplied.
   design-conversion NATS request/result subjects, preferred neutral exports,
   required evidence, review gates, and machine-release blockers.
 - A process plan and structured `processGraph` across 3D printers,
-  vertical/5-axis/horizontal mills, routers, laser, waterjet, plasma, wire EDM/sheet cutters,
-  sinker/ram EDM cells, mill-turn/swiss-turning centers, and lathes when those
-  machine profiles are available. The graph links operations,
+  vertical/5-axis/4th-axis/horizontal mills, routers, laser, waterjet, plasma, wire EDM/sheet cutters,
+  sinker/ram EDM cells, robotic assembly/joining cells,
+  mill-turn/swiss-turning centers, and lathes when those machine profiles are
+  available. The graph links operations,
   generated programs, sequencing dependencies, assembly interfaces, and release
   gates.
 - A `machineSelection` trace for every inferred or requested part, including the
@@ -117,14 +118,18 @@ is supplied.
   green-part cure/depowder/sinter or infiltration job sheets with binder-saturation,
   printhead, green-strength, and shrink-coupon gates, ISO/Haas-style
   vertical milling G-code, ISO-style five-axis TCP/RTCP milling G-code,
-  ISO-style horizontal side-slot/keyway milling G-code, GRBL-style router
+  ISO-style 4th-axis rotary-indexed milling G-code with A-axis index,
+  brake/clamp, clearance-sweep, and re-probe checkpoints, ISO-style horizontal side-slot/keyway milling G-code, GRBL-style router
   profile programs with tab gates, laser, waterjet, plasma, and wire EDM sheet-cutting
   job sheets with kerf tests, wire-thread/skim-pass/slug-retention gates, and
   fire/fume/dielectric/flushing gates, sinker/ram EDM cavity burn sheets with
   electrode, dielectric/flushing, orbit-finish, depth-stop, and wear-compensation
-  gates, mill-turn/swiss G-code with C/Y-axis live-tooling and subspindle transfer
-  checkpoints, Fanuc-style turning G-code, or operator-only instructions for
-  unsupported machine kinds.
+  gates, robotic assembly-cell job sheets with kit traceability, datum dry-fit,
+  robot path/gripper/fixture/vision evidence, press/heat-set/torque/adhesive
+  join recipes, cure or clamp timing, and final metrology gates, mill-turn/swiss
+  G-code with C/Y-axis live-tooling and subspindle transfer checkpoints,
+  Fanuc-style turning G-code, or operator-only instructions for unsupported
+  machine kinds.
 - Validation and simulation findings plus failure boundaries for heat-up, homing,
   spindle-speed/direction/start/process-stop state, work-offset/datum evidence,
   G10 fixture/work-offset table write review state, additive material/color/tool-change,
@@ -137,13 +142,16 @@ is supplied.
   high-speed kinematic evidence, additive thin-wall geometry, printer
   async-nozzle-wait state, async-bed-target re-wait state, nozzle-cooldown/
   reheat state, bed-cooldown/re-wait state, stepper-idle/re-home state,
-  additive inch-units/slicer conversion state, printer coordinate/home-offset state,
+  mid-print homing/resume-position state, additive inch-units/slicer conversion state,
+  printer coordinate/home-offset state,
   extrusion-mode/reset state, post-mode-switch extrusion reset state,
   negative-Z extrusion/Z-offset probe state, bed-leveling/mesh restore state,
   filament lot/dry-storage
   conditioning evidence, material-capacity/runout evidence,
   extrusion calibration/flow/pressure-advance evidence,
+  volumetric-extrusion/M200 state,
   firmware retraction/recover settings evidence,
+  printer G2/G3 arc-support evidence,
   high-speed input-shaper/acceleration/volumetric-flow evidence,
   chamber/enclosure/thermal-soak evidence for warp-prone filament,
   bed-adhesion, first-layer, fan-timing, resin exposure/profile/layer/support evidence,
@@ -157,7 +165,10 @@ is supplied.
   metal powder-bed fusion alloy-lot/oxygen/recoater/stress-relief/plate-removal evidence,
   binder-jet binder-lot/saturation/printhead/green-strength and cure/debind/sinter/infiltration/shrink-compensation evidence,
   powder-bed recoater clearance/thermal spacing/cooldown evidence,
-  assembly fit/metrology/datum/torque/cure evidence,
+  assembly fit/metrology/datum/torque/cure evidence, assembly-cell
+  robot-path/gripper/fixture/vision/interlock evidence, assembly-cell
+  press/heat-set/torque/adhesive/cure/final-metrology evidence,
+  part-separation cut-path/fixture/kerf/deburr/traceability/final-inspection evidence,
   precision tolerance/surface-finish metrology evidence,
   unattended/batch monitoring and recovery evidence,
   thermal postprocess temperature/fixture/cooldown evidence,
@@ -173,7 +184,8 @@ is supplied.
   from failure boundaries, including split/combine, human review, automation,
   and regeneration phases.
 - A `machineRelease` report with checklist status, release blockers, generated
-  and improved program readiness counts, and the current machine-release state.
+  and improved program readiness counts, release-probe blockers from
+  `releaseProbePlan`, and the current machine-release state.
 - An `executionPlan` preflight that turns machine-release blockers, simulation
   traces, and intervention maps into program runs, checkpoints, stop points,
   unattended-run eligibility, and required human or automation actions before
@@ -181,7 +193,7 @@ is supplied.
 - A `postprocessPlan` preflight with controller-specific targets, postprocessor
   selection, input/output formats, dry-run gates, blockers, required artifacts,
   and operator signoff requirements before any printer, mill, mill-turn center,
-  router, sheet cutter, lathe, or manual cell can start.
+  router, sheet cutter, lathe, robotic assembly cell, or manual cell can start.
 - A `manufacturingHandoff` package with part-level geometry envelopes, stock
   strategy, datum scheme, fixture/setup plan, inspection gates, release blockers,
   and release gates for downstream CAD/CAM, slicer, or shop-floor review.
@@ -232,10 +244,12 @@ operator sign-off.
 `GET /capabilities` and the gateway-prefixed `GET /fabrication/capabilities`
 return the service capability contract before a caller submits work. The payload
 includes supported request families, built-in `defaultMachines`, machine classes
-for FDM, large-format pellet/FGF, resin, material jetting, directed-energy deposition/WAAM, continuous-fiber composite, binder jet, polymer powder-bed, metal PBF, vertical milling, five-axis milling, horizontal milling,
+for FDM, large-format pellet/FGF, resin, material jetting, directed-energy deposition/WAAM, continuous-fiber composite, binder jet, polymer powder-bed, metal PBF, vertical milling, five-axis milling, rotary-indexed milling, horizontal milling,
 mill-turn/swiss-turning, routing, laser,
-waterjet, plasma, lathe, and manual/special-process work, accepted instruction
-kinds including slicer, pellet-FGF, SLA/resin, material-jetting, DED/WAAM, composite-fiber, binder-jet, SLS/powder, metal-PBF, mill-turn, laser/waterjet/plasma,
+waterjet, plasma, robotic assembly/joining, lathe, and manual/special-process
+work, accepted instruction kinds including slicer, pellet-FGF, SLA/resin,
+material-jetting, DED/WAAM, composite-fiber, binder-jet, SLS/powder, metal-PBF,
+mill-turn, indexed-mill, assembly-cell, part-separation, laser/waterjet/plasma,
 wire-EDM, and sinker-EDM job sheets, design input format
 families, generated artifact families, learning
 channels, bounded `profileEvidence` buckets for submitted machine profiles, and
@@ -365,12 +379,13 @@ Requests use camelCase JSON:
 If `machines` is omitted, the service uses a conservative default fleet with an
 FDM printer, SLA resin printer, material-jetting printer, continuous-fiber composite printer, SLS powder-bed printer, DED/WAAM directed-energy deposition cell, metal PBF printer, binder jet printer, vertical
 mill,
-five-axis mill, horizontal mill, CNC router, laser cutter, waterjet cutter, plasma cutter, wire
-EDM cutter, sinker EDM cell, and lathe. If `parts` is omitted, the planner infers
+five-axis mill, rotary-indexer mill, horizontal mill, CNC router, laser cutter, waterjet cutter, plasma cutter, wire
+EDM cutter, sinker EDM cell, robotic assembly cell, and lathe. If `parts` is omitted, the planner infers
 a first decomposition from the objective, material, and tolerance, including
 resin-print, material-jetting-print, directed-energy-deposition, composite-fiber-print, binder-jet-print, polymer powder-bed-print, metal PBF-print, five-axis-milled impellers/undercuts,
-horizontal-milled side slots/keyways, laser,
-waterjet, plasma, wire EDM, sinker EDM cavity burns, and kerf-controlled
+4th-axis indexed multi-face milling, horizontal-milled side slots/keyways, laser,
+waterjet, plasma, wire EDM, sinker EDM cavity burns, assembly-joining/fit-up
+steps, and kerf-controlled
 sheet-cut profiles, and routed sheet/profile parts for wood,
 foam, acrylic, panel, sign, engraving, and tabbed-profile requests. Additive
 plans flag overhang, bridge, cantilever, thin-wall, snap-fit, and resin
@@ -414,7 +429,8 @@ words, missing units or positioning modes, late or mid-program `G20`/`G21` unit-
 after async `M104` nozzle targets without `M109` or verified hotend wait,
 after async `M140` bed target changes without `M190` or verified bed wait,
 after nozzle cooldown without reheat, after bed cooldown without re-wait, after
-stepper idle without re-homing, after `G20` inch-mode selection without slicer/printer
+stepper idle without re-homing, after mid-print `G28` homing without safe-park,
+Z-hop, or resume-position evidence, after `G20` inch-mode selection without slicer/printer
 unit-conversion evidence, after `M206`/`G92 X/Y/Z` printer coordinate/home
 offsets without offset-probe or dry-run evidence, or before homing, missing
 `M82`/`M83` extrusion mode and `G92 E0` reset state before priming, firmware `G10`/`G11` retract/unretract before `M207`/`M208`/`M209` or equivalent retraction settings evidence, missing spool-weight/remaining-filament/runout-sensor evidence before long extrusion, missing filament lot/dry-storage/
@@ -429,7 +445,7 @@ build-surface Z without measured Z-offset/probe evidence, positive extrusion aft
 `M420 S0` or bed-leveling/mesh-compensation disable without `M420 S1`, `G29`, or
 equivalent bed-mesh/Z-offset verification, first-layer adhesion setup, early
 part-cooling fan timing, additive material/color/tool-change stops such as `M600`
-or multi-tool selection, post-change extrusion without purge/prime/resume evidence, printer pauses before renewed position/extrusion resume evidence, selected-tool extrusion without `M104`/`M109` or hotend temperature evidence, high-speed FDM extrusion without input-shaper/acceleration/volumetric-flow evidence, mill/router rapid/feed negative-Z plunges after tool selection without
+or multi-tool selection, post-change extrusion without purge/prime/resume evidence, printer pauses before renewed position/extrusion resume evidence, selected-tool extrusion without `M104`/`M109` or hotend temperature evidence, printer `G2`/`G3` arcs without firmware/slicer arc-support evidence, `M200` volumetric extrusion before filament-diameter/slicer volumetric E-unit evidence, high-speed FDM extrusion without input-shaper/acceleration/volumetric-flow evidence, mill/router rapid/feed negative-Z plunges after tool selection without
 explicit `G43`/probe/tool-length state or later `M6` tool changes before `G49` cancellation, `G41`/`G42` cutter compensation without
 `D` offset or tool radius/diameter evidence or without `G40` cancellation before program end, `M6` tool changes before ATC/magazine/
 carousel/operator-loaded evidence or while spindle/process remains active without `M5`/`M05` stop evidence, mill/router/lathe cutting feeds and mill/router rapid negative-Z plunges before probed
@@ -456,7 +472,7 @@ build profile/powder lot/nesting controls or missing powder-bed build/profile ev
 cooldown/depowder/recovery controls or missing powder-bed handling evidence, missing
 metal-PBF alloy-lot/oxygen/recoater/stress-relief/plate-removal evidence, missing
 powder-bed recoater clearance/thermal spacing/cooldown evidence, missing binder-jet binder/saturation/printhead/green-strength evidence, missing binder-jet cure/debind/sinter/infiltration/shrink-compensation evidence, assembly
-dry-fit/metrology/datum/torque/cure controls or missing assembly fit/metrology evidence, missing precision tolerance/surface-finish metrology evidence, missing unattended/batch monitoring and recovery evidence, missing thermal postprocess temperature/furnace/atmosphere/cooldown/quench/inspection evidence, missing surface/chemical finishing media/masking/PPE/waste/thickness/inspection evidence, missing indexed setup clamp/brake/index-angle/clearance/re-probe evidence, unreviewed `G51` scaling/mirroring or `G68` coordinate rotation and missing `G50.1`/`G69` transform cancellation, `G43.4`/`G234` tool-center-point mode before rotary/linear motion or program end without TCP kinematic review and `G49` cancellation, `G92` work-coordinate offsets before motion or program end without temporary-offset review and `G92.1`/`G92.2` cancellation, `G10 L2`/`G10 L20` fixture/work-offset table writes without controller offset-table backup or review evidence, late or mid-program `G20`/`G21` unit-mode changes after motion without conversion review, sheet-cutting
+dry-fit/metrology/datum/torque/cure controls or missing assembly fit/metrology evidence, missing assembly-cell robot-path/gripper/fixture/vision/interlock evidence, missing assembly-cell press/heat-set/torque/adhesive/cure/final-metrology evidence, missing part-separation cut-path/fixture/kerf/heat/deburr/traceability/final-inspection evidence, missing precision tolerance/surface-finish metrology evidence, missing unattended/batch monitoring and recovery evidence, missing thermal postprocess temperature/furnace/atmosphere/cooldown/quench/inspection evidence, missing surface/chemical finishing media/masking/PPE/waste/thickness/inspection evidence, missing indexed setup clamp/brake/index-angle/clearance/re-probe evidence, unreviewed `G51` scaling/mirroring or `G68` coordinate rotation and missing `G50.1`/`G69` transform cancellation, `G43.4`/`G234` tool-center-point mode before rotary/linear motion or program end without TCP kinematic review and `G49` cancellation, `G92` work-coordinate offsets before motion or program end without temporary-offset review and `G92.1`/`G92.2` cancellation, `G10 L2`/`G10 L20` fixture/work-offset table writes without controller offset-table backup or review evidence, late or mid-program `G20`/`G21` unit-mode changes after motion without conversion review, sheet-cutting
 kerf/fire/fume checks or missing sheet-cutting material/thickness/cut-chart recipe evidence, missing wire EDM start-hole/threading/slug-retention/dielectric/flushing/skim-pass evidence, wire EDM profile/skim cuts before start-hole, wire-threading, guide/tension, conductive workholding, or slug-retention setup evidence, missing sinker EDM electrode/dielectric/flushing/debris-removal/depth/orbit-finish/recast evidence, missing mill-turn live-tooling C-axis/Y-axis/polar-interpolation evidence, missing mill-turn subspindle pickup/clamp/sync/pull-force/transfer-clearance evidence, `G4`/`G04` dwell commands without positive `P`/`S`/`X`/`U` duration or operator-timed dwell review, lathe text threading feed-per-rev/pitch/spindle-encoder evidence, lathe text part-off catcher/subspindle/tailstock/stock-support evidence, assembly, splitting, or operator intervention. Improved
 drafts are still marked `machineReady=false`; they are normalization aids for
 review, motion-envelope simulation, and controller-specific postprocessing.
@@ -491,6 +507,13 @@ same data is retained as `boundary-summary`, `analysis-boundary-summary`,
 automation paths, program boundary traces, and machine-failure risk scores back
 to program IDs and process nodes
 when process graph context exists.
+Instruction-analysis responses also include a `learning` plan derived from the
+submitted programs, boundary evidence, improvements, and release probes. The
+retained `analysis-learning-plan`, `analysis-pomdp-belief-state`,
+`analysis-release-probe-plan`, `analysis-neural-training-corpus`, and
+`analysis-mdp-request` artifacts let MDP/POMDP and neural workers learn from
+imported CNC, slicer, printer, and text instruction streams without requiring a
+new generated design plan first.
 
 Plan responses also include `assembly.assemblyGraph`; the retained
 `parametric-design` and `assembly-plan` artifacts carry the same graph so
@@ -614,7 +637,10 @@ Failed or negative outcomes are retained as material-specific
 `learned-remediation-risk:*` POMDP observations, review/avoid policy actions
 such as `avoid-learned-risk-milling-petg`, and remediation examples so the
 MDP/POMDP worker can revise programs, split/combine choices, tooling, and
-quality gates before retry.
+quality gates before retry. Those learned remediation risks also contribute
+machine-failure hidden-state evidence and add a
+`learned-remediation-risk:review-prior-failure-outcome-before-release`
+required-before-release action in `releaseProbePlan`.
 The plan also includes scored `strategyCandidates` such as selected hybrid,
 additive consolidation, machined datum-finish, and split-for-inspection options.
 These candidates carry methods, machine kinds, estimated time, intervention
@@ -626,7 +652,11 @@ program-valid hidden-state probabilities with observation likelihoods and
 recommended probe actions before release. `releaseProbePlan` promotes those
 POMDP probes into required/recommended/watch priorities, required-before-release
 actions, release-blocker flags, and evidence snippets for downstream POMDP
-workers or operators. A `neuralPolicy` sketch with a
+workers or operators, including required review of matching learned
+remediation-risk memory before machine release. Planning feeds those release
+probes back into `machineRelease` as `release-probe` blockers and checklist
+evidence so learned failure memory can hold the top-level machine release. A
+`neuralPolicy` sketch with a
 normalized feature vector, hidden activations, and bounded action scores lets an
 external neural model train from the same state or replace the local scoring
 head. `neuralTrainingCorpus` carries per-part generated examples,
@@ -667,9 +697,11 @@ runtime inspection boundary while the database contract is still being designed.
   `improved-program-*` instruction rewrite, plus instruction-analysis artifacts such as
   `analysis-boundary-summary`, `analysis-intervention-map`,
   `analysis-machine-release`, `analysis-execution-plan`, `analysis-postprocess-plan`,
-  `analysis-simulation-report`, and learning artifacts such as `reward-signal`,
-  `mdp-experience`, `outcome-remediation-plan`, `pomdp-observations`, and
-  `neural-example`. `design-package`, `parametric-design`, and `mdp-request`
+  `analysis-simulation-report`, `analysis-learning-plan`,
+  `analysis-pomdp-belief-state`, `analysis-release-probe-plan`,
+  `analysis-neural-training-corpus`, `analysis-mdp-request`, and learning artifacts
+  such as `reward-signal`, `mdp-experience`, `outcome-remediation-plan`,
+  `pomdp-observations`, and `neural-example`. `design-package`, `parametric-design`, and `mdp-request`
   include `designPackage` export targets, coordinate frames, model intent,
   neutral CAD/mesh/profile formats, assembly exports, review gates, and export
   blockers; `design-export-bundle`, `generated-design-export`,
@@ -707,7 +739,8 @@ runtime inspection boundary while the database contract is still being designed.
   `postprocess-plan`, `analysis-postprocess-plan`, `parametric-design`, and
   `mdp-request` include `postprocessPlan` controller targets, postprocessor
   choices, input/output formats, dry-run evidence gates, blockers, required
-  artifacts, and operator signoff requirements;
+  artifacts including assembly-kit travelers, robot-path or fixture simulation
+  reports, final-fit metrology records, and operator signoff requirements;
   `pomdp-belief-state`, `release-probe-plan`, `parametric-design`, and `mdp-request` include
   `pomdpBeliefState` hidden-state probabilities, observation likelihoods, and
   recommended probe actions for uncertain machine-failure, intervention,
