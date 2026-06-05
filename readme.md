@@ -103,7 +103,7 @@ resolved machine profile material lists before the plan is marked OK.
   negative-Z extrusion/Z-offset probe state, filament lot/dry-storage
   conditioning evidence, bed-adhesion, first-layer, fan-timing, resin-handling,
   powder-handling,
-  sheet-cutting pierce/kerf/focus/gas/fume/support evidence, deep-cut, arc-plane/geometry,
+  sheet-cutting pierce/kerf/focus/gas/fume/support, waterjet pressure/abrasive-flow, and plasma work-clamp evidence, deep-cut, arc-plane/geometry,
   positioning-mode reset state, additive relative-positioning extrusion state, setup-limit, machine-envelope, inspection, and automation constraints.
 - A `resolutionPlan` with ordered release-blocking remediation steps derived
   from failure boundaries, including split/combine, human review, automation,
@@ -309,7 +309,7 @@ fixture/vise/clamp/vacuum/hold-down/tab evidence, cutting moves before positive
 coolant, air blast, dust collection, chip conveyor, or dry-machining approval
 before cutting feed moves or after those systems are stopped, sheet-cutter feed
 moves before
-pierce/kerf/focus/assist-gas/fume/support evidence or after assist-gas/fume/abrasive support media is stopped, unsafe canned
+pierce/kerf/focus/assist-gas/fume/support evidence, waterjet pump-pressure/abrasive-flow evidence, plasma work-clamp/ground-return evidence, or after assist-gas/fume/abrasive support media is stopped, unsafe canned
 drilling/peck/tapping cycles with missing or nonpositive `R` retract planes or motion before `G80` cancellation, mill/router/lathe `M3`/`M4` spindle starts without positive `S` speed evidence or changes direction while active without `M5`/`M05` stop evidence, subtractive feed moves before spindle start or after
 explicit `M5`/`M05` process stop, mill/router rapid negative-Z plunges before spindle/process start or after explicit `M5`/`M05` process stop without restart, lathe chuck/collet/tailstock/stick-out/runout
 evidence before turning feeds, part-off or cutoff operations without catcher/subspindle/tailstock/stock-support evidence, lathe `T` tool/turret changes while spindle/process remains active without `M5`/`M05` stop evidence, lathe `G41`/`G42` tool-nose compensation without tool-nose radius/geometry/wear offset evidence or without `G40` cancellation before program end, lathe
