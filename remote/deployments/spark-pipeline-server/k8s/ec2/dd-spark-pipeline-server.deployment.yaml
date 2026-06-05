@@ -7,13 +7,13 @@ metadata:
     app: dd-spark-pipeline-server
 spec:
   replicas: 1
-  # Keep one ready pod serving during rollouts. The request is intentionally small enough that a
-  # temporary replacement pod can schedule before the old pod is removed.
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      # The EC2 cluster is single-node and pod-slot constrained, so roll
+      # this singleton in-place instead of requiring a surge pod.
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-spark-pipeline-server
