@@ -3501,6 +3501,7 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
     let assembly = assembly_plan(&part_plans, constraints);
     let learning = learning_plan(
         request.learning.as_ref(),
+        constraints,
         &part_plans,
         &process_plan,
         &validation,
@@ -3615,6 +3616,7 @@ fn assembly_plan(parts: &[PartPlan], constraints: Option<&FabricationConstraints
 
 fn learning_plan(
     hints: Option<&LearningHints>,
+    constraints: Option<&FabricationConstraints>,
     parts: &[PartPlan],
     process_plan: &[ProcessStep],
     validation: &ValidationReport,
@@ -3652,6 +3654,14 @@ fn learning_plan(
             "assign-{}-to-{}",
             part.id,
             normalize_token(&part.machine_kind)
+        ));
+    }
+    if let Some(strategy) =
+        constraints.and_then(|constraints| constraints.preferred_assembly_strategy.as_ref())
+    {
+        actions.push(format!(
+            "prefer-learned-assembly-{}",
+            normalize_token(strategy)
         ));
     }
     actions.sort();
@@ -5741,6 +5751,83 @@ mod tests {
             .training_examples
             .iter()
             .any(|example| example.contains("router-success-1")));
+    }
+
+    #[test]
+    fn learned_assembly_preferences_shape_future_hybrid_join_strategy() {
+        let request = FabricationPlanRequest {
+            request_id: Some("unit-learned-assembly".to_string()),
+            objective: "PETG housing with a turned brass threaded insert".to_string(),
+            material: Some(material("petg", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.12),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: Some(vec![
+                RequestedPart {
+                    id: "printed-body".to_string(),
+                    description: "printed ergonomic shell".to_string(),
+                    material: Some(material("petg", "polymer")),
+                    preferred_method: Some("additive-print".to_string()),
+                    tolerance_mm: Some(0.18),
+                },
+                RequestedPart {
+                    id: "turned-insert".to_string(),
+                    description: "turned brass threaded insert".to_string(),
+                    material: Some(material("brass", "metal")),
+                    preferred_method: Some("turning".to_string()),
+                    tolerance_mm: Some(0.04),
+                },
+            ]),
+            existing_instructions: None,
+            learning: None,
+        };
+        let baseline = plan_fabrication(request.clone()).expect("baseline plan should succeed");
+        assert_eq!(
+            baseline.assembly.strategy,
+            "multi-part hybrid fabrication with explicit assembly interfaces"
+        );
+
+        let policy = LearningPolicySnapshot {
+            outcome_count: 2,
+            successes: 2,
+            failures: 0,
+            average_reward: 2.8,
+            method_preferences: Vec::new(),
+            assembly_preferences: vec![LearningPreference {
+                key: "printed body plus turned insert".to_string(),
+                samples: 2,
+                successes: 2,
+                failures: 0,
+                average_reward: 2.8,
+                recommendation: "prefer".to_string(),
+            }],
+            neural_training_examples: vec![
+                "job=hybrid-success-1 success=true reward=3.200 methods=additive-print+turning assembly=printed body plus turned insert observations=press-fit-pass".to_string(),
+            ],
+        };
+        let learned =
+            plan_fabrication_with_policy(request, Some(&policy)).expect("learned plan should work");
+
+        assert_eq!(
+            learned.assembly.strategy,
+            "learned hybrid assembly strategy: printed body plus turned insert"
+        );
+        assert!(learned.assembly.combine_candidates.iter().any(|candidate| {
+            candidate.contains("reuse learned assembly strategy")
+                && candidate.contains("printed body plus turned insert")
+        }));
+        assert!(learned
+            .assembly
+            .notes
+            .iter()
+            .any(|note| note.contains("Learned policy prefers assembly strategy")));
+        assert!(learned
+            .learning
+            .training_examples
+            .iter()
+            .any(|example| example.contains("hybrid-success-1")));
     }
 
     #[test]
