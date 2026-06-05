@@ -36,6 +36,24 @@ pub const DES_RESULTS_SUBJECT: &str = "dd.remote.des.results";
 pub const DES_SIMULATE_SUBJECT: &str = "dd.remote.des.simulate";
 pub const DES_SIMULATE_QUEUE_GROUP: &str = "dd-des-simulator";
 
+/// Design input conversion requests for CAD, mesh, slicer, CAM setup, and neutral export workers.
+/// Service: dd-fabrication-server
+pub const FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.design.conversion.requests";
+pub const FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-design-converters";
+
+/// Design input conversion results carrying neutral exports, translator evidence, blockers, and review metadata.
+/// Service: dd-fabrication-server
+pub const FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT: &str = "dd.remote.fabrication.design.conversion.results";
+
+/// Instruction generation requests for slicer, CAM, postprocess, setup-sheet, and machine-code workers.
+/// Service: dd-fabrication-server
+pub const FABRICATION_INSTRUCTION_GENERATION_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.instructions.generation.requests";
+pub const FABRICATION_INSTRUCTION_GENERATION_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-instruction-generators";
+
+/// Instruction generation results carrying machine code, setup sheets, simulation evidence, blockers, and release metadata.
+/// Service: dd-fabrication-server
+pub const FABRICATION_INSTRUCTION_GENERATION_RESULTS_SUBJECT: &str = "dd.remote.fabrication.instructions.generation.results";
+
 /// Fabrication planning requests. Default for FABRICATION_REQUEST_SUBJECT.
 /// Service: dd-fabrication-server
 pub const FABRICATION_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.requests";

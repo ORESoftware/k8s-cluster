@@ -35,6 +35,7 @@ remote/libs/nats/subject-defs/
 │   ├── ai-ml-platform.schema.json
 │   ├── container-pool.schema.json
 │   ├── contracts.schema.json
+│   ├── fabrication.schema.json
 │   ├── lambdas.schema.json
 │   ├── presence.schema.json
 │   ├── runtime-events.schema.json
@@ -185,6 +186,33 @@ use dd_nats_subject_defs::{
 
 `RUNTIME_CRITICAL_EVENTS_SUBJECT` is backed by `DD_REMOTE_CRITICAL_EVENTS_STREAM_NAME`; the
 queue-consumer deployment uses that durable stream to log/alert on compact critical runtime events.
+
+### Fabrication CAD Conversion
+
+The fabrication planner publishes native CAD, mesh, slicer, CAM setup, and neutral-export conversion
+work on `FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT`
+(`dd.remote.fabrication.design.conversion.requests`) with queue group
+`FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP`
+(`dd-fabrication-design-converters`). External converter workers publish translator evidence,
+neutral exports, blockers, and review metadata on
+`FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT`
+(`dd.remote.fabrication.design.conversion.results`). This keeps SOLIDWORKS, Creo/Pro/Engineer, NX,
+CATIA, Fusion, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, slicer, and CAM conversion work out of
+the core Rust planner while preserving stable cross-language subject constants.
+
+### Fabrication Instruction Generation
+
+Instruction-generation workers consume verified geometry, machine profiles, operation plans, and
+release evidence from `FABRICATION_INSTRUCTION_GENERATION_REQUESTS_SUBJECT`
+(`dd.remote.fabrication.instructions.generation.requests`) with queue group
+`FABRICATION_INSTRUCTION_GENERATION_REQUESTS_QUEUE_GROUP`
+(`dd-fabrication-instruction-generators`). Slicer, CAM, postprocess, setup-sheet, tool-list,
+inspection-plan, and controller-specific adapters publish machine-code and operator-instruction
+evidence on `FABRICATION_INSTRUCTION_GENERATION_RESULTS_SUBJECT`
+(`dd.remote.fabrication.instructions.generation.results`). The Rust planner retains final
+machine-ready authority so generated G-code, NC programs, lathe cycles, setup sheets, and printer
+jobs can still surface simulation, workholding, material-conditioning, toolpath, or human-intervention
+blockers before release.
 
 ### Python
 
