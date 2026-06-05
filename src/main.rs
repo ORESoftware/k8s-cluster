@@ -994,6 +994,18 @@ fn is_polymer(material: &MaterialSpec) -> bool {
         )
 }
 
+fn is_router_material(material: &MaterialSpec) -> bool {
+    let name = normalize_token(&material.name);
+    let family = material.family.as_deref().map(normalize_token);
+    family
+        .as_deref()
+        .is_some_and(|family| matches!(family, "wood" | "foam" | "plastic" | "polymer"))
+        || matches!(
+            name.as_str(),
+            "wood" | "plywood" | "mdf" | "acrylic" | "foam" | "hdpe" | "polycarbonate"
+        )
+}
+
 fn machine_class(kind: &str) -> MachineClass {
     let token = normalize_token(kind);
     if token.contains("printer")
@@ -1083,6 +1095,28 @@ fn default_machines() -> Vec<MachineProfile> {
                 "slot".to_string(),
                 "heavy-roughing".to_string(),
                 "side-mill".to_string(),
+            ]),
+        },
+        MachineProfile {
+            id: "cnc-router-1".to_string(),
+            kind: "cnc-router".to_string(),
+            controller: Some("grbl-gcode".to_string()),
+            materials: Some(vec![
+                "wood".to_string(),
+                "plywood".to_string(),
+                "mdf".to_string(),
+                "acrylic".to_string(),
+                "plastic".to_string(),
+                "foam".to_string(),
+                "aluminum".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![1200.0, 800.0, 100.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "profile".to_string(),
+                "pocket".to_string(),
+                "engrave".to_string(),
+                "tab-cut".to_string(),
             ]),
         },
     ]
@@ -1216,13 +1250,22 @@ fn infer_requested_parts(
         || objective_token.contains("datum")
         || tolerance_mm <= 0.08
         || is_metal(material);
+    let needs_routed_part = objective_token.contains("router")
+        || objective_token.contains("routed")
+        || objective_token.contains("sign")
+        || objective_token.contains("panel")
+        || objective_token.contains("sheet")
+        || objective_token.contains("profile")
+        || objective_token.contains("engrave")
+        || objective_token.contains("tabbed")
+        || is_router_material(material);
     let needs_printed_part = objective_token.contains("prototype")
         || objective_token.contains("case")
         || objective_token.contains("cover")
         || objective_token.contains("organic")
         || objective_token.contains("ergonomic")
         || is_polymer(material)
-        || !needs_milled_part;
+        || (!needs_milled_part && !needs_routed_part);
 
     if needs_printed_part {
         parts.push(RequestedPart {
@@ -1231,6 +1274,17 @@ fn infer_requested_parts(
             material: Some(material.clone()),
             preferred_method: Some("additive-print".to_string()),
             tolerance_mm: Some(tolerance_mm.max(0.15)),
+        });
+    }
+    if needs_routed_part {
+        parts.push(RequestedPart {
+            id: "routed-sheet-profile".to_string(),
+            description:
+                "routed sheet, sign, profile, engraving, or tabbed panel inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("routing".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.12)),
         });
     }
     if needs_milled_part {
@@ -1302,6 +1356,10 @@ fn choose_machine<'a>(
         .is_some_and(|value| value.contains("turn") || value.contains("lathe"))
     {
         Some(MachineClass::Lathe)
+    } else if preferred.as_deref().is_some_and(|value| {
+        value.contains("router") || value.contains("routing") || value.contains("rout")
+    }) {
+        Some(MachineClass::Router)
     } else if preferred
         .as_deref()
         .is_some_and(|value| value.contains("mill") || value.contains("machin"))
@@ -1317,6 +1375,10 @@ fn choose_machine<'a>(
         .any(|value| value.contains("turn") || value.contains("lathe"))
     {
         Some(MachineClass::Lathe)
+    } else if preferred_methods.iter().any(|value| {
+        value.contains("router") || value.contains("routing") || value.contains("rout")
+    }) {
+        Some(MachineClass::Router)
     } else if preferred_methods
         .iter()
         .any(|value| value.contains("mill") || value.contains("machin"))
@@ -1437,7 +1499,7 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                     .to_string(),
             ],
         ),
-        MachineClass::Mill | MachineClass::Router => (
+        MachineClass::Mill => (
             machine
                 .controller
                 .clone()
@@ -1468,6 +1530,41 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: generate final CAM from verified stock, fixtures, tools, feeds, speeds, and postprocessor."
                     .to_string(),
                 "Human signoff is required after the programmed stop and before any fixture change."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Router => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "grbl-gcode".to_string()),
+            vec![
+                "(draft router profile program generated by dd-fabrication-server)".to_string(),
+                "G21 G90 G17 ; millimeters, absolute, XY plane".to_string(),
+                "G54 ; operator-verified spoilboard work offset".to_string(),
+                "S18000 M3 ; router spindle on clockwise".to_string(),
+                "G0 X0 Y0 Z12 ; safe clearance above clamps".to_string(),
+                "G1 Z-2.0 F180 ; first profile depth".to_string(),
+                "G1 X180 Y0 F900 ; profile edge".to_string(),
+                "G1 X180 Y90".to_string(),
+                "G1 X0 Y90".to_string(),
+                "G1 X0 Y0".to_string(),
+                "G0 Z6 ; lift over tab boundary".to_string(),
+                "G0 X45 Y0 ; skip retained tab".to_string(),
+                "G1 Z-4.0 F160 ; second profile depth".to_string(),
+                "G1 X180 Y0 F800".to_string(),
+                "G1 X180 Y90".to_string(),
+                "G1 X0 Y90".to_string(),
+                "G1 X0 Y0".to_string(),
+                "M0 ; inspect tabs, clamps, dust collection, and chip evacuation".to_string(),
+                "G0 Z15".to_string(),
+                "M5 ; spindle stop".to_string(),
+                "M30".to_string(),
+            ],
+            vec![
+                "Draft only: verify hold-down, tab placement, cutter diameter, dust collection, and spoilboard clearance before running."
+                    .to_string(),
+                "Router paths need a controller-specific postprocessor and dry-run because clamps and tabs are machine-specific."
                     .to_string(),
             ],
         ),
@@ -2745,7 +2842,10 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
             });
         }
         if constraints.and_then(|constraints| constraints.allow_human_intervention) == Some(false)
-            && matches!(class, MachineClass::Mill | MachineClass::Lathe)
+            && matches!(
+                class,
+                MachineClass::Mill | MachineClass::Lathe | MachineClass::Router
+            )
         {
             plan_boundaries.push(FailureBoundary {
                 kind: "automation-boundary".to_string(),
@@ -3000,6 +3100,7 @@ fn learning_plan(
     let mut actions = vec![
         "choose-additive-process".to_string(),
         "choose-milling-process".to_string(),
+        "choose-routing-process".to_string(),
         "choose-turning-process".to_string(),
         "split-part".to_string(),
         "combine-parts".to_string(),
@@ -4439,6 +4540,69 @@ mod tests {
             .generated_programs
             .iter()
             .all(|program| program.draft && !program.machine_ready));
+    }
+
+    #[test]
+    fn router_plan_uses_default_cnc_router_and_tabbed_profile_program() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-router".to_string()),
+            objective: "plywood sign with engraved lettering and tabbed outside profile"
+                .to_string(),
+            material: Some(material("plywood", "wood")),
+            stock: Some(StockSpec {
+                form: "sheet".to_string(),
+                dimensions_mm: Some(vec![400.0, 200.0, 12.0]),
+            }),
+            tolerance_mm: Some(0.25),
+            quantity: Some(1),
+            machines: None,
+            constraints: Some(FabricationConstraints {
+                max_setups: Some(2),
+                allow_human_intervention: Some(true),
+                allow_multi_part_assembly: Some(true),
+                require_dry_run: Some(true),
+                preferred_methods: Some(vec!["routing".to_string()]),
+            }),
+            parts: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("router plan should be generated");
+
+        assert!(response
+            .design
+            .parts
+            .iter()
+            .any(|part| part.manufacturing_method == "subtractive-routing"
+                && part.machine_kind == "cnc-router"));
+        let router_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "cnc-router")
+            .expect("router program should be generated");
+        assert_eq!(router_program.language, "grbl-gcode");
+        assert!(router_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft router profile program")));
+        assert!(router_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("lift over tab boundary")));
+        assert!(router_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("hold-down")));
+        assert!(response
+            .learning
+            .actions
+            .iter()
+            .any(|action| action == "choose-routing-process"));
+        assert!(!response
+            .validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "missing-spindle-start"));
     }
 
     #[test]
