@@ -1,6 +1,8 @@
 # mip-solver-node.rs
 
-Rust server deployment for `dd-in-house-mip-solver-node`: a distributed in-house LP/MIP/IP solver node using NATS JetStream for branch-and-bound work distribution.
+Rust server deployment for `dd-in-house-mip-solver-node`: an in-house LP solver plus a distributed MIP/IP branch-and-bound node using NATS JetStream for integer subproblem work distribution.
+
+Pure LP requests are solved as a single local LP job on the master, even when NATS is configured. The cluster workers are reserved for MIP/IP branch-and-bound subtrees; LPs only benefit from solver-internal parallelism unless a future LP-specific decomposition engine is added.
 
 The same binary can run as either a master or a slave. The role is deterministic at boot via `MIP_SOLVER_NODE_ROLE`; pods do not elect or switch roles dynamically.
 

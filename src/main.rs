@@ -51,7 +51,7 @@ use uuid::Uuid;
 
 const SERVICE_NAME: &str = "dd-in-house-mip-solver-node";
 const SERVICE_DESCRIPTION: &str =
-    "Distributed in-house LP/MIP/IP solver node with NATS JetStream master/slave execution.";
+    "In-house LP solver plus distributed MIP/IP branch-and-bound node with NATS JetStream master/slave execution.";
 const API_DOCS_SCHEMA: &str = "dd.service-docs.v1";
 const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_VARS: usize = 10_000;
@@ -1380,14 +1380,7 @@ fn preprocess_bounds_with_mode(
     let mut rows = problem.a.clone();
     let mut rhs = problem.b.clone();
     for constraint in extra_constraints {
-        if constraint.coefs.len() != n {
-            return Err(format!(
-                "branch constraint {} has length {}, expected {}",
-                constraint.name,
-                constraint.coefs.len(),
-                n
-            ));
-        }
+        validate_branch_constraint(constraint, n)?;
         rows.push(constraint.coefs.clone());
         rhs.push(constraint.rhs);
     }
@@ -1533,6 +1526,30 @@ fn normalized_problem(mut problem: MipProblemSpec) -> Result<MipProblemSpec, Str
     validate_problem(&problem)?;
     problem.integer_vars.resize(problem.c.len(), false);
     Ok(problem)
+}
+
+fn validate_branch_constraint(constraint: &BranchConstraint, n: usize) -> Result<(), String> {
+    if constraint.coefs.len() != n {
+        return Err(format!(
+            "branch constraint {} has length {}, expected {}",
+            constraint.name,
+            constraint.coefs.len(),
+            n
+        ));
+    }
+    if constraint.coefs.iter().any(|v| !v.is_finite()) {
+        return Err(format!(
+            "branch constraint {} contains a non-finite coefficient",
+            constraint.name
+        ));
+    }
+    if !constraint.rhs.is_finite() {
+        return Err(format!(
+            "branch constraint {} rhs must be finite",
+            constraint.name
+        ));
+    }
+    Ok(())
 }
 
 fn vec_f64(command: &Value, key: &str) -> Option<Vec<f64>> {
@@ -1840,14 +1857,7 @@ fn to_ipmip_problem(
     let mut b = problem.b.clone();
     let mut con_names = problem.con_names.clone();
     for constraint in extra_constraints {
-        if constraint.coefs.len() != problem.c.len() {
-            return Err(format!(
-                "branch constraint {} has length {}, expected {}",
-                constraint.name,
-                constraint.coefs.len(),
-                problem.c.len()
-            ));
-        }
+        validate_branch_constraint(constraint, problem.c.len())?;
         a.push(constraint.coefs.clone());
         b.push(constraint.rhs);
         if let Some(names) = con_names.as_mut() {
@@ -1878,6 +1888,7 @@ fn to_lp_problem(
     let mut b = problem.b.clone();
     let mut con_names = problem.con_names.clone();
     for constraint in extra_constraints {
+        validate_branch_constraint(constraint, problem.c.len())?;
         a.push(constraint.coefs.clone());
         b.push(constraint.rhs);
         if let Some(names) = con_names.as_mut() {
@@ -4459,6 +4470,172 @@ async fn finish_cancelled_solve(
     response
 }
 
+async fn solve_pure_lp_local(
+    state: AppState,
+    request_id: String,
+    problem_id: String,
+    revision: u64,
+    problem: MipProblemSpec,
+    options: SolveOptions,
+) -> Result<SolveResponse, String> {
+    let solve_id = format!("solve-{}", Uuid::new_v4());
+    let job = SubproblemJob {
+        solve_id: solve_id.clone(),
+        request_id: request_id.clone(),
+        job_id: format!("{solve_id}-lp"),
+        job_uuid: new_uuid_string(),
+        problem_id: Some(problem_id.clone()),
+        revision,
+        depth: 0,
+        master_node: state.node_id.clone(),
+        problem: problem.clone(),
+        extra_constraints: Vec::new(),
+        options: options.clone(),
+        submitted_at_ms: now_ms(),
+    };
+    let warnings = Vec::new();
+    track_solve_started(
+        &state,
+        &solve_id,
+        &request_id,
+        &problem_id,
+        revision,
+        1,
+        false,
+    )?;
+    track_runtime_task_solve(&state, &problem_id, &solve_id);
+    persist_solve_started(
+        &state,
+        &solve_id,
+        &request_id,
+        revision,
+        &problem,
+        &options,
+        1,
+        false,
+    )
+    .await;
+    snapshot_solve_state(&state, &solve_id).await;
+    snapshot_solve_frontier(&state, &solve_id, std::slice::from_ref(&job)).await;
+
+    let cancel_poll = cancel_poll_interval();
+    if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+        let response = finish_cancelled_solve(
+            &state,
+            solve_id,
+            request_id,
+            Some(problem_id.clone()),
+            revision,
+            false,
+            warnings,
+            cancel.reason,
+        )
+        .await;
+        return Ok(response);
+    }
+
+    record_job_submitted(&state, &job).await;
+    let node = state.node_id.clone();
+    let attempt_job = job.clone();
+    let task_id = attempt_job.job_uuid.clone();
+    track_runtime_task_started(
+        &state,
+        task_id.clone(),
+        "local-lp",
+        Some(problem_id.clone()),
+        Some(solve_id.clone()),
+        Some(request_id.clone()),
+        Some(attempt_job.job_id.clone()),
+        Some(task_id.clone()),
+        None,
+    );
+    let mut solve_task = tokio::task::spawn_blocking(move || solve_subproblem(attempt_job, node));
+    track_runtime_task_abort_handle(&state, &task_id, solve_task.abort_handle());
+    let _task_guard = RuntimeTaskFinishGuard::new(state.clone(), task_id.clone(), "finished");
+    let result = loop {
+        tokio::select! {
+            joined = &mut solve_task => {
+                break match joined {
+                    Ok(result) => result,
+                    Err(err) => {
+                        track_runtime_task_finished(&state, &task_id, "error");
+                        return Err(format!("local LP solve task failed: {err}"));
+                    }
+                };
+            }
+            _ = tokio::time::sleep(cancel_poll) => {
+                if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+                    let response = finish_cancelled_solve(
+                        &state,
+                        solve_id,
+                        request_id,
+                        Some(problem_id.clone()),
+                        revision,
+                        false,
+                        warnings,
+                        cancel.reason,
+                    )
+                    .await;
+                    track_runtime_task_finished(&state, &task_id, "cancelled");
+                    return Ok(response);
+                }
+            }
+        }
+    };
+    track_runtime_task_finished(&state, &task_id, &result.status);
+    if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
+        let response = finish_cancelled_solve(
+            &state,
+            solve_id,
+            request_id,
+            Some(problem_id.clone()),
+            revision,
+            false,
+            warnings,
+            cancel.reason,
+        )
+        .await;
+        track_runtime_task_finished(&state, &task_id, "cancelled");
+        return Ok(response);
+    }
+
+    record_job_result(&state, &result, true).await;
+    let response = aggregate_results(
+        solve_id,
+        request_id,
+        Some(problem_id.clone()),
+        revision,
+        &problem,
+        1,
+        1,
+        0,
+        0,
+        vec![result],
+        false,
+        false,
+        &state,
+        warnings,
+    );
+    track_solve_finished(&state, &response);
+    finalize_solve_state(&state, &response).await;
+    publish_event(
+        &state,
+        "solve-finished",
+        json!({
+            "solveId": &response.solve_id,
+            "requestId": &response.request_id,
+            "status": &response.status,
+            "jobsPublished": response.jobs_published,
+            "jobsCompleted": response.jobs_completed,
+            "jobsRedelegated": response.jobs_redelegated,
+            "jobsSplit": response.jobs_split,
+            "timedOut": response.timed_out,
+        }),
+    )
+    .await;
+    Ok(response)
+}
+
 async fn solve_problem_distributed(
     state: AppState,
     request_id: String,
@@ -4468,6 +4645,10 @@ async fn solve_problem_distributed(
     options: SolveOptions,
 ) -> Result<SolveResponse, String> {
     let problem = normalized_problem(problem)?;
+    if is_pure_lp(&problem)? {
+        return solve_pure_lp_local(state, request_id, problem_id, revision, problem, options)
+            .await;
+    }
     let solve_id = format!("solve-{}", Uuid::new_v4());
     let (jobs, mut warnings) = build_frontier_jobs(
         &problem,
@@ -7166,6 +7347,35 @@ mod tests {
     }
 
     #[test]
+    fn branch_constraints_are_validated_before_lp_and_mip_conversion() {
+        let lp_problem = normalized_problem(pure_lp_problem()).unwrap();
+        let bad_width = BranchConstraint {
+            coefs: vec![1.0],
+            rhs: 1.0,
+            name: "bad_width".to_string(),
+        };
+        let err = to_lp_problem(&lp_problem, &[bad_width]).unwrap_err();
+        assert!(err.contains("bad_width has length 1, expected 2"));
+
+        let mip_problem = normalized_problem(binary_knapsack_problem()).unwrap();
+        let bad_coef = BranchConstraint {
+            coefs: vec![1.0, f64::NAN, 0.0, 0.0],
+            rhs: 1.0,
+            name: "bad_coef".to_string(),
+        };
+        let err = to_ipmip_problem(&mip_problem, &[bad_coef]).unwrap_err();
+        assert!(err.contains("bad_coef contains a non-finite coefficient"));
+
+        let bad_rhs = BranchConstraint {
+            coefs: vec![1.0, 0.0, 0.0, 0.0],
+            rhs: f64::INFINITY,
+            name: "bad_rhs".to_string(),
+        };
+        let err = preprocess_bounds_with_mode(&mip_problem, &[bad_rhs], "off").unwrap_err();
+        assert!(err.contains("bad_rhs rhs must be finite"));
+    }
+
+    #[test]
     fn bound_preprocess_prunes_rows_impossible_under_lower_bounds() {
         let problem = MipProblemSpec {
             sense: "max".to_string(),
@@ -7685,6 +7895,51 @@ mod tests {
         assert_eq!(response.jobs_redelegated, 0);
         assert!(response.jobs_published >= response.jobs_completed);
         assert!(response.jobs_published > 0);
+    }
+
+    #[tokio::test]
+    async fn pure_lp_request_uses_single_local_lp_job() {
+        let state = test_state(NodeRole::Master);
+        let response = solve_problem_distributed(
+            state.clone(),
+            "request-lp-local".to_string(),
+            "44444444-4444-4444-8444-444444444444".to_string(),
+            4,
+            pure_lp_problem(),
+            SolveOptions {
+                split_depth: Some(8),
+                max_subproblems: Some(1_000),
+                ..SolveOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(response.ok, "warnings: {:?}", response.warnings);
+        assert_eq!(response.status, "optimal");
+        assert_eq!(response.z, Some(10.0));
+        assert_eq!(response.jobs_expected, 1);
+        assert_eq!(response.jobs_published, 1);
+        assert_eq!(response.jobs_completed, 1);
+        assert_eq!(response.jobs_redelegated, 0);
+        assert_eq!(response.jobs_split, 0);
+        assert!(!response.distributed);
+        assert!(response.lp.is_some());
+
+        let solves = state.solves.lock().expect("solves mutex poisoned");
+        let solve = solves.get(&response.solve_id).expect("tracked LP solve");
+        assert!(!solve.distributed);
+        assert_eq!(solve.jobs.len(), 1);
+        let (job_id, job) = solve.jobs.iter().next().expect("single LP job");
+        assert!(job_id.ends_with("-lp"));
+        assert_eq!(job.status, "optimal");
+        assert_eq!(job.depth, 0);
+        drop(solves);
+
+        let tasks = runtime_task_entries(&state);
+        assert!(tasks.iter().any(|task| {
+            task.kind == "local-lp" && task.solve_id.as_deref() == Some(&response.solve_id)
+        }));
     }
 
     #[test]

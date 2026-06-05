@@ -2,7 +2,7 @@
 name = "dd-in-house-mip-solver-node"
 version = "0.1.0"
 edition = "2021"
-description = "Distributed in-house LP/MIP/IP solver node with NATS JetStream master/slave execution."
+description = "In-house LP solver plus distributed MIP/IP branch-and-bound node with NATS JetStream master/slave execution."
 license = "MIT OR Apache-2.0"
 
 [dependencies]
