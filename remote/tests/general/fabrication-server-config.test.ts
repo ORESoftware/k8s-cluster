@@ -51,6 +51,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct ProcessGraph/);
   assert.match(source, /struct ProcessGraphDependency/);
   assert.match(source, /struct ProcessGraphGate/);
+  assert.match(source, /struct ManufacturingHandoff/);
+  assert.match(source, /struct MachineReleaseReport/);
+  assert.match(source, /struct MachineReleaseBlocker/);
+  assert.match(source, /struct MachineReleaseChecklistItem/);
   assert.match(source, /struct AssemblyGraph/);
   assert.match(source, /struct AssemblyInterface/);
   assert.match(source, /struct AssemblySequenceStep/);
@@ -67,6 +71,15 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /assembly_graph: AssemblyGraph/);
   assert.match(source, /fn process_graph/);
   assert.match(source, /process_graph: ProcessGraph/);
+  assert.match(source, /fn manufacturing_handoff/);
+  assert.match(source, /manufacturing_handoff: ManufacturingHandoff/);
+  assert.match(source, /fn machine_release_report/);
+  assert.match(source, /machine_release: MachineReleaseReport/);
+  assert.match(source, /"manufacturing-handoff"/);
+  assert.match(source, /"machine-release"/);
+  assert.match(source, /"analysis-machine-release"/);
+  assert.match(source, /"machineRelease": response\.machine_release/);
+  assert.match(source, /"manufacturingHandoff": response\.manufacturing_handoff/);
   assert.match(source, /assembly-interface/);
   assert.match(source, /gated-before-machine-release/);
   assert.match(source, /printed-pocket-turned-insert/);
@@ -81,8 +94,19 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /enum FabricationNatsRequest/);
   assert.match(source, /fn parse_fabrication_nats_request/);
   assert.match(source, /FabricationNatsRequest::InstructionAnalysis/);
+  assert.match(source, /FabricationNatsRequest::FabricationOutcome/);
+  assert.match(source, /FabricationNatsRequest::LearningOutcome/);
+  assert.match(source, /fn parse_fabrication_outcome_nats_value/);
+  assert.match(source, /fn parse_learning_outcome_nats_value/);
   assert.match(source, /async fn publish_analysis_outputs/);
   assert.match(source, /"fabrication\.instructions\.analysis\.result"/);
+  assert.match(source, /async fn publish_learning_outcome_outputs/);
+  assert.match(source, /"fabrication\.learning\.outcome\.result"/);
+  assert.match(source, /"fabrication\.learning-outcome\.v1"/);
+  assert.match(source, /"fabrication\.learning\.observe"/);
+  assert.match(source, /"fabrication\.learning\.outcome"/);
+  assert.match(source, /publish_learning_outcome_outputs\(\s*&task_state/);
+  assert.match(source, /publish_learning_outcome_outputs\(&state/);
   assert.match(source, /FABRICATION_MDP_AUTOPUBLISH/);
   assert.match(source, /dd_fabrication_server_learning_requests_total/);
   assert.match(source, /dd_fabrication_server_learning_events_stored_total/);
@@ -147,6 +171,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     source,
     /struct FabricationPlanResponse[\s\S]*boundary_summary: BoundarySummary[\s\S]*improvements: Vec<InstructionImprovement>[\s\S]*improved_programs: Vec<ImprovedInstructionProgram>/,
   );
+  assert.match(source, /manufacturing_handoff: ManufacturingHandoff/);
+  assert.match(source, /struct ManufacturingHandoff/);
+  assert.match(source, /struct ManufacturingHandoffPart/);
+  assert.match(source, /struct ManufacturingHandoffGate/);
+  assert.match(source, /fn manufacturing_handoff/);
+  assert.match(source, /dd\.fabrication\.manufacturing-handoff\.v1/);
   assert.match(source, /struct BoundarySummary/);
   assert.match(source, /struct AutomationRequirement/);
   assert.match(source, /struct BoundaryResolutionPlan/);
@@ -170,6 +200,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"analysis-boundary-summary"/);
   assert.match(source, /"resolution-plan"/);
   assert.match(source, /"process-graph"/);
+  assert.match(source, /"manufacturing-handoff"/);
   assert.match(source, /"analysis-resolution-plan"/);
   assert.match(source, /fn boundary_learning_actions/);
   assert.match(source, /fn boundary_learning_observations/);
@@ -208,6 +239,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /machined-datum-finish-candidate/);
   assert.match(source, /split-for-inspection-candidate/);
   assert.match(source, /"strategyCandidates": response\.learning\.strategy_candidates/);
+  assert.match(source, /"manufacturingHandoff": response\.manufacturing_handoff/);
   assert.match(source, /"processGraph": response\.process_graph/);
   assert.match(source, /"interventionSignals": response\.learning\.intervention_signals/);
   assert.match(source, /"automationRequirements": response\.boundary_summary\.automation_requirements/);
@@ -275,15 +307,31 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/fabrication\/plan`/);
   assert.match(readme, /`POST \/instructions\/analyze`/);
   assert.match(readme, /`POST \/fabrication\/instructions\/analyze`/);
+  assert.match(readme, /rich fabrication outcome payloads/);
+  assert.match(readme, /compact learning-outcome payloads/);
+  assert.match(readme, /fabrication\.learning\.observe/);
+  assert.match(readme, /fabrication\.learning\.outcome/);
+  assert.match(readme, /fabrication\.learning\.outcome\.result/);
+  assert.match(
+    readme,
+    /Plan,\s+instruction-analysis,\s+learning-observation,\s+and compact learning-outcome results/,
+  );
+  assert.match(readme, /learning-observation, or\s+learning-outcome request/);
   assert.match(readme, /bounded in-process job and artifact ledger/);
   assert.match(readme, /boundary summaries/);
   assert.match(readme, /resolution plans/);
+  assert.match(readme, /machine-release reports/);
+  assert.match(readme, /manufacturing handoffs/);
   assert.match(readme, /process graphs/);
   assert.match(readme, /assembly graphs/);
   assert.match(readme, /structured `processGraph`/);
   assert.match(readme, /`boundarySummary` object/);
   assert.match(readme, /typed `automationRequirements`/);
   assert.match(readme, /`resolutionPlan`/);
+  assert.match(readme, /`machineRelease` report/);
+  assert.match(readme, /`manufacturingHandoff` package/);
+  assert.match(readme, /checklist status, release blockers/);
+  assert.match(readme, /datum scheme, fixture\/setup plan/);
   assert.match(readme, /split-job-or-part/);
   assert.match(readme, /combine-or-assemble-parts/);
   assert.match(readme, /add-verified-automation/);
@@ -292,12 +340,23 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`analysis-boundary-summary`/);
   assert.match(readme, /`resolution-plan`/);
   assert.match(readme, /`analysis-resolution-plan`/);
+  assert.match(readme, /`machine-release`/);
+  assert.match(readme, /`analysis-machine-release`/);
+  assert.match(readme, /`manufacturing-handoff`/);
   assert.match(readme, /`assembly\.assemblyGraph`/);
   assert.match(readme, /retained `process-graph`/);
   assert.match(readme, /operation order, generated programs/);
   assert.match(readme, /join interfaces, dry-fit\/metrology gates/);
   assert.match(readme, /`process-graph`/);
-  assert.match(readme, /`mdp-request` artifact includes `strategyCandidates`, `interventionSignals`/);
+  assert.match(
+    readme,
+    /`mdp-request` artifact includes `strategyCandidates`, `interventionSignals`/,
+  );
+  assert.match(
+    readme,
+    /`manufacturingHandoff`, `automationRequirements`, `resolutionPlan`, and\s+`machineRelease`/,
+  );
+  assert.match(readme, /CAD\/CAM handoff assumptions/);
   assert.match(readme, /ordered release-blocking remediation steps/);
   assert.match(readme, /attempts machine-ready release/);
   assert.match(readme, /horizontal side-slot\/keyway milling/);
@@ -350,7 +409,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /dd\.remote\.fabrication\.results/);
   assert.match(readme, /direct instruction-analysis payloads/);
   assert.match(readme, /fabrication\.instructions\.analyze/);
-  assert.match(readme, /instruction-analysis results are both published/);
+  assert.match(readme, /are published to the fabrication result subject/);
+  assert.match(
+    readme,
+    /Compact learning outcomes fan\s+out `fabrication\.learning\.outcome\.result`/,
+  );
   assert.match(readme, /FABRICATION_MDP_AUTOPUBLISH=true/);
   assert.match(readme, /default local port is `8113`/);
 

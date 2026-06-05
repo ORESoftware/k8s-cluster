@@ -35,11 +35,14 @@ machine code is intentionally advisory: responses are draft planning artifacts
 and are not marked machine-ready.
 
 The queue accepts direct plan payloads, direct instruction-analysis payloads
-containing `programs`, and tagged envelopes such as
-`{"type":"fabrication.instructions.analyze","request":{...}}`. Plan and
-instruction-analysis results are both published to the fabrication result
-subject with their full validation, boundary, resolution, artifact, and learning
-surfaces.
+containing `programs`, rich fabrication outcome payloads containing `outcome`,
+compact learning-outcome payloads containing `success`, and tagged envelopes
+such as `{"type":"fabrication.instructions.analyze","request":{...}}`,
+`{"type":"fabrication.learning.observe","request":{...}}`, or
+`{"type":"fabrication.learning.outcome","request":{...}}`. Plan,
+instruction-analysis, learning-observation, and compact learning-outcome results
+are published to the fabrication result subject. Compact learning outcomes fan
+out `fabrication.learning.outcome.result` with the retained policy snapshot.
 
 ## What It Does Today
 
@@ -75,6 +78,11 @@ resolved machine profile material lists before the plan is marked OK.
 - A `resolutionPlan` with ordered release-blocking remediation steps derived
   from failure boundaries, including split/combine, human review, automation,
   and regeneration phases.
+- A `machineRelease` report with checklist status, release blockers, generated
+  and improved program readiness counts, and the current machine-release state.
+- A `manufacturingHandoff` package with part-level geometry envelopes, stock
+  strategy, datum scheme, fixture/setup plan, inspection gates, release blockers,
+  and release gates for downstream CAD/CAM, slicer, or shop-floor review.
 - `improvements` and `improvedPrograms` review drafts for generated and
   submitted instruction streams, with conservative gates inserted before
   machine-ready release.
@@ -97,9 +105,9 @@ resolved machine profile material lists before the plan is marked OK.
   explicit process or join-strategy preferences.
 - A bounded in-process job and artifact ledger for generated design summaries,
   parametric design payloads, process plans, machine programs, validation
-  reports, boundary summaries, resolution plans, improved instructions,
-  assembly plans, process graphs, assembly graphs, and optimizer-shaped MDP
-  requests.
+  reports, boundary summaries, resolution plans, machine-release reports,
+  manufacturing handoffs, improved instructions, assembly plans, process graphs,
+  assembly graphs, and optimizer-shaped MDP requests.
 
 Real production use still requires CAD/CAM generation, controller-specific
 post-processing, simulation, workholding review, material verification, and
@@ -251,6 +259,11 @@ Plan responses also include `assembly.assemblyGraph`; the retained
 `parametric-design` and `assembly-plan` artifacts carry the same graph so
 external CAD/CAM or learning workers can connect generated parts, manufacturing
 methods, join interfaces, dry-fit/metrology gates, and assembly sequence steps.
+The response, retained `parametric-design`, retained `manufacturing-handoff`, and
+`mdp-request` artifacts also include `manufacturingHandoff` so downstream
+CAD/CAM, slicer, fixture, and learning workers can connect each part to its
+geometry primitive, stock and datum assumptions, fixture strategy, draft program,
+inspection gates, and machine-release blockers.
 Plan responses and the retained `process-graph`, `parametric-design`, and
 `mdp-request` artifacts include `processGraph` nodes, dependencies, and release
 gates so downstream agents can reason over operation order, generated programs,
@@ -299,13 +312,14 @@ replace the local scoring head. `interventionSignals` expose automation
 requirements and ordered `resolutionPlan` steps as learnable actions,
 observations, next states, and reward adjustments. The optimizer-shaped
 `mdp-request` artifact includes `strategyCandidates`, `interventionSignals`,
-`automationRequirements`, and `resolutionPlan` so external MDP/POMDP workers can
-learn from the same boundary evidence.
+`manufacturingHandoff`, `automationRequirements`, `resolutionPlan`, and
+`machineRelease` so external MDP/POMDP workers can learn from the same boundary
+evidence and CAD/CAM handoff assumptions.
 
 ## Job And Artifact Inspection
 
-Every successful planning, instruction-analysis, or learning-observation
-request is recorded in a
+Every successful planning, instruction-analysis, learning-observation, or
+learning-outcome request is recorded in a
 bounded in-process ledger. This is not durable storage yet; it is the current
 runtime inspection boundary while the database contract is still being designed.
 
@@ -315,15 +329,20 @@ runtime inspection boundary while the database contract is still being designed.
   artifact summaries.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
   such as `design-summary`, `parametric-design`, `process-plan`,
-  `process-graph`, `boundary-summary`, `simulation-report`, `learning-plan`,
-  `mdp-request`, a `program-*` generated machine program, or an
+  `process-graph`, `manufacturing-handoff`, `machine-release`,
+  `boundary-summary`, `simulation-report`, `learning-plan`, `mdp-request`, a
+  `program-*` generated machine program, or an
   `improved-program-*` instruction rewrite, plus instruction-analysis artifacts such as
-  `analysis-boundary-summary`, `analysis-simulation-report`, and learning
-  artifacts such as `reward-signal`, `mdp-experience`, `pomdp-observations`, and
+  `analysis-boundary-summary`, `analysis-machine-release`,
+  `analysis-simulation-report`, and learning artifacts such as `reward-signal`,
+  `mdp-experience`, `pomdp-observations`, and
   `neural-example`. `parametric-design` and `assembly-plan` include
   `assemblyGraph` nodes, interfaces, and sequence gates; `parametric-design`,
-  `process-graph`, and `mdp-request` include `processGraph` operation nodes,
-  dependencies, and release gates.
+  `manufacturing-handoff`, and `mdp-request` include `manufacturingHandoff`
+  part-level stock, datum, fixture, program-link, inspection, and release-blocker
+  data; `process-graph`, and `mdp-request` include `processGraph` operation
+  nodes, dependencies, and release gates. `parametric-design` also embeds
+  `machineRelease` and `manufacturingHandoff` for one-payload handoff review.
 
 ## Local Build
 
