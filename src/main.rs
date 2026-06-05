@@ -2861,6 +2861,10 @@ fn analyze_instruction_programs(
         let mut has_tool_selection = false;
         let mut has_tool_length_reference = false;
         let mut reported_tool_length_boundary = false;
+        let mut has_lathe_spindle_limit = false;
+        let mut reported_lathe_css_boundary = false;
+        let mut reported_lathe_threading_boundary = false;
+        let mut reported_lathe_partoff_boundary = false;
         let findings_at_program_start = findings.len();
         let boundaries_at_program_start = boundaries.len();
 
@@ -2928,6 +2932,96 @@ fn analyze_instruction_programs(
                     || line_mentions(raw_line, "probe")
                 {
                     has_tool_length_reference = true;
+                }
+            }
+            if class == MachineClass::Lathe {
+                if has_any_code(&stripped, &["G50"]) && number_after(&stripped, 'S').is_some() {
+                    has_lathe_spindle_limit = true;
+                }
+                if has_any_code(&stripped, &["G96"])
+                    && !has_lathe_spindle_limit
+                    && !reported_lathe_css_boundary
+                {
+                    reported_lathe_css_boundary = true;
+                    findings.push(ValidationFinding {
+                        severity: "warning".to_string(),
+                        code: "lathe-css-without-spindle-limit".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message:
+                            "lathe constant-surface-speed mode appears before an explicit G50 spindle speed limit"
+                                .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "lathe-spindle-speed-boundary".to_string(),
+                        severity: "warning".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "constant surface speed can overspeed a lathe spindle as diameter changes unless a verified maximum RPM is set"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "insert a reviewed G50 S spindle cap, verify chuck/workholding RPM limits, and rerun turning simulation before release"
+                                .to_string(),
+                    });
+                }
+                let normalized_line = normalize_token(raw_line);
+                if !reported_lathe_threading_boundary
+                    && (has_any_code(&stripped, &["G32", "G33", "G76", "G92"])
+                        || normalized_line.contains("thread"))
+                {
+                    reported_lathe_threading_boundary = true;
+                    findings.push(ValidationFinding {
+                        severity: "warning".to_string(),
+                        code: "lathe-threading-boundary".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message: "lathe threading move requires synchronized spindle/feed review"
+                            .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "lathe-threading-boundary".to_string(),
+                        severity: "warning".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "threading cycles depend on pitch, spindle encoder, tool orientation, relief, and verified retry strategy"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "split threading into an operator-approved setup with pitch gauge, spring-pass, relief, and clearance checks"
+                                .to_string(),
+                    });
+                }
+                if !reported_lathe_partoff_boundary
+                    && (has_any_code(&stripped, &["G75"])
+                        || normalized_line.contains("part-off")
+                        || normalized_line.contains("cut-off")
+                        || normalized_line.contains("cutoff"))
+                {
+                    reported_lathe_partoff_boundary = true;
+                    findings.push(ValidationFinding {
+                        severity: "warning".to_string(),
+                        code: "lathe-part-off-boundary".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message: "lathe part-off or cutoff step needs workholding and catch review"
+                            .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "lathe-part-off-boundary".to_string(),
+                        severity: "warning".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "part-off operations can pinch tools, drop parts, or exceed stick-out/workholding limits without operator-reviewed support"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "add a catch/support plan, verify stick-out and cutoff tool geometry, and split the operation before unattended release"
+                                .to_string(),
+                    });
                 }
             }
 
@@ -6647,6 +6741,68 @@ mod tests {
             .iter()
             .any(|boundary| boundary.kind == "machine-safety-gate"));
         assert!(improvements.is_empty());
+    }
+
+    #[test]
+    fn lathe_analysis_flags_css_threading_and_partoff_boundaries() {
+        let programs = vec![program(
+            "risky-lathe",
+            "lathe",
+            &[
+                "G21 G90 G54",
+                "T0303",
+                "G96 S220 M3",
+                "G1 X18 Z-20 F0.18",
+                "G76 X16 Z-30 P010060 Q100 F1.5",
+                "G1 X2 Z-35 F0.04 ; part-off cutoff",
+                "M30",
+            ],
+        )];
+
+        let (analyzed, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(analyzed[0].machine_kind, "lathe");
+        assert_eq!(validation.severity, "warning");
+        assert!(validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "lathe-css-without-spindle-limit"));
+        assert!(validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "lathe-threading-boundary"));
+        assert!(validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "lathe-part-off-boundary"));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "lathe-spindle-speed-boundary"
+                && boundary.requires_human_intervention
+        }));
+        assert!(validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| boundary.kind == "lathe-threading-boundary"));
+        assert!(validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| boundary.kind == "lathe-part-off-boundary"));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary lathe-spindle-speed-boundary")));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary lathe-threading-boundary")));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary lathe-part-off-boundary")));
     }
 
     #[test]
