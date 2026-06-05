@@ -24,9 +24,15 @@ use dd_nats_subject_defs::{
     MDP_OPTIMIZE_SUBJECT, RUNTIME_EVENTS_SUBJECT,
 };
 use des_engine::{
-    des::decision::{
-        solve_mdp, solve_pomdp_underlying, MdpMethod, MdpSpec, MdpTransition, PomdpSpec,
-        TerminalState, MDP_SCHEMA, POMDP_SCHEMA,
+    des::{
+        decision::{
+            solve_mdp, solve_pomdp_underlying, MdpMethod, MdpSpec, MdpTransition, PomdpSpec,
+            TerminalState, MDP_SCHEMA, POMDP_SCHEMA,
+        },
+        general::{
+            des_base::neural_network::NeuralNetworkLike,
+            neural_network::{ActivationName, DenseLayerConfig, FeedForwardNetwork},
+        },
     },
     sdk as des_sdk,
 };
@@ -1416,7 +1422,23 @@ struct NeuralPolicySketch {
     model_family: String,
     feature_vector: Vec<f64>,
     hidden_activations: Vec<f64>,
+    engine_inference: NeuralEngineInference,
     action_scores: Vec<NeuralActionScore>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NeuralEngineInference {
+    schema_version: String,
+    engine: String,
+    network_kind: String,
+    input_dim: usize,
+    output_dim: usize,
+    parameter_count: usize,
+    output_labels: Vec<String>,
+    output_scores: Vec<NeuralActionScore>,
+    top_signal: String,
     notes: Vec<String>,
 }
 
@@ -23167,6 +23189,65 @@ fn sigmoid(value: f64) -> f64 {
     1.0 / (1.0 + (-value).exp())
 }
 
+fn fabrication_neural_engine_network() -> FeedForwardNetwork {
+    FeedForwardNetwork::new(vec![DenseLayerConfig {
+        weights: vec![
+            vec![1.2, 0.9, 0.0, 0.0, 0.0, 0.0, 0.6, 0.0, 0.0],
+            vec![0.0, 0.0, 1.4, 0.0, 1.1, 0.7, 0.0, 0.0, 0.0],
+            vec![0.0, 0.0, 0.0, 1.6, 0.0, 0.0, 0.0, 0.0, 0.0],
+            vec![0.0, 0.0, 0.0, 0.0, 0.4, 0.0, 0.0, 1.3, 0.7],
+        ],
+        biases: vec![-0.8, -0.6, -0.5, -0.5],
+        activation: ActivationName::Sigmoid,
+    }])
+}
+
+fn neural_engine_inference(
+    network: &FeedForwardNetwork,
+    feature_vector: &[f64],
+    hidden_activations: &[f64],
+) -> NeuralEngineInference {
+    let output_labels = vec![
+        "split-combine".to_string(),
+        "human-intervention".to_string(),
+        "machine-failure".to_string(),
+        "automation-gap".to_string(),
+    ];
+    let output_scores = output_labels
+        .iter()
+        .zip(hidden_activations.iter())
+        .map(|(label, score)| NeuralActionScore {
+            action: label.clone(),
+            score: rounded_score(*score),
+        })
+        .collect::<Vec<_>>();
+    let top_signal = output_scores
+        .iter()
+        .max_by(|left, right| {
+            left.score
+                .partial_cmp(&right.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|score| score.action.clone())
+        .unwrap_or_else(|| "none".to_string());
+
+    NeuralEngineInference {
+        schema_version: "dd.fabrication.neural-engine-inference.v1".to_string(),
+        engine: "des_engine::des::general::neural_network::FeedForwardNetwork".to_string(),
+        network_kind: "deterministic-single-layer-sigmoid-policy-head".to_string(),
+        input_dim: feature_vector.len(),
+        output_dim: hidden_activations.len(),
+        parameter_count: network.num_parameters(),
+        output_labels,
+        output_scores,
+        top_signal,
+        notes: vec![
+            "DES feed-forward network inference over bounded fabrication policy features".to_string(),
+            "Outputs seed action scoring while the retained neuralTrainingCorpus remains available for external training".to_string(),
+        ],
+    }
+}
+
 fn neural_policy_sketch(
     model_family: &str,
     actions: &[String],
@@ -23188,16 +23269,6 @@ fn neural_policy_sketch(
         .iter()
         .map(|part| part.tolerance_mm)
         .fold(DEFAULT_TOLERANCE_MM, f64::min);
-    let error_count = validation
-        .findings
-        .iter()
-        .filter(|finding| finding.severity == "error")
-        .count()
-        + validation
-            .failure_boundaries
-            .iter()
-            .filter(|boundary| boundary.severity == "error")
-            .count();
     let human_boundary_count = validation
         .failure_boundaries
         .iter()
@@ -23217,12 +23288,14 @@ fn neural_policy_sketch(
         clamp_unit(summary.automation_required as f64 / 12.0),
         clamp_unit(resolution_plan.step_count as f64 / 16.0),
     ];
-    let hidden_activations = vec![
-        sigmoid(feature_vector[0] * 1.2 + feature_vector[1] * 0.9 + feature_vector[6] * 0.6 - 0.8),
-        sigmoid(feature_vector[2] * 1.4 + feature_vector[4] * 1.1 + feature_vector[5] * 0.7 - 0.6),
-        sigmoid(feature_vector[3] * 1.6 + error_count as f64 * 0.35 - 0.5),
-        sigmoid(feature_vector[7] * 1.3 + feature_vector[8] * 0.7 + feature_vector[4] * 0.4 - 0.5),
-    ];
+    let neural_network = fabrication_neural_engine_network();
+    let hidden_activations = neural_network
+        .predict(&feature_vector)
+        .into_iter()
+        .map(rounded_score)
+        .collect::<Vec<_>>();
+    let engine_inference =
+        neural_engine_inference(&neural_network, &feature_vector, &hidden_activations);
     let action_scores = actions
         .iter()
         .map(|action| {
@@ -23253,9 +23326,10 @@ fn neural_policy_sketch(
         model_family: model_family.to_string(),
         feature_vector,
         hidden_activations,
+        engine_inference,
         action_scores,
         notes: vec![
-            "Deterministic neural-network sketch for downstream training or replacement by an external model"
+            "Deterministic neural-network sketch backed by des_engine FeedForwardNetwork inference"
                 .to_string(),
             "Inputs are normalized plan, validation, intervention, automation, resolution, tolerance, and improvement features"
                 .to_string(),
@@ -23397,6 +23471,163 @@ fn strategy_candidate_feature_vector(candidate: &StrategyCandidate) -> Vec<f64> 
     ]
 }
 
+fn boundary_learning_machine_feature(boundary: &FailureBoundary) -> f64 {
+    let combined = boundary_combined_text(boundary);
+    if summary_text_has_any(&combined, &["lathe", "turning", "part-off", "thread"]) {
+        0.78
+    } else if summary_text_has_any(&combined, &["mill", "spindle", "cutter", "tool length"]) {
+        0.64
+    } else if summary_text_has_any(&combined, &["router"]) {
+        0.36
+    } else if summary_text_has_any(
+        &combined,
+        &["printer", "slicer", "extrusion", "resin", "powder", "additive"],
+    ) {
+        0.18
+    } else if summary_text_has_any(&combined, &["laser", "waterjet", "plasma", "edm", "sheet"]) {
+        0.48
+    } else {
+        0.5
+    }
+}
+
+fn boundary_learning_material_feature(boundary: &FailureBoundary) -> f64 {
+    let combined = boundary_combined_text(boundary);
+    if summary_text_has_any(&combined, &["metal", "steel", "aluminum", "brass", "titanium"]) {
+        0.82
+    } else if summary_text_has_any(&combined, &["polymer", "plastic", "pla", "petg", "resin"]) {
+        0.28
+    } else if summary_text_has_any(&combined, &["wood", "foam"]) {
+        0.38
+    } else if summary_text_has_any(&combined, &["ceramic", "glass"]) {
+        0.74
+    } else {
+        0.5
+    }
+}
+
+fn boundary_linked_improvement<'a>(
+    boundary: &FailureBoundary,
+    improvements: &'a [InstructionImprovement],
+) -> Option<&'a InstructionImprovement> {
+    let program_match = |improvement: &&InstructionImprovement| {
+        boundary.program_id.is_none()
+            || improvement.program_id.is_none()
+            || improvement.program_id == boundary.program_id
+    };
+    improvements
+        .iter()
+        .find(|improvement| {
+            program_match(improvement)
+                && boundary.line.is_some()
+                && improvement.line.is_some()
+                && improvement.line == boundary.line
+        })
+        .or_else(|| improvements.iter().find(program_match))
+}
+
+fn boundary_training_feature_vector(
+    boundary: &FailureBoundary,
+    summary: &BoundarySummary,
+    improvement: Option<&InstructionImprovement>,
+    index: usize,
+) -> Vec<f64> {
+    let combined = boundary_combined_text(boundary);
+    let automation = automation_requirement_type(boundary, &combined).is_some();
+    vec![
+        rounded_score((boundary.kind.len() + boundary.reason.len()) as f64 / 180.0),
+        rounded_score(boundary_learning_material_feature(boundary)),
+        rounded_score(if boundary_split_recommended(boundary) {
+            0.84
+        } else if boundary.line.is_some() {
+            0.45
+        } else {
+            0.25
+        }),
+        rounded_score(boundary_learning_machine_feature(boundary)),
+        rounded_score(if boundary.line.is_some() {
+            0.72
+        } else if boundary.program_id.is_some() {
+            0.42
+        } else {
+            0.18
+        }),
+        rounded_score(
+            if boundary_machine_failure_risk(boundary) {
+                0.88
+            } else {
+                0.25
+            } + index as f64 * 0.01,
+        ),
+        rounded_score(
+            if boundary.requires_human_intervention {
+                0.82
+            } else {
+                0.28
+            } + if boundary.severity == "error" { 0.12 } else { 0.0 },
+        ),
+        rounded_score(if automation { 0.86 } else { 0.18 }),
+        rounded_score(
+            summary.total_boundaries as f64 / 24.0
+                + if improvement.is_some() { 0.24 } else { 0.0 },
+        ),
+    ]
+}
+
+fn boundary_training_labels(
+    boundary: &FailureBoundary,
+    improvement: Option<&InstructionImprovement>,
+) -> Vec<String> {
+    let mut labels = vec![
+        format!("boundary-kind:{}", normalize_token(&boundary.kind)),
+        format!("boundary-severity:{}", normalize_token(&boundary.severity)),
+    ];
+    if boundary.requires_human_intervention {
+        labels.push("requires-human-intervention".to_string());
+    } else {
+        labels.push("automated-review-candidate".to_string());
+    }
+    if boundary_machine_failure_risk(boundary) {
+        labels.push("machine-failure-risk".to_string());
+    }
+    if boundary_split_recommended(boundary) || boundary_combine_recommended(boundary) {
+        labels.push("split-or-combine-boundary".to_string());
+    }
+    if automation_requirement_type(boundary, &boundary_combined_text(boundary)).is_some() {
+        labels.push("automation-boundary".to_string());
+    }
+    if let Some(improvement) = improvement {
+        labels.push(format!(
+            "resolution-action:{}",
+            normalize_token(&improvement.action)
+        ));
+    } else {
+        labels.push(format!(
+            "resolution-suggested:{}",
+            normalize_token(&boundary.suggested_resolution)
+        ));
+    }
+    labels
+}
+
+fn boundary_training_reward_hint(
+    boundary: &FailureBoundary,
+    improvement: Option<&InstructionImprovement>,
+) -> f64 {
+    let base = match boundary.severity.as_str() {
+        "error" => -0.72,
+        "warning" => -0.36,
+        _ => -0.12,
+    };
+    rounded_engine_value(
+        base - if boundary.requires_human_intervention {
+            0.18
+        } else {
+            0.0
+        } + if improvement.is_some() { 0.14 } else { 0.0 },
+    )
+}
+
 fn neural_training_corpus(
     model_family: &str,
     feature_names: &[String],
@@ -23481,6 +23712,53 @@ fn neural_training_corpus(
         });
     }
 
+    for (index, boundary) in validation
+        .failure_boundaries
+        .iter()
+        .take(MAX_LEARNING_SIGNALS.min(48))
+        .enumerate()
+    {
+        let improvement = boundary_linked_improvement(boundary, improvements);
+        let example_labels = boundary_training_labels(boundary, improvement);
+        for label in &example_labels {
+            labels.insert(label.clone());
+        }
+        let mut observations = vec![
+            format!("boundary-kind:{}", normalize_token(&boundary.kind)),
+            format!("boundary-severity:{}", normalize_token(&boundary.severity)),
+            format!(
+                "boundary-program:{}",
+                normalize_token(boundary.program_id.as_deref().unwrap_or("whole-job"))
+            ),
+            format!("boundary-line:{}", boundary_line_token(boundary.line)),
+            format!(
+                "suggested-resolution:{}",
+                normalize_token(&boundary.suggested_resolution)
+            ),
+        ];
+        if let Some(improvement) = improvement {
+            observations.push(format!(
+                "resolution-action:{}",
+                normalize_token(&improvement.action)
+            ));
+        }
+        examples.push(NeuralTrainingExample {
+            example_id: boundary_trace_id("neural-boundary", boundary, index),
+            source: "validation-boundary".to_string(),
+            part_id: None,
+            machine_kind: None,
+            feature_vector: boundary_training_feature_vector(
+                boundary,
+                &summary,
+                improvement,
+                index,
+            ),
+            labels: example_labels,
+            reward_hint: boundary_training_reward_hint(boundary, improvement),
+            observations,
+        });
+    }
+
     for (index, example) in training_examples
         .iter()
         .take(MAX_LEARNING_SIGNALS.min(32))
@@ -23558,6 +23836,7 @@ fn neural_training_corpus(
         notes: vec![
             "Deterministic normalized corpus for external neural model training, replay, or replacement of the built-in sketch".to_string(),
             "Feature vectors are bounded 0..1 and aligned with learning.neuralFeatures".to_string(),
+            "Validation failure boundaries become per-boundary examples with linked resolution actions when improvements are available".to_string(),
         ],
     }
 }
@@ -38675,6 +38954,30 @@ mod tests {
         assert!(response
             .learning
             .neural_training_corpus
+            .examples
+            .iter()
+            .any(|example| example.source == "validation-boundary"
+                && example.feature_vector.len() == response.learning.neural_features.len()
+                && example.reward_hint < 0.0
+                && example
+                    .labels
+                    .iter()
+                    .any(|label| label.starts_with("boundary-kind:"))
+                && example
+                    .observations
+                    .iter()
+                    .any(|observation| observation.starts_with("resolution-action:")
+                        || observation.starts_with("suggested-resolution:"))));
+        assert!(response
+            .learning
+            .neural_training_corpus
+            .labels
+            .iter()
+            .any(|label| label.starts_with("resolution-action:")
+                || label.starts_with("resolution-suggested:")));
+        assert!(response
+            .learning
+            .neural_training_corpus
             .inference_candidates
             .iter()
             .any(|candidate| candidate.action.starts_with("select-strategy-")
@@ -40480,6 +40783,20 @@ mod tests {
             .actions
             .iter()
             .any(|action| action.contains("machine-failure-risk") || action.contains("human")));
+        assert!(response
+            .learning
+            .neural_training_corpus
+            .examples
+            .iter()
+            .any(|example| example.source == "validation-boundary"
+                && example
+                    .labels
+                    .iter()
+                    .any(|label| label.starts_with("boundary-kind:"))
+                && example
+                    .observations
+                    .iter()
+                    .any(|observation| observation.starts_with("resolution-action:"))));
         let analysis_mdp_request = job
             .artifacts
             .get("analysis-mdp-request")
