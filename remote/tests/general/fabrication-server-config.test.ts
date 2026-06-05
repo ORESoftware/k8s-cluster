@@ -58,6 +58,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct FabricationArtifact/);
   assert.match(source, /fn stored_plan_job/);
   assert.match(source, /fn stored_analysis_job/);
+  assert.match(source, /fn stock_envelope_excesses/);
+  assert.match(source, /"machine-envelope"/);
   assert.match(source, /async fn list_jobs/);
   assert.match(source, /async fn get_artifact/);
   assert.match(source, /\.route\("\/jobs", get\(list_jobs\)\)/);
@@ -77,6 +79,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/fabrication\/plan`/);
   assert.match(readme, /`POST \/instructions\/analyze`/);
   assert.match(readme, /bounded in-process job and artifact ledger/);
+  assert.match(readme, /machine-envelope/);
   assert.match(readme, /dd\.remote\.fabrication\.requests/);
   assert.match(readme, /dd\.remote\.fabrication\.results/);
   assert.match(readme, /FABRICATION_MDP_AUTOPUBLISH=true/);
