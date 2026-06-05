@@ -94,7 +94,7 @@ Gateway path map:
 - `/mdp/`, `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`,
   `POST /mdp/telemetry/learn` -> `dd-mdp-optimizer:8096` (gateway auth required)
 - `/fabrication/`, `/fabrication/healthz`, `/fabrication/metrics`, `/fabrication/docs/api`,
-  `POST /fabrication/plan`, `POST /fabrication/instructions/analyze` ->
+  `/fabrication/jobs`, `POST /fabrication/plan`, `POST /fabrication/instructions/analyze` ->
   `dd-fabrication-server:8113` (gateway auth required)
 - `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
   `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`

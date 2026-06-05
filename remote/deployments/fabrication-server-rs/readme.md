@@ -12,6 +12,9 @@ It exposes:
 - `GET /docs/api`
 - `GET /api/docs`
 - `GET /api/docs.json`
+- `GET /jobs`
+- `GET /jobs/:job_id`
+- `GET /jobs/:job_id/artifacts/:artifact_id`
 - `POST /plan`
 - `POST /fabrication/plan`
 - `POST /instructions/analyze`
@@ -44,6 +47,9 @@ learning hints. It returns:
   split so tight-tolerance features can be machined and inspected separately.
 - A learning contract with MDP states, POMDP observations, policy actions,
   reward terms, neural feature names, and training-example sketches.
+- A bounded in-process job and artifact ledger for generated design summaries,
+  process plans, machine programs, validation reports, improved instructions,
+  assembly plans, and optimizer-shaped MDP requests.
 
 Real production use still requires CAD/CAM generation, controller-specific
 post-processing, simulation, workholding review, material verification, and
@@ -151,6 +157,21 @@ program ends, and text-instruction boundaries where the job needs setup,
 post-processing, assembly, splitting, or operator intervention. Improved drafts
 are still marked `machineReady=false`; they are normalization aids for review,
 simulation, and controller-specific postprocessing.
+
+## Job And Artifact Inspection
+
+Every successful planning or instruction-analysis request is recorded in a
+bounded in-process ledger. This is not durable storage yet; it is the current
+runtime inspection boundary while the database contract is still being designed.
+
+- `GET /jobs` lists retained jobs with status, severity, summary, and artifact
+  IDs.
+- `GET /jobs/:job_id` returns the recorded plan or analysis response plus
+  artifact summaries.
+- `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
+  such as `design-summary`, `process-plan`, `learning-plan`, `mdp-request`, a
+  `program-*` generated machine program, or an `improved-program-*` instruction
+  rewrite.
 
 ## Local Build
 
