@@ -88,8 +88,9 @@ GraphQL also provides extension points for non-Postgres sources and service-to-s
   `REST_API_GRAPHQL_SERVICE_ALLOWLIST=name=http://service.namespace.svc.cluster.local:port,...`.
   These resolvers require `X-Agent-Auth` or `X-Server-Auth` and only call named allowlist entries,
   never caller-supplied absolute URLs. By default, allowlist URLs must be cluster-local, localhost,
-  or private/link-local IP addresses; set `REST_API_GRAPHQL_ALLOW_EXTERNAL_SERVICES=true` only for
-  a trusted operator environment that intentionally calls external services.
+  or private/loopback IP addresses; link-local metadata-style hosts are rejected. Subservice clients
+  do not follow redirects. Set `REST_API_GRAPHQL_ALLOW_EXTERNAL_SERVICES=true` only for a trusted
+  operator environment that intentionally calls external services.
 - Subservice GraphQL calls reject introspection queries by default. Set
   `REST_API_GRAPHQL_SUBSERVICE_INTROSPECTION_ENABLED=true` only when the target service and caller
   are both trusted.
