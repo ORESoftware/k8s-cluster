@@ -2333,6 +2333,8 @@ jobs:
           prom_query "gcs-rss-max" 'max by (pod) (max_over_time(gcs_process_resident_memory_bytes[60m]))'
           prom_query "gcs-cpu-max" 'max by (pod, container) (max_over_time(dd_k8s_pod_container_cpu_usage_cores{namespace="default",pod=~"gcs.*"}[60m]))'
           prom_query "gcs-memory-max" 'max by (pod, container) (max_over_time(dd_k8s_pod_container_memory_usage_bytes{namespace="default",pod=~"gcs.*"}[60m]))'
+          prom_query "gcs-cadvisor-cpu-max" 'max by (pod, container) (max_over_time(rate(container_cpu_usage_seconds_total{namespace="default",pod=~"gcs.*",container!="",container!="POD"}[2m])[60m:]))'
+          prom_query "gcs-cadvisor-memory-working-set-max" 'max by (pod, container) (max_over_time(container_memory_working_set_bytes{namespace="default",pod=~"gcs.*",container!="",container!="POD"}[60m]))'
           prom_query "router-upstream-errors" 'sum by (pool, peer) (increase(gcs_router_upstream_errors_total[60m]))'
 
           echo "=== current top pods: gcs/loadtest/dependencies ==="
