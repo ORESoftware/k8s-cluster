@@ -171,6 +171,12 @@ spec:
               value: 'true'
             - name: GCS_WS_ENABLE_CHAT_MAP_SIDE_EFFECT
               value: 'false'
+            - name: GCS_WS_CONV_FANOUT_BATCH_ENABLED
+              value: 'true'
+            - name: GCS_WS_CONV_FANOUT_BATCH_MS
+              value: '5'
+            - name: GCS_WS_CONV_FANOUT_BATCH_MAX
+              value: '128'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
