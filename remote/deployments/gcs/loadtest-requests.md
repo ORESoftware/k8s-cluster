@@ -26,3 +26,4 @@
 - 2026-06-04 20k-medium goroutine-fix retry after Argo sync/scale guard: 4 loader replicas x 5000 clients, 2.5 msg/(conn*second), 180s.
 - 2026-06-04 20k-medium goroutine-fix retry after freeing MIP solver pods: 4 loader replicas x 5000 clients, 2.5 msg/(conn*second), 180s.
 - 2026-06-05 20k-medium goroutine-fix retry after disabling MIP Argo/KEDA owner: 4 loader replicas x 5000 clients, 2.5 msg/(conn*second), 180s.
+- 2026-06-05 20k-medium goroutine-fix retry with fewer loader pods: 3 loader replicas x 6667 clients, 2.5 msg/(conn*second), 180s.
