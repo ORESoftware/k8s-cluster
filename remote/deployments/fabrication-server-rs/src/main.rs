@@ -1578,6 +1578,7 @@ fn generate_fdm_gcode(
     let material = request.objective.material.as_deref().unwrap_or("PLA");
     let (extruder_temp, bed_temp) = print_temps(material);
     let box_text = part_box_text(part.bounding_box_mm.as_ref());
+    let layer_stack = fdm_primitive_toolpath(part);
     format!(
         "; dd-fabrication-server fabrication.v1\n\
          ; part: {}\n\
@@ -1597,8 +1598,7 @@ fn generate_fdm_gcode(
          G1 Z0.28 F900\n\
          G1 X8 Y8 F3000\n\
          G1 X120 E8 F900 ; purge line\n\
-         ; TODO_CAM_LAYER_STACK: generated geometry must be sliced into per-layer toolpaths.\n\
-         ; Recommended: 4 perimeters, 35% infill, orient load-bearing layer lines along principal stress.\n\
+         {layer_stack}\
          M104 S0\n\
          M140 S0\n\
          G1 X0 Y200 F3000\n\
@@ -1654,6 +1654,7 @@ fn generate_mill_gcode(
         .unwrap_or(6000.0)
         .min(4500.0);
     let box_text = part_box_text(part.bounding_box_mm.as_ref());
+    let toolpath = mill_primitive_toolpath(part, process, feed);
     format!(
         "(dd-fabrication-server fabrication.v1)\n\
          (part: {})\n\
@@ -1667,13 +1668,8 @@ fn generate_mill_gcode(
          G0 X0 Y0 Z25\n\
          M8\n\
          G1 Z2 F200\n\
-         (TODO_CAM_ROUGHING: adaptive roughing path from generated design artifact)\n\
-         G1 X10 Y0 F{feed:.0}\n\
-         G1 X10 Y10\n\
-         G1 X0 Y10\n\
-         G1 X0 Y0\n\
+         {toolpath}\
          G0 Z25\n\
-         (TODO_CAM_FINISHING: finish datum faces, bores, and mating features only)\n\
          M9\n\
          M5\n\
          G53 G0 Z0\n\
@@ -1699,6 +1695,7 @@ fn generate_lathe_gcode(
         .and_then(|capabilities| capabilities.max_spindle_rpm)
         .unwrap_or(2500.0)
         .min(1800.0);
+    let toolpath = lathe_primitive_toolpath(part);
     format!(
         "(dd-fabrication-server fabrication.v1)\n\
          (part: {})\n\
@@ -1710,8 +1707,7 @@ fn generate_lathe_gcode(
          T0101 (verify insert, stickout, and workholding)\n\
          G97 S{spindle:.0} M3\n\
          G0 X50 Z5\n\
-         (TODO_CAM_TURNING_PROFILE: rough and finish generated rotational profile)\n\
-         G1 Z0 F0.18\n\
+         {toolpath}\
          G0 X55 Z10\n\
          M5\n\
          M30\n",
@@ -1731,6 +1727,7 @@ fn generate_router_or_cut_gcode(
     machine: Option<&Machine>,
     process: FabricationProcess,
 ) -> String {
+    let toolpath = router_or_cut_primitive_toolpath(part, process);
     format!(
         "(dd-fabrication-server fabrication.v1)\n\
          (part: {})\n\
@@ -1739,13 +1736,8 @@ fn generate_router_or_cut_gcode(
          (material: {})\n\
          G21 G90\n\
          G28\n\
-         (TODO_CAM_NESTING: nest profile and tab parts before running)\n\
          G0 X0 Y0 Z10\n\
-         G1 Z-1 F120\n\
-         G1 X25 Y0 F500\n\
-         G1 X25 Y25\n\
-         G1 X0 Y25\n\
-         G1 X0 Y0\n\
+         {toolpath}\
          G0 Z10\n\
          M30\n",
         part.name,
