@@ -418,8 +418,8 @@
       ],
       "routeType": "service",
       "implementation": "service",
-      "auth": "public",
-      "purpose": "Machine-readable GraphQL SDL schema for the remote REST API service.",
+      "auth": "operator secret by default",
+      "purpose": "Machine-readable GraphQL SDL schema for the remote REST API service; protected by internal auth by default.",
       "handlers": [
         "graphql_schema_sdl"
       ],
@@ -526,8 +526,8 @@
       ],
       "routeType": "service",
       "implementation": "service",
-      "auth": "public",
-      "purpose": "Machine-readable GraphQL SDL schema for the remote REST API service.",
+      "auth": "operator secret by default",
+      "purpose": "Machine-readable GraphQL SDL schema for the remote REST API service; protected by internal auth by default.",
       "handlers": [
         "graphql_schema_sdl"
       ],
