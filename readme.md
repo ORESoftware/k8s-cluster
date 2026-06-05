@@ -132,6 +132,7 @@ is supplied.
   indexed setup clamp/index/clearance/re-probe evidence,
   sheet-cutting material/thickness/cut-chart/recipe evidence, pierce/kerf/focus/gas/fume/support, retained-tab/microjoint/part-release evidence, waterjet pressure/abrasive-flow, and plasma work-clamp evidence, deep-cut, arc-plane/geometry,
   coordinate transform rotation/scaling/mirroring review and cancel state,
+  inverse-time feed review and G94 cancel state,
   positioning-mode reset state, additive relative-positioning extrusion state, setup-limit, machine-envelope, inspection, and automation constraints.
 - A `resolutionPlan` with ordered release-blocking remediation steps derived
   from failure boundaries, including split/combine, human review, automation,
@@ -367,7 +368,7 @@ materials, process support, maintenance, release evidence, and retained blockers
 ```
 
 The analyzer is intentionally conservative. It checks common `G`, `M`, and `T`
-words, missing units or positioning modes, CNC program end while still in `G91` incremental positioning without `G90` reset, CNC subprogram calls, macro variables, conditionals, or jumps before controller dependency review evidence, printer extrusion before heat-up,
+words, missing units or positioning modes, CNC program end while still in `G91` incremental positioning without `G90` reset, CNC inverse-time `G93` feed motion without timing review or program end before `G94` cancel, CNC subprogram calls, macro variables, conditionals, or jumps before controller dependency review evidence, printer extrusion before heat-up,
 after async `M104` nozzle targets without `M109` or verified hotend wait,
 after async `M140` bed target changes without `M190` or verified bed wait,
 after nozzle cooldown without reheat, after bed cooldown without re-wait, after
