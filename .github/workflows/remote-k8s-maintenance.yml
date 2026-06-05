@@ -3303,9 +3303,18 @@ jobs:
               echo "=== router metrics during $loader_name ==="
               router_metrics
               prom_compact_snapshot "during $loader_name remaining=${remaining}s"
-              kubectl -n default top pods --containers 2>/dev/null \
-                | grep -E '^(gcs|gcs-router|dd-ws-loadtest-rs-gcs|dd-nodejs-ws-loadtest-gcs|dd-gleamlang-ws-loadtest-gcs)[[:space:]]' \
-                | while IFS= read -r line; do echo "top-sample $line"; done || true
+              top_status=0
+              top_output="$(kubectl -n default top pods --containers --no-headers 2>&1)" || top_status=$?
+              if [ "$top_status" -ne 0 ]; then
+                echo "WARNING: top-sample failed status=$top_status output=$(printf '%s' "$top_output" | tr '\n' ' ')"
+              else
+                matched_top="$(printf '%s\n' "$top_output" | grep -E '^(gcs|gcs-router|dd-ws-loadtest-rs-gcs|dd-nodejs-ws-loadtest-gcs|dd-gleamlang-ws-loadtest-gcs)[[:space:]]' || true)"
+                if [ -n "$matched_top" ]; then
+                  printf '%s\n' "$matched_top" | while IFS= read -r line; do echo "top-sample $line"; done
+                else
+                  echo "WARNING: top-sample matched no target pods output_lines=$(printf '%s\n' "$top_output" | wc -l | awk '{print $1}')"
+                fi
+              fi
             done
             echo "=== final $loader_name loader summary ==="
             collect_loader "$d"
