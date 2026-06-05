@@ -26,6 +26,8 @@ use crate::money::Currency;
 
 use super::oauth_common::CodeExchangeResult;
 
+const STRIPE_API_BASE: &str = "https://api.stripe.com";
+
 // --- Credential ------------------------------------------------------------
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -201,6 +203,7 @@ pub struct StripeApi {
     stripe_account: String,
     api_version: String,
     http: reqwest::Client,
+    base_url: String,
 }
 
 impl StripeApi {
@@ -210,7 +213,28 @@ impl StripeApi {
             stripe_account,
             api_version,
             http: reqwest::Client::new(),
+            base_url: STRIPE_API_BASE.to_string(),
         }
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url_for_tests(
+        secret_key: String,
+        stripe_account: String,
+        api_version: String,
+        base_url: String,
+    ) -> Self {
+        Self {
+            secret_key,
+            stripe_account,
+            api_version,
+            http: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     /// List balance transactions older than `ending_before` (i.e. newer than
@@ -230,7 +254,7 @@ impl StripeApi {
             provider: "stripe".into(),
             message: format!("encode query: {e}"),
         })?;
-        let url = format!("https://api.stripe.com/v1/balance_transactions?{qs}");
+        let url = format!("{}/v1/balance_transactions?{qs}", self.base_url());
 
         let resp = self
             .http

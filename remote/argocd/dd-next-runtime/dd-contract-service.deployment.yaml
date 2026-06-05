@@ -20,12 +20,18 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-17-contract-service'
+        dd.dev/telemetry-revision: '2026-06-05-contract-observability-hardening'
       labels:
         app: dd-contract-service
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: contract-service
           image: docker.io/library/rust:1.90-bookworm
@@ -54,6 +60,8 @@ spec:
               value: 0.0.0.0
             - name: PORT
               value: '8101'
+            - name: HOME
+              value: /tmp
             - name: SOLANA_CLUSTER
               value: devnet
             - name: SOLANA_RPC_URL
@@ -76,6 +84,8 @@ spec:
               value: dd.remote.contracts.solana.results
             - name: CONTRACT_EVENT_SUBJECT
               value: dd.remote.events
+            - name: NATS_CRITICAL_EVENT_SUBJECT
+              value: dd.remote.events.critical
             # runtime-config wiring: registers this pod with the control plane
             # so it receives /internal/update-runtime-config pushes every 5 min
             # plus on-demand admin pushes.

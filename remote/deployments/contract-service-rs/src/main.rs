@@ -19,7 +19,7 @@ use axum::{
 use base64::{engine::general_purpose, Engine as _};
 use dd_nats_subject_defs::{
     CONTRACTS_SOLANA_RESULTS_SUBJECT, CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP,
-    CONTRACTS_SOLANA_VALIDATE_SUBJECT, RUNTIME_EVENTS_SUBJECT,
+    CONTRACTS_SOLANA_VALIDATE_SUBJECT, RUNTIME_CRITICAL_EVENTS_SUBJECT, RUNTIME_EVENTS_SUBJECT,
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,10 @@ const MAX_TRANSACTION_COMPUTE_UNITS: u64 = 1_400_000;
 const MAX_SEND_RETRIES: usize = 20;
 const DEFAULT_COMMITMENT: &str = "confirmed";
 const SEND_AUTH_HEADER: &str = "x-contract-send-auth";
+const SERVICE_NAME: &str = "dd-contract-service";
+const SERVICE_NAMESPACE: &str = "remote-dev";
+const LOG_SCHEMA: &str = "dd.log.v1";
+const LOG_SCOPE: &str = "contract-service-rs";
 
 #[derive(Clone)]
 struct AppState {
@@ -54,6 +58,7 @@ struct AppState {
     nats: Option<async_nats::Client>,
     result_subject: String,
     event_subject: String,
+    critical_event_subject: String,
     metrics: Arc<Metrics>,
 }
 
@@ -65,8 +70,23 @@ struct Metrics {
     rpc_requests_total: AtomicU64,
     rpc_errors_total: AtomicU64,
     nats_messages_total: AtomicU64,
+    nats_payload_rejected_total: AtomicU64,
+    nats_results_published_total: AtomicU64,
+    nats_events_published_total: AtomicU64,
+    nats_critical_events_published_total: AtomicU64,
+    nats_publish_errors_total: AtomicU64,
     send_blocked_total: AtomicU64,
+    send_auth_failures_total: AtomicU64,
+    policy_rejections_total: AtomicU64,
     errors_total: AtomicU64,
+    rpc_get_health_requests_total: AtomicU64,
+    rpc_get_health_errors_total: AtomicU64,
+    rpc_get_version_requests_total: AtomicU64,
+    rpc_get_version_errors_total: AtomicU64,
+    rpc_simulate_transaction_requests_total: AtomicU64,
+    rpc_simulate_transaction_errors_total: AtomicU64,
+    rpc_send_transaction_requests_total: AtomicU64,
+    rpc_send_transaction_errors_total: AtomicU64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -188,6 +208,71 @@ fn now_ms() -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
+}
+
+fn now_unix_nano() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos().min(u64::MAX as u128) as u64)
+        .unwrap_or(0)
+}
+
+fn severity_number(severity: &str) -> i32 {
+    match severity {
+        "FATAL" => 24,
+        "ERROR" => 17,
+        "WARN" => 13,
+        "INFO" => 9,
+        "DEBUG" => 5,
+        _ => 1,
+    }
+}
+
+fn structured_log_record(severity: &str, event_name: &str, body: &str, attributes: Value) -> Value {
+    json!({
+        "schema": LOG_SCHEMA,
+        "time_unix_nano": now_unix_nano().to_string(),
+        "severity_text": severity,
+        "severity_number": severity_number(severity),
+        "body": body,
+        "resource_service_name": SERVICE_NAME,
+        "resource_service_namespace": SERVICE_NAMESPACE,
+        "scope_name": LOG_SCOPE,
+        "event_name": event_name,
+        "attributes": attributes,
+    })
+}
+
+fn write_structured_log_to_stdout(severity: &str, event_name: &str, body: &str, attributes: Value) {
+    let record = structured_log_record(severity, event_name, body, attributes);
+    match serde_json::to_string(&record) {
+        Ok(line) => println!("{line}"),
+        Err(error) => println!(
+            "{{\"schema\":\"{LOG_SCHEMA}\",\"severity_text\":\"ERROR\",\"body\":\"structured log serialization failed\",\"resource_service_name\":\"{SERVICE_NAME}\",\"event_name\":\"structured-log-serialize-failed\",\"attributes\":{{\"error\":\"{error}\"}}}}"
+        ),
+    }
+}
+
+fn write_structured_log_to_stderr(severity: &str, event_name: &str, body: &str, attributes: Value) {
+    let record = structured_log_record(severity, event_name, body, attributes);
+    match serde_json::to_string(&record) {
+        Ok(line) => eprintln!("{line}"),
+        Err(error) => eprintln!(
+            "{{\"schema\":\"{LOG_SCHEMA}\",\"severity_text\":\"ERROR\",\"body\":\"structured log serialization failed\",\"resource_service_name\":\"{SERVICE_NAME}\",\"event_name\":\"structured-log-serialize-failed\",\"attributes\":{{\"error\":\"{error}\"}}}}"
+        ),
+    }
+}
+
+fn log_info(event_name: &str, body: &str, attributes: Value) {
+    write_structured_log_to_stdout("INFO", event_name, body, attributes);
+}
+
+fn log_warn(event_name: &str, body: &str, attributes: Value) {
+    write_structured_log_to_stderr("WARN", event_name, body, attributes);
+}
+
+fn log_error(event_name: &str, body: &str, attributes: Value) {
+    write_structured_log_to_stderr("ERROR", event_name, body, attributes);
 }
 
 fn request_id(input: Option<&String>, prefix: &str) -> String {
@@ -333,6 +418,40 @@ fn sensitive_eq(left: &str, right: &str) -> bool {
         diff |= usize::from(left_byte ^ right_byte);
     }
     diff == 0
+}
+
+fn rpc_method_counters<'a>(metrics: &'a Metrics, method: &str) -> (&'a AtomicU64, &'a AtomicU64) {
+    match method {
+        "getHealth" => (
+            &metrics.rpc_get_health_requests_total,
+            &metrics.rpc_get_health_errors_total,
+        ),
+        "getVersion" => (
+            &metrics.rpc_get_version_requests_total,
+            &metrics.rpc_get_version_errors_total,
+        ),
+        "simulateTransaction" => (
+            &metrics.rpc_simulate_transaction_requests_total,
+            &metrics.rpc_simulate_transaction_errors_total,
+        ),
+        "sendTransaction" => (
+            &metrics.rpc_send_transaction_requests_total,
+            &metrics.rpc_send_transaction_errors_total,
+        ),
+        _ => (&metrics.rpc_requests_total, &metrics.rpc_errors_total),
+    }
+}
+
+fn record_rpc_request(metrics: &Metrics, method: &str) {
+    metrics.rpc_requests_total.fetch_add(1, Ordering::Relaxed);
+    let (requests, _) = rpc_method_counters(metrics, method);
+    requests.fetch_add(1, Ordering::Relaxed);
+}
+
+fn record_rpc_error(metrics: &Metrics, method: &str) {
+    metrics.rpc_errors_total.fetch_add(1, Ordering::Relaxed);
+    let (_, errors) = rpc_method_counters(metrics, method);
+    errors.fetch_add(1, Ordering::Relaxed);
 }
 
 fn authorize_send(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusCode, &'static str)> {
@@ -738,10 +857,7 @@ fn send_params(
 }
 
 async fn solana_rpc(state: &AppState, method: &str, params: Value) -> Result<Value, String> {
-    state
-        .metrics
-        .rpc_requests_total
-        .fetch_add(1, Ordering::Relaxed);
+    record_rpc_request(&state.metrics, method);
 
     let payload = json!({
         "jsonrpc": "2.0",
@@ -757,22 +873,54 @@ async fn solana_rpc(state: &AppState, method: &str, params: Value) -> Result<Val
         .send()
         .await
         .map_err(|error| {
-            eprintln!("solana rpc {method} request failed: {error}");
+            record_rpc_error(&state.metrics, method);
+            log_error(
+                "solana-rpc-request-failed",
+                "Solana RPC request failed.",
+                json!({
+                    "rpcMethod": method,
+                    "error": error.to_string(),
+                }),
+            );
             "solana rpc request failed".to_string()
         })?;
 
     let status = response.status();
     let body = response.text().await.map_err(|error| {
-        eprintln!("solana rpc {method} response read failed: {error}");
+        record_rpc_error(&state.metrics, method);
+        log_error(
+            "solana-rpc-response-read-failed",
+            "Solana RPC response body could not be read.",
+            json!({
+                "rpcMethod": method,
+                "error": error.to_string(),
+            }),
+        );
         "solana rpc response read failed".to_string()
     })?;
     let body = serde_json::from_str::<Value>(&body).map_err(|error| {
-        eprintln!("solana rpc {method} response was not json: {error}");
+        record_rpc_error(&state.metrics, method);
+        log_error(
+            "solana-rpc-response-json-failed",
+            "Solana RPC response body was not JSON.",
+            json!({
+                "rpcMethod": method,
+                "error": error.to_string(),
+            }),
+        );
         "solana rpc response was not json".to_string()
     })?;
 
     if !status.is_success() {
-        eprintln!("solana rpc {method} returned HTTP {status}");
+        record_rpc_error(&state.metrics, method);
+        log_warn(
+            "solana-rpc-http-error",
+            "Solana RPC returned a non-success HTTP status.",
+            json!({
+                "rpcMethod": method,
+                "status": status.as_u16(),
+            }),
+        );
         return Err(format!("solana rpc returned HTTP {status}"));
     }
     if let Some(error) = body.get("error") {
@@ -785,7 +933,15 @@ async fn solana_rpc(state: &AppState, method: &str, params: Value) -> Result<Val
             .get("message")
             .and_then(Value::as_str)
             .unwrap_or("upstream rpc error");
-        eprintln!("solana rpc {method} returned error code={code} message={message}");
+        record_rpc_error(&state.metrics, method);
+        log_warn(
+            "solana-rpc-upstream-error",
+            "Solana RPC returned an upstream JSON-RPC error.",
+            json!({
+                "rpcMethod": method,
+                "rpcErrorCode": code,
+            }),
+        );
         return Err(format!(
             "solana rpc {method} returned error code={code}: {message}"
         ));
@@ -859,10 +1015,7 @@ async fn status_http(State(state): State<AppState>) -> Response {
         StatusCode::BAD_GATEWAY
     };
     if !ok {
-        state
-            .metrics
-            .rpc_errors_total
-            .fetch_add(1, Ordering::Relaxed);
+        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
     }
 
     json_response(
@@ -915,6 +1068,14 @@ async fn validate_http(
                 .validation_errors_total
                 .fetch_add(1, Ordering::Relaxed);
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            log_warn(
+                "contract-validation-rejected",
+                "Contract validation request was rejected.",
+                json!({
+                    "requestId": request_id(request.request_id.as_ref(), "contract-validation"),
+                    "errorCount": errors.len(),
+                }),
+            );
             json_response(
                 StatusCode::BAD_REQUEST,
                 json!({
@@ -941,28 +1102,66 @@ async fn simulate_http(
         match normalize_request_cluster(request.cluster.as_deref(), &state.default_cluster) {
             Ok(cluster) => cluster,
             Err(error) => {
+                state
+                    .metrics
+                    .policy_rejections_total
+                    .fetch_add(1, Ordering::Relaxed);
+                log_warn(
+                    "contract-simulate-policy-rejected",
+                    "Signed transaction simulation was rejected by policy.",
+                    json!({
+                        "requestId": request_id(request.request_id.as_ref(), "contract-simulate"),
+                        "reason": "cluster_mismatch",
+                    }),
+                );
                 return json_response(
                     StatusCode::BAD_REQUEST,
                     json!({ "ok": false, "error": error }),
-                )
+                );
             }
         };
     let (encoding, decoded_bytes) = match validate_signed_transaction(&request) {
         Ok(validated) => validated,
         Err(error) => {
+            state
+                .metrics
+                .policy_rejections_total
+                .fetch_add(1, Ordering::Relaxed);
+            log_warn(
+                "contract-simulate-policy-rejected",
+                "Signed transaction simulation was rejected by policy.",
+                json!({
+                    "requestId": request_id(request.request_id.as_ref(), "contract-simulate"),
+                    "reason": "transaction_invalid",
+                    "error": error.clone(),
+                }),
+            );
             return json_response(
                 StatusCode::BAD_REQUEST,
                 json!({ "ok": false, "error": error }),
-            )
+            );
         }
     };
     let params = match simulate_params(&request, encoding) {
         Ok(params) => params,
         Err(error) => {
+            state
+                .metrics
+                .policy_rejections_total
+                .fetch_add(1, Ordering::Relaxed);
+            log_warn(
+                "contract-simulate-policy-rejected",
+                "Signed transaction simulation was rejected by policy.",
+                json!({
+                    "requestId": request_id(request.request_id.as_ref(), "contract-simulate"),
+                    "reason": "simulate_params_invalid",
+                    "error": error.clone(),
+                }),
+            );
             return json_response(
                 StatusCode::BAD_REQUEST,
                 json!({ "ok": false, "error": error }),
-            )
+            );
         }
     };
 
@@ -980,10 +1179,6 @@ async fn simulate_http(
             }),
         ),
         Err(error) => {
-            state
-                .metrics
-                .rpc_errors_total
-                .fetch_add(1, Ordering::Relaxed);
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             json_response(
                 StatusCode::BAD_GATEWAY,
@@ -1013,6 +1208,17 @@ async fn send_http(
             .metrics
             .send_blocked_total
             .fetch_add(1, Ordering::Relaxed);
+        state
+            .metrics
+            .policy_rejections_total
+            .fetch_add(1, Ordering::Relaxed);
+        log_warn(
+            "contract-send-disabled",
+            "Raw transaction send was blocked because sending is disabled.",
+            json!({
+                "requestId": request_id(request.request_id.as_ref(), "contract-send"),
+            }),
+        );
         return json_response(
             StatusCode::FORBIDDEN,
             json!({
@@ -1029,6 +1235,22 @@ async fn send_http(
             .metrics
             .send_blocked_total
             .fetch_add(1, Ordering::Relaxed);
+        state
+            .metrics
+            .send_auth_failures_total
+            .fetch_add(1, Ordering::Relaxed);
+        state
+            .metrics
+            .policy_rejections_total
+            .fetch_add(1, Ordering::Relaxed);
+        log_warn(
+            "contract-send-auth-failed",
+            "Raw transaction send authorization failed.",
+            json!({
+                "requestId": request_id(request.request_id.as_ref(), "contract-send"),
+                "status": status.as_u16(),
+            }),
+        );
         return json_response(
             status,
             json!({
@@ -1044,28 +1266,66 @@ async fn send_http(
         match normalize_request_cluster(request.cluster.as_deref(), &state.default_cluster) {
             Ok(cluster) => cluster,
             Err(error) => {
+                state
+                    .metrics
+                    .policy_rejections_total
+                    .fetch_add(1, Ordering::Relaxed);
+                log_warn(
+                    "contract-send-policy-rejected",
+                    "Raw transaction send was rejected by policy.",
+                    json!({
+                        "requestId": request_id(request.request_id.as_ref(), "contract-send"),
+                        "reason": "cluster_mismatch",
+                    }),
+                );
                 return json_response(
                     StatusCode::BAD_REQUEST,
                     json!({ "ok": false, "error": error }),
-                )
+                );
             }
         };
     let (encoding, decoded_bytes) = match validate_signed_transaction(&request) {
         Ok(validated) => validated,
         Err(error) => {
+            state
+                .metrics
+                .policy_rejections_total
+                .fetch_add(1, Ordering::Relaxed);
+            log_warn(
+                "contract-send-policy-rejected",
+                "Raw transaction send was rejected by policy.",
+                json!({
+                    "requestId": request_id(request.request_id.as_ref(), "contract-send"),
+                    "reason": "transaction_invalid",
+                    "error": error.clone(),
+                }),
+            );
             return json_response(
                 StatusCode::BAD_REQUEST,
                 json!({ "ok": false, "error": error }),
-            )
+            );
         }
     };
     let params = match send_params(&request, encoding, state.allow_skip_preflight) {
         Ok(params) => params,
         Err(error) => {
+            state
+                .metrics
+                .policy_rejections_total
+                .fetch_add(1, Ordering::Relaxed);
+            log_warn(
+                "contract-send-policy-rejected",
+                "Raw transaction send was rejected by policy.",
+                json!({
+                    "requestId": request_id(request.request_id.as_ref(), "contract-send"),
+                    "reason": "send_params_invalid",
+                    "error": error.clone(),
+                }),
+            );
             return json_response(
                 StatusCode::BAD_REQUEST,
                 json!({ "ok": false, "error": error }),
-            )
+            );
         }
     };
 
@@ -1083,10 +1343,6 @@ async fn send_http(
             }),
         ),
         Err(error) => {
-            state
-                .metrics
-                .rpc_errors_total
-                .fetch_add(1, Ordering::Relaxed);
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             json_response(
                 StatusCode::BAD_GATEWAY,
@@ -1101,13 +1357,20 @@ async fn send_http(
     }
 }
 
-async fn metrics(State(state): State<AppState>) -> Response {
-    state
-        .metrics
-        .http_requests_total
-        .fetch_add(1, Ordering::Relaxed);
-    let body = format!(
+fn bool_label(value: bool) -> &'static str {
+    if value {
+        "true"
+    } else {
+        "false"
+    }
+}
+
+fn metrics_body(state: &AppState) -> String {
+    format!(
         "\
+# HELP dd_contract_service_info Static service configuration labels for the Solana contract service.\n\
+# TYPE dd_contract_service_info gauge\n\
+dd_contract_service_info{{cluster=\"{}\",send_enabled=\"{}\",skip_preflight_allowed=\"{}\"}} 1\n\
 # HELP dd_contract_service_http_requests_total HTTP requests handled by the Solana contract service.\n\
 # TYPE dd_contract_service_http_requests_total counter\n\
 dd_contract_service_http_requests_total {}\n\
@@ -1117,33 +1380,133 @@ dd_contract_service_validations_total {}\n\
 # HELP dd_contract_service_validation_errors_total Contract validation requests rejected.\n\
 # TYPE dd_contract_service_validation_errors_total counter\n\
 dd_contract_service_validation_errors_total {}\n\
+# HELP dd_contract_service_policy_rejections_total Requests rejected by contract service safety policy before upstream RPC.\n\
+# TYPE dd_contract_service_policy_rejections_total counter\n\
+dd_contract_service_policy_rejections_total {}\n\
 # HELP dd_contract_service_rpc_requests_total Solana JSON-RPC requests sent.\n\
 # TYPE dd_contract_service_rpc_requests_total counter\n\
 dd_contract_service_rpc_requests_total {}\n\
 # HELP dd_contract_service_rpc_errors_total Solana JSON-RPC requests that failed.\n\
 # TYPE dd_contract_service_rpc_errors_total counter\n\
 dd_contract_service_rpc_errors_total {}\n\
+# HELP dd_contract_service_rpc_requests_by_method_total Solana JSON-RPC requests sent by low-cardinality method.\n\
+# TYPE dd_contract_service_rpc_requests_by_method_total counter\n\
+dd_contract_service_rpc_requests_by_method_total{{rpc_method=\"getHealth\"}} {}\n\
+dd_contract_service_rpc_requests_by_method_total{{rpc_method=\"getVersion\"}} {}\n\
+dd_contract_service_rpc_requests_by_method_total{{rpc_method=\"simulateTransaction\"}} {}\n\
+dd_contract_service_rpc_requests_by_method_total{{rpc_method=\"sendTransaction\"}} {}\n\
+# HELP dd_contract_service_rpc_errors_by_method_total Solana JSON-RPC failures by low-cardinality method.\n\
+# TYPE dd_contract_service_rpc_errors_by_method_total counter\n\
+dd_contract_service_rpc_errors_by_method_total{{rpc_method=\"getHealth\"}} {}\n\
+dd_contract_service_rpc_errors_by_method_total{{rpc_method=\"getVersion\"}} {}\n\
+dd_contract_service_rpc_errors_by_method_total{{rpc_method=\"simulateTransaction\"}} {}\n\
+dd_contract_service_rpc_errors_by_method_total{{rpc_method=\"sendTransaction\"}} {}\n\
 # HELP dd_contract_service_nats_messages_total NATS validation messages received.\n\
 # TYPE dd_contract_service_nats_messages_total counter\n\
 dd_contract_service_nats_messages_total {}\n\
+# HELP dd_contract_service_nats_payload_rejected_total NATS validation messages rejected before contract validation.\n\
+# TYPE dd_contract_service_nats_payload_rejected_total counter\n\
+dd_contract_service_nats_payload_rejected_total {}\n\
+# HELP dd_contract_service_nats_published_total NATS messages published by subject kind.\n\
+# TYPE dd_contract_service_nats_published_total counter\n\
+dd_contract_service_nats_published_total{{subject_kind=\"result\"}} {}\n\
+dd_contract_service_nats_published_total{{subject_kind=\"event\"}} {}\n\
+dd_contract_service_nats_published_total{{subject_kind=\"critical\"}} {}\n\
+# HELP dd_contract_service_nats_publish_errors_total NATS publish failures observed.\n\
+# TYPE dd_contract_service_nats_publish_errors_total counter\n\
+dd_contract_service_nats_publish_errors_total {}\n\
 # HELP dd_contract_service_send_blocked_total Raw transaction sends blocked by policy.\n\
 # TYPE dd_contract_service_send_blocked_total counter\n\
 dd_contract_service_send_blocked_total {}\n\
+# HELP dd_contract_service_send_auth_failures_total Raw transaction send attempts rejected by the send auth header check.\n\
+# TYPE dd_contract_service_send_auth_failures_total counter\n\
+dd_contract_service_send_auth_failures_total {}\n\
 # HELP dd_contract_service_errors_total Contract service errors observed.\n\
 # TYPE dd_contract_service_errors_total counter\n\
 dd_contract_service_errors_total {}\n",
+        state.default_cluster,
+        bool_label(state.send_enabled),
+        bool_label(state.allow_skip_preflight),
         state.metrics.http_requests_total.load(Ordering::Relaxed),
         state.metrics.validations_total.load(Ordering::Relaxed),
         state
             .metrics
             .validation_errors_total
             .load(Ordering::Relaxed),
+        state
+            .metrics
+            .policy_rejections_total
+            .load(Ordering::Relaxed),
         state.metrics.rpc_requests_total.load(Ordering::Relaxed),
         state.metrics.rpc_errors_total.load(Ordering::Relaxed),
+        state
+            .metrics
+            .rpc_get_health_requests_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .rpc_get_version_requests_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .rpc_simulate_transaction_requests_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .rpc_send_transaction_requests_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .rpc_get_health_errors_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .rpc_get_version_errors_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .rpc_simulate_transaction_errors_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .rpc_send_transaction_errors_total
+            .load(Ordering::Relaxed),
         state.metrics.nats_messages_total.load(Ordering::Relaxed),
+        state
+            .metrics
+            .nats_payload_rejected_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .nats_results_published_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .nats_events_published_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .nats_critical_events_published_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .nats_publish_errors_total
+            .load(Ordering::Relaxed),
         state.metrics.send_blocked_total.load(Ordering::Relaxed),
+        state
+            .metrics
+            .send_auth_failures_total
+            .load(Ordering::Relaxed),
         state.metrics.errors_total.load(Ordering::Relaxed),
-    );
+    )
+}
+
+async fn metrics(State(state): State<AppState>) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let body = metrics_body(&state);
     ([(header::CONTENT_TYPE, "text/plain; version=0.0.4")], body).into_response()
 }
 
@@ -1231,6 +1594,7 @@ fn contract_example() -> Value {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -1259,6 +1623,22 @@ mod tests {
                 data_base58: None,
                 compute_units: Some(DEFAULT_COMPUTE_UNITS),
             }],
+        }
+    }
+
+    fn sample_state() -> AppState {
+        AppState {
+            rpc_client: reqwest::Client::new(),
+            solana_rpc_url: "https://api.devnet.solana.com".to_string(),
+            default_cluster: "devnet".to_string(),
+            send_enabled: true,
+            send_auth_secret: Some("secret".to_string()),
+            allow_skip_preflight: false,
+            nats: None,
+            result_subject: "results".to_string(),
+            event_subject: "events".to_string(),
+            critical_event_subject: "events.critical".to_string(),
+            metrics: Arc::new(Metrics::default()),
         }
     }
 
@@ -1292,6 +1672,11 @@ mod tests {
         assert!(validate_solana_rpc_url("http://127.0.0.1:8899", false).is_err());
         assert!(validate_solana_rpc_url("http://127.0.0.1:8899", true).is_ok());
         assert!(validate_solana_rpc_url("https://user:pass@example.com", false).is_err());
+        assert!(validate_solana_rpc_url("https://10.0.0.10:8899", false).is_err());
+        assert!(validate_solana_rpc_url("https://169.254.169.254/latest", false).is_err());
+        assert!(
+            validate_solana_rpc_url("https://solana-rpc.default.svc.cluster.local", false).is_err()
+        );
     }
 
     #[test]
@@ -1336,19 +1721,62 @@ mod tests {
     }
 
     #[test]
-    fn send_auth_requires_matching_header() {
-        let state = AppState {
-            rpc_client: reqwest::Client::new(),
-            solana_rpc_url: "https://api.devnet.solana.com".to_string(),
-            default_cluster: "devnet".to_string(),
-            send_enabled: true,
-            send_auth_secret: Some("secret".to_string()),
-            allow_skip_preflight: false,
-            nats: None,
-            result_subject: "results".to_string(),
-            event_subject: "events".to_string(),
-            metrics: Arc::new(Metrics::default()),
+    fn send_params_rejects_excessive_retries() {
+        let request = TransactionRpcRequest {
+            request_id: Some("send-demo".to_string()),
+            cluster: Some("devnet".to_string()),
+            transaction: general_purpose::STANDARD.encode([1_u8, 2, 3]),
+            encoding: Some("base64".to_string()),
+            commitment: None,
+            sig_verify: None,
+            replace_recent_blockhash: None,
+            skip_preflight: None,
+            max_retries: Some(MAX_SEND_RETRIES + 1),
+            min_context_slot: None,
         };
+
+        let error = send_params(&request, "base64", false).expect_err("must reject retries");
+
+        assert!(error.contains("maxRetries must be at most"));
+    }
+
+    #[test]
+    fn signed_transaction_rejects_oversized_payload() {
+        let request = TransactionRpcRequest {
+            request_id: Some("simulate-demo".to_string()),
+            cluster: Some("devnet".to_string()),
+            transaction: general_purpose::STANDARD
+                .encode(vec![7_u8; MAX_SIGNED_TRANSACTION_BYTES + 1]),
+            encoding: Some("base64".to_string()),
+            commitment: None,
+            sig_verify: None,
+            replace_recent_blockhash: None,
+            skip_preflight: None,
+            max_retries: None,
+            min_context_slot: None,
+        };
+
+        let error = validate_signed_transaction(&request).expect_err("must reject oversize tx");
+
+        assert!(error.contains("transaction must be at most"));
+    }
+
+    #[test]
+    fn contract_validation_rejects_dual_instruction_data_encodings() {
+        let mut request = sample_contract_request();
+        request.instructions[0].data_base58 = Some("111".to_string());
+
+        let errors =
+            validate_contract_request(&request, "devnet").expect_err("must reject dual encoding");
+
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("dataBase64 or dataBase58, not both")));
+    }
+
+    #[test]
+    fn send_auth_requires_matching_header() {
+        let state = sample_state();
         let mut headers = HeaderMap::new();
 
         assert!(authorize_send(&headers, &state).is_err());
@@ -1356,6 +1784,57 @@ mod tests {
         assert!(authorize_send(&headers, &state).is_ok());
         headers.insert(SEND_AUTH_HEADER, "wrong".parse().unwrap());
         assert!(authorize_send(&headers, &state).is_err());
+    }
+
+    #[test]
+    fn structured_log_record_matches_shared_contract() {
+        let record = structured_log_record(
+            "WARN",
+            "contract-test-event",
+            "contract test body",
+            json!({ "rpcMethod": "simulateTransaction" }),
+        );
+
+        assert_eq!(record["schema"], LOG_SCHEMA);
+        assert_eq!(record["severity_text"], "WARN");
+        assert_eq!(record["severity_number"], 13);
+        assert_eq!(record["resource_service_name"], SERVICE_NAME);
+        assert_eq!(record["resource_service_namespace"], SERVICE_NAMESPACE);
+        assert_eq!(record["scope_name"], LOG_SCOPE);
+        assert_eq!(record["event_name"], "contract-test-event");
+        assert_eq!(record["attributes"]["rpcMethod"], "simulateTransaction");
+        assert!(record["time_unix_nano"].as_str().is_some());
+    }
+
+    #[test]
+    fn metrics_body_includes_rpc_and_nats_breakdowns() {
+        let state = sample_state();
+        record_rpc_request(&state.metrics, "simulateTransaction");
+        record_rpc_error(&state.metrics, "simulateTransaction");
+        state
+            .metrics
+            .nats_results_published_total
+            .fetch_add(2, Ordering::Relaxed);
+        state
+            .metrics
+            .nats_critical_events_published_total
+            .fetch_add(1, Ordering::Relaxed);
+
+        let body = metrics_body(&state);
+
+        assert!(body.contains("dd_contract_service_info{cluster=\"devnet\""));
+        assert!(body.contains(
+            "dd_contract_service_rpc_requests_by_method_total{rpc_method=\"simulateTransaction\"} 1"
+        ));
+        assert!(body.contains(
+            "dd_contract_service_rpc_errors_by_method_total{rpc_method=\"simulateTransaction\"} 1"
+        ));
+        assert!(
+            body.contains("dd_contract_service_nats_published_total{subject_kind=\"result\"} 2")
+        );
+        assert!(
+            body.contains("dd_contract_service_nats_published_total{subject_kind=\"critical\"} 1")
+        );
     }
 }
 
@@ -1365,6 +1844,11 @@ async fn publish_contract_result(state: &AppState, payload: Value) {
     };
     let Ok(encoded) = serde_json::to_vec(&payload) else {
         state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+        log_error(
+            "contract-result-serialize-failed",
+            "Contract validation result could not be serialized for NATS.",
+            json!({}),
+        );
         return;
     };
     if let Err(error) = nats
@@ -1372,7 +1856,25 @@ async fn publish_contract_result(state: &AppState, payload: Value) {
         .await
     {
         state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-        eprintln!("failed to publish contract result: {error}");
+        state
+            .metrics
+            .nats_publish_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        publish_runtime_critical_event(
+            state,
+            "contract-result-publish-failed",
+            "Contract validation result NATS publish failed.",
+            json!({
+                "subject": &state.result_subject,
+                "error": error.to_string(),
+            }),
+        )
+        .await;
+    } else {
+        state
+            .metrics
+            .nats_results_published_total
+            .fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -1393,24 +1895,122 @@ async fn publish_contract_event(state: &AppState, event_type: &str, request_id: 
         .await
     {
         state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-        eprintln!("failed to publish contract event: {error}");
+        state
+            .metrics
+            .nats_publish_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        log_warn(
+            "contract-event-publish-failed",
+            "Contract lifecycle event NATS publish failed.",
+            json!({
+                "subject": &state.event_subject,
+                "eventType": event_type,
+                "requestId": request_id,
+                "error": error.to_string(),
+            }),
+        );
+    } else {
+        state
+            .metrics
+            .nats_events_published_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+async fn publish_runtime_critical_event(
+    state: &AppState,
+    event_name: &str,
+    body: &str,
+    attributes: Value,
+) {
+    log_error(event_name, body, attributes.clone());
+    let Some(nats) = &state.nats else {
+        return;
+    };
+    let log = structured_log_record("ERROR", event_name, body, attributes);
+    let payload = json!({
+        "type": "runtime-critical-event",
+        "schema": "dd.runtime_critical_event.v1",
+        "source": SERVICE_NAME,
+        "eventName": event_name,
+        "severity": "ERROR",
+        "log": log,
+        "emittedAtMs": now_ms(),
+    });
+    match serde_json::to_vec(&payload) {
+        Ok(encoded) => match nats
+            .publish(state.critical_event_subject.clone(), encoded.into())
+            .await
+        {
+            Ok(()) => {
+                state
+                    .metrics
+                    .nats_critical_events_published_total
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            Err(error) => {
+                state
+                    .metrics
+                    .nats_publish_errors_total
+                    .fetch_add(1, Ordering::Relaxed);
+                log_error(
+                    "contract-critical-event-publish-failed",
+                    "Contract service critical event NATS publish failed.",
+                    json!({
+                        "subject": &state.critical_event_subject,
+                        "eventName": event_name,
+                        "error": error.to_string(),
+                    }),
+                );
+            }
+        },
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            log_error(
+                "contract-critical-event-serialize-failed",
+                "Contract service critical event payload serialization failed.",
+                json!({
+                    "eventName": event_name,
+                    "error": error.to_string(),
+                }),
+            );
+        }
     }
 }
 
 async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
     let Some(nats) = state.nats.clone() else {
-        println!("contract service nats loop disabled: NATS_URL is not configured");
+        log_info(
+            "contract-nats-loop-disabled",
+            "Contract service NATS loop is disabled because NATS_URL is not configured.",
+            json!({}),
+        );
         return;
     };
-    println!(
-        "contract service nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
-        state.result_subject
+    log_info(
+        "contract-nats-loop-starting",
+        "Contract service NATS validation loop is starting.",
+        json!({
+            "subject": &subject,
+            "queueGroup": &queue_group,
+            "resultSubject": &state.result_subject,
+            "eventSubject": &state.event_subject,
+            "criticalEventSubject": &state.critical_event_subject,
+        }),
     );
     let mut subscription = match nats.queue_subscribe(subject, queue_group).await {
         Ok(subscription) => subscription,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("contract service nats subscribe failed: {error}");
+            publish_runtime_critical_event(
+                &state,
+                "contract-nats-subscribe-failed",
+                "Contract service could not subscribe to validation requests.",
+                json!({
+                    "error": error.to_string(),
+                }),
+            )
+            .await;
             return;
         }
     };
@@ -1423,10 +2023,20 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
         let payload = message.payload.to_vec();
         if payload.len() > MAX_NATS_PAYLOAD_BYTES {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
-                "contract service rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
-                payload.len()
-            );
+            state
+                .metrics
+                .nats_payload_rejected_total
+                .fetch_add(1, Ordering::Relaxed);
+            publish_runtime_critical_event(
+                &state,
+                "contract-nats-payload-too-large",
+                "Contract service rejected an oversized NATS validation request.",
+                json!({
+                    "payloadBytes": payload.len(),
+                    "maxPayloadBytes": MAX_NATS_PAYLOAD_BYTES,
+                }),
+            )
+            .await;
             continue;
         }
 
@@ -1472,7 +2082,19 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
             }
             Err(error) => {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("contract service invalid nats request: {error}");
+                state
+                    .metrics
+                    .nats_payload_rejected_total
+                    .fetch_add(1, Ordering::Relaxed);
+                publish_runtime_critical_event(
+                    &state,
+                    "contract-nats-payload-invalid",
+                    "Contract service rejected an invalid NATS validation request.",
+                    json!({
+                        "error": error.to_string(),
+                    }),
+                )
+                .await;
             }
         }
     }
@@ -1480,7 +2102,11 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
 
 async fn shutdown_signal() {
     if let Err(error) = tokio::signal::ctrl_c().await {
-        eprintln!("failed to install Ctrl-C handler: {error}");
+        log_error(
+            "contract-shutdown-signal-failed",
+            "Contract service failed while waiting for Ctrl-C.",
+            json!({ "error": error.to_string() }),
+        );
     }
 }
 
@@ -1517,16 +2143,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     let allow_skip_preflight = env_bool("SOLANA_ALLOW_SKIP_PREFLIGHT", false);
     let rpc_timeout_seconds = env_u64("SOLANA_RPC_TIMEOUT_SECONDS", 20);
-    let result_subject = env_value(
-        "CONTRACT_RESULT_SUBJECT",
-        CONTRACTS_SOLANA_RESULTS_SUBJECT,
-    );
+    let result_subject = env_value("CONTRACT_RESULT_SUBJECT", CONTRACTS_SOLANA_RESULTS_SUBJECT);
     let event_subject = env_value("CONTRACT_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT);
+    let critical_event_subject = env_value(
+        "NATS_CRITICAL_EVENT_SUBJECT",
+        RUNTIME_CRITICAL_EVENTS_SUBJECT,
+    );
     let validate_subject = env_value(
         "CONTRACT_VALIDATE_SUBJECT",
         CONTRACTS_SOLANA_VALIDATE_SUBJECT,
     );
-    let queue_group = env_value("CONTRACT_QUEUE_GROUP", CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP);
+    let queue_group = env_value(
+        "CONTRACT_QUEUE_GROUP",
+        CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP,
+    );
 
     let rpc_client = reqwest::Client::builder()
         .timeout(Duration::from_secs(rpc_timeout_seconds))
@@ -1540,7 +2170,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(url) => match async_nats::connect(url.clone()).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("dd-contract-service failed to connect to NATS at {url}: {error}");
+                log_error(
+                    "contract-nats-connect-failed",
+                    "Contract service failed to connect to NATS.",
+                    json!({
+                        "url": url,
+                        "error": error.to_string(),
+                    }),
+                );
                 None
             }
         },
@@ -1557,8 +2194,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
         nats,
         result_subject,
         event_subject,
+        critical_event_subject,
         metrics: Arc::new(Metrics::default()),
     };
+
+    log_info(
+        "contract-service-starting",
+        "Contract service runtime configuration loaded.",
+        json!({
+            "cluster": &state.default_cluster,
+            "sendEnabled": state.send_enabled,
+            "skipPreflightAllowed": state.allow_skip_preflight,
+            "resultSubject": &state.result_subject,
+            "eventSubject": &state.event_subject,
+            "criticalEventSubject": &state.critical_event_subject,
+            "natsEnabled": state.nats.is_some(),
+        }),
+    );
 
     if state.nats.is_some() {
         tokio::spawn(run_nats_loop(state.clone(), validate_subject, queue_group));
@@ -1585,7 +2237,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let address: SocketAddr = format!("{host}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
-    println!("dd-contract-service listening on http://{address}");
+    log_info(
+        "contract-service-listening",
+        "Contract service HTTP listener is ready.",
+        json!({
+            "address": address.to_string(),
+        }),
+    );
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;

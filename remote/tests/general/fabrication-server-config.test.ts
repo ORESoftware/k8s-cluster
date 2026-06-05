@@ -403,6 +403,13 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /thermal-postprocess-evidence-missing/);
   assert.match(source, /thermal-postprocess-boundary/);
   assert.match(source, /add-thermal-postprocess-evidence/);
+  assert.match(source, /has_text_surface_finishing_context/);
+  assert.match(source, /has_text_surface_finishing_evidence/);
+  assert.match(source, /fn has_text_surface_finishing_context/);
+  assert.match(source, /fn has_text_surface_finishing_evidence/);
+  assert.match(source, /surface-finishing-evidence-missing/);
+  assert.match(source, /surface-finishing-boundary/);
+  assert.match(source, /add-surface-finishing-evidence/);
   assert.match(
     source,
     /text_resin_and_powder_jobs_require_process_evidence_before_release/,
@@ -432,6 +439,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(
     source,
     /text_thermal_postprocess_jobs_require_profile_fixture_and_inspection_evidence/,
+  );
+  assert.match(
+    source,
+    /text_surface_finishing_jobs_require_chemistry_masking_and_inspection_evidence/,
   );
   assert.match(source, /machine\.axes must be at least 1/);
   assert.match(source, /machine_profile_validation_rejects_zero_axis_machine/);
@@ -1261,6 +1272,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /precision tolerance\/surface-finish metrology evidence/);
   assert.match(readme, /unattended\/batch monitoring and recovery evidence/);
   assert.match(readme, /thermal postprocess temperature\/fixture\/cooldown evidence/);
+  assert.match(readme, /surface\/chemical finishing media\/masking\/PPE\/waste evidence/);
   assert.match(readme, /assembly\s+dry-fit\/metrology\/datum\/torque\/cure controls/);
   assert.match(readme, /missing assembly fit\/metrology evidence/);
   assert.match(readme, /missing precision tolerance\/surface-finish metrology evidence/);
@@ -1268,6 +1280,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(
     readme,
     /missing thermal postprocess temperature\/furnace\/atmosphere\/cooldown\/quench\/inspection evidence/,
+  );
+  assert.match(
+    readme,
+    /missing surface\/chemical finishing media\/masking\/PPE\/waste\/thickness\/inspection evidence/,
   );
   assert.match(
     readme,

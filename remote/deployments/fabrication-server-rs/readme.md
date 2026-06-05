@@ -80,6 +80,9 @@ is supplied.
   Siemens NX, CATIA, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, STEP, 3MF,
   STL, OBJ, and PrusaSlicer/OrcaSlicer/Cura/Bambu Studio project sources while
   retaining translator, topology, scale, slicer-profile, and release blockers.
+  Its `conversionPlan` lists per-input CAD/model/slicer conversion worker lanes,
+  design-conversion NATS request/result subjects, preferred neutral exports,
+  required evidence, review gates, and machine-release blockers.
 - A process plan and structured `processGraph` across 3D printers,
   vertical/horizontal mills, routers, laser, waterjet, plasma/sheet cutters, and
   lathes when those machine profiles are available. The graph links operations,
@@ -125,6 +128,7 @@ is supplied.
   precision tolerance/surface-finish metrology evidence,
   unattended/batch monitoring and recovery evidence,
   thermal postprocess temperature/fixture/cooldown evidence,
+  surface/chemical finishing media/masking/PPE/waste evidence,
   sheet-cutting material/thickness/cut-chart/recipe evidence, pierce/kerf/focus/gas/fume/support, retained-tab/microjoint/part-release evidence, waterjet pressure/abrasive-flow, and plasma work-clamp evidence, deep-cut, arc-plane/geometry,
   positioning-mode reset state, additive relative-positioning extrusion state, setup-limit, machine-envelope, inspection, and automation constraints.
 - A `resolutionPlan` with ordered release-blocking remediation steps derived
@@ -399,7 +403,7 @@ workholding/datum/tool-length and spindle/feed/coolant/kerf/pierce/cut-chart
 controls, slicer profile/support/orientation/first-layer evidence, missing slicer mesh unit/scale/watertight/manifold/normals/wall-thickness evidence for STL/3MF/OBJ/model inputs, slicer high-speed input-shaper/acceleration/volumetric-flow evidence, post-processing, missing resin exposure/profile/layer/support/build-plate evidence, missing resin vat-volume/level/refill evidence for large resin jobs, resin IPA/wash/cure/drain/PPE/
 waste controls or missing resin postprocess evidence, powder
 build profile/powder lot/nesting controls or missing powder-bed build/profile evidence, cooldown/depowder/recovery controls or missing powder-bed handling evidence, assembly
-dry-fit/metrology/datum/torque/cure controls or missing assembly fit/metrology evidence, missing precision tolerance/surface-finish metrology evidence, missing unattended/batch monitoring and recovery evidence, missing thermal postprocess temperature/furnace/atmosphere/cooldown/quench/inspection evidence, sheet-cutting
+dry-fit/metrology/datum/torque/cure controls or missing assembly fit/metrology evidence, missing precision tolerance/surface-finish metrology evidence, missing unattended/batch monitoring and recovery evidence, missing thermal postprocess temperature/furnace/atmosphere/cooldown/quench/inspection evidence, missing surface/chemical finishing media/masking/PPE/waste/thickness/inspection evidence, sheet-cutting
 kerf/fire/fume checks or missing sheet-cutting material/thickness/cut-chart recipe evidence, lathe text threading feed-per-rev/pitch/spindle-encoder evidence, lathe text part-off catcher/subspindle/tailstock/stock-support evidence, assembly, splitting, or operator intervention. Improved
 drafts are still marked `machineReady=false`; they are normalization aids for
 review, motion-envelope simulation, and controller-specific postprocessing.
@@ -452,8 +456,10 @@ content with blockers, review gates, process-node links, and generated-program
 links.
 The response, retained `design-input-review`, retained `parametric-design`, and
 `mdp-request` artifacts include `designInputReview` source classification,
-supported format catalog entries, preferred neutral exports, slicer targets, and
-translator/topology/profile blockers for CAD/model/slicer intake.
+supported format catalog entries, preferred neutral exports, slicer targets,
+per-input `conversionPlan` worker handoffs to
+`dd.remote.fabrication.design.conversion.requests`, and translator/topology/profile
+blockers for CAD/model/slicer intake.
 The response, retained `parametric-design`, retained `manufacturing-handoff`, and
 `mdp-request` artifacts also include `manufacturingHandoff` so downstream
 CAD/CAM, slicer, fixture, and learning workers can connect each part to its
@@ -602,7 +608,8 @@ runtime inspection boundary while the database contract is still being designed.
   export payloads, source previews, media types, blockers, and generated
   program/process-node links; `design-input-review`, `parametric-design`, and
   `mdp-request` include `designInputReview` supported format families, reviewed
-  inputs, preferred neutral exports, slicer targets, and release blockers;
+  inputs, preferred neutral exports, slicer targets, per-input conversion worker
+  lanes, required evidence, review gates, and release blockers;
   `parametric-design` and `assembly-plan` include
   `assemblyGraph` nodes, interfaces, and sequence gates; `parametric-design`,
   `production-plan`, and `mdp-request` include `productionPlan` batch counts,

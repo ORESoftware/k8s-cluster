@@ -1,17 +1,14 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: dd-fabrication-server
+  name: dd-contract-service
   namespace: default
   labels:
-    app: dd-fabrication-server
-    app.kubernetes.io/name: dd-fabrication-server
-    app.kubernetes.io/part-of: dd-next-runtime
-    app.kubernetes.io/component: fabrication-planner
+    app: dd-contract-service
 spec:
   podSelector:
     matchLabels:
-      app: dd-fabrication-server
+      app: dd-contract-service
   policyTypes:
     - Ingress
     - Egress
@@ -26,16 +23,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
-          podSelector:
-            matchExpressions:
-              - key: app
-                operator: In
-                values:
-                  - dd-prometheus
-                  - dd-otel-collector
       ports:
         - protocol: TCP
-          port: 8113
+          port: 8101
   egress:
     - to:
         - namespaceSelector:
@@ -64,50 +54,15 @@ spec:
         - protocol: TCP
           port: 8110
     - to:
-        - podSelector:
-            matchLabels:
-              app: dd-mdp-optimizer
-      ports:
-        - protocol: TCP
-          port: 8096
-    - to:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
-              - 0.0.0.0/8
               - 10.0.0.0/8
               - 100.64.0.0/10
               - 127.0.0.0/8
               - 169.254.0.0/16
               - 172.16.0.0/12
-              - 192.0.0.0/24
               - 192.168.0.0/16
-              - 192.0.2.0/24
-              - 198.18.0.0/15
-              - 198.51.100.0/24
-              - 203.0.113.0/24
-              - 224.0.0.0/4
-              - 240.0.0.0/4
       ports:
-        - protocol: TCP
-          port: 80
-        - protocol: TCP
-          port: 443
-    - to:
-        - ipBlock:
-            cidr: ::/0
-            except:
-              - ::/128
-              - ::1/128
-              - 64:ff9b:1::/48
-              - 100::/64
-              - 2001:2::/48
-              - 2001:db8::/32
-              - fc00::/7
-              - fe80::/10
-              - ff00::/8
-      ports:
-        - protocol: TCP
-          port: 80
         - protocol: TCP
           port: 443

@@ -10,6 +10,7 @@ mod api;
 mod cdc;
 mod config;
 mod crypto;
+mod customer_locks;
 mod customers;
 mod db;
 mod error;

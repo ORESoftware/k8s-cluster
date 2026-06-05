@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::config::Config;
 use crate::crypto::Sealer;
+use crate::customer_locks::CustomerLockBroker;
 use crate::customers::CustomerService;
 use crate::ledger::LedgerService;
 use crate::locks::LockService;
@@ -37,8 +38,9 @@ impl AppState {
     pub fn new(cfg: Arc<Config>, pool: PgPool, sealer: Arc<Sealer>) -> Self {
         let tenants = TenantService::new(pool.clone());
         let users = UserService::new(pool.clone());
-        let ledger = LedgerService::new(pool.clone());
-        let customers = CustomerService::new(pool.clone(), users.clone(), ledger.clone());
+        let customer_locks = CustomerLockBroker::from_config(&cfg);
+        let ledger = LedgerService::new(pool.clone(), customer_locks.clone());
+        let customers = CustomerService::new(pool.clone(), users.clone(), customer_locks.clone());
         let vendors = VendorService::new(pool.clone(), users.clone(), ledger.clone());
         let connections = ConnectionService::new(pool.clone(), sealer);
         let locks = LockService::new(pool.clone());
