@@ -98,11 +98,10 @@ Airbyte/Kafka/NATS/HTTP telemetry
 ```
 
 The pipeline pod does not mount a Kubernetes API token, runs with a read-only root filesystem, runs
-from the prebuilt `docker.io/library/dd-ai-ml-pipeline:dev` image instead of a repo `hostPath`, opens
-only a bounded writable `/tmp`, and only allows egress to kube-dns plus the NATS client port in the
-`messaging` namespace when a NetworkPolicy-capable CNI is installed. First-party platform base
-images are pinned by digest in their Dockerfiles to avoid mutable-tag drift.
-Build first-party local images on the EC2 node before syncing those Applications:
+from `docker.io/library/python:3.12-slim` with the EC2 host checkout mounted read-only at
+`/opt/dd-next-1`, opens only a bounded writable `/tmp`, and only allows egress to kube-dns plus the
+NATS client port in the `messaging` namespace when a NetworkPolicy-capable CNI is installed.
+First-party platform Dockerfiles remain available for local image testing:
 
 ```bash
 bash remote/tools/build-ai-ml-platform-images.sh

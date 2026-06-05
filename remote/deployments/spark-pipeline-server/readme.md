@@ -126,19 +126,22 @@ mvn -B -DskipTests package
 java -jar target/dd-spark-pipeline-server.jar
 ```
 
-## Container image
+## EC2 runtime image
 
-The EC2 Kubernetes overlay runs the prebuilt image
-`docker.io/library/dd-spark-pipeline-server:dev`. Build it from the k8s-cluster repo root so the
-Dockerfile can include the generated JVM pg-defs sources and generated API docs:
+The EC2 Kubernetes overlay runs `docker.io/library/maven:3.9.9-eclipse-temurin-17`, mounts the host
+checkout at `/opt/dd-next-1`, copies this module plus generated JVM pg-defs into an emptyDir
+workspace, and self-builds the jar on pod start. This keeps the cluster from depending on a locally
+prebuilt `docker.io/library/dd-spark-pipeline-server:dev` image that may not exist in containerd.
+
+The Dockerfile remains useful for local image testing. Build it from the k8s-cluster repo root so it
+can include the generated JVM pg-defs sources and generated API docs:
 
 ```bash
 docker build -f remote/deployments/spark-pipeline-server/Dockerfile \
   -t docker.io/library/dd-spark-pipeline-server:dev .
 ```
 
-On the EC2 node/containerd path, build the first-party AI/ML images in one pass before syncing
-Argo CD:
+For local containerd image testing on the EC2 node, build the first-party AI/ML images in one pass:
 
 ```bash
 bash remote/tools/build-ai-ml-platform-images.sh
