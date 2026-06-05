@@ -95,7 +95,7 @@ on:
         type: string
         default: "2.5"
       loadtest_parallel_jobs:
-        description: Number of GCS loader branches to run concurrently.
+        description: Number of GCS loader branches to run concurrently, from 1 to 3.
         required: false
         type: string
         default: "3"
