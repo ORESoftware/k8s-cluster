@@ -17,17 +17,17 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use des_engine::{
-    des::decision::{
-        solve_mdp, MdpMethod, MdpSpec, MdpTransition, TerminalState, MDP_SCHEMA, POMDP_SCHEMA,
-    },
-    sdk as des_sdk,
-};
 use dd_nats_subject_defs::{
     FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP,
     FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT, FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
     FABRICATION_REQUESTS_QUEUE_GROUP, FABRICATION_REQUESTS_SUBJECT, FABRICATION_RESULTS_SUBJECT,
     MDP_OPTIMIZE_SUBJECT, RUNTIME_EVENTS_SUBJECT,
+};
+use des_engine::{
+    des::decision::{
+        solve_mdp, MdpMethod, MdpSpec, MdpTransition, TerminalState, MDP_SCHEMA, POMDP_SCHEMA,
+    },
+    sdk as des_sdk,
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -1467,9 +1467,26 @@ struct LearningEngineMetadata {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct LearningMdpEnginePolicy {
+    schema_version: String,
+    status: String,
+    method: String,
+    discount: f64,
+    state_count: usize,
+    action_count: usize,
+    state_values: Vec<f64>,
+    policy: Vec<String>,
+    iterations: usize,
+    final_delta: f64,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct LearningPlan {
     model_family: String,
     engine: LearningEngineMetadata,
+    engine_policy: LearningMdpEnginePolicy,
     mdp_states: Vec<String>,
     pomdp_observations: Vec<String>,
     pomdp_belief_state: PomdpBeliefState,
@@ -23249,6 +23266,10 @@ fn rounded_score(value: f64) -> f64 {
     (clamp_unit(value) * 1000.0).round() / 1000.0
 }
 
+fn rounded_engine_value(value: f64) -> f64 {
+    (value * 1000.0).round() / 1000.0
+}
+
 fn material_family_feature(material: &MaterialSpec) -> f64 {
     let token = normalize_token(material.family.as_ref().unwrap_or(&material.name).as_str());
     if token.contains("metal") || token.contains("steel") || token.contains("aluminum") {
@@ -24283,6 +24304,62 @@ fn learning_engine_metadata() -> LearningEngineMetadata {
     }
 }
 
+fn learning_mdp_engine_policy(states: &[String], actions: &[String]) -> LearningMdpEnginePolicy {
+    let spec = des_learning_mdp_spec(states, actions);
+
+    match solve_mdp(&spec, MdpMethod::ValueIteration) {
+        Ok(solution) => LearningMdpEnginePolicy {
+            schema_version: MDP_SCHEMA.to_string(),
+            status: "solved".to_string(),
+            method: "value-iteration".to_string(),
+            discount: solution.discount,
+            state_count: spec.num_states,
+            action_count: actions.len(),
+            state_values: solution
+                .value
+                .iter()
+                .map(|value| rounded_engine_value(*value))
+                .collect(),
+            policy: solution
+                .policy
+                .iter()
+                .enumerate()
+                .map(|(state_index, action_index)| {
+                    if *action_index < 0 {
+                        format!("{}:terminal", spec.state_labels[state_index])
+                    } else {
+                        let action = spec
+                            .action_labels
+                            .get(*action_index as usize)
+                            .map(String::as_str)
+                            .unwrap_or("invalid-action");
+                        format!("{}:{action}", spec.state_labels[state_index])
+                    }
+                })
+                .collect(),
+            iterations: solution.iterations,
+            final_delta: rounded_engine_value(solution.final_delta),
+            notes: vec![
+                "Solved in-process with des_engine::decision::solve_mdp from remote/submodules/discrete-event-system.rs".to_string(),
+                "External MDP/POMDP workers can replay the serialized request or replace this preview with a richer policy".to_string(),
+            ],
+        },
+        Err(error) => LearningMdpEnginePolicy {
+            schema_version: MDP_SCHEMA.to_string(),
+            status: "solver-error".to_string(),
+            method: "value-iteration".to_string(),
+            discount: spec.discount,
+            state_count: spec.num_states,
+            action_count: actions.len(),
+            state_values: Vec::new(),
+            policy: Vec::new(),
+            iterations: 0,
+            final_delta: 0.0,
+            notes: vec![format!("des_engine solve_mdp rejected the generated MDP: {error}")],
+        },
+    }
+}
+
 fn learning_plan(
     hints: Option<&LearningHints>,
     constraints: Option<&FabricationConstraints>,
@@ -24453,22 +24530,25 @@ fn learning_plan(
         validation,
         learned_remediation_risk_count,
     );
+    let mdp_states = vec![
+        "design-proposed".to_string(),
+        "process-selected".to_string(),
+        "program-generated".to_string(),
+        "simulation-passed".to_string(),
+        "inspection-required".to_string(),
+        "automation-required".to_string(),
+        "assembly-required".to_string(),
+        "failed-until-resolved".to_string(),
+        "complete".to_string(),
+        "failed".to_string(),
+    ];
+    let engine_policy = learning_mdp_engine_policy(&mdp_states, &actions);
 
     Ok(LearningPlan {
         model_family,
         engine: learning_engine_metadata(),
-        mdp_states: vec![
-            "design-proposed".to_string(),
-            "process-selected".to_string(),
-            "program-generated".to_string(),
-            "simulation-passed".to_string(),
-            "inspection-required".to_string(),
-            "automation-required".to_string(),
-            "assembly-required".to_string(),
-            "failed-until-resolved".to_string(),
-            "complete".to_string(),
-            "failed".to_string(),
-        ],
+        engine_policy,
+        mdp_states,
         pomdp_observations: observations,
         pomdp_belief_state,
         release_probe_plan,
@@ -25424,62 +25504,175 @@ async fn publish_json_to_nats(state: &AppState, subject: &str, payload: Value) -
     }
 }
 
+fn learning_mdp_target_state(state: &str, action: &str) -> String {
+    if matches!(state, "complete" | "failed") {
+        state.to_string()
+    } else if action.contains("reject") {
+        "failed".to_string()
+    } else if action.contains("resolve-machine-failure-risk")
+        || action.contains("safety-resolution")
+        || action.contains("learned-risk")
+        || action.contains("learned-remediation")
+    {
+        "failed-until-resolved".to_string()
+    } else if action.contains("automation") || action.contains("automate") {
+        "automation-required".to_string()
+    } else if action.contains("insert-human-inspection") {
+        "inspection-required".to_string()
+    } else if action.contains("combine") || action.contains("split") {
+        "assembly-required".to_string()
+    } else if action.contains("assign-") || action.contains("choose-") {
+        "process-selected".to_string()
+    } else {
+        "program-generated".to_string()
+    }
+}
+
+fn learning_mdp_reward(action: &str, target: &str) -> f64 {
+    let reward = match target {
+        "complete" => 4.0,
+        "failed" => -5.0,
+        "inspection-required" => 0.7,
+        "automation-required" => 0.8,
+        "assembly-required" => 1.0,
+        "failed-until-resolved" => -2.0,
+        "process-selected" => 1.5,
+        "program-generated" => 2.0,
+        _ => 0.2,
+    };
+    reward - if action.contains("human") { 0.7 } else { 0.0 }
+}
+
+fn learning_mdp_primary_probability(target: &str) -> f64 {
+    if target == "failed" {
+        1.0
+    } else {
+        0.86
+    }
+}
+
+fn learning_mdp_failure_probability(target: &str) -> Option<f64> {
+    if target == "failed" {
+        None
+    } else {
+        Some(0.14)
+    }
+}
+
+fn des_learning_mdp_spec(states: &[String], actions: &[String]) -> MdpSpec {
+    let mut state_labels = states.to_vec();
+    for required_state in ["complete", "failed"] {
+        if !state_labels
+            .iter()
+            .any(|state| state.as_str() == required_state)
+        {
+            state_labels.push(required_state.to_string());
+        }
+    }
+    for state in states {
+        for action in actions {
+            let target = learning_mdp_target_state(state, action);
+            if !state_labels.iter().any(|state| state == &target) {
+                state_labels.push(target);
+            }
+        }
+    }
+
+    let state_indices = state_labels
+        .iter()
+        .enumerate()
+        .map(|(index, state)| (state.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    let failed_index = *state_indices.get("failed").unwrap_or(&0);
+    let transitions = state_labels
+        .iter()
+        .map(|state| {
+            actions
+                .iter()
+                .map(|action| {
+                    let target = learning_mdp_target_state(state, action);
+                    let target_index = *state_indices.get(&target).unwrap_or(&failed_index);
+                    let reward = learning_mdp_reward(action, &target);
+                    let mut outcomes = vec![MdpTransition {
+                        prob: learning_mdp_primary_probability(&target),
+                        reward,
+                        next: target_index,
+                    }];
+                    if let Some(failure_probability) = learning_mdp_failure_probability(&target) {
+                        outcomes.push(MdpTransition {
+                            prob: failure_probability,
+                            reward: -5.0,
+                            next: failed_index,
+                        });
+                    }
+                    outcomes
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let terminal = ["complete", "failed"]
+        .iter()
+        .filter_map(|state| {
+            state_indices.get(*state).map(|index| TerminalState {
+                state: *index,
+                reward: if *state == "complete" { 4.0 } else { -5.0 },
+            })
+        })
+        .collect();
+
+    MdpSpec {
+        schema: MDP_SCHEMA.to_string(),
+        num_states: state_labels.len(),
+        transitions,
+        discount: 0.82,
+        terminal,
+        state_labels,
+        action_labels: actions.to_vec(),
+    }
+}
+
+fn des_learning_mdp_solution(spec: &MdpSpec) -> Value {
+    match solve_mdp(spec, MdpMethod::ValueIteration) {
+        Ok(solution) => json!({
+            "status": "solved",
+            "method": "des_engine::decision::solve_mdp:value-iteration",
+            "solution": solution,
+        }),
+        Err(error) => json!({
+            "status": "invalid",
+            "method": "des_engine::decision::solve_mdp:value-iteration",
+            "error": error,
+        }),
+    }
+}
+
 fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
     let states = response.learning.mdp_states.clone();
     let actions = response.learning.actions.clone();
-    let final_states = ["complete", "failed"];
+    let des_mdp_spec = des_learning_mdp_spec(&states, &actions);
+    let des_mdp_solution = des_learning_mdp_solution(&des_mdp_spec);
     let mut transitions = Vec::new();
     let mut rewards = Vec::new();
 
     for state in &states {
         for action in &actions {
-            let target = if final_states.contains(&state.as_str()) {
-                state.as_str()
-            } else if action.contains("reject") {
-                "failed"
-            } else if action.contains("resolve-machine-failure-risk")
-                || action.contains("safety-resolution")
-                || action.contains("learned-risk")
-                || action.contains("learned-remediation")
-            {
-                "failed-until-resolved"
-            } else if action.contains("automation") || action.contains("automate") {
-                "automation-required"
-            } else if action.contains("insert-human-inspection") {
-                "inspection-required"
-            } else if action.contains("combine") || action.contains("split") {
-                "assembly-required"
-            } else if action.contains("assign-") || action.contains("choose-") {
-                "process-selected"
-            } else {
-                "program-generated"
-            };
+            let target = learning_mdp_target_state(state, action);
             transitions.push(json!({
                 "state": state,
                 "action": action,
-                "nextState": target,
-                "probability": 0.86
+                "nextState": &target,
+                "probability": learning_mdp_primary_probability(&target)
             }));
-            if target != "failed" {
+            if let Some(failure_probability) = learning_mdp_failure_probability(&target) {
                 transitions.push(json!({
                     "state": state,
                     "action": action,
                     "nextState": "failed",
-                    "probability": 0.14
+                    "probability": failure_probability
                 }));
             }
 
-            let reward = match target {
-                "complete" => 4.0,
-                "failed" => -5.0,
-                "inspection-required" => 0.7,
-                "automation-required" => 0.8,
-                "assembly-required" => 1.0,
-                "failed-until-resolved" => -2.0,
-                "process-selected" => 1.5,
-                "program-generated" => 2.0,
-                _ => 0.2,
-            } - if action.contains("human") { 0.7 } else { 0.0 };
+            let reward = learning_mdp_reward(action, &target);
             rewards.push(json!({
                 "state": state,
                 "action": action,
@@ -25491,6 +25684,9 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
     json!({
         "requestId": format!("{}-fabrication-policy", response.request_id),
         "kind": "fabrication.mdp.process-policy",
+        "learningEngine": &response.learning.engine,
+        "desMdpSpec": des_mdp_spec,
+        "desMdpSolution": des_mdp_solution,
         "designPackage": response.design_package,
         "designExports": response.design_exports,
         "designInputReview": response.design_input_review,
@@ -25526,59 +25722,30 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
 fn instruction_analysis_mdp_request(response: &InstructionAnalysisResponse) -> Value {
     let states = response.learning.mdp_states.clone();
     let actions = response.learning.actions.clone();
-    let final_states = ["complete", "failed"];
+    let des_mdp_spec = des_learning_mdp_spec(&states, &actions);
+    let des_mdp_solution = des_learning_mdp_solution(&des_mdp_spec);
     let mut transitions = Vec::new();
     let mut rewards = Vec::new();
 
     for state in &states {
         for action in &actions {
-            let target = if final_states.contains(&state.as_str()) {
-                state.as_str()
-            } else if action.contains("reject") {
-                "failed"
-            } else if action.contains("resolve-machine-failure-risk")
-                || action.contains("safety-resolution")
-                || action.contains("learned-risk")
-                || action.contains("learned-remediation")
-            {
-                "failed-until-resolved"
-            } else if action.contains("automation") || action.contains("automate") {
-                "automation-required"
-            } else if action.contains("insert-human-inspection") {
-                "inspection-required"
-            } else if action.contains("combine") || action.contains("split") {
-                "assembly-required"
-            } else if action.contains("assign-") || action.contains("choose-") {
-                "process-selected"
-            } else {
-                "program-generated"
-            };
+            let target = learning_mdp_target_state(state, action);
             transitions.push(json!({
                 "state": state,
                 "action": action,
-                "nextState": target,
-                "probability": 0.86
+                "nextState": &target,
+                "probability": learning_mdp_primary_probability(&target)
             }));
-            if target != "failed" {
+            if let Some(failure_probability) = learning_mdp_failure_probability(&target) {
                 transitions.push(json!({
                     "state": state,
                     "action": action,
                     "nextState": "failed",
-                    "probability": 0.14
+                    "probability": failure_probability
                 }));
             }
 
-            let reward = match target {
-                "complete" => 4.0,
-                "failed" => -5.0,
-                "inspection-required" => 0.7,
-                "automation-required" => 0.8,
-                "assembly-required" => 1.0,
-                "failed-until-resolved" => -2.0,
-                "process-selected" => 1.5,
-                "program-generated" => 2.0,
-                _ => 0.2,
-            } - if action.contains("human") { 0.7 } else { 0.0 };
+            let reward = learning_mdp_reward(action, &target);
             rewards.push(json!({
                 "state": state,
                 "action": action,
@@ -25590,6 +25757,9 @@ fn instruction_analysis_mdp_request(response: &InstructionAnalysisResponse) -> V
     json!({
         "requestId": format!("{}-instruction-analysis-policy", response.request_id),
         "kind": "fabrication.mdp.instruction-analysis-policy",
+        "learningEngine": &response.learning.engine,
+        "desMdpSpec": des_mdp_spec,
+        "desMdpSolution": des_mdp_solution,
         "programs": &response.programs,
         "states": states,
         "actions": actions,
@@ -39426,6 +39596,54 @@ mod tests {
         assert!(job.artifacts.contains_key("pomdp-belief-state"));
         assert!(job.artifacts.contains_key("release-probe-plan"));
         assert!(job.artifacts.contains_key("neural-training-corpus"));
+        assert_eq!(response.learning.engine.crate_name, "des_engine");
+        assert_eq!(
+            response
+                .learning
+                .engine
+                .decision_schemas
+                .get("mdp")
+                .map(String::as_str),
+            Some(MDP_SCHEMA)
+        );
+        assert_eq!(response.learning.engine_policy.schema_version, MDP_SCHEMA);
+        assert_eq!(response.learning.engine_policy.status, "solved");
+        assert!(response.learning.engine_policy.state_count >= response.learning.mdp_states.len());
+        assert!(!response.learning.engine_policy.state_values.is_empty());
+        assert!(response
+            .learning
+            .engine_policy
+            .policy
+            .iter()
+            .any(|action| action.starts_with("design-proposed:")));
+        let mdp_request = job
+            .artifacts
+            .get("mdp-request")
+            .expect("mdp request artifact should be retained");
+        assert_eq!(
+            mdp_request
+                .content
+                .get("learningEngine")
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str),
+            Some("des_engine")
+        );
+        assert_eq!(
+            mdp_request
+                .content
+                .get("desMdpSpec")
+                .and_then(|spec| spec.get("$schema"))
+                .and_then(Value::as_str),
+            Some(MDP_SCHEMA)
+        );
+        assert_eq!(
+            mdp_request
+                .content
+                .get("desMdpSolution")
+                .and_then(|solution| solution.get("status"))
+                .and_then(Value::as_str),
+            Some("solved")
+        );
         assert!(response
             .machine_selection
             .iter()
@@ -40033,6 +40251,39 @@ mod tests {
                 .get("kind")
                 .and_then(Value::as_str),
             Some("fabrication.mdp.instruction-analysis-policy")
+        );
+        assert_eq!(response.learning.engine.crate_name, "des_engine");
+        assert_eq!(response.learning.engine_policy.status, "solved");
+        assert!(response.learning.engine_policy.state_count >= response.learning.mdp_states.len());
+        assert!(response
+            .learning
+            .engine_policy
+            .notes
+            .iter()
+            .any(|note| note.contains("des_engine::decision::solve_mdp")));
+        assert_eq!(
+            analysis_mdp_request
+                .content
+                .get("learningEngine")
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str),
+            Some("des_engine")
+        );
+        assert_eq!(
+            analysis_mdp_request
+                .content
+                .get("desMdpSpec")
+                .and_then(|spec| spec.get("$schema"))
+                .and_then(Value::as_str),
+            Some(MDP_SCHEMA)
+        );
+        assert_eq!(
+            analysis_mdp_request
+                .content
+                .get("desMdpSolution")
+                .and_then(|solution| solution.get("status"))
+                .and_then(Value::as_str),
+            Some("solved")
         );
         assert!(analysis_mdp_request
             .content

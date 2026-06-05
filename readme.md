@@ -39,6 +39,12 @@ events to `dd.remote.events`, and can publish optimizer-shaped learning jobs to
 `dd.remote.mdp.optimize` when `FABRICATION_MDP_AUTOPUBLISH=true`. Generated
 machine code is intentionally advisory: responses are draft planning artifacts
 and are not marked machine-ready.
+The Rust deployment imports the local `des_engine` crate from
+`remote/submodules/discrete-event-system.rs` as the preferred in-process
+math/simulation/learning engine. Learning responses and optimizer artifacts
+identify the DES SDK surface, carry canonical DES MDP/POMDP schema names, and
+include a DES-compatible `desMdpSpec` plus a value-iteration `desMdpSolution`
+preview for downstream policy workers.
 
 The queue accepts direct plan payloads, direct instruction-analysis payloads
 containing `programs`, rich fabrication outcome payloads containing `outcome`,
@@ -665,13 +671,13 @@ policy-memory examples, bounded labels, and strategy inference candidates aligne
 to `neuralFeatures`. `interventionSignals` expose automation requirements and ordered
 `resolutionPlan` steps as learnable actions, observations, next states, and
 reward adjustments. The optimizer-shaped `mdp-request` artifact includes
-`strategyCandidates`, `interventionSignals`, `pomdpBeliefState`, `releaseProbePlan`,
-`neuralTrainingCorpus`,
+`learningEngine`, `desMdpSpec`, `desMdpSolution`, `strategyCandidates`,
+`interventionSignals`, `pomdpBeliefState`, `releaseProbePlan`, `neuralTrainingCorpus`,
 `designPackage`, `designExports`, `designInputReview`, `productionPlan`,
 `machineSchedule`, `machineSelection`, `manufacturingHandoff`, `qualityPlan`,
 `toolingPlan`, `interventionMap`, `executionPlan`, `postprocessPlan`,
 `automationRequirements`, `resolutionPlan`, and `machineRelease` so external
-MDP/POMDP workers can learn from the same boundary evidence, design export state,
+MDP/POMDP workers can reuse the same DES-backed policy preview, boundary evidence, design export state,
 CAD/model/slicer source assumptions, batch-planning state, machine-choice
 alternatives, machine-schedule state, quality evidence targets, tooling/setup
 requirements, intervention paths, postprocessor gates, and CAD/CAM handoff
