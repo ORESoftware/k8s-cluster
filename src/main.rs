@@ -480,6 +480,24 @@ struct AssemblyPlan {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct NeuralActionScore {
+    action: String,
+    score: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NeuralPolicySketch {
+    schema_version: String,
+    model_family: String,
+    feature_vector: Vec<f64>,
+    hidden_activations: Vec<f64>,
+    action_scores: Vec<NeuralActionScore>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct LearningPlan {
     model_family: String,
     mdp_states: Vec<String>,
@@ -487,6 +505,7 @@ struct LearningPlan {
     actions: Vec<String>,
     reward_terms: Vec<String>,
     neural_features: Vec<String>,
+    neural_policy: NeuralPolicySketch,
     training_examples: Vec<String>,
 }
 
@@ -541,6 +560,7 @@ struct LearningPolicySnapshot {
     failures: u64,
     average_reward: f64,
     method_preferences: Vec<LearningPreference>,
+    method_combination_preferences: Vec<LearningPreference>,
     assembly_preferences: Vec<LearningPreference>,
     neural_training_examples: Vec<String>,
 }
@@ -908,6 +928,7 @@ impl LearningMemory {
 
     fn snapshot(&self) -> LearningPolicySnapshot {
         let mut methods = BTreeMap::<String, LearningAggregate>::new();
+        let mut method_combinations = BTreeMap::<String, LearningAggregate>::new();
         let mut assemblies = BTreeMap::<String, LearningAggregate>::new();
         let mut successes = 0_u64;
         let mut reward_sum = 0.0;
@@ -919,6 +940,12 @@ impl LearningMemory {
             reward_sum += outcome.reward;
             for method in &outcome.manufacturing_methods {
                 methods.entry(method.clone()).or_default().add(outcome);
+            }
+            if let Some(combination) = method_combination_key(&outcome.manufacturing_methods) {
+                method_combinations
+                    .entry(combination)
+                    .or_default()
+                    .add(outcome);
             }
             if let Some(strategy) = outcome.assembly_strategy.as_ref() {
                 assemblies.entry(strategy.clone()).or_default().add(outcome);
@@ -937,6 +964,18 @@ impl LearningMemory {
             .map(|(key, aggregate)| aggregate.preference(key))
             .collect::<Vec<_>>();
         method_preferences.sort_by(|left, right| {
+            right
+                .average_reward
+                .partial_cmp(&left.average_reward)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.samples.cmp(&left.samples))
+                .then_with(|| left.key.cmp(&right.key))
+        });
+        let mut method_combination_preferences = method_combinations
+            .into_iter()
+            .map(|(key, aggregate)| aggregate.preference(key))
+            .collect::<Vec<_>>();
+        method_combination_preferences.sort_by(|left, right| {
             right
                 .average_reward
                 .partial_cmp(&left.average_reward)
@@ -980,6 +1019,7 @@ impl LearningMemory {
             failures,
             average_reward,
             method_preferences,
+            method_combination_preferences,
             assembly_preferences,
             neural_training_examples,
         }
@@ -1077,6 +1117,19 @@ fn wants_sheet_cutting(value: &str) -> bool {
         || token.contains("gasket")
 }
 
+fn wants_laser_cutting(value: &str) -> bool {
+    normalize_token(value).contains("laser")
+}
+
+fn wants_waterjet_cutting(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("waterjet") || token.contains("water-jet")
+}
+
+fn wants_plasma_cutting(value: &str) -> bool {
+    normalize_token(value).contains("plasma")
+}
+
 fn is_horizontal_mill_kind(kind: &str) -> bool {
     let token = normalize_token(kind);
     token.contains("horizontal-mill")
@@ -1094,6 +1147,18 @@ fn is_powder_bed_printer_kind(kind: &str) -> bool {
 
 fn is_sheet_cutter_kind(kind: &str) -> bool {
     wants_sheet_cutting(kind)
+}
+
+fn is_laser_cutter_kind(kind: &str) -> bool {
+    wants_laser_cutting(kind)
+}
+
+fn is_waterjet_cutter_kind(kind: &str) -> bool {
+    wants_waterjet_cutting(kind)
+}
+
+fn is_plasma_cutter_kind(kind: &str) -> bool {
+    wants_plasma_cutting(kind)
 }
 
 fn wants_horizontal_milling(value: &str) -> bool {
@@ -1280,6 +1345,50 @@ fn default_machines() -> Vec<MachineProfile> {
                 "kerf-test".to_string(),
             ]),
         },
+        MachineProfile {
+            id: "waterjet-cutter-1".to_string(),
+            kind: "waterjet-cutter".to_string(),
+            controller: Some("waterjet-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "aluminum".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "brass".to_string(),
+                "titanium".to_string(),
+                "copper".to_string(),
+                "stone".to_string(),
+                "glass".to_string(),
+                "plastic".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![1500.0, 1000.0, 75.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "waterjet-cut".to_string(),
+                "abrasive-pierce".to_string(),
+                "kerf-test".to_string(),
+                "tab-cut".to_string(),
+            ]),
+        },
+        MachineProfile {
+            id: "plasma-cutter-1".to_string(),
+            kind: "plasma-cutter".to_string(),
+            controller: Some("plasma-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "aluminum".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![1250.0, 1250.0, 25.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "plasma-cut".to_string(),
+                "arc-start".to_string(),
+                "pierce".to_string(),
+                "kerf-test".to_string(),
+            ]),
+        },
     ]
 }
 
@@ -1398,6 +1507,10 @@ fn infer_requested_parts(
     let objective_token = normalize_token(objective);
     let mut parts = Vec::new();
 
+    let wants_resin_part =
+        wants_resin_printing(&objective_token) || wants_resin_printing(&material.name);
+    let wants_powder_bed_part =
+        wants_powder_bed_printing(&objective_token) || wants_powder_bed_printing(&material.name);
     let needs_turned_part = objective_token.contains("shaft")
         || objective_token.contains("bushing")
         || objective_token.contains("bearing")
@@ -1414,7 +1527,9 @@ fn infer_requested_parts(
         || tolerance_mm <= 0.08
         || is_metal(material);
     let needs_sheet_cut_part = wants_sheet_cutting(&objective_token);
-    let needs_routed_part = !needs_sheet_cut_part
+    let needs_routed_part = !wants_resin_part
+        && !wants_powder_bed_part
+        && !needs_sheet_cut_part
         && (objective_token.contains("router")
             || objective_token.contains("routed")
             || objective_token.contains("sign")
@@ -1424,7 +1539,9 @@ fn infer_requested_parts(
             || objective_token.contains("engrave")
             || objective_token.contains("tabbed")
             || is_router_material(material));
-    let needs_printed_part = objective_token.contains("prototype")
+    let needs_printed_part = wants_resin_part
+        || wants_powder_bed_part
+        || objective_token.contains("prototype")
         || objective_token.contains("case")
         || objective_token.contains("cover")
         || objective_token.contains("organic")
@@ -1433,16 +1550,13 @@ fn infer_requested_parts(
         || (!needs_milled_part && !needs_routed_part && !needs_sheet_cut_part);
 
     if needs_printed_part {
-        let preferred_method =
-            if wants_resin_printing(&objective_token) || wants_resin_printing(&material.name) {
-                "resin-print"
-            } else if wants_powder_bed_printing(&objective_token)
-                || wants_powder_bed_printing(&material.name)
-            {
-                "powder-bed-print"
-            } else {
-                "additive-print"
-            };
+        let preferred_method = if wants_resin_part {
+            "resin-print"
+        } else if wants_powder_bed_part {
+            "powder-bed-print"
+        } else {
+            "additive-print"
+        };
         parts.push(RequestedPart {
             id: "printed-body".to_string(),
             description: "additive body or prototype shell inferred from objective".to_string(),
@@ -1565,6 +1679,18 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_powder_bed_printing(value));
+    let wants_laser_cutter = preferred.as_deref().is_some_and(wants_laser_cutting)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_laser_cutting(value));
+    let wants_waterjet_cutter = preferred.as_deref().is_some_and(wants_waterjet_cutting)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_waterjet_cutting(value));
+    let wants_plasma_cutter = preferred.as_deref().is_some_and(wants_plasma_cutting)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_plasma_cutting(value));
     let wants_sheet_cutter = preferred.as_deref().is_some_and(wants_sheet_cutting)
         || preferred_methods
             .iter()
@@ -1587,6 +1713,27 @@ fn choose_machine<'a>(
     if wants_powder_bed_printer {
         if let Some(machine) = machines.iter().find(|machine| {
             is_powder_bed_printer_kind(&machine.kind) && material_supported(machine, material)
+        }) {
+            return machine;
+        }
+    }
+    if wants_waterjet_cutter {
+        if let Some(machine) = machines.iter().find(|machine| {
+            is_waterjet_cutter_kind(&machine.kind) && material_supported(machine, material)
+        }) {
+            return machine;
+        }
+    }
+    if wants_plasma_cutter {
+        if let Some(machine) = machines.iter().find(|machine| {
+            is_plasma_cutter_kind(&machine.kind) && material_supported(machine, material)
+        }) {
+            return machine;
+        }
+    }
+    if wants_laser_cutter {
+        if let Some(machine) = machines.iter().find(|machine| {
+            is_laser_cutter_kind(&machine.kind) && material_supported(machine, material)
         }) {
             return machine;
         }
@@ -1913,28 +2060,99 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                     .to_string(),
             ],
         ),
-        MachineClass::SheetCut => (
-            machine
-                .controller
-                .clone()
-                .unwrap_or_else(|| "laser-job".to_string()),
-            vec![
-                "; draft sheet-cutting job generated by dd-fabrication-server".to_string(),
-                "CHECKPOINT [setup-boundary]: verify sheet material, thickness, lens/focus, ventilation, fire watch, and honeycomb bed".to_string(),
-                "KERF_TEST coupon_width_mm=20 power=operator-reviewed speed=operator-reviewed".to_string(),
-                "PIERCE at lead-in points only after focus and assist-air check".to_string(),
-                "VECTOR_ENGRAVE optional marks before through-cut; preserve datums".to_string(),
-                "VECTOR_CUT outside profile with tabs/bridges and verified kerf compensation".to_string(),
-                "CHECKPOINT [sheet-cutting-boundary]: inspect flame, fumes, pierce quality, retained tabs, and part release".to_string(),
-                "COMPLETE record material lot, kerf coupon, and edge inspection".to_string(),
-            ],
-            vec![
-                "Draft only: final laser/waterjet/plasma settings must come from machine-specific material, thickness, kerf, and assist-gas validation."
-                    .to_string(),
-                "Human signoff is required for fire watch, fumes/ventilation, material certification, and sheet hold-down before cutting."
-                    .to_string(),
-            ],
-        ),
+        MachineClass::SheetCut => {
+            if is_waterjet_cutter_kind(&machine.kind) {
+                (
+                    machine
+                        .controller
+                        .clone()
+                        .unwrap_or_else(|| "waterjet-job".to_string()),
+                    vec![
+                        "; draft waterjet sheet-cutting job generated by dd-fabrication-server"
+                            .to_string(),
+                        "CHECKPOINT [setup-boundary]: verify sheet material, thickness, slats, garnet hopper, nozzle/orifice, water level, and part catch"
+                            .to_string(),
+                        "KERF_TEST coupon_width_mm=25 abrasive=operator-reviewed pressure=operator-reviewed feed=operator-reviewed"
+                            .to_string(),
+                        "ABRASIVE_FLOW_TEST confirm garnet feed, water pressure, and nozzle health before piercing"
+                            .to_string(),
+                        "PIERCE_DELAY at lead-in points with low-pressure pierce or predrill when material requires it"
+                            .to_string(),
+                        "WATERJET_CUT outside profile with tabs/bridges and verified taper/kerf compensation"
+                            .to_string(),
+                        "CHECKPOINT [sheet-cutting-boundary]: inspect pierce blowout, taper, abrasive feed, slat collision risk, and part release"
+                            .to_string(),
+                        "COMPLETE record material lot, kerf coupon, garnet usage, and edge inspection"
+                            .to_string(),
+                    ],
+                    vec![
+                        "Draft only: final waterjet pressure, abrasive flow, standoff, pierce delay, and taper compensation must come from the machine/material database."
+                            .to_string(),
+                        "Human signoff is required for high-pressure water, garnet handling, slat support, catcher state, and part-retention risk before cutting."
+                            .to_string(),
+                    ],
+                )
+            } else if is_plasma_cutter_kind(&machine.kind) {
+                (
+                    machine
+                        .controller
+                        .clone()
+                        .unwrap_or_else(|| "plasma-job".to_string()),
+                    vec![
+                        "; draft plasma sheet-cutting job generated by dd-fabrication-server"
+                            .to_string(),
+                        "CHECKPOINT [setup-boundary]: verify conductive work clamp, torch consumables, gas, pierce height, cut height, ventilation, and fire watch"
+                            .to_string(),
+                        "KERF_TEST coupon_width_mm=25 amperage=operator-reviewed gas=operator-reviewed feed=operator-reviewed"
+                            .to_string(),
+                        "PIERCE_HEIGHT set from material table; wait for ARC_OK before feed motion"
+                            .to_string(),
+                        "PLASMA_CUT outside profile with lead-ins, dross allowance, and verified kerf compensation"
+                            .to_string(),
+                        "CHECKPOINT [sheet-cutting-boundary]: inspect arc transfer, dross, fumes, heat distortion, retained tabs, and part release"
+                            .to_string(),
+                        "COMPLETE record material lot, kerf coupon, consumable state, and edge inspection"
+                            .to_string(),
+                    ],
+                    vec![
+                        "Draft only: final plasma amperage, gas, torch height, pierce delay, and feed rates must come from machine-specific cut charts."
+                            .to_string(),
+                        "Human signoff is required for conductive workholding, fumes/ventilation, fire watch, consumables, and thermal distortion before cutting."
+                            .to_string(),
+                    ],
+                )
+            } else {
+                (
+                    machine
+                        .controller
+                        .clone()
+                        .unwrap_or_else(|| "laser-job".to_string()),
+                    vec![
+                        "; draft laser sheet-cutting job generated by dd-fabrication-server"
+                            .to_string(),
+                        "CHECKPOINT [setup-boundary]: verify sheet material, thickness, lens/focus, ventilation, fire watch, and honeycomb bed"
+                            .to_string(),
+                        "KERF_TEST coupon_width_mm=20 power=operator-reviewed speed=operator-reviewed"
+                            .to_string(),
+                        "PIERCE at lead-in points only after focus and assist-air check"
+                            .to_string(),
+                        "VECTOR_ENGRAVE optional marks before through-cut; preserve datums"
+                            .to_string(),
+                        "VECTOR_CUT outside profile with tabs/bridges and verified kerf compensation"
+                            .to_string(),
+                        "CHECKPOINT [sheet-cutting-boundary]: inspect flame, fumes, pierce quality, retained tabs, and part release"
+                            .to_string(),
+                        "COMPLETE record material lot, kerf coupon, and edge inspection".to_string(),
+                    ],
+                    vec![
+                        "Draft only: final laser settings must come from machine-specific material, thickness, kerf, focus, and assist-gas validation."
+                            .to_string(),
+                        "Human signoff is required for fire watch, fumes/ventilation, material certification, and sheet hold-down before cutting."
+                            .to_string(),
+                    ],
+                )
+            }
+        }
         MachineClass::Lathe => (
             machine
                 .controller
@@ -2060,6 +2278,19 @@ fn contains_code(line: &str, code: &str) -> bool {
 
 fn has_any_code(line: &str, codes: &[&str]) -> bool {
     codes.iter().any(|code| contains_code(line, code))
+}
+
+fn has_numeric_tool_select(line: &str) -> bool {
+    strip_comment(line).split_whitespace().any(|token| {
+        token.strip_prefix('T').is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.chars().all(|character| character.is_ascii_digit())
+        })
+    })
+}
+
+fn has_tool_length_compensation(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    has_any_code(&stripped, &["G43", "G43.1"]) || number_after(&stripped, 'H').is_some()
 }
 
 fn number_after(line: &str, axis: char) -> Option<f64> {
@@ -2627,6 +2858,9 @@ fn analyze_instruction_programs(
         let mut has_program_end = false;
         let mut has_feed_move = false;
         let mut has_extrusion = false;
+        let mut has_tool_selection = false;
+        let mut has_tool_length_reference = false;
+        let mut reported_tool_length_boundary = false;
         let findings_at_program_start = findings.len();
         let boundaries_at_program_start = boundaries.len();
 
@@ -2655,6 +2889,9 @@ fn analyze_instruction_programs(
                 continue;
             }
 
+            let line_has_feed_move =
+                has_any_code(&stripped, &["G1", "G01", "G2", "G02", "G3", "G03"]);
+
             if has_any_code(&stripped, &["G20", "G21"]) {
                 has_units_mode = true;
             }
@@ -2676,11 +2913,22 @@ fn analyze_instruction_programs(
             if has_any_code(&stripped, &["M2", "M02", "M30"]) || contains_code(&stripped, "M84") {
                 has_program_end = true;
             }
-            if has_any_code(&stripped, &["G1", "G01", "G2", "G02", "G3", "G03"]) {
+            if line_has_feed_move {
                 has_feed_move = true;
             }
             if number_after(&stripped, 'E').is_some() {
                 has_extrusion = true;
+            }
+            if matches!(class, MachineClass::Mill | MachineClass::Router) {
+                if has_numeric_tool_select(&stripped) || has_any_code(&stripped, &["M6", "M06"]) {
+                    has_tool_selection = true;
+                }
+                if has_tool_length_compensation(&stripped)
+                    || line_mentions(raw_line, "tool length")
+                    || line_mentions(raw_line, "probe")
+                {
+                    has_tool_length_reference = true;
+                }
             }
 
             if has_any_code(&stripped, &["M0", "M00", "M1", "M01", "M600"])
@@ -2703,9 +2951,77 @@ fn analyze_instruction_programs(
                 });
             }
 
+            if class == MachineClass::Additive
+                && (has_any_code(&stripped, &["M600", "M701", "M702"])
+                    || has_numeric_tool_select(&stripped)
+                    || line_mentions(raw_line, "filament change")
+                    || line_mentions(raw_line, "color change")
+                    || line_mentions(raw_line, "material change")
+                    || line_mentions(raw_line, "tool change")
+                    || line_mentions(raw_line, "toolchange"))
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "additive-material-change-boundary".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "additive program requires a material, color, filament, or tool-change intervention"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "additive-material-change-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "printer program cannot complete unattended across material/color/tool changes without verified filament handling, purge, and resume state"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "split the print at the material-change boundary or add validated AMS/MMU/robotic filament-change automation with purge and inspection checkpoints"
+                    .to_string(),
+                });
+            }
+
+            if matches!(class, MachineClass::Mill | MachineClass::Router)
+                && has_tool_selection
+                && !has_tool_length_reference
+                && !reported_tool_length_boundary
+                && line_has_feed_move
+                && number_after(&stripped, 'Z').is_some_and(|z| z < 0.0)
+            {
+                reported_tool_length_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "missing-tool-length-compensation".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "cutting move follows a tool selection without explicit tool-length compensation or probe state"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "tool-length-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "mill/router toolpath depends on hidden tool length, probe, or offset state before plunging into stock"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "insert G43/G43.1 with the verified H offset, run a documented tool-length probe, or split the setup for operator signoff before cutting"
+                            .to_string(),
+                });
+            }
+
             if matches!(
                 class,
-                MachineClass::Mill | MachineClass::Lathe | MachineClass::Router | MachineClass::SheetCut
+                MachineClass::Mill
+                    | MachineClass::Lathe
+                    | MachineClass::Router
+                    | MachineClass::SheetCut
             ) && has_feed_move
                 && !has_spindle_or_heatup
             {
@@ -2882,7 +3198,10 @@ fn analyze_instruction_programs(
         if machine_code_language
             && matches!(
                 class,
-                MachineClass::Mill | MachineClass::Lathe | MachineClass::Router | MachineClass::SheetCut
+                MachineClass::Mill
+                    | MachineClass::Lathe
+                    | MachineClass::Router
+                    | MachineClass::SheetCut
             )
             && !has_spindle_or_heatup
         {
@@ -3475,6 +3794,42 @@ fn canonical_policy_method(value: &str) -> Option<String> {
     }
 }
 
+fn method_rank(method: &str) -> u8 {
+    match method {
+        "additive-print" => 0,
+        "milling" => 1,
+        "horizontal-milling" => 2,
+        "routing" => 3,
+        "sheet-cutting" => 4,
+        "turning" => 5,
+        _ => 100,
+    }
+}
+
+fn canonical_policy_methods(values: &[String]) -> Vec<String> {
+    let mut methods = values
+        .iter()
+        .filter_map(|value| canonical_policy_method(value))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    methods.sort_by(|left, right| {
+        method_rank(left)
+            .cmp(&method_rank(right))
+            .then_with(|| left.cmp(right))
+    });
+    methods
+}
+
+fn method_combination_key(values: &[String]) -> Option<String> {
+    let methods = canonical_policy_methods(values);
+    if methods.len() > 1 {
+        Some(methods.join("+"))
+    } else {
+        None
+    }
+}
+
 fn learned_preferred_methods(policy: Option<&LearningPolicySnapshot>) -> Vec<String> {
     let mut methods = Vec::new();
     let Some(policy) = policy else {
@@ -3496,6 +3851,28 @@ fn learned_preferred_methods(policy: Option<&LearningPolicySnapshot>) -> Vec<Str
     methods
 }
 
+fn learned_preferred_method_combination(policy: Option<&LearningPolicySnapshot>) -> Vec<String> {
+    let Some(policy) = policy else {
+        return Vec::new();
+    };
+    policy
+        .method_combination_preferences
+        .iter()
+        .find(|preference| {
+            preference.recommendation == "prefer"
+                && preference.samples >= 2
+                && preference.average_reward >= 0.0
+        })
+        .map(|preference| {
+            preference
+                .key
+                .split('+')
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
 fn learned_preferred_assembly_strategy(policy: Option<&LearningPolicySnapshot>) -> Option<String> {
     let policy = policy?;
     policy
@@ -3509,11 +3886,59 @@ fn learned_preferred_assembly_strategy(policy: Option<&LearningPolicySnapshot>) 
         .map(|preference| preference.key.clone())
 }
 
+fn learned_part_description(method: &str) -> &'static str {
+    match method {
+        "additive-print" => "learned additive component inferred from successful hybrid outcomes",
+        "milling" => "learned milled datum, pocket, or precision face inferred from successful hybrid outcomes",
+        "horizontal-milling" => {
+            "learned horizontal-milled side slot or keyway inferred from successful hybrid outcomes"
+        }
+        "routing" => "learned routed sheet/profile component inferred from successful hybrid outcomes",
+        "sheet-cutting" => {
+            "learned kerf-controlled sheet-cut component inferred from successful hybrid outcomes"
+        }
+        "turning" => {
+            "learned turned shaft, bushing, threaded insert, or cylindrical component inferred from successful hybrid outcomes"
+        }
+        _ => "learned special-process component inferred from successful hybrid outcomes",
+    }
+}
+
+fn learned_parts_for_method_combination(
+    request: &FabricationPlanRequest,
+    methods: &[String],
+) -> Option<Vec<RequestedPart>> {
+    if methods.len() < 2 {
+        return None;
+    }
+    let parts = methods
+        .iter()
+        .take(MAX_PARTS)
+        .map(|method| RequestedPart {
+            id: format!("learned-{}-part", normalize_token(method)),
+            description: learned_part_description(method).to_string(),
+            material: request.material.clone(),
+            preferred_method: Some(method.clone()),
+            tolerance_mm: request.tolerance_mm,
+        })
+        .collect::<Vec<_>>();
+    if parts.len() > 1 {
+        Some(parts)
+    } else {
+        None
+    }
+}
+
 fn apply_learning_policy_to_request(
     mut request: FabricationPlanRequest,
     policy: Option<&LearningPolicySnapshot>,
 ) -> FabricationPlanRequest {
-    let learned_methods = learned_preferred_methods(policy);
+    let learned_method_combination = learned_preferred_method_combination(policy);
+    let learned_methods = if learned_method_combination.is_empty() {
+        learned_preferred_methods(policy)
+    } else {
+        learned_method_combination.clone()
+    };
     let learned_assembly_strategy = learned_preferred_assembly_strategy(policy);
     if learned_methods.is_empty() && learned_assembly_strategy.is_none() {
         return request;
@@ -3524,6 +3949,9 @@ fn apply_learning_policy_to_request(
         .as_ref()
         .and_then(|constraints| constraints.preferred_methods.as_ref())
         .is_some_and(|methods| !methods.is_empty());
+    if request.parts.is_none() && !has_request_preferences && learned_method_combination.len() > 1 {
+        request.parts = learned_parts_for_method_combination(&request, &learned_method_combination);
+    }
     let constraints = request
         .constraints
         .get_or_insert_with(|| FabricationConstraints {
@@ -3674,7 +4102,10 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         if constraints.and_then(|constraints| constraints.allow_human_intervention) == Some(false)
             && matches!(
                 class,
-                MachineClass::Mill | MachineClass::Lathe | MachineClass::Router
+                MachineClass::Mill
+                    | MachineClass::Lathe
+                    | MachineClass::Router
+                    | MachineClass::SheetCut
             )
         {
             plan_boundaries.push(FailureBoundary {
@@ -3928,6 +4359,103 @@ fn assembly_plan(parts: &[PartPlan], constraints: Option<&FabricationConstraints
     }
 }
 
+fn clamp_unit(value: f64) -> f64 {
+    value.clamp(0.0, 1.0)
+}
+
+fn sigmoid(value: f64) -> f64 {
+    1.0 / (1.0 + (-value).exp())
+}
+
+fn neural_policy_sketch(
+    model_family: &str,
+    actions: &[String],
+    parts: &[PartPlan],
+    process_plan: &[ProcessStep],
+    validation: &ValidationReport,
+    improvements: &[InstructionImprovement],
+) -> NeuralPolicySketch {
+    let method_count = parts
+        .iter()
+        .map(|part| part.manufacturing_method.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let human_intervention_steps = process_plan
+        .iter()
+        .filter(|step| step.requires_human_intervention)
+        .count();
+    let min_tolerance = parts
+        .iter()
+        .map(|part| part.tolerance_mm)
+        .fold(DEFAULT_TOLERANCE_MM, f64::min);
+    let error_count = validation
+        .findings
+        .iter()
+        .filter(|finding| finding.severity == "error")
+        .count()
+        + validation
+            .failure_boundaries
+            .iter()
+            .filter(|boundary| boundary.severity == "error")
+            .count();
+    let human_boundary_count = validation
+        .failure_boundaries
+        .iter()
+        .filter(|boundary| boundary.requires_human_intervention)
+        .count();
+
+    let feature_vector = vec![
+        clamp_unit(parts.len() as f64 / MAX_PARTS as f64),
+        clamp_unit(method_count as f64 / 6.0),
+        clamp_unit(human_intervention_steps as f64 / process_plan.len().max(1) as f64),
+        clamp_unit(validation.findings.len() as f64 / 12.0),
+        clamp_unit(human_boundary_count as f64 / 12.0),
+        clamp_unit(improvements.len() as f64 / 12.0),
+        clamp_unit((DEFAULT_TOLERANCE_MM / min_tolerance.max(0.01)) / 10.0),
+    ];
+    let hidden_activations = vec![
+        sigmoid(feature_vector[0] * 1.2 + feature_vector[1] * 0.9 + feature_vector[6] * 0.6 - 0.8),
+        sigmoid(feature_vector[2] * 1.4 + feature_vector[4] * 1.1 + feature_vector[5] * 0.7 - 0.6),
+        sigmoid(feature_vector[3] * 1.6 + error_count as f64 * 0.35 - 0.5),
+    ];
+    let action_scores = actions
+        .iter()
+        .map(|action| {
+            let score = if action.contains("reject") {
+                hidden_activations[2]
+            } else if action.contains("human") || action.contains("inspection") {
+                hidden_activations[1]
+            } else if action.contains("split") || action.contains("combine") {
+                hidden_activations[0]
+            } else if action.contains("learned") {
+                (hidden_activations[0] + hidden_activations[1]) / 2.0
+            } else if action.contains("assign") {
+                1.0 - hidden_activations[2] * 0.5
+            } else {
+                0.5 + hidden_activations[0] * 0.25 - hidden_activations[2] * 0.25
+            };
+            NeuralActionScore {
+                action: action.clone(),
+                score: (clamp_unit(score) * 1000.0).round() / 1000.0,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    NeuralPolicySketch {
+        schema_version: "dd.fabrication.neural-policy-sketch.v1".to_string(),
+        model_family: model_family.to_string(),
+        feature_vector,
+        hidden_activations,
+        action_scores,
+        notes: vec![
+            "Deterministic neural-network sketch for downstream training or replacement by an external model"
+                .to_string(),
+            "Inputs are normalized plan, validation, intervention, tolerance, and improvement features"
+                .to_string(),
+        ],
+    }
+}
+
 fn learning_plan(
     hints: Option<&LearningHints>,
     constraints: Option<&FabricationConstraints>,
@@ -3957,6 +4485,7 @@ fn learning_plan(
         "choose-additive-process".to_string(),
         "choose-milling-process".to_string(),
         "choose-routing-process".to_string(),
+        "choose-sheet-cutting-process".to_string(),
         "choose-turning-process".to_string(),
         "split-part".to_string(),
         "combine-parts".to_string(),
@@ -3969,6 +4498,17 @@ fn learning_plan(
             part.id,
             normalize_token(&part.machine_kind)
         ));
+    }
+    if let Some(methods) =
+        constraints.and_then(|constraints| constraints.preferred_methods.as_ref())
+    {
+        let canonical_methods = canonical_policy_methods(methods);
+        if canonical_methods.len() > 1 {
+            actions.push(format!(
+                "prefer-learned-method-combination-{}",
+                normalize_token(&canonical_methods.join("-"))
+            ));
+        }
     }
     if let Some(strategy) =
         constraints.and_then(|constraints| constraints.preferred_assembly_strategy.as_ref())
@@ -4007,6 +4547,14 @@ fn learning_plan(
                 })
                 .collect()
         });
+    let neural_policy = neural_policy_sketch(
+        &model_family,
+        &actions,
+        parts,
+        process_plan,
+        validation,
+        improvements,
+    );
 
     Ok(LearningPlan {
         model_family,
@@ -4042,6 +4590,7 @@ fn learning_plan(
             "simulated-force-temperature-vibration".to_string(),
             "inspection-error-vector".to_string(),
         ],
+        neural_policy,
         training_examples,
     })
 }
@@ -5597,6 +6146,11 @@ mod tests {
             .process_plan
             .iter()
             .any(|step| step.operation.contains("kerf-test")));
+        assert!(response
+            .learning
+            .actions
+            .iter()
+            .any(|action| action == "choose-sheet-cutting-process"));
         let laser_program = response
             .generated_programs
             .iter()
@@ -5606,7 +6160,7 @@ mod tests {
         assert!(laser_program
             .instructions
             .iter()
-            .any(|line| line.contains("draft sheet-cutting job")));
+            .any(|line| line.contains("draft laser sheet-cutting job")));
         assert!(laser_program
             .instructions
             .iter()
@@ -5623,6 +6177,109 @@ mod tests {
             .failure_boundaries
             .iter()
             .any(|boundary| boundary.kind == "sheet-cutting-boundary"));
+    }
+
+    #[test]
+    fn default_sheet_cut_fleet_generates_waterjet_job_for_metal_profile() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-waterjet-cutter".to_string()),
+            objective: "steel waterjet-cut bracket with abrasive pierce and kerf compensation"
+                .to_string(),
+            material: Some(material("steel", "metal")),
+            stock: Some(StockSpec {
+                form: "sheet".to_string(),
+                dimensions_mm: Some(vec![500.0, 250.0, 12.0]),
+            }),
+            tolerance_mm: Some(0.20),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("waterjet cutter plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "sheet-cut-profile"
+                && part.machine_kind == "waterjet-cutter"
+                && part.manufacturing_method == "sheet-cutting"
+        }));
+        let waterjet_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "waterjet-cutter")
+            .expect("waterjet program should be generated");
+        assert_eq!(waterjet_program.language, "waterjet-job");
+        assert!(waterjet_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft waterjet sheet-cutting job")));
+        assert!(waterjet_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("ABRASIVE_FLOW_TEST")));
+        assert!(waterjet_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("high-pressure water")));
+        assert!(response.validation.findings.iter().any(|finding| {
+            finding.code == "text-sheet-cutting-boundary"
+                && finding
+                    .program_id
+                    .as_deref()
+                    .is_some_and(|id| id.contains("waterjet-cutter"))
+        }));
+    }
+
+    #[test]
+    fn default_sheet_cut_fleet_generates_plasma_job_for_conductive_sheet() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-plasma-cutter".to_string()),
+            objective: "plasma-cut steel guard plate with pierce height and dross allowance"
+                .to_string(),
+            material: Some(material("steel", "metal")),
+            stock: Some(StockSpec {
+                form: "sheet".to_string(),
+                dimensions_mm: Some(vec![420.0, 280.0, 6.0]),
+            }),
+            tolerance_mm: Some(0.35),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("plasma cutter plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "sheet-cut-profile"
+                && part.machine_kind == "plasma-cutter"
+                && part.manufacturing_method == "sheet-cutting"
+        }));
+        let plasma_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "plasma-cutter")
+            .expect("plasma program should be generated");
+        assert_eq!(plasma_program.language, "plasma-job");
+        assert!(plasma_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft plasma sheet-cutting job")));
+        assert!(plasma_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("ARC_OK")));
+        assert!(plasma_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("PLASMA_CUT")));
+        assert!(plasma_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("conductive workholding")));
     }
 
     #[test]
@@ -5791,6 +6448,45 @@ mod tests {
     }
 
     #[test]
+    fn mill_analysis_flags_uncompensated_tool_length_before_plunge() {
+        let programs = vec![program(
+            "uncompensated-mill",
+            "vertical-mill",
+            &[
+                "G21 G90 G54",
+                "T1 M6",
+                "S8000 M3",
+                "G0 X0 Y0 Z15",
+                "G1 Z-2.0 F120",
+                "M30",
+            ],
+        )];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "missing-tool-length-compensation"
+                && finding.program_id.as_deref() == Some("uncompensated-mill")
+                && finding.line == Some(5)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "tool-length-boundary"
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("G43")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(!improved[0].machine_ready);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary tool-length-boundary")));
+    }
+
+    #[test]
     fn simulation_flags_submitted_toolpath_outside_machine_envelope() {
         let programs = vec![InstructionProgram {
             id: Some("oversize-router".to_string()),
@@ -5876,6 +6572,55 @@ mod tests {
             .instructions
             .iter()
             .any(|line| { line.contains("REVIEW: add verified nozzle/bed heat-up commands") }));
+    }
+
+    #[test]
+    fn additive_analysis_flags_material_change_as_operator_boundary() {
+        let programs = vec![program(
+            "multi-material-print",
+            "fdm-printer",
+            &[
+                "G21 G90",
+                "G28",
+                "M104 S215",
+                "M109 S215",
+                "G1 X10 Y10 E1.0 F900",
+                "M600 ; color change before raised logo",
+                "T1 ; switch to support extruder",
+                "G1 X20 Y10 E1.5 F900",
+                "M84",
+            ],
+        )];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "additive-material-change-boundary"
+                && finding.program_id.as_deref() == Some("multi-material-print")
+                && finding.line == Some(6)
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "additive-material-change-boundary" && finding.line == Some(7)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "additive-material-change-boundary"
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("AMS/MMU")
+        }));
+        assert!(validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| { boundary.kind == "human-intervention" && boundary.line == Some(6) }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(!improved[0].machine_ready);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary additive-material-change-boundary")));
     }
 
     #[test]
@@ -6005,6 +6750,24 @@ mod tests {
             .pomdp_observations
             .iter()
             .any(|observation| observation == "insert-fit"));
+        assert_eq!(
+            response.learning.neural_policy.schema_version,
+            "dd.fabrication.neural-policy-sketch.v1"
+        );
+        assert_eq!(
+            response.learning.neural_policy.model_family,
+            "mdp-pomdp-neural-cam-policy"
+        );
+        assert_eq!(response.learning.neural_policy.feature_vector.len(), 7);
+        assert_eq!(response.learning.neural_policy.hidden_activations.len(), 3);
+        assert!(response
+            .learning
+            .neural_policy
+            .action_scores
+            .iter()
+            .any(|score| score.action == "reject-or-repostprocess-program"
+                && score.score >= 0.0
+                && score.score <= 1.0));
         assert!(response
             .validation
             .failure_boundaries
@@ -6145,6 +6908,14 @@ mod tests {
                 && preference.samples == 2
                 && preference.recommendation == "prefer"
         }));
+        assert!(snapshot
+            .method_combination_preferences
+            .iter()
+            .any(|preference| {
+                preference.key == "additive-print+turning"
+                    && preference.samples == 2
+                    && preference.recommendation == "prefer"
+            }));
         assert!(snapshot.assembly_preferences.iter().any(|preference| {
             preference.key == "printed body plus turned insert"
                 && preference.samples == 2
@@ -6218,6 +6989,7 @@ mod tests {
                 average_reward: 1.7,
                 recommendation: "prefer".to_string(),
             }],
+            method_combination_preferences: Vec::new(),
             assembly_preferences: vec![LearningPreference {
                 key: "printed body plus routed clamp insert".to_string(),
                 samples: 2,
@@ -6253,6 +7025,109 @@ mod tests {
         }));
         assert!(learned.learning.actions.iter().any(|action| {
             action == "prefer-learned-assembly-printed-body-plus-routed-clamp-insert"
+        }));
+    }
+
+    #[test]
+    fn learned_method_combinations_decompose_future_open_requests() {
+        let first_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("hybrid-methods-1".to_string()),
+            job_id: Some("plan-methods-1".to_string()),
+            objective: Some("printed fixture body with milled datum pads".to_string()),
+            material: Some(material("pla", "polymer")),
+            manufacturing_methods: Some(vec!["milling".to_string(), "additive-print".to_string()]),
+            assembly_strategy: Some("printed body plus milled datum pads".to_string()),
+            success: true,
+            reward: Some(2.2),
+            observations: Some(vec!["datum inspection passed".to_string()]),
+            notes: Some(vec!["reuse hybrid process".to_string()]),
+        })
+        .expect("first learned combination outcome should be valid");
+        let second_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("hybrid-methods-2".to_string()),
+            job_id: Some("plan-methods-2".to_string()),
+            objective: Some("printed jig with milled reference ledges".to_string()),
+            material: Some(material("pla", "polymer")),
+            manufacturing_methods: Some(vec!["additive-print".to_string(), "milling".to_string()]),
+            assembly_strategy: Some("printed body plus milled datum pads".to_string()),
+            success: true,
+            reward: Some(2.6),
+            observations: Some(vec!["low intervention".to_string()]),
+            notes: Some(vec!["same process worked again".to_string()]),
+        })
+        .expect("second learned combination outcome should be valid");
+        let mut memory = LearningMemory::new(8);
+        memory.insert(first_success);
+        memory.insert(second_success);
+        let snapshot = memory.snapshot();
+        assert!(snapshot
+            .method_combination_preferences
+            .iter()
+            .any(|preference| {
+                preference.key == "additive-print+milling"
+                    && preference.samples == 2
+                    && preference.recommendation == "prefer"
+            }));
+
+        let request = FabricationPlanRequest {
+            request_id: Some("unit-learned-combination".to_string()),
+            objective: "PLA production aid that can be fabricated by learned shop cells"
+                .to_string(),
+            material: Some(material("pla", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.18),
+            quantity: Some(1),
+            machines: Some(vec![
+                MachineProfile {
+                    id: "polymer-printer".to_string(),
+                    kind: "fdm-printer".to_string(),
+                    controller: Some("marlin".to_string()),
+                    materials: Some(vec!["pla".to_string()]),
+                    work_envelope_mm: Some(vec![220.0, 220.0, 220.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["additive-print".to_string()]),
+                },
+                MachineProfile {
+                    id: "polymer-mill".to_string(),
+                    kind: "vertical-mill".to_string(),
+                    controller: Some("haas-gcode".to_string()),
+                    materials: Some(vec!["pla".to_string()]),
+                    work_envelope_mm: Some(vec![300.0, 180.0, 120.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["face".to_string(), "contour".to_string()]),
+                },
+            ]),
+            constraints: None,
+            parts: None,
+            existing_instructions: None,
+            learning: None,
+        };
+        let learned = plan_fabrication_with_policy(request, Some(&snapshot))
+            .expect("learned plan should work");
+
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-additive-print-part"
+                && part.machine_kind == "fdm-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-milling-part"
+                && part.machine_kind == "vertical-mill"
+                && part.manufacturing_method == "subtractive-milling"
+        }));
+        assert!(learned.generated_programs.iter().any(|program| {
+            program.part_id == "learned-additive-print-part"
+                && program.machine_id == "polymer-printer"
+        }));
+        assert!(learned.generated_programs.iter().any(|program| {
+            program.part_id == "learned-milling-part" && program.machine_id == "polymer-mill"
+        }));
+        assert_eq!(
+            learned.assembly.strategy,
+            "learned hybrid assembly strategy: printed body plus milled datum pads"
+        );
+        assert!(learned.learning.actions.iter().any(|action| {
+            action == "prefer-learned-method-combination-additive-print-milling"
         }));
     }
 
@@ -6298,6 +7173,7 @@ mod tests {
             failures: 0,
             average_reward: 2.8,
             method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
             assembly_preferences: vec![LearningPreference {
                 key: "printed body plus turned insert".to_string(),
                 samples: 2,
