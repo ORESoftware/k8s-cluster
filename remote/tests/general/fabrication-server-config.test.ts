@@ -81,8 +81,19 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /enum FabricationNatsRequest/);
   assert.match(source, /fn parse_fabrication_nats_request/);
   assert.match(source, /FabricationNatsRequest::InstructionAnalysis/);
+  assert.match(source, /FabricationNatsRequest::FabricationOutcome/);
+  assert.match(source, /FabricationNatsRequest::LearningOutcome/);
+  assert.match(source, /fn parse_fabrication_outcome_nats_value/);
+  assert.match(source, /fn parse_learning_outcome_nats_value/);
   assert.match(source, /async fn publish_analysis_outputs/);
   assert.match(source, /"fabrication\.instructions\.analysis\.result"/);
+  assert.match(source, /async fn publish_learning_outcome_outputs/);
+  assert.match(source, /"fabrication\.learning\.outcome\.result"/);
+  assert.match(source, /"fabrication\.learning-outcome\.v1"/);
+  assert.match(source, /"fabrication\.learning\.observe"/);
+  assert.match(source, /"fabrication\.learning\.outcome"/);
+  assert.match(source, /publish_learning_outcome_outputs\(\s*&task_state/);
+  assert.match(source, /publish_learning_outcome_outputs\(&state/);
   assert.match(source, /FABRICATION_MDP_AUTOPUBLISH/);
   assert.match(source, /dd_fabrication_server_learning_requests_total/);
   assert.match(source, /dd_fabrication_server_learning_events_stored_total/);
@@ -275,6 +286,16 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/fabrication\/plan`/);
   assert.match(readme, /`POST \/instructions\/analyze`/);
   assert.match(readme, /`POST \/fabrication\/instructions\/analyze`/);
+  assert.match(readme, /rich fabrication outcome payloads/);
+  assert.match(readme, /compact learning-outcome payloads/);
+  assert.match(readme, /fabrication\.learning\.observe/);
+  assert.match(readme, /fabrication\.learning\.outcome/);
+  assert.match(readme, /fabrication\.learning\.outcome\.result/);
+  assert.match(
+    readme,
+    /Plan,\s+instruction-analysis,\s+learning-observation,\s+and compact learning-outcome results/,
+  );
+  assert.match(readme, /learning-observation, or\s+learning-outcome request/);
   assert.match(readme, /bounded in-process job and artifact ledger/);
   assert.match(readme, /boundary summaries/);
   assert.match(readme, /resolution plans/);
@@ -350,7 +371,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /dd\.remote\.fabrication\.results/);
   assert.match(readme, /direct instruction-analysis payloads/);
   assert.match(readme, /fabrication\.instructions\.analyze/);
-  assert.match(readme, /instruction-analysis results are both published/);
+  assert.match(readme, /are published to the fabrication result subject/);
+  assert.match(
+    readme,
+    /Compact learning outcomes fan\s+out `fabrication\.learning\.outcome\.result`/,
+  );
   assert.match(readme, /FABRICATION_MDP_AUTOPUBLISH=true/);
   assert.match(readme, /default local port is `8113`/);
 
