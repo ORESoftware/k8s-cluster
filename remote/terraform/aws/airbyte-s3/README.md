@@ -20,7 +20,11 @@ operator-owned/backend location and do not commit it.
 
 ## Apply
 
-Use the local operator AWS profile from `~/.aws/credentials`:
+Use the local operator AWS profile from `~/.aws/credentials`. The applying
+principal must be allowed to create/configure the bucket, create the dedicated
+IAM user/access key, and write `dd/remote-dev/airbyte-s3` in Secrets Manager.
+`apply-policy.template.json` is the narrow policy shape for a temporary
+operator grant or CI/OIDC role; replace `<account-id>` before attaching it.
 
 ```sh
 aws sts get-caller-identity --profile dd-codex
@@ -30,3 +34,9 @@ AWS_PROFILE=dd-codex terraform apply
 ```
 
 Terraform state is intentionally not committed; see the repository `.gitignore`.
+
+The EC2 node role `dd-remote-k8s-role` is intentionally limited to the
+External Secrets read/write path documented in `remote/argocd/secrets/readme.md`.
+Do not permanently broaden that role just so Kubernetes can create buckets or
+IAM users; use a short-lived operator profile or workflow role, then let
+External Secrets consume the generated Secrets Manager value.

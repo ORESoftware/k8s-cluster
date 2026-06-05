@@ -74,3 +74,27 @@ test('lambda function code highlighter uses language-specific comments', async (
   assert.doesNotMatch(python, /<span class="tok-comment">\/\/ 2<\/span>/);
   assert.match(python, /<span class="tok-comment"># comment<\/span>/);
 });
+
+test('lambda function code highlighter covers every process profile language', async () => {
+  const server = await readWebHomeSource();
+  const lambdaJs = rawStringConst(server, 'LAMBDA_FUNCTIONS_JS');
+  const samples: Array<[string, string, RegExp, RegExp]> = [
+    ['nodejs', 'async function handler() {\n// ok\nreturn true;\n}', /tok-keyword">async/, /tok-comment">\/\/ ok/],
+    ['python3', 'def handler(request, context):\n# ok\n    return True', /tok-keyword">def/, /tok-comment"># ok/],
+    ['ruby', 'def handler(request, context)\n# ok\n  return true\nend', /tok-keyword">def/, /tok-comment"># ok/],
+    ['bash', 'handler() {\n# ok\nif true; then echo yes; fi\n}', /tok-keyword">if/, /tok-comment"># ok/],
+    ['golang', 'func Handler() {\n// ok\nreturn\n}', /tok-keyword">func/, /tok-comment">\/\/ ok/],
+    ['dart', 'dynamic handler() {\n// ok\nreturn true;\n}', /tok-keyword">dynamic/, /tok-comment">\/\/ ok/],
+    ['erlang', 'handle(_Request, _Context) ->\n% ok\ncase true of true -> ok end.', /tok-keyword">case/, /tok-comment">% ok/],
+    ['elixir', 'defmodule Handler do\n# ok\n  def handle(), do: true\nend', /tok-keyword">defmodule/, /tok-comment"># ok/],
+    ['java', 'public final class Handler {\n// ok\nreturn;\n}', /tok-keyword">public/, /tok-comment">\/\/ ok/],
+    ['rust', 'fn main() {\n// ok\nreturn;\n}', /tok-keyword">fn/, /tok-comment">\/\/ ok/],
+    ['gleamlang', 'pub fn handler() {\n// ok\ntodo\n}', /tok-keyword">pub/, /tok-comment">\/\/ ok/],
+  ];
+
+  for (const [language, source, keywordPattern, commentPattern] of samples) {
+    const html = highlightWith(lambdaJs, source, language);
+    assert.match(html, keywordPattern, `${language} keyword should be highlighted`);
+    assert.match(html, commentPattern, `${language} comment should be highlighted`);
+  }
+});

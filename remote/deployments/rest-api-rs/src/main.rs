@@ -2526,6 +2526,11 @@ fn normalize_lambda_runtime_alias(input: &str) -> Option<&'static str> {
         "python" | "python3" => Some("python3"),
         "ruby" => Some("ruby"),
         "bash" | "shell" => Some("bash"),
+        "go" | "golang" => Some("golang"),
+        "dart" => Some("dart"),
+        "erlang" | "erl" => Some("erlang"),
+        "elixir" | "ex" => Some("elixir"),
+        "java" | "jvm" => Some("java"),
         _ => None,
     }
 }
@@ -2534,7 +2539,10 @@ fn validate_lambda_runtime(input: Option<&str>) -> Result<String, String> {
     let value = input.unwrap_or("javascript");
     normalize_lambda_runtime_alias(value)
         .map(ToString::to_string)
-        .ok_or_else(|| "runtime must be one of nodejs, python3, ruby, or bash".to_string())
+        .ok_or_else(|| {
+            "runtime must be one of nodejs, python3, ruby, bash, golang, dart, erlang, elixir, or java"
+                .to_string()
+        })
 }
 
 fn lambda_host_runtime_allowed(runtime: &str) -> bool {
@@ -3738,6 +3746,11 @@ fn lambda_entry_command_for_runtime(runtime: &str) -> String {
         "bash" => {
             "env -i PATH=\"$PATH\" NODE_NO_WARNINGS=1 node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs"
         }
+        "golang" | "dart" | "erlang" | "elixir" | "java" => {
+            return format!(
+                "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"{runtime}\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs"
+            );
+        }
         _ => {
             "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs"
         }
@@ -3746,7 +3759,9 @@ fn lambda_entry_command_for_runtime(runtime: &str) -> String {
 }
 
 fn managed_lambda_entry_command(value: &str) -> bool {
-    ["nodejs", "python3", "ruby", "bash"]
+    [
+        "nodejs", "python3", "ruby", "bash", "golang", "dart", "erlang", "elixir", "java",
+    ]
         .iter()
         .map(|runtime| lambda_entry_command_for_runtime(runtime))
         .any(|command| command == value)
@@ -4111,8 +4126,33 @@ fn lambda_runner_source(runtime: &str) -> (&'static str, &'static str) {
         "python3" => ("python-function-runner.py", "runner.py"),
         "ruby" => ("ruby-function-runner.rb", "runner.rb"),
         "bash" => ("bash-function-runner.mjs", "runner.mjs"),
+        "golang" | "dart" | "erlang" | "elixir" | "java" => {
+            ("polyglot-function-runner.mjs", "runner.mjs")
+        }
         _ => ("js-function-runner.mjs", "runner.mjs"),
     }
+}
+
+fn polyglot_lambda_container_dockerfile(
+    runtime: &str,
+    base_image: &str,
+    package_install: &str,
+    user_setup: &str,
+    label: &str,
+) -> String {
+    format!(
+        r#"FROM {base_image}
+{package_install}
+{user_setup}
+WORKDIR /opt/dd-lambda
+COPY runner.mjs ./runner.mjs
+COPY definition.json ./definition.json
+{label}
+ENV LAMBDA_TARGET_RUNTIME={runtime}
+USER 10001:10001
+ENTRYPOINT ["node", "/opt/dd-lambda/runner.mjs"]
+"#
+    )
 }
 
 fn lambda_container_dockerfile(runtime: &str, function: &LambdaFunctionRow) -> String {
@@ -4160,9 +4200,56 @@ ENV NODE_NO_WARNINGS=1
 USER 10001:10001
 ENTRYPOINT ["node", "--permission", "--allow-net", "--allow-child-process", "/opt/dd-lambda/runner.mjs"]
 "#
-        ),
-        _ => format!(
-            r#"FROM docker.io/library/alpine:edge
+          ),
+          "golang" => polyglot_lambda_container_dockerfile(
+              runtime,
+              "docker.io/library/golang:1.25-alpine",
+              r#"RUN apk add --no-cache \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+  nodejs-current"#,
+              r#"RUN addgroup -S lambda && adduser -S -G lambda -u 10001 lambda"#,
+              &label,
+          ),
+          "dart" => polyglot_lambda_container_dockerfile(
+              runtime,
+              "docker.io/library/dart:stable",
+              "RUN apt-get update && apt-get install -y --no-install-recommends nodejs ca-certificates && apt-get clean",
+              "RUN groupadd --system lambda && useradd --system --gid lambda --uid 10001 --create-home lambda",
+              &label,
+          ),
+          "erlang" => polyglot_lambda_container_dockerfile(
+              runtime,
+              "docker.io/library/erlang:28-alpine",
+              r#"RUN apk add --no-cache \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+  nodejs-current"#,
+              r#"RUN addgroup -S lambda && adduser -S -G lambda -u 10001 lambda"#,
+              &label,
+          ),
+          "elixir" => polyglot_lambda_container_dockerfile(
+              runtime,
+              "docker.io/library/elixir:1.18-alpine",
+              r#"RUN apk add --no-cache \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+  nodejs-current"#,
+              r#"RUN addgroup -S lambda && adduser -S -G lambda -u 10001 lambda"#,
+              &label,
+          ),
+          "java" => polyglot_lambda_container_dockerfile(
+              runtime,
+              "docker.io/library/eclipse-temurin:21-jdk-alpine",
+              r#"RUN apk add --no-cache \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+  nodejs-current"#,
+              r#"RUN addgroup -S lambda && adduser -S -G lambda -u 10001 lambda"#,
+              &label,
+          ),
+          _ => format!(
+              r#"FROM docker.io/library/alpine:edge
 RUN apk add --no-cache \
   --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
   --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \

@@ -8563,23 +8563,33 @@ const LAMBDA_FUNCTIONS_BODY: &str = r###"<div class="app">
         </label>
         <label>
           <span>Runtime</span>
-          <select id="runtime">
-            <option value="nodejs">nodejs</option>
-            <option value="python3">python3</option>
-            <option value="ruby">ruby</option>
-            <option value="bash">bash</option>
-          </select>
-        </label>
-        <label>
-          <span>Process profile</span>
-          <select id="process-profile">
-            <option value="nodejs">nodejs process</option>
-            <option value="python3">python3 process</option>
-            <option value="rust">rust process</option>
-            <option value="golang">golang process</option>
-            <option value="gleamlang">gleamlang process</option>
-          </select>
-        </label>
+            <select id="runtime">
+              <option value="nodejs">nodejs</option>
+              <option value="python3">python3</option>
+              <option value="ruby">ruby</option>
+              <option value="bash">bash</option>
+              <option value="golang">golang</option>
+              <option value="dart">dart</option>
+              <option value="erlang">erlang</option>
+              <option value="elixir">elixir</option>
+              <option value="java">java</option>
+            </select>
+          </label>
+          <label>
+            <span>Process profile</span>
+            <select id="process-profile">
+              <option value="nodejs">nodejs process</option>
+              <option value="python3">python3 process</option>
+              <option value="ruby">ruby process</option>
+              <option value="golang">golang process</option>
+              <option value="dart">dart process</option>
+              <option value="erlang">erlang process</option>
+              <option value="elixir">elixir process</option>
+              <option value="java">java process</option>
+              <option value="rust">rust process</option>
+              <option value="gleamlang">gleamlang process</option>
+            </select>
+          </label>
         <label>
           <span>Container runner</span>
           <select id="container-runner">
@@ -8672,6 +8682,11 @@ const entryCommands = {
   python3: "env -i PATH=\"$PATH\" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py",
   ruby: "env -i PATH=\"$PATH\" ruby child-runtimes/ruby-function-runner.rb",
   bash: "env -i PATH=\"$PATH\" NODE_NO_WARNINGS=1 node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs",
+  golang: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"golang\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  dart: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"dart\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  erlang: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"erlang\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  elixir: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"elixir\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  java: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"java\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
 };
 const processProfiles = {
   nodejs: {
@@ -8691,10 +8706,58 @@ const processProfiles = {
       "docker.io/library/dd-container-pool-python3-runtime:dev",
       "docker.io/library/python:3.12-alpine",
     ],
-  },
-  rust: {
-    runtime: "nodejs",
-    poolSlug: "rust",
+    },
+    ruby: {
+      runtime: "ruby",
+      poolSlug: "ruby",
+      baseImages: [
+        "docker.io/library/dd-lambda-ruby-runtime:dev",
+        "docker.io/library/ruby:3.3-alpine",
+      ],
+    },
+    golang: {
+      runtime: "golang",
+      poolSlug: "golang",
+      baseImages: [
+        "docker.io/library/dd-lambda-golang-runtime:dev",
+        "docker.io/library/golang:1.25-alpine",
+      ],
+    },
+    dart: {
+      runtime: "dart",
+      poolSlug: "dart",
+      baseImages: [
+        "docker.io/library/dd-lambda-dart-runtime:dev",
+        "docker.io/library/dart:stable",
+      ],
+    },
+    erlang: {
+      runtime: "erlang",
+      poolSlug: "erlang",
+      baseImages: [
+        "docker.io/library/dd-lambda-erlang-runtime:dev",
+        "docker.io/library/erlang:28-alpine",
+      ],
+    },
+    elixir: {
+      runtime: "elixir",
+      poolSlug: "elixir",
+      baseImages: [
+        "docker.io/library/dd-lambda-elixir-runtime:dev",
+        "docker.io/library/elixir:1.18-alpine",
+      ],
+    },
+    java: {
+      runtime: "java",
+      poolSlug: "java",
+      baseImages: [
+        "docker.io/library/dd-lambda-java-runtime:dev",
+        "docker.io/library/eclipse-temurin:21-jdk-alpine",
+      ],
+    },
+    rust: {
+      runtime: "nodejs",
+      poolSlug: "rust",
     requiresContainerPool: true,
     baseImages: [
       "docker.io/library/dd-container-pool-rust-runtime:dev",
@@ -8729,9 +8792,12 @@ const state = {
   functions: [],
   selectedId: null,
   queryAutofillActive: false,
-  editorDirty: false,
-  bodyProfile: "nodejs",
-};
+    editorDirty: false,
+    bodyProfile: "nodejs",
+    activeProfile: "nodejs",
+    draftLoadToken: 0,
+    draftSaveTimer: null,
+  };
 const queryParams = new URLSearchParams(location.search);
 const autofillParamNames = [
   "slug", "name", "displayName", "title", "description", "status", "runtime",
@@ -8755,30 +8821,72 @@ const codeKeywordSets = {
     "move", "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super",
     "trait", "true", "type", "unsafe", "use", "where", "while",
   ]),
-  golang: new Set([
-    "break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough",
-    "for", "func", "go", "goto", "if", "import", "interface", "map", "nil", "package",
-    "range", "return", "select", "struct", "switch", "type", "var",
+    golang: new Set([
+      "break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough",
+      "for", "func", "go", "goto", "if", "import", "interface", "map", "nil", "package",
+      "range", "return", "select", "struct", "switch", "type", "var",
+    ]),
+    dart: new Set([
+      "abstract", "as", "async", "await", "base", "break", "case", "catch", "class", "const",
+      "continue", "default", "deferred", "do", "dynamic", "else", "enum", "export", "extends",
+      "extension", "external", "factory", "false", "final", "finally", "for", "Function",
+      "if", "implements", "import", "in", "interface", "is", "late", "library", "mixin",
+      "new", "null", "on", "operator", "part", "required", "return", "sealed", "static",
+      "super", "switch", "sync", "this", "throw", "true", "try", "typedef", "var", "void",
+      "when", "while", "with", "yield",
+    ]),
+    erlang: new Set([
+      "after", "and", "andalso", "band", "begin", "bnot", "bor", "bsl", "bsr", "bxor",
+      "case", "catch", "cond", "div", "end", "fun", "if", "let", "not", "of", "or",
+      "orelse", "receive", "rem", "try", "when", "xor",
+    ]),
+    elixir: new Set([
+      "after", "alias", "and", "case", "catch", "cond", "def", "defmodule", "defp", "do",
+      "else", "end", "false", "fn", "for", "if", "import", "in", "nil", "not", "or",
+      "quote", "raise", "receive", "require", "rescue", "super", "throw", "true", "try",
+      "unless", "unquote", "use", "when",
+    ]),
+    java: new Set([
+      "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class",
+      "const", "continue", "default", "do", "double", "else", "enum", "extends", "false",
+      "final", "finally", "float", "for", "goto", "if", "implements", "import", "instanceof",
+      "int", "interface", "long", "native", "new", "null", "package", "private", "protected",
+      "public", "return", "short", "static", "strictfp", "super", "switch", "synchronized",
+      "this", "throw", "throws", "transient", "true", "try", "void", "volatile", "while",
+    ]),
+    gleamlang: new Set([
+      "as", "assert", "case", "const", "echo", "else", "external", "fn", "if", "import",
+      "let", "opaque", "panic", "pub", "todo", "type", "use",
   ]),
-  gleamlang: new Set([
-    "as", "assert", "case", "const", "echo", "else", "external", "fn", "if", "import",
-    "let", "opaque", "panic", "pub", "todo", "type", "use",
-  ]),
-  python3: new Set([
-    "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del",
-    "elif", "else", "except", "False", "finally", "for", "from", "global", "if",
-    "import", "in", "is", "lambda", "None", "nonlocal", "not", "or", "pass", "raise",
-    "return", "True", "try", "while", "with", "yield",
-  ]),
-};
+    python3: new Set([
+      "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del",
+      "elif", "else", "except", "False", "finally", "for", "from", "global", "if",
+      "import", "in", "is", "lambda", "None", "nonlocal", "not", "or", "pass", "raise",
+      "return", "True", "try", "while", "with", "yield",
+    ]),
+    ruby: new Set([
+      "BEGIN", "END", "alias", "and", "begin", "break", "case", "class", "def", "defined?",
+      "do", "else", "elsif", "end", "ensure", "false", "for", "if", "in", "module", "next",
+      "nil", "not", "or", "redo", "rescue", "retry", "return", "self", "super", "then",
+      "true", "undef", "unless", "until", "when", "while", "yield",
+    ]),
+    bash: new Set([
+      "case", "coproc", "do", "done", "elif", "else", "esac", "fi", "for", "function", "if",
+      "in", "select", "then", "time", "until", "while",
+    ]),
+  };
 const commentPatterns = {
-  nodejs: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
-  rust: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
-  golang: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
-  gleamlang: String.raw`\/\/[^\n]*`,
-  python3: String.raw`#[^\n]*`,
-  bash: String.raw`#[^\n]*`,
-  ruby: String.raw`#[^\n]*`,
+    nodejs: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    rust: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    golang: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    dart: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    java: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    gleamlang: String.raw`\/\/[^\n]*`,
+    erlang: String.raw`%[^\n]*`,
+    elixir: String.raw`#[^\n]*`,
+    python3: String.raw`#[^\n]*`,
+    bash: String.raw`#[^\n]*`,
+    ruby: String.raw`#[^\n]*`,
 };
 
 function queryParam(...names) {
@@ -8839,30 +8947,38 @@ function ensureSelectValue(id, value) {
   select.value = value;
 }
 
-function normalizeRuntime(value) {
-  if (value === "javascript" || value === "typescript" || value === "node") return "nodejs";
-  if (value === "python") return "python3";
-  if (value === "shell") return "bash";
-  return entryCommands[value] ? value : "nodejs";
-}
+  function normalizeRuntime(value) {
+    if (value === "javascript" || value === "typescript" || value === "node") return "nodejs";
+    if (value === "python") return "python3";
+    if (value === "shell") return "bash";
+    if (value === "go") return "golang";
+    if (value === "erl") return "erlang";
+    if (value === "ex") return "elixir";
+    if (value === "jvm") return "java";
+    return entryCommands[value] ? value : "nodejs";
+  }
 
 function normalizeProcessProfile(value) {
   const key = String(value || "").trim().toLowerCase();
-  if (key === "gleam") return "gleamlang";
-  if (key === "go") return "golang";
-  if (key === "python") return "python3";
-  return processProfiles[key] ? key : "nodejs";
-}
+    if (key === "gleam") return "gleamlang";
+    if (key === "go") return "golang";
+    if (key === "python") return "python3";
+    if (key === "node") return "nodejs";
+    if (key === "erl") return "erlang";
+    if (key === "ex") return "elixir";
+    if (key === "jvm") return "java";
+    return processProfiles[key] ? key : "nodejs";
+  }
 
 function processProfileForRuntime(runtime) {
   const raw = String(runtime || "").trim().toLowerCase();
-  if (raw === "go" || raw === "golang") return "golang";
-  if (raw === "rust") return "rust";
-  if (raw === "gleam" || raw === "gleamlang") return "gleamlang";
-  const normalized = normalizeRuntime(runtime);
-  if (normalized === "python3") return "python3";
-  return "nodejs";
-}
+    if (raw === "go" || raw === "golang") return "golang";
+    if (raw === "rust") return "rust";
+    if (raw === "gleam" || raw === "gleamlang") return "gleamlang";
+    const normalized = normalizeRuntime(runtime);
+    if (processProfiles[normalized]) return normalized;
+    return "nodejs";
+  }
 
 function deploymentMeta(metaData) {
   const value = metaData?.lambdaDeployment;
@@ -8941,10 +9057,104 @@ function updateCodeHighlight() {
   syncCodeScroll();
 }
 
-function setFunctionBody(value) {
-  $("function-body").value = value;
-  updateCodeHighlight();
-}
+  function setFunctionBody(value) {
+    $("function-body").value = value;
+    updateCodeHighlight();
+  }
+
+  function draftFunctionKey(fn = selectedFunction()) {
+    if (fn?.id) return `id:${fn.id}`;
+    const slug = normalizeSlug($("slug")?.value || fn?.slug || "");
+    return slug ? `slug:${slug}` : "new";
+  }
+
+  function draftStorageKey(profileName, functionKey = draftFunctionKey()) {
+    return `dd-lambda-function-draft:v2:${functionKey}:${normalizeProcessProfile(profileName)}`;
+  }
+
+  function serviceWorkerRequest(message, timeoutMs = 1000) {
+    if (!("serviceWorker" in navigator)) return Promise.resolve(null);
+    return navigator.serviceWorker.ready.then((registration) => {
+      const target = registration.active || navigator.serviceWorker.controller;
+      if (!target) return null;
+      return new Promise((resolve) => {
+        const channel = new MessageChannel();
+        const timer = setTimeout(() => resolve(null), timeoutMs);
+        channel.port1.onmessage = (event) => {
+          clearTimeout(timer);
+          resolve(event.data || null);
+        };
+        target.postMessage(message, [channel.port2]);
+      });
+    }).catch(() => null);
+  }
+
+  function storeDraftInServiceWorker(key, record) {
+    void serviceWorkerRequest({ type: "dd-lambda-draft-save", key, record }, 1000);
+  }
+
+  function loadLocalDraft(profileName, functionKey = draftFunctionKey()) {
+    try {
+      const raw = window.localStorage.getItem(draftStorageKey(profileName, functionKey));
+      if (!raw) return null;
+      const record = JSON.parse(raw);
+      return record && typeof record.body === "string" ? record : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function persistLanguageDraft(profileName = state.activeProfile || normalizeProcessProfile($("process-profile").value)) {
+    const normalizedProfile = normalizeProcessProfile(profileName);
+    const key = draftStorageKey(normalizedProfile);
+    const record = {
+      schema: "dd.lambda.functionDraft.v2",
+      functionKey: draftFunctionKey(),
+      profile: normalizedProfile,
+      runtime: normalizeRuntime((processProfiles[normalizedProfile] || processProfiles.nodejs).runtime),
+      body: $("function-body").value,
+      updatedAt: new Date().toISOString(),
+    };
+    try {
+      window.localStorage.setItem(key, JSON.stringify(record));
+    } catch {
+      // localStorage can be unavailable in hardened browser contexts; the
+      // service worker cache is the secondary same-origin draft store.
+    }
+    storeDraftInServiceWorker(key, record);
+    return record;
+  }
+
+  function queueLanguageDraftPersist() {
+    clearTimeout(state.draftSaveTimer);
+    state.draftSaveTimer = setTimeout(() => persistLanguageDraft(), 250);
+  }
+
+  function restoreServiceWorkerDraft(profileName, functionKey, token) {
+    const key = draftStorageKey(profileName, functionKey);
+    void serviceWorkerRequest({ type: "dd-lambda-draft-load", key }, 1200).then((reply) => {
+      const record = reply?.ok && reply.record && typeof reply.record.body === "string" ? reply.record : null;
+      if (!record || token !== state.draftLoadToken) return;
+      if (draftFunctionKey() !== functionKey) return;
+      if (normalizeProcessProfile($("process-profile").value) !== normalizeProcessProfile(profileName)) return;
+      if (state.editorDirty) return;
+      setFunctionBody(record.body);
+      state.bodyProfile = generatedDefaultProfile(record.body) || null;
+    });
+  }
+
+  function bodyForProfile(profileName, fallback, functionKey = draftFunctionKey()) {
+    const draft = loadLocalDraft(profileName, functionKey);
+    if (draft?.body !== undefined) return draft.body;
+    const token = ++state.draftLoadToken;
+    restoreServiceWorkerDraft(profileName, functionKey, token);
+    return fallback;
+  }
+
+  function registerLambdaServiceWorker() {
+    if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+    navigator.serviceWorker.register("/service-worker.js", { scope: "/" }).catch(() => {});
+  }
 
 function containerPoolFunctionBody(profileName) {
   const profile = processProfiles[normalizeProcessProfile(profileName)] || processProfiles.nodejs;
@@ -8957,27 +9167,99 @@ function containerPoolFunctionBody(profileName) {
   ].join("\n");
 }
 
-function defaultFunctionBody(runtimeOrProfile) {
-  const profileName = processProfiles[runtimeOrProfile]
-    ? runtimeOrProfile
-    : processProfileForRuntime(runtimeOrProfile);
-  switch (profileName) {
-    case "python3":
-      return "result = { \"status\": 200, \"body\": { \"ok\": True, \"echo\": request.get(\"body\") } }";
-    case "rust":
-    case "golang":
-    case "gleamlang":
-      return containerPoolFunctionBody(profileName);
-    case "nodejs":
-      return "return { status: 200, body: { ok: true, echo: request.body ?? null } };";
-    case "ruby":
-      return "{ status: 200, body: { ok: true, echo: request[\"body\"] } }";
-    case "bash":
-      return "printf '%s\\n' '{\"status\":200,\"body\":{\"ok\":true}}'";
-    default:
-      return "return { status: 200, body: { ok: true, echo: request.body ?? null } };";
+  function defaultFunctionBody(runtimeOrProfile) {
+    const profileName = processProfiles[runtimeOrProfile]
+      ? runtimeOrProfile
+      : processProfileForRuntime(runtimeOrProfile);
+    switch (profileName) {
+      case "python3":
+        return [
+          "def handler(request, context):",
+          "    return { \"status\": 200, \"body\": { \"ok\": True, \"echo\": request.get(\"body\") } }",
+          "",
+          "result = handler(request, context)",
+        ].join("\n");
+      case "ruby":
+        return [
+          "def handler(request, context)",
+          "  { status: 200, body: { ok: true, echo: request[\"body\"] } }",
+          "end",
+          "",
+          "handler(request, context)",
+        ].join("\n");
+      case "bash":
+        return [
+          "handler() {",
+          "  printf '%s\\n' '{\"status\":200,\"body\":{\"ok\":true}}'",
+          "}",
+          "",
+          "handler",
+        ].join("\n");
+      case "golang":
+        return [
+          "package main",
+          "",
+          "func Handler(request map[string]any, context map[string]any) (any, error) {",
+          "  return map[string]any{",
+          "    \"status\": 200,",
+          "    \"body\": map[string]any{",
+          "      \"ok\": true,",
+          "      \"echo\": request[\"body\"],",
+          "    },",
+          "  }, nil",
+          "}",
+        ].join("\n");
+      case "dart":
+        return [
+          "dynamic handler(Map<String, dynamic> request, Map<String, dynamic> context) {",
+          "  return {",
+          "    \"status\": 200,",
+          "    \"body\": {",
+          "      \"ok\": true,",
+          "      \"echo\": request[\"body\"],",
+          "    },",
+          "  };",
+          "}",
+        ].join("\n");
+      case "erlang":
+        return [
+          "-module(handler).",
+          "-export([handle/2]).",
+          "",
+          "handle(_RequestJson, _ContextJson) ->",
+          "  <<\"{\\\"status\\\":200,\\\"body\\\":{\\\"ok\\\":true}}\">>.",
+        ].join("\n");
+      case "elixir":
+        return [
+          "defmodule Handler do",
+          "  def handle(_request_json, _context_json) do",
+          "    ~s({\"status\":200,\"body\":{\"ok\":true}})",
+          "  end",
+          "end",
+        ].join("\n");
+      case "java":
+        return [
+          "public final class Handler {",
+          "  public static String handle(String requestJson, String contextJson) throws Exception {",
+          "    return \"{\\\"status\\\":200,\\\"body\\\":{\\\"ok\\\":true}}\";",
+          "  }",
+          "}",
+        ].join("\n");
+      case "rust":
+      case "gleamlang":
+        return containerPoolFunctionBody(profileName);
+      case "nodejs":
+        return [
+          "async function handler(request, context) {",
+          "  return { status: 200, body: { ok: true, echo: request.body ?? null } };",
+          "}",
+          "",
+          "return await handler(request, context);",
+        ].join("\n");
+      default:
+        return defaultFunctionBody("nodejs");
+    }
   }
-}
 
 function normalizedBody(value) {
   return String(value || "").trim().replace(/\r\n/g, "\n");
@@ -9008,11 +9290,12 @@ function markEditorDirty() {
   state.editorDirty = true;
 }
 
-function markBodyDirty() {
-  state.bodyProfile = generatedDefaultProfile($("function-body").value) || null;
-  updateCodeHighlight();
-  markEditorDirty();
-}
+  function markBodyDirty() {
+    state.bodyProfile = generatedDefaultProfile($("function-body").value) || null;
+    updateCodeHighlight();
+    queueLanguageDraftPersist();
+    markEditorDirty();
+  }
 
 function syncEntryCommand() {
   $("entry-command").value = entryCommands[normalizeRuntime($("runtime").value)] || defaultCommand;
@@ -9041,21 +9324,25 @@ function syncContainerPolicy() {
   if (requiresContainer) $("containerized").checked = true;
 }
 
-function syncProcessProfile(options = {}) {
-  const profileName = normalizeProcessProfile($("process-profile").value);
-  const profile = processProfiles[profileName] || processProfiles.nodejs;
-  $("process-profile").value = profileName;
-  $("runtime").value = profile.runtime;
-  syncEntryCommand();
-  syncContainerPolicy();
-  syncBaseImages(options.baseImage || "");
-  if (profile.requiresContainerPool) $("containerized").checked = false;
-  if (options.replaceBody) {
-    setFunctionBody(defaultFunctionBody(profileName));
-    state.bodyProfile = profileName;
+  function syncProcessProfile(options = {}) {
+    const profileName = normalizeProcessProfile($("process-profile").value);
+    const profile = processProfiles[profileName] || processProfiles.nodejs;
+    $("process-profile").value = profileName;
+    $("runtime").value = profile.runtime;
+    state.activeProfile = profileName;
+    syncEntryCommand();
+    syncContainerPolicy();
+    syncBaseImages(options.baseImage || "");
+    if (profile.requiresContainerPool) $("containerized").checked = false;
+    if (options.restoreBody || options.replaceBody) {
+      const functionKey = options.functionKey || draftFunctionKey();
+      const fallback = options.bodyFallback ?? defaultFunctionBody(profileName);
+      const body = bodyForProfile(profileName, fallback, functionKey);
+      setFunctionBody(body);
+      state.bodyProfile = generatedDefaultProfile(body) || null;
+    }
+    updateCodeHighlight();
   }
-  updateCodeHighlight();
-}
 
 function deploymentMetaFromControls(existingMeta = {}) {
   const profileName = normalizeProcessProfile($("process-profile").value);
@@ -9316,17 +9603,20 @@ function setRunState(message, kind = "warn") {
   node.className = kind === "bad" ? "pill bad" : kind === "ok" ? "pill" : "pill warn";
 }
 
-function fillEditor(fn) {
-  state.selectedId = fn?.id || null;
-  $("editor-title").textContent = fn?.displayName || "New function";
-  $("editor-subtitle").textContent = fn?.slug || "draft";
+  function fillEditor(fn) {
+    persistLanguageDraft();
+    state.selectedId = fn?.id || null;
+    $("editor-title").textContent = fn?.displayName || "New function";
+    $("editor-subtitle").textContent = fn?.slug || "draft";
   $("slug").value = fn?.slug || "";
   $("display-name").value = fn?.displayName || "";
   $("status").value = fn?.status || "draft";
-  const profileName = processProfileForFunction(fn);
-  const lambdaDeployment = deploymentMeta(fn?.metaData);
-  $("process-profile").value = profileName;
-  $("runtime").value = normalizeRuntime(fn?.runtime || processProfiles[profileName]?.runtime || "nodejs");
+    const profileName = processProfileForFunction(fn);
+    const functionKey = draftFunctionKey(fn);
+    const lambdaDeployment = deploymentMeta(fn?.metaData);
+    $("process-profile").value = profileName;
+    state.activeProfile = profileName;
+    $("runtime").value = normalizeRuntime(fn?.runtime || processProfiles[profileName]?.runtime || "nodejs");
   $("container-runner").value = lambdaDeployment.containerRunner || defaultContainerRunner;
   $("reuse-key").value = fn?.reuseKey || "";
   $("idle-timeout").value = fn?.idleTimeoutSeconds || 300;
@@ -9335,11 +9625,12 @@ function fillEditor(fn) {
   $("containerized").checked = Boolean(fn?.containerized);
   syncContainerPolicy();
   syncBaseImages(lambdaDeployment.baseImage || "");
-  $("container-image").value = fn?.containerImage || "";
-  $("container-build-status").value = fn?.containerBuildStatus || (fn?.containerized ? "pending" : "not_requested");
-  $("description").value = fn?.description || "";
-  setFunctionBody(fn?.functionBody || defaultFunctionBody(profileName));
-  state.bodyProfile = generatedDefaultProfile($("function-body").value) || profileName;
+    $("container-image").value = fn?.containerImage || "";
+    $("container-build-status").value = fn?.containerBuildStatus || (fn?.containerized ? "pending" : "not_requested");
+    $("description").value = fn?.description || "";
+    const body = bodyForProfile(profileName, fn?.functionBody || defaultFunctionBody(profileName), functionKey);
+    setFunctionBody(body);
+    state.bodyProfile = generatedDefaultProfile(body) || null;
   $("labels-json").value = JSON.stringify(fn?.labels ?? [], null, 2);
   $("meta-json").value = JSON.stringify(fn?.metaData ?? {}, null, 2);
   $("request-json").value = JSON.stringify({ body: { ping: "pong" } }, null, 2);
@@ -9443,9 +9734,10 @@ async function load() {
   renderFunctions();
 }
 
-async function save() {
-  setSaveState("saving");
-  const checked = await checkDraft();
+  async function save() {
+    setSaveState("saving");
+    persistLanguageDraft();
+    const checked = await checkDraft();
   if (!checked.ok) {
     return;
   }
@@ -9499,28 +9791,29 @@ async function invokeSelected() {
 $("refresh").addEventListener("click", () => load().catch((error) => setSaveState(String(error), "bad")));
 $("new-function").addEventListener("click", () => {
   state.queryAutofillActive = false;
+  registerLambdaServiceWorker();
   fillEditor(null);
 });
 $("search").addEventListener("input", renderFunctions);
-$("slug").addEventListener("input", () => {
-  markEditorDirty();
-  $("slug").value = normalizeSlug($("slug").value);
-  $("invoke-route").textContent = `/lambdas/invoke/${selectedFunction()?.id || ":function-id"}`;
-});
-$("runtime").addEventListener("change", () => {
-  const previousProfile = normalizeProcessProfile($("process-profile").value);
-  const replaceBody = shouldReplaceGeneratedBody(previousProfile);
-  $("process-profile").value = processProfileForRuntime($("runtime").value);
-  syncProcessProfile({ replaceBody });
-  markEditorDirty();
-});
-$("process-profile").addEventListener("change", () => {
-  const previousProfile = state.bodyProfile || generatedDefaultProfile($("function-body").value);
-  const replaceBody = shouldReplaceGeneratedBody(previousProfile);
-  syncProcessProfile({ replaceBody });
-  markEditorDirty();
-  if (!replaceBody) setSaveState("kept custom body", "warn");
-});
+  $("slug").addEventListener("input", () => {
+    markEditorDirty();
+    $("slug").value = normalizeSlug($("slug").value);
+    queueLanguageDraftPersist();
+    $("invoke-route").textContent = `/lambdas/invoke/${selectedFunction()?.id || ":function-id"}`;
+  });
+  $("runtime").addEventListener("change", () => {
+    persistLanguageDraft(state.activeProfile || normalizeProcessProfile($("process-profile").value));
+    $("process-profile").value = processProfileForRuntime($("runtime").value);
+    syncProcessProfile({ restoreBody: true });
+    markEditorDirty();
+  });
+  $("process-profile").addEventListener("change", () => {
+    const previousProfile = state.activeProfile || generatedDefaultProfile($("function-body").value);
+    persistLanguageDraft(previousProfile);
+    syncProcessProfile({ restoreBody: true });
+    markEditorDirty();
+    setSaveState(`${normalizeProcessProfile($("process-profile").value)} draft restored`, "warn");
+  });
 for (const id of [
   "display-name", "status", "container-runner", "base-image", "containerized",
   "reuse-key", "idle-timeout", "max-run", "description", "labels-json", "meta-json",
@@ -9555,8 +9848,22 @@ const handleLoadError = (error) => {
   $("snapshot-meta").textContent = String(error);
 };
 load().catch(handleLoadError);
-setInterval(() => load().catch(handleLoadError), 15000);
-"###;
+  setInterval(() => load().catch(handleLoadError), 15000);
+  "###;
+
+const SHARED_SERVICE_WORKER_JS: &str = include_str!("../../../libs/browser/service-worker.js");
+
+async fn service_worker_js() -> impl IntoResponse {
+    record_request("GET", "/service-worker.js", StatusCode::OK);
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+            (header::HeaderName::from_static("service-worker-allowed"), "/"),
+        ],
+        SHARED_SERVICE_WORKER_JS,
+    )
+}
 
 async fn favicon() -> impl IntoResponse {
     record_request("GET", "/favicon.ico", StatusCode::NO_CONTENT);
@@ -10135,8 +10442,9 @@ async fn main() {
         .route("/agents/threads/", get(agents_threads_page))
         .route("/assets/web-home/agents-tasks.css", get(agents_tasks_css))
         .route("/assets/web-home/agents-tasks.js", get(agents_tasks_js))
-        .route("/assets/web-home/shared-header.css", get(shared_header_css))
-        .route("/assets/web-home/shared-header.js", get(shared_header_js))
+          .route("/assets/web-home/shared-header.css", get(shared_header_css))
+          .route("/assets/web-home/shared-header.js", get(shared_header_js))
+          .route("/service-worker.js", get(service_worker_js))
         .route(
             "/assets/web-home/agents-tasks.html",
             get(agents_tasks_html_fragment),

@@ -47,15 +47,17 @@ keeps page rendering separate from data access without making the webserver a pr
 `POST /lambdas/invoke/<function-id>` route.
 
 The editor exposes a deployment profile layer above the persisted lambda runtime: direct `nodejs`
-and `python3` child-process profiles, plus `rust`, `golang`, and `gleamlang` process profiles that
-generate a Node.js wrapper using the lambda runner's `context.containerPool.dispatch(...)` helper. The UI also
+and `python3` profiles, containerized `ruby`, `golang`, `dart`, `erlang`, `elixir`, and `java`
+profiles, plus `rust` and `gleamlang` process profiles that generate a Node.js wrapper using the
+lambda runner's `context.containerPool.dispatch(...)` helper. The UI also
 captures the intended base image and container runner (`containerd / ctr`, `containerd / nerdctl`,
 or `docker`) in `metaData.lambdaDeployment` so operators can see and revise the deployment intent
 without widening the REST API's trusted entry-command contract.
 
 The page accepts query params to prefill a new draft. Common params are `slug`, `name` or
-`displayName`, `description`, `status`, `runtime`, `processProfile` (`nodejs`, `python3`, `rust`,
-`golang`, or `gleamlang`), `containerized`, `containerRunner`, `baseImage`, `reuseKey`,
+`displayName`, `description`, `status`, `runtime`, `processProfile` (`nodejs`, `python3`, `ruby`,
+`golang`, `dart`, `erlang`, `elixir`, `java`, `rust`, or `gleamlang`), `containerized`,
+`containerRunner`, `baseImage`, `reuseKey`,
 `idleTimeoutSeconds`, `maxRunMs`, `body` or `functionBody`, `request`, `labels`, `meta`, and
 `containerPoolTimeoutMs`. JSON-valued params such as `request`, `labels`, and `meta` should be URL
 encoded.
@@ -64,9 +66,10 @@ The Maud-rendered editor keeps user edits stable across background refreshes, hi
 the selected process profile, reports field-specific save validation, and requires the authenticated
 `POST /lambdas/check` runner path to compile or syntax-check the draft before saving. The runner
 applies the same managed runtime and host/container policy used for invocation, so containerized
-Python, Ruby, and Bash drafts are checked in their runtime image. Process-profile switches replace
-the generated default body only while the body is still one of the generated defaults; custom code
-is left in place.
+Python, Ruby, Bash, Go, Dart, Erlang, Elixir, and Java drafts are checked in their runtime image.
+Each language template includes the expected handler signature. Process-profile switches persist
+the outgoing language body to localStorage and the root service worker cache, then restore the
+incoming language's saved draft for the current function.
 
 ## Service directory
 

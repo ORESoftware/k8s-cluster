@@ -43,11 +43,13 @@ leased. Use the pool for runtime-shaped work queues; use this runner when invoca
 stored lambda function definition.
 
 The Rust REST API is responsible for CRUD/read models over Postgres. Invocation traffic goes
-directly through the load balancer/gateway to this Gleam service. The BEAM runner loads the active
-function definition from Postgres by immutable function UUID, then maps the function runtime to a
-reusable worker actor. The managed runtimes are `nodejs`, `python3`, `ruby`, and `bash`; legacy
-`javascript`, `typescript`, `python`, and `shell` values normalize to those runtime pools. Each
-child receives the definition over stdio, so it does not need database credentials or `psql`.
+ directly through the load balancer/gateway to this Gleam service. The BEAM runner loads the active
+ function definition from Postgres by immutable function UUID, then maps the function runtime to a
+ reusable worker actor. The managed host runtime is `nodejs`; `python3`, `ruby`, `bash`, `golang`,
+ `dart`, `erlang`, `elixir`, and `java` are supported as managed container runtimes. Legacy
+ `javascript`, `typescript`, `python`, `shell`, `go`, `erl`, `ex`, and `jvm` values normalize to
+ those runtime pools. Each child receives the definition over stdio, so it does not need database
+ credentials or `psql`.
 `POST /check` uses the same runtime mapping and host/container policy as invocation: containerized
 definitions are checked inside their managed runtime image, while host checks are limited by
 `LAMBDA_ALLOW_HOST_RUNTIMES`.
@@ -77,9 +79,10 @@ The child is started through `env -i`, so it receives no database secrets, and n
 child-process, worker, addon, or inspector permission is granted. The deployment installs Alpine
 `nodejs-current` because network permissions require Node 25 or newer.
 
-Python, Ruby, and Bash do not have a reliable in-process filesystem sandbox. The API and runner
-therefore require `containerized: true` for those runtimes by default. Host execution is limited to
-Node.js unless `LAMBDA_ALLOW_HOST_RUNTIMES` is explicitly widened for a trusted environment. The
+Python, Ruby, Bash, Go, Dart, Erlang, Elixir, and Java do not have a reliable in-process filesystem
+sandbox in this service. The API and runner therefore require `containerized: true` for those
+runtimes by default. Host execution is limited to Node.js unless `LAMBDA_ALLOW_HOST_RUNTIMES` is
+explicitly widened for a trusted environment. The
 managed host commands can be overridden by trusted deployment/local env with
 `LAMBDA_NODEJS_HOST_COMMAND`, `LAMBDA_PYTHON3_HOST_COMMAND`, `LAMBDA_RUBY_HOST_COMMAND`, and
 `LAMBDA_BASH_HOST_COMMAND`; this is mainly for dev machines whose local Node permission flags lag the
@@ -115,6 +118,11 @@ nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images
 nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/python3.Dockerfile -t docker.io/library/dd-lambda-python3-runtime:dev remote/deployments/gleam-lambda-runner
 nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/ruby.Dockerfile -t docker.io/library/dd-lambda-ruby-runtime:dev remote/deployments/gleam-lambda-runner
 nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/bash.Dockerfile -t docker.io/library/dd-lambda-bash-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/golang.Dockerfile -t docker.io/library/dd-lambda-golang-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/dart.Dockerfile -t docker.io/library/dd-lambda-dart-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/erlang.Dockerfile -t docker.io/library/dd-lambda-erlang-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/elixir.Dockerfile -t docker.io/library/dd-lambda-elixir-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/java.Dockerfile -t docker.io/library/dd-lambda-java-runtime:dev remote/deployments/gleam-lambda-runner
 ```
 
 When the REST API has `LAMBDA_IMAGE_BUILD_ENABLED=true`, saving a containerized function also writes
