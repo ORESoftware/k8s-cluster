@@ -179,10 +179,11 @@ words, missing units or positioning modes, printer extrusion before heat-up or
 homing, additive material/color/tool-change stops such as `M600` or multi-tool
 selection, mill/router plunges after tool selection without explicit
 `G43`/probe/tool-length state, subtractive feed moves before spindle start,
-manual stops, fixture changes, deep negative Z moves, arc moves without I/J/R
-geometry, missing program ends, and text-instruction boundaries where the job
-needs setup, post-processing, sheet-cutting kerf/fire/fume checks, assembly,
-splitting, or operator intervention. Improved drafts are still marked
+lathe constant-surface-speed without a spindle cap, threading cycles, part-off
+or cutoff operations, manual stops, fixture changes, deep negative Z moves, arc
+moves without I/J/R geometry, missing program ends, and text-instruction
+boundaries where the job needs setup, post-processing, sheet-cutting
+kerf/fire/fume checks, assembly, splitting, or operator intervention. Improved drafts are still marked
 `machineReady=false`; they are normalization aids for review, motion-envelope
 simulation, and controller-specific postprocessing.
 
