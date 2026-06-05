@@ -35,11 +35,14 @@ machine code is intentionally advisory: responses are draft planning artifacts
 and are not marked machine-ready.
 
 The queue accepts direct plan payloads, direct instruction-analysis payloads
-containing `programs`, and tagged envelopes such as
-`{"type":"fabrication.instructions.analyze","request":{...}}`. Plan and
-instruction-analysis results are both published to the fabrication result
-subject with their full validation, boundary, resolution, artifact, and learning
-surfaces.
+containing `programs`, rich fabrication outcome payloads containing `outcome`,
+compact learning-outcome payloads containing `success`, and tagged envelopes
+such as `{"type":"fabrication.instructions.analyze","request":{...}}`,
+`{"type":"fabrication.learning.observe","request":{...}}`, or
+`{"type":"fabrication.learning.outcome","request":{...}}`. Plan,
+instruction-analysis, learning-observation, and compact learning-outcome results
+are published to the fabrication result subject. Compact learning outcomes fan
+out `fabrication.learning.outcome.result` with the retained policy snapshot.
 
 ## What It Does Today
 
@@ -304,8 +307,8 @@ learn from the same boundary evidence.
 
 ## Job And Artifact Inspection
 
-Every successful planning, instruction-analysis, or learning-observation
-request is recorded in a
+Every successful planning, instruction-analysis, learning-observation, or
+learning-outcome request is recorded in a
 bounded in-process ledger. This is not durable storage yet; it is the current
 runtime inspection boundary while the database contract is still being designed.
 

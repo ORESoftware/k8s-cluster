@@ -232,6 +232,7 @@ struct FabricationPlanResponse {
     validation: ValidationReport,
     boundary_summary: BoundarySummary,
     resolution_plan: BoundaryResolutionPlan,
+    machine_release: MachineReleaseReport,
     simulation: SimulationReport,
     improvements: Vec<InstructionImprovement>,
     improved_programs: Vec<ImprovedInstructionProgram>,
@@ -251,6 +252,7 @@ struct InstructionAnalysisResponse {
     validation: ValidationReport,
     boundary_summary: BoundarySummary,
     resolution_plan: BoundaryResolutionPlan,
+    machine_release: MachineReleaseReport,
     simulation: SimulationReport,
     improvements: Vec<InstructionImprovement>,
     improved_programs: Vec<ImprovedInstructionProgram>,
@@ -547,6 +549,42 @@ struct BoundaryResolutionStep {
     line: Option<usize>,
     requires_human_intervention: bool,
     suggested_resolution: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineReleaseReport {
+    status: String,
+    machine_release_blocked: bool,
+    generated_programs_ready: usize,
+    generated_programs_blocked: usize,
+    improved_programs_ready: usize,
+    improved_programs_blocked: usize,
+    blockers: Vec<MachineReleaseBlocker>,
+    checklist: Vec<MachineReleaseChecklistItem>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineReleaseBlocker {
+    blocker_id: String,
+    source: String,
+    blocker_type: String,
+    severity: String,
+    program_id: Option<String>,
+    line: Option<usize>,
+    reason: String,
+    required_action: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineReleaseChecklistItem {
+    item: String,
+    status: String,
+    evidence: String,
+    program_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -7178,6 +7216,26 @@ async fn publish_learning_outputs(state: &AppState, response: &FabricationLearni
     }
 }
 
+async fn publish_learning_outcome_outputs(
+    state: &AppState,
+    outcome_id: &str,
+    snapshot: &LearningPolicySnapshot,
+) {
+    let result = json!({
+        "schemaVersion": "fabrication.learning-outcome.v1",
+        "type": "fabrication.learning.outcome.result",
+        "ok": true,
+        "outcomeId": outcome_id,
+        "policy": snapshot,
+    });
+    if publish_json_to_nats(state, &state.result_subject, result).await {
+        state
+            .metrics
+            .nats_results_published_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 fn record_plan_metrics(state: &AppState, response: &FabricationPlanResponse) {
     state
         .metrics
@@ -7212,6 +7270,20 @@ fn discriminator_requests_analysis(token: &str) -> bool {
         || (token.contains("instruction") && !token.contains("plan"))
 }
 
+fn discriminator_requests_fabrication_outcome(token: &str) -> bool {
+    token.contains("observe")
+        || token.contains("observation")
+        || (token.contains("fabrication") && token.contains("outcome"))
+}
+
+fn discriminator_requests_learning_outcome(token: &str) -> bool {
+    token.contains("learning-outcome")
+        || token.contains("learning-outcomes")
+        || token.contains("outcome-record")
+        || token.contains("policy-outcome")
+        || (token.contains("learning") && token.contains("reward"))
+}
+
 fn discriminator_requests_plan(token: &str) -> bool {
     token.contains("plan") || token.contains("fabrication-request")
 }
@@ -7226,6 +7298,16 @@ fn parse_plan_nats_value(value: Value) -> Result<FabricationPlanRequest, String>
         .map_err(|error| format!("invalid fabrication plan request: {error}"))
 }
 
+fn parse_fabrication_outcome_nats_value(value: Value) -> Result<FabricationOutcomeRequest, String> {
+    serde_json::from_value(value)
+        .map_err(|error| format!("invalid fabrication outcome request: {error}"))
+}
+
+fn parse_learning_outcome_nats_value(value: Value) -> Result<LearningOutcomeRequest, String> {
+    serde_json::from_value(value)
+        .map_err(|error| format!("invalid learning outcome request: {error}"))
+}
+
 fn parse_fabrication_nats_request(payload: &[u8]) -> Result<FabricationNatsRequest, String> {
     let value = serde_json::from_slice::<Value>(payload)
         .map_err(|error| format!("invalid fabrication request json: {error}"))?;
@@ -7238,12 +7320,21 @@ fn parse_fabrication_nats_request(payload: &[u8]) -> Result<FabricationNatsReque
             plan,
             analysis,
             instruction_analysis,
+            outcome,
+            fabrication_outcome,
+            learning_outcome,
         } = envelope;
         if let Some(analysis) = analysis.or(instruction_analysis) {
             return Ok(FabricationNatsRequest::InstructionAnalysis(analysis));
         }
         if let Some(plan) = plan {
             return Ok(FabricationNatsRequest::Plan(plan));
+        }
+        if let Some(outcome) = outcome.or(fabrication_outcome) {
+            return Ok(FabricationNatsRequest::FabricationOutcome(outcome));
+        }
+        if let Some(outcome) = learning_outcome {
+            return Ok(FabricationNatsRequest::LearningOutcome(outcome));
         }
         let discriminator = kind
             .as_ref()
@@ -7252,6 +7343,14 @@ fn parse_fabrication_nats_request(payload: &[u8]) -> Result<FabricationNatsReque
             .map(|value| normalize_token(value));
         if let Some(token) = discriminator {
             let request_value = request.unwrap_or_else(|| value.clone());
+            if discriminator_requests_learning_outcome(&token) {
+                return parse_learning_outcome_nats_value(request_value)
+                    .map(FabricationNatsRequest::LearningOutcome);
+            }
+            if discriminator_requests_fabrication_outcome(&token) {
+                return parse_fabrication_outcome_nats_value(request_value)
+                    .map(FabricationNatsRequest::FabricationOutcome);
+            }
             if discriminator_requests_analysis(&token) {
                 return parse_analysis_nats_value(request_value)
                     .map(FabricationNatsRequest::InstructionAnalysis);
@@ -7263,6 +7362,14 @@ fn parse_fabrication_nats_request(payload: &[u8]) -> Result<FabricationNatsReque
     }
     if value.get("programs").is_some() {
         return parse_analysis_nats_value(value).map(FabricationNatsRequest::InstructionAnalysis);
+    }
+    if value.get("success").is_some() {
+        return parse_learning_outcome_nats_value(value)
+            .map(FabricationNatsRequest::LearningOutcome);
+    }
+    if value.get("outcome").is_some() {
+        return parse_fabrication_outcome_nats_value(value)
+            .map(FabricationNatsRequest::FabricationOutcome);
     }
     parse_plan_nats_value(value).map(FabricationNatsRequest::Plan)
 }
@@ -7356,6 +7463,88 @@ async fn run_nats_loop(state: AppState) {
                                 .errors_total
                                 .fetch_add(1, Ordering::Relaxed);
                             eprintln!("{SERVICE_NAME} failed nats instruction analysis: {error}");
+                        }
+                    }
+                }
+                Ok(FabricationNatsRequest::FabricationOutcome(request)) => {
+                    task_state
+                        .metrics
+                        .learning_requests_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    match learn_from_outcome(request) {
+                        Ok((response, record)) => {
+                            match store_learning_response(&task_state, &response, record) {
+                                Ok(_) => {
+                                    publish_learning_outputs(&task_state, &response).await;
+                                    publish_event(
+                                        &task_state,
+                                        "fabrication.learning.observed",
+                                        &response.request_id,
+                                        response.ok,
+                                    )
+                                    .await;
+                                }
+                                Err(error) => {
+                                    task_state
+                                        .metrics
+                                        .errors_total
+                                        .fetch_add(1, Ordering::Relaxed);
+                                    eprintln!("{SERVICE_NAME} failed nats learning store: {error}");
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            task_state
+                                .metrics
+                                .errors_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            eprintln!("{SERVICE_NAME} failed nats fabrication outcome: {error}");
+                        }
+                    }
+                }
+                Ok(FabricationNatsRequest::LearningOutcome(request)) => {
+                    task_state
+                        .metrics
+                        .learning_requests_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    match learning_outcome_record(request) {
+                        Ok(record) => {
+                            let outcome_id = record.outcome_id.clone();
+                            match store_learning_record(&task_state, record) {
+                                Ok(snapshot) => {
+                                    publish_learning_outcome_outputs(
+                                        &task_state,
+                                        &outcome_id,
+                                        &snapshot,
+                                    )
+                                    .await;
+                                    publish_event(
+                                        &task_state,
+                                        "fabrication.learning.outcome",
+                                        &outcome_id,
+                                        true,
+                                    )
+                                    .await;
+                                }
+                                Err(error) => {
+                                    task_state
+                                        .metrics
+                                        .errors_total
+                                        .fetch_add(1, Ordering::Relaxed);
+                                    eprintln!(
+                                        "{SERVICE_NAME} failed nats compact learning store: {error}"
+                                    );
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            task_state
+                                .metrics
+                                .errors_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            eprintln!(
+                                "{SERVICE_NAME} failed nats compact learning outcome: {error}"
+                            );
                         }
                     }
                 }
@@ -7724,6 +7913,7 @@ async fn learning_outcome_http(
                         .into_response();
                 }
             };
+            publish_learning_outcome_outputs(&state, &outcome_id, &snapshot).await;
             publish_event(&state, "fabrication.learning.outcome", &outcome_id, true).await;
             Json(json!({
                 "ok": true,
@@ -7876,6 +8066,10 @@ mod tests {
             FabricationNatsRequest::InstructionAnalysis(_) => {
                 panic!("direct plan payload should not parse as analysis");
             }
+            FabricationNatsRequest::FabricationOutcome(_)
+            | FabricationNatsRequest::LearningOutcome(_) => {
+                panic!("direct plan payload should not parse as learning");
+            }
         }
 
         let direct_analysis = json!({
@@ -7899,6 +8093,10 @@ mod tests {
             }
             FabricationNatsRequest::Plan(_) => {
                 panic!("direct analysis payload should not parse as a plan");
+            }
+            FabricationNatsRequest::FabricationOutcome(_)
+            | FabricationNatsRequest::LearningOutcome(_) => {
+                panic!("direct analysis payload should not parse as learning");
             }
         }
 
@@ -7933,6 +8131,54 @@ mod tests {
             FabricationNatsRequest::Plan(_) => {
                 panic!("tagged analysis envelope should not parse as a plan");
             }
+            FabricationNatsRequest::FabricationOutcome(_)
+            | FabricationNatsRequest::LearningOutcome(_) => {
+                panic!("tagged analysis envelope should not parse as learning");
+            }
+        }
+
+        let fabrication_outcome = json!({
+            "type": "fabrication.learning.observe",
+            "request": {
+                "requestId": "nats-fabrication-outcome",
+                "outcome": "print completed after manual purge check",
+                "completed": true,
+                "humanInterventionRequired": true
+            }
+        })
+        .to_string();
+        match parse_fabrication_nats_request(fabrication_outcome.as_bytes())
+            .expect("fabrication outcome envelope should parse")
+        {
+            FabricationNatsRequest::FabricationOutcome(request) => {
+                assert_eq!(
+                    request.request_id.as_deref(),
+                    Some("nats-fabrication-outcome")
+                );
+                assert_eq!(request.completed, Some(true));
+            }
+            _ => panic!("fabrication outcome envelope should parse as a fabrication outcome"),
+        }
+
+        let compact_outcome = json!({
+            "type": "fabrication.learning.outcome",
+            "request": {
+                "requestId": "nats-compact-outcome",
+                "manufacturingMethods": ["additive-print", "turning"],
+                "assemblyStrategy": "printed body plus turned insert",
+                "success": true,
+                "reward": 2.7
+            }
+        })
+        .to_string();
+        match parse_fabrication_nats_request(compact_outcome.as_bytes())
+            .expect("compact learning outcome envelope should parse")
+        {
+            FabricationNatsRequest::LearningOutcome(request) => {
+                assert_eq!(request.request_id.as_deref(), Some("nats-compact-outcome"));
+                assert!(request.success);
+            }
+            _ => panic!("compact outcome envelope should parse as a learning outcome"),
         }
     }
 
@@ -8017,7 +8263,10 @@ mod tests {
             .sequence
             .iter()
             .any(|step| step.action.contains("join-and-verify")));
-        assert_eq!(response.process_graph.nodes.len(), response.process_plan.len());
+        assert_eq!(
+            response.process_graph.nodes.len(),
+            response.process_plan.len()
+        );
         assert!(response
             .process_graph
             .nodes
@@ -8032,8 +8281,9 @@ mod tests {
             .process_graph
             .gates
             .iter()
-            .any(|gate| gate.boundary_kind == "inspection-gate"
-                && gate.requires_human_intervention));
+            .any(
+                |gate| gate.boundary_kind == "inspection-gate" && gate.requires_human_intervention
+            ));
         assert!(response
             .validation
             .failure_boundaries
