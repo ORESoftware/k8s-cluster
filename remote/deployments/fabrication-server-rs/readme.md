@@ -137,7 +137,7 @@ is supplied.
   high-speed kinematic evidence, additive thin-wall geometry, printer
   async-nozzle-wait state, async-bed-target re-wait state, nozzle-cooldown/
   reheat state, bed-cooldown/re-wait state, stepper-idle/re-home state,
-  additive inch-units/slicer conversion state,
+  additive inch-units/slicer conversion state, printer coordinate/home-offset state,
   extrusion-mode/reset state, post-mode-switch extrusion reset state,
   negative-Z extrusion/Z-offset probe state, bed-leveling/mesh restore state,
   filament lot/dry-storage
@@ -415,8 +415,9 @@ after async `M104` nozzle targets without `M109` or verified hotend wait,
 after async `M140` bed target changes without `M190` or verified bed wait,
 after nozzle cooldown without reheat, after bed cooldown without re-wait, after
 stepper idle without re-homing, after `G20` inch-mode selection without slicer/printer
-unit-conversion evidence, or before homing, missing `M82`/`M83` extrusion
-mode and `G92 E0` reset state before priming, firmware `G10`/`G11` retract/unretract before `M207`/`M208`/`M209` or equivalent retraction settings evidence, missing spool-weight/remaining-filament/runout-sensor evidence before long extrusion, missing filament lot/dry-storage/
+unit-conversion evidence, after `M206`/`G92 X/Y/Z` printer coordinate/home
+offsets without offset-probe or dry-run evidence, or before homing, missing
+`M82`/`M83` extrusion mode and `G92 E0` reset state before priming, firmware `G10`/`G11` retract/unretract before `M207`/`M208`/`M209` or equivalent retraction settings evidence, missing spool-weight/remaining-filament/runout-sensor evidence before long extrusion, missing filament lot/dry-storage/
 dryer/desiccant evidence before first extrusion, missing extrusion
 calibration/flow/pressure-advance evidence before first extrusion, missing
 chamber/enclosure/thermal-soak evidence before first extrusion for ABS/ASA/PC/nylon,

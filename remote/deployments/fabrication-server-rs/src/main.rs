@@ -1754,6 +1754,9 @@ struct TextInstructionSignals {
     has_sinker_edm_burn_control_evidence: bool,
     has_text_assembly_context: bool,
     has_text_assembly_fit_evidence: bool,
+    has_text_assembly_cell_context: bool,
+    has_text_assembly_cell_automation_evidence: bool,
+    has_text_assembly_join_process_evidence: bool,
     has_text_precision_requirement_context: bool,
     has_text_precision_inspection_evidence: bool,
     has_text_unattended_run_context: bool,
@@ -2819,6 +2822,41 @@ fn is_sinker_edm_kind(kind: &str) -> bool {
     wants_sinker_edm_machining(kind)
 }
 
+fn wants_assembly_joining(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("assembly-cell")
+        || token.contains("assembly cell")
+        || token.contains("robotic-assembly")
+        || token.contains("robot assembly")
+        || token.contains("assembly-joining")
+        || token.contains("assembly joining")
+        || token.contains("assembly-checklist")
+        || token.contains("assemble")
+        || token.contains("assembly")
+        || token.contains("pick-and-place")
+        || token.contains("pick place")
+        || token.contains("join-and-verify")
+        || token.contains("join and verify")
+        || token.contains("adhesive-bond")
+        || token.contains("adhesive bond")
+        || token.contains("epoxy-bond")
+        || token.contains("epoxy bond")
+        || token.contains("fastener-torque")
+        || token.contains("fastener torque")
+        || token.contains("torque-driver")
+        || token.contains("torque driver")
+        || token.contains("heat-set-insert")
+        || token.contains("heat set insert")
+        || token.contains("press-fit")
+        || token.contains("press fit")
+        || token.contains("part-join")
+        || token.contains("part join")
+}
+
+fn is_assembly_cell_kind(kind: &str) -> bool {
+    wants_assembly_joining(kind)
+}
+
 fn wants_five_axis_milling(value: &str) -> bool {
     let token = normalize_token(value);
     token.contains("5-axis")
@@ -3378,6 +3416,38 @@ fn default_machines() -> Vec<MachineProfile> {
                 "dielectric-flush".to_string(),
                 "wear-compensation".to_string(),
                 "depth-stop".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "robotic-assembly-cell-1".to_string(),
+            kind: "robotic-assembly-cell".to_string(),
+            controller: Some("assembly-cell-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "plastic".to_string(),
+                "resin".to_string(),
+                "composite".to_string(),
+                "metal".to_string(),
+                "aluminum".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "brass".to_string(),
+                "wood".to_string(),
+                "adhesive".to_string(),
+                "hardware".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![650.0, 450.0, 350.0]),
+            axes: Some(6),
+            operations: Some(vec![
+                "assembly-joining".to_string(),
+                "robotic-assembly".to_string(),
+                "pick-and-place".to_string(),
+                "press-fit".to_string(),
+                "heat-set-insert".to_string(),
+                "adhesive-bond".to_string(),
+                "fastener-torque".to_string(),
+                "vision-inspection".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -4672,6 +4742,7 @@ fn infer_requested_parts(
     let wants_powder_bed_part = wants_metal_pbf_part
         || wants_powder_bed_printing(&objective_token)
         || wants_powder_bed_printing(&material.name);
+    let needs_assembly_join_part = wants_assembly_joining(&objective_token);
     let needs_mill_turn_part = wants_mill_turning(&objective_token);
     let needs_turned_part = needs_mill_turn_part
         || objective_token.contains("shaft")
@@ -4840,6 +4911,17 @@ fn infer_requested_parts(
                 .to_string(),
             ),
             tolerance_mm: Some(tolerance_mm),
+        });
+    }
+    if needs_assembly_join_part {
+        parts.push(RequestedPart {
+            id: "assembly-join".to_string(),
+            description:
+                "assembly, bonding, fastening, insert installation, or fit-up operation inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("assembly-joining".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.10)),
         });
     }
 
@@ -5024,6 +5106,10 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_sinker_edm_machining(value));
+    let wants_assembly_cell = preferred.as_deref().is_some_and(wants_assembly_joining)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_assembly_joining(value));
     let wants_sheet_cutter = preferred.as_deref().is_some_and(wants_sheet_cutting)
         || preferred_methods
             .iter()
@@ -5134,6 +5220,13 @@ fn choose_machine<'a>(
             return machine;
         }
     }
+    if wants_assembly_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_assembly_cell_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
     if wants_laser_cutter {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_laser_cutter_kind(&machine.kind)
@@ -5160,6 +5253,8 @@ fn choose_machine<'a>(
         Some(MachineClass::Router)
     } else if preferred.as_deref().is_some_and(wants_sheet_cutting) {
         Some(MachineClass::SheetCut)
+    } else if preferred.as_deref().is_some_and(wants_assembly_joining) {
+        Some(MachineClass::Other)
     } else if preferred
         .as_deref()
         .is_some_and(|value| value.contains("mill") || value.contains("machin"))
@@ -5184,6 +5279,11 @@ fn choose_machine<'a>(
         .any(|value| wants_sheet_cutting(value))
     {
         Some(MachineClass::SheetCut)
+    } else if preferred_methods
+        .iter()
+        .any(|value| wants_assembly_joining(value))
+    {
+        Some(MachineClass::Other)
     } else if preferred_methods
         .iter()
         .any(|value| value.contains("mill") || value.contains("machin"))
@@ -5264,6 +5364,8 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
         Some(MachineClass::SheetCut)
     } else if tokens.iter().any(|token| wants_sinker_edm_machining(token)) {
         Some(MachineClass::Other)
+    } else if tokens.iter().any(|token| wants_assembly_joining(token)) {
+        Some(MachineClass::Other)
     } else if tokens
         .iter()
         .any(|token| wants_mill_turning(token) || token.contains("turn") || token.contains("lathe"))
@@ -5322,6 +5424,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
     let wants_plasma = tokens.iter().any(|token| wants_plasma_cutting(token));
     let wants_wire_edm = tokens.iter().any(|token| wants_wire_edm_cutting(token));
     let wants_sinker_edm = tokens.iter().any(|token| wants_sinker_edm_machining(token));
+    let wants_assembly_cell = tokens.iter().any(|token| wants_assembly_joining(token));
     let wants_mill_turn = tokens.iter().any(|token| wants_mill_turning(token));
     let has_special = wants_five_axis
         || wants_horizontal
@@ -5338,6 +5441,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         || wants_plasma
         || wants_wire_edm
         || wants_sinker_edm
+        || wants_assembly_cell
         || wants_mill_turn;
     if !has_special {
         return true;
@@ -5357,6 +5461,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_plasma || is_plasma_cutter_kind(&machine.kind))
         && (!wants_wire_edm || is_wire_edm_kind(&machine.kind))
         && (!wants_sinker_edm || is_sinker_edm_kind(&machine.kind))
+        && (!wants_assembly_cell || is_assembly_cell_kind(&machine.kind))
         && (!wants_mill_turn || is_mill_turn_kind(&machine.kind))
 }
 
@@ -5415,6 +5520,15 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || (preference.contains("ram-edm") && operation.contains("edm"))
         || (preference.contains("die-sink") && operation.contains("die-sink"))
         || (preference == "edm" && operation.contains("edm"))
+        || (wants_assembly_joining(preference)
+            && (operation.contains("assembly")
+                || operation.contains("join")
+                || operation.contains("pick")
+                || operation.contains("press-fit")
+                || operation.contains("heat-set")
+                || operation.contains("adhesive")
+                || operation.contains("fastener")
+                || operation.contains("vision")))
         || (wants_mill_turning(preference)
             && (operation.contains("live-tool")
                 || operation.contains("c-axis")
@@ -5681,6 +5795,9 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         MachineClass::Lathe => "face, rough turn, finish turn, and bore/thread if needed",
         MachineClass::Router => "profile, pocket, and tab-cut",
         MachineClass::SheetCut => "kerf-test, pierce, cut/engrave sheet profile, and inspect",
+        MachineClass::Other if is_assembly_cell_kind(&part.machine_kind) => {
+            "kit fabricated parts, verify datums, pick/place, join by press/fastener/adhesive, and inspect assembly"
+        }
         MachineClass::Other => "prepare operator-reviewed special process",
     }
 }
@@ -6817,6 +6934,38 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Human measurement is required at the programmed stop before the finish pass.".to_string(),
             ],
         ),
+        MachineClass::Other if is_assembly_cell_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "assembly-cell-job".to_string()),
+            vec![
+                "; draft robotic assembly/joining job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [assembly-kit-boundary]: verify part IDs, revisions, cleaned mating surfaces, orientation datums, fixtures, hardware/adhesive lots, and end-effector state"
+                    .to_string(),
+                "KIT_PARTS source=generated-design-package part_revisions=operator-reviewed join_graph=operator-reviewed"
+                    .to_string(),
+                "VERIFY_DATUMS dry_fit=true locating_pins=operator-reviewed tolerance_stack=operator-reviewed"
+                    .to_string(),
+                "PICK_PLACE robot_path=simulated gripper=operator-reviewed collision_clearance=verified vision_fiducials=verified"
+                    .to_string(),
+                "CHECKPOINT [assembly-join-boundary]: verify press force, insert heat, torque program, adhesive mix ratio, dispense path, clamp time, and cure schedule before lock-in"
+                    .to_string(),
+                "JOIN press_fit_force_n=operator-reviewed heat_set_temp_c=operator-reviewed torque_nm=operator-reviewed adhesive_cure=operator-reviewed"
+                    .to_string(),
+                "INSPECT_JOIN vision_alignment=passed pull_or_torque_test=operator-reviewed go_no_go=passed final_metrology=recorded"
+                    .to_string(),
+                "COMPLETE record kit trace, robot path, end-effector, join recipe, cure/torque/press results, and final assembly inspection"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final assembly-cell parameters must come from the fixture model, robot reach/collision simulation, end-effector qualification, join recipe, hardware or adhesive lot, and inspection plan."
+                    .to_string(),
+                "Human signoff is required for kitting, datum fit-up, press/heat/torque/adhesive lock-in, cure or clamp timing, pinch-point safety, and final metrology."
+                    .to_string(),
+            ],
+        ),
         MachineClass::Other if is_sinker_edm_kind(&machine.kind) => (
             machine
                 .controller
@@ -7254,6 +7403,59 @@ fn has_additive_relative_positioning_evidence(line: &str) -> bool {
         || line_mentions(line, "g91 positioning verified")
         || line_mentions(line, "g91 travel block verified")
         || line_mentions(line, "coordinate state verified")
+}
+
+fn token_is_additive_coordinate_offset_start(token: &str) -> bool {
+    if token == "G92" {
+        return true;
+    }
+    token.strip_prefix("G92").is_some_and(|suffix| {
+        !suffix.is_empty()
+            && !suffix.starts_with('.')
+            && suffix
+                .chars()
+                .next()
+                .is_some_and(|character| matches!(character, 'X' | 'Y' | 'Z'))
+    })
+}
+
+fn has_additive_coordinate_offset_start(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    let has_axis_offset = ['X', 'Y', 'Z']
+        .iter()
+        .any(|axis| numeric_word_value(&stripped, *axis).is_some());
+
+    has_axis_offset
+        && (has_any_code(&stripped, &["M206"])
+            || stripped
+                .split_whitespace()
+                .any(token_is_additive_coordinate_offset_start))
+}
+
+fn has_additive_coordinate_offset_cancel(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    stripped
+        .split_whitespace()
+        .any(|token| matches!(token, "G92.1" | "G92.2"))
+        || line_mentions(line, "printer coordinate offset cleared")
+        || line_mentions(line, "printer-coordinate offset cleared")
+        || line_mentions(line, "home offset cleared")
+        || line_mentions(line, "axis offset cleared")
+        || line_mentions(line, "g92 offset cleared")
+}
+
+fn has_additive_coordinate_offset_evidence(line: &str) -> bool {
+    line_mentions(line, "printer coordinate offset verified")
+        || line_mentions(line, "printer-coordinate offset verified")
+        || line_mentions(line, "printer axis offset verified")
+        || line_mentions(line, "axis offset verified")
+        || line_mentions(line, "home offset verified")
+        || line_mentions(line, "workspace offset verified")
+        || line_mentions(line, "m206 offset verified")
+        || line_mentions(line, "g92 axis offset verified")
+        || line_mentions(line, "coordinate offset dry run")
+        || line_mentions(line, "offset dry run")
+        || line_mentions(line, "offset probe verified")
 }
 
 fn has_additive_z_offset_evidence(line: &str) -> bool {
@@ -10115,6 +10317,87 @@ fn has_text_assembly_fit_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_assembly_cell_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "assembly-cell",
+            "assembly cell",
+            "robotic assembly",
+            "robot assembly",
+            "cobot",
+            "robot",
+            "pick and place",
+            "pick-and-place",
+            "gripper",
+            "end effector",
+            "end-effector",
+            "vision fiducial",
+            "robot path",
+            "kit parts",
+            "kit_part",
+        ],
+    )
+}
+
+fn has_text_assembly_cell_automation_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "robot path",
+            "path simulated",
+            "collision clearance",
+            "reach envelope",
+            "reach check",
+            "gripper",
+            "end effector",
+            "end-effector",
+            "tool changer",
+            "fixture model",
+            "vision fiducial",
+            "fiducial",
+            "camera calibration",
+            "force limit",
+            "torque driver",
+            "interlock",
+            "pinch point",
+            "dry run",
+            "simulation",
+        ],
+    )
+}
+
+fn has_text_assembly_join_process_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "press force",
+            "press-fit force",
+            "insertion force",
+            "heat-set temperature",
+            "insert temperature",
+            "heat-set temp",
+            "torque program",
+            "torque spec",
+            "torque trace",
+            "adhesive mix",
+            "mix ratio",
+            "dispense path",
+            "bondline",
+            "clamp time",
+            "cure schedule",
+            "cure time",
+            "pull test",
+            "witness mark",
+            "go/no-go",
+            "go no-go",
+            "final metrology",
+            "vision alignment",
+        ],
+    )
+}
+
 fn has_text_precision_requirement_context(language: &str, line: &str) -> bool {
     language_or_line_has_any(
         language,
@@ -11187,8 +11470,10 @@ fn analyze_instruction_programs(
         let mut has_homing_or_fixture_reference = false;
         let mut printer_position_reference_active = false;
         let mut printer_stepper_disable_observed = false;
+        let mut additive_coordinate_offset_verified = true;
         let mut additive_z_offset_evidence_observed = false;
         let mut additive_bed_leveling_disabled = false;
+        let mut reported_additive_coordinate_offset_boundary = false;
         let mut reported_additive_negative_z_extrusion_boundary = false;
         let mut reported_additive_bed_leveling_boundary = false;
         let mut has_spindle_or_heatup = false;
@@ -11786,6 +12071,17 @@ fn analyze_instruction_programs(
             if class == MachineClass::Additive && has_additive_z_offset_evidence(raw_line) {
                 additive_z_offset_evidence_observed = true;
                 additive_bed_leveling_disabled = false;
+            }
+            if class == MachineClass::Additive && has_additive_coordinate_offset_evidence(raw_line)
+            {
+                additive_coordinate_offset_verified = true;
+            }
+            if class == MachineClass::Additive && has_additive_coordinate_offset_cancel(raw_line) {
+                additive_coordinate_offset_verified = true;
+            }
+            if class == MachineClass::Additive && has_additive_coordinate_offset_start(&stripped) {
+                additive_coordinate_offset_verified =
+                    has_additive_coordinate_offset_evidence(raw_line);
             }
             if class == MachineClass::Additive && has_additive_bed_leveling_disable(raw_line) {
                 additive_bed_leveling_disabled = true;
@@ -12895,6 +13191,34 @@ fn analyze_instruction_programs(
                     requires_human_intervention: true,
                     suggested_resolution:
                         "record input-shaper or resonance-tuning evidence, acceleration/jerk or junction-deviation limits, max volumetric-flow validation, and a first-article or dry-run review before releasing high-speed extrusion"
+                            .to_string(),
+                });
+            }
+            if line_has_positive_additive_extrusion
+                && !additive_coordinate_offset_verified
+                && !reported_additive_coordinate_offset_boundary
+            {
+                reported_additive_coordinate_offset_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "additive-coordinate-offset-not-verified".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "positive extrusion follows printer coordinate or home-offset commands without probe, offset, or dry-run verification"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "printer-coordinate-offset-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "M206 home offsets or G92 X/Y/Z printer coordinate offsets can shift the print origin, move the nozzle off the build surface, or drive it into fixtures unless the adjusted datum is verified before extrusion"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "clear temporary offsets with G92.1/G92.2, re-home or probe the printer, or record coordinate/home-offset dry-run verification before positive extrusion resumes"
                             .to_string(),
                 });
             }
@@ -18889,6 +19213,8 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         || token.contains("die-sink")
     {
         "sinker-edm-cavity-postprocessor"
+    } else if wants_assembly_joining(&token) {
+        "assembly-cell-job-packager"
     } else if token.contains("wire-edm") || token.contains("edm") {
         "wire-edm-profile-postprocessor"
     } else if token.contains("laser") {
@@ -18953,6 +19279,8 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         || token.contains("die-sink")
     {
         "sinker-edm-job".to_string()
+    } else if wants_assembly_joining(&token) {
+        "assembly-cell-job-package".to_string()
     } else if token.contains("wire-edm") || token.contains("edm") {
         "wire-edm-job".to_string()
     } else if token.contains("laser") || token.contains("waterjet") || token.contains("plasma") {
@@ -18970,6 +19298,15 @@ fn postprocess_required_artifacts(targets: &[PostprocessTarget]) -> Vec<String> 
         "operator-signoff-record".to_string(),
     ]);
     for target in targets {
+        if is_assembly_cell_kind(&target.machine_kind)
+            || wants_assembly_joining(&target.output_format)
+            || wants_assembly_joining(&target.controller)
+        {
+            artifacts.insert("assembly-kit-and-join-traveler".to_string());
+            artifacts.insert("robot-path-or-fixture-simulation-report".to_string());
+            artifacts.insert("final-fit-metrology-record".to_string());
+            continue;
+        }
         match machine_class(&target.machine_kind) {
             MachineClass::Additive => {
                 artifacts.insert("slicer-preview-or-build-sheet".to_string());
@@ -19991,7 +20328,12 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         let part_tolerance = part.tolerance_mm.unwrap_or(tolerance_mm);
         let machine = choose_machine(part, &machines, &part_material, constraints);
         let class = machine_class(&machine.kind);
-        let method = part_method(class).to_string();
+        let method = if is_assembly_cell_kind(&machine.kind) {
+            "assembly-joining"
+        } else {
+            part_method(class)
+        }
+        .to_string();
         machine_selection.push(machine_selection_trace(
             part,
             &machines,
@@ -20076,6 +20418,9 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
             operation: operation_for_part(&part_plan).to_string(),
             setup: if matches!(class, MachineClass::Additive) {
                 "single additive setup with material-specific slicing".to_string()
+            } else if is_assembly_cell_kind(&machine.kind) {
+                "operator-verified kit, fixture, end-effector, join recipe, and vision/metrology setup"
+                    .to_string()
             } else {
                 "operator-verified stock, tool, work offset, and dry-run setup".to_string()
             },
@@ -24638,6 +24983,8 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "wire-edm-job",
         "sinker-edm-job",
         "mill-turn-job",
+        "assembly-cell-job",
+        "assembly-checklist",
         "router-profile",
         "operator-checklist",
         "setup-sheet",
@@ -24693,6 +25040,7 @@ async fn capabilities() -> impl IntoResponse {
             "sinker-edm-cell",
             "mill-turn-center",
             "lathe",
+            "robotic-assembly-cell",
             "manual-or-special-process"
         ],
         "defaultMachines": default_machines(),
@@ -24819,6 +25167,8 @@ async fn request_schema() -> impl IntoResponse {
                 "wire-edm",
                 "sinker-edm",
                 "mill-turn-center",
+                "robotic-assembly-cell",
+                "assembly-cell",
                 "lathe",
                 "manual-cell"
             ]
@@ -31539,6 +31889,104 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.contains("boundary printer-inch-units-boundary")));
+    }
+
+    #[test]
+    fn additive_analysis_requires_coordinate_offset_evidence_before_extrusion() {
+        let programs = vec![
+            program(
+                "m206-offset-print",
+                "fdm-printer",
+                &[
+                    "G21 G90",
+                    "M82 ; filament lot PLA-17 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
+                    "G28",
+                    "M104 S210",
+                    "M109 S210",
+                    "M140 S60",
+                    "M190 S60",
+                    "M206 X2.0 Y-1.0 Z0.05 ; unverified home offset",
+                    "G92 E0",
+                    "G1 Z0.28 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+            program(
+                "g92-axis-offset-verified",
+                "fdm-printer",
+                &[
+                    "G21 G90",
+                    "M82 ; filament lot PLA-17 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
+                    "G28",
+                    "M104 S210",
+                    "M109 S210",
+                    "M140 S60",
+                    "M190 S60",
+                    "G92 X0 Y0 Z0 ; printer coordinate offset verified, offset probe verified, coordinate offset dry run approved",
+                    "G92 E0",
+                    "G1 Z0.28 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+            program(
+                "extruder-reset-only",
+                "fdm-printer",
+                &[
+                    "G21 G90",
+                    "M82 ; filament lot PLA-17 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
+                    "G28",
+                    "M104 S210",
+                    "M109 S210",
+                    "M140 S60",
+                    "M190 S60",
+                    "G92 E0",
+                    "G1 Z0.28 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "additive-coordinate-offset-not-verified"
+                && finding.program_id.as_deref() == Some("m206-offset-print")
+                && finding.line == Some(11)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "printer-coordinate-offset-boundary"
+                && boundary.program_id.as_deref() == Some("m206-offset-print")
+                && boundary.line == Some(11)
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("G92.1")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "additive-coordinate-offset-not-verified"
+                && matches!(
+                    finding.program_id.as_deref(),
+                    Some("g92-axis-offset-verified" | "extruder-reset-only")
+                )
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-coordinate-offset-boundary")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-coordinate-offset-boundary")));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-coordinate-offset-boundary")));
     }
 
     #[test]
