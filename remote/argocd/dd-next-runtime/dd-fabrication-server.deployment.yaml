@@ -58,6 +58,10 @@ spec:
               value: dd.remote.fabrication.results
             - name: FABRICATION_EVENT_SUBJECT
               value: dd.remote.events
+            - name: FABRICATION_MDP_OPTIMIZE_SUBJECT
+              value: dd.remote.mdp.optimize
+            - name: FABRICATION_MDP_AUTOPUBLISH
+              value: 'true'
             - name: RUNTIME_CONFIG_SERVICE_NAME
               value: dd-fabrication-server
             - name: RUNTIME_CONFIG_SCOPE

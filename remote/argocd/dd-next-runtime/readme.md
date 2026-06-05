@@ -452,6 +452,10 @@ queue-subscribes to `dd.remote.mdp.optimize` for explicit optimization jobs and
 `dd.remote.telemetry.mdp` for app/infra telemetry snapshots, then publishes results to
 `dd.remote.mdp.results` plus compact runtime events on `dd.remote.events`.
 
+`dd-fabrication-server` is one producer of those explicit optimization jobs:
+`POST /fabrication/fabricate` includes a `learning.mdpRequest` and the deployment publishes that
+request to `dd.remote.mdp.optimize` when `FABRICATION_MDP_AUTOPUBLISH=true`.
+
 ## Solana contract service
 
 `dd-contract-service` runs `remote/deployments/contract-service-rs` as a Rust Solana contract gateway. It serves

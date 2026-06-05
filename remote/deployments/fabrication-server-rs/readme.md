@@ -114,11 +114,20 @@ as `M0`, `M1`, `M6`, and `M600`.
 
 ## Learning path
 
+`POST /fabricate` emits an optimizer-ready `learning.mdpRequest` whenever
+learning mode is `mdp`, `pomdp`, or `hybrid`. The live deployment publishes that
+payload to `dd.remote.mdp.optimize` by default through
+`FABRICATION_MDP_AUTOPUBLISH=true`; set it to `false` to keep the optimizer
+request in the HTTP/NATS response without delegating it.
+
 `POST /learn/telemetry` turns fabrication telemetry into reward-style signals
-for future policy optimization. The response is shaped for delegation to the
-existing `dd-mdp-optimizer` service and for a future neural policy service:
+for future policy optimization. The response is shaped for the existing
+`dd-mdp-optimizer` service and for a future neural policy service:
 
 - MDP/POMDP state and action labels are emitted by `/fabricate`.
+- The generated MDP request includes transitions, rewards, and POMDP belief /
+  observation models for hidden states such as tool wear and fixture
+  uncertainty.
 - Telemetry events become bounded reward signals.
 - Hidden-state hints track tool wear, material batch variation, fixture
   rigidity, and operator availability.
