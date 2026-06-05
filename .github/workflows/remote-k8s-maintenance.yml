@@ -99,7 +99,7 @@ on:
         required: false
         type: string
         default: "3"
-      # gcs-loadtest marker: 2026-06-05 active-capacity-guard-2
+      # gcs-loadtest marker: 2026-06-05 active-capacity-guard-3
       loadtest_gcs_replicas:
         description: Number of backend GCS pods to keep available during the load test.
         required: false
@@ -2539,7 +2539,7 @@ jobs:
           loaders="dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs"
           capacity_apps="dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam"
           capacity_targets="dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server"
-          capacity_extra_targets="dd-des-rs dd-fabrication-server dd-trading-server dd-web-scraper dd-selenium-server dd-rust-vapi-phone dd-remote-web-home dd-remote-rest-api dd-remote-queue-consumer dd-container-pool dd-webrtc-signaling dd-webrtc-media dd-rust-network-mutex"
+          capacity_extra_targets="dd-des-rs dd-fabrication-server dd-trading-server dd-web-scraper dd-selenium-server dd-rust-vapi-phone dd-remote-web-home dd-remote-rest-api dd-remote-queue-consumer dd-container-pool dd-webrtc-signaling dd-webrtc-media dd-rust-network-mutex dd-idle-reaper"
           capacity_extra_statefulsets="dd-rust-network-mutex-raft"
           capacity_scaledobjects="dd-remote-queue-consumer-nats-jetstream"
           mip_capacity_app="dd-in-house-mip-solver-node"
@@ -2646,6 +2646,9 @@ jobs:
             kubectl -n "$mip_capacity_namespace" delete "scaledobject/$mip_capacity_scaledobject" \
               --ignore-not-found=true \
               --wait=false || true
+            kubectl -n "$mip_capacity_namespace" delete "hpa/keda-hpa-$mip_capacity_scaledobject" \
+              --ignore-not-found=true \
+              --wait=false || true
           }
 
           assert_capacity_free() {
@@ -2704,24 +2707,38 @@ jobs:
               kubectl -n default delete "scaledobject/$capacity_target" \
                 --ignore-not-found=true \
                 --wait=false || true
+              kubectl -n default delete "hpa/keda-hpa-$capacity_target" \
+                --ignore-not-found=true \
+                --wait=false || true
             done
             kubectl -n "$mip_capacity_namespace" annotate "scaledobject/$mip_capacity_scaledobject" \
               autoscaling.keda.sh/paused-replicas="0" \
               autoscaling.keda.sh/paused="true" \
               --overwrite >/dev/null 2>&1 || true
+            kubectl -n "$mip_capacity_namespace" delete "hpa/keda-hpa-$mip_capacity_scaledobject" \
+              --ignore-not-found=true \
+              --wait=false || true
             kubectl -n "$mip_capacity_namespace" get deploy $mip_capacity_targets -o wide || true
             for attempt in $(seq 1 48); do
+              for capacity_target in $capacity_scaledobjects; do
+                kubectl -n default delete "scaledobject/$capacity_target" --ignore-not-found=true --wait=false || true
+                kubectl -n default delete "hpa/keda-hpa-$capacity_target" --ignore-not-found=true --wait=false || true
+              done
+              kubectl -n "$mip_capacity_namespace" delete "scaledobject/$mip_capacity_scaledobject" --ignore-not-found=true --wait=false || true
+              kubectl -n "$mip_capacity_namespace" delete "hpa/keda-hpa-$mip_capacity_scaledobject" --ignore-not-found=true --wait=false || true
               for capacity_target in $capacity_targets $capacity_extra_targets; do
                 kubectl -n default scale "deployment/$capacity_target" --replicas=0 || true
-                kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true || true
+                kubectl -n default delete "hpa/$capacity_target" --ignore-not-found=true --wait=false || true
+                kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true --grace-period=0 --force || true
               done
               for capacity_target in $capacity_extra_statefulsets; do
                 kubectl -n default scale "statefulset/$capacity_target" --replicas=0 || true
-                kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true || true
+                kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true --grace-period=0 --force || true
               done
               for capacity_target in $mip_capacity_targets; do
                 kubectl -n "$mip_capacity_namespace" scale "deployment/$capacity_target" --replicas=0 || true
-                kubectl -n "$mip_capacity_namespace" delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true || true
+                kubectl -n "$mip_capacity_namespace" delete "hpa/$capacity_target" --ignore-not-found=true --wait=false || true
+                kubectl -n "$mip_capacity_namespace" delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true --grace-period=0 --force || true
               done
               sleep 5
               if assert_capacity_free; then
@@ -2746,7 +2763,7 @@ jobs:
           }
 
           start_capacity_guard() {
-            local interval="${LOADTEST_CAPACITY_GUARD_INTERVAL_SECONDS:-5}"
+            local interval="${LOADTEST_CAPACITY_GUARD_INTERVAL_SECONDS:-2}"
             if [ -n "${capacity_guard_pid:-}" ] && kill -0 "$capacity_guard_pid" >/dev/null 2>&1; then
               echo "capacity-guard already running pid=$capacity_guard_pid"
               return 0
@@ -2761,17 +2778,25 @@ jobs:
             (
               set +e
               while true; do
+                for capacity_target in $capacity_scaledobjects; do
+                  kubectl -n default delete "scaledobject/$capacity_target" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
+                  kubectl -n default delete "hpa/keda-hpa-$capacity_target" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
+                done
+                kubectl -n "$mip_capacity_namespace" delete "scaledobject/$mip_capacity_scaledobject" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
+                kubectl -n "$mip_capacity_namespace" delete "hpa/keda-hpa-$mip_capacity_scaledobject" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
                 for capacity_target in $capacity_targets $capacity_extra_targets; do
                   kubectl -n default scale "deployment/$capacity_target" --replicas=0 >/dev/null 2>&1 || true
-                  kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true >/dev/null 2>&1 || true
+                  kubectl -n default delete "hpa/$capacity_target" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
+                  kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true --grace-period=0 --force >/dev/null 2>&1 || true
                 done
                 for capacity_target in $capacity_extra_statefulsets; do
                   kubectl -n default scale "statefulset/$capacity_target" --replicas=0 >/dev/null 2>&1 || true
-                  kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true >/dev/null 2>&1 || true
+                  kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true --grace-period=0 --force >/dev/null 2>&1 || true
                 done
                 for capacity_target in $mip_capacity_targets; do
                   kubectl -n "$mip_capacity_namespace" scale "deployment/$capacity_target" --replicas=0 >/dev/null 2>&1 || true
-                  kubectl -n "$mip_capacity_namespace" delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true >/dev/null 2>&1 || true
+                  kubectl -n "$mip_capacity_namespace" delete "hpa/$capacity_target" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
+                  kubectl -n "$mip_capacity_namespace" delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true --grace-period=0 --force >/dev/null 2>&1 || true
                 done
                 sleep "$interval"
               done
