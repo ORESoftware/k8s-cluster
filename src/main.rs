@@ -17,6 +17,12 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use des_engine::{
+    des::decision::{
+        solve_mdp, MdpMethod, MdpSpec, MdpTransition, TerminalState, MDP_SCHEMA, POMDP_SCHEMA,
+    },
+    sdk as des_sdk,
+};
 use dd_nats_subject_defs::{
     FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP,
     FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT, FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
@@ -1451,8 +1457,19 @@ struct NeuralInferenceCandidate {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct LearningEngineMetadata {
+    crate_name: String,
+    crate_version: String,
+    sdk_modules: Vec<String>,
+    decision_schemas: BTreeMap<String, String>,
+    preferred_for: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct LearningPlan {
     model_family: String,
+    engine: LearningEngineMetadata,
     mdp_states: Vec<String>,
     pomdp_observations: Vec<String>,
     pomdp_belief_state: PomdpBeliefState,
@@ -24241,6 +24258,31 @@ fn strategy_candidates(
     candidates
 }
 
+fn learning_engine_metadata() -> LearningEngineMetadata {
+    let surface = des_sdk::surface();
+    let mut decision_schemas = BTreeMap::new();
+    decision_schemas.insert("mdp".to_string(), MDP_SCHEMA.to_string());
+    decision_schemas.insert("pomdp".to_string(), POMDP_SCHEMA.to_string());
+
+    LearningEngineMetadata {
+        crate_name: surface.crate_name.to_string(),
+        crate_version: surface.version.to_string(),
+        sdk_modules: surface
+            .modules
+            .iter()
+            .map(|module| (*module).to_string())
+            .collect(),
+        decision_schemas,
+        preferred_for: vec![
+            "discrete-event-simulation".to_string(),
+            "mdp-value-iteration".to_string(),
+            "pomdp-policy".to_string(),
+            "hybrid-process-modeling".to_string(),
+            "neural-policy-training".to_string(),
+        ],
+    }
+}
+
 fn learning_plan(
     hints: Option<&LearningHints>,
     constraints: Option<&FabricationConstraints>,
@@ -24414,6 +24456,7 @@ fn learning_plan(
 
     Ok(LearningPlan {
         model_family,
+        engine: learning_engine_metadata(),
         mdp_states: vec![
             "design-proposed".to_string(),
             "process-selected".to_string(),

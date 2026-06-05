@@ -7,6 +7,7 @@ description = "Rust fabrication planner and instruction validator for 3D printer
 [dependencies]
 async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
+des_engine = { path = "../../submodules/discrete-event-system.rs" }
 dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
 dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
 futures-util = "0.3"
