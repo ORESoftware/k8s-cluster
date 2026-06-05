@@ -2462,7 +2462,7 @@ jobs:
           script = r'''set -euo pipefail
           proof_log="/tmp/gcs-loadtest-proof-$(date -u +%Y%m%dT%H%M%SZ).log"
           if [ "${LOADTEST_COMPACT_OUTPUT:-true}" = "true" ]; then
-            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|capacity-not-free|capacity targets are all scaled down|loader-scale|gcs-summary|loader-warmup|gcs_router_(active_total|routed_total|upstream_errors_total|active_conns))') 2> >(tee -a "$proof_log" >&2)
+            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|capacity-not-free|capacity targets are all scaled down|loader-scale|top-sample|gcs-summary|loader-warmup|gcs_router_(active_total|routed_total|upstream_errors_total|active_conns))') 2> >(tee -a "$proof_log" >&2)
           fi
           echo "PROOF remote_log=$proof_log compact_output=${LOADTEST_COMPACT_OUTPUT:-true}"
           repo=/home/ec2-user/codes/dd/dd-next-1
@@ -3303,6 +3303,9 @@ jobs:
               echo "=== router metrics during $loader_name ==="
               router_metrics
               prom_compact_snapshot "during $loader_name remaining=${remaining}s"
+              kubectl -n default top pods --containers 2>/dev/null \
+                | grep -E '^(gcs|gcs-router|dd-ws-loadtest-rs-gcs|dd-nodejs-ws-loadtest-gcs|dd-gleamlang-ws-loadtest-gcs)[[:space:]]' \
+                | while IFS= read -r line; do echo "top-sample $line"; done || true
             done
             echo "=== final $loader_name loader summary ==="
             collect_loader "$d"
