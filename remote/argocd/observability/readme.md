@@ -48,16 +48,13 @@ The runtimes are instrumented explicitly:
   connection/channel/queue/message counters.
 - Auth, agent-worker broker, billing, formal-methods-service, and lock
   load-test trigger expose lightweight Prometheus health/work counters.
-<<<<<<< HEAD
 - The Solana contract gateway exposes Prometheus counters for validation,
   policy rejection, Solana RPC method outcomes, NATS publish outcomes, and
   send-auth failures, plus `dd.log.v1` stdout/stderr records for Loki.
-=======
 - Runtime-config exposes subscriber, entry, and push counters that make
   configuration delivery visible for dependent planners such as
   `dd-fabrication-server`; Prometheus alerts when the target is down, stage
   subscribers disappear, or stage push errors increase.
->>>>>>> 0c9f5eb67651977d5d8150523fa6a56174ebb172
 - Rust MDP optimizer emits Prometheus metrics and accepts compact app/infra
   telemetry snapshots on `/mdp/telemetry/learn` or `dd.remote.telemetry.mdp`
   for policy learning over operational risk. Prometheus alerts when the
@@ -149,7 +146,8 @@ Currently opted-in:
   cannot quietly mask one replica's retained fabrication evidence.
   The `Fabrication Planner` Grafana dashboard (uid `dd-fabrication-planner`)
   groups those signals with request intake, machine-failure boundary rates,
-  NATS result fanout, MDP optimization fanout, in-memory evidence ledgers,
+  NATS result fanout, MDP optimization fanout, generated-program,
+  job/artifact, and learning-event throughput, in-memory evidence ledgers,
   runtime-config push delivery, dependency scrape health, HPA capacity, CPU and
   memory limit headroom, Loki-derived gateway guardrail rejection counters for
   `/fabrication` auth/internal-route/method/payload/rate-limit failures, gateway edge-latency

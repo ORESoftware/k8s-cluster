@@ -540,6 +540,11 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(dashboardText, /dd_fabrication_server_failure_boundaries_total/);
   assert.match(dashboardText, /dd_fabrication_server_nats_results_published_total/);
   assert.match(dashboardText, /dd_fabrication_server_mdp_published_total/);
+  assert.match(dashboardText, /Generated Programs, Artifacts, and Learning Events/);
+  assert.match(dashboardText, /dd_fabrication_server_generated_programs_total/);
+  assert.match(dashboardText, /dd_fabrication_server_jobs_stored_total/);
+  assert.match(dashboardText, /dd_fabrication_server_artifacts_stored_total/);
+  assert.match(dashboardText, /dd_fabrication_server_learning_events_stored_total/);
   assert.match(dashboardText, /dd_runtime_config_push_total/);
   assert.match(dashboardText, /dd_k8s_hpa_current_at_max/);
   assert.match(dashboardText, /dd_k8s_deployment_updated_replicas/);
@@ -579,6 +584,7 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(dashboardText, /429 rate limit/);
   assert.match(dashboardText, /dd-remote-gateway/);
   assert.match(dashboardText, /401\|404\|405\|413\|429/);
+  assert.match(observabilityReadme, /generated-program,\s+job\/artifact, and learning-event throughput/);
   assert.match(observabilityReadme, /Loki-derived gateway guardrail rejection counters/);
   assert.match(observabilityReadme, /auth\/internal-route\/method\/payload\/rate-limit failures/);
   assert.match(observabilityReadme, /gateway edge-latency/);

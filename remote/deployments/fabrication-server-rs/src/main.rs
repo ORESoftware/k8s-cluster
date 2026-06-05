@@ -5528,6 +5528,30 @@ fn has_coordinate_transform_evidence(line: &str) -> bool {
         || line_mentions(line, "transform cancel verified")
 }
 
+fn has_inverse_time_feed_start(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    has_any_code(&stripped, &["G93"])
+}
+
+fn has_inverse_time_feed_cancel(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    has_any_code(&stripped, &["G94"])
+}
+
+fn has_inverse_time_feed_evidence(line: &str) -> bool {
+    line_mentions(line, "inverse time feed verified")
+        || line_mentions(line, "inverse-time feed verified")
+        || line_mentions(line, "inverse time mode verified")
+        || line_mentions(line, "inverse-time mode verified")
+        || line_mentions(line, "g93 verified")
+        || line_mentions(line, "per-move f word verified")
+        || line_mentions(line, "per move f word verified")
+        || line_mentions(line, "per-block f word verified")
+        || line_mentions(line, "inverse feed audited")
+        || line_mentions(line, "rotary blend feed verified")
+        || line_mentions(line, "feed timing dry run")
+}
+
 fn has_printer_restart_position_evidence(line: &str) -> bool {
     line_mentions(line, "re-home")
         || line_mentions(line, "rehome")
@@ -8485,6 +8509,10 @@ fn analyze_instruction_programs(
         let mut coordinate_transform_evidence_observed = false;
         let mut reported_coordinate_transform_motion_boundary = false;
         let mut reported_coordinate_transform_cancel_boundary = false;
+        let mut inverse_time_feed_active = false;
+        let mut inverse_time_feed_evidence_observed = false;
+        let mut reported_inverse_time_feed_motion_boundary = false;
+        let mut reported_inverse_time_feed_cancel_boundary = false;
         let mut mill_router_workholding_evidence_observed = false;
         let mut reported_mill_router_workholding_boundary = false;
         let mut reported_fan_timing_boundary = false;
@@ -8726,6 +8754,15 @@ fn analyze_instruction_programs(
             ) && has_coordinate_transform_cancel(&stripped);
             let line_has_coordinate_transform_evidence =
                 has_coordinate_transform_evidence(raw_line);
+            let line_has_inverse_time_feed_start = matches!(
+                class,
+                MachineClass::Mill | MachineClass::Router | MachineClass::Lathe
+            ) && has_inverse_time_feed_start(&stripped);
+            let line_cancels_inverse_time_feed = matches!(
+                class,
+                MachineClass::Mill | MachineClass::Router | MachineClass::Lathe
+            ) && has_inverse_time_feed_cancel(&stripped);
+            let line_has_inverse_time_feed_evidence = has_inverse_time_feed_evidence(raw_line);
             let line_has_program_end =
                 has_any_code(&stripped, &["M2", "M02", "M30"]) || contains_code(&stripped, "M84");
             let line_stops_subtractive_process = has_any_code(&stripped, &["M5", "M05"]);
