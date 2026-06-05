@@ -26463,7 +26463,7 @@ mod tests {
                 && lane.utilization_ratio > 0.0
         }));
         assert!(response.machine_schedule.machine_lanes.iter().any(|lane| {
-            lane.machine_kind.contains("lathe")
+            machine_class(&lane.machine_kind) == MachineClass::Lathe
                 && lane.scheduled_operations > 0
                 && lane.utilization_ratio > 0.0
         }));
