@@ -36,6 +36,8 @@ const MAX_MACHINES: usize = 32;
 const MAX_PARTS: usize = 64;
 const MAX_PROGRAMS: usize = 32;
 const MAX_PROGRAM_LINES: usize = 8_000;
+const MAX_DESIGN_INPUTS: usize = 64;
+const MAX_DESIGN_INPUT_NOTES: usize = 16;
 const MAX_STORED_JOBS: usize = 128;
 const MAX_LEARNING_OUTCOMES: usize = 512;
 const MAX_LEARNING_SIGNALS: usize = 128;
@@ -87,8 +89,21 @@ struct FabricationPlanRequest {
     machines: Option<Vec<MachineProfile>>,
     constraints: Option<FabricationConstraints>,
     parts: Option<Vec<RequestedPart>>,
+    design_inputs: Option<Vec<DesignInputFile>>,
     existing_instructions: Option<Vec<InstructionProgram>>,
     learning: Option<LearningHints>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignInputFile {
+    id: Option<String>,
+    file_name: Option<String>,
+    source_uri: Option<String>,
+    format: Option<String>,
+    source_system: Option<String>,
+    role: Option<String>,
+    notes: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -231,6 +246,7 @@ struct FabricationPlanResponse {
     design: DesignSummary,
     design_package: DesignPackage,
     design_exports: DesignExportBundle,
+    design_input_review: DesignInputReview,
     machine_selection: Vec<MachineSelectionTrace>,
     manufacturing_handoff: ManufacturingHandoff,
     quality_plan: QualityPlan,
@@ -544,6 +560,59 @@ struct DesignExportBundleSummary {
     formats: Vec<String>,
     blocked_exports: usize,
     draft_ready_exports: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignInputReview {
+    schema_version: &'static str,
+    input_count: usize,
+    supported_count: usize,
+    unsupported_count: usize,
+    review_required_count: usize,
+    native_cad_count: usize,
+    neutral_geometry_count: usize,
+    mesh_or_slicer_count: usize,
+    artistic_model_count: usize,
+    inputs: Vec<ReviewedDesignInput>,
+    supported_formats: Vec<SupportedDesignFormat>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewedDesignInput {
+    input_id: String,
+    file_name: Option<String>,
+    source_uri: Option<String>,
+    declared_format: Option<String>,
+    declared_source_system: Option<String>,
+    role: Option<String>,
+    normalized_format: String,
+    source_system: String,
+    ecosystem: String,
+    category: String,
+    status: String,
+    import_strategy: String,
+    preferred_neutral_exports: Vec<String>,
+    slicer_targets: Vec<String>,
+    blockers: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportedDesignFormat {
+    normalized_format: String,
+    source_system: String,
+    ecosystem: String,
+    category: String,
+    extensions: Vec<String>,
+    aliases: Vec<String>,
+    import_strategy: String,
+    preferred_neutral_exports: Vec<String>,
+    slicer_targets: Vec<String>,
+    notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1554,6 +1623,25 @@ struct TextInstructionSignals {
     has_slicer_orientation: bool,
     has_slicer_support_plan: bool,
     has_slicer_first_layer_evidence: bool,
+    has_resin_context: bool,
+    has_resin_print_context: bool,
+    has_resin_profile_evidence: bool,
+    has_resin_postprocess_evidence: bool,
+    has_powder_bed_context: bool,
+    has_powder_bed_print_context: bool,
+    has_powder_bed_profile_evidence: bool,
+    has_powder_bed_handling_evidence: bool,
+    has_subtractive_text_context: bool,
+    has_subtractive_text_setup_evidence: bool,
+    has_subtractive_text_process_evidence: bool,
+    has_lathe_text_threading_context: bool,
+    has_lathe_text_threading_sync_evidence: bool,
+    has_lathe_text_partoff_context: bool,
+    has_lathe_text_partoff_support_evidence: bool,
+    has_sheet_cutting_text_context: bool,
+    has_sheet_cutting_recipe_evidence: bool,
+    has_text_assembly_context: bool,
+    has_text_assembly_fit_evidence: bool,
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
@@ -2582,6 +2670,727 @@ fn validate_machines(input: Option<Vec<MachineProfile>>) -> Result<Vec<MachinePr
         });
     }
     Ok(validated)
+}
+
+#[derive(Clone, Copy)]
+struct DesignFormatSpec {
+    normalized_format: &'static str,
+    source_system: &'static str,
+    ecosystem: &'static str,
+    category: &'static str,
+    extensions: &'static [&'static str],
+    aliases: &'static [&'static str],
+    import_strategy: &'static str,
+    preferred_neutral_exports: &'static [&'static str],
+    slicer_targets: &'static [&'static str],
+    note: &'static str,
+}
+
+const DESIGN_FORMAT_SPECS: &[DesignFormatSpec] = &[
+    DesignFormatSpec {
+        normalized_format: "ptc-creo-pro-engineer-native",
+        source_system: "PTC Creo / Pro/ENGINEER",
+        ecosystem: "professional-mechanical-cad",
+        category: "native-cad",
+        extensions: &["prt", "asm", "xpr", "xas"],
+        aliases: &["creo", "pro-engineer", "pro/engineer", "proe", "ptc creo", "wildfire"],
+        import_strategy: "route through a Creo/ProE translator or request STEP/3MF/STL export before release",
+        preferred_neutral_exports: &["STEP", "3MF", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "Creo/ProE .prt and .asm extensions overlap other CAD systems, so sourceSystem evidence is retained.",
+    },
+    DesignFormatSpec {
+        normalized_format: "solidworks-native",
+        source_system: "SOLIDWORKS",
+        ecosystem: "professional-mechanical-cad",
+        category: "native-cad",
+        extensions: &["sldprt", "sldasm", "slddrw"],
+        aliases: &["solidworks", "solid works", "sldprt", "sldasm"],
+        import_strategy: "route through a SOLIDWORKS translator or request STEP/3MF/STL export before release",
+        preferred_neutral_exports: &["STEP", "3MF", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "SOLIDWORKS parts and assemblies are accepted as native CAD source references, not certified geometry.",
+    },
+    DesignFormatSpec {
+        normalized_format: "autodesk-fusion-native",
+        source_system: "Autodesk Fusion",
+        ecosystem: "professional-mechanical-cad",
+        category: "native-cad",
+        extensions: &["f3d", "f3z"],
+        aliases: &["fusion", "fusion 360", "autodesk fusion"],
+        import_strategy: "route through Fusion export automation or request STEP/3MF/STL export before release",
+        preferred_neutral_exports: &["STEP", "3MF", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "Fusion archives are treated as parametric CAD sources with downstream export review.",
+    },
+    DesignFormatSpec {
+        normalized_format: "siemens-nx-native",
+        source_system: "Siemens NX",
+        ecosystem: "professional-mechanical-cad",
+        category: "native-cad",
+        extensions: &["prt", "jt"],
+        aliases: &["siemens nx", "nx", "unigraphics", "jt"],
+        import_strategy: "route through an NX/JT translator or request STEP/3MF/STL export before release",
+        preferred_neutral_exports: &["STEP", "JT", "3MF", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "NX .prt is ambiguous with Creo unless sourceSystem or translator metadata is supplied.",
+    },
+    DesignFormatSpec {
+        normalized_format: "catia-native",
+        source_system: "CATIA",
+        ecosystem: "professional-mechanical-cad",
+        category: "native-cad",
+        extensions: &["catpart", "catproduct", "cgr"],
+        aliases: &["catia", "catpart", "catproduct", "dassault catia"],
+        import_strategy: "route through a CATIA translator or request STEP/3MF/STL export before release",
+        preferred_neutral_exports: &["STEP", "3MF", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "CATIA part/product sources keep surface and assembly intent for downstream CAD regeneration.",
+    },
+    DesignFormatSpec {
+        normalized_format: "onshape-cloud-document",
+        source_system: "Onshape",
+        ecosystem: "professional-mechanical-cad",
+        category: "cloud-cad",
+        extensions: &["onshape"],
+        aliases: &["onshape", "cloud cad", "cad.onshape.com"],
+        import_strategy: "request authenticated Onshape export to STEP, 3MF, or STL before release",
+        preferred_neutral_exports: &["STEP", "3MF", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "Onshape inputs are handled as document links or declared cloud sources requiring export evidence.",
+    },
+    DesignFormatSpec {
+        normalized_format: "freecad-native",
+        source_system: "FreeCAD",
+        ecosystem: "free-open-source-cad",
+        category: "open-source-cad",
+        extensions: &["fcstd"],
+        aliases: &["freecad", "fcstd"],
+        import_strategy: "route through FreeCAD export automation or request STEP/3MF/STL export before release",
+        preferred_neutral_exports: &["STEP", "3MF", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "FreeCAD sources are accepted as editable parametric references with downstream geometry review.",
+    },
+    DesignFormatSpec {
+        normalized_format: "openscad-source",
+        source_system: "OpenSCAD",
+        ecosystem: "free-open-source-cad",
+        category: "code-cad",
+        extensions: &["scad"],
+        aliases: &["openscad", "open scad", "scad"],
+        import_strategy: "evaluate OpenSCAD source to STL/3MF with parameter and manifold review before release",
+        preferred_neutral_exports: &["STL", "3MF", "STEP"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "OpenSCAD inputs retain parametric code intent and require generated mesh review.",
+    },
+    DesignFormatSpec {
+        normalized_format: "blender-native",
+        source_system: "Blender",
+        ecosystem: "artistic-organic-modeling",
+        category: "organic-model",
+        extensions: &["blend"],
+        aliases: &["blender", "blend"],
+        import_strategy: "export watertight STL/3MF/OBJ mesh and verify units, scale, normals, and manifoldness before release",
+        preferred_neutral_exports: &["3MF", "STL", "OBJ"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "Blender sources are mesh/scene references and need dimension/tolerance review for engineering prints.",
+    },
+    DesignFormatSpec {
+        normalized_format: "zbrush-native",
+        source_system: "ZBrush",
+        ecosystem: "artistic-organic-modeling",
+        category: "organic-model",
+        extensions: &["ztl", "zpr"],
+        aliases: &["zbrush", "ztl", "zpr"],
+        import_strategy: "export decimated watertight STL/3MF/OBJ mesh and verify scale, normals, wall thickness, and manifoldness before release",
+        preferred_neutral_exports: &["3MF", "STL", "OBJ"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "ZBrush sculpture sources are accepted for organic print workflows with mesh repair gates.",
+    },
+    DesignFormatSpec {
+        normalized_format: "3mf",
+        source_system: "3MF",
+        ecosystem: "neutral-3d-printing",
+        category: "neutral-print",
+        extensions: &["3mf"],
+        aliases: &["3mf", "3d manufacturing format"],
+        import_strategy: "inspect 3MF package metadata, units, build plates, materials, and slicer profile before release",
+        preferred_neutral_exports: &["3MF"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "3MF is the preferred neutral package for additive handoff when metadata is preserved.",
+    },
+    DesignFormatSpec {
+        normalized_format: "stl",
+        source_system: "STL",
+        ecosystem: "neutral-3d-printing",
+        category: "neutral-print",
+        extensions: &["stl"],
+        aliases: &["stl", "stereolithography"],
+        import_strategy: "inspect units, scale, watertightness, manifoldness, normals, and wall thickness before release",
+        preferred_neutral_exports: &["STL", "3MF"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "STL is accepted as a mesh handoff but loses CAD feature and material metadata.",
+    },
+    DesignFormatSpec {
+        normalized_format: "step",
+        source_system: "STEP",
+        ecosystem: "neutral-mechanical-cad",
+        category: "neutral-cad",
+        extensions: &["step", "stp"],
+        aliases: &["step", "stp", "iso 10303"],
+        import_strategy: "inspect B-rep solids, units, assemblies, and missing print metadata before slicer export",
+        preferred_neutral_exports: &["STEP", "3MF", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "STEP is preferred for mechanical CAD interchange before downstream 3MF/STL generation.",
+    },
+    DesignFormatSpec {
+        normalized_format: "iges",
+        source_system: "IGES",
+        ecosystem: "neutral-mechanical-cad",
+        category: "neutral-cad",
+        extensions: &["iges", "igs"],
+        aliases: &["iges", "igs"],
+        import_strategy: "inspect surface continuity, units, and solid healing needs before downstream export",
+        preferred_neutral_exports: &["STEP", "3MF", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "IGES is accepted for legacy surface handoff but usually needs healing before printing.",
+    },
+    DesignFormatSpec {
+        normalized_format: "obj",
+        source_system: "OBJ",
+        ecosystem: "neutral-mesh",
+        category: "neutral-print",
+        extensions: &["obj"],
+        aliases: &["obj", "wavefront"],
+        import_strategy: "inspect units, mesh groups, normals, material references, and manifoldness before release",
+        preferred_neutral_exports: &["3MF", "STL", "OBJ"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "OBJ is accepted as a mesh handoff when visual surface detail matters.",
+    },
+    DesignFormatSpec {
+        normalized_format: "prusaslicer-project",
+        source_system: "PrusaSlicer",
+        ecosystem: "slicer",
+        category: "slicer-project",
+        extensions: &["3mf", "ini"],
+        aliases: &["prusaslicer", "prusa slicer", "prusa"],
+        import_strategy: "inspect slicer project, printer profile, filament profile, support settings, and first-layer assumptions before release",
+        preferred_neutral_exports: &["3MF", "G-code"],
+        slicer_targets: &["PrusaSlicer"],
+        note: "PrusaSlicer project inputs are handled as process evidence, not raw CAD authority.",
+    },
+    DesignFormatSpec {
+        normalized_format: "orcaslicer-project",
+        source_system: "OrcaSlicer",
+        ecosystem: "slicer",
+        category: "slicer-project",
+        extensions: &["3mf", "ini"],
+        aliases: &["orcaslicer", "orca slicer", "orca"],
+        import_strategy: "inspect slicer project, printer profile, filament profile, support settings, and first-layer assumptions before release",
+        preferred_neutral_exports: &["3MF", "G-code"],
+        slicer_targets: &["OrcaSlicer"],
+        note: "OrcaSlicer project inputs are handled as process evidence with profile and material gates.",
+    },
+    DesignFormatSpec {
+        normalized_format: "cura-project",
+        source_system: "Cura",
+        ecosystem: "slicer",
+        category: "slicer-project",
+        extensions: &["ufp", "3mf", "curaprofile"],
+        aliases: &["cura", "ultimaker cura", "curaprofile"],
+        import_strategy: "inspect Cura project/profile, printer settings, material profile, support settings, and first-layer assumptions before release",
+        preferred_neutral_exports: &["3MF", "G-code"],
+        slicer_targets: &["Cura"],
+        note: "Cura project/profile inputs are handled as process evidence with profile gates.",
+    },
+    DesignFormatSpec {
+        normalized_format: "bambu-studio-project",
+        source_system: "Bambu Studio",
+        ecosystem: "slicer",
+        category: "slicer-project",
+        extensions: &["3mf", "bbs"],
+        aliases: &["bambu studio", "bambu"],
+        import_strategy: "inspect Bambu Studio project, printer profile, AMS/material mapping, support settings, and first-layer assumptions before release",
+        preferred_neutral_exports: &["3MF", "G-code"],
+        slicer_targets: &["Bambu Studio"],
+        note: "Bambu Studio inputs are handled as slicer process evidence with material/profile gates.",
+    },
+];
+
+fn design_strings(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_string()).collect()
+}
+
+fn design_format_catalog() -> Vec<SupportedDesignFormat> {
+    DESIGN_FORMAT_SPECS
+        .iter()
+        .map(|spec| SupportedDesignFormat {
+            normalized_format: spec.normalized_format.to_string(),
+            source_system: spec.source_system.to_string(),
+            ecosystem: spec.ecosystem.to_string(),
+            category: spec.category.to_string(),
+            extensions: design_strings(spec.extensions),
+            aliases: design_strings(spec.aliases),
+            import_strategy: spec.import_strategy.to_string(),
+            preferred_neutral_exports: design_strings(spec.preferred_neutral_exports),
+            slicer_targets: design_strings(spec.slicer_targets),
+            notes: vec![spec.note.to_string()],
+        })
+        .collect()
+}
+
+fn sanitize_design_source_uri(value: String) -> String {
+    let without_fragment = value.split('#').next().unwrap_or(value.as_str());
+    let without_query = without_fragment
+        .split('?')
+        .next()
+        .unwrap_or(without_fragment);
+    let mut sanitized = without_query.to_string();
+    if let Some(scheme_index) = sanitized.find("://") {
+        let authority_start = scheme_index + 3;
+        let authority_end = sanitized[authority_start..]
+            .find('/')
+            .map(|offset| authority_start + offset)
+            .unwrap_or(sanitized.len());
+        if let Some(at_offset) = sanitized[authority_start..authority_end].rfind('@') {
+            let at_index = authority_start + at_offset;
+            sanitized.replace_range(authority_start..at_index, "redacted");
+        }
+    }
+    sanitized
+}
+
+fn validate_design_inputs(
+    input: Option<Vec<DesignInputFile>>,
+) -> Result<Vec<DesignInputFile>, String> {
+    let inputs = input.unwrap_or_default();
+    if inputs.len() > MAX_DESIGN_INPUTS {
+        return Err(format!(
+            "designInputs must contain at most {MAX_DESIGN_INPUTS} entries"
+        ));
+    }
+
+    inputs
+        .into_iter()
+        .enumerate()
+        .map(|(index, input)| {
+            let id = input
+                .id
+                .map(|value| validate_label(&value, &format!("designInputs[{index}].id")))
+                .transpose()?;
+            let file_name = validate_optional_text(
+                input.file_name,
+                &format!("designInputs[{index}].fileName"),
+                MAX_TEXT_LEN,
+            )?;
+            let source_uri = validate_optional_text(
+                input.source_uri,
+                &format!("designInputs[{index}].sourceUri"),
+                MAX_TEXT_LEN,
+            )?
+            .map(sanitize_design_source_uri)
+            .map(|value| {
+                if value.trim().is_empty() {
+                    Err(format!(
+                        "designInputs[{index}].sourceUri must include a path or identifier before query/fragment"
+                    ))
+                } else {
+                    Ok(value)
+                }
+            })
+            .transpose()?;
+            let format = validate_optional_text(
+                input.format,
+                &format!("designInputs[{index}].format"),
+                MAX_LABEL_LEN,
+            )?;
+            let source_system = validate_optional_text(
+                input.source_system,
+                &format!("designInputs[{index}].sourceSystem"),
+                MAX_LABEL_LEN,
+            )?;
+            let role = validate_optional_text(
+                input.role,
+                &format!("designInputs[{index}].role"),
+                MAX_LABEL_LEN,
+            )?;
+            let notes = match input.notes {
+                Some(notes) => {
+                    if notes.len() > MAX_DESIGN_INPUT_NOTES {
+                        return Err(format!(
+                            "designInputs[{index}].notes must contain at most {MAX_DESIGN_INPUT_NOTES} entries"
+                        ));
+                    }
+                    Some(
+                        notes
+                            .into_iter()
+                            .enumerate()
+                            .map(|(note_index, note)| {
+                                validate_text(
+                                    &note,
+                                    &format!("designInputs[{index}].notes[{note_index}]"),
+                                    MAX_TEXT_LEN,
+                                )
+                            })
+                            .collect::<Result<Vec<_>, _>>()?,
+                    )
+                }
+                None => None,
+            };
+            let has_source_identity = file_name
+                .as_ref()
+                .or(source_uri.as_ref())
+                .or(format.as_ref())
+                .or(source_system.as_ref())
+                .is_some();
+            if !has_source_identity {
+                return Err(format!(
+                    "designInputs[{index}] must include fileName, sourceUri, format, or sourceSystem"
+                ));
+            }
+            Ok(DesignInputFile {
+                id,
+                file_name,
+                source_uri,
+                format,
+                source_system,
+                role,
+                notes,
+            })
+        })
+        .collect()
+}
+
+fn normalized_token_parts(value: &str) -> Vec<String> {
+    normalize_token(value)
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn option_token_parts(value: Option<&String>) -> Vec<String> {
+    value.map_or_else(Vec::new, |value| normalized_token_parts(value))
+}
+
+fn design_input_notes_parts(input: &DesignInputFile) -> Vec<String> {
+    input.notes.as_ref().map_or_else(Vec::new, |notes| {
+        notes
+            .iter()
+            .flat_map(|note| normalized_token_parts(note))
+            .collect()
+    })
+}
+
+fn token_parts_contain(tokenized_text: &[String], needle: &str) -> bool {
+    let needle = normalized_token_parts(needle);
+    !needle.is_empty()
+        && tokenized_text
+            .windows(needle.len())
+            .any(|window| window == needle.as_slice())
+}
+
+fn design_source_extension(value: &str) -> Option<String> {
+    let without_fragment = value.split('#').next().unwrap_or(value);
+    let without_query = without_fragment
+        .split('?')
+        .next()
+        .unwrap_or(without_fragment);
+    let last_segment = without_query
+        .rsplit(|character| character == '/' || character == '\\')
+        .next()
+        .unwrap_or(without_query);
+    let extension = last_segment.rsplit_once('.')?.1;
+    let extension = normalize_token(extension);
+    (!extension.is_empty()).then_some(extension)
+}
+
+fn design_input_extensions(input: &DesignInputFile) -> BTreeSet<String> {
+    [input.file_name.as_deref(), input.source_uri.as_deref()]
+        .into_iter()
+        .flatten()
+        .filter_map(design_source_extension)
+        .collect()
+}
+
+fn format_declares_extension(input: &DesignInputFile, extension: &str) -> bool {
+    input
+        .format
+        .as_ref()
+        .map(|format| normalize_token(format) == normalize_token(extension))
+        .unwrap_or(false)
+}
+
+fn design_extension_score(spec: &DesignFormatSpec, extension: &str) -> u32 {
+    if spec.category == "slicer-project" && matches!(extension, "3mf" | "ini") {
+        4
+    } else {
+        12
+    }
+}
+
+fn design_input_spec_score(input: &DesignInputFile, spec: &DesignFormatSpec) -> u32 {
+    let format_parts = option_token_parts(input.format.as_ref());
+    let source_system_parts = option_token_parts(input.source_system.as_ref());
+    let file_parts = option_token_parts(input.file_name.as_ref());
+    let uri_parts = option_token_parts(input.source_uri.as_ref());
+    let role_parts = option_token_parts(input.role.as_ref());
+    let notes_parts = design_input_notes_parts(input);
+    let source_extensions = design_input_extensions(input);
+    let mut score = 0;
+
+    for alias in spec.aliases {
+        if token_parts_contain(&source_system_parts, alias) {
+            score += 60;
+        } else if token_parts_contain(&format_parts, alias) {
+            score += 40;
+        } else if token_parts_contain(&file_parts, alias)
+            || token_parts_contain(&uri_parts, alias)
+            || token_parts_contain(&role_parts, alias)
+            || token_parts_contain(&notes_parts, alias)
+        {
+            score += 8;
+        }
+    }
+
+    for extension in spec.extensions {
+        let normalized_extension = normalize_token(extension);
+        if format_declares_extension(input, extension) {
+            score += 15;
+        }
+        if source_extensions.contains(&normalized_extension) {
+            score += design_extension_score(spec, extension);
+        }
+    }
+    score
+}
+
+fn design_input_id(input: &DesignInputFile, index: usize) -> String {
+    input
+        .id
+        .clone()
+        .or_else(|| input.file_name.as_ref().map(|value| normalize_token(value)))
+        .or_else(|| {
+            input
+                .source_system
+                .as_ref()
+                .map(|value| normalize_token(value))
+        })
+        .or_else(|| input.format.as_ref().map(|value| normalize_token(value)))
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("design-input-{}", index + 1))
+}
+
+fn design_input_status(spec: &DesignFormatSpec) -> &'static str {
+    match spec.category {
+        "native-cad" => "supported-native-cad-translator-required",
+        "cloud-cad" => "supported-cloud-cad-export-required",
+        "open-source-cad" | "code-cad" => "supported-parametric-cad-review-required",
+        "organic-model" => "supported-organic-model-review-required",
+        "neutral-cad" | "neutral-print" => "supported-neutral-geometry-review-required",
+        "slicer-project" => "supported-slicer-project-review-required",
+        _ => "supported-review-required",
+    }
+}
+
+fn design_input_blockers(spec: &DesignFormatSpec) -> Vec<String> {
+    match spec.category {
+        "native-cad" => vec![format!(
+            "{} native source requires licensed translator, neutral export, or explicit source-system regeneration before certified geometry release",
+            spec.source_system
+        )],
+        "cloud-cad" => vec![format!(
+            "{} source requires authenticated export evidence before certified geometry release",
+            spec.source_system
+        )],
+        "organic-model" => vec![
+            "organic mesh source requires unit, scale, wall-thickness, manifold, and surface-normal review before slicing".to_string(),
+        ],
+        "slicer-project" => vec![
+            "slicer project requires printer profile, material profile, support strategy, and first-layer evidence before machine release".to_string(),
+        ],
+        _ => vec![
+            "neutral geometry requires unit, scale, topology, and downstream machine-release review before use".to_string(),
+        ],
+    }
+}
+
+fn ambiguous_design_input(input: &DesignInputFile, index: usize) -> ReviewedDesignInput {
+    ReviewedDesignInput {
+        input_id: design_input_id(input, index),
+        file_name: input.file_name.clone(),
+        source_uri: input.source_uri.clone(),
+        declared_format: input.format.clone(),
+        declared_source_system: input.source_system.clone(),
+        role: input.role.clone(),
+        normalized_format: "ambiguous-native-cad".to_string(),
+        source_system: "ambiguous".to_string(),
+        ecosystem: "professional-mechanical-cad".to_string(),
+        category: "native-cad".to_string(),
+        status: "review-required-ambiguous-source-system".to_string(),
+        import_strategy:
+            "declare sourceSystem or provide STEP/3MF/STL neutral export before release"
+                .to_string(),
+        preferred_neutral_exports: vec!["STEP".to_string(), "3MF".to_string(), "STL".to_string()],
+        slicer_targets: vec![
+            "PrusaSlicer".to_string(),
+            "OrcaSlicer".to_string(),
+            "Cura".to_string(),
+            "Bambu Studio".to_string(),
+        ],
+        blockers: vec![
+            "native CAD extension is ambiguous across CAD systems; sourceSystem or translator evidence is required".to_string(),
+        ],
+        notes: vec![
+            "Extensions such as .prt and .asm can refer to Creo/ProE or Siemens NX depending on the source system.".to_string(),
+        ],
+    }
+}
+
+fn unsupported_design_input(input: &DesignInputFile, index: usize) -> ReviewedDesignInput {
+    ReviewedDesignInput {
+        input_id: design_input_id(input, index),
+        file_name: input.file_name.clone(),
+        source_uri: input.source_uri.clone(),
+        declared_format: input.format.clone(),
+        declared_source_system: input.source_system.clone(),
+        role: input.role.clone(),
+        normalized_format: "unrecognized".to_string(),
+        source_system: "unknown".to_string(),
+        ecosystem: "unknown".to_string(),
+        category: "unknown".to_string(),
+        status: "unsupported-format-review-required".to_string(),
+        import_strategy:
+            "provide format/sourceSystem metadata or export a supported STEP, 3MF, STL, OBJ, or slicer project"
+                .to_string(),
+        preferred_neutral_exports: vec!["STEP".to_string(), "3MF".to_string(), "STL".to_string()],
+        slicer_targets: vec![
+            "PrusaSlicer".to_string(),
+            "OrcaSlicer".to_string(),
+            "Cura".to_string(),
+            "Bambu Studio".to_string(),
+        ],
+        blockers: vec![
+            "format was not recognized by the fabrication CAD/model/slicer catalog".to_string(),
+        ],
+        notes: vec![
+            "Supported families include Creo/ProE, SOLIDWORKS, Fusion, NX, CATIA, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, STEP, 3MF, STL, OBJ, and common slicer projects.".to_string(),
+        ],
+    }
+}
+
+fn reviewed_design_input(input: &DesignInputFile, index: usize) -> ReviewedDesignInput {
+    let mut scored = DESIGN_FORMAT_SPECS
+        .iter()
+        .filter_map(|spec| {
+            let score = design_input_spec_score(input, spec);
+            (score > 0).then_some((score, *spec))
+        })
+        .collect::<Vec<_>>();
+    scored.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| left.1.normalized_format.cmp(right.1.normalized_format))
+    });
+    let Some((best_score, best_spec)) = scored.first().copied() else {
+        return unsupported_design_input(input, index);
+    };
+    let tied_best_specs = scored
+        .iter()
+        .filter(|(score, spec)| {
+            *score == best_score && spec.normalized_format != best_spec.normalized_format
+        })
+        .map(|(_, spec)| *spec)
+        .collect::<Vec<_>>();
+    if !tied_best_specs.is_empty() {
+        if best_spec.category == "native-cad"
+            && tied_best_specs
+                .iter()
+                .all(|spec| spec.category == "native-cad")
+        {
+            return ambiguous_design_input(input, index);
+        }
+        return unsupported_design_input(input, index);
+    }
+
+    ReviewedDesignInput {
+        input_id: design_input_id(input, index),
+        file_name: input.file_name.clone(),
+        source_uri: input.source_uri.clone(),
+        declared_format: input.format.clone(),
+        declared_source_system: input.source_system.clone(),
+        role: input.role.clone(),
+        normalized_format: best_spec.normalized_format.to_string(),
+        source_system: best_spec.source_system.to_string(),
+        ecosystem: best_spec.ecosystem.to_string(),
+        category: best_spec.category.to_string(),
+        status: design_input_status(&best_spec).to_string(),
+        import_strategy: best_spec.import_strategy.to_string(),
+        preferred_neutral_exports: design_strings(best_spec.preferred_neutral_exports),
+        slicer_targets: design_strings(best_spec.slicer_targets),
+        blockers: design_input_blockers(&best_spec),
+        notes: vec![best_spec.note.to_string()],
+    }
+}
+
+fn review_design_inputs(inputs: &[DesignInputFile]) -> DesignInputReview {
+    let reviewed = inputs
+        .iter()
+        .enumerate()
+        .map(|(index, input)| reviewed_design_input(input, index))
+        .collect::<Vec<_>>();
+    let supported_count = reviewed
+        .iter()
+        .filter(|input| input.status.starts_with("supported"))
+        .count();
+    let unsupported_count = reviewed.len().saturating_sub(supported_count);
+    let native_cad_count = reviewed
+        .iter()
+        .filter(|input| matches!(input.category.as_str(), "native-cad" | "cloud-cad"))
+        .count();
+    let neutral_geometry_count = reviewed
+        .iter()
+        .filter(|input| matches!(input.category.as_str(), "neutral-cad" | "neutral-print"))
+        .count();
+    let mesh_or_slicer_count = reviewed
+        .iter()
+        .filter(|input| matches!(input.category.as_str(), "slicer-project" | "organic-model"))
+        .count();
+    let artistic_model_count = reviewed
+        .iter()
+        .filter(|input| input.category == "organic-model")
+        .count();
+    let review_required_count = reviewed
+        .iter()
+        .filter(|input| !input.blockers.is_empty())
+        .count();
+    let notes = if reviewed.is_empty() {
+        vec![
+            "No designInputs were supplied; planner will generate draft parametric design/export contracts from the objective.".to_string(),
+            "Supported inputs include native CAD, neutral CAD/mesh, organic modeling, and slicer project ecosystems.".to_string(),
+        ]
+    } else {
+        vec![
+            "Design input review classifies CAD/model/slicer sources and retains translator, topology, scale, and profile gates.".to_string(),
+            "Recognized inputs remain draft evidence until downstream CAD/CAM regeneration, slicer validation, simulation, and machine-release blockers are resolved.".to_string(),
+        ]
+    };
+
+    DesignInputReview {
+        schema_version: "dd.fabrication.design-input-review.v1",
+        input_count: reviewed.len(),
+        supported_count,
+        unsupported_count,
+        review_required_count,
+        native_cad_count,
+        neutral_geometry_count,
+        mesh_or_slicer_count,
+        artistic_model_count,
+        inputs: reviewed,
+        supported_formats: design_format_catalog(),
+        notes,
+    }
 }
 
 fn validate_request_parts(
@@ -4550,6 +5359,60 @@ fn has_additive_material_conditioning_evidence(line: &str) -> bool {
         || line_mentions(line, "conditioned material")
 }
 
+fn has_additive_extrusion_calibration_evidence(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    has_any_code(&stripped, &["M200", "M221", "M900"])
+        || (has_any_code(&stripped, &["M92"]) && number_after(&stripped, 'E').is_some())
+        || line_mentions(line, "flow calibration")
+        || line_mentions(line, "flow rate")
+        || line_mentions(line, "flow ratio")
+        || line_mentions(line, "extrusion multiplier")
+        || line_mentions(line, "extrusion factor")
+        || line_mentions(line, "extruder calibration")
+        || line_mentions(line, "extrusion calibration")
+        || line_mentions(line, "calibrated extrusion")
+        || line_mentions(line, "e-steps")
+        || line_mentions(line, "esteps")
+        || line_mentions(line, "rotation distance")
+        || line_mentions(line, "pressure advance")
+        || line_mentions(line, "linear advance")
+        || line_mentions(line, "advance k")
+        || line_mentions(line, "volumetric flow")
+        || line_mentions(line, "extrusion width verified")
+}
+
+fn has_additive_warp_prone_material_context(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .any(|token| {
+            matches!(
+                token,
+                "abs" | "asa" | "pc" | "nylon" | "polycarbonate" | "pa6" | "pa12"
+            )
+        })
+        || lower.contains("pa-cf")
+        || lower.contains("pa cf")
+        || lower.contains("cf nylon")
+        || lower.contains("carbon fiber nylon")
+}
+
+fn has_additive_chamber_thermal_evidence(line: &str) -> bool {
+    line_mentions(line, "enclosure")
+        || line_mentions(line, "heated chamber")
+        || line_mentions(line, "chamber temp")
+        || line_mentions(line, "chamber temperature")
+        || line_mentions(line, "chamber soak")
+        || line_mentions(line, "thermal soak")
+        || line_mentions(line, "heat soak")
+        || line_mentions(line, "preheat soak")
+        || line_mentions(line, "ambient temperature")
+        || line_mentions(line, "draft shield")
+        || line_mentions(line, "draft-shield")
+        || line_mentions(line, "warp control")
+        || line_mentions(line, "warping control")
+}
+
 fn has_additive_material_resume_evidence(line: &str) -> bool {
     let stripped = strip_comment(line);
     has_any_code(&stripped, &["G92"]) && number_after(&stripped, 'E').is_some()
@@ -5420,6 +6283,391 @@ fn language_or_line_has_any(language: &str, line: &str, needles: &[&str]) -> boo
     text_has_any(language, needles) || text_has_any(line, needles)
 }
 
+fn has_text_resin_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "resin",
+            "sla",
+            "msla",
+            "dlp",
+            "photopolymer",
+            "vat",
+            "lychee",
+            "chitubox",
+        ],
+    )
+}
+
+fn has_text_resin_postprocess_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "wash",
+            "ipa",
+            "isopropyl",
+            "alcohol",
+            "cure",
+            "uv",
+            "drain",
+            "drip",
+            "waste",
+            "vent",
+            "ventilation",
+            "ppe",
+            "glove",
+            "support removal",
+            "remove supports",
+            "wash station",
+            "cure station",
+        ],
+    )
+}
+
+fn has_text_resin_print_context(language: &str, line: &str) -> bool {
+    has_text_resin_context(language, line)
+        && text_has_any(
+            line,
+            &[
+                "print",
+                "slice",
+                "build",
+                "expose",
+                "exposure",
+                "layer",
+                "support",
+                "supports",
+                "orientation",
+                "raft",
+            ],
+        )
+}
+
+fn has_text_resin_profile_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "resin profile",
+            "slice profile",
+            "slicer profile",
+            "exposure",
+            "bottom exposure",
+            "burn-in",
+            "burn in",
+            "layer height",
+            "lift speed",
+            "retract speed",
+            "light-off delay",
+            "light off delay",
+            "anti-alias",
+            "anti alias",
+            "compensation",
+            "support strategy",
+            "support density",
+            "supports reviewed",
+            "reviewed supports",
+            "approved supports",
+            "orientation",
+            "drain hole",
+            "build plate calibrated",
+            "vat film",
+            "fep",
+            "nfep",
+            "calibration coupon",
+            "validation matrix",
+            "test exposure",
+        ],
+    )
+}
+
+fn has_text_powder_bed_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "sls",
+            "mjf",
+            "powder",
+            "powder-bed",
+            "powder bed",
+            "powder cake",
+            "depowder",
+        ],
+    )
+}
+
+fn has_text_powder_bed_handling_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "cooldown",
+            "cool down",
+            "depowder",
+            "thermal",
+            "nitrogen",
+            "inert",
+            "vacuum",
+            "grounded",
+            "recovery",
+            "refresh ratio",
+            "powder reuse",
+            "reuse state",
+            "sieve",
+            "unpack temperature",
+        ],
+    )
+}
+
+fn has_text_powder_bed_print_context(language: &str, line: &str) -> bool {
+    has_text_powder_bed_context(language, line)
+        && text_has_any(
+            line,
+            &[
+                "print", "build", "nest", "nested", "pack", "packing", "sinter", "fuse", "layer",
+                "scan",
+            ],
+        )
+}
+
+fn has_text_powder_bed_profile_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "powder lot",
+            "powder batch",
+            "material profile",
+            "build profile",
+            "print profile",
+            "sinter profile",
+            "validated profile",
+            "layer thickness",
+            "slice profile",
+            "nesting",
+            "nested build",
+            "packing density",
+            "part spacing",
+            "powder refresh",
+            "refresh ratio",
+            "laser power",
+            "scan speed",
+            "energy density",
+            "bed temperature",
+            "chamber temperature",
+            "thermal profile",
+            "preheat profile",
+            "recoater",
+            "recoat",
+            "roller check",
+            "calibration coupon",
+            "witness coupon",
+            "density coupon",
+        ],
+    )
+}
+
+fn has_text_subtractive_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "mill",
+            "machining",
+            "lathe",
+            "turning",
+            "router",
+            "sheet-cut",
+            "sheet cutting",
+            "laser",
+            "waterjet",
+            "plasma",
+            "face",
+            "pocket",
+            "bore",
+            "thread",
+            "drill",
+            "contour",
+            "slot",
+            "engrave",
+        ],
+    )
+}
+
+fn has_text_subtractive_setup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "fixture",
+            "vise",
+            "clamp",
+            "workholding",
+            "hold-down",
+            "tab",
+            "tabs",
+            "chuck",
+            "collet",
+            "tailstock",
+            "stickout",
+            "stick-out",
+            "datum",
+            "work offset",
+            "zero",
+            "probe",
+            "touch off",
+            "touch-off",
+            "edge finder",
+            "tool length",
+            "setup sheet",
+        ],
+    )
+}
+
+fn has_text_subtractive_process_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "spindle",
+            "rpm",
+            "sfm",
+            "surface speed",
+            "feed",
+            "feeds and speeds",
+            "chip load",
+            "cut chart",
+            "coolant",
+            "air blast",
+            "dust collection",
+            "tool list",
+            "toolpath",
+            "kerf",
+            "pierce",
+            "focus",
+            "assist gas",
+            "fume",
+            "work clamp",
+            "abrasive",
+        ],
+    )
+}
+
+fn has_text_sheet_cutting_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "sheet-cut",
+            "sheet cutting",
+            "laser",
+            "waterjet",
+            "water-jet",
+            "plasma",
+            "knife cut",
+            "die cut",
+            "kerf",
+            "pierce",
+            "vector cut",
+            "vector_cut",
+        ],
+    )
+}
+
+fn has_text_sheet_cutting_recipe_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "material lot",
+            "material certification",
+            "material table",
+            "material database",
+            "thickness",
+            "cut chart",
+            "cut settings",
+            "recipe",
+            "power=",
+            "speed=",
+            "feed=",
+            "pressure=",
+            "amperage",
+            "assist gas",
+            "assist-air",
+            "focus",
+            "kerf coupon",
+            "kerf test",
+            "pierce height",
+            "cut height",
+            "standoff",
+            "nozzle/orifice",
+            "garnet",
+            "abrasive flow",
+            "torch height",
+            "lens",
+        ],
+    )
+}
+
+fn has_text_assembly_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "assemble",
+            "assembly",
+            "bond",
+            "adhesive",
+            "epoxy",
+            "fasten",
+            "screw",
+            "pin",
+            "dowel",
+            "press fit",
+            "press-fit",
+            "heat-set",
+            "insert",
+            "join",
+            "fit-up",
+        ],
+    )
+}
+
+fn has_text_assembly_fit_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "alignment",
+            "datum",
+            "dry fit",
+            "dry-fit",
+            "fit check",
+            "fit-check",
+            "metrology",
+            "inspection",
+            "cmm",
+            "caliper",
+            "go/no-go",
+            "gauge",
+            "thread gauge",
+            "torque",
+            "torque spec",
+            "cure time",
+            "cure schedule",
+            "clamp time",
+            "adhesive mix",
+            "mix ratio",
+            "surface prep",
+            "bondline",
+            "tolerance stack",
+            "stack-up",
+            "press-fit allowance",
+            "press fit allowance",
+            "insert allowance",
+            "pull test",
+            "witness mark",
+            "locating pin",
+            "dowel pin",
+        ],
+    )
+}
+
 fn inspect_text_instruction_line(
     raw_line: &str,
     program_id: &str,
@@ -5616,31 +6864,21 @@ fn inspect_text_instruction_line(
                     .to_string(),
         });
     }
-    let resin_context = language.contains("sla")
-        || language.contains("msla")
-        || language.contains("resin")
-        || text_has_any(
-            raw_line,
-            &["resin", "ipa", "isopropyl", "alcohol", "vat", "uv cure"],
-        );
-    if resin_context
-        && text_has_any(
-            raw_line,
-            &[
-                "resin",
-                "ipa",
-                "isopropyl",
-                "alcohol",
-                "wash",
-                "cure",
-                "uv",
-                "waste",
-                "ventilation",
-                "ppe",
-                "glove",
-            ],
-        )
-    {
+    let resin_context = has_text_resin_context(language, raw_line);
+    let resin_print_context = has_text_resin_print_context(language, raw_line);
+    let resin_postprocess_evidence = has_text_resin_postprocess_evidence(raw_line);
+    if resin_context {
+        signals.has_resin_context = true;
+    }
+    if resin_print_context {
+        signals.has_resin_print_context = true;
+    }
+    if resin_context && has_text_resin_profile_evidence(raw_line) {
+        signals.has_resin_profile_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if resin_context && resin_postprocess_evidence {
+        signals.has_resin_postprocess_evidence = true;
         signals.has_process_preparation = true;
         findings.push(ValidationFinding {
             severity: "warning".to_string(),
@@ -5664,30 +6902,21 @@ fn inspect_text_instruction_line(
                     .to_string(),
         });
     }
-    let powder_context = language.contains("sls")
-        || language.contains("mjf")
-        || language.contains("powder")
-        || text_has_any(
-            raw_line,
-            &["powder", "depowder", "nitrogen", "cooldown", "cool down"],
-        );
-    if powder_context
-        && text_has_any(
-            raw_line,
-            &[
-                "powder",
-                "depowder",
-                "nitrogen",
-                "cooldown",
-                "cool down",
-                "thermal",
-                "vacuum",
-                "recovery",
-                "refresh ratio",
-                "sinter",
-            ],
-        )
-    {
+    let powder_context = has_text_powder_bed_context(language, raw_line);
+    let powder_print_context = has_text_powder_bed_print_context(language, raw_line);
+    let powder_handling_evidence = has_text_powder_bed_handling_evidence(raw_line);
+    if powder_context {
+        signals.has_powder_bed_context = true;
+    }
+    if powder_print_context {
+        signals.has_powder_bed_print_context = true;
+    }
+    if powder_context && has_text_powder_bed_profile_evidence(raw_line) {
+        signals.has_powder_bed_profile_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if powder_context && powder_handling_evidence {
+        signals.has_powder_bed_handling_evidence = true;
         signals.has_process_preparation = true;
         findings.push(ValidationFinding {
             severity: "warning".to_string(),
@@ -5712,21 +6941,43 @@ fn inspect_text_instruction_line(
                     .to_string(),
         });
     }
-    if text_has_any(
-        raw_line,
-        &[
-            "assemble",
-            "assembly",
-            "bond",
-            "adhesive",
-            "epoxy",
-            "fasten",
-            "screw",
-            "pin",
-            "press fit",
-            "join",
-        ],
-    ) {
+    let subtractive_context = has_text_subtractive_context(language, raw_line);
+    if subtractive_context {
+        signals.has_subtractive_text_context = true;
+    }
+    if has_text_subtractive_setup_evidence(raw_line) {
+        signals.has_subtractive_text_setup_evidence = true;
+        signals.has_setup_reference = true;
+    }
+    if has_text_subtractive_process_evidence(raw_line) {
+        signals.has_subtractive_text_process_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if has_lathe_threading_command(raw_line) {
+        signals.has_lathe_text_threading_context = true;
+    }
+    if has_lathe_threading_feed_mode_evidence(raw_line) {
+        signals.has_lathe_text_threading_sync_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if has_lathe_partoff_command(raw_line) {
+        signals.has_lathe_text_partoff_context = true;
+    }
+    if has_lathe_partoff_support_evidence(raw_line) {
+        signals.has_lathe_text_partoff_support_evidence = true;
+        signals.has_setup_reference = true;
+    }
+    let sheet_cutting_text_context = has_text_sheet_cutting_context(language, raw_line);
+    if sheet_cutting_text_context {
+        signals.has_sheet_cutting_text_context = true;
+    }
+    if has_text_sheet_cutting_recipe_evidence(raw_line) {
+        signals.has_sheet_cutting_recipe_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let assembly_context = has_text_assembly_context(language, raw_line);
+    if assembly_context {
+        signals.has_text_assembly_context = true;
         findings.push(ValidationFinding {
             severity: "warning".to_string(),
             code: "text-assembly-boundary".to_string(),
@@ -5745,6 +6996,10 @@ fn inspect_text_instruction_line(
             suggested_resolution:
                 "preserve alignment datums and add inspection before the assembly step".to_string(),
         });
+    }
+    if has_text_assembly_fit_evidence(raw_line) {
+        signals.has_text_assembly_fit_evidence = true;
+        signals.has_process_preparation = true;
     }
     if text_has_any(
         raw_line,
@@ -5929,6 +7184,11 @@ fn analyze_instruction_programs(
         let mut reported_printer_stepper_disable_boundary = false;
         let mut additive_material_conditioning_observed = false;
         let mut reported_additive_material_conditioning_boundary = false;
+        let mut additive_extrusion_calibration_observed = false;
+        let mut reported_additive_extrusion_calibration_boundary = false;
+        let mut additive_warp_prone_material_observed = false;
+        let mut additive_chamber_thermal_evidence_observed = false;
+        let mut reported_additive_chamber_thermal_boundary = false;
         let mut additive_material_change_pending_resume = false;
         let mut reported_additive_material_resume_boundary = false;
         let mut additive_tool_selection_pending_temperature = false;
@@ -6002,6 +7262,25 @@ fn analyze_instruction_programs(
         let mut has_slicer_orientation = false;
         let mut has_slicer_support_plan = false;
         let mut has_slicer_first_layer_evidence = false;
+        let mut has_resin_context = false;
+        let mut has_resin_print_context = false;
+        let mut has_resin_profile_evidence = false;
+        let mut has_resin_postprocess_evidence = false;
+        let mut has_powder_bed_context = false;
+        let mut has_powder_bed_print_context = false;
+        let mut has_powder_bed_profile_evidence = false;
+        let mut has_powder_bed_handling_evidence = false;
+        let mut has_subtractive_text_context = false;
+        let mut has_subtractive_text_setup_evidence = false;
+        let mut has_subtractive_text_process_evidence = false;
+        let mut has_lathe_text_threading_context = false;
+        let mut has_lathe_text_threading_sync_evidence = false;
+        let mut has_lathe_text_partoff_context = false;
+        let mut has_lathe_text_partoff_support_evidence = false;
+        let mut has_sheet_cutting_text_context = false;
+        let mut has_sheet_cutting_recipe_evidence = false;
+        let mut has_text_assembly_context = false;
+        let mut has_text_assembly_fit_evidence = false;
         let findings_at_program_start = findings.len();
         let boundaries_at_program_start = boundaries.len();
 
@@ -6028,6 +7307,28 @@ fn analyze_instruction_programs(
                 has_slicer_orientation |= signals.has_slicer_orientation;
                 has_slicer_support_plan |= signals.has_slicer_support_plan;
                 has_slicer_first_layer_evidence |= signals.has_slicer_first_layer_evidence;
+                has_resin_context |= signals.has_resin_context;
+                has_resin_print_context |= signals.has_resin_print_context;
+                has_resin_profile_evidence |= signals.has_resin_profile_evidence;
+                has_resin_postprocess_evidence |= signals.has_resin_postprocess_evidence;
+                has_powder_bed_context |= signals.has_powder_bed_context;
+                has_powder_bed_print_context |= signals.has_powder_bed_print_context;
+                has_powder_bed_profile_evidence |= signals.has_powder_bed_profile_evidence;
+                has_powder_bed_handling_evidence |= signals.has_powder_bed_handling_evidence;
+                has_subtractive_text_context |= signals.has_subtractive_text_context;
+                has_subtractive_text_setup_evidence |= signals.has_subtractive_text_setup_evidence;
+                has_subtractive_text_process_evidence |=
+                    signals.has_subtractive_text_process_evidence;
+                has_lathe_text_threading_context |= signals.has_lathe_text_threading_context;
+                has_lathe_text_threading_sync_evidence |=
+                    signals.has_lathe_text_threading_sync_evidence;
+                has_lathe_text_partoff_context |= signals.has_lathe_text_partoff_context;
+                has_lathe_text_partoff_support_evidence |=
+                    signals.has_lathe_text_partoff_support_evidence;
+                has_sheet_cutting_text_context |= signals.has_sheet_cutting_text_context;
+                has_sheet_cutting_recipe_evidence |= signals.has_sheet_cutting_recipe_evidence;
+                has_text_assembly_context |= signals.has_text_assembly_context;
+                has_text_assembly_fit_evidence |= signals.has_text_assembly_fit_evidence;
                 continue;
             }
             let stripped = strip_comment(raw_line);
@@ -6420,6 +7721,18 @@ fn analyze_instruction_programs(
             {
                 additive_material_conditioning_observed = true;
             }
+            if class == MachineClass::Additive
+                && has_additive_extrusion_calibration_evidence(raw_line)
+            {
+                additive_extrusion_calibration_observed = true;
+            }
+            if class == MachineClass::Additive && has_additive_warp_prone_material_context(raw_line)
+            {
+                additive_warp_prone_material_observed = true;
+            }
+            if class == MachineClass::Additive && has_additive_chamber_thermal_evidence(raw_line) {
+                additive_chamber_thermal_evidence_observed = true;
+            }
             if class == MachineClass::Additive && has_additive_material_resume_evidence(raw_line) {
                 additive_material_change_pending_resume = false;
             }
@@ -6597,6 +7910,61 @@ fn analyze_instruction_programs(
                         requires_human_intervention: true,
                         suggested_resolution:
                         "record filament or material lot, dry-storage/dry-box state, dryer/desiccant evidence, and moisture-sensitive material handling before the first extrusion"
+                                .to_string(),
+                    });
+                }
+                if !additive_extrusion_calibration_observed
+                    && !reported_additive_extrusion_calibration_boundary
+                {
+                    reported_additive_extrusion_calibration_boundary = true;
+                    findings.push(ValidationFinding {
+                        severity: "warning".to_string(),
+                        code: "additive-extrusion-calibration-missing".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message:
+                            "first positive extrusion appears before flow, extrusion multiplier, e-step, linear-advance, or pressure-advance calibration evidence"
+                                .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "printer-extrusion-calibration-boundary".to_string(),
+                        severity: "warning".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "FDM jobs can over-extrude, under-extrude, jam, weaken layer bonding, or miss dimensional targets when flow multiplier, E-step/rotation-distance, volumetric flow, or pressure/linear advance state is inherited from an unverified printer profile"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                        "record M221/flow-rate, extrusion multiplier, E-step or rotation-distance, volumetric-flow, and pressure/linear-advance calibration evidence before the first extrusion, then rerun analysis before release"
+                                .to_string(),
+                    });
+                }
+                if additive_warp_prone_material_observed
+                    && !additive_chamber_thermal_evidence_observed
+                    && !reported_additive_chamber_thermal_boundary
+                {
+                    reported_additive_chamber_thermal_boundary = true;
+                    findings.push(ValidationFinding {
+                        severity: "warning".to_string(),
+                        code: "additive-chamber-thermal-evidence-missing".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message:
+                            "first positive extrusion for warp-prone filament appears before enclosure, chamber, ambient, or thermal-soak evidence"
+                                .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "printer-chamber-thermal-boundary".to_string(),
+                        severity: "warning".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "ABS, ASA, PC, nylon, and similar warp-prone FDM jobs can curl, crack, delaminate, or detach when chamber, enclosure, ambient-temperature, draft-shield, or thermal-soak state is implicit before extrusion"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "record enclosure/chamber temperature, ambient draft control, thermal-soak dwell, and warp-control setup before first extrusion, then rerun analysis before unattended release"
                                 .to_string(),
                     });
                 }
@@ -8286,6 +9654,353 @@ fn analyze_instruction_programs(
                     });
                 }
             }
+            if (class == MachineClass::Additive || has_resin_context)
+                && has_resin_print_context
+                && !has_resin_profile_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "resin-print-profile-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "resin/SLA text print job lacks exposure, layer, support, orientation, vat, or build-plate profile evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "resin-print-profile-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "resin/SLA jobs can fail, undercure, overcure, detach, trap uncured resin, or lose dimensional accuracy when exposure profile, layer height, lift/retract speeds, support/orientation review, vat film, or build-plate calibration evidence is omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach resin profile, exposure/layer/lift/retract parameters, support and orientation review, build-plate/vat-film calibration, and drain/compensation evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-resin-print-profile-evidence".to_string(),
+                    reason:
+                        "resin text print instructions should retain profile, exposure, support, orientation, and calibration evidence before release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_resin_context)
+                && has_resin_context
+                && !has_resin_postprocess_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "resin-postprocess-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "resin/SLA text job lacks wash, cure, drain, ventilation, PPE, or waste evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "resin-postprocess-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "resin/SLA work cannot be released as one uninterrupted print when the submitted instructions omit wash, cure, drain, ventilation, PPE, or waste-control evidence"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach explicit resin wash, UV-cure, drain/drip, support-removal, ventilation/PPE, and waste-containment checkpoints before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-resin-postprocess-evidence".to_string(),
+                    reason:
+                        "resin text instructions should retain wash/cure/drain/PPE/waste evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_powder_bed_context)
+                && has_powder_bed_print_context
+                && !has_powder_bed_profile_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "powder-bed-build-profile-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "powder-bed text print job lacks powder lot, material profile, nesting, packing, layer, scan, or calibration evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "powder-bed-build-profile-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "SLS/MJF powder-bed jobs can warp, curl, under-sinter, overheat, fuse unintended parts, lose tolerance, or damage recoaters when powder lot, refresh ratio, material profile, nesting/packing density, layer thickness, thermal profile, scan speed, laser power, or calibration coupon evidence is omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach powder lot/refresh-ratio records, material/build profile, nested build and packing review, layer thickness, thermal/scan/laser parameters, recoater checks, and calibration coupon evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-powder-bed-build-profile-evidence".to_string(),
+                    reason:
+                        "powder-bed text print instructions should retain powder lot, build profile, nesting, packing, thermal, scan, and calibration evidence before release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_powder_bed_context)
+                && has_powder_bed_context
+                && !has_powder_bed_handling_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "powder-bed-handling-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "powder-bed text job lacks cooldown, depowdering, atmosphere, vacuum, or powder-recovery evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "powder-bed-handling-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "SLS/MJF powder-bed work cannot be released as one uninterrupted print when the submitted instructions omit cooldown, depowdering, atmosphere, grounded-vacuum, or powder-recovery evidence"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach explicit cooldown dwell, unpack-temperature, depowdering, grounded-vacuum, powder-recovery/refresh-ratio, PPE, and atmosphere checkpoints before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-powder-bed-handling-evidence".to_string(),
+                    reason:
+                        "powder-bed text instructions should retain cooldown, depowder, atmosphere, and powder-recovery evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if class == MachineClass::Lathe
+                && has_lathe_text_threading_context
+                && !has_lathe_text_threading_sync_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "lathe-text-threading-sync-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "lathe text job includes threading without feed-per-rev, pitch, or spindle-encoder synchronization evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "lathe-text-threading-sync-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "lathe threading text instructions can cut the wrong pitch, scrap the thread, crash the tool, or fail inspection when feed-per-revolution mode, thread pitch verification, spindle encoder synchronization, tool orientation, relief, or spring-pass evidence is omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach feed-per-rev mode, thread pitch and gauge plan, spindle encoder/synchronization evidence, tool orientation, relief clearance, spring-pass strategy, and operator signoff before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-lathe-text-threading-sync-evidence".to_string(),
+                    reason:
+                        "lathe text instructions should retain feed-per-rev, pitch-sync, spindle-encoder, gauge, and spring-pass evidence before threading release"
+                            .to_string(),
+                });
+            }
+            if class == MachineClass::Lathe
+                && has_lathe_text_partoff_context
+                && !has_lathe_text_partoff_support_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "lathe-text-partoff-support-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "lathe text job includes part-off or cutoff work without catcher, subspindle, tailstock, or stock-support evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "lathe-text-partoff-support-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "lathe part-off text instructions can drop the part, pinch the cutoff tool, pull unsupported bar stock, or exceed workholding limits when part-catcher, subspindle/pickoff, tailstock, or stock-support state is omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach part-catcher, subspindle/pickoff, tailstock, bar/stock-support, workholding, stick-out, and cutoff-tool evidence before release, or split part-off into an operator-approved stop"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-lathe-text-partoff-support-evidence".to_string(),
+                    reason:
+                        "lathe text instructions should retain catcher, subspindle, tailstock, stock-support, and workholding evidence before part-off release"
+                            .to_string(),
+                });
+            }
+            let text_sheet_cutting_program =
+                class == MachineClass::SheetCut || has_sheet_cutting_text_context;
+            if text_sheet_cutting_program && !has_sheet_cutting_recipe_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "sheet-cutting-recipe-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "sheet-cutting text job lacks material, thickness, cut-chart, or machine-parameter recipe evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "sheet-cutting-recipe-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "laser/waterjet/plasma sheet jobs can fail, ignite, delaminate, leave dross, miss tolerance, or damage consumables when material, thickness, cut-chart, kerf, pierce, focus/standoff, gas, power/feed/pressure/amperage, fume, or fire-watch evidence is omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach material/thickness, machine cut chart or recipe, kerf coupon, power/speed/feed/pressure/amperage, focus/standoff/pierce settings, and fume/fire-watch evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-sheet-cutting-recipe-evidence".to_string(),
+                    reason:
+                        "sheet-cutting text instructions should retain material, thickness, cut-chart, kerf, and machine-parameter evidence before release"
+                            .to_string(),
+                });
+            }
+            let text_subtractive_program = matches!(
+                class,
+                MachineClass::Mill
+                    | MachineClass::Lathe
+                    | MachineClass::Router
+                    | MachineClass::SheetCut
+            ) || has_subtractive_text_context;
+            if text_subtractive_program && !has_subtractive_text_setup_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "subtractive-text-setup-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "subtractive text job lacks workholding, datum, fixture, or tool-length setup evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "subtractive-text-setup-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "mill/router/lathe/sheet text instructions can fail or damage stock when they omit workholding, datum, fixture, stick-out, or tool-length setup evidence"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach fixture/workholding, datum or touch-off, tool-length/stick-out, and setup-sheet evidence before machine-ready release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-subtractive-text-setup-evidence".to_string(),
+                    reason:
+                        "subtractive text instructions should retain workholding, datum, fixture, and tool/setup evidence before release"
+                            .to_string(),
+                });
+            }
+            if text_subtractive_program && !has_subtractive_text_process_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "subtractive-text-process-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "subtractive text job lacks spindle/feed/coolant/cut-chart or process-parameter evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "subtractive-text-process-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "mill/router/lathe/sheet text instructions can leave machine-ready release ambiguous when they omit spindle/feed, coolant/chip/fume control, kerf/pierce, cut-chart, or process-parameter evidence"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach tool list, spindle/feed or cut-chart parameters, coolant/chip/fume controls, and dry-run evidence before machine-ready release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-subtractive-text-process-evidence".to_string(),
+                    reason:
+                        "subtractive text instructions should retain spindle/feed/coolant/cut-chart process evidence before release"
+                        .to_string(),
+                });
+            }
+            if has_text_assembly_context && !has_text_assembly_fit_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "assembly-fit-metrology-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "assembly text job lacks dry-fit, datum alignment, torque/cure, tolerance, or metrology evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "assembly-fit-metrology-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "multi-part fabrication instructions can fail after printing, machining, or turning when they combine parts without fit-up, alignment datum, press-fit, adhesive cure, fastener torque, tolerance stack, or inspection evidence"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach dry-fit/metrology results, alignment datums, press-fit or insert allowance, adhesive cure schedule, fastener torque, and final inspection evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-assembly-fit-metrology-evidence".to_string(),
+                    reason:
+                        "assembly text instructions should retain fit-up, datum, torque/cure, tolerance, and inspection evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
             if findings.len() == findings_at_program_start
                 && boundaries.len() == boundaries_at_program_start
             {
@@ -9418,6 +11133,7 @@ fn parametric_design_content(response: &FabricationPlanResponse) -> Value {
         "representation": response.design.representation,
         "designPackage": response.design_package,
         "designExports": response.design_exports,
+        "designInputReview": response.design_input_review,
         "executionPlan": response.execution_plan,
         "postprocessPlan": response.postprocess_plan,
         "pomdpBeliefState": response.learning.pomdp_belief_state,
@@ -9472,6 +11188,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             "design-export-bundle".to_string(),
             "design-export-bundle",
             json!(response.design_exports),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "design-input-review".to_string(),
+            "design-input-review",
+            json!(response.design_input_review),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -11977,6 +13699,8 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         validate_request_parts(request.parts, &objective, &material, tolerance_mm)?;
     let existing_programs =
         validate_programs(request.existing_instructions.as_deref().unwrap_or_default())?;
+    let design_inputs = validate_design_inputs(request.design_inputs)?;
+    let design_input_review = review_design_inputs(&design_inputs);
     let constraints = request.constraints.as_ref();
     if let Some(strategy) =
         constraints.and_then(|constraints| constraints.preferred_assembly_strategy.as_ref())
@@ -11996,6 +13720,14 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
     let mut plan_findings = Vec::new();
     let mut plan_boundaries = Vec::new();
     let mut machine_by_part = BTreeMap::new();
+    if design_input_review.input_count > 0 {
+        warnings.push(format!(
+            "designInputs reviewed: {} supported, {} unsupported, {} require translator/topology/profile review before release",
+            design_input_review.supported_count,
+            design_input_review.unsupported_count,
+            design_input_review.review_required_count
+        ));
+    }
 
     for (index, part) in requested_parts.iter().enumerate() {
         let part_material = part.material.clone().unwrap_or_else(|| material.clone());
@@ -12316,6 +14048,7 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         },
         design_package,
         design_exports,
+        design_input_review,
         production_plan,
         machine_schedule,
         machine_selection,
@@ -15985,6 +17718,7 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "kind": "fabrication.mdp.process-policy",
         "designPackage": response.design_package,
         "designExports": response.design_exports,
+        "designInputReview": response.design_input_review,
         "states": states,
         "actions": actions,
         "transitions": transitions,
@@ -16450,6 +18184,7 @@ async fn root() -> impl IntoResponse {
             "hybrid additive/subtractive/turning process planning",
             "draft G-code and operator instruction generation",
             "existing instruction validation and improvement hints",
+            "CAD, organic-model, neutral mesh, and slicer project input review",
             "bounded job and artifact inspection",
             "fabrication outcome reward ingestion and policy snapshots",
             "machine-failure and human-intervention boundary detection",
@@ -16513,11 +18248,13 @@ async fn capabilities() -> impl IntoResponse {
             "operator-checklist",
             "setup-sheet"
         ],
+        "designInputFormats": design_format_catalog(),
         "generatedArtifacts": [
             "design-summary",
             "parametric-design",
             "design-package",
             "design-export-bundle",
+            "design-input-review",
             "generated-design-export",
             "process-plan",
             "production-plan",
@@ -16586,13 +18323,24 @@ async fn request_schema() -> impl IntoResponse {
                 "machines",
                 "constraints",
                 "parts",
+                "designInputs",
                 "existingInstructions",
                 "learning"
             ],
             "notes": [
                 "machines may be omitted to use the built-in fallback fleet exposed by GET /capabilities",
+                "designInputs may name native CAD, neutral geometry, organic model, or slicer project sources for compatibility review",
                 "existingInstructions are analyzed beside generated drafts and can be CNC G-code or text-based printer/setup/operator instructions",
                 "generated programs and improved programs are review drafts until downstream release evidence is attached"
+            ]
+        },
+        "designInput": {
+            "optional": ["id", "fileName", "sourceUri", "format", "sourceSystem", "role", "notes"],
+            "supportedFormats": design_format_catalog(),
+            "reviewContract": [
+                "native CAD sources are classified and retained as translator-required evidence",
+                "neutral STEP/3MF/STL/OBJ sources still require unit, topology, scale, and release review",
+                "slicer project sources require printer/material profile, support, orientation, and first-layer evidence"
             ]
         },
         "machineProfile": {
@@ -16669,6 +18417,7 @@ async fn request_schema() -> impl IntoResponse {
         "responseHighlights": [
             "designPackage",
             "designExports",
+            "designInputReview",
             "productionPlan",
             "machineSchedule",
             "machineSelection",
@@ -16728,6 +18477,29 @@ async fn examples() -> impl IntoResponse {
                             "material": { "name": "brass", "family": "metal" },
                             "preferredMethod": "turning",
                             "toleranceMm": 0.05
+                        }
+                    ],
+                    "designInputs": [
+                        {
+                            "id": "native-solidworks-body",
+                            "fileName": "fixture-body.SLDPRT",
+                            "format": "SLDPRT",
+                            "sourceSystem": "SOLIDWORKS",
+                            "role": "editable source CAD"
+                        },
+                        {
+                            "id": "creo-insert-assembly",
+                            "fileName": "threaded-insert.asm",
+                            "format": "Pro/ENGINEER assembly",
+                            "sourceSystem": "PTC Creo",
+                            "role": "supplier assembly reference"
+                        },
+                        {
+                            "id": "slicer-review",
+                            "fileName": "fixture-body.3mf",
+                            "format": "3MF",
+                            "sourceSystem": "PrusaSlicer",
+                            "role": "slicer project evidence"
                         }
                     ],
                     "learning": {
@@ -17430,6 +19202,358 @@ mod tests {
     }
 
     #[test]
+    fn plan_reviews_professional_open_artistic_and_slicer_design_inputs() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-cad-inputs".to_string()),
+            objective: "PLA printable fixture imported from several CAD ecosystems".to_string(),
+            material: Some(material("pla", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.18),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: Some(vec![
+                DesignInputFile {
+                    id: Some("creo-part".to_string()),
+                    file_name: Some("housing.prt".to_string()),
+                    source_uri: None,
+                    format: Some("Pro/ENGINEER part".to_string()),
+                    source_system: Some("PTC Creo".to_string()),
+                    role: Some("source CAD".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("solidworks-part".to_string()),
+                    file_name: Some("mount.SLDPRT".to_string()),
+                    source_uri: None,
+                    format: Some("SLDPRT".to_string()),
+                    source_system: Some("SOLIDWORKS".to_string()),
+                    role: Some("source CAD".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("fusion-archive".to_string()),
+                    file_name: Some("fixture.f3d".to_string()),
+                    source_uri: None,
+                    format: Some("F3D".to_string()),
+                    source_system: Some("Autodesk Fusion".to_string()),
+                    role: Some("source CAD".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("nx-part".to_string()),
+                    file_name: Some("bracket.prt".to_string()),
+                    source_uri: None,
+                    format: Some("NX part".to_string()),
+                    source_system: Some("Siemens NX".to_string()),
+                    role: Some("source CAD".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("catia-product".to_string()),
+                    file_name: Some("console.CATProduct".to_string()),
+                    source_uri: None,
+                    format: Some("CATIA product".to_string()),
+                    source_system: Some("CATIA".to_string()),
+                    role: Some("assembly source".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("onshape-document".to_string()),
+                    file_name: None,
+                    source_uri: Some("https://cad.onshape.com/documents/demo".to_string()),
+                    format: Some("Onshape document".to_string()),
+                    source_system: Some("Onshape".to_string()),
+                    role: Some("cloud CAD source".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("freecad-model".to_string()),
+                    file_name: Some("adapter.FCStd".to_string()),
+                    source_uri: None,
+                    format: Some("FreeCAD".to_string()),
+                    source_system: Some("FreeCAD".to_string()),
+                    role: Some("source CAD".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("openscad-source".to_string()),
+                    file_name: Some("parametric_clip.scad".to_string()),
+                    source_uri: None,
+                    format: Some("OpenSCAD".to_string()),
+                    source_system: Some("OpenSCAD".to_string()),
+                    role: Some("code CAD source".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("blender-model".to_string()),
+                    file_name: Some("organic_handle.blend".to_string()),
+                    source_uri: None,
+                    format: Some("Blender".to_string()),
+                    source_system: Some("Blender".to_string()),
+                    role: Some("organic mesh source".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("zbrush-tool".to_string()),
+                    file_name: Some("miniature.ztl".to_string()),
+                    source_uri: None,
+                    format: Some("ZBrush".to_string()),
+                    source_system: Some("ZBrush".to_string()),
+                    role: Some("sculpt source".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("neutral-step".to_string()),
+                    file_name: Some("datum_plate.step".to_string()),
+                    source_uri: None,
+                    format: Some("STEP".to_string()),
+                    source_system: None,
+                    role: Some("neutral CAD handoff".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("neutral-stl".to_string()),
+                    file_name: Some("draft_mesh.stl".to_string()),
+                    source_uri: None,
+                    format: Some("STL".to_string()),
+                    source_system: None,
+                    role: Some("neutral mesh handoff".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("prusa-project".to_string()),
+                    file_name: Some("fixture-prusa.3mf".to_string()),
+                    source_uri: None,
+                    format: Some("3MF".to_string()),
+                    source_system: Some("PrusaSlicer".to_string()),
+                    role: Some("slicer project".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("orca-project".to_string()),
+                    file_name: Some("fixture-orca.3mf".to_string()),
+                    source_uri: None,
+                    format: Some("3MF".to_string()),
+                    source_system: Some("OrcaSlicer".to_string()),
+                    role: Some("slicer project".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("cura-project".to_string()),
+                    file_name: Some("fixture.ufp".to_string()),
+                    source_uri: None,
+                    format: Some("UFP".to_string()),
+                    source_system: Some("Cura".to_string()),
+                    role: Some("slicer project".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("bambu-project".to_string()),
+                    file_name: Some("fixture-bambu.3mf".to_string()),
+                    source_uri: None,
+                    format: Some("3MF".to_string()),
+                    source_system: Some("Bambu Studio".to_string()),
+                    role: Some("slicer project".to_string()),
+                    notes: None,
+                },
+            ]),
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("CAD input review plan should be generated");
+
+        assert_eq!(
+            response.design_input_review.schema_version,
+            "dd.fabrication.design-input-review.v1"
+        );
+        assert_eq!(response.design_input_review.input_count, 16);
+        assert_eq!(response.design_input_review.supported_count, 16);
+        assert_eq!(response.design_input_review.unsupported_count, 0);
+        assert_eq!(response.design_input_review.review_required_count, 16);
+        let systems = response
+            .design_input_review
+            .inputs
+            .iter()
+            .map(|input| input.source_system.as_str())
+            .collect::<BTreeSet<_>>();
+        for system in [
+            "PTC Creo / Pro/ENGINEER",
+            "SOLIDWORKS",
+            "Autodesk Fusion",
+            "Siemens NX",
+            "CATIA",
+            "Onshape",
+            "FreeCAD",
+            "OpenSCAD",
+            "Blender",
+            "ZBrush",
+            "STEP",
+            "STL",
+            "PrusaSlicer",
+            "OrcaSlicer",
+            "Cura",
+            "Bambu Studio",
+        ] {
+            assert!(systems.contains(system), "missing system {system}");
+        }
+        assert!(response
+            .design_input_review
+            .supported_formats
+            .iter()
+            .any(|format| format.source_system == "SOLIDWORKS"));
+        assert!(response
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("designInputs reviewed")));
+        let job = stored_plan_job(&response);
+        assert!(job.artifacts.contains_key("design-input-review"));
+    }
+
+    #[test]
+    fn design_input_review_hardens_ambiguous_extensions_and_redacts_uris() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-cad-hardening".to_string()),
+            objective: "audit CAD source intake classification for 3D printed fixtures".to_string(),
+            material: Some(material("pla", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.18),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: Some(vec![
+                DesignInputFile {
+                    id: Some("solidworks-extension-only".to_string()),
+                    file_name: Some("mount.sldprt".to_string()),
+                    source_uri: None,
+                    format: None,
+                    source_system: None,
+                    role: Some("source CAD".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("ambiguous-prt".to_string()),
+                    file_name: Some("gear.prt".to_string()),
+                    source_uri: None,
+                    format: None,
+                    source_system: None,
+                    role: Some("native CAD source".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("plain-3mf".to_string()),
+                    file_name: Some("plain.3mf".to_string()),
+                    source_uri: None,
+                    format: None,
+                    source_system: None,
+                    role: Some("neutral geometry".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("prusa-project".to_string()),
+                    file_name: Some("print-profile.3mf".to_string()),
+                    source_uri: None,
+                    format: None,
+                    source_system: Some("PrusaSlicer".to_string()),
+                    role: Some("slicer project".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("private-onshape".to_string()),
+                    file_name: None,
+                    source_uri: Some(
+                        "https://user:secret@cad.onshape.com/documents/demo?access_token=secret#workspace"
+                            .to_string(),
+                    ),
+                    format: None,
+                    source_system: None,
+                    role: Some("cloud CAD source".to_string()),
+                    notes: None,
+                },
+            ]),
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("hardened CAD input review plan should be generated");
+
+        assert_eq!(response.design_input_review.input_count, 5);
+        assert_eq!(response.design_input_review.supported_count, 4);
+        assert_eq!(response.design_input_review.unsupported_count, 1);
+        assert_eq!(response.design_input_review.review_required_count, 5);
+
+        let review_for = |id: &str| {
+            response
+                .design_input_review
+                .inputs
+                .iter()
+                .find(|input| input.input_id == id)
+                .unwrap_or_else(|| panic!("missing reviewed design input {id}"))
+        };
+
+        let solidworks = review_for("solidworks-extension-only");
+        assert_eq!(solidworks.normalized_format, "solidworks-native");
+        assert_eq!(solidworks.source_system, "SOLIDWORKS");
+
+        let ambiguous = review_for("ambiguous-prt");
+        assert_eq!(ambiguous.normalized_format, "ambiguous-native-cad");
+        assert_eq!(ambiguous.status, "review-required-ambiguous-source-system");
+
+        let plain_3mf = review_for("plain-3mf");
+        assert_eq!(plain_3mf.normalized_format, "3mf");
+        assert_eq!(plain_3mf.source_system, "3MF");
+
+        let prusa_project = review_for("prusa-project");
+        assert_eq!(prusa_project.normalized_format, "prusaslicer-project");
+        assert_eq!(prusa_project.source_system, "PrusaSlicer");
+
+        let private_onshape = review_for("private-onshape");
+        assert_eq!(private_onshape.normalized_format, "onshape-cloud-document");
+        assert_eq!(
+            private_onshape.source_uri.as_deref(),
+            Some("https://redacted@cad.onshape.com/documents/demo")
+        );
+
+        let error = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-cad-notes-only".to_string()),
+            objective: "reject design input metadata without a source identity".to_string(),
+            material: Some(material("pla", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.18),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: Some(vec![DesignInputFile {
+                id: Some("notes-only".to_string()),
+                file_name: None,
+                source_uri: None,
+                format: None,
+                source_system: None,
+                role: Some("source CAD".to_string()),
+                notes: Some(vec!["looks like SOLIDWORKS".to_string()]),
+            }]),
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect_err("notes-only design inputs should be rejected");
+        assert!(error.contains("must include fileName, sourceUri, format, or sourceSystem"));
+
+        let error = validate_design_inputs(Some(vec![DesignInputFile {
+            id: Some("query-only-uri".to_string()),
+            file_name: None,
+            source_uri: Some("?access_token=secret#fragment".to_string()),
+            format: None,
+            source_system: None,
+            role: None,
+            notes: None,
+        }]))
+        .expect_err("query-only source URIs should be rejected after redaction");
+        assert!(error.contains("sourceUri must include a path or identifier"));
+    }
+
+    #[test]
     fn hybrid_plan_splits_tight_metal_object_across_mill_and_lathe() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-hybrid".to_string()),
@@ -17453,6 +19577,7 @@ mod tests {
                 preferred_assembly_strategy: None,
             }),
             parts: None,
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         })
@@ -17803,6 +19928,7 @@ mod tests {
                 preferred_assembly_strategy: None,
             }),
             parts: None,
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         })
@@ -17876,6 +20002,7 @@ mod tests {
                 preferred_assembly_strategy: None,
             }),
             parts: None,
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         })
@@ -17933,6 +20060,7 @@ mod tests {
             machines: None,
             constraints: None,
             parts: None,
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         })
@@ -17996,6 +20124,7 @@ mod tests {
             machines: None,
             constraints: None,
             parts: None,
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         })
@@ -18049,6 +20178,7 @@ mod tests {
             machines: None,
             constraints: None,
             parts: None,
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         })
@@ -18095,6 +20225,7 @@ mod tests {
             machines: None,
             constraints: None,
             parts: None,
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         })
@@ -18152,6 +20283,7 @@ mod tests {
             machines: None,
             constraints: None,
             parts: None,
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         })
@@ -18213,6 +20345,7 @@ mod tests {
             machines: None,
             constraints: None,
             parts: None,
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         })
@@ -19869,6 +22002,7 @@ mod tests {
                 preferred_method: Some("milling".to_string()),
                 tolerance_mm: Some(0.12),
             }]),
+            design_inputs: None,
             existing_instructions: Some(vec![InstructionProgram {
                 id: Some("legacy-steel-print".to_string()),
                 machine_id: Some("polymer-printer".to_string()),
@@ -20469,7 +22603,7 @@ mod tests {
                 "implicit-extrusion-state",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "G28",
                     "M104 S210",
                     "M109 S210",
@@ -20485,7 +22619,7 @@ mod tests {
                 "fdm-printer",
                 &[
                     "G21 G90",
-                    "M82 ; filament lot and dry-storage evidence verified",
+                    "M82 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "G28",
                     "M104 S210",
                     "M109 S210",
@@ -20541,7 +22675,7 @@ mod tests {
                 "negative-z-extrusion",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -20558,7 +22692,7 @@ mod tests {
                 "verified-negative-z-extrusion",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "G29 ; bed probe verified",
@@ -20576,7 +22710,7 @@ mod tests {
                 "positive-z-extrusion",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -20640,7 +22774,7 @@ mod tests {
                 "relative-position-extrusion",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -20659,7 +22793,7 @@ mod tests {
                 "absolute-restored-extrusion",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -20680,7 +22814,7 @@ mod tests {
                 "verified-relative-extrusion",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -20744,7 +22878,7 @@ mod tests {
                 "mode-switch-without-reset",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -20763,7 +22897,7 @@ mod tests {
                 "mode-switch-with-reset",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -20821,7 +22955,7 @@ mod tests {
                 "async-nozzle-target-print",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -20837,7 +22971,7 @@ mod tests {
                 "waited-nozzle-target-print",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -20892,7 +23026,7 @@ mod tests {
                 "cooled-nozzle-print",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -20911,7 +23045,7 @@ mod tests {
                 "reheated-nozzle-print",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -20966,7 +23100,7 @@ mod tests {
                 "async-bed-target-print",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S245",
@@ -20985,7 +23119,7 @@ mod tests {
                 "rewaited-bed-target-print",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S245",
@@ -21043,7 +23177,7 @@ mod tests {
                 "cooled-bed-print",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -21062,7 +23196,7 @@ mod tests {
                 "rewaited-bed-print",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -21118,7 +23252,7 @@ mod tests {
                 "idle-stepper-print",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -21137,7 +23271,7 @@ mod tests {
                 "rehomed-stepper-print",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -21191,7 +23325,7 @@ mod tests {
                 "unverified-pause-resume",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -21210,7 +23344,7 @@ mod tests {
                 "verified-pause-resume",
                 "fdm-printer",
                 &[
-                    "G21 G90 ; filament lot and dry-storage evidence verified",
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
                     "M82 ; absolute extrusion mode",
                     "G28",
                     "M104 S210",
@@ -21287,7 +23421,7 @@ mod tests {
                 "fdm-printer",
                 &[
                     "G21 G90",
-                    "M82 ; filament lot PETG-42 dry-storage, dryer, and desiccant evidence verified",
+                    "M82 ; filament lot PETG-42 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
                     "G28",
                     "M104 S245",
                     "M109 S245",
@@ -21327,6 +23461,144 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.contains("boundary printer-material-conditioning-boundary")));
+        assert!(!improved[1].changed);
+    }
+
+    #[test]
+    fn additive_analysis_requires_extrusion_calibration_before_first_extrusion() {
+        let programs = vec![
+            program(
+                "uncalibrated-extrusion",
+                "fdm-printer",
+                &[
+                    "G21 G90",
+                    "M82 ; filament lot PLA-42 dry-storage, dryer, and desiccant evidence verified",
+                    "G28",
+                    "M104 S215",
+                    "M109 S215",
+                    "M140 S60",
+                    "M190 S60",
+                    "G92 E0",
+                    "G1 Z0.28 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+            program(
+                "calibrated-extrusion",
+                "fdm-printer",
+                &[
+                    "G21 G90",
+                    "M82 ; filament lot PLA-42 dry-storage, dryer, and desiccant evidence verified",
+                    "M221 S97 ; flow calibration, extrusion multiplier, and pressure advance reviewed",
+                    "G28",
+                    "M104 S215",
+                    "M109 S215",
+                    "M140 S60",
+                    "M190 S60",
+                    "G92 E0",
+                    "G1 Z0.28 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "additive-extrusion-calibration-missing"
+                && finding.program_id.as_deref() == Some("uncalibrated-extrusion")
+                && finding.line == Some(10)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "printer-extrusion-calibration-boundary"
+                && boundary.program_id.as_deref() == Some("uncalibrated-extrusion")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("M221")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "additive-extrusion-calibration-missing"
+                && finding.program_id.as_deref() == Some("calibrated-extrusion")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-extrusion-calibration-boundary")));
+        assert!(!improved[1].changed);
+    }
+
+    #[test]
+    fn additive_analysis_requires_chamber_thermal_evidence_for_warp_prone_filament() {
+        let programs = vec![
+            program(
+                "abs-without-chamber",
+                "fdm-printer",
+                &[
+                    "G21 G90",
+                    "M82 ; ABS filament lot A42 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
+                    "G28",
+                    "M104 S250",
+                    "M109 S250",
+                    "M140 S105",
+                    "M190 S105",
+                    "G92 E0",
+                    "G1 Z0.28 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+            program(
+                "abs-with-chamber",
+                "fdm-printer",
+                &[
+                    "G21 G90",
+                    "M82 ; ABS filament lot A42 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
+                    "M141 S45 ; heated chamber temperature and thermal soak verified",
+                    "G28",
+                    "M104 S250",
+                    "M109 S250",
+                    "M140 S105",
+                    "M190 S105",
+                    "G92 E0",
+                    "G1 Z0.28 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "additive-chamber-thermal-evidence-missing"
+                && finding.program_id.as_deref() == Some("abs-without-chamber")
+                && finding.line == Some(10)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "printer-chamber-thermal-boundary"
+                && boundary.program_id.as_deref() == Some("abs-without-chamber")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("thermal-soak")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "additive-chamber-thermal-evidence-missing"
+                && finding.program_id.as_deref() == Some("abs-with-chamber")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-chamber-thermal-boundary")));
         assert!(!improved[1].changed);
     }
 
@@ -21399,7 +23671,7 @@ mod tests {
                 "fdm-printer",
                 &[
                     "G21 G90",
-                    "M82 ; filament lot PLA-17 dry-storage, dryer, and desiccant evidence verified",
+                    "M82 ; filament lot PLA-17 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
                     "G28",
                     "M104 S215",
                     "M109 S215",
@@ -21419,7 +23691,7 @@ mod tests {
                 "fdm-printer",
                 &[
                     "G21 G90",
-                    "M82 ; filament lot PLA-17 dry-storage, dryer, and desiccant evidence verified",
+                    "M82 ; filament lot PLA-17 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
                     "G28",
                     "M104 S215",
                     "M109 S215",
@@ -21478,7 +23750,7 @@ mod tests {
                 "fdm-printer",
                 &[
                     "G21 G90",
-                    "M82 ; filament lot PLA-17 dry-storage, dryer, and desiccant evidence verified",
+                    "M82 ; filament lot PLA-17 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
                     "G28",
                     "M104 S215",
                     "M109 S215",
@@ -21498,7 +23770,7 @@ mod tests {
                 "fdm-printer",
                 &[
                     "G21 G90",
-                    "M82 ; filament lot PLA-17 dry-storage, dryer, and desiccant evidence verified",
+                    "M82 ; filament lot PLA-17 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
                     "G28",
                     "M104 S215",
                     "M109 S215",
@@ -22284,6 +24556,70 @@ mod tests {
     }
 
     #[test]
+    fn text_assembly_jobs_require_fit_metrology_and_join_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("assembly-missing-fit-evidence".to_string()),
+                machine_id: Some("manual-assembly-1".to_string()),
+                machine_kind: Some("manual-cell".to_string()),
+                language: Some("assembly-checklist".to_string()),
+                instructions: vec![
+                    "Assemble printed housing, milled plate, and turned brass insert".to_string(),
+                    "Bond the insert with epoxy, fasten the plate, and finish the job".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("assembly-with-fit-evidence".to_string()),
+                machine_id: Some("manual-assembly-1".to_string()),
+                machine_kind: Some("manual-cell".to_string()),
+                language: Some("assembly-checklist".to_string()),
+                instructions: vec![
+                    "Dry-fit printed housing to milled datum plate and turned brass insert"
+                        .to_string(),
+                    "Record datum alignment, press-fit allowance, torque spec, epoxy cure time, and final go/no-go inspection"
+                        .to_string(),
+                    "Assemble and finish when metrology passes".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "assembly-fit-metrology-evidence-missing"
+                && finding.program_id.as_deref() == Some("assembly-missing-fit-evidence")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "assembly-fit-metrology-evidence-missing"
+                && finding.program_id.as_deref() == Some("assembly-with-fit-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "assembly-fit-metrology-boundary"
+                && boundary.program_id.as_deref() == Some("assembly-missing-fit-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("dry-fit/metrology")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.combine_recommended > 0);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "assembly-fit-metrology-boundary"
+                && requirement.automation_type == "operator-gate-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-assembly-fit-metrology-evidence"
+                && improvement.program_id.as_deref() == Some("assembly-missing-fit-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [assembly-fit-metrology-boundary]")));
+    }
+
+    #[test]
     fn text_printer_jobs_flag_resin_and_powder_handling_boundaries() {
         let programs = vec![
             InstructionProgram {
@@ -22352,6 +24688,536 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.starts_with("CHECKPOINT [powder-handling-boundary]")));
+    }
+
+    #[test]
+    fn text_resin_and_powder_jobs_require_process_evidence_before_release() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("sla-missing-postprocess".to_string()),
+                machine_id: Some("sla-1".to_string()),
+                machine_kind: Some("sla-printer".to_string()),
+                language: Some("resin-job".to_string()),
+                instructions: vec![
+                    "Print resin dental guide from reviewed supports".to_string(),
+                    "Remove part from build plate for final inspection".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("sls-missing-handling".to_string()),
+                machine_id: Some("sls-1".to_string()),
+                machine_kind: Some("sls-printer".to_string()),
+                language: Some("powder-job".to_string()),
+                instructions: vec![
+                    "Print powder-bed clip batch from nested build".to_string(),
+                    "Move build to the unpack cart for inspection".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("sla-with-postprocess".to_string()),
+                machine_id: Some("sla-1".to_string()),
+                machine_kind: Some("sla-printer".to_string()),
+                language: Some("resin-job".to_string()),
+                instructions: vec![
+                    "Print resin housing from approved supports".to_string(),
+                    "Wash in IPA, drain, UV cure, and record ventilation and waste controls"
+                        .to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("sls-with-handling".to_string()),
+                machine_id: Some("sls-1".to_string()),
+                machine_kind: Some("sls-printer".to_string()),
+                language: Some("powder-job".to_string()),
+                instructions: vec![
+                    "Print powder-bed spacer batch from nested build".to_string(),
+                    "Cooldown to safe unpack temperature, depowder with grounded vacuum, and record refresh ratio"
+                        .to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "resin-postprocess-evidence-missing"
+                && finding.program_id.as_deref() == Some("sla-missing-postprocess")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "powder-bed-handling-evidence-missing"
+                && finding.program_id.as_deref() == Some("sls-missing-handling")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "resin-postprocess-evidence-missing"
+                && finding.program_id.as_deref() == Some("sla-with-postprocess")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "powder-bed-handling-evidence-missing"
+                && finding.program_id.as_deref() == Some("sls-with-handling")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "resin-postprocess-boundary"
+                && boundary.program_id.as_deref() == Some("sla-missing-postprocess")
+                && boundary.line.is_none()
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("UV-cure")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "powder-bed-handling-boundary"
+                && boundary.program_id.as_deref() == Some("sls-missing-handling")
+                && boundary.line.is_none()
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("refresh-ratio")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "resin-postprocess-boundary"
+                && requirement.automation_type == "process-cell-automation"
+        }));
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "powder-bed-handling-boundary"
+                && requirement.automation_type == "process-cell-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-resin-postprocess-evidence"
+                && improvement.program_id.as_deref() == Some("sla-missing-postprocess")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-powder-bed-handling-evidence"
+                && improvement.program_id.as_deref() == Some("sls-missing-handling")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[1].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [resin-postprocess-boundary]")));
+        assert!(improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [powder-bed-handling-boundary]")));
+    }
+
+    #[test]
+    fn text_resin_print_jobs_require_profile_exposure_and_support_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("sla-missing-print-profile".to_string()),
+                machine_id: Some("sla-1".to_string()),
+                machine_kind: Some("sla-printer".to_string()),
+                language: Some("resin-job".to_string()),
+                instructions: vec![
+                    "Print resin dental guide on the SLA printer".to_string(),
+                    "Wash in IPA, UV cure, drain, and record PPE and waste controls".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("sla-with-print-profile".to_string()),
+                machine_id: Some("sla-1".to_string()),
+                machine_kind: Some("sla-printer".to_string()),
+                language: Some("resin-job".to_string()),
+                instructions: vec![
+                    "Print resin housing with resin profile Dental-50, layer height 50um, exposure 2.4s, lift speed recorded, and supports reviewed".to_string(),
+                    "Wash in IPA, UV cure, drain, and record PPE and waste controls".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "resin-print-profile-evidence-missing"
+                && finding.program_id.as_deref() == Some("sla-missing-print-profile")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "resin-print-profile-evidence-missing"
+                && finding.program_id.as_deref() == Some("sla-with-print-profile")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "resin-print-profile-boundary"
+                && boundary.program_id.as_deref() == Some("sla-missing-print-profile")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("resin profile")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "resin-print-profile-boundary"
+                && requirement.automation_type == "process-cell-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-resin-print-profile-evidence"
+                && improvement.program_id.as_deref() == Some("sla-missing-print-profile")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [resin-print-profile-boundary]")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [resin-print-profile-boundary]")));
+    }
+
+    #[test]
+    fn text_powder_bed_print_jobs_require_build_profile_and_powder_lot_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("sls-missing-build-profile".to_string()),
+                machine_id: Some("sls-1".to_string()),
+                machine_kind: Some("sls-printer".to_string()),
+                language: Some("powder-job".to_string()),
+                instructions: vec![
+                    "Print powder-bed nylon bracket on the SLS printer".to_string(),
+                    "Cooldown, depowder with grounded vacuum, and record PPE controls".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("sls-with-build-profile".to_string()),
+                machine_id: Some("sls-1".to_string()),
+                machine_kind: Some("sls-printer".to_string()),
+                language: Some("powder-job".to_string()),
+                instructions: vec![
+                    "Print powder-bed nylon bracket with powder lot PA12-44, material profile PA12-fine, layer thickness 100um, nested build reviewed, packing density recorded, laser power and scan speed from validated profile".to_string(),
+                    "Cooldown, depowder with grounded vacuum, and record refresh ratio and PPE controls".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "powder-bed-build-profile-evidence-missing"
+                && finding.program_id.as_deref() == Some("sls-missing-build-profile")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "powder-bed-build-profile-evidence-missing"
+                && finding.program_id.as_deref() == Some("sls-with-build-profile")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "powder-bed-build-profile-boundary"
+                && boundary.program_id.as_deref() == Some("sls-missing-build-profile")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("powder lot")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "powder-bed-build-profile-boundary"
+                && requirement.automation_type == "process-cell-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-powder-bed-build-profile-evidence"
+                && improvement.program_id.as_deref() == Some("sls-missing-build-profile")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [powder-bed-build-profile-boundary]")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [powder-bed-build-profile-boundary]")));
+    }
+
+    #[test]
+    fn text_subtractive_jobs_require_setup_and_process_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("mill-text-missing-evidence".to_string()),
+                machine_id: Some("mill-1".to_string()),
+                machine_kind: Some("vertical-mill".to_string()),
+                language: Some("operator-checklist".to_string()),
+                instructions: vec![
+                    "Machine aluminum bracket on the vertical mill".to_string(),
+                    "Face top surface, pocket the slot, drill four holes, and finish".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("lathe-text-with-evidence".to_string()),
+                machine_id: Some("lathe-1".to_string()),
+                machine_kind: Some("lathe".to_string()),
+                language: Some("setup-sheet".to_string()),
+                instructions: vec![
+                    "Clamp 6061 round in collet with stick-out recorded and probe datum zero"
+                        .to_string(),
+                    "Run tool list T0101/T0202 at spindle 1800 rpm, feed 0.12 mm/rev, coolant on, and dry-run reviewed"
+                        .to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "subtractive-text-setup-evidence-missing"
+                && finding.program_id.as_deref() == Some("mill-text-missing-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "subtractive-text-process-evidence-missing"
+                && finding.program_id.as_deref() == Some("mill-text-missing-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "subtractive-text-setup-evidence-missing"
+                && finding.program_id.as_deref() == Some("lathe-text-with-evidence")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "subtractive-text-process-evidence-missing"
+                && finding.program_id.as_deref() == Some("lathe-text-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "subtractive-text-setup-boundary"
+                && boundary.program_id.as_deref() == Some("mill-text-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary
+                    .suggested_resolution
+                    .contains("fixture/workholding")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "subtractive-text-process-boundary"
+                && boundary.program_id.as_deref() == Some("mill-text-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("spindle/feed")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "subtractive-text-setup-boundary"
+                && requirement.automation_type == "fixture-automation"
+        }));
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "subtractive-text-process-boundary"
+                && requirement.automation_type == "process-cell-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-subtractive-text-setup-evidence"
+                && improvement.program_id.as_deref() == Some("mill-text-missing-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-subtractive-text-process-evidence"
+                && improvement.program_id.as_deref() == Some("mill-text-missing-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [subtractive-text-setup-boundary]")));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [subtractive-text-process-boundary]")));
+    }
+
+    #[test]
+    fn text_lathe_threading_jobs_require_feed_per_rev_pitch_sync_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("lathe-text-thread-missing-sync".to_string()),
+                machine_id: Some("lathe-1".to_string()),
+                machine_kind: Some("lathe".to_string()),
+                language: Some("setup-sheet".to_string()),
+                instructions: vec![
+                    "Clamp 4140 round in chuck with stick-out and runout recorded".to_string(),
+                    "Turn M12 external thread at spindle 900 rpm, feed 1.5 mm pitch, coolant on, then inspect".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("lathe-text-thread-with-sync".to_string()),
+                machine_id: Some("lathe-1".to_string()),
+                machine_kind: Some("lathe".to_string()),
+                language: Some("setup-sheet".to_string()),
+                instructions: vec![
+                    "Clamp 4140 round in chuck with stick-out and runout recorded".to_string(),
+                    "Turn M12 external thread with feed per rev mode recorded, thread pitch verified, spindle encoder verified, gauge plan, and spring-pass strategy".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "lathe-text-threading-sync-evidence-missing"
+                && finding.program_id.as_deref() == Some("lathe-text-thread-missing-sync")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "lathe-text-threading-sync-evidence-missing"
+                && finding.program_id.as_deref() == Some("lathe-text-thread-with-sync")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "lathe-text-threading-sync-boundary"
+                && boundary.program_id.as_deref() == Some("lathe-text-thread-missing-sync")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("feed-per-rev")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "lathe-text-threading-sync-boundary"
+                && requirement.automation_type == "operator-gate-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-lathe-text-threading-sync-evidence"
+                && improvement.program_id.as_deref() == Some("lathe-text-thread-missing-sync")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [lathe-text-threading-sync-boundary]")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [lathe-text-threading-sync-boundary]")));
+    }
+
+    #[test]
+    fn text_lathe_partoff_jobs_require_catcher_or_stock_support_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("lathe-text-partoff-missing-support".to_string()),
+                machine_id: Some("lathe-1".to_string()),
+                machine_kind: Some("lathe".to_string()),
+                language: Some("setup-sheet".to_string()),
+                instructions: vec![
+                    "Clamp 6061 bar in collet with stick-out and runout recorded".to_string(),
+                    "Turn OD at spindle 1800 rpm, feed 0.12 mm/rev, coolant on, then part-off cutoff at Z-35".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("lathe-text-partoff-with-support".to_string()),
+                machine_id: Some("lathe-1".to_string()),
+                machine_kind: Some("lathe".to_string()),
+                language: Some("setup-sheet".to_string()),
+                instructions: vec![
+                    "Clamp 6061 bar in collet with stick-out and runout recorded".to_string(),
+                    "Turn OD at spindle 1800 rpm, feed 0.12 mm/rev, coolant on, then part-off cutoff at Z-35 with part catcher verified".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "lathe-text-partoff-support-evidence-missing"
+                && finding.program_id.as_deref() == Some("lathe-text-partoff-missing-support")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "lathe-text-partoff-support-evidence-missing"
+                && finding.program_id.as_deref() == Some("lathe-text-partoff-with-support")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "lathe-text-partoff-support-boundary"
+                && boundary.program_id.as_deref() == Some("lathe-text-partoff-missing-support")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("part-catcher")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "lathe-text-partoff-support-boundary"
+                && requirement.automation_type == "fixture-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-lathe-text-partoff-support-evidence"
+                && improvement.program_id.as_deref() == Some("lathe-text-partoff-missing-support")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [lathe-text-partoff-support-boundary]")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [lathe-text-partoff-support-boundary]")));
+    }
+
+    #[test]
+    fn text_sheet_cutting_jobs_require_material_thickness_and_recipe_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("laser-missing-recipe".to_string()),
+                machine_id: Some("laser-1".to_string()),
+                machine_kind: Some("laser-cutter".to_string()),
+                language: Some("laser-job".to_string()),
+                instructions: vec![
+                    "Cut acrylic logo on the laser cutter".to_string(),
+                    "Clamp sheet, start fume extraction, and keep fire watch".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("laser-with-recipe".to_string()),
+                machine_id: Some("laser-1".to_string()),
+                machine_kind: Some("laser-cutter".to_string()),
+                language: Some("laser-job".to_string()),
+                instructions: vec![
+                    "Cut acrylic logo with material table acrylic 3mm, thickness recorded, kerf coupon, power=reviewed, speed=reviewed, and focus verified".to_string(),
+                    "Clamp sheet, start fume extraction, and keep fire watch".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "sheet-cutting-recipe-evidence-missing"
+                && finding.program_id.as_deref() == Some("laser-missing-recipe")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "sheet-cutting-recipe-evidence-missing"
+                && finding.program_id.as_deref() == Some("laser-with-recipe")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "sheet-cutting-recipe-boundary"
+                && boundary.program_id.as_deref() == Some("laser-missing-recipe")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("material/thickness")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "sheet-cutting-recipe-boundary"
+                && requirement.automation_type == "process-cell-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-sheet-cutting-recipe-evidence"
+                && improvement.program_id.as_deref() == Some("laser-missing-recipe")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [sheet-cutting-recipe-boundary]")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [sheet-cutting-recipe-boundary]")));
     }
 
     #[test]
@@ -22430,6 +25296,7 @@ mod tests {
             machines: None,
             constraints: None,
             parts: None,
+            design_inputs: None,
             existing_instructions: Some(vec![program(
                 "legacy-insert",
                 "lathe",
@@ -23000,6 +25867,7 @@ mod tests {
                     preferred_method: Some("milling".to_string()),
                     tolerance_mm: Some(0.08),
                 }]),
+                design_inputs: None,
                 existing_instructions: None,
                 learning: None,
             },
@@ -23073,6 +25941,7 @@ mod tests {
                 preferred_method: None,
                 tolerance_mm: Some(0.25),
             }]),
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         };
@@ -23207,6 +26076,7 @@ mod tests {
             ]),
             constraints: None,
             parts: None,
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         };
@@ -23266,6 +26136,7 @@ mod tests {
                     tolerance_mm: Some(0.04),
                 },
             ]),
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         };
@@ -23346,6 +26217,7 @@ mod tests {
             machines: None,
             constraints: None,
             parts: None,
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         })
@@ -23760,6 +26632,7 @@ mod tests {
             }]),
             constraints: None,
             parts: None,
+            design_inputs: None,
             existing_instructions: None,
             learning: None,
         })

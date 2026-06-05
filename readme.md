@@ -53,12 +53,20 @@ out `fabrication.learning.outcome.result` with the retained policy snapshot.
 ## What It Does Today
 
 `POST /fabrication/plan` accepts a fabrication intent, optional machine fleet,
-optional part decomposition, optional existing instruction streams, and optional
-learning hints. It returns:
+optional part decomposition, optional CAD/model/slicer design inputs, optional
+existing instruction streams, and optional learning hints. It returns:
 
 Submitted `existingInstructions` are analyzed beside generated drafts. When the
 request declares a material, those submitted programs are also checked against
 resolved machine profile material lists before the plan is marked OK.
+Submitted `designInputs` are classified as native CAD, cloud CAD, open/scripted
+CAD, organic model, neutral geometry, or slicer project evidence before any
+downstream worker treats them as releasable geometry. Each entry must carry a
+source identity field (`fileName`, `sourceUri`, `format`, or `sourceSystem`);
+`role` and `notes` are supplemental only. Source URIs are stored without
+userinfo, query strings, or fragments, and ambiguous native extensions such as
+bare `.prt` stay release-blocked until source-system or neutral-export evidence
+is supplied.
 
 - A normalized design summary with inferred additive, milling, turning, or
   special-process parts.
@@ -68,6 +76,10 @@ resolved machine profile material lists before the plan is marked OK.
 - A `designExports` bundle that instantiates those targets as deterministic draft
   3MF/STL/STEP/DXF/CAM setup/nesting/assembly payloads with source text or JSON
   previews, blockers, process-node links, and generated-program links.
+- A `designInputReview` that recognizes Creo/Pro/ENGINEER, SOLIDWORKS, Fusion,
+  Siemens NX, CATIA, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, STEP, 3MF,
+  STL, OBJ, and PrusaSlicer/OrcaSlicer/Cura/Bambu Studio project sources while
+  retaining translator, topology, scale, slicer-profile, and release blockers.
 - A process plan and structured `processGraph` across 3D printers,
   vertical/horizontal mills, routers, laser, waterjet, plasma/sheet cutters, and
   lathes when those machine profiles are available. The graph links operations,
@@ -92,18 +104,21 @@ resolved machine profile material lists before the plan is marked OK.
 - Validation and simulation findings plus failure boundaries for heat-up, homing,
   spindle-speed/direction/start/process-stop state, work-offset/datum evidence, additive material/color/tool-change,
   manual-stop, CNC tool-change automation/operator-load/spindle-stop evidence,
-  mill/router fixture/hold-down evidence, cutting feed-rate/cut-chart evidence,
+  subtractive text setup/process evidence, mill/router fixture/hold-down evidence, cutting feed-rate/cut-chart evidence,
   tool-length/probe compensation/cancel state, cutter-compensation offset/cancel state, chip/coolant/dust-collection state, lathe
-  chuck/stick-out/runout evidence, part-off catcher/support evidence, tool/turret-change stop state, tool-nose compensation evidence/cancel state, canned drilling/tapping cycle setup/cancel state, declared
+  chuck/stick-out/runout evidence, part-off catcher/support evidence including lathe text part-off support evidence, lathe text threading feed-per-rev/pitch-sync evidence, tool/turret-change stop state, tool-nose compensation evidence/cancel state, canned drilling/tapping cycle setup/cancel state, declared
   material/machine compatibility, additive slicer profile/support/
   orientation/first-layer evidence, additive thin-wall geometry, printer
   async-nozzle-wait state, async-bed-target re-wait state, nozzle-cooldown/
   reheat state, bed-cooldown/re-wait state, stepper-idle/re-home state,
   extrusion-mode/reset state, post-mode-switch extrusion reset state,
   negative-Z extrusion/Z-offset probe state, filament lot/dry-storage
-  conditioning evidence, bed-adhesion, first-layer, fan-timing, resin-handling,
-  powder-handling,
-  sheet-cutting pierce/kerf/focus/gas/fume/support, waterjet pressure/abrasive-flow, and plasma work-clamp evidence, deep-cut, arc-plane/geometry,
+  conditioning evidence, extrusion calibration/flow/pressure-advance evidence,
+  chamber/enclosure/thermal-soak evidence for warp-prone filament,
+  bed-adhesion, first-layer, fan-timing, resin exposure/profile/layer/support evidence, resin-handling/
+  postprocess evidence, powder-bed build profile/powder lot/nesting evidence, powder-handling/cooldown-depowder evidence,
+  assembly fit/metrology/datum/torque/cure evidence,
+  sheet-cutting material/thickness/cut-chart/recipe evidence, pierce/kerf/focus/gas/fume/support, waterjet pressure/abrasive-flow, and plasma work-clamp evidence, deep-cut, arc-plane/geometry,
   positioning-mode reset state, additive relative-positioning extrusion state, setup-limit, machine-envelope, inspection, and automation constraints.
 - A `resolutionPlan` with ordered release-blocking remediation steps derived
   from failure boundaries, including split/combine, human review, automation,
@@ -169,9 +184,9 @@ return the service capability contract before a caller submits work. The payload
 includes supported request families, built-in `defaultMachines`, machine classes
 for FDM, resin, powder-bed, vertical milling, horizontal milling, routing, laser,
 waterjet, plasma, lathe, and manual/special-process work, accepted instruction
-kinds, generated artifact families, learning channels, and safety boundary
-classes. These capabilities describe draft planning and validation support, not
-controller-certified release.
+kinds, design input format families, generated artifact families, learning
+channels, and safety boundary classes. These capabilities describe draft
+planning and validation support, not controller-certified release.
 
 ## `GET /fabrication/schema` And `GET /fabrication/examples`
 
@@ -230,6 +245,29 @@ Requests use camelCase JSON:
       "workEnvelopeMm": [300, 750],
       "axes": 2,
       "operations": ["face", "turn", "bore", "thread"]
+    }
+  ],
+  "designInputs": [
+    {
+      "id": "native-solidworks-body",
+      "fileName": "fixture-body.SLDPRT",
+      "format": "SLDPRT",
+      "sourceSystem": "SOLIDWORKS",
+      "role": "editable source CAD"
+    },
+    {
+      "id": "creo-assembly",
+      "fileName": "threaded-insert.asm",
+      "format": "Pro/ENGINEER assembly",
+      "sourceSystem": "PTC Creo",
+      "role": "supplier assembly reference"
+    },
+    {
+      "id": "slicer-project",
+      "fileName": "fixture-body.3mf",
+      "format": "3MF",
+      "sourceSystem": "PrusaSlicer",
+      "role": "slicer project evidence"
     }
   ],
   "learning": {
@@ -293,7 +331,10 @@ after async `M140` bed target changes without `M190` or verified bed wait,
 after nozzle cooldown without reheat, after bed cooldown without re-wait, after
 stepper idle without re-homing, or before homing, missing `M82`/`M83` extrusion
 mode and `G92 E0` reset state before priming, missing filament lot/dry-storage/
-dryer/desiccant evidence before first extrusion, missing bed-temperature waits or
+dryer/desiccant evidence before first extrusion, missing extrusion
+calibration/flow/pressure-advance evidence before first extrusion, missing
+chamber/enclosure/thermal-soak evidence before first extrusion for ABS/ASA/PC/nylon,
+missing bed-temperature waits or
 re-waits, later `M82`/`M83` extrusion-mode switches without renewed `G92 E`
 reset evidence, positive extrusion while `G91` relative axis positioning remains
 active without `G90` or coordinate-state verification, positive extrusion below
@@ -317,10 +358,13 @@ constant-surface-speed without a spindle cap, threading cycles without feed-per-
 cutoff operations, manual stops, fixture changes, deep negative Z moves, arc
 moves before explicit `G17`/`G18`/`G19` plane evidence, with center offsets that do not match the selected plane, or without plane-matched `I`/`J`, `I`/`K`, or `J`/`K` center offsets or `R` radius, missing program ends, declared material
 incompatibility with resolved machine profiles, and text-instruction boundaries
-where the job needs setup, slicer profile/support/
-orientation/first-layer evidence, post-processing, resin IPA/wash/cure/waste
-controls, powder cooldown/depowder/recovery controls, sheet-cutting
-kerf/fire/fume checks, assembly, splitting, or operator intervention. Improved
+where the job needs setup, subtractive text setup/process evidence for
+workholding/datum/tool-length and spindle/feed/coolant/kerf/pierce/cut-chart
+controls, slicer profile/support/orientation/first-layer evidence, post-processing, missing resin exposure/profile/layer/support/build-plate evidence, resin IPA/wash/cure/drain/PPE/
+waste controls or missing resin postprocess evidence, powder
+build profile/powder lot/nesting controls or missing powder-bed build/profile evidence, cooldown/depowder/recovery controls or missing powder-bed handling evidence, assembly
+dry-fit/metrology/datum/torque/cure controls or missing assembly fit/metrology evidence, sheet-cutting
+kerf/fire/fume checks or missing sheet-cutting material/thickness/cut-chart recipe evidence, lathe text threading feed-per-rev/pitch/spindle-encoder evidence, lathe text part-off catcher/subspindle/tailstock/stock-support evidence, assembly, splitting, or operator intervention. Improved
 drafts are still marked `machineReady=false`; they are normalization aids for
 review, motion-envelope simulation, and controller-specific postprocessing.
 `resolutionPlan` converts those boundaries into ordered remediation steps before
@@ -370,6 +414,10 @@ for CAD/CAM, slicer, mesh review, sheet nesting, and assembly agents; individual
 `generated-design-export` artifacts expose draft 3MF/STL/STEP/DXF/CAM setup JSON
 content with blockers, review gates, process-node links, and generated-program
 links.
+The response, retained `design-input-review`, retained `parametric-design`, and
+`mdp-request` artifacts include `designInputReview` source classification,
+supported format catalog entries, preferred neutral exports, slicer targets, and
+translator/topology/profile blockers for CAD/model/slicer intake.
 The response, retained `parametric-design`, retained `manufacturing-handoff`, and
 `mdp-request` artifacts also include `manufacturingHandoff` so downstream
 CAD/CAM, slicer, fixture, and learning workers can connect each part to its
@@ -477,11 +525,12 @@ to `neuralFeatures`. `interventionSignals` expose automation requirements and or
 reward adjustments. The optimizer-shaped `mdp-request` artifact includes
 `strategyCandidates`, `interventionSignals`, `pomdpBeliefState`,
 `neuralTrainingCorpus`,
-`designPackage`, `designExports`, `productionPlan`, `machineSchedule`, `machineSelection`,
-`manufacturingHandoff`, `qualityPlan`, `toolingPlan`, `interventionMap`,
-`executionPlan`, `postprocessPlan`, `automationRequirements`, `resolutionPlan`,
-and `machineRelease` so external MDP/POMDP workers can learn from the same
-boundary evidence, design export state, batch-planning state, machine-choice
+`designPackage`, `designExports`, `designInputReview`, `productionPlan`,
+`machineSchedule`, `machineSelection`, `manufacturingHandoff`, `qualityPlan`,
+`toolingPlan`, `interventionMap`, `executionPlan`, `postprocessPlan`,
+`automationRequirements`, `resolutionPlan`, and `machineRelease` so external
+MDP/POMDP workers can learn from the same boundary evidence, design export state,
+CAD/model/slicer source assumptions, batch-planning state, machine-choice
 alternatives, machine-schedule state, quality evidence targets, tooling/setup
 requirements, intervention paths, postprocessor gates, and CAD/CAM handoff
 assumptions.
@@ -499,7 +548,7 @@ runtime inspection boundary while the database contract is still being designed.
   artifact summaries.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
   such as `design-summary`, `parametric-design`, `process-plan`,
-  `design-package`, `design-export-bundle`, `production-plan`, `machine-schedule`, `machine-selection`, `process-graph`,
+  `design-package`, `design-export-bundle`, `design-input-review`, `production-plan`, `machine-schedule`, `machine-selection`, `process-graph`,
   `manufacturing-handoff`, `quality-plan`, `tooling-plan`, `machine-release`,
   `execution-plan`, `postprocess-plan`, `boundary-summary`, `intervention-map`, `simulation-report`, `learning-plan`,
   `pomdp-belief-state`, `neural-training-corpus`,
@@ -515,7 +564,10 @@ runtime inspection boundary while the database contract is still being designed.
   blockers; `design-export-bundle`, `generated-design-export`,
   `parametric-design`, and `mdp-request` include `designExports` generated design
   export payloads, source previews, media types, blockers, and generated
-  program/process-node links; `parametric-design` and `assembly-plan` include
+  program/process-node links; `design-input-review`, `parametric-design`, and
+  `mdp-request` include `designInputReview` supported format families, reviewed
+  inputs, preferred neutral exports, slicer targets, and release blockers;
+  `parametric-design` and `assembly-plan` include
   `assemblyGraph` nodes, interfaces, and sequence gates; `parametric-design`,
   `production-plan`, and `mdp-request` include `productionPlan` batch counts,
   setup repeats, estimated machine minutes, review gates, release blockers, and
@@ -556,9 +608,9 @@ runtime inspection boundary while the database contract is still being designed.
   fabrication outcomes; `process-graph`, and
   `mdp-request` include `processGraph` operation nodes, dependencies, and
   release gates. `parametric-design` also embeds `designPackage`, `designExports`,
-  `executionPlan`, `postprocessPlan`, `pomdpBeliefState`, `machineRelease`,
-  `manufacturingHandoff`, `productionPlan`, `machineSchedule`, `qualityPlan`, and
-  `toolingPlan` for one-payload handoff review.
+  `designInputReview`, `executionPlan`, `postprocessPlan`, `pomdpBeliefState`,
+  `machineRelease`, `manufacturingHandoff`, `productionPlan`, `machineSchedule`,
+  `qualityPlan`, and `toolingPlan` for one-payload handoff review.
 
 ## Local Build
 
