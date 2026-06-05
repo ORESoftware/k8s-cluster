@@ -101,7 +101,7 @@ on:
         default: "3"
 
 concurrency:
-  group: ${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[gcs-diagnose]') || contains(github.event.head_commit.message, '[gcs-snapshot]') || contains(github.event.head_commit.message, '[gcs-ssm]')) && 'remote-k8s-maintenance-gcs-diagnose') || 'remote-k8s-maintenance-capacity' }}
+  group: ${{ ((inputs.operation == 'loadtest-gcs-wss' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]'))) && 'remote-k8s-maintenance-gcs-loadtest') || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[gcs-diagnose]') || contains(github.event.head_commit.message, '[gcs-snapshot]') || contains(github.event.head_commit.message, '[gcs-ssm]')) && 'remote-k8s-maintenance-gcs-diagnose') || 'remote-k8s-maintenance-capacity' }}
   cancel-in-progress: false
 
 permissions:
@@ -114,7 +114,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.target_revision || 'dev' }}
+          ref: ${{ inputs.target_revision || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && github.sha) || 'dev' }}
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -125,7 +125,7 @@ jobs:
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
           OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[verify-mip-solver]') && 'verify-mip-solver-node') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-ssm]') && 'inspect-gcs-ssm') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-bisect]') && 'bisect-gcs-wss') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-recover]') && 'recover-gcs') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-diagnose]') && 'diagnose-gcs-scheduler') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-snapshot]') && 'snapshot-gcs-loadtest') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
-          TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
+          TARGET_REVISION: ${{ inputs.target_revision || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && github.sha) || 'dev' }}
           SSM_COMMAND_ID: ${{ inputs.ssm_command_id || github.event.head_commit.message || '' }}
           CANCEL_SSM_COMMAND: ${{ inputs.cancel_ssm_command || 'false' }}
           REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
@@ -2517,7 +2517,7 @@ jobs:
 
           apply_target_manifest() {
             local path="$1"
-            git show "origin/${TARGET_REVISION:-dev}:$path" | kubectl apply -f -
+            git show "$target_git_ref:$path" | kubectl apply -f -
           }
 
           sync_app() {
@@ -2695,18 +2695,31 @@ jobs:
           cd "$repo"
           before_revision="$(git rev-parse HEAD 2>/dev/null || true)"
           git status --short --branch
-          git fetch origin "${TARGET_REVISION:-dev}"
-          ARGO_SYNC_REVISION="$(git rev-parse "origin/${TARGET_REVISION:-dev}")"
+          target_revision="${TARGET_REVISION:-dev}"
+          if ! git fetch origin "$target_revision"; then
+            echo "WARNING: git fetch origin $target_revision failed; fetching dev to resolve possible commit SHA"
+            git fetch origin dev
+          fi
+          target_git_ref="origin/$target_revision"
+          if ! git rev-parse --verify --quiet "$target_git_ref^{commit}" >/dev/null; then
+            if git rev-parse --verify --quiet "$target_revision^{commit}" >/dev/null; then
+              target_git_ref="$target_revision"
+            else
+              echo "ERROR: unable to resolve target revision $target_revision" >&2
+              exit 1
+            fi
+          fi
+          ARGO_SYNC_REVISION="$(git rev-parse "$target_git_ref")"
           export ARGO_SYNC_REVISION
           echo "argo_sync_revision=$ARGO_SYNC_REVISION"
           merge_ok=0
-          if git merge --ff-only "origin/${TARGET_REVISION:-dev}"; then
+          if git merge --ff-only "$target_git_ref"; then
             merge_ok=1
           else
             echo "WARNING: EC2 superproject fast-forward blocked by local dirty state; continuing with targeted GCS submodule refresh"
             git status --short --branch
-            echo "=== targeted refresh of loadtest/GCS operator paths from origin/${TARGET_REVISION:-dev} ==="
-            git archive "origin/${TARGET_REVISION:-dev}" \
+            echo "=== targeted refresh of loadtest/GCS operator paths from $target_git_ref ==="
+            git archive "$target_git_ref" \
               remote/argocd/apps \
               remote/deployments/gcs/k8s \
               remote/deployments/ws-loadtest-rs \
@@ -2717,11 +2730,11 @@ jobs:
           if [ "$merge_ok" -eq 1 ]; then
             changed_paths="$(git diff --name-only "${before_revision:-$after_revision}" "$after_revision" 2>/dev/null || true)"
           else
-            changed_paths="$(git diff --name-only "$after_revision" "origin/${TARGET_REVISION:-dev}" 2>/dev/null | grep -E '^(remote/deployments/gcs/|remote/argocd/apps/gcs.application.yaml|remote/deployments/ws-loadtest-rs/|remote/deployments/gleamlang-ws-loadtest/)' || true)"
+            changed_paths="$(git diff --name-only "$after_revision" "$target_git_ref" 2>/dev/null | grep -E '^(remote/deployments/gcs/|remote/argocd/apps/gcs.application.yaml|remote/deployments/ws-loadtest-rs/|remote/deployments/gleamlang-ws-loadtest/)' || true)"
           fi
           git submodule sync --recursive
           git submodule update --init --recursive
-          target_gcs_sha="$(git ls-tree "origin/${TARGET_REVISION:-dev}" remote/deployments/gcs/chat-vibe | awk '{print $3}')"
+          target_gcs_sha="$(git ls-tree "$target_git_ref" remote/deployments/gcs/chat-vibe | awk '{print $3}')"
           if [ -n "$target_gcs_sha" ]; then
             echo "=== target gcs/chat-vibe submodule ==="
             echo "$target_gcs_sha"
@@ -2923,7 +2936,7 @@ jobs:
 
           echo "=== clean restart gcs stack before correctness/perf validation ==="
           wait_observability
-          git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2/gcs-kafka.deployment.yaml" | kubectl apply -f -
+          git show "$target_git_ref:remote/deployments/gcs/k8s/ec2/gcs-kafka.deployment.yaml" | kubectl apply -f -
           kubectl -n default get deploy gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
           kubectl -n default get statefulset gcs-mongodb -o wide || true
           kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
@@ -2959,7 +2972,7 @@ jobs:
           run_correctness_job() {
             echo "=== GCS correctness smoke: chat.vibe CLI scripts ==="
             kubectl -n default delete job/gcs-loadtest --ignore-not-found=true || true
-            git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2-loadtest/loadtest-job.yaml" | kubectl apply -f -
+            git show "$target_git_ref:remote/deployments/gcs/k8s/ec2-loadtest/loadtest-job.yaml" | kubectl apply -f -
             result="timeout"
             for i in $(seq 1 300); do
               succeeded="$(kubectl -n default get job/gcs-loadtest -o jsonpath='{.status.succeeded}' 2>/dev/null || true)"
