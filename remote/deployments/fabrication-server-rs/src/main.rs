@@ -1676,6 +1676,10 @@ struct TextInstructionSignals {
     has_material_jetting_material_evidence: bool,
     has_material_jetting_support_evidence: bool,
     has_material_jetting_uv_inspection_evidence: bool,
+    has_ded_text_context: bool,
+    has_ded_feedstock_path_evidence: bool,
+    has_ded_energy_shielding_evidence: bool,
+    has_ded_thermal_inspection_evidence: bool,
     has_composite_fiber_text_context: bool,
     has_composite_fiber_layup_evidence: bool,
     has_composite_fiber_process_evidence: bool,
@@ -2499,11 +2503,22 @@ fn is_router_material(material: &MaterialSpec) -> bool {
 
 fn wants_resin_printing(value: &str) -> bool {
     let token = normalize_token(value);
-    token.contains("resin")
-        || token.contains("sla")
-        || token.contains("msla")
-        || token.contains("dlp")
-        || token.contains("photopolymer")
+    let material_jetting_context = token.contains("material-jet")
+        || token.contains("material jet")
+        || token.contains("polyjet")
+        || token.contains("poly jet")
+        || token.contains("mjp")
+        || token.contains("multi-jet")
+        || token.contains("multi jet")
+        || token.contains("photopolymer jet")
+        || token.contains("jetted photopolymer")
+        || token.contains("digital material");
+    !material_jetting_context
+        && (token.contains("resin")
+            || token.contains("sla")
+            || token.contains("msla")
+            || token.contains("dlp")
+            || token.contains("photopolymer"))
 }
 
 fn wants_material_jetting_printing(value: &str) -> bool {
@@ -2521,6 +2536,32 @@ fn wants_material_jetting_printing(value: &str) -> bool {
         || token.contains("jetted photopolymer")
         || token.contains("digital material")
         || token.contains("full-color photopolymer")
+}
+
+fn token_has_ded_segment(token: &str) -> bool {
+    token == "ded"
+        || token.starts_with("ded-")
+        || token.ends_with("-ded")
+        || token.contains("-ded-")
+}
+
+fn wants_directed_energy_deposition(value: &str) -> bool {
+    let token = normalize_token(value);
+    token_has_ded_segment(&token)
+        || token.contains("directed-energy-deposition")
+        || token.contains("directed-energy")
+        || token.contains("directed-metal-deposition")
+        || token.contains("laser-metal-deposition")
+        || token.contains("laser-directed-energy")
+        || token.contains("laser-cladding")
+        || token.contains("cladding")
+        || token.contains("waam")
+        || token.contains("wire-arc-additive")
+        || token.contains("wire-arc-deposition")
+        || token.contains("wire-feed-deposition")
+        || token.contains("powder-fed-deposition")
+        || token.contains("blown-powder")
+        || token.contains("melt-pool")
 }
 
 fn wants_composite_fiber_printing(value: &str) -> bool {
@@ -2656,6 +2697,10 @@ fn is_material_jetting_printer_kind(kind: &str) -> bool {
     wants_material_jetting_printing(kind)
 }
 
+fn is_directed_energy_deposition_kind(kind: &str) -> bool {
+    wants_directed_energy_deposition(kind)
+}
+
 fn is_composite_fiber_printer_kind(kind: &str) -> bool {
     wants_composite_fiber_printing(kind)
 }
@@ -2737,6 +2782,11 @@ fn machine_class(kind: &str) -> MachineClass {
         || token.contains("material-jet")
         || token.contains("polyjet")
         || token.contains("mjp")
+        || token.contains("directed-energy")
+        || token_has_ded_segment(&token)
+        || token.contains("waam")
+        || token.contains("wire-arc-additive")
+        || token.contains("laser-cladding")
         || token.contains("composite")
         || token.contains("continuous-fiber")
         || token.contains("carbon-fiber")
@@ -2860,6 +2910,37 @@ fn default_machines() -> Vec<MachineProfile> {
                 "cooldown".to_string(),
                 "depowder".to_string(),
                 "bead-blast".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "directed-energy-deposition-cell-1".to_string(),
+            kind: "directed-energy-deposition-cell".to_string(),
+            controller: Some("directed-energy-deposition-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "titanium".to_string(),
+                "ti6al4v".to_string(),
+                "inconel".to_string(),
+                "nickel-alloy".to_string(),
+                "aluminum".to_string(),
+                "weld-wire".to_string(),
+                "powder-feedstock".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![800.0, 500.0, 500.0]),
+            axes: Some(5),
+            operations: Some(vec![
+                "directed-energy-deposition".to_string(),
+                "laser-cladding".to_string(),
+                "waam-deposition".to_string(),
+                "wire-feed-deposition".to_string(),
+                "powder-feed-deposition".to_string(),
+                "interpass-temperature-check".to_string(),
+                "melt-pool-monitoring".to_string(),
+                "finish-machining-allowance".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -9198,6 +9279,24 @@ fn has_text_wire_edm_process_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_wire_edm_cut_command(line: &str) -> bool {
+    let token = normalize_token(line);
+    token.starts_with("cut-profile")
+        || token.starts_with("cut-contour")
+        || token.starts_with("rough-cut")
+        || token.starts_with("finish-cut")
+        || token.starts_with("skim-cut")
+        || token.starts_with("skim-pass-cut")
+        || token.starts_with("skim-pass-finish")
+        || token.starts_with("skim-pass-profile")
+        || token.contains("-cut-profile")
+        || token.contains("-cut-contour")
+        || token.contains("-rough-cut")
+        || token.contains("-finish-cut")
+        || token.contains("-skim-cut")
+        || token.contains("-skim-pass-cut")
+}
+
 fn has_text_sinker_edm_context(language: &str, line: &str) -> bool {
     language_or_line_has_any(
         language,
@@ -10518,6 +10617,10 @@ fn analyze_instruction_programs(
         let mut has_slicer_mesh_topology_evidence = false;
         let mut has_slicer_high_speed_context = false;
         let mut has_slicer_high_speed_kinematic_evidence = false;
+        let mut has_material_jetting_text_context = false;
+        let mut has_material_jetting_material_evidence = false;
+        let mut has_material_jetting_support_evidence = false;
+        let mut has_material_jetting_uv_inspection_evidence = false;
         let mut has_composite_fiber_text_context = false;
         let mut has_composite_fiber_layup_evidence = false;
         let mut has_composite_fiber_process_evidence = false;
@@ -10554,6 +10657,7 @@ fn analyze_instruction_programs(
         let mut has_wire_edm_text_context = false;
         let mut has_wire_edm_setup_evidence = false;
         let mut has_wire_edm_process_evidence = false;
+        let mut reported_wire_edm_cut_setup_boundary = false;
         let mut has_sinker_edm_text_context = false;
         let mut has_sinker_edm_electrode_evidence = false;
         let mut has_sinker_edm_dielectric_evidence = false;
@@ -10601,6 +10705,13 @@ fn analyze_instruction_programs(
                 has_slicer_high_speed_context |= signals.has_slicer_high_speed_context;
                 has_slicer_high_speed_kinematic_evidence |=
                     signals.has_slicer_high_speed_kinematic_evidence;
+                has_material_jetting_text_context |= signals.has_material_jetting_text_context;
+                has_material_jetting_material_evidence |=
+                    signals.has_material_jetting_material_evidence;
+                has_material_jetting_support_evidence |=
+                    signals.has_material_jetting_support_evidence;
+                has_material_jetting_uv_inspection_evidence |=
+                    signals.has_material_jetting_uv_inspection_evidence;
                 has_composite_fiber_text_context |= signals.has_composite_fiber_text_context;
                 has_composite_fiber_layup_evidence |= signals.has_composite_fiber_layup_evidence;
                 has_composite_fiber_process_evidence |=
@@ -10669,6 +10780,35 @@ fn analyze_instruction_programs(
                 has_text_surface_finishing_evidence |= signals.has_text_surface_finishing_evidence;
                 has_text_indexed_setup_context |= signals.has_text_indexed_setup_context;
                 has_text_indexed_setup_evidence |= signals.has_text_indexed_setup_evidence;
+                if signals.has_wire_edm_text_context
+                    && has_text_wire_edm_cut_command(raw_line)
+                    && !has_wire_edm_setup_evidence
+                    && !reported_wire_edm_cut_setup_boundary
+                {
+                    reported_wire_edm_cut_setup_boundary = true;
+                    findings.push(ValidationFinding {
+                        severity: "error".to_string(),
+                        code: "wire-edm-cut-before-threading-setup".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message:
+                            "wire-EDM profile cut appears before start-hole, wire-threading, or slug-retention setup evidence"
+                                .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "wire-edm-cut-setup-boundary".to_string(),
+                        severity: "error".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "wire-EDM cutting before start-hole, wire-threading, guide/tension, conductive workholding, or slug-retention evidence can break wire, drop the slug, lose datum, or scrap the profile before the job can recover unattended"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "move the profile/skim cut after verified start-hole, wire-threading, guide/tension, conductive workholding, and slug-retention evidence, then rerun instruction analysis before release"
+                                .to_string(),
+                    });
+                }
                 continue;
             }
             let stripped = strip_comment(raw_line);
@@ -13886,6 +14026,77 @@ fn analyze_instruction_programs(
                     action: "add-slicer-high-speed-kinematic-evidence".to_string(),
                     reason:
                         "high-speed FDM text instructions should retain input-shaper, acceleration, jerk, and volumetric-flow evidence before release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_material_jetting_text_context)
+                && has_material_jetting_text_context
+                && !has_material_jetting_material_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "material-jetting-material-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "material-jetting text job lacks cartridge, material-channel, printhead, tray, or packing evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "material-jetting-material-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "material jetting can mix color/material channels, mis-pack the tray, or lose fine details when cartridge lots, channel maps, printhead/nozzle checks, tray calibration, and packing evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach cartridge lots, material/color channel map, printhead/nozzle purge check, tray map, tray calibration, and packing review before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-material-jetting-material-evidence".to_string(),
+                    reason:
+                        "material-jetting text instructions should retain material-channel, cartridge, printhead, and tray evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_material_jetting_text_context)
+                && has_material_jetting_text_context
+                && (!has_material_jetting_support_evidence
+                    || !has_material_jetting_uv_inspection_evidence)
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "material-jetting-support-uv-inspection-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "material-jetting text job lacks support-removal, UV-cure, color/material, or dimensional-inspection evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "material-jetting-support-uv-inspection-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "PolyJet/MJP parts can remain tacky, trap support residue, lose color/material interfaces, or break fine features when support removal, UV exposure, and inspection are not separated from the print cycle"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "split material jetting release into support-removal method, solvent or waterjet cleaning, UV dose/post-cure, color/material verification, surface tack review, and dimensional inspection"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-material-jetting-support-uv-inspection-evidence".to_string(),
+                    reason:
+                        "material-jetting text instructions should retain support-removal, UV/post-cure, color/material verification, and inspection evidence before release"
                             .to_string(),
                 });
             }
@@ -17643,6 +17854,12 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "iso-gcode-postprocessor"
     } else if token.contains("sla") || token.contains("resin") {
         "resin-printer-job-packager"
+    } else if token.contains("material-jet")
+        || token.contains("polyjet")
+        || token.contains("mjp")
+        || token.contains("multi-jet")
+    {
+        "material-jetting-job-packager"
     } else if token.contains("composite-fiber")
         || token.contains("continuous-fiber")
         || token.contains("carbon-fiber")
@@ -17690,6 +17907,12 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "controller-gcode".to_string()
     } else if token.contains("sla") || token.contains("resin") {
         "resin-printer-job-package".to_string()
+    } else if token.contains("material-jet")
+        || token.contains("polyjet")
+        || token.contains("mjp")
+        || token.contains("multi-jet")
+    {
+        "material-jetting-job-package".to_string()
     } else if token.contains("composite-fiber")
         || token.contains("continuous-fiber")
         || token.contains("carbon-fiber")
@@ -23286,6 +23509,7 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "slicer-job",
         "sla-job",
         "resin-job",
+        "material-jetting-job",
         "composite-fiber-job",
         "binder-jet-job",
         "sls-job",
@@ -23334,6 +23558,7 @@ async fn capabilities() -> impl IntoResponse {
         "machineClasses": [
             "fdm-printer",
             "sla-msla-resin-printer",
+            "material-jetting-printer",
             "continuous-fiber-composite-printer",
             "binder-jet-printer",
             "sls-mjf-powder-bed-printer",
@@ -23456,6 +23681,7 @@ async fn request_schema() -> impl IntoResponse {
             "supportedKinds": [
                 "fdm-printer",
                 "sla-printer",
+                "material-jetting-printer",
                 "composite-fiber-printer",
                 "binder-jet-printer",
                 "sls-printer",
@@ -26177,6 +26403,66 @@ mod tests {
             .any(|target| {
                 target.machine_kind == "composite-fiber-printer"
                     && target.output_format == "composite-fiber-job-package"
+            }));
+    }
+
+    #[test]
+    fn default_additive_fleet_generates_material_jetting_printer_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-material-jetting-printer".to_string()),
+            objective:
+                "PolyJet material jetting full-color photopolymer anatomical model with support removal and UV inspection"
+                    .to_string(),
+            material: Some(material("photopolymer", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.12),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("material jetting printer plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "material-jetting-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("jet photopolymer")));
+        let material_jetting_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "material-jetting-printer")
+            .expect("material jetting program should be generated");
+        assert_eq!(material_jetting_program.language, "material-jetting-job");
+        assert!(material_jetting_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft material jetting/PolyJet job")));
+        assert!(material_jetting_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("JET_MATERIALS")));
+        assert!(material_jetting_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("REMOVE_SUPPORT")));
+        assert!(material_jetting_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("material-channel map")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "material-jetting-printer"
+                    && target.output_format == "material-jetting-job-package"
             }));
     }
 
@@ -32598,6 +32884,100 @@ mod tests {
     }
 
     #[test]
+    fn text_material_jetting_jobs_require_material_support_and_uv_inspection_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("material-jetting-missing-material-evidence".to_string()),
+                machine_id: Some("polyjet-1".to_string()),
+                machine_kind: Some("material-jetting-printer".to_string()),
+                language: Some("material-jetting-job".to_string()),
+                instructions: vec![
+                    "PolyJet material jetting anatomical model with support material removal, waterjet cleaning, UV cure, color verification, surface finish, and dimensional inspection recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("material-jetting-missing-support-uv-evidence".to_string()),
+                machine_id: Some("polyjet-1".to_string()),
+                machine_kind: Some("material-jetting-printer".to_string()),
+                language: Some("material-jetting-job".to_string()),
+                instructions: vec![
+                    "PolyJet material jetting tray with material cartridge lot Vero-22, photopolymer lot RGD-8, material channel map, color map, printhead nozzle check, purge, tray map, tray calibration, and packing density reviewed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("material-jetting-with-evidence".to_string()),
+                machine_id: Some("polyjet-1".to_string()),
+                machine_kind: Some("material-jetting-printer".to_string()),
+                language: Some("material-jetting-job".to_string()),
+                instructions: vec![
+                    "PolyJet material jetting tray with material cartridge lot Vero-22, photopolymer lot RGD-8, material channel map, color map, printhead nozzle check, purge, tray map, tray calibration, and packing density reviewed".to_string(),
+                    "Support material SUP706 loaded, support removal method approved, waterjet cleaning cycle and solvent wipe recorded with support residue inspection".to_string(),
+                    "UV lamp state, UV dose, tack-free review, color verification, material interface inspection, shore hardness, first article, and dimensional inspection recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "material-jetting-material-evidence-missing"
+                && finding.program_id.as_deref()
+                    == Some("material-jetting-missing-material-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "material-jetting-support-uv-inspection-evidence-missing"
+                && finding.program_id.as_deref()
+                    == Some("material-jetting-missing-support-uv-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("material-jetting-")
+                && finding.program_id.as_deref() == Some("material-jetting-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "material-jetting-material-boundary"
+                && boundary.program_id.as_deref()
+                    == Some("material-jetting-missing-material-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("cartridge lots")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "material-jetting-support-uv-inspection-boundary"
+                && boundary.program_id.as_deref()
+                    == Some("material-jetting-missing-support-uv-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("support-removal")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-material-jetting-material-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("material-jetting-missing-material-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-material-jetting-support-uv-inspection-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("material-jetting-missing-support-uv-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [material-jetting-material-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1].instructions.iter().any(|line| {
+            line.starts_with("CHECKPOINT [material-jetting-support-uv-inspection-boundary]")
+        }));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [material-jetting-")));
+    }
+
+    #[test]
     fn text_composite_fiber_jobs_require_layup_process_and_inspection_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -33152,6 +33532,7 @@ mod tests {
             "grbl-gcode",
             "fanuc-gcode",
             "sla-job",
+            "material-jetting-job",
             "composite-fiber-job",
             "sls-job",
             "metal-pbf-job",
