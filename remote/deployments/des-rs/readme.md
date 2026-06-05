@@ -39,8 +39,8 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
 - `GET  /simulations/<name>/run` — convenience GET form of `/simulate`; add
   `?exact=1` to run exactly the named sim (this is what the UI buttons use).
 - `GET  /models` — the first-class **model registry** (e.g. `mdp`, `pomdp`,
-  `hybrid`, `studio`): each kind's descriptor (title, schema, solve methods,
-  and a runnable example spec the UI/LLM can target).
+  `hybrid`, `track3t-warehouse`, `studio`): each kind's descriptor (title,
+  schema, solve methods, and a runnable example spec the UI/LLM can target).
 - `GET  /models/<kind>/run` — run that kind's built-in example spec and render
   an interactive player; add `?format=json` for the raw artifact.
 - `POST /models/<kind>/run` — run a user-supplied JSON spec for a kind (renders
@@ -62,6 +62,8 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
   and MP4 sample-seed variations.
 - `POST /music/sample-seed` — upload a 10-50s MP4 seed plus prompt text and
   render a WAV variation with a JSON manifest.
+- `GET /out/factory-floor-track3t.html` — rendered Track3t warehouse/factory-floor
+  comparison after running `main_factory_floor_track3t`.
 - `GET  /delivery-planner.html` — friendly redirect to the generated delivery
   planner artifact.
 - `GET  /deliver-planner.html` — typo-compatible redirect to the same generated

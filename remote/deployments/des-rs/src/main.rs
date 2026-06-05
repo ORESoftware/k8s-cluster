@@ -16,7 +16,7 @@
 //! - `GET /simulations` — the engine's full simulation catalogue.
 //! - `POST /simulate` — run sims by `name` (filter, or exact via `{"exact":true}`), in series.
 //! - `GET /simulations/:name/run` — convenience GET form (`?exact=1` for one entry).
-//! - `GET /models` — first-class model registry (mdp, pomdp, hybrid, studio) with example specs.
+//! - `GET /models` — first-class model registry with example specs.
 //! - `GET /models/:kind/run` — run a kind's example spec and render an interactive player (`?format=json` for the raw artifact).
 //! - `POST /models/:kind/run` — run a user-supplied JSON spec for a kind (renders a player; `?format=json` for the artifact).
 //! - `GET /streaming` — JSONL streaming-solver contracts (lp, milp, mdp, pomdp, soccer-planner).
@@ -253,7 +253,8 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
 </main>
 <div id="toast" class="toast"></div>
 <script>
-const FEATURED=[["main_build_site","Build site index"],["main_elevator_highrise","Elevator high-rise"],["main_factmachine_markets","FactMachine markets"],["main_two_disease","Two-disease epidemic"],["main_electric_circuit","Electric circuit"],["main_traffic","Traffic network"],["main_court_mdp","Court MDP"],["main_convolution","Convolution"]];
+const FEATURED=[["main_factory_floor_track3t","Track3t warehouse"],["main_build_site","Build site index"],["main_elevator_highrise","Elevator high-rise"],["main_factmachine_markets","FactMachine markets"],["main_two_disease","Two-disease epidemic"],["main_electric_circuit","Electric circuit"],["main_traffic","Traffic network"],["main_court_mdp","Court MDP"],["main_convolution","Convolution"]];
+const OUTPUTS={main_factory_floor_track3t:"out/factory-floor-track3t.html",main_build_site:"out/index.html"};
 const CONTROL=[
   ["main_shadow_eval","Shadow Gramians","Probe each plant as a black box: recover controllability/observability Gramians from perturbed shadow copies, cross-check against the analytic model, then re-ask via a nested MDP/POMDP of the motor's speed regimes."],
   ["main_observability_controllability_anim","Obs / ctrl (animated)","Kalman rank tests for controllability & observability of a state-space model, animated step by step."],
@@ -282,7 +283,7 @@ async function run(name,btn,st){
     const r=await fetch('simulations/'+encodeURIComponent(name)+'/run?exact=1');
     const d=await r.json();
     const o=(d.ran&&d.ran[0])||{};
-    if(d.ok){st.className='st ok';st.textContent='\u2713 '+(o.millis!=null?o.millis+' ms':'done');toast('Ran <code>'+name+'</code> — <a href="out/">view results &rarr;</a>');}
+    if(d.ok){const out=OUTPUTS[name]||'out/';st.className='st ok';st.textContent='\u2713 '+(o.millis!=null?o.millis+' ms':'done');toast('Ran <code>'+name+'</code> — <a href="'+out+'">view results &rarr;</a>');}
     else{st.className='st err';st.textContent='\u2717 '+(d.error||'failed');}
   }catch(e){st.className='st err';st.textContent='\u2717 '+e;}
   finally{btn.disabled=false;btn.textContent=old;}
@@ -746,6 +747,13 @@ fn env_value(key: &str, fallback: &str) -> String {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+fn env_value_or_empty(key: &str, fallback: &str) -> String {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
         .unwrap_or_else(|| fallback.to_string())
 }
 
@@ -2630,7 +2638,7 @@ fn build_descriptor() -> ServiceDescriptor {
         .endpoint(
             "GET",
             "/models",
-            "First-class model registry (mdp, pomdp, hybrid, studio) with example specs.",
+            "First-class model registry with example specs.",
             EndpointKind::Service,
         )
         .endpoint(
@@ -2942,7 +2950,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Populate `out/` in the background so /healthz comes up immediately while
     // the startup catalogue renders.
-    let startup = env_value("DES_STARTUP_SIMS", DEFAULT_STARTUP_SIMS);
+    let startup = env_value_or_empty("DES_STARTUP_SIMS", DEFAULT_STARTUP_SIMS);
     if !startup.is_empty() {
         let startup_state = state.clone();
         tokio::spawn(async move {
