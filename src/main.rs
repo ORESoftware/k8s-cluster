@@ -170,6 +170,8 @@ struct InstructionAnalysisRequest {
 enum FabricationNatsRequest {
     Plan(FabricationPlanRequest),
     InstructionAnalysis(InstructionAnalysisRequest),
+    FabricationOutcome(FabricationOutcomeRequest),
+    LearningOutcome(LearningOutcomeRequest),
 }
 
 #[derive(Debug, Deserialize)]
@@ -183,6 +185,9 @@ struct FabricationNatsEnvelope {
     plan: Option<FabricationPlanRequest>,
     analysis: Option<InstructionAnalysisRequest>,
     instruction_analysis: Option<InstructionAnalysisRequest>,
+    outcome: Option<FabricationOutcomeRequest>,
+    fabrication_outcome: Option<FabricationOutcomeRequest>,
+    learning_outcome: Option<LearningOutcomeRequest>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -8012,6 +8017,23 @@ mod tests {
             .sequence
             .iter()
             .any(|step| step.action.contains("join-and-verify")));
+        assert_eq!(response.process_graph.nodes.len(), response.process_plan.len());
+        assert!(response
+            .process_graph
+            .nodes
+            .iter()
+            .all(|node| node.program_id.is_some()));
+        assert!(response
+            .process_graph
+            .dependencies
+            .iter()
+            .any(|dependency| dependency.dependency_type == "assembly-interface"));
+        assert!(response
+            .process_graph
+            .gates
+            .iter()
+            .any(|gate| gate.boundary_kind == "inspection-gate"
+                && gate.requires_human_intervention));
         assert!(response
             .validation
             .failure_boundaries
@@ -9362,6 +9384,11 @@ mod tests {
             .get("automationRequirements")
             .and_then(Value::as_array)
             .is_some_and(|requirements| !requirements.is_empty()));
+        assert!(mdp_request
+            .get("processGraph")
+            .and_then(|graph| graph.get("nodes"))
+            .and_then(Value::as_array)
+            .is_some_and(|nodes| !nodes.is_empty()));
         assert!(mdp_request.get("resolutionPlan").is_some());
         assert!(mdp_request
             .get("transitions")
@@ -9853,6 +9880,7 @@ mod tests {
         assert!(job.artifacts.contains_key("plan-improvements"));
         assert!(job.artifacts.contains_key("boundary-summary"));
         assert!(job.artifacts.contains_key("resolution-plan"));
+        assert!(job.artifacts.contains_key("process-graph"));
         assert!(response.simulation.ok);
         assert!(job
             .artifacts
@@ -9878,6 +9906,12 @@ mod tests {
             .get("parts")
             .and_then(Value::as_array)
             .is_some_and(|parts| !parts.is_empty()));
+        assert!(parametric_design
+            .content
+            .get("processGraph")
+            .and_then(|graph| graph.get("nodes"))
+            .and_then(Value::as_array)
+            .is_some_and(|nodes| !nodes.is_empty()));
         assert!(parametric_design
             .content
             .get("assembly")
