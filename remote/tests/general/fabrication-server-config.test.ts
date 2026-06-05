@@ -36,7 +36,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
   assert.match(
     source,
-    /use dd_nats_subject_defs::\{[\s\S]*?FABRICATION_REQUESTS_QUEUE_GROUP[\s\S]*?FABRICATION_REQUESTS_SUBJECT[\s\S]*?FABRICATION_RESULTS_SUBJECT[\s\S]*?MDP_OPTIMIZE_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?\};/,
+    /use dd_nats_subject_defs::\{[\s\S]*?FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP[\s\S]*?FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT[\s\S]*?FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT[\s\S]*?FABRICATION_REQUESTS_QUEUE_GROUP[\s\S]*?FABRICATION_REQUESTS_SUBJECT[\s\S]*?FABRICATION_RESULTS_SUBJECT[\s\S]*?MDP_OPTIMIZE_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?\};/,
   );
   assert.match(source, /const SCHEMA_VERSION: &str = "fabrication\.plan\.v1"/);
   assert.match(source, /struct FabricationPlanRequest/);
@@ -1867,6 +1867,18 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /FABRICATION_REQUEST_SUBJECT[\s\S]*dd\.remote\.fabrication\.requests/);
   assert.match(deployment, /FABRICATION_QUEUE_GROUP[\s\S]*dd-fabrication-server/);
   assert.match(deployment, /FABRICATION_RESULT_SUBJECT[\s\S]*dd\.remote\.fabrication\.results/);
+  assert.match(
+    deployment,
+    /FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT: &str = "dd\.remote\.fabrication\.design\.conversion\.requests"/,
+  );
+  assert.match(
+    deployment,
+    /FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-design-converters"/,
+  );
+  assert.match(
+    deployment,
+    /FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT: &str = "dd\.remote\.fabrication\.design\.conversion\.results"/,
+  );
   assert.match(deployment, /FABRICATION_MDP_OPTIMIZE_SUBJECT[\s\S]*dd\.remote\.mdp\.optimize/);
   assert.match(deployment, /FABRICATION_MDP_AUTOPUBLISH[\s\S]*value:\s*'true'/);
   assert.match(deployment, /RUNTIME_CONFIG_APPLY_URL[\s\S]*dd-fabrication-server\.default\.svc\.cluster\.local:8113/);
@@ -1944,6 +1956,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /JSON `rate_limited` 429/);
   assert.match(runtimeReadme, /explicit runtime hardening/);
   assert.match(runtimeReadme, /dedicated NetworkPolicy/);
+  assert.match(runtimeReadme, /CAD design-conversion request\/queue\/result handoffs/);
   assert.match(runtimeReadme, /\/grafana\/fabrication/);
   assert.match(runtimeReadme, /dd-fabrication-planner/);
   assert.match(observabilityReadme, /Fabrication Planner/);
