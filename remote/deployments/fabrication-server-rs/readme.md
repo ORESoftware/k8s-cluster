@@ -15,9 +15,16 @@ It exposes:
 - `GET /jobs`
 - `GET /jobs/:job_id`
 - `GET /jobs/:job_id/artifacts/:artifact_id`
+- `GET /learning/policy`
+- `GET /fabrication/learning/policy`
 - `POST /plan`
 - `POST /fabrication/plan`
 - `POST /instructions/analyze`
+- `POST /fabrication/instructions/analyze`
+- `POST /learning/observe`
+- `POST /fabrication/learning/observe`
+- `POST /learning/outcomes`
+- `POST /fabrication/learning/outcomes`
 
 When `NATS_URL` is configured, the service also queue-subscribes to
 `dd.remote.fabrication.requests` with queue group `dd-fabrication-server`,
@@ -47,6 +54,8 @@ learning hints. It returns:
   split so tight-tolerance features can be machined and inspected separately.
 - A learning contract with MDP states, POMDP observations, policy actions,
   reward terms, neural feature names, and training-example sketches.
+- Outcome learning endpoints that accept fabrication results, shape reward
+  terms, emit MDP/POMDP/neural evidence, and expose a bounded policy snapshot.
 - A bounded in-process job and artifact ledger for generated design summaries,
   parametric design payloads, process plans, machine programs, validation
   reports, improved instructions, assembly plans, and optimizer-shaped MDP
@@ -124,7 +133,8 @@ tolerance.
 
 ## `POST /instructions/analyze`
 
-`POST /instructions/analyze` accepts existing G-code-like programs plus
+`POST /fabrication/instructions/analyze` and its gateway-stripped alias
+`POST /instructions/analyze` accept existing G-code-like programs plus
 non-controller text instructions such as printer job sheets, setup sheets, and
 operator checklists. It returns controller-agnostic safety findings, improvement
 opportunities, and `improvedPrograms` review drafts that insert conservative
@@ -159,9 +169,33 @@ post-processing, assembly, splitting, or operator intervention. Improved drafts
 are still marked `machineReady=false`; they are normalization aids for review,
 simulation, and controller-specific postprocessing.
 
+## Outcome Learning
+
+`POST /fabrication/learning/observe` accepts completed or failed fabrication
+outcomes for a generated plan, program, part, machine, or external shop-floor
+instruction stream. `POST /learning/observe` is the gateway-stripped alias.
+
+The route validates bounded observations, optional dimensional/surface/time
+measurements, machine failure flags, scrap flags, human-intervention cost, and
+optional reward weights. It returns:
+
+- A shaped reward with per-term contributions for completion, machine failure,
+  scrap, human intervention, dimensional accuracy, surface quality, and machine
+  time.
+- An MDP experience update, POMDP observation list, and neural training example.
+- A policy snapshot summarizing retained method and assembly preferences.
+
+Learning outcomes are also recorded as job artifacts: `outcome-learning-event`,
+`reward-signal`, `mdp-experience`, `pomdp-observations`, and `neural-example`.
+`GET /fabrication/learning/policy` and `GET /learning/policy` return the
+current bounded in-process policy memory. `POST /learning/outcomes` and
+`POST /fabrication/learning/outcomes` accept a compact success/reward record
+when callers already have their own training features.
+
 ## Job And Artifact Inspection
 
-Every successful planning or instruction-analysis request is recorded in a
+Every successful planning, instruction-analysis, or learning-observation
+request is recorded in a
 bounded in-process ledger. This is not durable storage yet; it is the current
 runtime inspection boundary while the database contract is still being designed.
 
@@ -172,7 +206,9 @@ runtime inspection boundary while the database contract is still being designed.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
   such as `design-summary`, `parametric-design`, `process-plan`,
   `learning-plan`, `mdp-request`, a `program-*` generated machine program, or an
-  `improved-program-*` instruction rewrite.
+  `improved-program-*` instruction rewrite, plus learning artifacts such as
+  `reward-signal`, `mdp-experience`, `pomdp-observations`, and
+  `neural-example`.
 
 ## Local Build
 

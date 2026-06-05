@@ -41,13 +41,23 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /const SCHEMA_VERSION: &str = "fabrication\.plan\.v1"/);
   assert.match(source, /struct FabricationPlanRequest/);
   assert.match(source, /struct InstructionAnalysisRequest/);
+  assert.match(source, /struct FabricationOutcomeRequest/);
+  assert.match(source, /struct FabricationLearningResponse/);
+  assert.match(source, /struct LearningOutcomeRequest/);
+  assert.match(source, /struct LearningPolicySnapshot/);
   assert.match(source, /struct LearningPlan/);
   assert.match(source, /fn plan_fabrication\(request: FabricationPlanRequest\)/);
   assert.match(source, /fn analyze_instruction_programs/);
+  assert.match(source, /fn learn_from_outcome/);
+  assert.match(source, /fn learning_artifacts/);
+  assert.match(source, /fn stored_learning_job/);
   assert.match(source, /fn fabrication_mdp_request/);
   assert.match(source, /async fn run_nats_loop/);
   assert.match(source, /queue_subscribe\(state\.request_subject\.clone\(\), state\.queue_group\.clone\(\)\)/);
   assert.match(source, /FABRICATION_MDP_AUTOPUBLISH/);
+  assert.match(source, /dd_fabrication_server_learning_requests_total/);
+  assert.match(source, /dd_fabrication_server_learning_events_stored_total/);
+  assert.match(source, /dd_fabrication_server_current_learning_outcomes/);
   assert.match(source, /dd_fabrication_server_nats_messages_total/);
   assert.match(source, /dd_fabrication_server_nats_results_published_total/);
   assert.match(source, /dd_fabrication_server_mdp_published_total/);
@@ -62,6 +72,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"machine-envelope"/);
   assert.match(source, /async fn list_jobs/);
   assert.match(source, /async fn get_artifact/);
+  assert.match(source, /async fn learning_observe_http/);
+  assert.match(source, /async fn learning_policy_http/);
   assert.match(source, /\.route\("\/jobs", get\(list_jobs\)\)/);
   assert.match(source, /\.route\("\/jobs\/:job_id", get\(get_job\)\)/);
   assert.match(
@@ -71,13 +83,30 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /\.route\("\/plan", post\(plan_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/plan", post\(plan_http\)\)/);
   assert.match(source, /\.route\("\/instructions\/analyze", post\(analyze_http\)\)/);
+  assert.match(source, /\.route\("\/fabrication\/instructions\/analyze", post\(analyze_http\)\)/);
+  assert.match(source, /\.route\("\/learning\/policy", get\(learning_policy_http\)\)/);
+  assert.match(source, /\.route\("\/fabrication\/learning\/policy", get\(learning_policy_http\)\)/);
+  assert.match(source, /\.route\("\/learning\/observe", post\(learning_observe_http\)\)/);
+  assert.match(
+    source,
+    /\.route\("\/fabrication\/learning\/observe", post\(learning_observe_http\)\)/,
+  );
+  assert.match(source, /\.route\("\/learning\/outcomes", post\(learning_outcome_http\)\)/);
 
   assert.match(readme, /`GET \/jobs`/);
   assert.match(readme, /`GET \/jobs\/:job_id`/);
   assert.match(readme, /`GET \/jobs\/:job_id\/artifacts\/:artifact_id`/);
+  assert.match(readme, /`GET \/learning\/policy`/);
+  assert.match(readme, /`POST \/learning\/observe`/);
+  assert.match(readme, /`POST \/fabrication\/learning\/observe`/);
+  assert.match(readme, /Outcome Learning/);
+  assert.match(readme, /reward-signal/);
+  assert.match(readme, /pomdp-observations/);
+  assert.match(readme, /neural-example/);
   assert.match(readme, /`POST \/plan`/);
   assert.match(readme, /`POST \/fabrication\/plan`/);
   assert.match(readme, /`POST \/instructions\/analyze`/);
+  assert.match(readme, /`POST \/fabrication\/instructions\/analyze`/);
   assert.match(readme, /bounded in-process job and artifact ledger/);
   assert.match(readme, /machine-envelope/);
   assert.match(readme, /dd\.remote\.fabrication\.requests/);
@@ -92,9 +121,15 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/plan"/);
   assert.match(docs, /"path": "\/fabrication\/plan"/);
   assert.match(docs, /"path": "\/instructions\/analyze"/);
+  assert.match(docs, /"path": "\/fabrication\/instructions\/analyze"/);
   assert.match(docs, /"path": "\/jobs"/);
   assert.match(docs, /"path": "\/jobs\/:job_id"/);
   assert.match(docs, /"path": "\/jobs\/:job_id\/artifacts\/:artifact_id"/);
+  assert.match(docs, /"path": "\/learning\/policy"/);
+  assert.match(docs, /"path": "\/fabrication\/learning\/policy"/);
+  assert.match(docs, /"path": "\/learning\/observe"/);
+  assert.match(docs, /"path": "\/fabrication\/learning\/observe"/);
+  assert.match(docs, /"path": "\/learning\/outcomes"/);
 });
 
 test('fabrication server is deployed through runtime manifests, gateway, and observability', async () => {
