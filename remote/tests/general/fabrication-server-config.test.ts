@@ -192,6 +192,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /dd\.fabrication\.postprocess-plan\.v1/);
   assert.match(source, /"pomdp-belief-state"/);
   assert.match(source, /dd\.fabrication\.pomdp-belief-state\.v1/);
+  assert.match(source, /struct ReleaseProbePlan/);
+  assert.match(source, /struct ReleaseProbe/);
+  assert.match(source, /fn release_probe_plan/);
+  assert.match(source, /"release-probe-plan"/);
+  assert.match(source, /dd\.fabrication\.release-probe-plan\.v1/);
   assert.match(source, /"neural-training-corpus"/);
   assert.match(source, /dd\.fabrication\.neural-training-corpus\.v1/);
   assert.match(source, /"intervention-map"/);
@@ -268,6 +273,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"executionPlan": response\.execution_plan/);
   assert.match(source, /"postprocessPlan": response\.postprocess_plan/);
   assert.match(source, /"pomdpBeliefState": response\.learning\.pomdp_belief_state/);
+  assert.match(source, /"releaseProbePlan": response\.learning\.release_probe_plan/);
   assert.match(source, /"neuralTrainingCorpus": response\.learning\.neural_training_corpus/);
   assert.match(source, /"machineRelease": response\.machine_release/);
   assert.match(source, /"manufacturingHandoff": response\.manufacturing_handoff/);
@@ -1142,6 +1148,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"interventionSignals": response\.learning\.intervention_signals/);
   assert.match(source, /"postprocessPlan": response\.postprocess_plan/);
   assert.match(source, /"pomdpBeliefState": response\.learning\.pomdp_belief_state/);
+  assert.match(source, /"releaseProbePlan": response\.learning\.release_probe_plan/);
   assert.match(source, /"neuralTrainingCorpus": response\.learning\.neural_training_corpus/);
   assert.match(source, /"automationRequirements": response\.boundary_summary\.automation_requirements/);
   assert.match(source, /"resolutionPlan": response\.resolution_plan/);
@@ -1278,6 +1285,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /pomdp-observations/);
   assert.match(readme, /`pomdpBeliefState`/);
   assert.match(readme, /`pomdp-belief-state`/);
+  assert.match(readme, /`releaseProbePlan`/);
+  assert.match(readme, /`release-probe-plan`/);
+  assert.match(readme, /priority evidence probes/);
+  assert.match(readme, /required-before-release actions/);
   assert.match(readme, /hidden-state probabilities/);
   assert.match(readme, /observation likelihoods/);
   assert.match(readme, /recommended probe actions/);
@@ -1325,6 +1336,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /execution plans/);
   assert.match(readme, /postprocess plans/);
   assert.match(readme, /POMDP\s+belief states/);
+  assert.match(readme, /release probe plans/);
   assert.match(readme, /neural training corpora/);
   assert.match(readme, /manufacturing\s+handoffs/);
   assert.match(readme, /design packages/);
@@ -1440,7 +1452,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`process-graph`/);
   assert.match(
     readme,
-    /`mdp-request` artifact includes\s+`strategyCandidates`, `interventionSignals`, `pomdpBeliefState`,\s+`neuralTrainingCorpus`/,
+    /`mdp-request` artifact includes\s+`strategyCandidates`, `interventionSignals`, `pomdpBeliefState`, `releaseProbePlan`,\s+`neuralTrainingCorpus`/,
   );
   assert.match(
     readme,
