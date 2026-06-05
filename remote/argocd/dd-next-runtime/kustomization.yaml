@@ -34,6 +34,7 @@ resources:
   - dd-des-simulator.deployment.yaml
   - dd-des-simulator.service.yaml
   - dd-des-rs.deployment.yaml
+  - dd-des-rs.hpa.yaml
   - dd-des-rs.service.yaml
   - dd-contract-service.deployment.yaml
   - dd-contract-service.networkpolicy.yaml
