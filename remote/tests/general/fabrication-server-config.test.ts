@@ -83,6 +83,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /\.route\("\/plan", post\(plan_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/plan", post\(plan_http\)\)/);
   assert.match(source, /\.route\("\/instructions\/analyze", post\(analyze_http\)\)/);
+  assert.match(source, /\.route\("\/fabrication\/instructions\/analyze", post\(analyze_http\)\)/);
   assert.match(source, /\.route\("\/learning\/policy", get\(learning_policy_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/learning\/policy", get\(learning_policy_http\)\)/);
   assert.match(source, /\.route\("\/learning\/observe", post\(learning_observe_http\)\)/);
@@ -105,6 +106,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/plan`/);
   assert.match(readme, /`POST \/fabrication\/plan`/);
   assert.match(readme, /`POST \/instructions\/analyze`/);
+  assert.match(readme, /`POST \/fabrication\/instructions\/analyze`/);
   assert.match(readme, /bounded in-process job and artifact ledger/);
   assert.match(readme, /machine-envelope/);
   assert.match(readme, /dd\.remote\.fabrication\.requests/);
@@ -119,6 +121,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/plan"/);
   assert.match(docs, /"path": "\/fabrication\/plan"/);
   assert.match(docs, /"path": "\/instructions\/analyze"/);
+  assert.match(docs, /"path": "\/fabrication\/instructions\/analyze"/);
   assert.match(docs, /"path": "\/jobs"/);
   assert.match(docs, /"path": "\/jobs\/:job_id"/);
   assert.match(docs, /"path": "\/jobs\/:job_id\/artifacts\/:artifact_id"/);
