@@ -99,7 +99,7 @@ on:
         required: false
         type: string
         default: "3"
-      # gcs-loadtest marker: 2026-06-05 lowered-loader-requests-1
+      # gcs-loadtest marker: 2026-06-05 active-capacity-guard-1
       loadtest_gcs_replicas:
         description: Number of backend GCS pods to keep available during the load test.
         required: false
@@ -2546,6 +2546,7 @@ jobs:
           mip_capacity_namespace="ai-ml"
           mip_capacity_targets="dd-in-house-mip-solver-node-master dd-in-house-mip-solver-node-slave"
           mip_capacity_scaledobject="dd-in-house-mip-solver-node-slave-nats-jetstream"
+          capacity_guard_pid=""
 
           apply_target_manifest() {
             local path="$1"
@@ -2650,11 +2651,19 @@ jobs:
           assert_capacity_free() {
             local bad=0
             local d desired pods
-            for d in $capacity_targets; do
+            for d in $capacity_targets $capacity_extra_targets; do
               desired="$(kubectl -n default get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
               pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
               if [ "${desired:-missing}" != "0" ] || [ "${pods:-0}" -ne 0 ]; then
                 echo "capacity-not-free deployment=$d desired=${desired:-unknown} pods=${pods:-0}"
+                bad=1
+              fi
+            done
+            for d in $capacity_extra_statefulsets; do
+              desired="$(kubectl -n default get "statefulset/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
+              pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
+              if [ "${desired:-missing}" != "0" ] || [ "${pods:-0}" -ne 0 ]; then
+                echo "capacity-not-free statefulset=$d desired=${desired:-unknown} pods=${pods:-0}"
                 bad=1
               fi
             done
@@ -2730,8 +2739,49 @@ jobs:
             exit 1
           }
 
+          start_capacity_guard() {
+            local interval="${LOADTEST_CAPACITY_GUARD_INTERVAL_SECONDS:-5}"
+            case "$interval" in
+              ''|*[!0-9]*) interval=5 ;;
+            esac
+            if [ "$interval" = "0" ]; then
+              interval=5
+            fi
+            echo "=== start capacity guard interval=${interval}s ==="
+            (
+              set +e
+              while true; do
+                for capacity_target in $capacity_targets $capacity_extra_targets; do
+                  kubectl -n default scale "deployment/$capacity_target" --replicas=0 >/dev/null 2>&1 || true
+                  kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true >/dev/null 2>&1 || true
+                done
+                for capacity_target in $capacity_extra_statefulsets; do
+                  kubectl -n default scale "statefulset/$capacity_target" --replicas=0 >/dev/null 2>&1 || true
+                  kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true >/dev/null 2>&1 || true
+                done
+                for capacity_target in $mip_capacity_targets; do
+                  kubectl -n "$mip_capacity_namespace" scale "deployment/$capacity_target" --replicas=0 >/dev/null 2>&1 || true
+                  kubectl -n "$mip_capacity_namespace" delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true >/dev/null 2>&1 || true
+                done
+                sleep "$interval"
+              done
+            ) &
+            capacity_guard_pid="$!"
+            echo "capacity-guard pid=$capacity_guard_pid"
+          }
+
+          stop_capacity_guard() {
+            if [ -n "${capacity_guard_pid:-}" ]; then
+              echo "=== stop capacity guard pid=$capacity_guard_pid ==="
+              kill "$capacity_guard_pid" >/dev/null 2>&1 || true
+              wait "$capacity_guard_pid" >/dev/null 2>&1 || true
+              capacity_guard_pid=""
+            fi
+          }
+
           cleanup() {
             set +e
+            stop_capacity_guard
             echo "=== cleanup: scale GCS WSS loadtest deployments to 0 ==="
             for d in $loaders; do
               kubectl -n default scale "deployment/$d" --replicas=0 || true
@@ -2811,6 +2861,7 @@ jobs:
           done
           free_gcs_capacity
           disable_loadtest_autosync
+          start_capacity_guard
 
           wait_available() {
             local d="$1"
