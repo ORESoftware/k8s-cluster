@@ -48,6 +48,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct LearningPlan/);
   assert.match(source, /struct StrategyCandidate/);
   assert.match(source, /struct InterventionLearningSignal/);
+  assert.match(source, /struct ProcessGraph/);
+  assert.match(source, /struct ProcessGraphDependency/);
+  assert.match(source, /struct ProcessGraphGate/);
   assert.match(source, /struct AssemblyGraph/);
   assert.match(source, /struct AssemblyInterface/);
   assert.match(source, /struct AssemblySequenceStep/);
@@ -62,6 +65,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /preferred_assembly_strategy/);
   assert.match(source, /fn assembly_graph/);
   assert.match(source, /assembly_graph: AssemblyGraph/);
+  assert.match(source, /fn process_graph/);
+  assert.match(source, /process_graph: ProcessGraph/);
+  assert.match(source, /assembly-interface/);
+  assert.match(source, /gated-before-machine-release/);
   assert.match(source, /printed-pocket-turned-insert/);
   assert.match(source, /first-article-metrology-and-fit-check/);
   assert.match(source, /fn analyze_instruction_programs/);
@@ -162,6 +169,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"boundary-summary"/);
   assert.match(source, /"analysis-boundary-summary"/);
   assert.match(source, /"resolution-plan"/);
+  assert.match(source, /"process-graph"/);
   assert.match(source, /"analysis-resolution-plan"/);
   assert.match(source, /fn boundary_learning_actions/);
   assert.match(source, /fn boundary_learning_observations/);
@@ -200,6 +208,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /machined-datum-finish-candidate/);
   assert.match(source, /split-for-inspection-candidate/);
   assert.match(source, /"strategyCandidates": response\.learning\.strategy_candidates/);
+  assert.match(source, /"processGraph": response\.process_graph/);
   assert.match(source, /"interventionSignals": response\.learning\.intervention_signals/);
   assert.match(source, /"automationRequirements": response\.boundary_summary\.automation_requirements/);
   assert.match(source, /"resolutionPlan": response\.resolution_plan/);
@@ -269,7 +278,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /bounded in-process job and artifact ledger/);
   assert.match(readme, /boundary summaries/);
   assert.match(readme, /resolution plans/);
+  assert.match(readme, /process graphs/);
   assert.match(readme, /assembly graphs/);
+  assert.match(readme, /structured `processGraph`/);
   assert.match(readme, /`boundarySummary` object/);
   assert.match(readme, /typed `automationRequirements`/);
   assert.match(readme, /`resolutionPlan`/);
@@ -282,7 +293,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`resolution-plan`/);
   assert.match(readme, /`analysis-resolution-plan`/);
   assert.match(readme, /`assembly\.assemblyGraph`/);
+  assert.match(readme, /retained `process-graph`/);
+  assert.match(readme, /operation order, generated programs/);
   assert.match(readme, /join interfaces, dry-fit\/metrology gates/);
+  assert.match(readme, /`process-graph`/);
   assert.match(readme, /`mdp-request` artifact includes `strategyCandidates`, `interventionSignals`/);
   assert.match(readme, /ordered release-blocking remediation steps/);
   assert.match(readme, /attempts machine-ready release/);

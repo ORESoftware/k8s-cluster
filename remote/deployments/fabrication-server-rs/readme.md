@@ -53,9 +53,11 @@ resolved machine profile material lists before the plan is marked OK.
 
 - A normalized design summary with inferred additive, milling, turning, or
   special-process parts.
-- A process plan across 3D printers, vertical/horizontal mills, routers,
-  laser, waterjet, plasma/sheet cutters, and lathes when those machine
-  profiles are available.
+- A process plan and structured `processGraph` across 3D printers,
+  vertical/horizontal mills, routers, laser, waterjet, plasma/sheet cutters, and
+  lathes when those machine profiles are available. The graph links operations,
+  generated programs, sequencing dependencies, assembly interfaces, and release
+  gates.
 - Draft machine programs such as Marlin-style FDM printer G-code,
   SLA/MSLA resin print-wash-cure job sheets, SLS/MJF-style powder-bed
   print-cooldown-depowder job sheets, ISO/Haas-style vertical milling G-code,
@@ -96,7 +98,8 @@ resolved machine profile material lists before the plan is marked OK.
 - A bounded in-process job and artifact ledger for generated design summaries,
   parametric design payloads, process plans, machine programs, validation
   reports, boundary summaries, resolution plans, improved instructions,
-  assembly plans, assembly graphs, and optimizer-shaped MDP requests.
+  assembly plans, process graphs, assembly graphs, and optimizer-shaped MDP
+  requests.
 
 Real production use still requires CAD/CAM generation, controller-specific
 post-processing, simulation, workholding review, material verification, and
@@ -248,6 +251,10 @@ Plan responses also include `assembly.assemblyGraph`; the retained
 `parametric-design` and `assembly-plan` artifacts carry the same graph so
 external CAD/CAM or learning workers can connect generated parts, manufacturing
 methods, join interfaces, dry-fit/metrology gates, and assembly sequence steps.
+Plan responses and the retained `process-graph`, `parametric-design`, and
+`mdp-request` artifacts include `processGraph` nodes, dependencies, and release
+gates so downstream agents can reason over operation order, generated programs,
+assembly-interface dependencies, and validation gates without reparsing prose.
 
 ## Outcome Learning
 
@@ -308,13 +315,15 @@ runtime inspection boundary while the database contract is still being designed.
   artifact summaries.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
   such as `design-summary`, `parametric-design`, `process-plan`,
-  `boundary-summary`, `simulation-report`, `learning-plan`, `mdp-request`, a
-  `program-*` generated machine program, or an `improved-program-*` instruction
-  rewrite, plus instruction-analysis artifacts such as
+  `process-graph`, `boundary-summary`, `simulation-report`, `learning-plan`,
+  `mdp-request`, a `program-*` generated machine program, or an
+  `improved-program-*` instruction rewrite, plus instruction-analysis artifacts such as
   `analysis-boundary-summary`, `analysis-simulation-report`, and learning
   artifacts such as `reward-signal`, `mdp-experience`, `pomdp-observations`, and
   `neural-example`. `parametric-design` and `assembly-plan` include
-  `assemblyGraph` nodes, interfaces, and sequence gates.
+  `assemblyGraph` nodes, interfaces, and sequence gates; `parametric-design`,
+  `process-graph`, and `mdp-request` include `processGraph` operation nodes,
+  dependencies, and release gates.
 
 ## Local Build
 
