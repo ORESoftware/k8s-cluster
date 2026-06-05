@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 15,
+  "routeCount": 12,
   "routeTypeCounts": {
-    "service": 6,
-    "user-generated": 6,
+    "service": 7,
+    "user-generated": 2,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -25,7 +25,7 @@
       "auth": "public",
       "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
       "handlers": [
-        "healthz"
+        "root"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -84,24 +84,7 @@
       "notes": ""
     },
     {
-      "path": "/example",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "example"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fabrication-server-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/fabricate",
+      "path": "/fabrication/plan",
       "methods": [
         "POST"
       ],
@@ -110,7 +93,7 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "fabricate_http"
+        "plan_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -135,7 +118,7 @@
       "notes": ""
     },
     {
-      "path": "/instructions/improve",
+      "path": "/instructions/analyze",
       "methods": [
         "POST"
       ],
@@ -144,24 +127,7 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "improve_instructions_http"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fabrication-server-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/instructions/validate",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "validate_instructions_http"
+        "analyze_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -220,23 +186,6 @@
       "notes": ""
     },
     {
-      "path": "/learn/telemetry",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "learn_telemetry_http"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fabrication-server-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
       "path": "/metrics",
       "methods": [
         "GET"
@@ -254,16 +203,16 @@
       "notes": ""
     },
     {
-      "path": "/schema",
+      "path": "/readyz",
       "methods": [
         "GET"
       ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Readiness check.",
       "handlers": [
-        "schema"
+        "healthz"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
