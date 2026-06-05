@@ -70,6 +70,11 @@ data:
         static_configs:
           - targets:
               - dd-mdp-optimizer.default.svc.cluster.local:8096
+      - job_name: dd-fabrication-server
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-fabrication-server.default.svc.cluster.local:8113
       - job_name: dd-des-simulator
         metrics_path: /metrics
         static_configs:
