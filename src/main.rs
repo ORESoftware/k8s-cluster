@@ -37,6 +37,8 @@ const MAX_PARTS: usize = 64;
 const MAX_PROGRAMS: usize = 32;
 const MAX_PROGRAM_LINES: usize = 8_000;
 const MAX_STORED_JOBS: usize = 128;
+const MAX_LEARNING_OUTCOMES: usize = 512;
+const MAX_LEARNING_SIGNALS: usize = 128;
 const DEFAULT_TOLERANCE_MM: f64 = 0.2;
 
 #[derive(Clone)]
@@ -50,12 +52,14 @@ struct AppState {
     mdp_autopublish: bool,
     metrics: Arc<Metrics>,
     jobs: Arc<RwLock<FabricationJobStore>>,
+    learning: Arc<RwLock<LearningMemory>>,
 }
 
 #[derive(Default)]
 struct Metrics {
     plan_requests_total: AtomicU64,
     analysis_requests_total: AtomicU64,
+    learning_requests_total: AtomicU64,
     generated_programs_total: AtomicU64,
     validation_findings_total: AtomicU64,
     failure_boundaries_total: AtomicU64,
@@ -67,6 +71,7 @@ struct Metrics {
     jobs_stored_total: AtomicU64,
     artifacts_stored_total: AtomicU64,
     artifact_requests_total: AtomicU64,
+    learning_events_stored_total: AtomicU64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -161,6 +166,31 @@ struct InstructionAnalysisRequest {
     material: Option<MaterialSpec>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FabricationOutcomeRequest {
+    request_id: Option<String>,
+    source_job_id: Option<String>,
+    source_artifact_id: Option<String>,
+    part_id: Option<String>,
+    program_id: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    material: Option<MaterialSpec>,
+    outcome: String,
+    completed: Option<bool>,
+    machine_failure: Option<bool>,
+    scrap: Option<bool>,
+    human_intervention_required: Option<bool>,
+    intervention_minutes: Option<f64>,
+    duration_minutes: Option<f64>,
+    dimensional_error_mm: Option<f64>,
+    surface_quality: Option<f64>,
+    observations: Option<Vec<String>>,
+    notes: Option<Vec<String>>,
+    reward_weights: Option<BTreeMap<String, f64>>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationPlanResponse {
@@ -192,6 +222,35 @@ struct InstructionAnalysisResponse {
     improvements: Vec<InstructionImprovement>,
     improved_programs: Vec<ImprovedInstructionProgram>,
     generated_at_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FabricationLearningResponse {
+    ok: bool,
+    job_id: String,
+    request_id: String,
+    source_job_id: Option<String>,
+    source_artifact_id: Option<String>,
+    outcome: String,
+    state: String,
+    recommended_action: String,
+    reward: f64,
+    reward_terms: Vec<LearningRewardTerm>,
+    observations: Vec<String>,
+    mdp_update: Value,
+    neural_example: Value,
+    warnings: Vec<String>,
+    generated_at_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LearningRewardTerm {
+    name: String,
+    value: f64,
+    weight: f64,
+    contribution: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -248,6 +307,7 @@ struct StoredFabricationJob {
     record: FabricationJobRecord,
     plan: Option<FabricationPlanResponse>,
     analysis: Option<InstructionAnalysisResponse>,
+    learning: Option<FabricationLearningResponse>,
     artifacts: BTreeMap<String, FabricationArtifact>,
 }
 
@@ -257,6 +317,7 @@ struct FabricationJobDetail {
     record: FabricationJobRecord,
     plan: Option<FabricationPlanResponse>,
     analysis: Option<InstructionAnalysisResponse>,
+    learning: Option<FabricationLearningResponse>,
     artifacts: Vec<FabricationArtifactSummary>,
 }
 
@@ -392,6 +453,74 @@ struct LearningPlan {
     training_examples: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LearningOutcomeRequest {
+    request_id: Option<String>,
+    job_id: Option<String>,
+    objective: Option<String>,
+    material: Option<MaterialSpec>,
+    manufacturing_methods: Option<Vec<String>>,
+    assembly_strategy: Option<String>,
+    success: bool,
+    reward: Option<f64>,
+    observations: Option<Vec<String>>,
+    notes: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LearningOutcomeRecord {
+    outcome_id: String,
+    request_id: String,
+    job_id: Option<String>,
+    objective: Option<String>,
+    material: Option<MaterialSpec>,
+    manufacturing_methods: Vec<String>,
+    assembly_strategy: Option<String>,
+    success: bool,
+    reward: f64,
+    observations: Vec<String>,
+    notes: Vec<String>,
+    created_at_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LearningPreference {
+    key: String,
+    samples: u64,
+    successes: u64,
+    failures: u64,
+    average_reward: f64,
+    recommendation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LearningPolicySnapshot {
+    outcome_count: usize,
+    successes: u64,
+    failures: u64,
+    average_reward: f64,
+    method_preferences: Vec<LearningPreference>,
+    assembly_preferences: Vec<LearningPreference>,
+    neural_training_examples: Vec<String>,
+}
+
+#[derive(Default)]
+struct LearningMemory {
+    outcomes: VecDeque<LearningOutcomeRecord>,
+    max_outcomes: usize,
+}
+
+#[derive(Default)]
+struct LearningAggregate {
+    samples: u64,
+    successes: u64,
+    reward_sum: f64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AnalyzedProgram {
@@ -496,6 +625,42 @@ fn finite_positive(value: f64, label: &str) -> Result<f64, String> {
     Ok(value)
 }
 
+fn finite_non_negative(value: f64, label: &str) -> Result<f64, String> {
+    if !value.is_finite() || value < 0.0 {
+        return Err(format!("{label} must be finite and non-negative"));
+    }
+    Ok(value)
+}
+
+fn finite_ratio(value: f64, label: &str) -> Result<f64, String> {
+    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+        return Err(format!("{label} must be finite and in [0, 1]"));
+    }
+    Ok(value)
+}
+
+fn bounded(value: f64, min: f64, max: f64) -> f64 {
+    value.max(min).min(max)
+}
+
+fn stock_envelope_excesses(
+    stock_dimensions: &[f64],
+    work_envelope: &[f64],
+) -> Vec<(usize, f64, f64)> {
+    stock_dimensions
+        .iter()
+        .zip(work_envelope.iter())
+        .enumerate()
+        .filter_map(|(index, (stock, limit))| {
+            if stock > limit {
+                Some((index, *stock, *limit))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 fn normalize_token(value: &str) -> String {
     value
         .trim()
@@ -589,6 +754,7 @@ impl FabricationJobStore {
             record: job.record.clone(),
             plan: job.plan.clone(),
             analysis: job.analysis.clone(),
+            learning: job.learning.clone(),
             artifacts: job
                 .artifacts
                 .values()
@@ -2487,6 +2653,38 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
                 .to_string(),
         );
     }
+    if let Some(stock_dimensions) = request
+        .stock
+        .as_ref()
+        .and_then(|stock| stock.dimensions_mm.as_ref())
+    {
+        for step in &process_plan {
+            let Some(machine) = machine_by_part.get(&step.part_id) else {
+                continue;
+            };
+            let Some(work_envelope) = machine.work_envelope_mm.as_ref() else {
+                continue;
+            };
+            for (axis_index, stock, limit) in
+                stock_envelope_excesses(stock_dimensions, work_envelope)
+            {
+                plan_boundaries.push(FailureBoundary {
+                    kind: "machine-envelope".to_string(),
+                    severity: "error".to_string(),
+                    program_id: None,
+                    line: None,
+                    reason: format!(
+                        "part {} stock dimension axis {} is {:.3} mm, exceeding machine {} envelope {:.3} mm",
+                        step.part_id, axis_index, stock, machine.id, limit
+                    ),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "split the part, choose a larger machine, revise stock prep, or add an explicit fixture/assembly plan"
+                            .to_string(),
+                });
+            }
+        }
+    }
 
     let generated_as_input = generated_programs
         .iter()
@@ -3611,11 +3809,29 @@ mod tests {
         let job = stored_plan_job(&response);
         assert_eq!(job.record.job_id, response.job_id);
         assert!(job.artifacts.contains_key("design-summary"));
+        assert!(job.artifacts.contains_key("parametric-design"));
         assert!(job.artifacts.contains_key("mdp-request"));
         assert!(job
             .artifacts
             .keys()
             .any(|artifact_id| artifact_id.starts_with("program-")));
+        let parametric_design = job
+            .artifacts
+            .get("parametric-design")
+            .expect("parametric design artifact should be retained");
+        assert_eq!(
+            parametric_design
+                .content
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.parametric-design.v1")
+        );
+        assert!(parametric_design
+            .content
+            .get("parts")
+            .and_then(Value::as_array)
+            .is_some_and(|parts| !parts.is_empty()));
+        assert_eq!(parametric_design.machine_ready, false);
 
         let mut store = FabricationJobStore::new(2);
         store.insert(job);
@@ -3631,6 +3847,47 @@ mod tests {
             .artifacts
             .iter()
             .any(|artifact| artifact.artifact_id == "learning-plan"));
+    }
+
+    #[test]
+    fn oversized_stock_creates_machine_envelope_failure_boundary() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-envelope".to_string()),
+            objective: "large PLA printer cover".to_string(),
+            material: Some(material("pla", "polymer")),
+            stock: Some(StockSpec {
+                form: "sheet".to_string(),
+                dimensions_mm: Some(vec![300.0, 300.0, 80.0]),
+            }),
+            tolerance_mm: Some(0.2),
+            quantity: Some(1),
+            machines: Some(vec![MachineProfile {
+                id: "small-printer".to_string(),
+                kind: "fdm-printer".to_string(),
+                controller: Some("marlin".to_string()),
+                materials: Some(vec!["pla".to_string()]),
+                work_envelope_mm: Some(vec![120.0, 120.0, 120.0]),
+                axes: Some(3),
+                operations: Some(vec!["additive-print".to_string()]),
+            }]),
+            constraints: None,
+            parts: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("oversize plan should still return a validation report");
+
+        assert!(!response.ok);
+        assert_eq!(response.validation.severity, "error");
+        assert!(response
+            .validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| {
+                boundary.kind == "machine-envelope"
+                    && boundary.requires_human_intervention
+                    && boundary.suggested_resolution.contains("split the part")
+            }));
     }
 
     #[test]

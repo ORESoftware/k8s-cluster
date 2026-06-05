@@ -42,14 +42,15 @@ learning hints. It returns:
   unsupported machine kinds.
 - Validation findings and failure boundaries for heat-up, homing, spindle,
   work-offset, tool-change, manual-stop, deep-cut, arc, setup-limit,
-  inspection, and automation constraints.
+  machine-envelope, inspection, and automation constraints.
 - Assembly advice that calls out when parts should be combined into one job or
   split so tight-tolerance features can be machined and inspected separately.
 - A learning contract with MDP states, POMDP observations, policy actions,
   reward terms, neural feature names, and training-example sketches.
 - A bounded in-process job and artifact ledger for generated design summaries,
-  process plans, machine programs, validation reports, improved instructions,
-  assembly plans, and optimizer-shaped MDP requests.
+  parametric design payloads, process plans, machine programs, validation
+  reports, improved instructions, assembly plans, and optimizer-shaped MDP
+  requests.
 
 Real production use still requires CAD/CAM generation, controller-specific
 post-processing, simulation, workholding review, material verification, and
@@ -169,9 +170,9 @@ runtime inspection boundary while the database contract is still being designed.
 - `GET /jobs/:job_id` returns the recorded plan or analysis response plus
   artifact summaries.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
-  such as `design-summary`, `process-plan`, `learning-plan`, `mdp-request`, a
-  `program-*` generated machine program, or an `improved-program-*` instruction
-  rewrite.
+  such as `design-summary`, `parametric-design`, `process-plan`,
+  `learning-plan`, `mdp-request`, a `program-*` generated machine program, or an
+  `improved-program-*` instruction rewrite.
 
 ## Local Build
 
