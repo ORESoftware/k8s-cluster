@@ -19,10 +19,9 @@ use axum::{
 };
 use dd_nats_subject_defs::{
     FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP,
-    FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
-    FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT, FABRICATION_REQUESTS_QUEUE_GROUP,
-    FABRICATION_REQUESTS_SUBJECT, FABRICATION_RESULTS_SUBJECT, MDP_OPTIMIZE_SUBJECT,
-    RUNTIME_EVENTS_SUBJECT,
+    FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT, FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
+    FABRICATION_REQUESTS_QUEUE_GROUP, FABRICATION_REQUESTS_SUBJECT, FABRICATION_RESULTS_SUBJECT,
+    MDP_OPTIMIZE_SUBJECT, RUNTIME_EVENTS_SUBJECT,
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -32218,6 +32217,95 @@ mod tests {
     }
 
     #[test]
+    fn text_composite_fiber_jobs_require_layup_process_and_inspection_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("composite-missing-layup".to_string()),
+                machine_id: Some("composite-1".to_string()),
+                machine_kind: Some("composite-fiber-printer".to_string()),
+                language: Some("composite-fiber-job".to_string()),
+                instructions: vec![
+                    "Continuous fiber carbon fiber nylon drone arm with matrix lot PA-CF-7, fiber spool lot CF-44, fiber cutter calibration, cut test, nozzle purge, bed adhesion, and fiber tension verified".to_string(),
+                    "Continuous fiber coupon bend test, fiber continuity, void inspection, delamination review, exposed fiber trim inspection, and dimensional inspection recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("composite-missing-process-inspection".to_string()),
+                machine_id: Some("composite-1".to_string()),
+                machine_kind: Some("composite-fiber-printer".to_string()),
+                language: Some("composite-fiber-job".to_string()),
+                instructions: vec![
+                    "Continuous fiber carbon fiber nylon bracket with fiber orientation 0/90/45/-45, layup schedule L-12, reinforcement rings, load direction, neutral axis, and anisotropy review".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("composite-with-evidence".to_string()),
+                machine_id: Some("composite-1".to_string()),
+                machine_kind: Some("composite-fiber-printer".to_string()),
+                language: Some("composite-fiber-job".to_string()),
+                instructions: vec![
+                    "Continuous fiber carbon fiber nylon bracket with fiber orientation 0/90/45/-45, fiber path, layup schedule L-12, reinforcement rings, load direction, neutral axis, and anisotropy review".to_string(),
+                    "Continuous fiber matrix lot PA-CF-7, dry box, fiber spool lot CF-44, fiber cutter calibration, cut test, fiber tension, anchor length, nozzle purge, bed adhesion, fiber volume, and compaction recorded".to_string(),
+                    "Continuous fiber coupon bend test, fiber continuity, void inspection, delamination review, exposed fiber trim inspection, and dimensional inspection recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "composite-fiber-layup-evidence-missing"
+                && finding.program_id.as_deref() == Some("composite-missing-layup")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "composite-fiber-process-inspection-evidence-missing"
+                && finding.program_id.as_deref() == Some("composite-missing-process-inspection")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("composite-fiber-")
+                && finding.program_id.as_deref() == Some("composite-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "composite-fiber-layup-boundary"
+                && boundary.program_id.as_deref() == Some("composite-missing-layup")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("fiber layup")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "composite-fiber-process-inspection-boundary"
+                && boundary.program_id.as_deref() == Some("composite-missing-process-inspection")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("cutter calibration")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-composite-fiber-layup-evidence"
+                && improvement.program_id.as_deref() == Some("composite-missing-layup")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-composite-fiber-process-inspection-evidence"
+                && improvement.program_id.as_deref() == Some("composite-missing-process-inspection")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [composite-fiber-layup-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1].instructions.iter().any(
+            |line| line.starts_with("CHECKPOINT [composite-fiber-process-inspection-boundary]")
+        ));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [composite-fiber-")));
+    }
+
+    #[test]
     fn text_powder_bed_print_jobs_require_build_profile_and_powder_lot_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -32683,6 +32771,7 @@ mod tests {
             "grbl-gcode",
             "fanuc-gcode",
             "sla-job",
+            "composite-fiber-job",
             "sls-job",
             "metal-pbf-job",
             "binder-jet-job",
