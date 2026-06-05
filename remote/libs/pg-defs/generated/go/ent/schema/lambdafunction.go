@@ -30,7 +30,7 @@ func (LambdaFunction) Fields() []ent.Field {
 		field.String("slug").MaxLen(120).Match(regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)).StorageKey("slug"),
 		field.String("display_name").MinLen(1).MaxLen(200).StorageKey("display_name"),
 		field.String("description").Default("").StorageKey("description"),
-		field.Enum("runtime").Values("nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell").StorageKey("runtime"),
+		field.Enum("runtime").Values("nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm").StorageKey("runtime"),
 		field.String("entry_command").Default("env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs").StorageKey("entry_command"),
 		field.String("function_body").MinLen(1).StorageKey("function_body"),
 		field.String("reuse_key").MaxLen(200).Optional().Nillable().StorageKey("reuse_key"),

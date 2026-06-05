@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "web-home-rs",
   "language": "rust",
-  "routeCount": 43,
+  "routeCount": 44,
   "routeTypeCounts": {
     "service": 10,
-    "user-generated": 30,
+    "user-generated": 31,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -706,6 +706,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "presence_test_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/service-worker.js",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "service_worker_js"
       ],
       "sourceFiles": [
         "remote/deployments/web-home-rs/src/main.rs"

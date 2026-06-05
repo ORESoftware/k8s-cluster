@@ -82,7 +82,7 @@ test('lambda function code highlighter covers every process profile language', a
     ['nodejs', 'async function handler() {\n// ok\nreturn true;\n}', /tok-keyword">async/, /tok-comment">\/\/ ok/],
     ['python3', 'def handler(request, context):\n# ok\n    return True', /tok-keyword">def/, /tok-comment"># ok/],
     ['ruby', 'def handler(request, context)\n# ok\n  return true\nend', /tok-keyword">def/, /tok-comment"># ok/],
-    ['bash', 'handler() {\n# ok\nif true; then echo yes; fi\n}', /tok-keyword">if/, /tok-comment"># ok/],
+    ['bash', 'handler() {\n# ok\nreturn 0\n}', /tok-keyword">return/, /tok-comment"># ok/],
     ['golang', 'func Handler() {\n// ok\nreturn\n}', /tok-keyword">func/, /tok-comment">\/\/ ok/],
     ['dart', 'dynamic handler() {\n// ok\nreturn true;\n}', /tok-keyword">dynamic/, /tok-comment">\/\/ ok/],
     ['erlang', 'handle(_Request, _Context) ->\n% ok\ncase true of true -> ok end.', /tok-keyword">case/, /tok-comment">% ok/],

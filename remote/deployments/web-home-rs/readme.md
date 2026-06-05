@@ -47,7 +47,7 @@ keeps page rendering separate from data access without making the webserver a pr
 `POST /lambdas/invoke/<function-id>` route.
 
 The editor exposes a deployment profile layer above the persisted lambda runtime: direct `nodejs`
-and `python3` profiles, containerized `ruby`, `golang`, `dart`, `erlang`, `elixir`, and `java`
+and `python3` profiles, containerized `ruby`, `bash`, `golang`, `dart`, `erlang`, `elixir`, and `java`
 profiles, plus `rust` and `gleamlang` process profiles that generate a Node.js wrapper using the
 lambda runner's `context.containerPool.dispatch(...)` helper. The UI also
 captures the intended base image and container runner (`containerd / ctr`, `containerd / nerdctl`,
@@ -56,7 +56,7 @@ without widening the REST API's trusted entry-command contract.
 
 The page accepts query params to prefill a new draft. Common params are `slug`, `name` or
 `displayName`, `description`, `status`, `runtime`, `processProfile` (`nodejs`, `python3`, `ruby`,
-`golang`, `dart`, `erlang`, `elixir`, `java`, `rust`, or `gleamlang`), `containerized`,
+`bash`, `golang`, `dart`, `erlang`, `elixir`, `java`, `rust`, or `gleamlang`), `containerized`,
 `containerRunner`, `baseImage`, `reuseKey`,
 `idleTimeoutSeconds`, `maxRunMs`, `body` or `functionBody`, `request`, `labels`, `meta`, and
 `containerPoolTimeoutMs`. JSON-valued params such as `request`, `labels`, and `meta` should be URL

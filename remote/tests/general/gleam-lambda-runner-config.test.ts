@@ -51,6 +51,9 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   const bashRunner = await readRepoFile(
     'remote/deployments/gleam-lambda-runner/child-runtimes/bash-function-runner.mjs',
   );
+  const polyglotRunner = await readRepoFile(
+    'remote/deployments/gleam-lambda-runner/child-runtimes/polyglot-function-runner.mjs',
+  );
   const restApi = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
   const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const webHomeReadme = await readRepoFile('remote/deployments/web-home-rs/readme.md');
@@ -70,6 +73,21 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   );
   const bashRuntimeDockerfile = await readRepoFile(
     'remote/deployments/gleam-lambda-runner/runtime-images/bash.Dockerfile',
+  );
+  const golangRuntimeDockerfile = await readRepoFile(
+    'remote/deployments/gleam-lambda-runner/runtime-images/golang.Dockerfile',
+  );
+  const dartRuntimeDockerfile = await readRepoFile(
+    'remote/deployments/gleam-lambda-runner/runtime-images/dart.Dockerfile',
+  );
+  const erlangRuntimeDockerfile = await readRepoFile(
+    'remote/deployments/gleam-lambda-runner/runtime-images/erlang.Dockerfile',
+  );
+  const elixirRuntimeDockerfile = await readRepoFile(
+    'remote/deployments/gleam-lambda-runner/runtime-images/elixir.Dockerfile',
+  );
+  const javaRuntimeDockerfile = await readRepoFile(
+    'remote/deployments/gleam-lambda-runner/runtime-images/java.Dockerfile',
   );
 
   assert.match(gleamToml, /name = "gleam_lambda_runner"/);
@@ -92,6 +110,17 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(bashRuntimeDockerfile, /ENV NODE_NO_WARNINGS=1/);
   assert.match(nodeRuntimeDockerfile, /ENTRYPOINT \["node", "--permission", "\/opt\/dd-lambda\/runner\.mjs"\]/);
   assert.match(bashRuntimeDockerfile, /ENTRYPOINT \["node", "--permission", "--allow-child-process", "\/opt\/dd-lambda\/runner\.mjs"\]/);
+  for (const runtimeDockerfile of [
+    golangRuntimeDockerfile,
+    dartRuntimeDockerfile,
+    erlangRuntimeDockerfile,
+    elixirRuntimeDockerfile,
+    javaRuntimeDockerfile,
+  ]) {
+    assert.match(runtimeDockerfile, /polyglot-function-runner\.mjs/);
+    assert.match(runtimeDockerfile, /LAMBDA_TARGET_RUNTIME=/);
+    assert.match(runtimeDockerfile, /USER 10001:10001/);
+  }
   assert.doesNotMatch(nodeRuntimeDockerfile, /"--allow-net"/);
   assert.doesNotMatch(bashRuntimeDockerfile, /"--allow-net"/);
   assert.doesNotMatch(nodeRuntimeDockerfile, /node:22-alpine/);
@@ -201,6 +230,11 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /host_command\(<<"python3">>\)/);
   assert.match(erlPort, /host_command\(<<"ruby">>\)/);
   assert.match(erlPort, /host_command\(<<"bash">>\)/);
+  assert.match(erlPort, /<<"golang">>/);
+  assert.match(erlPort, /<<"dart">>/);
+  assert.match(erlPort, /<<"erlang">>/);
+  assert.match(erlPort, /<<"elixir">>/);
+  assert.match(erlPort, /<<"java">>/);
   assert.match(erlPort, /host_command_from_env/);
   assert.match(erlPort, /LAMBDA_NODEJS_HOST_COMMAND/);
   assert.match(erlPort, /NODE_NO_WARNINGS=1/);
@@ -271,11 +305,18 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(bashRunner, /function checkBash/);
   assert.match(bashRunner, /spawn\('\/bin\/bash', \['-n'\]/);
   assert.match(bashRunner, /LAMBDA_REQUEST_JSON/);
+  assert.match(polyglotRunner, /function runGolang/);
+  assert.match(polyglotRunner, /function runDart/);
+  assert.match(polyglotRunner, /function runErlang/);
+  assert.match(polyglotRunner, /function runElixir/);
+  assert.match(polyglotRunner, /function runJava/);
+  assert.match(polyglotRunner, /LAMBDA_TARGET_RUNTIME/);
+  assert.match(polyglotRunner, /runtime\/image mismatch/);
   assert.match(restApi, /\/api\/lambdas\/functions/);
   assert.match(restApi, /get\(lambda_functions\)\.post\(create_lambda_function\)/);
   assert.match(restApi, /patch\(update_lambda_function\)/);
   assert.match(restApi, /validate_lambda_runtime/);
-  assert.match(restApi, /runtime must be one of nodejs, python3, ruby, or bash/);
+  assert.match(restApi, /runtime must be one of nodejs, python3, ruby, bash, golang, dart, erlang, elixir, or java/);
   assert.match(restApi, /validate_lambda_reuse_key/);
   assert.match(restApi, /reuseKey may contain only ASCII letters/);
   assert.match(restApi, /validate_lambda_image_build_root/);
@@ -285,6 +326,11 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(restApi, /"python3"/);
   assert.match(restApi, /"ruby"/);
   assert.match(restApi, /"bash"/);
+  assert.match(restApi, /"golang"/);
+  assert.match(restApi, /"dart"/);
+  assert.match(restApi, /"erlang"/);
+  assert.match(restApi, /"elixir"/);
+  assert.match(restApi, /"java"/);
   assert.match(restApi, /maybe_package_lambda_image/);
   assert.match(restApi, /LAMBDA_IMAGE_BUILD_ENABLED/);
   assert.match(restApi, /LAMBDA_ALLOW_HOST_RUNTIMES/);
@@ -309,14 +355,33 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(webHome, /id="check"/);
   assert.match(webHome, /<option value="nodejs">nodejs process<\/option>/);
   assert.match(webHome, /<option value="python3">python3 process<\/option>/);
+  assert.match(webHome, /<option value="ruby">ruby process<\/option>/);
+  assert.match(webHome, /<option value="bash">bash process<\/option>/);
+  assert.match(webHome, /<option value="dart">dart process<\/option>/);
+  assert.match(webHome, /<option value="erlang">erlang process<\/option>/);
+  assert.match(webHome, /<option value="elixir">elixir process<\/option>/);
+  assert.match(webHome, /<option value="java">java process<\/option>/);
   assert.match(webHome, /<option value="rust">rust process<\/option>/);
   assert.match(webHome, /<option value="golang">golang process<\/option>/);
   assert.match(webHome, /<option value="gleamlang">gleamlang process<\/option>/);
+  assert.match(webHome, /registerLambdaServiceWorker/);
+  assert.match(webHome, /dd-lambda-function-draft:v2/);
+  assert.match(webHome, /localStorage\.setItem/);
+  assert.match(webHome, /dd-lambda-draft-save/);
   assert.match(webHome, /id="container-runner"/);
   assert.match(webHome, /containerd \/ ctr/);
   assert.match(webHome, /containerd \/ nerdctl/);
   assert.match(webHome, /<option value="docker">docker<\/option>/);
   assert.match(webHome, /id="base-image"/);
+  const processProfilesBlock = webHome.match(/const processProfiles = \{([\s\S]*?)\n\};\nconst hostAllowedRuntimes/);
+  assert.ok(processProfilesBlock);
+  const bashProfile = processProfilesBlock[1].match(/bash:\s*\{([\s\S]*?)\n\s*\},\n\s*golang:/);
+  const golangProfile = processProfilesBlock[1].match(/golang:\s*\{([\s\S]*?)\n\s*\},\n\s*dart:/);
+  assert.ok(bashProfile);
+  assert.ok(golangProfile);
+  assert.match(bashProfile[1], /runtime: "bash"/);
+  assert.match(golangProfile[1], /runtime: "golang"/);
+  assert.doesNotMatch(golangProfile[1], /runtime: "nodejs"/);
   assert.match(webHome, /docker\.io\/library\/dd-container-pool-rust-runtime:dev/);
   assert.match(webHome, /docker\.io\/library\/dd-container-pool-golang-runtime:dev/);
   assert.match(webHome, /docker\.io\/library\/dd-container-pool-gleamlang-runtime:dev/);
@@ -337,11 +402,16 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(webHome, /"functionBody",\s*"body",\s*"code",\s*"source"/);
   assert.match(webHome, /state\.queryAutofillActive/);
   assert.match(webHomeReadme, /query params to prefill a new draft/);
-  assert.match(webHomeReadme, /`processProfile` \(`nodejs`, `python3`, `rust`,\s*`golang`, or `gleamlang`\)/);
+  assert.match(webHomeReadme, /`processProfile` \(`nodejs`, `python3`, `ruby`,\s*`bash`, `golang`, `dart`, `erlang`, `elixir`, `java`, `rust`, or `gleamlang`\)/);
   assert.match(webHomeReadme, /`POST \/lambdas\/check` runner path to compile or syntax-check/);
   assert.match(webHome, /<option value="python3">python3<\/option>/);
   assert.match(webHome, /<option value="ruby">ruby<\/option>/);
   assert.match(webHome, /<option value="bash">bash<\/option>/);
+  assert.match(webHome, /<option value="golang">golang<\/option>/);
+  assert.match(webHome, /<option value="dart">dart<\/option>/);
+  assert.match(webHome, /<option value="erlang">erlang<\/option>/);
+  assert.match(webHome, /<option value="elixir">elixir<\/option>/);
+  assert.match(webHome, /<option value="java">java<\/option>/);
   assert.match(restApiDeployment, /LAMBDA_IMAGE_BUILD_ENABLED/);
   assert.match(restApiDeployment, /securityContext:\s*\n\s*privileged:\s*true/);
   assert.match(restApiDeployment, /mountPath:\s*\/run\/containerd\/containerd.sock/);
@@ -376,7 +446,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(tableSql, /lambda_functions_entry_command_chk/);
   assert.match(tableSql, /containerized boolean default false not null/);
   assert.match(tableSql, /container_build_status/);
-  assert.match(tableSql, /runtime in \('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell'\)/);
+  assert.match(tableSql, /runtime in \('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm'\)/);
 });
 
 test('gleam lambda runner ships ec2 service manifests', async () => {
