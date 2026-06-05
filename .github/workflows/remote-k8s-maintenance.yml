@@ -99,7 +99,7 @@ on:
         required: false
         type: string
         default: "3"
-      # gcs-loadtest marker: 2026-06-05 active-capacity-guard-1
+      # gcs-loadtest marker: 2026-06-05 active-capacity-guard-2
       loadtest_gcs_replicas:
         description: Number of backend GCS pods to keep available during the load test.
         required: false
@@ -2654,25 +2654,31 @@ jobs:
             for d in $capacity_targets $capacity_extra_targets; do
               desired="$(kubectl -n default get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
               pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
-              if [ "${desired:-missing}" != "0" ] || [ "${pods:-0}" -ne 0 ]; then
+              if [ "${pods:-0}" -ne 0 ]; then
                 echo "capacity-not-free deployment=$d desired=${desired:-unknown} pods=${pods:-0}"
                 bad=1
+              elif [ "${desired:-missing}" != "0" ] && [ "${desired:-missing}" != "missing" ]; then
+                echo "capacity-desired-nonzero deployment=$d desired=${desired:-unknown} pods=${pods:-0}"
               fi
             done
             for d in $capacity_extra_statefulsets; do
               desired="$(kubectl -n default get "statefulset/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
               pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
-              if [ "${desired:-missing}" != "0" ] || [ "${pods:-0}" -ne 0 ]; then
+              if [ "${pods:-0}" -ne 0 ]; then
                 echo "capacity-not-free statefulset=$d desired=${desired:-unknown} pods=${pods:-0}"
                 bad=1
+              elif [ "${desired:-missing}" != "0" ] && [ "${desired:-missing}" != "missing" ]; then
+                echo "capacity-desired-nonzero statefulset=$d desired=${desired:-unknown} pods=${pods:-0}"
               fi
             done
             for d in $mip_capacity_targets; do
               desired="$(kubectl -n "$mip_capacity_namespace" get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
               pods="$(kubectl -n "$mip_capacity_namespace" get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
-              if [ "${desired:-missing}" != "0" ] || [ "${pods:-0}" -ne 0 ]; then
+              if [ "${pods:-0}" -ne 0 ]; then
                 echo "capacity-not-free namespace=$mip_capacity_namespace deployment=$d desired=${desired:-unknown} pods=${pods:-0}"
                 bad=1
+              elif [ "${desired:-missing}" != "0" ] && [ "${desired:-missing}" != "missing" ]; then
+                echo "capacity-desired-nonzero namespace=$mip_capacity_namespace deployment=$d desired=${desired:-unknown} pods=${pods:-0}"
               fi
             done
             return "$bad"
@@ -2704,7 +2710,7 @@ jobs:
               autoscaling.keda.sh/paused="true" \
               --overwrite >/dev/null 2>&1 || true
             kubectl -n "$mip_capacity_namespace" get deploy $mip_capacity_targets -o wide || true
-            for attempt in $(seq 1 24); do
+            for attempt in $(seq 1 48); do
               for capacity_target in $capacity_targets $capacity_extra_targets; do
                 kubectl -n default scale "deployment/$capacity_target" --replicas=0 || true
                 kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true || true
@@ -2725,7 +2731,7 @@ jobs:
                 kubectl -n "$mip_capacity_namespace" get deploy $mip_capacity_targets -o wide || true
                 return 0
               fi
-              echo "waiting for capacity targets to stay down attempt=$attempt/24"
+              echo "waiting for capacity targets to stay down attempt=$attempt/48"
             done
             echo "ERROR: capacity targets did not stay down; refusing partial loadtest" >&2
             kubectl -n default get deploy $capacity_targets $capacity_extra_targets -o wide || true
@@ -2741,6 +2747,10 @@ jobs:
 
           start_capacity_guard() {
             local interval="${LOADTEST_CAPACITY_GUARD_INTERVAL_SECONDS:-5}"
+            if [ -n "${capacity_guard_pid:-}" ] && kill -0 "$capacity_guard_pid" >/dev/null 2>&1; then
+              echo "capacity-guard already running pid=$capacity_guard_pid"
+              return 0
+            fi
             case "$interval" in
               ''|*[!0-9]*) interval=5 ;;
             esac
@@ -2859,9 +2869,9 @@ jobs:
           for app in $apps; do
             sync_app "$app"
           done
+          start_capacity_guard
           free_gcs_capacity
           disable_loadtest_autosync
-          start_capacity_guard
 
           wait_available() {
             local d="$1"
