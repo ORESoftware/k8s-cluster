@@ -1,0 +1,108 @@
+{
+  "schema": "dd.fabrication.instruction-simulation.request.v1",
+  "requestId": "instr-sim-gearbox-001",
+  "planRequestId": "fab-plan-gearbox-001",
+  "jobId": "fab-job-gearbox-001",
+  "emittedAtMs": 1762347900000,
+  "producer": "dd-fabrication-server-rs",
+  "resultSubject": "dd.remote.fabrication.instructions.simulation.results",
+  "instructions": [
+    {
+      "instructionId": "printer-gcode-mk4-artifact",
+      "artifactKind": "printer-gcode",
+      "format": "GCODE",
+      "uri": "s3://operator-controlled-cad/gearbox/instructions/gearbox-housing.mk4.gcode",
+      "sha256": "sha256-printer-gcode",
+      "machineId": "prusa-mk4-01",
+      "operationId": "op-print-housing",
+      "controllerDialect": "Marlin",
+      "previewLines": ["M190 S85", "M109 S245", "G1 X12.0 Y18.0 E0.42"],
+      "evidence": ["generated-by-slicer", "thermal-state-review-required", "material-conditioning-required"]
+    },
+    {
+      "instructionId": "mill-finish-bores-nc-artifact",
+      "artifactKind": "mill-nc",
+      "format": "NC",
+      "uri": "s3://operator-controlled-cad/gearbox/instructions/finish-bearing-bores.nc",
+      "sha256": "sha256-mill-nc",
+      "machineId": "haas-vf2-01",
+      "operationId": "op-machine-bearing-bores",
+      "controllerDialect": "Haas",
+      "previewLines": ["G17 G90 G54", "T2 M6", "G43 H2 Z50."],
+      "evidence": ["generated-by-cam", "tool-list-linked", "workholding-release-required"]
+    },
+    {
+      "instructionId": "lathe-spacer-cycle-artifact",
+      "artifactKind": "lathe-cycle",
+      "format": "NC",
+      "uri": "s3://operator-controlled-cad/gearbox/instructions/spacer-partoff.nc",
+      "sha256": "sha256-lathe-cycle",
+      "machineId": "okuma-lathe-01",
+      "operationId": "op-turn-spacer",
+      "controllerDialect": "Okuma",
+      "previewLines": ["G95", "G50 S2500", "G1 X0.8 F0.08"],
+      "evidence": ["generated-by-cam", "partoff-support-review-required"]
+    }
+  ],
+  "machineContexts": [
+    {
+      "machineId": "prusa-mk4-01",
+      "machineClass": "additive-fdm",
+      "controller": "Marlin",
+      "axisLimits": ["buildVolume=250x210x220mm", "minZ=0mm"],
+      "processLimits": ["nozzleMaxC=290", "bedMaxC=120", "requiresMaterialConditioning=true"],
+      "knownEvidence": ["printer-profile-released", "bed-wait-present", "nozzle-wait-present"]
+    },
+    {
+      "machineId": "haas-vf2-01",
+      "machineClass": "vertical-mill",
+      "controller": "Haas NGC",
+      "axisLimits": ["travelX=762mm", "travelY=406mm", "travelZ=508mm", "fixtureClearanceMin=5mm"],
+      "processLimits": ["spindleMaxRpm=8100", "rapidZRequiresToolLength=true", "workholdingProofRequired=true"],
+      "knownEvidence": ["tool-list-linked", "setup-sheet-generated"]
+    },
+    {
+      "machineId": "okuma-lathe-01",
+      "machineClass": "lathe",
+      "controller": "Okuma OSP",
+      "axisLimits": ["maxBarDiameter=52mm", "zTravel=500mm"],
+      "processLimits": ["partoffRequiresCatcherOrSubspindle=true", "threadingRequiresG95=true"],
+      "knownEvidence": ["feed-per-rev-mode-present"]
+    }
+  ],
+  "scopes": [
+    {
+      "scopeId": "scope-printer-thermal-material",
+      "instructionId": "printer-gcode-mk4-artifact",
+      "scopeKind": "thermal-state",
+      "checks": ["bed-wait-before-extrusion", "nozzle-wait-before-extrusion", "positive-extrusion-material-conditioned"],
+      "requiredEvidence": ["bed-wait-present", "nozzle-wait-present", "material-conditioning-verified"]
+    },
+    {
+      "scopeId": "scope-mill-envelope-workholding",
+      "instructionId": "mill-finish-bores-nc-artifact",
+      "scopeKind": "machine-envelope",
+      "checks": ["axis-travel", "fixture-clearance", "rapid-z-after-tool-length", "workholding-proof-before-feed"],
+      "requiredEvidence": ["tool-length-offset-present", "fixture-clearance-simulated", "workholding-release-required"]
+    },
+    {
+      "scopeId": "scope-lathe-partoff-support",
+      "instructionId": "lathe-spacer-cycle-artifact",
+      "scopeKind": "partoff-support",
+      "checks": ["feed-per-rev-mode", "partoff-catcher-or-subspindle", "spindle-speed-limit"],
+      "requiredEvidence": ["feed-per-rev-mode-present", "partoff-support-verified"]
+    }
+  ],
+  "knownEvidence": [
+    "assembly-plan-selected",
+    "printer-gcode-generated",
+    "mill-nc-generated",
+    "tool-list-linked",
+    "setup-sheet-generated"
+  ],
+  "priority": 7,
+  "notes": [
+    "Verify generated printer, mill, and lathe instructions before release readiness.",
+    "Retain any human-intervention boundaries for learning outcome updates."
+  ]
+}

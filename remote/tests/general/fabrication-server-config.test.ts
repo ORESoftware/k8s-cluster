@@ -321,9 +321,16 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /slicer-orientation-support-boundary/);
   assert.match(source, /slicer-first-layer-evidence-missing/);
   assert.match(source, /slicer-first-layer-boundary/);
+  assert.match(source, /has_slicer_mesh_source_context/);
+  assert.match(source, /has_slicer_mesh_topology_evidence/);
+  assert.match(source, /fn has_text_slicer_mesh_source_context/);
+  assert.match(source, /fn has_text_slicer_mesh_topology_evidence/);
+  assert.match(source, /slicer-mesh-topology-evidence-missing/);
+  assert.match(source, /slicer-mesh-topology-boundary/);
   assert.match(source, /add-slicer-profile-record/);
   assert.match(source, /add-slicer-support-orientation-review/);
   assert.match(source, /add-slicer-first-layer-evidence/);
+  assert.match(source, /add-slicer-mesh-topology-evidence/);
   assert.match(source, /fn has_text_resin_context/);
   assert.match(source, /fn has_text_resin_print_context/);
   assert.match(source, /fn has_text_resin_profile_evidence/);
@@ -344,6 +351,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /resin-print-profile-evidence-missing/);
   assert.match(source, /resin-print-profile-boundary/);
   assert.match(source, /add-resin-print-profile-evidence/);
+  assert.match(source, /fn has_text_resin_vat_capacity_context/);
+  assert.match(source, /fn has_text_resin_vat_capacity_evidence/);
+  assert.match(source, /has_resin_vat_capacity_context/);
+  assert.match(source, /has_resin_vat_capacity_evidence/);
+  assert.match(source, /resin-vat-capacity-evidence-missing/);
+  assert.match(source, /resin-vat-capacity-boundary/);
+  assert.match(source, /add-resin-vat-capacity-evidence/);
+  assert.match(source, /text_resin_large_jobs_require_vat_capacity_evidence/);
   assert.match(source, /resin-postprocess-evidence-missing/);
   assert.match(source, /resin-postprocess-boundary/);
   assert.match(source, /add-resin-postprocess-evidence/);
@@ -367,6 +382,27 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /assembly-fit-metrology-evidence-missing/);
   assert.match(source, /assembly-fit-metrology-boundary/);
   assert.match(source, /add-assembly-fit-metrology-evidence/);
+  assert.match(source, /has_text_precision_requirement_context/);
+  assert.match(source, /has_text_precision_inspection_evidence/);
+  assert.match(source, /fn has_text_precision_requirement_context/);
+  assert.match(source, /fn has_text_precision_inspection_evidence/);
+  assert.match(source, /precision-inspection-evidence-missing/);
+  assert.match(source, /precision-metrology-boundary/);
+  assert.match(source, /add-precision-metrology-evidence/);
+  assert.match(source, /has_text_unattended_run_context/);
+  assert.match(source, /has_text_unattended_monitoring_evidence/);
+  assert.match(source, /fn has_text_unattended_run_context/);
+  assert.match(source, /fn has_text_unattended_monitoring_evidence/);
+  assert.match(source, /unattended-monitoring-evidence-missing/);
+  assert.match(source, /unattended-monitoring-boundary/);
+  assert.match(source, /add-unattended-monitoring-evidence/);
+  assert.match(source, /has_text_thermal_postprocess_context/);
+  assert.match(source, /has_text_thermal_postprocess_evidence/);
+  assert.match(source, /fn has_text_thermal_postprocess_context/);
+  assert.match(source, /fn has_text_thermal_postprocess_evidence/);
+  assert.match(source, /thermal-postprocess-evidence-missing/);
+  assert.match(source, /thermal-postprocess-boundary/);
+  assert.match(source, /add-thermal-postprocess-evidence/);
   assert.match(
     source,
     /text_resin_and_powder_jobs_require_process_evidence_before_release/,
@@ -385,6 +421,18 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     /text_sheet_cutting_jobs_require_material_thickness_and_recipe_evidence/,
   );
   assert.match(source, /text_assembly_jobs_require_fit_metrology_and_join_evidence/);
+  assert.match(
+    source,
+    /text_precision_jobs_require_metrology_and_surface_finish_evidence/,
+  );
+  assert.match(
+    source,
+    /text_unattended_jobs_require_monitoring_and_recovery_evidence/,
+  );
+  assert.match(
+    source,
+    /text_thermal_postprocess_jobs_require_profile_fixture_and_inspection_evidence/,
+  );
   assert.match(source, /machine\.axes must be at least 1/);
   assert.match(source, /machine_profile_validation_rejects_zero_axis_machine/);
   assert.match(source, /additive-material-change-boundary/);
@@ -637,6 +685,35 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /additive-extrusion-calibration-missing/);
   assert.match(source, /printer-extrusion-calibration-boundary/);
   assert.match(source, /additive_analysis_requires_extrusion_calibration_before_first_extrusion/);
+  assert.match(source, /ADDITIVE_MATERIAL_CAPACITY_EXTRUSION_MM_THRESHOLD/);
+  assert.match(source, /fn has_additive_material_capacity_evidence/);
+  assert.match(source, /fn additive_extrusion_uses_significant_material/);
+  assert.match(source, /additive_material_capacity_observed/);
+  assert.match(source, /reported_additive_material_capacity_boundary/);
+  assert.match(source, /additive-material-capacity-evidence-missing/);
+  assert.match(source, /printer-material-capacity-boundary/);
+  assert.match(source, /additive_analysis_requires_material_capacity_for_large_extrusion/);
+  assert.match(source, /fn has_additive_firmware_retraction_evidence/);
+  assert.match(source, /additive_firmware_retraction_evidence_observed/);
+  assert.match(source, /reported_additive_firmware_retraction_boundary/);
+  assert.match(source, /additive-firmware-retraction-settings-missing/);
+  assert.match(source, /printer-firmware-retraction-boundary/);
+  assert.match(source, /additive_analysis_requires_firmware_retraction_evidence/);
+  assert.match(source, /fn has_additive_high_speed_kinematic_evidence/);
+  assert.match(source, /fn additive_feed_is_high_speed/);
+  assert.match(source, /additive_high_speed_kinematic_evidence_observed/);
+  assert.match(source, /reported_additive_high_speed_kinematic_boundary/);
+  assert.match(source, /additive-high-speed-kinematics-missing/);
+  assert.match(source, /printer-high-speed-kinematics-boundary/);
+  assert.match(source, /additive_analysis_requires_high_speed_kinematic_evidence/);
+  assert.match(source, /fn has_text_additive_high_speed_context/);
+  assert.match(source, /has_slicer_high_speed_context/);
+  assert.match(source, /has_slicer_high_speed_kinematic_evidence/);
+  assert.match(source, /slicer-high-speed-kinematics-evidence-missing/);
+  assert.match(source, /slicer-high-speed-kinematics-boundary/);
+  assert.match(source, /add-slicer-high-speed-kinematic-evidence/);
+  assert.match(source, /text_slicer_jobs_require_mesh_topology_and_scale_evidence/);
+  assert.match(source, /text_slicer_high_speed_jobs_require_kinematic_evidence/);
   assert.match(source, /fn has_additive_warp_prone_material_context/);
   assert.match(source, /fn has_additive_chamber_thermal_evidence/);
   assert.match(source, /additive_warp_prone_material_observed/);
@@ -660,9 +737,27 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn has_cutting_feed_rate_evidence/);
   assert.match(source, /cutting-feed-rate-not-verified/);
   assert.match(source, /cutting-feed-rate-boundary/);
+  assert.match(source, /SUBTRACTIVE_TOOL_LIFE_LONG_CUT_MM_THRESHOLD/);
+  assert.match(source, /fn has_subtractive_tool_life_evidence/);
+  assert.match(source, /fn feed_move_is_long_subtractive_cut/);
+  assert.match(source, /subtractive_tool_life_evidence_observed/);
+  assert.match(source, /reported_subtractive_tool_life_boundary/);
+  assert.match(source, /subtractive-tool-life-evidence-missing/);
+  assert.match(source, /subtractive-tool-life-boundary/);
+  assert.match(source, /subtractive_analysis_requires_tool_life_for_long_cuts/);
   assert.match(source, /fn has_work_offset_datum_evidence/);
   assert.match(source, /work-offset-datum-not-verified/);
   assert.match(source, /work-offset-datum-boundary/);
+  assert.match(source, /fn has_probe_cycle_command/);
+  assert.match(source, /fn has_probe_setup_evidence/);
+  assert.match(source, /fn has_probe_recovery_evidence/);
+  assert.match(source, /fn probe_cycle_has_safe_feed/);
+  assert.match(source, /probe_setup_evidence_observed/);
+  assert.match(source, /probe_recovery_evidence_observed/);
+  assert.match(source, /reported_probing_cycle_safety_boundary/);
+  assert.match(source, /probing-cycle-safety-evidence-missing/);
+  assert.match(source, /probing-cycle-safety-boundary/);
+  assert.match(source, /subtractive_analysis_requires_probe_cycle_setup_feed_and_recovery_evidence/);
   assert.match(source, /subtractive_spindle_speed_evidence_observed/);
   assert.match(source, /reported_spindle_speed_boundary/);
   assert.match(source, /spindle-speed-not-verified-before-start/);
@@ -694,6 +789,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /PLASMA_CUT/);
   assert.match(source, /text-sheet-cutting-boundary/);
   assert.match(source, /fn has_sheet_cutting_process_evidence/);
+  assert.match(source, /SHEET_CUT_PART_RETENTION_LONG_MOVE_MM_THRESHOLD/);
+  assert.match(source, /fn has_sheet_cutting_part_retention_evidence/);
+  assert.match(source, /fn sheet_cut_feed_needs_part_retention_review/);
+  assert.match(source, /sheet_cutting_part_retention_evidence_observed/);
+  assert.match(source, /reported_sheet_cutting_part_retention_boundary/);
   assert.match(source, /fn has_sheet_cutting_support_media_evidence/);
   assert.match(source, /sheet_cutting_support_media_active/);
   assert.match(source, /fn has_plasma_work_clamp_evidence/);
@@ -706,6 +806,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /waterjet-pressure-abrasive-boundary/);
   assert.match(source, /sheet-cutting-process-not-verified/);
   assert.match(source, /sheet-cutting-process-boundary/);
+  assert.match(source, /sheet-cutting-part-retention-evidence-missing/);
+  assert.match(source, /sheet-cutting-part-retention-boundary/);
+  assert.match(source, /sheet_cut_analysis_requires_part_retention_for_profile_release/);
   assert.match(source, /sheet-cutting-support-media-stopped-before-cut/);
   assert.match(source, /sheet-cutting-support-media-stop-boundary/);
   assert.match(source, /sheet_cut_analysis_requires_support_media_restart_after_stop/);
@@ -751,14 +854,30 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /draft router profile program generated by dd-fabrication-server/);
   assert.match(source, /lift over tab boundary/);
   assert.match(source, /"machine-envelope"/);
+  assert.match(source, /MAX_MACHINE_PROFILE_EVIDENCE/);
+  assert.match(source, /struct MachineProfileEvidence/);
+  assert.match(source, /profile_evidence: Option<MachineProfileEvidence>/);
+  assert.match(source, /validate_machine_profile_evidence/);
+  assert.match(source, /machine_profile_evidence_boundaries/);
+  assert.match(source, /machine_profile_blocker_count/);
+  assert.match(source, /select_machine/);
+  assert.match(source, /rejected-profile-blocker/);
+  assert.match(source, /"machine-profile-blocker"\.to_string\(\)/);
+  assert.match(source, /machine_profile_evidence_blockers_hold_plan_release/);
+  assert.match(source, /machine_selection_prefers_profile_clear_machine/);
+  assert.match(source, /machine_profile_evidence_blockers_hold_instruction_analysis_release/);
   assert.match(source, /async fn capabilities/);
   assert.match(source, /"schemaVersion": "dd\.fabrication\.capabilities\.v1"/);
   assert.match(source, /"defaultMachines": default_machines\(\)/);
   assert.match(source, /"acceptedInstructionKinds"/);
   assert.match(source, /"safetyBoundaryClasses"/);
+  assert.match(source, /"machine-profile-evidence"/);
+  assert.match(source, /"machine-profile-blocker"/);
   assert.match(source, /async fn request_schema/);
   assert.match(source, /"schemaVersion": "dd\.fabrication\.request-schema\.v1"/);
   assert.match(source, /"planRequest"/);
+  assert.match(source, /"profileEvidence"/);
+  assert.match(source, /"machineProfileEvidence"/);
   assert.match(source, /"instructionProgram"/);
   assert.match(source, /async fn examples/);
   assert.match(source, /"schemaVersion": "dd\.fabrication\.examples\.v1"/);
@@ -803,6 +922,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /built-in `defaultMachines`/);
   assert.match(readme, /accepted instruction\s+kinds/);
   assert.match(readme, /safety boundary\s+classes/);
+  assert.match(readme, /`profileEvidence`/);
+  assert.match(readme, /`profileEvidence\.blockers` are promoted into validation findings/);
+  assert.match(readme, /`machine-profile-blocker` failure boundaries/);
+  assert.match(readme, /selection prefers compatible machines with no retained profile blockers/);
+  assert.match(readme, /`rejected-profile-blocker` candidates/);
+  assert.match(readme, /calibration, tools, fixtures,\s+materials, process support/);
   assert.match(readme, /ready-to-edit JSON examples/);
   assert.match(readme, /hybrid\s+printed\/milled\/turned plan/);
   assert.match(readme, /`GET \/jobs\/:job_id`/);
@@ -1001,16 +1126,18 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /slicer job\s+sheets/);
   assert.match(
     readme,
-    /additive slicer profile\/support\/\s+orientation\/first-layer evidence/,
+    /additive slicer profile\/support\/\s+orientation\/first-layer, mesh unit\/scale\/topology\/wall-thickness evidence,\s+high-speed kinematic evidence/,
   );
-  assert.match(readme, /slicer profile\/support\/\s+orientation\/first-layer evidence/);
+  assert.match(readme, /slicer profile\/support\/orientation\/first-layer evidence/);
+  assert.match(readme, /mesh unit\/scale\/topology\/wall-thickness evidence/);
   assert.match(readme, /additive thin-wall geometry/);
   assert.match(
     readme,
-    /resin-handling\/\s+postprocess evidence, powder-bed build profile\/powder lot\/nesting evidence, powder-handling\/cooldown-depowder evidence/,
+    /resin\s+vat-capacity\/refill evidence, resin-handling\/postprocess evidence, powder-bed build profile\/powder lot\/nesting evidence, powder-handling\/cooldown-depowder evidence/,
   );
   assert.match(readme, /powder-bed build profile\/powder lot\/nesting evidence/);
   assert.match(readme, /resin exposure\/profile\/layer\/support evidence/);
+  assert.match(readme, /resin\s+vat-capacity\/refill evidence/);
   assert.match(readme, /subtractive text setup\/process evidence/);
   assert.match(readme, /workholding\/datum\/tool-length/);
   assert.match(readme, /spindle\/feed\/coolant\/kerf\/pierce\/cut-chart/);
@@ -1032,11 +1159,23 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /stepper-idle\/\s*re-home state/);
   assert.match(readme, /post-mode-switch extrusion reset state/);
   assert.match(readme, /negative-Z extrusion\/Z-offset probe state/);
+  assert.match(readme, /material-capacity\/runout evidence/);
   assert.match(readme, /extrusion calibration\/flow\/pressure-advance evidence/);
+  assert.match(readme, /firmware retraction\/recover settings evidence/);
+  assert.match(readme, /high-speed input-shaper\/acceleration\/volumetric-flow evidence/);
+  assert.match(
+    readme,
+    /missing slicer mesh unit\/scale\/watertight\/manifold\/normals\/wall-thickness evidence for STL\/3MF\/OBJ\/model inputs/,
+  );
+  assert.match(readme, /orientation\/first-layer, mesh unit\/scale\/topology\/wall-thickness evidence/);
+  assert.match(
+    readme,
+    /slicer high-speed input-shaper\/acceleration\/volumetric-flow evidence/,
+  );
   assert.match(readme, /chamber\/enclosure\/thermal-soak evidence for warp-prone filament/);
   assert.match(
     readme,
-    /printer\s+async-nozzle-wait state, async-bed-target re-wait state, nozzle-cooldown\/\s+reheat state, bed-cooldown\/re-wait state, stepper-idle\/re-home state,\s+extrusion-mode\/reset state, post-mode-switch extrusion reset state,\s+negative-Z extrusion\/Z-offset probe state, filament lot\/dry-storage\s+conditioning evidence, extrusion calibration\/flow\/pressure-advance evidence,\s+chamber\/enclosure\/thermal-soak evidence for warp-prone filament,\s+bed-adhesion, first-layer, fan-timing/,
+    /printer\s+async-nozzle-wait state, async-bed-target re-wait state, nozzle-cooldown\/\s+reheat state, bed-cooldown\/re-wait state, stepper-idle\/re-home state,\s+extrusion-mode\/reset state, post-mode-switch extrusion reset state,\s+negative-Z extrusion\/Z-offset probe state, filament lot\/dry-storage\s+conditioning evidence, material-capacity\/runout evidence,\s+extrusion calibration\/flow\/pressure-advance evidence,\s+firmware retraction\/recover settings evidence,\s+high-speed input-shaper\/acceleration\/volumetric-flow evidence,\s+chamber\/enclosure\/thermal-soak evidence for warp-prone filament,\s+bed-adhesion, first-layer, fan-timing/,
   );
   assert.match(
     readme,
@@ -1052,6 +1191,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(
     readme,
     /missing filament lot\/dry-storage\/\s+dryer\/desiccant evidence before first\s+extrusion/,
+  );
+  assert.match(
+    readme,
+    /missing spool-weight\/remaining-filament\/runout-sensor evidence before long extrusion/,
   );
   assert.match(
     readme,
@@ -1080,6 +1223,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     readme,
     /missing `M82`\/`M83`\s+extrusion\s+mode and `G92 E0` reset state before\s+priming/,
   );
+  assert.match(
+    readme,
+    /firmware `G10`\/`G11` retract\/unretract before `M207`\/`M208`\/`M209`/,
+  );
   assert.match(readme, /first-layer adhesion setup/);
   assert.match(readme, /early\s+part-cooling fan timing/);
   assert.match(readme, /post-change extrusion without purge\/prime\/resume evidence/);
@@ -1093,10 +1240,15 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   assert.match(
     readme,
+    /high-speed FDM extrusion without input-shaper\/acceleration\/volumetric-flow evidence/,
+  );
+  assert.match(
+    readme,
     /CNC subprogram calls, macro variables, conditionals, or jumps before controller dependency review evidence/,
   );
   assert.match(readme, /resin IPA\/wash\/cure\/drain\/PPE\/\s+waste controls/);
   assert.match(readme, /missing resin exposure\/profile\/layer\/support\/build-plate evidence/);
+  assert.match(readme, /missing resin vat-volume\/level\/refill evidence for large resin jobs/);
   assert.match(readme, /missing resin postprocess evidence/);
   assert.match(
     readme,
@@ -1106,11 +1258,20 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /missing powder-bed handling evidence/);
   assert.match(readme, /subtractive text setup\/process evidence/);
   assert.match(readme, /assembly fit\/metrology\/datum\/torque\/cure evidence/);
+  assert.match(readme, /precision tolerance\/surface-finish metrology evidence/);
+  assert.match(readme, /unattended\/batch monitoring and recovery evidence/);
+  assert.match(readme, /thermal postprocess temperature\/fixture\/cooldown evidence/);
   assert.match(readme, /assembly\s+dry-fit\/metrology\/datum\/torque\/cure controls/);
   assert.match(readme, /missing assembly fit\/metrology evidence/);
+  assert.match(readme, /missing precision tolerance\/surface-finish metrology evidence/);
+  assert.match(readme, /missing unattended\/batch monitoring and recovery evidence/);
   assert.match(
     readme,
-    /sheet-cutting material\/thickness\/cut-chart\/recipe evidence, pierce\/kerf\/focus\/gas\/fume\/support, waterjet pressure\/abrasive-flow, and plasma work-clamp evidence/,
+    /missing thermal postprocess temperature\/furnace\/atmosphere\/cooldown\/quench\/inspection evidence/,
+  );
+  assert.match(
+    readme,
+    /sheet-cutting material\/thickness\/cut-chart\/recipe evidence, pierce\/kerf\/focus\/gas\/fume\/support, retained-tab\/microjoint\/part-release evidence, waterjet pressure\/abrasive-flow, and plasma work-clamp evidence/,
   );
   assert.match(
     readme,
@@ -1118,6 +1279,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   assert.match(readme, /CNC tool-change automation\/operator-load\/spindle-stop evidence/);
   assert.match(readme, /tool-length\/probe compensation\/cancel state/);
+  assert.match(readme, /probing-cycle setup\/feed\/recovery state/);
   assert.match(readme, /cutter-compensation offset\/cancel state/);
   assert.match(readme, /lathe text part-off support evidence/);
   assert.match(readme, /lathe text threading feed-per-rev\/pitch-sync evidence/);
@@ -1156,6 +1318,15 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     readme,
     /cutting moves before positive\s+`F` feed-rate, chip-load, feeds-and-speeds, or cut-chart evidence/,
   );
+  assert.match(
+    readme,
+    /`G31`\/`G38\.x` probing cycles before touch-probe calibration, skip\/contact input, safe-feed, and retract\/recovery evidence/,
+  );
+  assert.match(readme, /tool-life\/wear\/load-monitor evidence/);
+  assert.match(
+    readme,
+    /long mill\/router\/lathe cutting feeds before tool-life, wear-inspection, fresh-edge, or load-monitor evidence/,
+  );
   assert.match(readme, /spindle-speed\/direction\/start\/process-stop state/);
   assert.match(readme, /chip\/coolant\/dust-collection\s+state/);
   assert.match(readme, /lathe\s+chuck\/stick-out\/runout evidence/);
@@ -1168,7 +1339,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   assert.match(
     readme,
-    /sheet-cutter\s+feed\s+moves before\s+pierce\/kerf\/focus\/assist-gas\/fume\/support\s+evidence, waterjet pump-pressure\/abrasive-flow evidence, plasma work-clamp\/ground-return evidence, or after assist-gas\/fume\/abrasive support media is stopped/,
+    /sheet-cutter\s+feed\s+moves before\s+pierce\/kerf\/focus\/assist-gas\/fume\/support\s+evidence, outside-profile release cuts before retained-tab\/bridge\/microjoint\/catcher\/tip-up evidence, waterjet pump-pressure\/abrasive-flow evidence, plasma work-clamp\/ground-return evidence, or after assist-gas\/fume\/abrasive support media is stopped/,
   );
   assert.match(readme, /canned drilling\/tapping cycle setup\/cancel state/);
   assert.match(readme, /motion before `G80` cancellation/);

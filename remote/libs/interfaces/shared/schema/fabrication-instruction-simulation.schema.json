@@ -1,0 +1,451 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/fabrication-instruction-simulation.schema.json",
+  "title": "FabricationInstructionSimulationInterfaces",
+  "description": "Shared cross-runtime JSON payloads for simulation and verification workers that check generated or imported fabrication instructions against machine envelopes, process state, toolpath geometry, thermal/material requirements, workholding, support media, and human-intervention boundaries before release readiness.",
+  "type": "object",
+  "$defs": {
+    "FabricationSimulationInstructionArtifact": {
+      "type": "object",
+      "title": "FabricationSimulationInstructionArtifact",
+      "description": "Generated or imported instruction artifact that needs simulation, dry-run review, machine-envelope checks, or process verification.",
+      "additionalProperties": false,
+      "required": ["instructionId", "format", "artifactKind"],
+      "properties": {
+        "instructionId": {
+          "type": "string",
+          "description": "Stable instruction artifact id."
+        },
+        "artifactKind": {
+          "type": "string",
+          "description": "Instruction kind such as printer-gcode, mill-nc, lathe-cycle, router-gcode, sheet-cutting-job, waterjet-job, setup-sheet, tool-list, slicer-project, or operator-instruction."
+        },
+        "format": {
+          "type": "string",
+          "description": "Artifact format such as GCODE, NC, TAP, 3MF, BAMBUPROJECT, DXF, SVG, JSON, MD, TXT, or SHOP_TEXT."
+        },
+        "uri": {
+          "type": ["string", "null"],
+          "description": "Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments."
+        },
+        "sha256": {
+          "type": ["string", "null"],
+          "description": "SHA-256 of the instruction artifact when available."
+        },
+        "machineId": {
+          "type": ["string", "null"],
+          "description": "Target machine id when known."
+        },
+        "operationId": {
+          "type": ["string", "null"],
+          "description": "Operation id associated with this instruction when known."
+        },
+        "controllerDialect": {
+          "type": ["string", "null"],
+          "description": "Controller, firmware, or dialect label such as Marlin, Klipper, Fanuc, Haas, LinuxCNC, GRBL, Heidenhain, Okuma, Bambu, Prusa, or vendor-specific."
+        },
+        "previewLines": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Short non-secret preview lines or summaries retained for operator review."
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evidence labels already attached to this instruction, such as generated-by-cam, imported-program-reviewed, setup-sheet-linked, tool-list-linked, or simulation-required."
+        }
+      }
+    },
+    "FabricationSimulationMachineContext": {
+      "type": "object",
+      "title": "FabricationSimulationMachineContext",
+      "description": "Machine, controller, fixture, material, and process context used during simulation or verification.",
+      "additionalProperties": false,
+      "required": ["machineId", "machineClass"],
+      "properties": {
+        "machineId": {
+          "type": "string",
+          "description": "Stable machine or station id."
+        },
+        "machineClass": {
+          "type": "string",
+          "description": "Machine class such as additive-fdm, additive-resin, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, plasma, postprocess-station, inspection, or assembly."
+        },
+        "controller": {
+          "type": ["string", "null"],
+          "description": "Controller, firmware, or postprocessor target."
+        },
+        "axisLimits": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Axis, build-volume, travel, chuck, sheet, stock, or rotary limits used by simulation."
+        },
+        "processLimits": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Process limits such as max feed, max spindle speed, max nozzle temp, abrasive pressure, beam power, coolant state, support media, or fixture clearance."
+        },
+        "knownEvidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evidence labels available before simulation, such as workholding-reviewed, material-conditioned, tool-list-reviewed, fixture-model-loaded, or profile-released."
+        }
+      }
+    },
+    "FabricationSimulationScope": {
+      "type": "object",
+      "title": "FabricationSimulationScope",
+      "description": "One requested simulation, dry-run, or verification scope.",
+      "additionalProperties": false,
+      "required": ["scopeId", "instructionId", "scopeKind", "checks"],
+      "properties": {
+        "scopeId": {
+          "type": "string",
+          "description": "Stable scope id."
+        },
+        "instructionId": {
+          "type": "string",
+          "description": "Instruction artifact id to simulate or verify."
+        },
+        "scopeKind": {
+          "type": "string",
+          "description": "Scope kind such as machine-envelope, toolpath-geometry, thermal-state, material-state, workholding, support-media, collision, modal-state, arc-geometry, cutter-comp, extruder-state, canned-cycle, partoff-support, or human-intervention-boundary."
+        },
+        "checks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Specific checks requested inside this scope."
+        },
+        "requiredEvidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evidence labels required to clear this simulation scope."
+        }
+      }
+    },
+    "FabricationSimulationEnvelopeCheck": {
+      "type": "object",
+      "title": "FabricationSimulationEnvelopeCheck",
+      "description": "One machine, build, travel, stock, fixture, or process envelope check result.",
+      "additionalProperties": false,
+      "required": ["checkId", "machineId", "checkKind", "status"],
+      "properties": {
+        "checkId": {
+          "type": "string",
+          "description": "Stable envelope check id."
+        },
+        "machineId": {
+          "type": "string",
+          "description": "Machine id used for the check."
+        },
+        "instructionId": {
+          "type": ["string", "null"],
+          "description": "Instruction id associated with the check when applicable."
+        },
+        "checkKind": {
+          "type": "string",
+          "description": "Check kind such as axis-travel, build-volume, stock-envelope, fixture-clearance, spindle-speed, feed-rate, thermal-state, support-media, material-flow, collision, or controller-modal-state."
+        },
+        "status": {
+          "type": "string",
+          "description": "Check status such as pass, fail, warning, skipped, blocked, or human-review-required."
+        },
+        "metrics": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Compact metric labels or key=value summaries such as maxX=118.2, minZ=-1.8, clearanceMm=0.7, maxFeedMmMin=1800, or nozzleTempWait=missing."
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evidence labels emitted or consumed by this check."
+        }
+      }
+    },
+    "FabricationSimulationFinding": {
+      "type": "object",
+      "title": "FabricationSimulationFinding",
+      "description": "A simulation or verification finding that may become a release blocker, warning, improvement input, or learning signal.",
+      "additionalProperties": false,
+      "required": ["findingId", "severity", "findingKind", "code", "message"],
+      "properties": {
+        "findingId": {
+          "type": "string",
+          "description": "Stable finding id."
+        },
+        "severity": {
+          "type": "string",
+          "description": "Severity such as blocker, high, medium, low, warning, or info."
+        },
+        "findingKind": {
+          "type": "string",
+          "description": "Finding kind such as collision, envelope, thermal-state, material-state, workholding, support-media, modal-state, arc-geometry, cutter-comp, tool-change, feed-rate, partoff-support, or human-intervention."
+        },
+        "code": {
+          "type": "string",
+          "description": "Stable finding code."
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable finding summary safe for logs and operator review."
+        },
+        "instructionId": {
+          "type": ["string", "null"],
+          "description": "Instruction id associated with this finding when known."
+        },
+        "operationId": {
+          "type": ["string", "null"],
+          "description": "Operation id associated with this finding when known."
+        },
+        "machineId": {
+          "type": ["string", "null"],
+          "description": "Machine id associated with this finding when known."
+        },
+        "segmentRef": {
+          "type": ["string", "null"],
+          "description": "Toolpath segment, line range, layer, operation, cycle, or instruction reference when available."
+        },
+        "machineReadyImpact": {
+          "type": ["string", "null"],
+          "description": "Effect on release posture, e.g. blocks-machine-ready, needs-operator-review, warning-only, simulation-only, or learning-only."
+        }
+      }
+    },
+    "FabricationSimulationFailureBoundary": {
+      "type": "object",
+      "title": "FabricationSimulationFailureBoundary",
+      "description": "Boundary where the simulated machine or process cannot proceed safely without human intervention, different sequencing, extra evidence, or part splitting/combining.",
+      "additionalProperties": false,
+      "required": ["boundaryId", "boundaryKind", "code", "message"],
+      "properties": {
+        "boundaryId": {
+          "type": "string",
+          "description": "Stable failure-boundary id."
+        },
+        "boundaryKind": {
+          "type": "string",
+          "description": "Boundary kind such as human-intervention, machine-envelope, toolpath-collision, thermal-state, workholding, support-media, material-flow, controller-state, partoff-support, split-required, combine-required, or inspection-required."
+        },
+        "code": {
+          "type": "string",
+          "description": "Stable boundary code."
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable boundary summary safe for logs."
+        },
+        "instructionId": {
+          "type": ["string", "null"],
+          "description": "Instruction id associated with this boundary when known."
+        },
+        "operationId": {
+          "type": ["string", "null"],
+          "description": "Operation id associated with this boundary when known."
+        },
+        "machineId": {
+          "type": ["string", "null"],
+          "description": "Machine id associated with this boundary when known."
+        },
+        "humanInterventionRequired": {
+          "type": "boolean",
+          "description": "True when the boundary requires explicit human action or review."
+        },
+        "recommendedAction": {
+          "type": ["string", "null"],
+          "description": "Recommended action such as add-workholding-evidence, wait-for-temperature, rehome-machine, add-support-media, split-part, combine-pieces, rerun-cam, request-inspection, or reject-release."
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evidence labels supporting this boundary."
+        }
+      }
+    },
+    "FabricationSimulationArtifact": {
+      "type": "object",
+      "title": "FabricationSimulationArtifact",
+      "description": "Simulation or verification artifact retained for release readiness, review, or learning.",
+      "additionalProperties": false,
+      "required": ["artifactId", "artifactKind", "format"],
+      "properties": {
+        "artifactId": {
+          "type": "string",
+          "description": "Stable simulation artifact id."
+        },
+        "artifactKind": {
+          "type": "string",
+          "description": "Artifact kind such as simulation-report, envelope-report, collision-map, layer-preview, material-flow-report, controller-trace, toolpath-preview, dry-run-log, or release-evidence."
+        },
+        "instructionId": {
+          "type": ["string", "null"],
+          "description": "Instruction id this artifact describes when applicable."
+        },
+        "uri": {
+          "type": ["string", "null"],
+          "description": "Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments."
+        },
+        "sha256": {
+          "type": ["string", "null"],
+          "description": "SHA-256 of the artifact when available."
+        },
+        "format": {
+          "type": "string",
+          "description": "Artifact format such as JSON, HTML, PNG, PDF, MD, TXT, CSV, GCODE, or NC."
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evidence labels attached to this artifact."
+        }
+      }
+    },
+    "FabricationInstructionSimulationRequest": {
+      "type": "object",
+      "title": "FabricationInstructionSimulationRequest",
+      "description": "Body published on dd.remote.fabrication.instructions.simulation.requests for simulation and verification workers.",
+      "additionalProperties": false,
+      "required": ["schema", "requestId", "planRequestId", "emittedAtMs", "instructions", "machineContexts", "scopes"],
+      "properties": {
+        "schema": {
+          "type": "string",
+          "description": "Envelope schema id. Producers should emit dd.fabrication.instruction-simulation.request.v1."
+        },
+        "requestId": {
+          "type": "string",
+          "description": "Unique id for this simulation job, suitable for dedupe and result correlation."
+        },
+        "planRequestId": {
+          "type": "string",
+          "description": "Fabrication planning request id that spawned this simulation job."
+        },
+        "jobId": {
+          "type": ["string", "null"],
+          "description": "Optional fabrication job id when the planner has already persisted one."
+        },
+        "emittedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix epoch milliseconds when the planner published this request."
+        },
+        "producer": {
+          "type": ["string", "null"],
+          "description": "Producer service instance or deployment name."
+        },
+        "resultSubject": {
+          "type": ["string", "null"],
+          "description": "Subject workers should publish the result to; defaults to dd.remote.fabrication.instructions.simulation.results."
+        },
+        "instructions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationSimulationInstructionArtifact" },
+          "description": "Instruction artifacts that need simulation or verification."
+        },
+        "machineContexts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationSimulationMachineContext" },
+          "description": "Machine contexts available for simulation."
+        },
+        "scopes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationSimulationScope" },
+          "description": "Requested simulation and verification scopes."
+        },
+        "knownEvidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evidence labels the planner already has before simulation."
+        },
+        "priority": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Optional scheduling hint. Higher values mean more urgent simulation work."
+        },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-secret simulation notes."
+        }
+      }
+    },
+    "FabricationInstructionSimulationResult": {
+      "type": "object",
+      "title": "FabricationInstructionSimulationResult",
+      "description": "Body published on dd.remote.fabrication.instructions.simulation.results with envelope checks, findings, failure boundaries, simulation artifacts, warnings, and release posture.",
+      "additionalProperties": false,
+      "required": ["schema", "requestId", "planRequestId", "emittedAtMs", "workerId", "success", "machineReady", "envelopeChecks", "findings", "failureBoundaries", "artifacts"],
+      "properties": {
+        "schema": {
+          "type": "string",
+          "description": "Envelope schema id. Workers should emit dd.fabrication.instruction-simulation.result.v1."
+        },
+        "requestId": {
+          "type": "string",
+          "description": "Instruction simulation request id this result answers."
+        },
+        "planRequestId": {
+          "type": "string",
+          "description": "Fabrication planning request id from the original simulation request."
+        },
+        "jobId": {
+          "type": ["string", "null"],
+          "description": "Optional persisted fabrication job id from the original request."
+        },
+        "emittedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix epoch milliseconds when the simulation worker published this result."
+        },
+        "workerId": {
+          "type": "string",
+          "description": "Worker id, pod name, or adapter instance that produced this result."
+        },
+        "simulator": {
+          "type": ["string", "null"],
+          "description": "Simulator, dry-run adapter, parser, controller model, or verification engine used."
+        },
+        "simulatorVersion": {
+          "type": ["string", "null"],
+          "description": "Simulator or adapter version used for repeatability and audit."
+        },
+        "success": {
+          "type": "boolean",
+          "description": "True when the worker completed the requested simulation or verification work."
+        },
+        "machineReady": {
+          "type": "boolean",
+          "description": "True only when simulated instructions and retained evidence are sufficient for release readiness."
+        },
+        "envelopeChecks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationSimulationEnvelopeCheck" },
+          "description": "Machine, build, travel, stock, fixture, and process envelope checks."
+        },
+        "findings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationSimulationFinding" },
+          "description": "Simulation findings emitted by the worker."
+        },
+        "failureBoundaries": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationSimulationFailureBoundary" },
+          "description": "Machine-failure and human-intervention boundaries found during simulation."
+        },
+        "artifacts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationSimulationArtifact" },
+          "description": "Simulation artifacts retained for release readiness, review, or learning."
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-blocking warnings that should be retained with simulation evidence."
+        },
+        "reviewMetadata": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Free-form non-secret metadata such as simulator profile, controller dialect, machine profile, sampled segments, confidence, or dry-run summary."
+        }
+      }
+    }
+  }
+}

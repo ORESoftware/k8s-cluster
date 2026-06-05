@@ -1,0 +1,92 @@
+{
+  "schema": "dd.fabrication.instruction-review.request.v1",
+  "requestId": "instr-review-gearbox-001",
+  "planRequestId": "fab-plan-gearbox-001",
+  "jobId": "fab-job-gearbox-001",
+  "emittedAtMs": 1791168540000,
+  "producer": "dd-fabrication-server",
+  "resultSubject": "dd.remote.fabrication.instructions.review.results",
+  "instructions": [
+    {
+      "instructionId": "submitted-haas-bearing-bores",
+      "fileName": "gearbox-bearing-bores-submitted.nc",
+      "format": "NC",
+      "sourceUri": "s3://operator-controlled-cad/gearbox/submitted/gearbox-bearing-bores-submitted.nc",
+      "sha256": "ffb43d1bb6a0bbff95f38cf24cb211fd3c8a9219425bb0c91e340d2c3379922b",
+      "machineClass": "vertical-mill",
+      "controllerDialect": "Haas NGC",
+      "previewLines": [
+        "G90 G17",
+        "T3 M6",
+        "S8200 M3",
+        "G1 Z-12.5 F120."
+      ],
+      "notes": [
+        "Imported customer NC program; verify before release.",
+        "Fixture and G54 evidence not attached."
+      ]
+    },
+    {
+      "instructionId": "submitted-prusa-shell",
+      "fileName": "gearbox-housing-submitted.gcode",
+      "format": "GCODE",
+      "sourceUri": "s3://operator-controlled-cad/gearbox/submitted/gearbox-housing-submitted.gcode",
+      "sha256": "5a70ac72d4a1de06d6d01d9c96e7c1ab0c4fd2493ebc7ad82590052a73183335",
+      "machineClass": "additive-fdm",
+      "controllerDialect": "Marlin",
+      "previewLines": [
+        "M104 S245",
+        "G28",
+        "G1 X90 Y90 E4.5",
+        "M104 S0"
+      ],
+      "notes": [
+        "Imported printer G-code; verify temperature waits and extrusion state."
+      ]
+    }
+  ],
+  "reviewScopes": [
+    {
+      "scopeId": "scope-haas-modal-workholding",
+      "instructionId": "submitted-haas-bearing-bores",
+      "reviewKind": "modal-state",
+      "machineId": "haas-vf2-03",
+      "requiredEvidence": [
+        "workholding-reviewed",
+        "stock-datum-verified",
+        "toolpath-simulated"
+      ]
+    },
+    {
+      "scopeId": "scope-haas-toolpath-improvement",
+      "instructionId": "submitted-haas-bearing-bores",
+      "reviewKind": "improvement-draft",
+      "machineId": "haas-vf2-03",
+      "requiredEvidence": [
+        "postprocessor-verified",
+        "operator-approval-required"
+      ]
+    },
+    {
+      "scopeId": "scope-prusa-thermal-extrusion",
+      "instructionId": "submitted-prusa-shell",
+      "reviewKind": "thermal-state",
+      "machineId": "prusa-mk4-01",
+      "requiredEvidence": [
+        "nozzle-temperature-verified",
+        "bed-temperature-verified",
+        "extrusion-state-verified"
+      ]
+    }
+  ],
+  "knownEvidence": [
+    "source-uri-sanitized",
+    "sha256-recorded",
+    "preview-lines-only"
+  ],
+  "priority": 55,
+  "notes": [
+    "Review imported instructions before converting them into release artifacts.",
+    "Return improvement drafts as separate retained artifacts; do not inline full programs."
+  ]
+}

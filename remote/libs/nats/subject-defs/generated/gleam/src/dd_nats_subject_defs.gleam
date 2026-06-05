@@ -36,6 +36,15 @@ pub const des_results_subject = "dd.remote.des.results"
 pub const des_simulate_subject = "dd.remote.des.simulate"
 pub const des_simulate_queue_group = "dd-des-simulator"
 
+/// Hybrid assembly and process-decomposition requests for workers that split, combine, join, and sequence printed, milled, turned, sheet-cut, and postprocessed parts.
+/// Service: dd-fabrication-server
+pub const fabrication_assembly_planning_requests_subject = "dd.remote.fabrication.assembly.planning.requests"
+pub const fabrication_assembly_planning_requests_queue_group = "dd-fabrication-assembly-planners"
+
+/// Hybrid assembly and process-decomposition results carrying part splits, joins, process sequences, learning state, blockers, and release metadata.
+/// Service: dd-fabrication-server
+pub const fabrication_assembly_planning_results_subject = "dd.remote.fabrication.assembly.planning.results"
+
 /// Design input conversion requests for CAD, mesh, slicer, CAM setup, and neutral export workers.
 /// Service: dd-fabrication-server
 pub const fabrication_design_conversion_requests_subject = "dd.remote.fabrication.design.conversion.requests"
@@ -45,6 +54,15 @@ pub const fabrication_design_conversion_requests_queue_group = "dd-fabrication-d
 /// Service: dd-fabrication-server
 pub const fabrication_design_conversion_results_subject = "dd.remote.fabrication.design.conversion.results"
 
+/// Design synthesis requests for workers that turn fabrication intent, constraints, parametric templates, learning hints, and CAD references into generated design candidates.
+/// Service: dd-fabrication-server
+pub const fabrication_design_synthesis_requests_subject = "dd.remote.fabrication.design.synthesis.requests"
+pub const fabrication_design_synthesis_requests_queue_group = "dd-fabrication-design-synthesizers"
+
+/// Design synthesis results carrying generated design candidates, parametric source artifacts, manufacturability evidence, blockers, and review metadata.
+/// Service: dd-fabrication-server
+pub const fabrication_design_synthesis_results_subject = "dd.remote.fabrication.design.synthesis.results"
+
 /// Instruction generation requests for slicer, CAM, postprocess, setup-sheet, and machine-code workers.
 /// Service: dd-fabrication-server
 pub const fabrication_instruction_generation_requests_subject = "dd.remote.fabrication.instructions.generation.requests"
@@ -53,6 +71,51 @@ pub const fabrication_instruction_generation_requests_queue_group = "dd-fabricat
 /// Instruction generation results carrying machine code, setup sheets, simulation evidence, blockers, and release metadata.
 /// Service: dd-fabrication-server
 pub const fabrication_instruction_generation_results_subject = "dd.remote.fabrication.instructions.generation.results"
+
+/// Imported fabrication instruction review requests for existing G-code, NC programs, slicer files, setup sheets, sheet-cutting jobs, and operator instructions.
+/// Service: dd-fabrication-server
+pub const fabrication_instruction_review_requests_subject = "dd.remote.fabrication.instructions.review.requests"
+pub const fabrication_instruction_review_requests_queue_group = "dd-fabrication-instruction-reviewers"
+
+/// Imported fabrication instruction review results carrying validation findings, improvement drafts, machine-failure boundaries, and release blockers.
+/// Service: dd-fabrication-server
+pub const fabrication_instruction_review_results_subject = "dd.remote.fabrication.instructions.review.results"
+
+/// Instruction simulation and verification requests for generated or imported printer jobs, G-code, NC programs, lathe cycles, sheet-cutting files, and setup evidence.
+/// Service: dd-fabrication-server
+pub const fabrication_instruction_simulation_requests_subject = "dd.remote.fabrication.instructions.simulation.requests"
+pub const fabrication_instruction_simulation_requests_queue_group = "dd-fabrication-instruction-simulators"
+
+/// Instruction simulation and verification results carrying machine-envelope checks, toolpath/process findings, failure boundaries, and release blockers.
+/// Service: dd-fabrication-server
+pub const fabrication_instruction_simulation_results_subject = "dd.remote.fabrication.instructions.simulation.results"
+
+/// Fabrication outcome learning requests for MDP, POMDP, neural-policy, reward, replay, and failure-boundary updaters.
+/// Service: dd-fabrication-server
+pub const fabrication_learning_outcome_requests_subject = "dd.remote.fabrication.learning.outcomes.requests"
+pub const fabrication_learning_outcome_requests_queue_group = "dd-fabrication-learning-updaters"
+
+/// Fabrication outcome learning results carrying accepted model updates, replay labels, reward summaries, and retained failure boundaries.
+/// Service: dd-fabrication-server
+pub const fabrication_learning_outcome_results_subject = "dd.remote.fabrication.learning.outcomes.results"
+
+/// Machine capability, calibration, fixture, tool, material, and maintenance profile requests for printers, mills, lathes, routers, sheet cutters, postprocess stations, and inspection equipment.
+/// Service: dd-fabrication-server
+pub const fabrication_machine_profile_requests_subject = "dd.remote.fabrication.machine.profiles.requests"
+pub const fabrication_machine_profile_requests_queue_group = "dd-fabrication-machine-profilers"
+
+/// Machine profile results carrying capability snapshots, calibration state, tool and fixture readiness, material/process state, maintenance blockers, and release evidence.
+/// Service: dd-fabrication-server
+pub const fabrication_machine_profile_results_subject = "dd.remote.fabrication.machine.profiles.results"
+
+/// Final fabrication release readiness requests that aggregate design, assembly, instruction, review, learning, machine, operator, and evidence state before machine-ready release.
+/// Service: dd-fabrication-server
+pub const fabrication_release_readiness_requests_subject = "dd.remote.fabrication.release.readiness.requests"
+pub const fabrication_release_readiness_requests_queue_group = "dd-fabrication-release-gates"
+
+/// Final fabrication release readiness results carrying release decisions, required human interventions, retained blockers, and machine-ready manifests.
+/// Service: dd-fabrication-server
+pub const fabrication_release_readiness_results_subject = "dd.remote.fabrication.release.readiness.results"
 
 /// Fabrication planning requests. Default for FABRICATION_REQUEST_SUBJECT.
 /// Service: dd-fabrication-server

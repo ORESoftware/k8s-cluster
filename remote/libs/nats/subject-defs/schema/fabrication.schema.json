@@ -24,6 +24,36 @@
         "direction": "both"
       },
       {
+        "name": "FabricationMachineProfileRequests",
+        "description": "Machine capability, calibration, fixture, tool, material, and maintenance profile requests for printers, mills, lathes, routers, sheet cutters, postprocess stations, and inspection equipment.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.machine.profiles.requests",
+        "queueGroup": "dd-fabrication-machine-profilers",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationMachineProfileResults",
+        "description": "Machine profile results carrying capability snapshots, calibration state, tool and fixture readiness, material/process state, maintenance blockers, and release evidence.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.machine.profiles.results",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationDesignSynthesisRequests",
+        "description": "Design synthesis requests for workers that turn fabrication intent, constraints, parametric templates, learning hints, and CAD references into generated design candidates.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.design.synthesis.requests",
+        "queueGroup": "dd-fabrication-design-synthesizers",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationDesignSynthesisResults",
+        "description": "Design synthesis results carrying generated design candidates, parametric source artifacts, manufacturability evidence, blockers, and review metadata.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.design.synthesis.results",
+        "direction": "both"
+      },
+      {
         "name": "FabricationDesignConversionRequests",
         "description": "Design input conversion requests for CAD, mesh, slicer, CAM setup, and neutral export workers.",
         "kind": "static",
@@ -51,6 +81,81 @@
         "description": "Instruction generation results carrying machine code, setup sheets, simulation evidence, blockers, and release metadata.",
         "kind": "static",
         "subject": "dd.remote.fabrication.instructions.generation.results",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationInstructionSimulationRequests",
+        "description": "Instruction simulation and verification requests for generated or imported printer jobs, G-code, NC programs, lathe cycles, sheet-cutting files, and setup evidence.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.instructions.simulation.requests",
+        "queueGroup": "dd-fabrication-instruction-simulators",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationInstructionSimulationResults",
+        "description": "Instruction simulation and verification results carrying machine-envelope checks, toolpath/process findings, failure boundaries, and release blockers.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.instructions.simulation.results",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationInstructionReviewRequests",
+        "description": "Imported fabrication instruction review requests for existing G-code, NC programs, slicer files, setup sheets, sheet-cutting jobs, and operator instructions.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.instructions.review.requests",
+        "queueGroup": "dd-fabrication-instruction-reviewers",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationInstructionReviewResults",
+        "description": "Imported fabrication instruction review results carrying validation findings, improvement drafts, machine-failure boundaries, and release blockers.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.instructions.review.results",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationAssemblyPlanningRequests",
+        "description": "Hybrid assembly and process-decomposition requests for workers that split, combine, join, and sequence printed, milled, turned, sheet-cut, and postprocessed parts.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.assembly.planning.requests",
+        "queueGroup": "dd-fabrication-assembly-planners",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationAssemblyPlanningResults",
+        "description": "Hybrid assembly and process-decomposition results carrying part splits, joins, process sequences, learning state, blockers, and release metadata.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.assembly.planning.results",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationLearningOutcomeRequests",
+        "description": "Fabrication outcome learning requests for MDP, POMDP, neural-policy, reward, replay, and failure-boundary updaters.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.learning.outcomes.requests",
+        "queueGroup": "dd-fabrication-learning-updaters",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationLearningOutcomeResults",
+        "description": "Fabrication outcome learning results carrying accepted model updates, replay labels, reward summaries, and retained failure boundaries.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.learning.outcomes.results",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationReleaseReadinessRequests",
+        "description": "Final fabrication release readiness requests that aggregate design, assembly, instruction, review, learning, machine, operator, and evidence state before machine-ready release.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.release.readiness.requests",
+        "queueGroup": "dd-fabrication-release-gates",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationReleaseReadinessResults",
+        "description": "Final fabrication release readiness results carrying release decisions, required human interventions, retained blockers, and machine-ready manifests.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.release.readiness.results",
         "direction": "both"
       }
     ]

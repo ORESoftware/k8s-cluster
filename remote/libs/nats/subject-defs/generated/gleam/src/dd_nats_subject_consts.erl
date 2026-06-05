@@ -20,12 +20,33 @@
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
+    fabrication_assembly_planning_requests_subject/0,
+    fabrication_assembly_planning_requests_queue_group/0,
+    fabrication_assembly_planning_results_subject/0,
     fabrication_design_conversion_requests_subject/0,
     fabrication_design_conversion_requests_queue_group/0,
     fabrication_design_conversion_results_subject/0,
+    fabrication_design_synthesis_requests_subject/0,
+    fabrication_design_synthesis_requests_queue_group/0,
+    fabrication_design_synthesis_results_subject/0,
     fabrication_instruction_generation_requests_subject/0,
     fabrication_instruction_generation_requests_queue_group/0,
     fabrication_instruction_generation_results_subject/0,
+    fabrication_instruction_review_requests_subject/0,
+    fabrication_instruction_review_requests_queue_group/0,
+    fabrication_instruction_review_results_subject/0,
+    fabrication_instruction_simulation_requests_subject/0,
+    fabrication_instruction_simulation_requests_queue_group/0,
+    fabrication_instruction_simulation_results_subject/0,
+    fabrication_learning_outcome_requests_subject/0,
+    fabrication_learning_outcome_requests_queue_group/0,
+    fabrication_learning_outcome_results_subject/0,
+    fabrication_machine_profile_requests_subject/0,
+    fabrication_machine_profile_requests_queue_group/0,
+    fabrication_machine_profile_results_subject/0,
+    fabrication_release_readiness_requests_subject/0,
+    fabrication_release_readiness_requests_queue_group/0,
+    fabrication_release_readiness_results_subject/0,
     fabrication_requests_subject/0,
     fabrication_requests_queue_group/0,
     fabrication_results_subject/0,
@@ -115,12 +136,33 @@ cron_prompts_stream() -> <<"DD_REMOTE_CRON"/utf8>>.
 des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
 des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
+fabrication_assembly_planning_requests_subject() -> <<"dd.remote.fabrication.assembly.planning.requests"/utf8>>.
+fabrication_assembly_planning_requests_queue_group() -> <<"dd-fabrication-assembly-planners"/utf8>>.
+fabrication_assembly_planning_results_subject() -> <<"dd.remote.fabrication.assembly.planning.results"/utf8>>.
 fabrication_design_conversion_requests_subject() -> <<"dd.remote.fabrication.design.conversion.requests"/utf8>>.
 fabrication_design_conversion_requests_queue_group() -> <<"dd-fabrication-design-converters"/utf8>>.
 fabrication_design_conversion_results_subject() -> <<"dd.remote.fabrication.design.conversion.results"/utf8>>.
+fabrication_design_synthesis_requests_subject() -> <<"dd.remote.fabrication.design.synthesis.requests"/utf8>>.
+fabrication_design_synthesis_requests_queue_group() -> <<"dd-fabrication-design-synthesizers"/utf8>>.
+fabrication_design_synthesis_results_subject() -> <<"dd.remote.fabrication.design.synthesis.results"/utf8>>.
 fabrication_instruction_generation_requests_subject() -> <<"dd.remote.fabrication.instructions.generation.requests"/utf8>>.
 fabrication_instruction_generation_requests_queue_group() -> <<"dd-fabrication-instruction-generators"/utf8>>.
 fabrication_instruction_generation_results_subject() -> <<"dd.remote.fabrication.instructions.generation.results"/utf8>>.
+fabrication_instruction_review_requests_subject() -> <<"dd.remote.fabrication.instructions.review.requests"/utf8>>.
+fabrication_instruction_review_requests_queue_group() -> <<"dd-fabrication-instruction-reviewers"/utf8>>.
+fabrication_instruction_review_results_subject() -> <<"dd.remote.fabrication.instructions.review.results"/utf8>>.
+fabrication_instruction_simulation_requests_subject() -> <<"dd.remote.fabrication.instructions.simulation.requests"/utf8>>.
+fabrication_instruction_simulation_requests_queue_group() -> <<"dd-fabrication-instruction-simulators"/utf8>>.
+fabrication_instruction_simulation_results_subject() -> <<"dd.remote.fabrication.instructions.simulation.results"/utf8>>.
+fabrication_learning_outcome_requests_subject() -> <<"dd.remote.fabrication.learning.outcomes.requests"/utf8>>.
+fabrication_learning_outcome_requests_queue_group() -> <<"dd-fabrication-learning-updaters"/utf8>>.
+fabrication_learning_outcome_results_subject() -> <<"dd.remote.fabrication.learning.outcomes.results"/utf8>>.
+fabrication_machine_profile_requests_subject() -> <<"dd.remote.fabrication.machine.profiles.requests"/utf8>>.
+fabrication_machine_profile_requests_queue_group() -> <<"dd-fabrication-machine-profilers"/utf8>>.
+fabrication_machine_profile_results_subject() -> <<"dd.remote.fabrication.machine.profiles.results"/utf8>>.
+fabrication_release_readiness_requests_subject() -> <<"dd.remote.fabrication.release.readiness.requests"/utf8>>.
+fabrication_release_readiness_requests_queue_group() -> <<"dd-fabrication-release-gates"/utf8>>.
+fabrication_release_readiness_results_subject() -> <<"dd.remote.fabrication.release.readiness.results"/utf8>>.
 fabrication_requests_subject() -> <<"dd.remote.fabrication.requests"/utf8>>.
 fabrication_requests_queue_group() -> <<"dd-fabrication-server"/utf8>>.
 fabrication_results_subject() -> <<"dd.remote.fabrication.results"/utf8>>.

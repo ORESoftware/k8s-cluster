@@ -1,0 +1,111 @@
+{
+  "schema": "dd.fabrication.learning-outcome.result.v1",
+  "requestId": "learn-outcome-gearbox-001",
+  "planRequestId": "fab-plan-gearbox-001",
+  "jobId": "fab-job-gearbox-001",
+  "emittedAtMs": 1791168480000,
+  "workerId": "fabrication-learning-updater-41c7d2",
+  "learner": "hybrid-fabrication-mdp-pomdp-replay-updater",
+  "learnerVersion": "2026.2.0+learner.9",
+  "success": true,
+  "updates": [
+    {
+      "updateId": "update-replay-gearbox-001",
+      "modelKind": "replay-buffer",
+      "modelName": "fabrication-hybrid-outcomes",
+      "modelVersion": "2026-06-05.18",
+      "updateKind": "append-replay",
+      "accepted": true,
+      "artifactUri": "s3://operator-controlled-cad/gearbox/learning/replay/gearbox-001.jsonl",
+      "metrics": [
+        "observations=2",
+        "boundaries=2",
+        "rewardSignals=2"
+      ],
+      "notes": [
+        "Replay sample accepted with human-intervention boundary labels."
+      ]
+    },
+    {
+      "updateId": "update-policy-split-bearing-insert",
+      "modelKind": "mdp-policy",
+      "modelName": "hybrid-split-combine-policy",
+      "modelVersion": "2026.2.0+policy.18",
+      "updateKind": "update-policy",
+      "accepted": true,
+      "artifactUri": "s3://operator-controlled-cad/gearbox/learning/policies/hybrid-split-combine-policy-18.json",
+      "metrics": [
+        "deltaReward=0.35",
+        "confidence=0.73",
+        "action=split-part"
+      ],
+      "notes": [
+        "Positive reward retained for split printed shell plus milled bearing insert strategy."
+      ]
+    },
+    {
+      "updateId": "update-boundary-workholding-release",
+      "modelKind": "failure-boundary-memory",
+      "modelName": "fabrication-machine-ready-boundaries",
+      "modelVersion": "2026-06-05.22",
+      "updateKind": "label-boundary",
+      "accepted": true,
+      "artifactUri": "s3://operator-controlled-cad/gearbox/learning/boundaries/workholding-release-required.json",
+      "metrics": [
+        "machineClass=vertical-mill",
+        "humanInterventionRequired=true",
+        "penalty=-0.55"
+      ],
+      "notes": [
+        "Boundary retained so future mill programs require fixture and G54 evidence before release."
+      ]
+    }
+  ],
+  "retainedBoundaries": [
+    {
+      "boundaryId": "boundary-mill-workholding-before-cycle",
+      "boundaryKind": "workholding",
+      "code": "workholding-release-required",
+      "message": "Mill program cannot be released before clamp torque, fixture photo, and G54 probe report are attached.",
+      "operationId": "step-machine-insert",
+      "partId": "bearing-insert",
+      "humanInterventionRequired": true,
+      "recommendedAction": "request-human-review",
+      "evidence": [
+        "operator-intervention-observed",
+        "machine-blocked-before-start",
+        "fixture-confirmation-needed"
+      ]
+    },
+    {
+      "boundaryId": "boundary-split-plan-reward",
+      "boundaryKind": "split-required",
+      "code": "split-bearing-insert-preferred",
+      "message": "Split plan reduced bearing bore risk compared with monolithic print-and-machine route, but adds datum-transfer review.",
+      "operationId": "step-final-assembly-inspection",
+      "partId": "bearing-insert",
+      "humanInterventionRequired": true,
+      "recommendedAction": "add-inspection-step",
+      "evidence": [
+        "split-combine-decision-recorded",
+        "datum-transfer-required"
+      ]
+    }
+  ],
+  "rewardSummary": "Accepted positive reward for split printed shell plus milled insert; accepted penalty for missing mill workholding evidence before cycle start.",
+  "warnings": [
+    "Learning update does not make the job machine-ready; planner must still require fixture and datum-transfer evidence.",
+    "Policy update is retained as advisory until enough comparable outcomes accumulate."
+  ],
+  "reviewMetadata": {
+    "replayPartition": "hybrid-gearbox",
+    "trainingSplit": "operator-reviewed",
+    "quarantine": false,
+    "policy": "hybrid-split-combine-policy",
+    "rewardModel": "machine-ready-boundary-reward-v4",
+    "retainedHumanInterventionBoundaries": [
+      "workholding-release-required",
+      "datum-transfer-required"
+    ]
+  }
+}

@@ -105,20 +105,27 @@ is supplied.
   spindle-speed/direction/start/process-stop state, work-offset/datum evidence, additive material/color/tool-change,
   manual-stop, CNC tool-change automation/operator-load/spindle-stop evidence,
   subtractive text setup/process evidence, mill/router fixture/hold-down evidence, cutting feed-rate/cut-chart evidence,
-  tool-length/probe compensation/cancel state, cutter-compensation offset/cancel state, chip/coolant/dust-collection state, lathe
+  tool-life/wear/load-monitor evidence, tool-length/probe compensation/cancel state, probing-cycle setup/feed/recovery state, cutter-compensation offset/cancel state, chip/coolant/dust-collection state, lathe
   chuck/stick-out/runout evidence, part-off catcher/support evidence including lathe text part-off support evidence, lathe text threading feed-per-rev/pitch-sync evidence, tool/turret-change stop state, tool-nose compensation evidence/cancel state, canned drilling/tapping cycle setup/cancel state, declared
   material/machine compatibility, additive slicer profile/support/
-  orientation/first-layer evidence, additive thin-wall geometry, printer
+  orientation/first-layer, mesh unit/scale/topology/wall-thickness evidence,
+  high-speed kinematic evidence, additive thin-wall geometry, printer
   async-nozzle-wait state, async-bed-target re-wait state, nozzle-cooldown/
   reheat state, bed-cooldown/re-wait state, stepper-idle/re-home state,
   extrusion-mode/reset state, post-mode-switch extrusion reset state,
   negative-Z extrusion/Z-offset probe state, filament lot/dry-storage
-  conditioning evidence, extrusion calibration/flow/pressure-advance evidence,
+  conditioning evidence, material-capacity/runout evidence,
+  extrusion calibration/flow/pressure-advance evidence,
+  firmware retraction/recover settings evidence,
+  high-speed input-shaper/acceleration/volumetric-flow evidence,
   chamber/enclosure/thermal-soak evidence for warp-prone filament,
-  bed-adhesion, first-layer, fan-timing, resin exposure/profile/layer/support evidence, resin-handling/
-  postprocess evidence, powder-bed build profile/powder lot/nesting evidence, powder-handling/cooldown-depowder evidence,
+  bed-adhesion, first-layer, fan-timing, resin exposure/profile/layer/support evidence, resin
+  vat-capacity/refill evidence, resin-handling/postprocess evidence, powder-bed build profile/powder lot/nesting evidence, powder-handling/cooldown-depowder evidence,
   assembly fit/metrology/datum/torque/cure evidence,
-  sheet-cutting material/thickness/cut-chart/recipe evidence, pierce/kerf/focus/gas/fume/support, waterjet pressure/abrasive-flow, and plasma work-clamp evidence, deep-cut, arc-plane/geometry,
+  precision tolerance/surface-finish metrology evidence,
+  unattended/batch monitoring and recovery evidence,
+  thermal postprocess temperature/fixture/cooldown evidence,
+  sheet-cutting material/thickness/cut-chart/recipe evidence, pierce/kerf/focus/gas/fume/support, retained-tab/microjoint/part-release evidence, waterjet pressure/abrasive-flow, and plasma work-clamp evidence, deep-cut, arc-plane/geometry,
   positioning-mode reset state, additive relative-positioning extrusion state, setup-limit, machine-envelope, inspection, and automation constraints.
 - A `resolutionPlan` with ordered release-blocking remediation steps derived
   from failure boundaries, including split/combine, human review, automation,
@@ -185,18 +192,29 @@ includes supported request families, built-in `defaultMachines`, machine classes
 for FDM, resin, powder-bed, vertical milling, horizontal milling, routing, laser,
 waterjet, plasma, lathe, and manual/special-process work, accepted instruction
 kinds, design input format families, generated artifact families, learning
-channels, and safety boundary classes. These capabilities describe draft
-planning and validation support, not controller-certified release.
+channels, bounded `profileEvidence` buckets for submitted machine profiles, and
+safety boundary classes. These capabilities describe draft planning and
+validation support, not controller-certified release.
 
 ## `GET /fabrication/schema` And `GET /fabrication/examples`
 
 `GET /schema` and `GET /fabrication/schema` return a compact request contract for
 planning, instruction analysis, learning observations, compact learning outcomes,
-machine profiles, instruction programs, and response highlights. `GET /examples`
-and `GET /fabrication/examples` return ready-to-edit JSON examples for a hybrid
-printed/milled/turned plan, existing CNC and resin-job instruction analysis,
-outcome learning, compact learning outcomes, and a NATS instruction-analysis
-envelope.
+machine profiles, optional machine-profile evidence, instruction programs, and
+response highlights. `GET /examples` and `GET /fabrication/examples` return
+ready-to-edit JSON examples for a hybrid printed/milled/turned plan with
+calibration/tool/fixture/material/process evidence, existing CNC and resin-job
+instruction analysis, outcome learning, compact learning outcomes, and a NATS
+instruction-analysis envelope.
+
+Submitted `profileEvidence.blockers` are promoted into validation findings,
+`machine-profile-blocker` failure boundaries, resolution steps, machine-release
+blockers, production release blockers, and tooling/handoff review gates until
+fresh operator, controller, calibration, material, fixture, or process-support
+evidence clears them. When several submitted machines can satisfy the same part,
+selection prefers compatible machines with no retained profile blockers and
+keeps blocked alternates visible in `machineSelection` as
+`rejected-profile-blocker` candidates.
 
 ## `POST /fabrication/plan`
 
@@ -226,7 +244,15 @@ Requests use camelCase JSON:
       "materials": ["PLA", "PETG", "ABS"],
       "workEnvelopeMm": [360, 360, 360],
       "axes": 3,
-      "operations": ["additive-print"]
+      "operations": ["additive-print"],
+      "profileEvidence": {
+        "calibration": ["bed-level-current", "nozzle-offset-current"],
+        "tools": ["0.4mm-nozzle-loaded"],
+        "fixtures": ["build-plate-clean"],
+        "materials": ["PETG-loaded", "filament-drying-required"],
+        "process": ["purge-line-required"],
+        "blockers": ["material-conditioning-required"]
+      }
     },
     {
       "id": "tm1p",
@@ -235,7 +261,15 @@ Requests use camelCase JSON:
       "materials": ["aluminum", "brass", "plastic"],
       "workEnvelopeMm": [760, 300, 400],
       "axes": 3,
-      "operations": ["face", "pocket", "drill", "contour"]
+      "operations": ["face", "pocket", "drill", "contour"],
+      "profileEvidence": {
+        "calibration": ["g54-work-offset-current", "tool-length-offset-current"],
+        "tools": ["t06-6mm-endmill-loaded"],
+        "fixtures": ["vise-loaded", "operator-fixture-photo-required"],
+        "process": ["coolant-ready", "chip-evacuation-ready"],
+        "release": ["dry-run-required"],
+        "blockers": ["fixture-proof-required"]
+      }
     },
     {
       "id": "toolroom-lathe",
@@ -303,7 +337,9 @@ operator checklists. It returns controller-agnostic safety findings, improvement
 opportunities, and `improvedPrograms` review drafts that insert conservative
 modal defaults or explicit setup, post-processing, split, assembly, and
 human-intervention gates. Submitted machine profiles are bounded and validated,
-including positive work-envelope values, unique IDs, and nonzero axis counts.
+including positive work-envelope values, unique IDs, nonzero axis counts, and
+bounded non-secret `profileEvidence` lists for calibration, tools, fixtures,
+materials, process support, maintenance, release evidence, and retained blockers.
 
 ```json
 {
@@ -330,7 +366,7 @@ after async `M104` nozzle targets without `M109` or verified hotend wait,
 after async `M140` bed target changes without `M190` or verified bed wait,
 after nozzle cooldown without reheat, after bed cooldown without re-wait, after
 stepper idle without re-homing, or before homing, missing `M82`/`M83` extrusion
-mode and `G92 E0` reset state before priming, missing filament lot/dry-storage/
+mode and `G92 E0` reset state before priming, firmware `G10`/`G11` retract/unretract before `M207`/`M208`/`M209` or equivalent retraction settings evidence, missing spool-weight/remaining-filament/runout-sensor evidence before long extrusion, missing filament lot/dry-storage/
 dryer/desiccant evidence before first extrusion, missing extrusion
 calibration/flow/pressure-advance evidence before first extrusion, missing
 chamber/enclosure/thermal-soak evidence before first extrusion for ABS/ASA/PC/nylon,
@@ -340,17 +376,17 @@ reset evidence, positive extrusion while `G91` relative axis positioning remains
 active without `G90` or coordinate-state verification, positive extrusion below
 build-surface Z without measured Z-offset/probe evidence, first-layer adhesion setup, early
 part-cooling fan timing, additive material/color/tool-change stops such as `M600`
-or multi-tool selection, post-change extrusion without purge/prime/resume evidence, printer pauses before renewed position/extrusion resume evidence, selected-tool extrusion without `M104`/`M109` or hotend temperature evidence, mill/router rapid/feed negative-Z plunges after tool selection without
+or multi-tool selection, post-change extrusion without purge/prime/resume evidence, printer pauses before renewed position/extrusion resume evidence, selected-tool extrusion without `M104`/`M109` or hotend temperature evidence, high-speed FDM extrusion without input-shaper/acceleration/volumetric-flow evidence, mill/router rapid/feed negative-Z plunges after tool selection without
 explicit `G43`/probe/tool-length state or later `M6` tool changes before `G49` cancellation, `G41`/`G42` cutter compensation without
 `D` offset or tool radius/diameter evidence or without `G40` cancellation before program end, `M6` tool changes before ATC/magazine/
 carousel/operator-loaded evidence or while spindle/process remains active without `M5`/`M05` stop evidence, mill/router/lathe cutting feeds and mill/router rapid negative-Z plunges before probed
 datum/touch-off/edge-finder/work-offset evidence, mill/router cutting feeds or rapid negative-Z plunges before
 fixture/vise/clamp/vacuum/hold-down/tab evidence, cutting moves before positive
-`F` feed-rate, chip-load, feeds-and-speeds, or cut-chart evidence, missing
+`F` feed-rate, chip-load, feeds-and-speeds, or cut-chart evidence, `G31`/`G38.x` probing cycles before touch-probe calibration, skip/contact input, safe-feed, and retract/recovery evidence, long mill/router/lathe cutting feeds before tool-life, wear-inspection, fresh-edge, or load-monitor evidence, missing
 coolant, air blast, dust collection, chip conveyor, or dry-machining approval
 before cutting feed moves or after those systems are stopped, sheet-cutter feed
 moves before
-pierce/kerf/focus/assist-gas/fume/support evidence, waterjet pump-pressure/abrasive-flow evidence, plasma work-clamp/ground-return evidence, or after assist-gas/fume/abrasive support media is stopped, unsafe canned
+pierce/kerf/focus/assist-gas/fume/support evidence, outside-profile release cuts before retained-tab/bridge/microjoint/catcher/tip-up evidence, waterjet pump-pressure/abrasive-flow evidence, plasma work-clamp/ground-return evidence, or after assist-gas/fume/abrasive support media is stopped, unsafe canned
 drilling/peck/tapping cycles with missing or nonpositive `R` retract planes or motion before `G80` cancellation, mill/router/lathe `M3`/`M4` spindle starts without positive `S` speed evidence or changes direction while active without `M5`/`M05` stop evidence, subtractive feed moves before spindle start or after
 explicit `M5`/`M05` process stop, mill/router rapid negative-Z plunges before spindle/process start or after explicit `M5`/`M05` process stop without restart, lathe chuck/collet/tailstock/stick-out/runout
 evidence before turning feeds, part-off or cutoff operations without catcher/subspindle/tailstock/stock-support evidence, lathe `T` tool/turret changes while spindle/process remains active without `M5`/`M05` stop evidence, lathe `G41`/`G42` tool-nose compensation without tool-nose radius/geometry/wear offset evidence or without `G40` cancellation before program end, lathe
@@ -360,10 +396,10 @@ moves before explicit `G17`/`G18`/`G19` plane evidence, with center offsets that
 incompatibility with resolved machine profiles, and text-instruction boundaries
 where the job needs setup, subtractive text setup/process evidence for
 workholding/datum/tool-length and spindle/feed/coolant/kerf/pierce/cut-chart
-controls, slicer profile/support/orientation/first-layer evidence, post-processing, missing resin exposure/profile/layer/support/build-plate evidence, resin IPA/wash/cure/drain/PPE/
+controls, slicer profile/support/orientation/first-layer evidence, missing slicer mesh unit/scale/watertight/manifold/normals/wall-thickness evidence for STL/3MF/OBJ/model inputs, slicer high-speed input-shaper/acceleration/volumetric-flow evidence, post-processing, missing resin exposure/profile/layer/support/build-plate evidence, missing resin vat-volume/level/refill evidence for large resin jobs, resin IPA/wash/cure/drain/PPE/
 waste controls or missing resin postprocess evidence, powder
 build profile/powder lot/nesting controls or missing powder-bed build/profile evidence, cooldown/depowder/recovery controls or missing powder-bed handling evidence, assembly
-dry-fit/metrology/datum/torque/cure controls or missing assembly fit/metrology evidence, sheet-cutting
+dry-fit/metrology/datum/torque/cure controls or missing assembly fit/metrology evidence, missing precision tolerance/surface-finish metrology evidence, missing unattended/batch monitoring and recovery evidence, missing thermal postprocess temperature/furnace/atmosphere/cooldown/quench/inspection evidence, sheet-cutting
 kerf/fire/fume checks or missing sheet-cutting material/thickness/cut-chart recipe evidence, lathe text threading feed-per-rev/pitch/spindle-encoder evidence, lathe text part-off catcher/subspindle/tailstock/stock-support evidence, assembly, splitting, or operator intervention. Improved
 drafts are still marked `machineReady=false`; they are normalization aids for
 review, motion-envelope simulation, and controller-specific postprocessing.

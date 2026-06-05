@@ -1,0 +1,280 @@
+{
+  "schema": "dd.fabrication.machine-profile.result.v1",
+  "requestId": "machine-profile-req-gearbox-001",
+  "planRequestId": "plan-gearbox-housing-001",
+  "jobId": "fab-job-gearbox-001",
+  "emittedAtMs": 1767039060000,
+  "workerId": "fabrication-machine-profiler-0",
+  "profiler": "dd-machine-inventory-adapter",
+  "profilerVersion": "0.4.0",
+  "success": true,
+  "machineReady": false,
+  "machines": [
+    {
+      "machineId": "prusa-mk4-01",
+      "displayName": "Prusa MK4 cell 01",
+      "machineClass": "additive-fdm",
+      "controller": "prusa-firmware-6",
+      "profileStatus": "review-required",
+      "axisLimits": ["buildVolume=250x210x220mm", "nozzle=0.4mm", "maxBedC=120"],
+      "processCapabilities": ["PLA", "PETG", "ASA", "3MF", "GCODE", "multi-material-manual-change"],
+      "requiredEvidence": ["filament-dried", "bed-level-current", "nozzle-offset-current"]
+    },
+    {
+      "machineId": "haas-vf2-01",
+      "displayName": "Haas VF2 vertical mill",
+      "machineClass": "vertical-mill",
+      "controller": "haas-ngc",
+      "profileStatus": "blocked",
+      "axisLimits": ["travelX=762mm", "travelY=406mm", "travelZ=508mm", "maxSpindleRpm=8100"],
+      "processCapabilities": ["3-axis-milling", "drilling", "tapping", "GCODE", "CAT40"],
+      "requiredEvidence": ["operator-fixture-photo", "work-offset-current", "tool-length-offset-current"]
+    },
+    {
+      "machineId": "okuma-lb3000-01",
+      "displayName": "Okuma LB3000 lathe",
+      "machineClass": "lathe",
+      "controller": "osp-p300",
+      "profileStatus": "review-required",
+      "axisLimits": ["barCapacity=76mm", "maxTurningDiameter=340mm", "turretStations=12"],
+      "processCapabilities": ["turning", "threading", "partoff", "NC", "turret-tooling"],
+      "requiredEvidence": ["chuck-pressure-current", "part-catcher-ready", "partoff-support-reviewed"]
+    },
+    {
+      "machineId": "flow-waterjet-01",
+      "displayName": "Flow waterjet table",
+      "machineClass": "waterjet",
+      "controller": "flowmaster",
+      "profileStatus": "blocked",
+      "axisLimits": ["sheet=3000x1500mm", "kerf=1.0mm", "maxPressurePsi=60000"],
+      "processCapabilities": ["waterjet-cutting", "DXF", "abrasive-garnet", "water-table"],
+      "requiredEvidence": ["pump-pressure-current", "abrasive-flow-current", "water-table-ready"]
+    },
+    {
+      "machineId": "cmm-01",
+      "displayName": "CMM inspection cell",
+      "machineClass": "inspection",
+      "controller": "pc-dmis",
+      "profileStatus": "current",
+      "axisLimits": ["envelope=700x700x600mm", "probe=touch-trigger"],
+      "processCapabilities": ["dimensional-inspection", "datum-transfer-check", "inspection-report"],
+      "requiredEvidence": ["probe-calibration-current", "inspection-nest-ready"]
+    }
+  ],
+  "calibrations": [
+    {
+      "calibrationId": "cal-prusa-bed-level-20251229",
+      "machineId": "prusa-mk4-01",
+      "calibrationKind": "bed-level",
+      "status": "current",
+      "measuredAtMs": 1767036000000,
+      "expiresAtMs": 1767122400000,
+      "metrics": ["meshVarianceMm=0.08", "zOffsetMm=-1.32"],
+      "evidence": ["bed-level-current", "nozzle-offset-current"]
+    },
+    {
+      "calibrationId": "cal-haas-g54-gearbox-001",
+      "machineId": "haas-vf2-01",
+      "calibrationKind": "work-offset",
+      "status": "human-review-required",
+      "measuredAtMs": 1767034200000,
+      "expiresAtMs": 1767120600000,
+      "metrics": ["g54X=125.443", "g54Y=-22.110", "g54Z=41.205"],
+      "evidence": ["work-offset-current"]
+    },
+    {
+      "calibrationId": "cal-waterjet-pump-20251229",
+      "machineId": "flow-waterjet-01",
+      "calibrationKind": "pump-pressure",
+      "status": "pending",
+      "measuredAtMs": 1767033600000,
+      "expiresAtMs": 1767040800000,
+      "metrics": ["pressurePsi=54000", "targetPsi=58000"],
+      "evidence": ["pump-pressure-low"]
+    },
+    {
+      "calibrationId": "cal-cmm-probe-20251229",
+      "machineId": "cmm-01",
+      "calibrationKind": "inspection-probe",
+      "status": "current",
+      "measuredAtMs": 1767033000000,
+      "expiresAtMs": 1767637800000,
+      "metrics": ["probeErrorMm=0.006"],
+      "evidence": ["probe-calibration-current"]
+    }
+  ],
+  "tools": [
+    {
+      "toolId": "nozzle-prusa-0p4",
+      "machineId": "prusa-mk4-01",
+      "toolKind": "nozzle",
+      "status": "ready",
+      "station": "toolhead-0",
+      "materials": ["PLA", "PETG"],
+      "evidence": ["nozzle-loaded", "nozzle-offset-current"]
+    },
+    {
+      "toolId": "haas-t06-6mm-carbide-endmill",
+      "machineId": "haas-vf2-01",
+      "toolKind": "endmill",
+      "status": "loaded",
+      "station": "T06",
+      "materials": ["6061-T6"],
+      "evidence": ["tool-length-offset-current", "tool-diameter-offset-current"]
+    },
+    {
+      "toolId": "okuma-t09-partoff-blade",
+      "machineId": "okuma-lb3000-01",
+      "toolKind": "partoff-blade",
+      "status": "loaded",
+      "station": "T0909",
+      "materials": ["6061-T6", "12L14"],
+      "evidence": ["partoff-blade-loaded"]
+    },
+    {
+      "toolId": "waterjet-abrasive-feed",
+      "machineId": "flow-waterjet-01",
+      "toolKind": "abrasive-feed",
+      "status": "human-review-required",
+      "station": "hopper-a",
+      "materials": ["garnet-80-mesh"],
+      "evidence": ["abrasive-hopper-loaded"]
+    },
+    {
+      "toolId": "cmm-touch-probe",
+      "machineId": "cmm-01",
+      "toolKind": "probe",
+      "status": "ready",
+      "station": "probe-head",
+      "materials": ["inspection"],
+      "evidence": ["probe-calibration-current"]
+    }
+  ],
+  "fixtures": [
+    {
+      "fixtureId": "prusa-textured-build-plate",
+      "machineId": "prusa-mk4-01",
+      "fixtureKind": "print-bed",
+      "status": "ready",
+      "partIds": ["printed-shell"],
+      "evidence": ["bed-clean", "sheet-installed"]
+    },
+    {
+      "fixtureId": "haas-vise-soft-jaw-gearbox",
+      "machineId": "haas-vf2-01",
+      "fixtureKind": "vise",
+      "status": "operator-proof-required",
+      "partIds": ["milled-bearing-insert"],
+      "evidence": ["vise-loaded", "soft-jaw-program-matched"]
+    },
+    {
+      "fixtureId": "okuma-part-catcher",
+      "machineId": "okuma-lb3000-01",
+      "fixtureKind": "part-catcher",
+      "status": "human-review-required",
+      "partIds": ["turned-spacer"],
+      "evidence": ["catcher-installed"]
+    },
+    {
+      "fixtureId": "flow-water-table",
+      "machineId": "flow-waterjet-01",
+      "fixtureKind": "water-table",
+      "status": "ready",
+      "partIds": ["sheet-gasket"],
+      "evidence": ["water-table-ready", "slats-clear"]
+    },
+    {
+      "fixtureId": "cmm-gearbox-nest",
+      "machineId": "cmm-01",
+      "fixtureKind": "inspection-nest",
+      "status": "ready",
+      "partIds": ["assembly-gearbox"],
+      "evidence": ["inspection-nest-ready"]
+    }
+  ],
+  "materials": [
+    {
+      "materialStateId": "mat-prusa-petg-blue",
+      "machineId": "prusa-mk4-01",
+      "materialKind": "filament",
+      "status": "stale",
+      "material": "PETG blue 1.75mm",
+      "metrics": ["moisture=unknown", "spoolRemainingG=420"],
+      "evidence": ["filament-loaded"]
+    },
+    {
+      "materialStateId": "mat-haas-6061-plate",
+      "machineId": "haas-vf2-01",
+      "materialKind": "billet",
+      "status": "loaded",
+      "material": "6061-T6 plate",
+      "metrics": ["stock=120x80x18mm", "lot=AL6061-1229"],
+      "evidence": ["stock-loaded", "stock-size-verified"]
+    },
+    {
+      "materialStateId": "mat-okuma-6061-bar",
+      "machineId": "okuma-lb3000-01",
+      "materialKind": "bar-stock",
+      "status": "loaded",
+      "material": "6061-T6 round bar",
+      "metrics": ["diameterMm=32", "stickoutMm=120"],
+      "evidence": ["bar-loaded", "chuck-pressure-current"]
+    },
+    {
+      "materialStateId": "mat-waterjet-garnet",
+      "machineId": "flow-waterjet-01",
+      "materialKind": "abrasive",
+      "status": "low",
+      "material": "80 mesh garnet",
+      "metrics": ["hopperPercent=18", "flowRate=unverified"],
+      "evidence": ["abrasive-hopper-loaded"]
+    }
+  ],
+  "blockers": [
+    {
+      "blockerId": "blocker-prusa-filament-conditioning",
+      "code": "material-conditioning-required",
+      "message": "PETG spool is loaded but drying evidence is stale before the selected print operation.",
+      "severity": "high",
+      "machineReadyImpact": "blocks-machine-ready",
+      "machineId": "prusa-mk4-01",
+      "evidenceRequired": ["filament-dried", "spool-material-confirmed"]
+    },
+    {
+      "blockerId": "blocker-haas-fixture-proof",
+      "code": "fixture-proof-required",
+      "message": "Soft-jaw fixture is loaded but still needs operator photo/probe proof before cutting.",
+      "severity": "blocker",
+      "machineReadyImpact": "blocks-machine-ready",
+      "machineId": "haas-vf2-01",
+      "evidenceRequired": ["operator-fixture-photo", "fixture-model-current", "probe-safe-clearance-current"]
+    },
+    {
+      "blockerId": "blocker-okuma-partoff-support",
+      "code": "partoff-support-required",
+      "message": "Lathe part-off operation needs part catcher or subspindle support reviewed before release.",
+      "severity": "high",
+      "machineReadyImpact": "needs-operator-review",
+      "machineId": "okuma-lb3000-01",
+      "evidenceRequired": ["part-catcher-ready", "partoff-support-reviewed"]
+    },
+    {
+      "blockerId": "blocker-waterjet-abrasive-flow",
+      "code": "support-media-required",
+      "message": "Waterjet abrasive flow and pump pressure need fresh verification before cutting feeds.",
+      "severity": "blocker",
+      "machineReadyImpact": "blocks-machine-ready",
+      "machineId": "flow-waterjet-01",
+      "evidenceRequired": ["pump-pressure-current", "abrasive-flow-current"]
+    }
+  ],
+  "warnings": [
+    "CMM profile is current, but final inspection plan still waits on release-readiness manifest.",
+    "Machine profile blockers should be copied into release-readiness knownBlockers before machine-ready decision."
+  ],
+  "reviewMetadata": {
+    "inventorySnapshotId": "inventory-2025-12-29T18-51Z",
+    "profileConfidence": "mixed-live-and-operator-evidence",
+    "controllerPolls": ["prusa-mk4-01", "haas-vf2-01", "okuma-lb3000-01", "flow-waterjet-01", "cmm-01"]
+  }
+}

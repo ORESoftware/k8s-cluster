@@ -1,0 +1,501 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/fabrication-design-synthesis.schema.json",
+  "title": "FabricationDesignSynthesisInterfaces",
+  "description": "Shared cross-runtime JSON payloads for design-synthesis workers that turn fabrication intent, CAD references, parametric templates, machine/process constraints, and learning hints into generated CAD-ready design candidates before conversion, slicing, CAM, assembly planning, or release review.",
+  "type": "object",
+  "$defs": {
+    "FabricationDesignIntent": {
+      "type": "object",
+      "title": "FabricationDesignIntent",
+      "description": "The object, function, dimensions, material preferences, and manufacturing posture a design-synthesis worker should satisfy.",
+      "additionalProperties": false,
+      "required": ["intentId", "objectName", "objective"],
+      "properties": {
+        "intentId": {
+          "type": "string",
+          "description": "Stable intent id from the planner request."
+        },
+        "objectName": {
+          "type": "string",
+          "description": "Operator-facing object or assembly name."
+        },
+        "objective": {
+          "type": "string",
+          "description": "Design objective such as generate-new-part, modify-existing-cad, parametric-variant, fixture-design, replacement-part, assembly-decomposition, or manufacturability-redesign."
+        },
+        "functionalRequirements": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Functional requirements, loads, fits, interfaces, aesthetics, assembly goals, or service constraints."
+        },
+        "dimensionalConstraints": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Dimensional constraints such as envelope, wall thickness, shaft spacing, hole pattern, tolerance, clearance, stock size, or build-volume limits."
+        },
+        "materialPreferences": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Preferred material or stock families."
+        },
+        "manufacturingPreferences": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Preferred processes or constraints such as fdm-print, resin-print, vertical-mill, horizontal-mill, lathe, router, waterjet, laser, plasma, postprocess, inspection, or assembly."
+        }
+      }
+    },
+    "FabricationDesignReference": {
+      "type": "object",
+      "title": "FabricationDesignReference",
+      "description": "Existing CAD, mesh, drawing, scan, slicer, CAM, job-sheet, image, measurement, or text reference available to a design-synthesis worker.",
+      "additionalProperties": false,
+      "required": ["refId", "refKind", "format"],
+      "properties": {
+        "refId": {
+          "type": "string",
+          "description": "Stable reference id."
+        },
+        "refKind": {
+          "type": "string",
+          "description": "Reference kind such as native-cad, neutral-cad, mesh, drawing, scan, slicer-project, cam-setup, machine-log, inspection-report, operator-note, or exemplar-part."
+        },
+        "format": {
+          "type": "string",
+          "description": "Reference format such as SOLIDWORKS, CREO, PROE, FUSION, NX, CATIA, ONSHAPE, FREECAD, OPENSCAD, BLENDER, ZBRUSH, STEP, IGES, STL, 3MF, OBJ, DXF, SVG, PDF, JSON, TXT, or SHOP_TEXT."
+        },
+        "uri": {
+          "type": ["string", "null"],
+          "description": "Sanitized source URI or object key. Do not include credentials, query strings, or fragments."
+        },
+        "sha256": {
+          "type": ["string", "null"],
+          "description": "SHA-256 of the reference artifact when available."
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evidence labels already attached to this reference, such as units-verified, native-source-authorized, mesh-manifold, scan-scaled, drawing-reviewed, or operator-measured."
+        }
+      }
+    },
+    "FabricationDesignTemplate": {
+      "type": "object",
+      "title": "FabricationDesignTemplate",
+      "description": "Parametric or procedural design template a worker may instantiate or adapt.",
+      "additionalProperties": false,
+      "required": ["templateId", "templateKind", "sourceFormat"],
+      "properties": {
+        "templateId": {
+          "type": "string",
+          "description": "Stable template id."
+        },
+        "templateKind": {
+          "type": "string",
+          "description": "Template kind such as openscad-module, freecad-macro, cadquery-script, fusion-script, feature-template, lattice-template, fixture-template, or assembly-pattern."
+        },
+        "sourceFormat": {
+          "type": "string",
+          "description": "Template source format such as OPENSCAD, PYTHON, FREECAD, FUSION_SCRIPT, JSON, YAML, or CADQUERY."
+        },
+        "uri": {
+          "type": ["string", "null"],
+          "description": "Sanitized template URI or object key."
+        },
+        "parameters": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Parameter labels or key=value defaults the worker may tune."
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Template evidence such as reviewed-source, unit-tested, manufacturability-reviewed, or known-good-prior."
+        }
+      }
+    },
+    "FabricationDesignCapability": {
+      "type": "object",
+      "title": "FabricationDesignCapability",
+      "description": "Design, translation, simulation, manufacturing, or inspection capability available while synthesizing candidates.",
+      "additionalProperties": false,
+      "required": ["capabilityId", "capabilityKind"],
+      "properties": {
+        "capabilityId": {
+          "type": "string",
+          "description": "Stable capability id."
+        },
+        "capabilityKind": {
+          "type": "string",
+          "description": "Capability kind such as cad-kernel, mesh-repair, topology-optimization, generative-design, slicer-preview, cam-preview, simulation, machine-process, inspection, or learning-policy."
+        },
+        "supportedFormats": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Source or output formats supported by this capability."
+        },
+        "machineClasses": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Machine classes this capability can target."
+        },
+        "limits": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Limits such as build volume, axis travel, tolerance band, surface finish, stock envelope, or operator-only steps."
+        }
+      }
+    },
+    "FabricationDesignConstraint": {
+      "type": "object",
+      "title": "FabricationDesignConstraint",
+      "description": "Constraint or evidence requirement the worker must satisfy or retain as a blocker.",
+      "additionalProperties": false,
+      "required": ["constraintId", "constraintKind", "description", "severity"],
+      "properties": {
+        "constraintId": {
+          "type": "string",
+          "description": "Stable constraint id."
+        },
+        "constraintKind": {
+          "type": "string",
+          "description": "Constraint kind such as dimensional, material, process, tolerance, strength, thermal, assembly, support-removal, stock-envelope, machine-envelope, postprocess, inspection, learning, or human-review."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable non-secret constraint summary."
+        },
+        "severity": {
+          "type": "string",
+          "description": "Severity such as blocker, high, medium, low, warning, or info."
+        },
+        "evidenceRequired": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evidence labels or ids required to clear this constraint."
+        }
+      }
+    },
+    "FabricationGeneratedDesignArtifact": {
+      "type": "object",
+      "title": "FabricationGeneratedDesignArtifact",
+      "description": "Generated design artifact retained by a synthesis worker for later CAD conversion, assembly planning, instruction generation, inspection, or review.",
+      "additionalProperties": false,
+      "required": ["artifactId", "candidateId", "artifactKind", "format"],
+      "properties": {
+        "artifactId": {
+          "type": "string",
+          "description": "Stable generated artifact id."
+        },
+        "candidateId": {
+          "type": "string",
+          "description": "Candidate id that produced this artifact."
+        },
+        "artifactKind": {
+          "type": "string",
+          "description": "Artifact kind such as parametric-source, native-cad, neutral-cad, mesh, assembly-graph, drawing, simulation-summary, inspection-plan, or manufacturability-report."
+        },
+        "format": {
+          "type": "string",
+          "description": "Artifact format such as OPENSCAD, FREECAD, CADQUERY, STEP, IGES, STL, 3MF, OBJ, DXF, JSON, PDF, MD, or TXT."
+        },
+        "uri": {
+          "type": ["string", "null"],
+          "description": "Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments."
+        },
+        "sha256": {
+          "type": ["string", "null"],
+          "description": "SHA-256 of the generated artifact when available."
+        },
+        "units": {
+          "type": ["string", "null"],
+          "description": "Design units when applicable."
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evidence labels attached to this artifact, such as units-verified, parametric-source-retained, neutral-export-ready, mesh-manifold, assembly-graph-generated, or manufacturability-reviewed."
+        }
+      }
+    },
+    "FabricationDesignSynthesisBlocker": {
+      "type": "object",
+      "title": "FabricationDesignSynthesisBlocker",
+      "description": "A blocker discovered while generating or selecting a design candidate.",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Stable blocker code such as missing-critical-dimension, native-source-review-required, strength-analysis-required, tolerance-stack-required, support-removal-risk, stock-envelope-risk, machine-envelope-risk, assembly-split-required, or human-review-required."
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable blocker summary safe for logs."
+        },
+        "candidateId": {
+          "type": ["string", "null"],
+          "description": "Candidate id associated with this blocker when applicable."
+        },
+        "constraintId": {
+          "type": ["string", "null"],
+          "description": "Constraint id associated with this blocker when applicable."
+        },
+        "machineReadyImpact": {
+          "type": ["string", "null"],
+          "description": "Effect on downstream release posture, e.g. blocks-design-release, needs-operator-review, warning-only, conversion-only, or learning-only."
+        }
+      }
+    },
+    "FabricationDesignCandidate": {
+      "type": "object",
+      "title": "FabricationDesignCandidate",
+      "description": "One generated design candidate and its recommended downstream manufacturing posture.",
+      "additionalProperties": false,
+      "required": ["candidateId", "candidateKind", "title", "score", "manufacturingStrategy"],
+      "properties": {
+        "candidateId": {
+          "type": "string",
+          "description": "Stable candidate id."
+        },
+        "candidateKind": {
+          "type": "string",
+          "description": "Candidate kind such as monolithic-print, split-print-and-machine, machined-insert, turned-component, sheet-cut-assembly, fixture-assisted, or parametric-variant."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short candidate title for review."
+        },
+        "score": {
+          "type": "number",
+          "description": "Worker score for ranking candidates. Larger is better within one result envelope."
+        },
+        "machineReady": {
+          "type": "boolean",
+          "description": "True only when this candidate has enough design evidence for downstream conversion/release consideration."
+        },
+        "manufacturingStrategy": {
+          "type": "string",
+          "description": "Recommended manufacturing strategy for this candidate."
+        },
+        "artifactIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Generated artifact ids that describe this candidate."
+        },
+        "clearedConstraintIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Constraint ids this candidate claims to satisfy."
+        },
+        "retainedBlockers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationDesignSynthesisBlocker" },
+          "description": "Candidate-specific blockers or review requirements."
+        }
+      }
+    },
+    "FabricationDesignLearningHint": {
+      "type": "object",
+      "title": "FabricationDesignLearningHint",
+      "description": "Compact MDP/POMDP/neural-policy hint available during design synthesis.",
+      "additionalProperties": false,
+      "required": ["hintId", "hintKind"],
+      "properties": {
+        "hintId": {
+          "type": "string",
+          "description": "Stable learning hint id."
+        },
+        "hintKind": {
+          "type": "string",
+          "description": "Hint kind such as mdp-state, pomdp-belief, policy-action, reward-prior, failure-boundary-memory, prior-success, or prior-failure."
+        },
+        "features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Compact state, observation, reward, or boundary features."
+        },
+        "recommendedAction": {
+          "type": ["string", "null"],
+          "description": "Recommended policy action such as split-part, thicken-wall, add-insert, avoid-supports, add-fixture, or request-human-review."
+        },
+        "confidence": {
+          "type": ["number", "null"],
+          "description": "Optional confidence for the hint."
+        }
+      }
+    },
+    "FabricationDesignSynthesisRequest": {
+      "type": "object",
+      "title": "FabricationDesignSynthesisRequest",
+      "description": "Body published on dd.remote.fabrication.design.synthesis.requests for design-generation workers.",
+      "additionalProperties": false,
+      "required": ["schema", "requestId", "planRequestId", "emittedAtMs", "intent", "references", "capabilities", "constraints", "targetFormats"],
+      "properties": {
+        "schema": {
+          "type": "string",
+          "description": "Envelope schema id. Producers should emit dd.fabrication.design-synthesis.request.v1."
+        },
+        "requestId": {
+          "type": "string",
+          "description": "Unique id for this design-synthesis job, suitable for dedupe and result correlation."
+        },
+        "planRequestId": {
+          "type": "string",
+          "description": "Fabrication planning request id that spawned this design-synthesis job."
+        },
+        "jobId": {
+          "type": ["string", "null"],
+          "description": "Optional fabrication job id when the planner has already persisted one."
+        },
+        "emittedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix epoch milliseconds when the planner published this request."
+        },
+        "producer": {
+          "type": ["string", "null"],
+          "description": "Producer service instance or deployment name."
+        },
+        "resultSubject": {
+          "type": ["string", "null"],
+          "description": "Subject workers should publish the result to; defaults to dd.remote.fabrication.design.synthesis.results."
+        },
+        "intent": {
+          "$ref": "#/$defs/FabricationDesignIntent",
+          "description": "Requested object intent and design requirements."
+        },
+        "references": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationDesignReference" },
+          "description": "Source references available to the worker."
+        },
+        "templates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationDesignTemplate" },
+          "description": "Parametric or procedural templates available to the worker."
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationDesignCapability" },
+          "description": "Design, conversion, manufacturing, inspection, and learning capabilities available for synthesis."
+        },
+        "constraints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationDesignConstraint" },
+          "description": "Constraints and evidence requirements the worker must satisfy or retain."
+        },
+        "targetFormats": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Requested output formats for downstream conversion, assembly planning, slicing, CAM, or review."
+        },
+        "learningHints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationDesignLearningHint" },
+          "description": "Learning hints from MDP/POMDP/neural/reward/failure-boundary memory."
+        },
+        "blockers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationDesignSynthesisBlocker" },
+          "description": "Planner-known blockers that workers may clear by returning generated candidates or evidence."
+        },
+        "priority": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Optional scheduling hint. Higher values mean more urgent design-synthesis work."
+        },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-secret planning notes for the worker."
+        }
+      }
+    },
+    "FabricationDesignSynthesisResult": {
+      "type": "object",
+      "title": "FabricationDesignSynthesisResult",
+      "description": "Body published on dd.remote.fabrication.design.synthesis.results with generated design candidates, artifacts, blockers, and downstream readiness evidence.",
+      "additionalProperties": false,
+      "required": ["schema", "requestId", "planRequestId", "emittedAtMs", "workerId", "success", "machineReady", "candidates", "artifacts"],
+      "properties": {
+        "schema": {
+          "type": "string",
+          "description": "Envelope schema id. Workers should emit dd.fabrication.design-synthesis.result.v1."
+        },
+        "requestId": {
+          "type": "string",
+          "description": "Design-synthesis request id this result answers."
+        },
+        "planRequestId": {
+          "type": "string",
+          "description": "Fabrication planning request id from the original design-synthesis job."
+        },
+        "jobId": {
+          "type": ["string", "null"],
+          "description": "Optional persisted fabrication job id from the original request."
+        },
+        "emittedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix epoch milliseconds when the worker published this result."
+        },
+        "workerId": {
+          "type": "string",
+          "description": "Worker id, pod name, or adapter instance that produced this result."
+        },
+        "synthesizer": {
+          "type": ["string", "null"],
+          "description": "Design synthesizer, CAD kernel, policy, or adapter used."
+        },
+        "synthesizerVersion": {
+          "type": ["string", "null"],
+          "description": "Synthesizer or model version used for repeatability and audit."
+        },
+        "success": {
+          "type": "boolean",
+          "description": "True when the worker completed its requested design-synthesis or review work."
+        },
+        "machineReady": {
+          "type": "boolean",
+          "description": "True only when returned candidates and artifacts are sufficient for downstream machine-ready release consideration."
+        },
+        "selectedCandidateId": {
+          "type": ["string", "null"],
+          "description": "Best candidate id selected by the worker, when one can be recommended."
+        },
+        "candidates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationDesignCandidate" },
+          "description": "Generated design candidates."
+        },
+        "artifacts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationGeneratedDesignArtifact" },
+          "description": "Generated design artifacts retained for downstream workers."
+        },
+        "blockers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationDesignSynthesisBlocker" },
+          "description": "Remaining blockers or new worker-discovered blockers."
+        },
+        "learningHints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationDesignLearningHint" },
+          "description": "Learning hints retained or emitted by the worker for outcome attribution."
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-blocking warnings that should be retained with the design evidence."
+        },
+        "reviewMetadata": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Free-form non-secret metadata such as model confidence, feature graph ids, policy names, cost estimates, simulation summaries, or human-review notes."
+        }
+      }
+    }
+  }
+}

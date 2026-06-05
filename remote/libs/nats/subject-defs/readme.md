@@ -187,6 +187,32 @@ use dd_nats_subject_defs::{
 `RUNTIME_CRITICAL_EVENTS_SUBJECT` is backed by `DD_REMOTE_CRITICAL_EVENTS_STREAM_NAME`; the
 queue-consumer deployment uses that durable stream to log/alert on compact critical runtime events.
 
+### Fabrication Machine Profiles
+
+Machine-profile workers consume printer, mill, lathe, router, sheet-cutter, postprocess, and
+inspection inventory requests from `FABRICATION_MACHINE_PROFILE_REQUESTS_SUBJECT`
+(`dd.remote.fabrication.machine.profiles.requests`) with queue group
+`FABRICATION_MACHINE_PROFILE_REQUESTS_QUEUE_GROUP`
+(`dd-fabrication-machine-profilers`). Workers publish capability snapshots, calibration state,
+tool/fixture readiness, material and process state, maintenance blockers, and release evidence on
+`FABRICATION_MACHINE_PROFILE_RESULTS_SUBJECT`
+(`dd.remote.fabrication.machine.profiles.results`). This gives design synthesis, instruction
+generation, simulation, and release readiness a typed source of current machine capability and
+setup evidence.
+
+### Fabrication Design Synthesis
+
+Design-synthesis workers consume fabrication intent, dimensions, constraints, parametric templates,
+native CAD references, and learning hints from `FABRICATION_DESIGN_SYNTHESIS_REQUESTS_SUBJECT`
+(`dd.remote.fabrication.design.synthesis.requests`) with queue group
+`FABRICATION_DESIGN_SYNTHESIS_REQUESTS_QUEUE_GROUP`
+(`dd-fabrication-design-synthesizers`). Workers publish generated design candidates, parametric
+source artifacts, manufacturability evidence, blockers, and review metadata on
+`FABRICATION_DESIGN_SYNTHESIS_RESULTS_SUBJECT`
+(`dd.remote.fabrication.design.synthesis.results`). This gives the Rust planner a typed lane for
+turning a requested object into CAD-ready candidates before conversion, CAM, slicing, or assembly
+decomposition.
+
 ### Fabrication CAD Conversion
 
 The fabrication planner publishes native CAD, mesh, slicer, CAM setup, and neutral-export conversion
@@ -213,6 +239,74 @@ evidence on `FABRICATION_INSTRUCTION_GENERATION_RESULTS_SUBJECT`
 machine-ready authority so generated G-code, NC programs, lathe cycles, setup sheets, and printer
 jobs can still surface simulation, workholding, material-conditioning, toolpath, or human-intervention
 blockers before release.
+
+### Fabrication Instruction Simulation
+
+Simulation workers consume generated or imported printer jobs, G-code, NC programs, lathe cycles,
+sheet-cutting files, setup sheets, and machine profiles from
+`FABRICATION_INSTRUCTION_SIMULATION_REQUESTS_SUBJECT`
+(`dd.remote.fabrication.instructions.simulation.requests`) with queue group
+`FABRICATION_INSTRUCTION_SIMULATION_REQUESTS_QUEUE_GROUP`
+(`dd-fabrication-instruction-simulators`). Workers publish machine-envelope checks, toolpath and
+process findings, failure boundaries, retained release blockers, and simulation artifacts on
+`FABRICATION_INSTRUCTION_SIMULATION_RESULTS_SUBJECT`
+(`dd.remote.fabrication.instructions.simulation.results`). This gives the planner a typed verification
+lane before release readiness for printer thermal/material state, CNC workholding and toolpath
+geometry, sheet-cutting support media, lathe part-off support, and human-intervention boundaries.
+
+### Fabrication Instruction Review
+
+Instruction-review workers consume imported controller programs, printer jobs, slicer projects,
+sheet-cutting files, setup sheets, and operator instructions from
+`FABRICATION_INSTRUCTION_REVIEW_REQUESTS_SUBJECT`
+(`dd.remote.fabrication.instructions.review.requests`) with queue group
+`FABRICATION_INSTRUCTION_REVIEW_REQUESTS_QUEUE_GROUP`
+(`dd-fabrication-instruction-reviewers`). Reviewers publish validation findings, improvement drafts,
+machine-failure boundaries, and remaining release blockers on
+`FABRICATION_INSTRUCTION_REVIEW_RESULTS_SUBJECT`
+(`dd.remote.fabrication.instructions.review.results`). This keeps submitted G-code, NC programs,
+lathe cycles, printer jobs, waterjet/laser/plasma files, setup sheets, and non-G-code shop
+instructions auditable before the planner accepts, improves, or releases them.
+
+### Fabrication Assembly Planning
+
+Hybrid assembly planners consume object intent, candidate source artifacts, machine capabilities,
+and process constraints from `FABRICATION_ASSEMBLY_PLANNING_REQUESTS_SUBJECT`
+(`dd.remote.fabrication.assembly.planning.requests`) with queue group
+`FABRICATION_ASSEMBLY_PLANNING_REQUESTS_QUEUE_GROUP`
+(`dd-fabrication-assembly-planners`). Workers publish part decomposition, combine/split decisions,
+join interfaces, process sequencing, MDP/POMDP learning-state hints, and remaining release blockers
+on `FABRICATION_ASSEMBLY_PLANNING_RESULTS_SUBJECT`
+(`dd.remote.fabrication.assembly.planning.results`). This gives the Rust planner a typed lane for
+deciding when one object should become several printed, milled, turned, sheet-cut, or postprocessed
+pieces, or when separate pieces should be combined before machine-ready release.
+
+### Fabrication Learning Outcomes
+
+Learning updaters consume completed job outcomes, machine observations, reward hints, failure
+boundaries, and human-intervention evidence from `FABRICATION_LEARNING_OUTCOME_REQUESTS_SUBJECT`
+(`dd.remote.fabrication.learning.outcomes.requests`) with queue group
+`FABRICATION_LEARNING_OUTCOME_REQUESTS_QUEUE_GROUP`
+(`dd-fabrication-learning-updaters`). MDP/POMDP, neural-policy, replay-buffer, reward-model, and
+failure-boundary workers publish accepted learning updates on
+`FABRICATION_LEARNING_OUTCOME_RESULTS_SUBJECT`
+(`dd.remote.fabrication.learning.outcomes.results`). This keeps outcome learning explicit and
+auditable: generated instructions, assembly plans, and operator interventions only become training
+signals after the planner records the observed result and retained boundaries.
+
+### Fabrication Release Readiness
+
+Release-readiness workers consume final evidence, machine gates, retained blockers, requested
+artifacts, and human-intervention state from `FABRICATION_RELEASE_READINESS_REQUESTS_SUBJECT`
+(`dd.remote.fabrication.release.readiness.requests`) with queue group
+`FABRICATION_RELEASE_READINESS_REQUESTS_QUEUE_GROUP`
+(`dd-fabrication-release-gates`). Workers publish machine-ready decisions, release manifests,
+required human interventions, and retained blockers on
+`FABRICATION_RELEASE_READINESS_RESULTS_SUBJECT`
+(`dd.remote.fabrication.release.readiness.results`). This keeps the Rust planner as the final
+machine-ready authority while giving machine-profile, design synthesis, CAD conversion, assembly
+planning, instruction generation, instruction simulation, instruction review, and learning workers a
+typed evidence bundle for the last release gate.
 
 ### Python
 

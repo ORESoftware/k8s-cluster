@@ -1,0 +1,161 @@
+{
+  "schema": "dd.fabrication.learning-outcome.request.v1",
+  "requestId": "learn-outcome-gearbox-001",
+  "planRequestId": "fab-plan-gearbox-001",
+  "jobId": "fab-job-gearbox-001",
+  "emittedAtMs": 1791168420000,
+  "producer": "dd-fabrication-server",
+  "resultSubject": "dd.remote.fabrication.learning.outcomes.results",
+  "outcomeStatus": "operator-intervention-required",
+  "selectedPlanId": "split-print-machine-insert-plan",
+  "sources": [
+    {
+      "refId": "split-print-machine-insert-plan",
+      "refKind": "assembly-plan",
+      "uri": "s3://operator-controlled-cad/gearbox/plans/split-print-machine-insert-plan.json",
+      "sha256": "8b8b08f25e7f78aa4f0f0d5f462156de7c74b0f9df99fa2b6cbe4704fd3131f0",
+      "evidence": [
+        "selected-plan",
+        "split-combine-decision-recorded",
+        "learning-signal-source"
+      ]
+    },
+    {
+      "refId": "printer-gcode-mk4-artifact",
+      "refKind": "instruction-artifact",
+      "uri": "s3://operator-controlled-cad/gearbox/instructions/gearbox-housing.mk4.gcode",
+      "sha256": "392bca561f4160cd3f85e82963d0f2b58ecb0d26840bce108323806cf48971f1",
+      "evidence": [
+        "slicer-profile-verified",
+        "temperature-state-verified"
+      ]
+    },
+    {
+      "refId": "mill-finish-bores-nc-artifact",
+      "refKind": "instruction-artifact",
+      "uri": "s3://operator-controlled-cad/gearbox/instructions/gearbox-bearing-bores.nc",
+      "sha256": "6ebd910ae3c0c1f21a95a3b33fe2aab9671432ccdf7a24438b4c9f60bfa43e1e",
+      "evidence": [
+        "toolpath-simulated",
+        "collision-check-passed",
+        "workholding-review-pending"
+      ]
+    },
+    {
+      "refId": "operator-fixture-photo-001",
+      "refKind": "operator-note",
+      "uri": "s3://operator-controlled-cad/gearbox/operator/fixture-photo-001.jpg",
+      "sha256": "4ff3a12cd2f223e7e23d932a74ad06a9da6d7728c3fbbf91fb64e0e2b883421b",
+      "evidence": [
+        "human-intervention-observed",
+        "fixture-confirmation-needed"
+      ]
+    }
+  ],
+  "observations": [
+    {
+      "observationId": "obs-print-shell-success",
+      "observationKind": "part-quality",
+      "machineId": "prusa-mk4-01",
+      "machineClass": "additive-fdm",
+      "operationId": "step-print-shell",
+      "partId": "printed-housing-shell",
+      "outcome": "success",
+      "metrics": [
+        "runtimeSec=18340",
+        "supportRemovalMin=18",
+        "visibleWarpMm=0.18"
+      ],
+      "notes": [
+        "Printed shell completed after nozzle and bed waits.",
+        "Support removal was manual but expected."
+      ]
+    },
+    {
+      "observationId": "obs-mill-fixture-boundary",
+      "observationKind": "operator-intervention",
+      "machineId": "haas-vf2-03",
+      "machineClass": "vertical-mill",
+      "operationId": "step-machine-insert",
+      "partId": "bearing-insert",
+      "outcome": "operator-intervention-required",
+      "metrics": [
+        "runtimeSec=0",
+        "cycleBlockedBeforeStart=true",
+        "fixturePhotoMissing=true"
+      ],
+      "notes": [
+        "Operator stopped before cycle start because clamp torque and G54 probe evidence were missing."
+      ]
+    }
+  ],
+  "failureBoundaries": [
+    {
+      "boundaryId": "boundary-mill-workholding-before-cycle",
+      "boundaryKind": "workholding",
+      "code": "workholding-release-required",
+      "message": "Mill program cannot be released before clamp torque, fixture photo, and G54 probe report are attached.",
+      "operationId": "step-machine-insert",
+      "partId": "bearing-insert",
+      "humanInterventionRequired": true,
+      "recommendedAction": "request-human-review",
+      "evidence": [
+        "operator-intervention-observed",
+        "machine-blocked-before-start",
+        "fixture-confirmation-needed"
+      ]
+    },
+    {
+      "boundaryId": "boundary-split-plan-reward",
+      "boundaryKind": "split-required",
+      "code": "split-bearing-insert-preferred",
+      "message": "Split plan reduced bearing bore risk compared with monolithic print-and-machine route, but adds datum-transfer review.",
+      "operationId": "step-final-assembly-inspection",
+      "partId": "bearing-insert",
+      "humanInterventionRequired": true,
+      "recommendedAction": "add-inspection-step",
+      "evidence": [
+        "split-combine-decision-recorded",
+        "datum-transfer-required"
+      ]
+    }
+  ],
+  "rewardSignals": [
+    {
+      "signalId": "reward-print-shell-success",
+      "signalKind": "reward",
+      "stateFeatures": [
+        "fdm-print",
+        "PETG",
+        "support-strategy-reviewed",
+        "visibleWarpMm=0.18"
+      ],
+      "action": "split-part",
+      "value": 0.35,
+      "confidence": 0.73,
+      "observations": [
+        "printed shell met visual quality threshold"
+      ]
+    },
+    {
+      "signalId": "penalty-workholding-missing",
+      "signalKind": "penalty",
+      "stateFeatures": [
+        "vertical-mill",
+        "workholding-review-pending",
+        "operator-intervention-required"
+      ],
+      "action": "request-human-review",
+      "value": -0.55,
+      "confidence": 0.91,
+      "observations": [
+        "cycle blocked before start due to missing fixture evidence"
+      ]
+    }
+  ],
+  "priority": 35,
+  "notes": [
+    "Use this outcome to reinforce workholding evidence before mill release.",
+    "Retain split-plan reward separately from machine-ready release outcome."
+  ]
+}

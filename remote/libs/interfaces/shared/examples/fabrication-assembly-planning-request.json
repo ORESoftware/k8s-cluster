@@ -1,0 +1,173 @@
+{
+  "schema": "dd.fabrication.assembly-planning.request.v1",
+  "requestId": "assembly-plan-gearbox-001",
+  "planRequestId": "fab-plan-gearbox-001",
+  "jobId": "fab-job-gearbox-001",
+  "emittedAtMs": 1791168240000,
+  "producer": "dd-fabrication-server",
+  "resultSubject": "dd.remote.fabrication.assembly.planning.results",
+  "objective": "Decide whether the gearbox housing should remain monolithic or split into printed, milled, turned, and postprocessed pieces before machine-code generation.",
+  "sourceArtifacts": [
+    {
+      "artifactId": "housing-step-mm-artifact",
+      "format": "STEP",
+      "uri": "s3://operator-controlled-cad/gearbox/exports/gearbox-housing.step",
+      "sha256": "32f0d363ed863d2b22e9da8e46f10f9cb1cdf0c2d90fed216a31184970ca3f2e",
+      "partIds": ["gearbox-housing"],
+      "evidence": [
+        "units-verified",
+        "configuration-verified",
+        "assembly-references-resolved",
+        "topology-exported"
+      ]
+    },
+    {
+      "artifactId": "housing-3mf-verified-artifact",
+      "format": "3MF",
+      "uri": "s3://operator-controlled-cad/gearbox/exports/gearbox-housing.verified.3mf",
+      "sha256": "c7a1dfef1b4c11cf6152237681fbfae8aa41f83d48d86e9a193bf6eb5f8ae3f9",
+      "partIds": ["gearbox-housing"],
+      "evidence": [
+        "mesh-manifold",
+        "wall-thickness-checked",
+        "support-strategy-reviewed",
+        "slicer-profile-verified"
+      ]
+    },
+    {
+      "artifactId": "gearbox-assembly-graph",
+      "format": "ASSEMBLY_GRAPH_JSON",
+      "uri": "s3://operator-controlled-cad/gearbox/exports/gearbox-assembly.graph.json",
+      "sha256": "e787eab5cfde56ad9d53d70dc8e2ea8b5df9d3dcfcbec157d94eeaf261fbfef1",
+      "partIds": ["gearbox-housing", "bearing-insert", "output-shaft"],
+      "evidence": [
+        "assembly-references-resolved",
+        "datum-graph-reviewed"
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "capabilityId": "prusa-mk4-fdm",
+      "machineClass": "additive-fdm",
+      "materials": ["PETG", "PC-CF", "PLA"],
+      "limits": [
+        "250x210x220mm build volume",
+        "requires support review for overhangs above 45 degrees",
+        "bearing bores require secondary machining"
+      ],
+      "requiredEvidence": [
+        "material-conditioning-verified",
+        "slicer-profile-release-approved"
+      ]
+    },
+    {
+      "capabilityId": "haas-vf2-mill",
+      "machineClass": "vertical-mill",
+      "materials": ["6061-T6 aluminum", "printed PETG secondary machining"],
+      "limits": [
+        "762x406x508mm travel",
+        "requires workholding review before finish bores",
+        "requires toolpath simulation before cycle start"
+      ],
+      "requiredEvidence": [
+        "workholding-reviewed",
+        "toolpath-simulated",
+        "stock-datum-verified"
+      ]
+    },
+    {
+      "capabilityId": "okuma-lathe",
+      "machineClass": "lathe",
+      "materials": ["4140 steel", "303 stainless", "6061-T6 aluminum"],
+      "limits": [
+        "65mm bar capacity",
+        "part-off requires catcher or subspindle evidence"
+      ],
+      "requiredEvidence": [
+        "workholding-reviewed",
+        "feed-per-rev-verified",
+        "partoff-support-verified"
+      ]
+    },
+    {
+      "capabilityId": "heat-set-insert-station",
+      "machineClass": "postprocess-station",
+      "materials": ["printed thermoplastics"],
+      "limits": [
+        "operator-loaded inserts",
+        "requires temperature and pullout verification"
+      ],
+      "requiredEvidence": [
+        "operator-intervention-boundary-marked",
+        "insert-pullout-tested"
+      ]
+    },
+    {
+      "capabilityId": "inspection-cmm",
+      "machineClass": "inspection",
+      "materials": ["assembled hybrid parts", "6061-T6 aluminum", "PETG", "4140 steel"],
+      "limits": [
+        "requires datum-transfer plan",
+        "requires operator-loaded fixture"
+      ],
+      "requiredEvidence": [
+        "inspection-datum-verified",
+        "operator-alignment-verified"
+      ]
+    }
+  ],
+  "candidateParts": [
+    {
+      "partId": "gearbox-housing-monolithic",
+      "parentPartId": "gearbox-housing",
+      "role": "monolithic printed and machined body",
+      "preferredProcess": "fdm-print-plus-vertical-mill",
+      "material": "PETG",
+      "sourceArtifactIds": [
+        "housing-step-mm-artifact",
+        "housing-3mf-verified-artifact"
+      ],
+      "rationale": "Baseline candidate keeps all features in one printed body and machines bearing bores afterward."
+    },
+    {
+      "partId": "bearing-insert",
+      "parentPartId": "gearbox-housing",
+      "role": "milled-insert",
+      "preferredProcess": "vertical-mill",
+      "material": "6061-T6 aluminum",
+      "sourceArtifactIds": ["housing-step-mm-artifact"],
+      "rationale": "Separates bearing bores into a stable aluminum insert to avoid machining deep precision bores in printed PETG."
+    },
+    {
+      "partId": "output-shaft",
+      "parentPartId": "gearbox-housing",
+      "role": "turned-shaft",
+      "preferredProcess": "lathe-turning",
+      "material": "4140 steel",
+      "sourceArtifactIds": ["gearbox-assembly-graph"],
+      "rationale": "Keeps concentric shaft geometry on the lathe and joins through bearing interfaces."
+    }
+  ],
+  "constraints": [
+    "Bearing bore true position must remain within 0.05mm.",
+    "Any split plan must include datum transfer and inspection evidence.",
+    "Human intervention boundaries must be explicit before assembly release.",
+    "Prefer plans that preserve learning attribution for split/combine decisions."
+  ],
+  "blockers": [
+    {
+      "code": "split-boundary-unverified",
+      "message": "Planner needs evidence for whether bearing bores should be printed then machined or split into a milled insert.",
+      "partId": "bearing-insert",
+      "interfaceId": null,
+      "stepId": null,
+      "machineReadyImpact": "blocks-machine-ready"
+    }
+  ],
+  "priority": 40,
+  "notes": [
+    "Return ranked candidates with process sequence and learning signals.",
+    "Do not mark machineReady until datum transfer, joint strength, and operator intervention boundaries are reviewed."
+  ]
+}

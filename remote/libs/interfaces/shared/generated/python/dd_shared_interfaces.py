@@ -49,6 +49,273 @@ class AgentTaskQueueMessage:
     # Unix epoch milliseconds when the producer created the envelope.
     createdAtMs: Optional[int] = None
 
+# A blocker discovered while splitting, combining, joining, sequencing, or learning from a hybrid fabrication plan.
+@dataclass
+class FabricationAssemblyBlocker:
+    """A blocker discovered while splitting, combining, joining, sequencing, or learning from a hybrid fabrication plan."""
+    # Stable blocker code, e.g. split-boundary-unverified, combine-before-release-required, separate-piece-required, joint-strength-verification-required, tolerance-stack-review-required, datum-transfer-required, human-intervention-required, or learning-outcome-required.
+    code: str
+    # Human-readable blocker summary safe for operator logs.
+    message: str
+    # Part id associated with this blocker when applicable.
+    partId: Optional[str] = None
+    # Join/interface id associated with this blocker when applicable.
+    interfaceId: Optional[str] = None
+    # Process step id associated with this blocker when applicable.
+    stepId: Optional[str] = None
+    # Effect on release posture, e.g. blocks-machine-ready, needs-operator-review, warning-only, or learning-only.
+    machineReadyImpact: Optional[str] = None
+
+# One proposed part, subpart, insert, fixture-dependent feature group, or subassembly in a hybrid fabrication plan.
+@dataclass
+class FabricationAssemblyCandidatePart:
+    """One proposed part, subpart, insert, fixture-dependent feature group, or subassembly in a hybrid fabrication plan."""
+    # Stable proposed part or subassembly id.
+    partId: str
+    # Design role such as printed-shell, milled-insert, turned-shaft, sheet-cover, fixture, support, sacrificial-tab, postprocess-feature, or final-assembly.
+    role: str
+    # Preferred process such as fdm-print, resin-print, vertical-mill, horizontal-mill, lathe-turning, sheet-cut, waterjet-cut, heat-set-inserts, bonding, pressing, fastening, inspection, or assembly.
+    preferredProcess: str
+    # Parent object or source part id when this candidate is split from a larger part.
+    parentPartId: Optional[str] = None
+    # Requested or proposed material for this part.
+    material: Optional[str] = None
+    # Source artifact ids used to derive this candidate part.
+    sourceArtifactIds: Optional[List[str]] = field(default_factory=list)
+    # Short reason this part should be separate, combined, printed, milled, turned, sheet-cut, or postprocessed.
+    rationale: Optional[str] = None
+
+# One join, datum, mating surface, press-fit, fastener pattern, adhesive joint, heat-set insert, weld, or operator alignment interface.
+@dataclass
+class FabricationAssemblyJoinInterface:
+    """One join, datum, mating surface, press-fit, fastener pattern, adhesive joint, heat-set insert, weld, or operator alignment interface."""
+    # Stable join/interface id.
+    interfaceId: str
+    # First part id in the interface.
+    fromPartId: str
+    # Second part id in the interface.
+    toPartId: str
+    # Join method such as fastener, heat-set-insert, press-fit, adhesive, weld, dovetail, alignment-pin, bearing-fit, slip-fit, operator-fixture, or inspect-only.
+    joinMethod: str
+    # Datum, tolerance, clearance, interference, or fit summary.
+    datumOrFit: Optional[str] = None
+    # Evidence required before this join can be released, such as tolerance-stack-reviewed, joint-strength-verified, operator-alignment-verified, adhesive-cure-verified, or inspection-datum-verified.
+    requiredEvidence: Optional[List[str]] = field(default_factory=list)
+
+# Compact MDP/POMDP or neural-learning hint emitted by an assembly worker for future outcome attribution.
+@dataclass
+class FabricationAssemblyLearningSignal:
+    """Compact MDP/POMDP or neural-learning hint emitted by an assembly worker for future outcome attribution."""
+    # Stable learning signal id.
+    signalId: str
+    # Learning signal kind such as mdp-state, pomdp-observation, policy-action, reward-hint, failure-boundary, split-combine-decision, or outcome-label.
+    signalKind: str
+    # Compact state features such as material-process mix, tolerance stack, machine class, join method, support removal, operator intervention, or failure boundary.
+    stateFeatures: Optional[List[str]] = field(default_factory=list)
+    # POMDP observations, uncertainty labels, sensor hints, or human-review observations.
+    observations: Optional[List[str]] = field(default_factory=list)
+    # Recommended policy action such as split-part, combine-parts, add-inspection-step, request-human-review, or reroute-process.
+    recommendedAction: Optional[str] = None
+    # Optional reward hint for policy learning.
+    rewardHint: Optional[float] = None
+
+# Available fabrication or postprocess capability that can be used when splitting or combining parts.
+@dataclass
+class FabricationAssemblyMachineCapability:
+    """Available fabrication or postprocess capability that can be used when splitting or combining parts."""
+    # Stable capability id, e.g. prusa-mk4-fdm, haas-vf2-mill, okuma-lathe, laser-sheet, heat-set-insert-station, or inspection-cmm.
+    capabilityId: str
+    # Machine or process class such as additive-fdm, additive-resin, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, plasma, postprocess-station, inspection, or assembly.
+    machineClass: str
+    # Material or stock families supported by this capability.
+    materials: Optional[List[str]] = field(default_factory=list)
+    # Human-readable limits such as build volume, travel, chuck diameter, sheet thickness, tolerance band, surface finish, or operator-only steps.
+    limits: Optional[List[str]] = field(default_factory=list)
+    # Evidence labels required before this capability can be included in a machine-ready plan.
+    requiredEvidence: Optional[List[str]] = field(default_factory=list)
+
+# One proposed hybrid assembly and process decomposition plan.
+@dataclass
+class FabricationAssemblyPlanCandidate:
+    """One proposed hybrid assembly and process decomposition plan."""
+    # Stable assembly-plan candidate id.
+    planId: str
+    # High-level strategy such as split-for-print-and-machine, combine-printed-shell-with-milled-inserts, separate-for-support-removal, merge-before-machining, or keep-monolithic.
+    strategy: str
+    # Planner or worker score for ranking candidates. Larger is better within one result envelope.
+    score: float
+    # Candidate parts and subassemblies in this plan.
+    parts: List['FabricationAssemblyCandidatePart']
+    # Join, datum, fit, fastener, or operator alignment interfaces in this plan.
+    interfaces: List['FabricationAssemblyJoinInterface']
+    # Ordered process sequence for this plan.
+    processSteps: List['FabricationAssemblyProcessStep']
+    # True only when this specific candidate has enough assembly evidence for machine-ready release consideration.
+    machineReady: Optional[bool] = None
+    # Candidate-specific blockers.
+    blockers: Optional[List['FabricationAssemblyBlocker']] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.assembly.planning.requests for hybrid assembly and process-decomposition workers.
+@dataclass
+class FabricationAssemblyPlanningRequest:
+    """Body published on dd.remote.fabrication.assembly.planning.requests for hybrid assembly and process-decomposition workers."""
+    # Envelope schema id. Producers should emit dd.fabrication.assembly-planning.request.v1.
+    schema: str
+    # Unique id for this assembly planning job, suitable for dedupe and result correlation.
+    requestId: str
+    # Fabrication planning request id that spawned this assembly planning job.
+    planRequestId: str
+    # Unix epoch milliseconds when the planner published this request.
+    emittedAtMs: int
+    # Human-readable fabrication objective, including whether the worker should split, combine, sequence, validate, or learn from candidate process plans.
+    objective: str
+    # Source artifacts available to the worker.
+    sourceArtifacts: List['FabricationAssemblySourceArtifact']
+    # Available fabrication, postprocess, inspection, and assembly capabilities.
+    capabilities: List['FabricationAssemblyMachineCapability']
+    # Initial part and subassembly candidates from the planner.
+    candidateParts: List['FabricationAssemblyCandidatePart']
+    # Optional fabrication job id when the planner has already persisted one.
+    jobId: Optional[str] = None
+    # Producer service instance or deployment name.
+    producer: Optional[str] = None
+    # Subject workers should publish the result to; defaults to dd.remote.fabrication.assembly.planning.results.
+    resultSubject: Optional[str] = None
+    # Design, tolerance, material, machine, schedule, cost, learning, or operator constraints.
+    constraints: Optional[List[str]] = field(default_factory=list)
+    # Planner-known blockers that workers may clear by returning split/combine plans, joins, process sequences, or learning evidence.
+    blockers: Optional[List['FabricationAssemblyBlocker']] = field(default_factory=list)
+    # Optional scheduling hint. Higher values mean more urgent assembly planning work.
+    priority: Optional[int] = None
+    # Non-secret planning notes for the worker.
+    notes: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.assembly.planning.results with hybrid part decomposition, combine/split decisions, joins, process sequence, learning hints, blockers, and machine-ready posture.
+@dataclass
+class FabricationAssemblyPlanningResult:
+    """Body published on dd.remote.fabrication.assembly.planning.results with hybrid part decomposition, combine/split decisions, joins, process sequence, learning hints, blockers, and machine-ready posture."""
+    # Envelope schema id. Workers should emit dd.fabrication.assembly-planning.result.v1.
+    schema: str
+    # Assembly planning request id this result answers.
+    requestId: str
+    # Fabrication planning request id from the original assembly planning job.
+    planRequestId: str
+    # Unix epoch milliseconds when the worker published this result.
+    emittedAtMs: int
+    # Worker id, pod name, or adapter instance that produced this result.
+    workerId: str
+    # True when the worker completed its requested assembly planning or review work.
+    success: bool
+    # True only when returned candidates and evidence are sufficient for the planner to consider the assembly lane releasable.
+    machineReady: bool
+    # Generated hybrid assembly and process decomposition candidates.
+    candidates: List['FabricationAssemblyPlanCandidate']
+    # Optional persisted fabrication job id from the original request.
+    jobId: Optional[str] = None
+    # Assembly planner, optimizer, policy model, or adapter used.
+    planner: Optional[str] = None
+    # Planner or model version used for repeatability and learning attribution.
+    plannerVersion: Optional[str] = None
+    # Best candidate id selected by the worker, when one can be recommended.
+    selectedPlanId: Optional[str] = None
+    # Compact MDP/POMDP/neural-learning hints retained for outcome attribution.
+    learningSignals: Optional[List['FabricationAssemblyLearningSignal']] = field(default_factory=list)
+    # Remaining blockers or new worker-discovered blockers.
+    blockers: Optional[List['FabricationAssemblyBlocker']] = field(default_factory=list)
+    # Non-blocking warnings that should be retained with the assembly evidence.
+    warnings: Optional[List[str]] = field(default_factory=list)
+    # Free-form non-secret metadata such as model confidence, process graph ids, policy names, cost estimates, tolerance-stack summaries, or operator-review notes.
+    reviewMetadata: Optional[Any] = None
+
+# One generated operation, inspection, postprocess, or assembly sequencing step proposed by an assembly planner.
+@dataclass
+class FabricationAssemblyProcessStep:
+    """One generated operation, inspection, postprocess, or assembly sequencing step proposed by an assembly planner."""
+    # Stable process step id.
+    stepId: str
+    # Process order within the plan candidate.
+    sequence: int
+    # Process label such as fdm-print, vertical-mill, lathe-turning, sheet-cut, deburr, heat-set-inserts, adhesive-cure, inspection, or final-assembly.
+    process: str
+    # Part ids affected by this step.
+    partIds: Optional[List[str]] = field(default_factory=list)
+    # Capability id used by this step when known.
+    capabilityId: Optional[str] = None
+    # Human action, handoff, setup, fixture, measurement, or approval needed at this step.
+    operatorIntervention: Optional[str] = None
+    # Instruction-generation targets or artifact labels expected from this step.
+    outputArtifactTargets: Optional[List[str]] = field(default_factory=list)
+
+# Verified source artifact that can drive part splitting, joining, assembly graph generation, process sequencing, or learning-state updates.
+@dataclass
+class FabricationAssemblySourceArtifact:
+    """Verified source artifact that can drive part splitting, joining, assembly graph generation, process sequencing, or learning-state updates."""
+    # Stable artifact id retained by the planner, usually from CAD conversion or instruction generation.
+    artifactId: str
+    # Artifact format such as STEP, STL, 3MF, DXF, ASSEMBLY_GRAPH_JSON, CAM_SETUP_JSON, SHEET_NESTING_JSON, GCODE, NC, SETUP_SHEET_MD, or INSPECTION_PLAN_JSON.
+    format: str
+    # Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments.
+    uri: Optional[str] = None
+    # SHA-256 of the source artifact when available.
+    sha256: Optional[str] = None
+    # Part or subassembly ids represented by this artifact.
+    partIds: Optional[List[str]] = field(default_factory=list)
+    # Evidence labels already attached to this artifact, such as units-verified, mesh-manifold, cam-setup-reviewed, toolpath-simulated, or inspection-plan-reviewed.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# One generated design candidate and its recommended downstream manufacturing posture.
+@dataclass
+class FabricationDesignCandidate:
+    """One generated design candidate and its recommended downstream manufacturing posture."""
+    # Stable candidate id.
+    candidateId: str
+    # Candidate kind such as monolithic-print, split-print-and-machine, machined-insert, turned-component, sheet-cut-assembly, fixture-assisted, or parametric-variant.
+    candidateKind: str
+    # Short candidate title for review.
+    title: str
+    # Worker score for ranking candidates. Larger is better within one result envelope.
+    score: float
+    # Recommended manufacturing strategy for this candidate.
+    manufacturingStrategy: str
+    # True only when this candidate has enough design evidence for downstream conversion/release consideration.
+    machineReady: Optional[bool] = None
+    # Generated artifact ids that describe this candidate.
+    artifactIds: Optional[List[str]] = field(default_factory=list)
+    # Constraint ids this candidate claims to satisfy.
+    clearedConstraintIds: Optional[List[str]] = field(default_factory=list)
+    # Candidate-specific blockers or review requirements.
+    retainedBlockers: Optional[List['FabricationDesignSynthesisBlocker']] = field(default_factory=list)
+
+# Design, translation, simulation, manufacturing, or inspection capability available while synthesizing candidates.
+@dataclass
+class FabricationDesignCapability:
+    """Design, translation, simulation, manufacturing, or inspection capability available while synthesizing candidates."""
+    # Stable capability id.
+    capabilityId: str
+    # Capability kind such as cad-kernel, mesh-repair, topology-optimization, generative-design, slicer-preview, cam-preview, simulation, machine-process, inspection, or learning-policy.
+    capabilityKind: str
+    # Source or output formats supported by this capability.
+    supportedFormats: Optional[List[str]] = field(default_factory=list)
+    # Machine classes this capability can target.
+    machineClasses: Optional[List[str]] = field(default_factory=list)
+    # Limits such as build volume, axis travel, tolerance band, surface finish, stock envelope, or operator-only steps.
+    limits: Optional[List[str]] = field(default_factory=list)
+
+# Constraint or evidence requirement the worker must satisfy or retain as a blocker.
+@dataclass
+class FabricationDesignConstraint:
+    """Constraint or evidence requirement the worker must satisfy or retain as a blocker."""
+    # Stable constraint id.
+    constraintId: str
+    # Constraint kind such as dimensional, material, process, tolerance, strength, thermal, assembly, support-removal, stock-envelope, machine-envelope, postprocess, inspection, learning, or human-review.
+    constraintKind: str
+    # Human-readable non-secret constraint summary.
+    description: str
+    # Severity such as blocker, high, medium, low, warning, or info.
+    severity: str
+    # Evidence labels or ids required to clear this constraint.
+    evidenceRequired: Optional[List[str]] = field(default_factory=list)
+
 # A release or conversion blocker reported by a planner or worker.
 @dataclass
 class FabricationDesignConversionBlocker:
@@ -168,6 +435,188 @@ class FabricationDesignInputRef:
     # Optional SHA-256 of the referenced source object when the producer has already resolved the content.
     sourceSha256: Optional[str] = None
 
+# The object, function, dimensions, material preferences, and manufacturing posture a design-synthesis worker should satisfy.
+@dataclass
+class FabricationDesignIntent:
+    """The object, function, dimensions, material preferences, and manufacturing posture a design-synthesis worker should satisfy."""
+    # Stable intent id from the planner request.
+    intentId: str
+    # Operator-facing object or assembly name.
+    objectName: str
+    # Design objective such as generate-new-part, modify-existing-cad, parametric-variant, fixture-design, replacement-part, assembly-decomposition, or manufacturability-redesign.
+    objective: str
+    # Functional requirements, loads, fits, interfaces, aesthetics, assembly goals, or service constraints.
+    functionalRequirements: Optional[List[str]] = field(default_factory=list)
+    # Dimensional constraints such as envelope, wall thickness, shaft spacing, hole pattern, tolerance, clearance, stock size, or build-volume limits.
+    dimensionalConstraints: Optional[List[str]] = field(default_factory=list)
+    # Preferred material or stock families.
+    materialPreferences: Optional[List[str]] = field(default_factory=list)
+    # Preferred processes or constraints such as fdm-print, resin-print, vertical-mill, horizontal-mill, lathe, router, waterjet, laser, plasma, postprocess, inspection, or assembly.
+    manufacturingPreferences: Optional[List[str]] = field(default_factory=list)
+
+# Compact MDP/POMDP/neural-policy hint available during design synthesis.
+@dataclass
+class FabricationDesignLearningHint:
+    """Compact MDP/POMDP/neural-policy hint available during design synthesis."""
+    # Stable learning hint id.
+    hintId: str
+    # Hint kind such as mdp-state, pomdp-belief, policy-action, reward-prior, failure-boundary-memory, prior-success, or prior-failure.
+    hintKind: str
+    # Compact state, observation, reward, or boundary features.
+    features: Optional[List[str]] = field(default_factory=list)
+    # Recommended policy action such as split-part, thicken-wall, add-insert, avoid-supports, add-fixture, or request-human-review.
+    recommendedAction: Optional[str] = None
+    # Optional confidence for the hint.
+    confidence: Optional[float] = None
+
+# Existing CAD, mesh, drawing, scan, slicer, CAM, job-sheet, image, measurement, or text reference available to a design-synthesis worker.
+@dataclass
+class FabricationDesignReference:
+    """Existing CAD, mesh, drawing, scan, slicer, CAM, job-sheet, image, measurement, or text reference available to a design-synthesis worker."""
+    # Stable reference id.
+    refId: str
+    # Reference kind such as native-cad, neutral-cad, mesh, drawing, scan, slicer-project, cam-setup, machine-log, inspection-report, operator-note, or exemplar-part.
+    refKind: str
+    # Reference format such as SOLIDWORKS, CREO, PROE, FUSION, NX, CATIA, ONSHAPE, FREECAD, OPENSCAD, BLENDER, ZBRUSH, STEP, IGES, STL, 3MF, OBJ, DXF, SVG, PDF, JSON, TXT, or SHOP_TEXT.
+    format: str
+    # Sanitized source URI or object key. Do not include credentials, query strings, or fragments.
+    uri: Optional[str] = None
+    # SHA-256 of the reference artifact when available.
+    sha256: Optional[str] = None
+    # Evidence labels already attached to this reference, such as units-verified, native-source-authorized, mesh-manifold, scan-scaled, drawing-reviewed, or operator-measured.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# A blocker discovered while generating or selecting a design candidate.
+@dataclass
+class FabricationDesignSynthesisBlocker:
+    """A blocker discovered while generating or selecting a design candidate."""
+    # Stable blocker code such as missing-critical-dimension, native-source-review-required, strength-analysis-required, tolerance-stack-required, support-removal-risk, stock-envelope-risk, machine-envelope-risk, assembly-split-required, or human-review-required.
+    code: str
+    # Human-readable blocker summary safe for logs.
+    message: str
+    # Candidate id associated with this blocker when applicable.
+    candidateId: Optional[str] = None
+    # Constraint id associated with this blocker when applicable.
+    constraintId: Optional[str] = None
+    # Effect on downstream release posture, e.g. blocks-design-release, needs-operator-review, warning-only, conversion-only, or learning-only.
+    machineReadyImpact: Optional[str] = None
+
+# Body published on dd.remote.fabrication.design.synthesis.requests for design-generation workers.
+@dataclass
+class FabricationDesignSynthesisRequest:
+    """Body published on dd.remote.fabrication.design.synthesis.requests for design-generation workers."""
+    # Envelope schema id. Producers should emit dd.fabrication.design-synthesis.request.v1.
+    schema: str
+    # Unique id for this design-synthesis job, suitable for dedupe and result correlation.
+    requestId: str
+    # Fabrication planning request id that spawned this design-synthesis job.
+    planRequestId: str
+    # Unix epoch milliseconds when the planner published this request.
+    emittedAtMs: int
+    # Requested object intent and design requirements.
+    intent: 'FabricationDesignIntent'
+    # Source references available to the worker.
+    references: List['FabricationDesignReference']
+    # Design, conversion, manufacturing, inspection, and learning capabilities available for synthesis.
+    capabilities: List['FabricationDesignCapability']
+    # Constraints and evidence requirements the worker must satisfy or retain.
+    constraints: List['FabricationDesignConstraint']
+    # Requested output formats for downstream conversion, assembly planning, slicing, CAM, or review.
+    targetFormats: List[str]
+    # Optional fabrication job id when the planner has already persisted one.
+    jobId: Optional[str] = None
+    # Producer service instance or deployment name.
+    producer: Optional[str] = None
+    # Subject workers should publish the result to; defaults to dd.remote.fabrication.design.synthesis.results.
+    resultSubject: Optional[str] = None
+    # Parametric or procedural templates available to the worker.
+    templates: Optional[List['FabricationDesignTemplate']] = field(default_factory=list)
+    # Learning hints from MDP/POMDP/neural/reward/failure-boundary memory.
+    learningHints: Optional[List['FabricationDesignLearningHint']] = field(default_factory=list)
+    # Planner-known blockers that workers may clear by returning generated candidates or evidence.
+    blockers: Optional[List['FabricationDesignSynthesisBlocker']] = field(default_factory=list)
+    # Optional scheduling hint. Higher values mean more urgent design-synthesis work.
+    priority: Optional[int] = None
+    # Non-secret planning notes for the worker.
+    notes: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.design.synthesis.results with generated design candidates, artifacts, blockers, and downstream readiness evidence.
+@dataclass
+class FabricationDesignSynthesisResult:
+    """Body published on dd.remote.fabrication.design.synthesis.results with generated design candidates, artifacts, blockers, and downstream readiness evidence."""
+    # Envelope schema id. Workers should emit dd.fabrication.design-synthesis.result.v1.
+    schema: str
+    # Design-synthesis request id this result answers.
+    requestId: str
+    # Fabrication planning request id from the original design-synthesis job.
+    planRequestId: str
+    # Unix epoch milliseconds when the worker published this result.
+    emittedAtMs: int
+    # Worker id, pod name, or adapter instance that produced this result.
+    workerId: str
+    # True when the worker completed its requested design-synthesis or review work.
+    success: bool
+    # True only when returned candidates and artifacts are sufficient for downstream machine-ready release consideration.
+    machineReady: bool
+    # Generated design candidates.
+    candidates: List['FabricationDesignCandidate']
+    # Generated design artifacts retained for downstream workers.
+    artifacts: List['FabricationGeneratedDesignArtifact']
+    # Optional persisted fabrication job id from the original request.
+    jobId: Optional[str] = None
+    # Design synthesizer, CAD kernel, policy, or adapter used.
+    synthesizer: Optional[str] = None
+    # Synthesizer or model version used for repeatability and audit.
+    synthesizerVersion: Optional[str] = None
+    # Best candidate id selected by the worker, when one can be recommended.
+    selectedCandidateId: Optional[str] = None
+    # Remaining blockers or new worker-discovered blockers.
+    blockers: Optional[List['FabricationDesignSynthesisBlocker']] = field(default_factory=list)
+    # Learning hints retained or emitted by the worker for outcome attribution.
+    learningHints: Optional[List['FabricationDesignLearningHint']] = field(default_factory=list)
+    # Non-blocking warnings that should be retained with the design evidence.
+    warnings: Optional[List[str]] = field(default_factory=list)
+    # Free-form non-secret metadata such as model confidence, feature graph ids, policy names, cost estimates, simulation summaries, or human-review notes.
+    reviewMetadata: Optional[Any] = None
+
+# Parametric or procedural design template a worker may instantiate or adapt.
+@dataclass
+class FabricationDesignTemplate:
+    """Parametric or procedural design template a worker may instantiate or adapt."""
+    # Stable template id.
+    templateId: str
+    # Template kind such as openscad-module, freecad-macro, cadquery-script, fusion-script, feature-template, lattice-template, fixture-template, or assembly-pattern.
+    templateKind: str
+    # Template source format such as OPENSCAD, PYTHON, FREECAD, FUSION_SCRIPT, JSON, YAML, or CADQUERY.
+    sourceFormat: str
+    # Sanitized template URI or object key.
+    uri: Optional[str] = None
+    # Parameter labels or key=value defaults the worker may tune.
+    parameters: Optional[List[str]] = field(default_factory=list)
+    # Template evidence such as reviewed-source, unit-tested, manufacturability-reviewed, or known-good-prior.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# Generated design artifact retained by a synthesis worker for later CAD conversion, assembly planning, instruction generation, inspection, or review.
+@dataclass
+class FabricationGeneratedDesignArtifact:
+    """Generated design artifact retained by a synthesis worker for later CAD conversion, assembly planning, instruction generation, inspection, or review."""
+    # Stable generated artifact id.
+    artifactId: str
+    # Candidate id that produced this artifact.
+    candidateId: str
+    # Artifact kind such as parametric-source, native-cad, neutral-cad, mesh, assembly-graph, drawing, simulation-summary, inspection-plan, or manufacturability-report.
+    artifactKind: str
+    # Artifact format such as OPENSCAD, FREECAD, CADQUERY, STEP, IGES, STL, 3MF, OBJ, DXF, JSON, PDF, MD, or TXT.
+    format: str
+    # Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments.
+    uri: Optional[str] = None
+    # SHA-256 of the generated artifact when available.
+    sha256: Optional[str] = None
+    # Design units when applicable.
+    units: Optional[str] = None
+    # Evidence labels attached to this artifact, such as units-verified, parametric-source-retained, neutral-export-ready, mesh-manifold, assembly-graph-generated, or manufacturability-reviewed.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
 # Generated machine code, setup sheet, inspection plan, simulation report, postprocess plan, or operator instruction returned by a worker.
 @dataclass
 class FabricationGeneratedInstructionArtifact:
@@ -213,6 +662,29 @@ class FabricationInstructionBlocker:
     machineId: Optional[str] = None
     # Effect on release posture, e.g. blocks-machine-ready, needs-operator-review, warning-only, or can-run-with-supervision.
     machineReadyImpact: Optional[str] = None
+
+# A boundary where submitted instructions may fail, pause, require human intervention, require splitting/combining, or need extra machine/setup evidence.
+@dataclass
+class FabricationInstructionFailureBoundary:
+    """A boundary where submitted instructions may fail, pause, require human intervention, require splitting/combining, or need extra machine/setup evidence."""
+    # Stable boundary id.
+    boundaryId: str
+    # Boundary kind such as human-intervention, controller-state, modal-state, thermal-state, workholding, toolpath, sheet-support, material-conditioning, split-required, combine-required, inspection, or postprocess.
+    boundaryKind: str
+    # Stable boundary code.
+    code: str
+    # Human-readable boundary summary safe for logs.
+    message: str
+    # Instruction id associated with this boundary.
+    instructionId: Optional[str] = None
+    # Line, block, section, or instruction reference. Avoid embedding full source programs.
+    lineRef: Optional[str] = None
+    # True when the boundary requires explicit human action or review.
+    humanInterventionRequired: Optional[bool] = None
+    # Recommended action such as add-evidence, request-human-review, stop-before-cycle, rehome, reheat, split-program, combine-parts, reroute-process, or reject-program.
+    recommendedAction: Optional[str] = None
+    # Evidence labels supporting this boundary.
+    evidence: Optional[List[str]] = field(default_factory=list)
 
 # Body published on dd.remote.fabrication.instructions.generation.requests for slicer, CAM, postprocess, setup-sheet, inspection, and machine-code workers.
 @dataclass
@@ -297,6 +769,27 @@ class FabricationInstructionGenerationTarget:
     # Evidence labels that must be returned before the planner can consider this instruction artifact releasable.
     evidenceRequired: Optional[List[str]] = field(default_factory=list)
 
+# A proposed safe improvement, patch, rewrite, split, or operator instruction change for submitted instructions.
+@dataclass
+class FabricationInstructionImprovementDraft:
+    """A proposed safe improvement, patch, rewrite, split, or operator instruction change for submitted instructions."""
+    # Stable improvement draft id.
+    draftId: str
+    # Instruction id this draft improves.
+    instructionId: str
+    # Draft kind such as add-modal-reset, add-temperature-wait, add-workholding-check, add-tool-change-stop, split-program, combine-setup, add-inspection-step, add-operator-pause, or reject-with-reason.
+    draftKind: str
+    # Human-readable improvement summary.
+    summary: str
+    # Sanitized URI for a retained patch or rewritten artifact when available.
+    patchUri: Optional[str] = None
+    # Short sanitized preview lines for the proposed change. Do not include full programs here.
+    previewLines: Optional[List[str]] = field(default_factory=list)
+    # True when the improvement draft needs explicit human approval before planner release.
+    requiresHumanApproval: Optional[bool] = None
+    # Evidence labels supporting this improvement draft.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
 # Machine, controller, slicer, or postprocessor profile requested for instruction generation.
 @dataclass
 class FabricationInstructionMachineProfile:
@@ -335,6 +828,176 @@ class FabricationInstructionOperation:
     # Operation-specific release requirements such as verified workholding, tool list, coolant, material conditioning, support media, simulation, inspection datum, or operator resume evidence.
     requirements: Optional[List[str]] = field(default_factory=list)
 
+# One validation finding, warning, risk, or informational note from a submitted instruction review.
+@dataclass
+class FabricationInstructionReviewFinding:
+    """One validation finding, warning, risk, or informational note from a submitted instruction review."""
+    # Stable finding id.
+    findingId: str
+    # Severity such as info, warning, error, blocker, or critical.
+    severity: str
+    # Stable finding code, e.g. arc-plane-missing, cutter-comp-uncancelled, spindle-start-missing-speed, extrusion-after-cooldown, workholding-evidence-missing, support-media-stopped, or operator-pause-unresolved.
+    code: str
+    # Human-readable finding summary safe for logs.
+    message: str
+    # Instruction id associated with this finding.
+    instructionId: Optional[str] = None
+    # Review scope id associated with this finding.
+    scopeId: Optional[str] = None
+    # Line, block, section, or instruction reference. Avoid embedding full source programs.
+    lineRef: Optional[str] = None
+    # Effect on release posture, e.g. blocks-machine-ready, needs-operator-review, warning-only, improvement-only, or informational.
+    machineReadyImpact: Optional[str] = None
+    # Evidence labels supporting this finding.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.instructions.review.requests for workers that validate and improve imported fabrication instructions.
+@dataclass
+class FabricationInstructionReviewRequest:
+    """Body published on dd.remote.fabrication.instructions.review.requests for workers that validate and improve imported fabrication instructions."""
+    # Envelope schema id. Producers should emit dd.fabrication.instruction-review.request.v1.
+    schema: str
+    # Unique id for this instruction review job, suitable for dedupe and result correlation.
+    requestId: str
+    # Fabrication planning request id that spawned this review job.
+    planRequestId: str
+    # Unix epoch milliseconds when the planner published this review request.
+    emittedAtMs: int
+    # Submitted fabrication instruction artifacts or snippets to review.
+    instructions: List['FabricationSubmittedInstruction']
+    # Requested validation, boundary, and improvement scopes.
+    reviewScopes: List['FabricationInstructionReviewScope']
+    # Optional fabrication job id when the planner has already persisted one.
+    jobId: Optional[str] = None
+    # Producer service instance or deployment name.
+    producer: Optional[str] = None
+    # Subject workers should publish the result to; defaults to dd.remote.fabrication.instructions.review.results.
+    resultSubject: Optional[str] = None
+    # Evidence labels the planner already has before review.
+    knownEvidence: Optional[List[str]] = field(default_factory=list)
+    # Optional scheduling hint. Higher values mean more urgent instruction review work.
+    priority: Optional[int] = None
+    # Non-secret review notes.
+    notes: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.instructions.review.results with validation findings, failure boundaries, improvement drafts, warnings, and release posture.
+@dataclass
+class FabricationInstructionReviewResult:
+    """Body published on dd.remote.fabrication.instructions.review.results with validation findings, failure boundaries, improvement drafts, warnings, and release posture."""
+    # Envelope schema id. Workers should emit dd.fabrication.instruction-review.result.v1.
+    schema: str
+    # Instruction review request id this result answers.
+    requestId: str
+    # Fabrication planning request id from the original instruction review request.
+    planRequestId: str
+    # Unix epoch milliseconds when the review worker published this result.
+    emittedAtMs: int
+    # Worker id, pod name, or adapter instance that produced this result.
+    workerId: str
+    # True when the worker completed the requested review work.
+    success: bool
+    # True only when submitted instructions and evidence are sufficient for the planner to consider release.
+    machineReady: bool
+    # Validation findings emitted by the review worker.
+    findings: List['FabricationInstructionReviewFinding']
+    # Optional persisted fabrication job id from the original request.
+    jobId: Optional[str] = None
+    # Reviewer, analyzer, simulator, parser, postprocessor, or adapter used.
+    reviewer: Optional[str] = None
+    # Reviewer or adapter version used for repeatability and audit.
+    reviewerVersion: Optional[str] = None
+    # Machine-failure and human-intervention boundaries found in submitted instructions.
+    failureBoundaries: Optional[List['FabricationInstructionFailureBoundary']] = field(default_factory=list)
+    # Proposed safe improvements, patches, rewrites, splits, combines, or operator instructions.
+    improvementDrafts: Optional[List['FabricationInstructionImprovementDraft']] = field(default_factory=list)
+    # Non-blocking warnings that should be retained with review evidence.
+    warnings: Optional[List[str]] = field(default_factory=list)
+    # Free-form non-secret metadata such as parser dialect, simulator id, modal summary, machine profile, or review confidence.
+    reviewMetadata: Optional[Any] = None
+
+# Review scope requested for one submitted instruction.
+@dataclass
+class FabricationInstructionReviewScope:
+    """Review scope requested for one submitted instruction."""
+    # Stable review scope id.
+    scopeId: str
+    # Submitted instruction id this scope reviews.
+    instructionId: str
+    # Review kind such as syntax, modal-state, machine-envelope, material-state, thermal-state, workholding, toolpath, arc-geometry, cutter-comp, tool-change, setup-sheet, postprocess, human-intervention-boundaries, improvement-draft, or release-readiness.
+    reviewKind: str
+    # Machine id or profile id to review against when known.
+    machineId: Optional[str] = None
+    # Evidence labels required before the planner can accept this review scope for release.
+    requiredEvidence: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.instructions.simulation.requests for simulation and verification workers.
+@dataclass
+class FabricationInstructionSimulationRequest:
+    """Body published on dd.remote.fabrication.instructions.simulation.requests for simulation and verification workers."""
+    # Envelope schema id. Producers should emit dd.fabrication.instruction-simulation.request.v1.
+    schema: str
+    # Unique id for this simulation job, suitable for dedupe and result correlation.
+    requestId: str
+    # Fabrication planning request id that spawned this simulation job.
+    planRequestId: str
+    # Unix epoch milliseconds when the planner published this request.
+    emittedAtMs: int
+    # Instruction artifacts that need simulation or verification.
+    instructions: List['FabricationSimulationInstructionArtifact']
+    # Machine contexts available for simulation.
+    machineContexts: List['FabricationSimulationMachineContext']
+    # Requested simulation and verification scopes.
+    scopes: List['FabricationSimulationScope']
+    # Optional fabrication job id when the planner has already persisted one.
+    jobId: Optional[str] = None
+    # Producer service instance or deployment name.
+    producer: Optional[str] = None
+    # Subject workers should publish the result to; defaults to dd.remote.fabrication.instructions.simulation.results.
+    resultSubject: Optional[str] = None
+    # Evidence labels the planner already has before simulation.
+    knownEvidence: Optional[List[str]] = field(default_factory=list)
+    # Optional scheduling hint. Higher values mean more urgent simulation work.
+    priority: Optional[int] = None
+    # Non-secret simulation notes.
+    notes: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.instructions.simulation.results with envelope checks, findings, failure boundaries, simulation artifacts, warnings, and release posture.
+@dataclass
+class FabricationInstructionSimulationResult:
+    """Body published on dd.remote.fabrication.instructions.simulation.results with envelope checks, findings, failure boundaries, simulation artifacts, warnings, and release posture."""
+    # Envelope schema id. Workers should emit dd.fabrication.instruction-simulation.result.v1.
+    schema: str
+    # Instruction simulation request id this result answers.
+    requestId: str
+    # Fabrication planning request id from the original simulation request.
+    planRequestId: str
+    # Unix epoch milliseconds when the simulation worker published this result.
+    emittedAtMs: int
+    # Worker id, pod name, or adapter instance that produced this result.
+    workerId: str
+    # True when the worker completed the requested simulation or verification work.
+    success: bool
+    # True only when simulated instructions and retained evidence are sufficient for release readiness.
+    machineReady: bool
+    # Machine, build, travel, stock, fixture, and process envelope checks.
+    envelopeChecks: List['FabricationSimulationEnvelopeCheck']
+    # Simulation findings emitted by the worker.
+    findings: List['FabricationSimulationFinding']
+    # Machine-failure and human-intervention boundaries found during simulation.
+    failureBoundaries: List['FabricationSimulationFailureBoundary']
+    # Simulation artifacts retained for release readiness, review, or learning.
+    artifacts: List['FabricationSimulationArtifact']
+    # Optional persisted fabrication job id from the original request.
+    jobId: Optional[str] = None
+    # Simulator, dry-run adapter, parser, controller model, or verification engine used.
+    simulator: Optional[str] = None
+    # Simulator or adapter version used for repeatability and audit.
+    simulatorVersion: Optional[str] = None
+    # Non-blocking warnings that should be retained with simulation evidence.
+    warnings: Optional[List[str]] = field(default_factory=list)
+    # Free-form non-secret metadata such as simulator profile, controller dialect, machine profile, sampled segments, confidence, or dry-run summary.
+    reviewMetadata: Optional[Any] = None
+
 # Verified geometry, slicer project, CAM setup, sheet nesting, mesh report, or assembly graph artifact that an instruction-generation worker can consume.
 @dataclass
 class FabricationInstructionSourceArtifact:
@@ -352,6 +1015,380 @@ class FabricationInstructionSourceArtifact:
     # Artifact units when known.
     units: Optional[str] = None
     # Evidence labels already attached to this artifact, such as units-verified, mesh-manifold, profile-closed, cam-setup-reviewed, or slicer-profile-verified.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# Observed or retained boundary where the machine could not complete without human intervention, process split/combine change, extra evidence, or rework.
+@dataclass
+class FabricationLearningFailureBoundary:
+    """Observed or retained boundary where the machine could not complete without human intervention, process split/combine change, extra evidence, or rework."""
+    # Stable failure-boundary id.
+    boundaryId: str
+    # Boundary kind such as human-intervention, split-required, combine-required, workholding, material-conditioning, thermal-state, toolpath, postprocess, inspection, assembly-fit, or controller-state.
+    boundaryKind: str
+    # Stable boundary code.
+    code: str
+    # Human-readable boundary summary safe for logs.
+    message: str
+    # Operation id associated with this boundary when known.
+    operationId: Optional[str] = None
+    # Part id associated with this boundary when known.
+    partId: Optional[str] = None
+    # True when the boundary required explicit human action or review.
+    humanInterventionRequired: Optional[bool] = None
+    # Recommended action such as split-part, combine-parts, add-inspection-step, reroute-process, request-human-review, retry-with-new-setup, or mark-scrap.
+    recommendedAction: Optional[str] = None
+    # Evidence labels supporting this boundary.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# Accepted or rejected model, policy, replay, memory, or boundary update returned by a learning worker.
+@dataclass
+class FabricationLearningModelUpdate:
+    """Accepted or rejected model, policy, replay, memory, or boundary update returned by a learning worker."""
+    # Stable update id.
+    updateId: str
+    # Model kind such as mdp-policy, pomdp-belief, neural-policy, reward-model, replay-buffer, failure-boundary-memory, split-combine-policy, or quality-predictor.
+    modelKind: str
+    # Update kind such as append-replay, update-policy, update-belief, label-boundary, adjust-reward, quarantine-sample, or reject-sample.
+    updateKind: str
+    # True when the learning worker accepted this update for retention.
+    accepted: bool
+    # Model, memory, policy, replay buffer, or boundary table name.
+    modelName: Optional[str] = None
+    # Model version after applying or proposing the update.
+    modelVersion: Optional[str] = None
+    # Sanitized retained model, replay, or label artifact URI when available.
+    artifactUri: Optional[str] = None
+    # Compact update metrics or labels.
+    metrics: Optional[List[str]] = field(default_factory=list)
+    # Non-secret update notes.
+    notes: Optional[List[str]] = field(default_factory=list)
+
+# One observed manufacturing outcome, measurement, human intervention, machine state, or inspection fact.
+@dataclass
+class FabricationLearningObservation:
+    """One observed manufacturing outcome, measurement, human intervention, machine state, or inspection fact."""
+    # Stable observation id.
+    observationId: str
+    # Observation kind such as machine-log, inspection-measurement, operator-intervention, failure-boundary, part-quality, assembly-fit, simulation-delta, or material-state.
+    observationKind: str
+    # Outcome label such as success, failure, partial-success, operator-intervention-required, rework-required, scrap, blocked-before-start, or simulation-only.
+    outcome: str
+    # Machine, station, or capability id associated with this observation.
+    machineId: Optional[str] = None
+    # Machine class such as additive-fdm, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, plasma, postprocess-station, inspection, or assembly.
+    machineClass: Optional[str] = None
+    # Operation id associated with this observation when known.
+    operationId: Optional[str] = None
+    # Part or subassembly id associated with this observation when known.
+    partId: Optional[str] = None
+    # Compact metric labels or key=value strings, e.g. runtimeSec=2480, boreErrorMm=0.035, filamentMoisture=high, collisionCount=0.
+    metrics: Optional[List[str]] = field(default_factory=list)
+    # Non-secret observation notes.
+    notes: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.learning.outcomes.requests after a fabrication attempt, simulation, operator review, or inspection produces learning evidence.
+@dataclass
+class FabricationLearningOutcomeRequest:
+    """Body published on dd.remote.fabrication.learning.outcomes.requests after a fabrication attempt, simulation, operator review, or inspection produces learning evidence."""
+    # Envelope schema id. Producers should emit dd.fabrication.learning-outcome.request.v1.
+    schema: str
+    # Unique id for this learning outcome job, suitable for dedupe and result correlation.
+    requestId: str
+    # Fabrication planning request id that produced the outcome.
+    planRequestId: str
+    # Fabrication job id that produced the outcome.
+    jobId: str
+    # Unix epoch milliseconds when the planner published this learning outcome request.
+    emittedAtMs: int
+    # Overall outcome status such as success, failure, partial-success, rework-required, operator-intervention-required, scrap, blocked-before-start, or simulation-only.
+    outcomeStatus: str
+    # Referenced plans, instruction artifacts, inspection reports, operator notes, or machine logs.
+    sources: List['FabricationLearningSourceRef']
+    # Observed facts and outcomes from the fabrication attempt.
+    observations: List['FabricationLearningObservation']
+    # Producer service instance or deployment name.
+    producer: Optional[str] = None
+    # Subject workers should publish the result to; defaults to dd.remote.fabrication.learning.outcomes.results.
+    resultSubject: Optional[str] = None
+    # Assembly or process plan id used for the attempt when known.
+    selectedPlanId: Optional[str] = None
+    # Observed or retained failure boundaries.
+    failureBoundaries: Optional[List['FabricationLearningFailureBoundary']] = field(default_factory=list)
+    # Reward, penalty, state, observation, action, or replay-label hints for learning.
+    rewardSignals: Optional[List['FabricationLearningRewardSignal']] = field(default_factory=list)
+    # Optional scheduling hint. Higher values mean more urgent learning update work.
+    priority: Optional[int] = None
+    # Non-secret learning notes.
+    notes: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.learning.outcomes.results with accepted learning updates, replay labels, reward summaries, retained boundaries, and model-memory metadata.
+@dataclass
+class FabricationLearningOutcomeResult:
+    """Body published on dd.remote.fabrication.learning.outcomes.results with accepted learning updates, replay labels, reward summaries, retained boundaries, and model-memory metadata."""
+    # Envelope schema id. Workers should emit dd.fabrication.learning-outcome.result.v1.
+    schema: str
+    # Learning outcome request id this result answers.
+    requestId: str
+    # Fabrication planning request id from the original learning outcome request.
+    planRequestId: str
+    # Fabrication job id from the original learning outcome request.
+    jobId: str
+    # Unix epoch milliseconds when the learning worker published this result.
+    emittedAtMs: int
+    # Worker id, pod name, or adapter instance that produced this result.
+    workerId: str
+    # True when the worker completed its requested learning update or review work.
+    success: bool
+    # Accepted or rejected learning updates.
+    updates: List['FabricationLearningModelUpdate']
+    # Learner, policy, replay, memory, boundary, or model adapter used.
+    learner: Optional[str] = None
+    # Learner or adapter version used for repeatability and audit.
+    learnerVersion: Optional[str] = None
+    # Failure boundaries retained for future planner and analyzer decisions.
+    retainedBoundaries: Optional[List['FabricationLearningFailureBoundary']] = field(default_factory=list)
+    # Compact human-readable reward or penalty summary.
+    rewardSummary: Optional[str] = None
+    # Non-blocking warnings that should be retained with the learning evidence.
+    warnings: Optional[List[str]] = field(default_factory=list)
+    # Free-form non-secret metadata such as replay ids, policy names, training split, quarantine reason, confidence, or model registry pointers.
+    reviewMetadata: Optional[Any] = None
+
+# Reward, penalty, action, state-feature, or observation hint for MDP/POMDP/neural learning.
+@dataclass
+class FabricationLearningRewardSignal:
+    """Reward, penalty, action, state-feature, or observation hint for MDP/POMDP/neural learning."""
+    # Stable reward or policy signal id.
+    signalId: str
+    # Signal kind such as mdp-state, pomdp-observation, policy-action, reward, penalty, replay-label, neural-feature, or outcome-label.
+    signalKind: str
+    # Compact state features retained for learning.
+    stateFeatures: Optional[List[str]] = field(default_factory=list)
+    # Action taken or recommended, such as split-part, keep-monolithic, add-fixture, wait-for-temperature, stop-for-human-review, or reroute-to-lathe.
+    action: Optional[str] = None
+    # Reward or penalty value when available.
+    value: Optional[float] = None
+    # Optional confidence for the signal.
+    confidence: Optional[float] = None
+    # POMDP observations, uncertainty labels, or human-review notes.
+    observations: Optional[List[str]] = field(default_factory=list)
+
+# Reference to an artifact, plan, operation, boundary, or worker result that produced evidence for learning.
+@dataclass
+class FabricationLearningSourceRef:
+    """Reference to an artifact, plan, operation, boundary, or worker result that produced evidence for learning."""
+    # Stable id of the referenced object.
+    refId: str
+    # Reference kind such as assembly-plan, instruction-artifact, machine-observation, inspection-report, operator-note, failure-boundary, or generated-result.
+    refKind: str
+    # Sanitized URI or object key when the source has a retained artifact. Do not include credentials, query strings, or fragments.
+    uri: Optional[str] = None
+    # SHA-256 of the referenced artifact when available.
+    sha256: Optional[str] = None
+    # Evidence labels attached to this source reference.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# Calibration, datum, probe, tool-length, extrusion, beam, pump, or inspection state for a machine.
+@dataclass
+class FabricationMachineCalibrationState:
+    """Calibration, datum, probe, tool-length, extrusion, beam, pump, or inspection state for a machine."""
+    # Stable calibration id.
+    calibrationId: str
+    # Machine id associated with this calibration state.
+    machineId: str
+    # Calibration kind such as bed-level, nozzle-offset, extrusion-steps, tool-length-offset, work-offset, probe-routine, spindle-runout, backlash, rotary-axis, beam-focus, pump-pressure, abrasive-flow, or inspection-probe.
+    calibrationKind: str
+    # Status such as current, stale, missing, failed, pending, waived, or human-review-required.
+    status: str
+    # Unix epoch milliseconds when this state was measured.
+    measuredAtMs: Optional[int] = None
+    # Unix epoch milliseconds when this calibration evidence expires.
+    expiresAtMs: Optional[int] = None
+    # Compact metric labels or key=value strings.
+    metrics: Optional[List[str]] = field(default_factory=list)
+    # Evidence labels emitted by this calibration state.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# Current machine capability snapshot usable by design, instruction generation, simulation, assembly planning, and release gates.
+@dataclass
+class FabricationMachineCapabilitySnapshot:
+    """Current machine capability snapshot usable by design, instruction generation, simulation, assembly planning, and release gates."""
+    # Stable machine or station id.
+    machineId: str
+    # Machine or station class such as additive-fdm, additive-resin, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, plasma, postprocess-station, inspection, or assembly.
+    machineClass: str
+    # Profile status such as current, stale, blocked, maintenance, calibration-required, offline, or review-required.
+    profileStatus: str
+    # Human-readable machine name.
+    displayName: Optional[str] = None
+    # Controller, firmware, postprocessor, or machine-control stack.
+    controller: Optional[str] = None
+    # Axis, build-volume, travel, chuck, rotary, sheet, stock, or fixture limits.
+    axisLimits: Optional[List[str]] = field(default_factory=list)
+    # Supported processes, materials, controllers, postprocessors, cutting modes, layer processes, support media, or inspection modes.
+    processCapabilities: Optional[List[str]] = field(default_factory=list)
+    # Evidence required before this machine can be used for machine-ready release.
+    requiredEvidence: Optional[List[str]] = field(default_factory=list)
+
+# Fixture, vise, chuck, pallet, build plate, slat bed, tailstock, catcher, subspindle, vacuum, clamp, or support-media readiness.
+@dataclass
+class FabricationMachineFixtureState:
+    """Fixture, vise, chuck, pallet, build plate, slat bed, tailstock, catcher, subspindle, vacuum, clamp, or support-media readiness."""
+    # Stable fixture or support id.
+    fixtureId: str
+    # Machine id associated with this fixture state.
+    machineId: str
+    # Fixture kind such as print-bed, vise, pallet, chuck, collet, tailstock, subspindle, part-catcher, vacuum-bed, clamp-kit, slat-table, water-table, support-media, or inspection-nest.
+    fixtureKind: str
+    # Status such as ready, loaded, missing, stale, blocked, operator-proof-required, or human-review-required.
+    status: str
+    # Part or operation ids this fixture state is tied to.
+    partIds: Optional[List[str]] = field(default_factory=list)
+    # Evidence labels attached to this fixture state.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# Material, stock, filament, resin, powder, sheet, coolant, gas, abrasive, water, or postprocess media readiness.
+@dataclass
+class FabricationMachineMaterialState:
+    """Material, stock, filament, resin, powder, sheet, coolant, gas, abrasive, water, or postprocess media readiness."""
+    # Stable material-state id.
+    materialStateId: str
+    # Machine id associated with this material state.
+    machineId: str
+    # Material state kind such as filament, resin, powder, billet, bar-stock, sheet-stock, coolant, assist-gas, abrasive, water-table, adhesive, solvent, or inspection-consumable.
+    materialKind: str
+    # Status such as ready, loaded, conditioned, stale, missing, contaminated, low, blocked, or human-review-required.
+    status: str
+    # Material or media label.
+    material: Optional[str] = None
+    # Compact metric labels such as moisture=ok, pressurePsi=55000, coolantConcentration=8pct, sheetThicknessMm=3.0, or lot=ABC.
+    metrics: Optional[List[str]] = field(default_factory=list)
+    # Evidence labels attached to this material state.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# Machine-profile blocker that prevents or constrains use of a machine, tool, fixture, calibration, material, or process state.
+@dataclass
+class FabricationMachineProfileBlocker:
+    """Machine-profile blocker that prevents or constrains use of a machine, tool, fixture, calibration, material, or process state."""
+    # Stable blocker id.
+    blockerId: str
+    # Stable blocker code such as calibration-expired, fixture-proof-required, tool-offset-stale, material-conditioning-required, maintenance-lockout, support-media-required, operator-load-required, or profile-stale.
+    code: str
+    # Human-readable blocker summary safe for logs.
+    message: str
+    # Severity such as blocker, high, medium, low, warning, or info.
+    severity: str
+    # Effect on release posture such as blocks-machine-ready, needs-operator-review, warning-only, profile-only, or learning-only.
+    machineReadyImpact: str
+    # Machine id associated with the blocker when known.
+    machineId: Optional[str] = None
+    # Evidence labels required to clear this blocker.
+    evidenceRequired: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.machine.profiles.requests for machine profile workers.
+@dataclass
+class FabricationMachineProfileRequest:
+    """Body published on dd.remote.fabrication.machine.profiles.requests for machine profile workers."""
+    # Envelope schema id. Producers should emit dd.fabrication.machine-profile.request.v1.
+    schema: str
+    # Unique id for this machine-profile job, suitable for dedupe and result correlation.
+    requestId: str
+    # Fabrication planning request id that needs current machine evidence.
+    planRequestId: str
+    # Unix epoch milliseconds when the planner published this request.
+    emittedAtMs: int
+    # Requested profile scopes.
+    scopes: List['FabricationMachineProfileScope']
+    # Optional fabrication job id when the planner has already persisted one.
+    jobId: Optional[str] = None
+    # Producer service instance or deployment name.
+    producer: Optional[str] = None
+    # Subject workers should publish the result to; defaults to dd.remote.fabrication.machine.profiles.results.
+    resultSubject: Optional[str] = None
+    # Machines preferred by the planner or operator.
+    preferredMachineIds: Optional[List[str]] = field(default_factory=list)
+    # Machine classes required for this planning job.
+    requiredMachineClasses: Optional[List[str]] = field(default_factory=list)
+    # Evidence labels the planner already has before profile refresh.
+    knownEvidence: Optional[List[str]] = field(default_factory=list)
+    # Optional scheduling hint. Higher values mean more urgent machine profile work.
+    priority: Optional[int] = None
+    # Non-secret profile notes.
+    notes: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.machine.profiles.results with current machine capabilities, calibration, tool/fixture/material state, blockers, and release evidence.
+@dataclass
+class FabricationMachineProfileResult:
+    """Body published on dd.remote.fabrication.machine.profiles.results with current machine capabilities, calibration, tool/fixture/material state, blockers, and release evidence."""
+    # Envelope schema id. Workers should emit dd.fabrication.machine-profile.result.v1.
+    schema: str
+    # Machine-profile request id this result answers.
+    requestId: str
+    # Fabrication planning request id from the original request.
+    planRequestId: str
+    # Unix epoch milliseconds when the worker published this result.
+    emittedAtMs: int
+    # Worker id, pod name, or adapter instance that produced this result.
+    workerId: str
+    # True when the worker completed the requested profile refresh.
+    success: bool
+    # True only when returned machine states have no retained blockers for the requested scope.
+    machineReady: bool
+    # Machine capability snapshots.
+    machines: List['FabricationMachineCapabilitySnapshot']
+    # Optional persisted fabrication job id from the original request.
+    jobId: Optional[str] = None
+    # Machine-profile adapter, inventory source, controller bridge, or operator system used.
+    profiler: Optional[str] = None
+    # Profiler or adapter version used for repeatability and audit.
+    profilerVersion: Optional[str] = None
+    # Calibration states returned by the worker.
+    calibrations: Optional[List['FabricationMachineCalibrationState']] = field(default_factory=list)
+    # Tool states returned by the worker.
+    tools: Optional[List['FabricationMachineToolState']] = field(default_factory=list)
+    # Fixture and support states returned by the worker.
+    fixtures: Optional[List['FabricationMachineFixtureState']] = field(default_factory=list)
+    # Material and process media states returned by the worker.
+    materials: Optional[List['FabricationMachineMaterialState']] = field(default_factory=list)
+    # Retained machine-profile blockers.
+    blockers: Optional[List['FabricationMachineProfileBlocker']] = field(default_factory=list)
+    # Non-blocking profile warnings.
+    warnings: Optional[List[str]] = field(default_factory=list)
+    # Free-form non-secret metadata such as inventory snapshot ids, controller poll times, operator-review notes, or profile confidence.
+    reviewMetadata: Optional[Any] = None
+
+# One requested profile or evidence scope for a machine or process class.
+@dataclass
+class FabricationMachineProfileScope:
+    """One requested profile or evidence scope for a machine or process class."""
+    # Stable scope id.
+    scopeId: str
+    # Scope kind such as capability, calibration, tool-library, fixture-library, material-state, process-state, maintenance, controller, network, safety, or release-evidence.
+    scopeKind: str
+    # Specific machine id to profile when known.
+    machineId: Optional[str] = None
+    # Machine or station class such as additive-fdm, additive-resin, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, plasma, postprocess-station, inspection, or assembly.
+    machineClass: Optional[str] = None
+    # Evidence labels requested for this scope.
+    requestedEvidence: Optional[List[str]] = field(default_factory=list)
+
+# Tool, nozzle, extruder, cutter, insert, magazine, turret, beam, jet, or inspection probe readiness.
+@dataclass
+class FabricationMachineToolState:
+    """Tool, nozzle, extruder, cutter, insert, magazine, turret, beam, jet, or inspection probe readiness."""
+    # Stable tool, nozzle, extruder, cutter, turret station, or probe id.
+    toolId: str
+    # Machine id associated with this tool state.
+    machineId: str
+    # Tool kind such as nozzle, extruder, endmill, drill, tap, turning-insert, partoff-blade, laser-head, waterjet-nozzle, plasma-torch, abrasive-feed, probe, or inspection-sensor.
+    toolKind: str
+    # Status such as ready, loaded, missing, worn, broken, stale-offset, needs-operator-load, blocked, or human-review-required.
+    status: str
+    # Magazine, turret, spindle, extruder, head, or station label when applicable.
+    station: Optional[str] = None
+    # Materials or stock this tool is suitable for.
+    materials: Optional[List[str]] = field(default_factory=list)
+    # Evidence labels attached to this tool state.
     evidence: Optional[List[str]] = field(default_factory=list)
 
 # One generated neutral export, slicer project, CAM setup, sheet nesting file, mesh report, or review artifact returned by a conversion worker.
@@ -378,6 +1415,376 @@ class FabricationNeutralExportArtifact:
     toleranceMm: Optional[float] = None
     # Evidence labels attached to this artifact, such as units-verified, mesh-manifold, watertight, profile-closed, slicer-profile-verified, or cam-setup-reviewed.
     evidence: Optional[List[str]] = field(default_factory=list)
+
+# A retained blocker that prevents or constrains machine-ready release.
+@dataclass
+class FabricationReleaseBlocker:
+    """A retained blocker that prevents or constrains machine-ready release."""
+    # Stable blocker id.
+    blockerId: str
+    # Stable blocker code such as workholding-release-required, datum-transfer-required, material-conditioning-required, instruction-review-blocker, machine-support-required, human-intervention-required, or learning-boundary-retained.
+    code: str
+    # Human-readable blocker summary safe for logs.
+    message: str
+    # Severity such as blocker, high, medium, low, warning, or info.
+    severity: str
+    # Effect on release posture, e.g. blocks-machine-ready, needs-human-release, warning-only, release-with-conditions, or learning-only.
+    machineReadyImpact: str
+    # Evidence ids or labels required to clear this blocker.
+    evidenceRequired: List[str]
+    # Operation id associated with this blocker when known.
+    operationId: Optional[str] = None
+    # Part or subassembly id associated with this blocker when known.
+    partId: Optional[str] = None
+    # Machine or station id associated with this blocker when known.
+    machineId: Optional[str] = None
+
+# One release decision for a job, plan, part, operation, machine, process group, or artifact set.
+@dataclass
+class FabricationReleaseDecision:
+    """One release decision for a job, plan, part, operation, machine, process group, or artifact set."""
+    # Stable release decision id.
+    decisionId: str
+    # Decision scope such as job, plan, part, operation, machine, artifact, assembly, postprocess, inspection, or learning.
+    scope: str
+    # True only when this decision scope can be released to the machine or next process without retained blockers.
+    machineReady: bool
+    # Release status such as approved, blocked, conditional, needs-human-review, warning, superseded, or rejected.
+    releaseStatus: str
+    # Blocker ids or labels retained against this decision.
+    blockers: List[str]
+    # Operator, service, policy, or approver id when this decision is approved.
+    approvedBy: Optional[str] = None
+    # Optional ISO-like expiration timestamp for time-bound evidence or release approvals.
+    expiresAt: Optional[str] = None
+    # Short non-secret decision summary.
+    message: Optional[str] = None
+
+# Evidence retained from a source artifact, worker result, operator action, inspection, simulation, machine observation, or learning outcome.
+@dataclass
+class FabricationReleaseEvidenceRef:
+    """Evidence retained from a source artifact, worker result, operator action, inspection, simulation, machine observation, or learning outcome."""
+    # Stable evidence id used by gates, blockers, interventions, decisions, and release artifacts.
+    evidenceId: str
+    # Evidence kind such as cad-conversion-result, assembly-plan-result, instruction-generation-result, instruction-review-result, learning-outcome-result, machine-observation, operator-proof, inspection-report, setup-sheet, simulation, material-conditioning, or datum-transfer.
+    evidenceKind: str
+    # Evidence status such as satisfied, pending, missing, rejected, superseded, stale, warning-only, or review-required.
+    status: str
+    # Source request, result, artifact, operation, part, machine, or boundary id when available.
+    sourceRefId: Optional[str] = None
+    # Sanitized evidence URI or object key. Do not include credentials, query strings, or fragments.
+    uri: Optional[str] = None
+    # SHA-256 of the retained evidence artifact when available.
+    sha256: Optional[str] = None
+    # Compact labels such as workholding-verified, temp-wait-satisfied, assembly-plan-selected, operator-proof, inspection-pending, or learning-boundary-retained.
+    labels: Optional[List[str]] = field(default_factory=list)
+
+# Human setup, handoff, verification, measurement, approval, assembly, recovery, or inspection required before release.
+@dataclass
+class FabricationReleaseHumanIntervention:
+    """Human setup, handoff, verification, measurement, approval, assembly, recovery, or inspection required before release."""
+    # Stable intervention id.
+    interventionId: str
+    # Intervention kind such as workholding-confirmation, datum-transfer, material-conditioning, filament-change-purge, tool-change-approval, assembly-fit-check, partoff-support, inspection-approval, or release-signoff.
+    interventionKind: str
+    # Human-readable intervention summary safe for logs and operator screens.
+    description: str
+    # True when machine-ready release must wait for this intervention.
+    required: bool
+    # Intervention status such as pending, satisfied, blocked, waived, rejected, or not-applicable.
+    status: str
+    # Evidence ids or labels required from the operator, inspector, setup sheet, or machine before this intervention is cleared.
+    evidenceRequired: List[str]
+    # Operation id associated with this intervention when known.
+    operationId: Optional[str] = None
+    # Part or subassembly id associated with this intervention when known.
+    partId: Optional[str] = None
+
+# One machine, process, station, assembly, inspection, or operator gate that must be satisfied before release.
+@dataclass
+class FabricationReleaseMachineGate:
+    """One machine, process, station, assembly, inspection, or operator gate that must be satisfied before release."""
+    # Stable gate id.
+    gateId: str
+    # Machine or process class such as additive-fdm, additive-resin, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, plasma, postprocess-station, inspection, assembly, or operator.
+    machineClass: str
+    # Gate kind such as thermal-state, material-state, workholding, datum, toolpath, cutter-compensation, spindle-state, support-media, instruction-review, assembly-fit, learning-outcome, or operator-approval.
+    gateKind: str
+    # Gate status such as satisfied, pending, blocked, warning, not-applicable, or human-review-required.
+    status: str
+    # Evidence ids or labels required to clear this gate.
+    requiredEvidence: List[str]
+    # Evidence ids already satisfying this gate.
+    satisfiedEvidence: List[str]
+    # Machine or station id when the gate is machine-specific.
+    machineId: Optional[str] = None
+    # Short non-secret gate summary for operator review.
+    message: Optional[str] = None
+
+# Artifact retained in the final release manifest or requested for release review.
+@dataclass
+class FabricationReleaseManifestArtifact:
+    """Artifact retained in the final release manifest or requested for release review."""
+    # Stable artifact id.
+    artifactId: str
+    # Artifact kind such as gcode, nc-program, slicer-project, setup-sheet, inspection-plan, simulation-report, release-manifest, operator-instruction, assembly-plan, learning-summary, or machine-log.
+    artifactKind: str
+    # Release role such as machine-program, setup-sheet, operator-proof, inspection-plan, assembly-guide, blocked-evidence, warning-evidence, or release-summary.
+    releaseRole: str
+    # Evidence ids or labels attached to this artifact.
+    evidence: List[str]
+    # Source worker result, instruction target, submitted program, or evidence id when available.
+    sourceRefId: Optional[str] = None
+    # Sanitized retained artifact URI or object key. Do not include credentials, query strings, or fragments.
+    uri: Optional[str] = None
+    # SHA-256 of the artifact when available.
+    sha256: Optional[str] = None
+    # Machine id this artifact is intended for when applicable.
+    machineId: Optional[str] = None
+    # Artifact format such as GCODE, NC, 3MF, STEP, DXF, PDF, JSON, MD, or TXT.
+    format: Optional[str] = None
+
+# Body published on dd.remote.fabrication.release.readiness.requests for final release-readiness workers.
+@dataclass
+class FabricationReleaseReadinessRequest:
+    """Body published on dd.remote.fabrication.release.readiness.requests for final release-readiness workers."""
+    # Envelope schema id. Producers should emit dd.fabrication.release-readiness.request.v1.
+    schema: str
+    # Unique id for this release-readiness job, suitable for dedupe and result correlation.
+    requestId: str
+    # Fabrication planning request id being considered for release.
+    planRequestId: str
+    # Unix epoch milliseconds when the planner published this request.
+    emittedAtMs: int
+    # Requested release scope such as job, selected-plan, part-set, machine-batch, operation-batch, inspection-handoff, or assembly-handoff.
+    releaseScope: str
+    # Evidence available to the release-readiness worker.
+    evidenceRefs: List['FabricationReleaseEvidenceRef']
+    # Machine, process, assembly, inspection, and operator gates to evaluate.
+    machineGates: List['FabricationReleaseMachineGate']
+    # Required or optional human interventions already known to the planner.
+    humanInterventions: List['FabricationReleaseHumanIntervention']
+    # Artifacts being considered for release or final manifest retention.
+    requestedArtifacts: List['FabricationReleaseManifestArtifact']
+    # Planner-known blockers that the release-readiness worker must retain, clear, or convert to conditions.
+    knownBlockers: List['FabricationReleaseBlocker']
+    # Optional persisted fabrication job id.
+    jobId: Optional[str] = None
+    # Producer service instance or deployment name.
+    producer: Optional[str] = None
+    # Subject workers should publish the result to; defaults to dd.remote.fabrication.release.readiness.results.
+    resultSubject: Optional[str] = None
+    # Selected assembly, process, or hybrid plan candidate under release review.
+    candidatePlanId: Optional[str] = None
+    # Optional scheduling hint. Higher values mean more urgent release review work.
+    priority: Optional[int] = None
+    # Non-secret release-readiness notes for the worker.
+    notes: Optional[List[str]] = field(default_factory=list)
+
+# Body published on dd.remote.fabrication.release.readiness.results with final machine-ready decisions, release manifest artifacts, retained blockers, and human-intervention requirements.
+@dataclass
+class FabricationReleaseReadinessResult:
+    """Body published on dd.remote.fabrication.release.readiness.results with final machine-ready decisions, release manifest artifacts, retained blockers, and human-intervention requirements."""
+    # Envelope schema id. Workers should emit dd.fabrication.release-readiness.result.v1.
+    schema: str
+    # Release-readiness request id this result answers.
+    requestId: str
+    # Fabrication planning request id from the original release-readiness request.
+    planRequestId: str
+    # Unix epoch milliseconds when the worker published this result.
+    emittedAtMs: int
+    # Worker id, pod name, or adapter instance that produced this result.
+    workerId: str
+    # True when the worker completed its requested release-readiness evaluation.
+    success: bool
+    # True only when all release decisions are machine-ready or explicitly approved with no retained machine-ready blockers.
+    machineReady: bool
+    # Release decisions by job, plan, part, operation, machine, artifact, assembly, inspection, or learning scope.
+    decisions: List['FabricationReleaseDecision']
+    # Final retained manifest artifacts.
+    manifestArtifacts: List['FabricationReleaseManifestArtifact']
+    # Retained release blockers after evaluation.
+    blockers: List['FabricationReleaseBlocker']
+    # Required or retained human interventions after evaluation.
+    humanInterventions: List['FabricationReleaseHumanIntervention']
+    # Optional persisted fabrication job id from the original request.
+    jobId: Optional[str] = None
+    # Release gate, policy, model, or adapter used.
+    releaseGate: Optional[str] = None
+    # Release gate or policy version used for repeatability and audit.
+    releaseGateVersion: Optional[str] = None
+    # Non-blocking release warnings that should be retained with the manifest.
+    warnings: Optional[List[str]] = field(default_factory=list)
+    # Free-form non-secret metadata such as policy confidence, evaluated gate ids, signed evidence ids, release manifest id, or learning boundary summaries.
+    reviewMetadata: Optional[Any] = None
+
+# Simulation or verification artifact retained for release readiness, review, or learning.
+@dataclass
+class FabricationSimulationArtifact:
+    """Simulation or verification artifact retained for release readiness, review, or learning."""
+    # Stable simulation artifact id.
+    artifactId: str
+    # Artifact kind such as simulation-report, envelope-report, collision-map, layer-preview, material-flow-report, controller-trace, toolpath-preview, dry-run-log, or release-evidence.
+    artifactKind: str
+    # Artifact format such as JSON, HTML, PNG, PDF, MD, TXT, CSV, GCODE, or NC.
+    format: str
+    # Instruction id this artifact describes when applicable.
+    instructionId: Optional[str] = None
+    # Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments.
+    uri: Optional[str] = None
+    # SHA-256 of the artifact when available.
+    sha256: Optional[str] = None
+    # Evidence labels attached to this artifact.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# One machine, build, travel, stock, fixture, or process envelope check result.
+@dataclass
+class FabricationSimulationEnvelopeCheck:
+    """One machine, build, travel, stock, fixture, or process envelope check result."""
+    # Stable envelope check id.
+    checkId: str
+    # Machine id used for the check.
+    machineId: str
+    # Check kind such as axis-travel, build-volume, stock-envelope, fixture-clearance, spindle-speed, feed-rate, thermal-state, support-media, material-flow, collision, or controller-modal-state.
+    checkKind: str
+    # Check status such as pass, fail, warning, skipped, blocked, or human-review-required.
+    status: str
+    # Instruction id associated with the check when applicable.
+    instructionId: Optional[str] = None
+    # Compact metric labels or key=value summaries such as maxX=118.2, minZ=-1.8, clearanceMm=0.7, maxFeedMmMin=1800, or nozzleTempWait=missing.
+    metrics: Optional[List[str]] = field(default_factory=list)
+    # Evidence labels emitted or consumed by this check.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# Boundary where the simulated machine or process cannot proceed safely without human intervention, different sequencing, extra evidence, or part splitting/combining.
+@dataclass
+class FabricationSimulationFailureBoundary:
+    """Boundary where the simulated machine or process cannot proceed safely without human intervention, different sequencing, extra evidence, or part splitting/combining."""
+    # Stable failure-boundary id.
+    boundaryId: str
+    # Boundary kind such as human-intervention, machine-envelope, toolpath-collision, thermal-state, workholding, support-media, material-flow, controller-state, partoff-support, split-required, combine-required, or inspection-required.
+    boundaryKind: str
+    # Stable boundary code.
+    code: str
+    # Human-readable boundary summary safe for logs.
+    message: str
+    # Instruction id associated with this boundary when known.
+    instructionId: Optional[str] = None
+    # Operation id associated with this boundary when known.
+    operationId: Optional[str] = None
+    # Machine id associated with this boundary when known.
+    machineId: Optional[str] = None
+    # True when the boundary requires explicit human action or review.
+    humanInterventionRequired: Optional[bool] = None
+    # Recommended action such as add-workholding-evidence, wait-for-temperature, rehome-machine, add-support-media, split-part, combine-pieces, rerun-cam, request-inspection, or reject-release.
+    recommendedAction: Optional[str] = None
+    # Evidence labels supporting this boundary.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# A simulation or verification finding that may become a release blocker, warning, improvement input, or learning signal.
+@dataclass
+class FabricationSimulationFinding:
+    """A simulation or verification finding that may become a release blocker, warning, improvement input, or learning signal."""
+    # Stable finding id.
+    findingId: str
+    # Severity such as blocker, high, medium, low, warning, or info.
+    severity: str
+    # Finding kind such as collision, envelope, thermal-state, material-state, workholding, support-media, modal-state, arc-geometry, cutter-comp, tool-change, feed-rate, partoff-support, or human-intervention.
+    findingKind: str
+    # Stable finding code.
+    code: str
+    # Human-readable finding summary safe for logs and operator review.
+    message: str
+    # Instruction id associated with this finding when known.
+    instructionId: Optional[str] = None
+    # Operation id associated with this finding when known.
+    operationId: Optional[str] = None
+    # Machine id associated with this finding when known.
+    machineId: Optional[str] = None
+    # Toolpath segment, line range, layer, operation, cycle, or instruction reference when available.
+    segmentRef: Optional[str] = None
+    # Effect on release posture, e.g. blocks-machine-ready, needs-operator-review, warning-only, simulation-only, or learning-only.
+    machineReadyImpact: Optional[str] = None
+
+# Generated or imported instruction artifact that needs simulation, dry-run review, machine-envelope checks, or process verification.
+@dataclass
+class FabricationSimulationInstructionArtifact:
+    """Generated or imported instruction artifact that needs simulation, dry-run review, machine-envelope checks, or process verification."""
+    # Stable instruction artifact id.
+    instructionId: str
+    # Instruction kind such as printer-gcode, mill-nc, lathe-cycle, router-gcode, sheet-cutting-job, waterjet-job, setup-sheet, tool-list, slicer-project, or operator-instruction.
+    artifactKind: str
+    # Artifact format such as GCODE, NC, TAP, 3MF, BAMBUPROJECT, DXF, SVG, JSON, MD, TXT, or SHOP_TEXT.
+    format: str
+    # Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments.
+    uri: Optional[str] = None
+    # SHA-256 of the instruction artifact when available.
+    sha256: Optional[str] = None
+    # Target machine id when known.
+    machineId: Optional[str] = None
+    # Operation id associated with this instruction when known.
+    operationId: Optional[str] = None
+    # Controller, firmware, or dialect label such as Marlin, Klipper, Fanuc, Haas, LinuxCNC, GRBL, Heidenhain, Okuma, Bambu, Prusa, or vendor-specific.
+    controllerDialect: Optional[str] = None
+    # Short non-secret preview lines or summaries retained for operator review.
+    previewLines: Optional[List[str]] = field(default_factory=list)
+    # Evidence labels already attached to this instruction, such as generated-by-cam, imported-program-reviewed, setup-sheet-linked, tool-list-linked, or simulation-required.
+    evidence: Optional[List[str]] = field(default_factory=list)
+
+# Machine, controller, fixture, material, and process context used during simulation or verification.
+@dataclass
+class FabricationSimulationMachineContext:
+    """Machine, controller, fixture, material, and process context used during simulation or verification."""
+    # Stable machine or station id.
+    machineId: str
+    # Machine class such as additive-fdm, additive-resin, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, plasma, postprocess-station, inspection, or assembly.
+    machineClass: str
+    # Controller, firmware, or postprocessor target.
+    controller: Optional[str] = None
+    # Axis, build-volume, travel, chuck, sheet, stock, or rotary limits used by simulation.
+    axisLimits: Optional[List[str]] = field(default_factory=list)
+    # Process limits such as max feed, max spindle speed, max nozzle temp, abrasive pressure, beam power, coolant state, support media, or fixture clearance.
+    processLimits: Optional[List[str]] = field(default_factory=list)
+    # Evidence labels available before simulation, such as workholding-reviewed, material-conditioned, tool-list-reviewed, fixture-model-loaded, or profile-released.
+    knownEvidence: Optional[List[str]] = field(default_factory=list)
+
+# One requested simulation, dry-run, or verification scope.
+@dataclass
+class FabricationSimulationScope:
+    """One requested simulation, dry-run, or verification scope."""
+    # Stable scope id.
+    scopeId: str
+    # Instruction artifact id to simulate or verify.
+    instructionId: str
+    # Scope kind such as machine-envelope, toolpath-geometry, thermal-state, material-state, workholding, support-media, collision, modal-state, arc-geometry, cutter-comp, extruder-state, canned-cycle, partoff-support, or human-intervention-boundary.
+    scopeKind: str
+    # Specific checks requested inside this scope.
+    checks: List[str]
+    # Evidence labels required to clear this simulation scope.
+    requiredEvidence: Optional[List[str]] = field(default_factory=list)
+
+# One submitted instruction artifact or inline snippet that needs validation, boundary analysis, or improvement.
+@dataclass
+class FabricationSubmittedInstruction:
+    """One submitted instruction artifact or inline snippet that needs validation, boundary analysis, or improvement."""
+    # Stable submitted instruction id.
+    instructionId: str
+    # Instruction format such as GCODE, NC, TAP, 3MF, BAMBUPROJECT, SETUP_SHEET_MD, TOOL_LIST_JSON, INSPECTION_PLAN_JSON, POSTPROCESS_PLAN_MD, SHEET_CUTTING_JOB_JSON, RESIN_JOB, POWDER_BED_JOB, or SHOP_TEXT.
+    format: str
+    # Original filename when available.
+    fileName: Optional[str] = None
+    # Sanitized source URI or object key. Do not include credentials, query strings, or fragments.
+    sourceUri: Optional[str] = None
+    # SHA-256 of the submitted instruction when available.
+    sha256: Optional[str] = None
+    # Intended machine class such as additive-fdm, additive-resin, powder-bed, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, plasma, postprocess-station, inspection, or assembly.
+    machineClass: Optional[str] = None
+    # Declared or inferred controller dialect such as Marlin, RepRap, Klipper, Haas NGC, Fanuc, LinuxCNC, GRBL, Heidenhain, Okuma, PrusaSlicer, OrcaSlicer, Cura, Bambu Studio, or SHOP_TEXT.
+    controllerDialect: Optional[str] = None
+    # Short sanitized preview lines. Do not embed full programs in the envelope.
+    previewLines: Optional[List[str]] = field(default_factory=list)
+    # Non-secret submitter notes.
+    notes: Optional[List[str]] = field(default_factory=list)
 
 # Why this push happened. 'cron' = periodic sweep, 'admin' = on-demand UI button, 'register' = subscriber just joined, 'manual' = explicit API call, 'initial' = subscriber boot-time pull.
 RuntimeConfigApplyReason = Literal["cron", "admin", "register", "manual", "initial"]
