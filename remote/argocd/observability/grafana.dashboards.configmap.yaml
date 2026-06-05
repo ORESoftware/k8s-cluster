@@ -802,7 +802,8 @@ data:
           "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
           "targets": [
             { "expr": "max(dd_fabrication_server_current_jobs)", "legendFormat": "retained jobs", "refId": "A" },
-            { "expr": "max(dd_fabrication_server_current_learning_outcomes)", "legendFormat": "learning outcomes", "refId": "B" }
+            { "expr": "max(dd_fabrication_server_current_artifacts)", "legendFormat": "retained artifacts", "refId": "B" },
+            { "expr": "max(dd_fabrication_server_current_learning_outcomes)", "legendFormat": "learning outcomes", "refId": "C" }
           ],
           "title": "In-Memory Evidence Ledgers",
           "type": "timeseries"
@@ -973,9 +974,10 @@ data:
             { "expr": "sum(rate(dd_fabrication_server_generated_programs_total[5m]))", "legendFormat": "generated programs", "refId": "A" },
             { "expr": "sum(rate(dd_fabrication_server_jobs_stored_total[5m]))", "legendFormat": "jobs stored", "refId": "B" },
             { "expr": "sum(rate(dd_fabrication_server_artifacts_stored_total[5m]))", "legendFormat": "artifacts stored", "refId": "C" },
-            { "expr": "sum(rate(dd_fabrication_server_learning_events_stored_total[5m]))", "legendFormat": "learning events stored", "refId": "D" }
+            { "expr": "sum(rate(dd_fabrication_server_learning_events_stored_total[5m]))", "legendFormat": "learning events stored", "refId": "D" },
+            { "expr": "sum(rate(dd_fabrication_server_artifact_requests_total[5m]))", "legendFormat": "artifact detail requests", "refId": "E" }
           ],
-          "title": "Generated Programs, Artifacts, and Learning Events",
+          "title": "Generated Programs, Artifacts, Learning Events, and Fetches",
           "type": "timeseries"
         }
       ],

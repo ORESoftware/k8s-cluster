@@ -1672,6 +1672,10 @@ struct TextInstructionSignals {
     has_slicer_mesh_topology_evidence: bool,
     has_slicer_high_speed_context: bool,
     has_slicer_high_speed_kinematic_evidence: bool,
+    has_material_jetting_text_context: bool,
+    has_material_jetting_material_evidence: bool,
+    has_material_jetting_support_evidence: bool,
+    has_material_jetting_uv_inspection_evidence: bool,
     has_composite_fiber_text_context: bool,
     has_composite_fiber_layup_evidence: bool,
     has_composite_fiber_process_evidence: bool,
@@ -2502,6 +2506,23 @@ fn wants_resin_printing(value: &str) -> bool {
         || token.contains("photopolymer")
 }
 
+fn wants_material_jetting_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("material-jet")
+        || token.contains("material jet")
+        || token.contains("material-jetting")
+        || token.contains("material jetting")
+        || token.contains("polyjet")
+        || token.contains("poly jet")
+        || token.contains("mjp")
+        || token.contains("multi-jet")
+        || token.contains("multi jet")
+        || token.contains("photopolymer jet")
+        || token.contains("jetted photopolymer")
+        || token.contains("digital material")
+        || token.contains("full-color photopolymer")
+}
+
 fn wants_composite_fiber_printing(value: &str) -> bool {
     let token = normalize_token(value);
     token.contains("continuous-fiber")
@@ -2631,6 +2652,10 @@ fn is_resin_printer_kind(kind: &str) -> bool {
     wants_resin_printing(kind)
 }
 
+fn is_material_jetting_printer_kind(kind: &str) -> bool {
+    wants_material_jetting_printing(kind)
+}
+
 fn is_composite_fiber_printer_kind(kind: &str) -> bool {
     wants_composite_fiber_printing(kind)
 }
@@ -2709,6 +2734,9 @@ fn machine_class(kind: &str) -> MachineClass {
         || token.contains("fdm")
         || token.contains("sla")
         || token.contains("sls")
+        || token.contains("material-jet")
+        || token.contains("polyjet")
+        || token.contains("mjp")
         || token.contains("composite")
         || token.contains("continuous-fiber")
         || token.contains("carbon-fiber")
@@ -2763,6 +2791,30 @@ fn default_machines() -> Vec<MachineProfile> {
                 "wash".to_string(),
                 "uv-cure".to_string(),
                 "support-removal".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "material-jetting-printer-1".to_string(),
+            kind: "material-jetting-printer".to_string(),
+            controller: Some("material-jetting-job".to_string()),
+            materials: Some(vec![
+                "photopolymer".to_string(),
+                "polymer".to_string(),
+                "digital-material".to_string(),
+                "rubber-like".to_string(),
+                "transparent-resin".to_string(),
+                "support-material".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![300.0, 200.0, 150.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "material-jetting-print".to_string(),
+                "polyjet-print".to_string(),
+                "support-jetting".to_string(),
+                "uv-cure".to_string(),
+                "support-removal".to_string(),
+                "color-material-channel".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -4365,6 +4417,8 @@ fn infer_requested_parts(
 
     let wants_resin_part =
         wants_resin_printing(&objective_token) || wants_resin_printing(&material.name);
+    let wants_material_jetting_part = wants_material_jetting_printing(&objective_token)
+        || wants_material_jetting_printing(&material.name);
     let wants_composite_fiber_part = wants_composite_fiber_printing(&objective_token)
         || wants_composite_fiber_printing(&material.name);
     let wants_binder_jet_part =
@@ -4395,6 +4449,7 @@ fn infer_requested_parts(
             || is_metal(material));
     let needs_sheet_cut_part = wants_sheet_cutting(&objective_token);
     let needs_routed_part = !wants_resin_part
+        && !wants_material_jetting_part
         && !wants_composite_fiber_part
         && !wants_binder_jet_part
         && !wants_powder_bed_part
@@ -4409,6 +4464,7 @@ fn infer_requested_parts(
             || objective_token.contains("tabbed")
             || is_router_material(material));
     let needs_printed_part = wants_resin_part
+        || wants_material_jetting_part
         || wants_composite_fiber_part
         || wants_binder_jet_part
         || wants_powder_bed_part
@@ -4421,7 +4477,9 @@ fn infer_requested_parts(
         || (!needs_milled_part && !needs_routed_part && !needs_sheet_cut_part);
 
     if needs_printed_part {
-        let preferred_method = if wants_resin_part {
+        let preferred_method = if wants_material_jetting_part {
+            "material-jetting-print"
+        } else if wants_resin_part {
             "resin-print"
         } else if wants_composite_fiber_part {
             "composite-fiber-print"
@@ -4641,6 +4699,12 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_resin_printing(value));
+    let wants_composite_fiber_printer = preferred
+        .as_deref()
+        .is_some_and(wants_composite_fiber_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_composite_fiber_printing(value));
     let wants_binder_jet_printer = preferred.as_deref().is_some_and(wants_binder_jet_printing)
         || preferred_methods
             .iter()
@@ -4697,6 +4761,13 @@ fn choose_machine<'a>(
     if wants_resin_printer {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_resin_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_composite_fiber_printer {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_composite_fiber_printer_kind(&machine.kind)
         }) {
             return machine;
         }
