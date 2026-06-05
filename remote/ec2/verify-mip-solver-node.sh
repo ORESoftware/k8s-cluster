@@ -317,6 +317,16 @@ free_cluster_pod_slots_for_mip
 echo "=== render MIP solver manifests ==="
 kubectl kustomize remote/deployments/mip-solver-node.rs/k8s >/tmp/dd-mip-solver-render.yaml
 wc -l /tmp/dd-mip-solver-render.yaml
+echo "=== Redis coordination access policy ==="
+kubectl -n default get networkpolicy/dd-redis-cache -o json 2>/dev/null \
+  | jq -c '{
+      name: .metadata.name,
+      namespace: .metadata.namespace,
+      podSelector: .spec.podSelector,
+      ingress: .spec.ingress
+    }' || true
+rg -n "dd.dev/redis-cache-client|REDIS_URL|MIP_SOLVER_COORDINATION_BACKENDS" \
+  /tmp/dd-mip-solver-render.yaml || true
 
 echo "=== apply and force Argo CD sync ==="
 pre_sync_phase="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
