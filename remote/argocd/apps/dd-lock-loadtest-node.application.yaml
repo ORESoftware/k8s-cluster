@@ -3,6 +3,9 @@ kind: Application
 metadata:
   name: dd-lock-loadtest-node
   namespace: argocd
+  labels:
+    role: loadtest
+    target: dd-live-mutex
 spec:
   project: default
   source:
@@ -12,9 +15,11 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: default
+  # NOTE: no automated.selfHeal - the deployment ships with replicas=0
+  # so the trigger is off by default. Operators scale to 1 for the
+  # duration of a load test and back to 0 afterwards.
   syncPolicy:
     automated:
       prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
