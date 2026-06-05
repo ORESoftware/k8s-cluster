@@ -1697,6 +1697,9 @@ struct TextInstructionSignals {
     has_slicer_mesh_topology_evidence: bool,
     has_slicer_high_speed_context: bool,
     has_slicer_high_speed_kinematic_evidence: bool,
+    has_pellet_fgf_text_context: bool,
+    has_pellet_fgf_material_evidence: bool,
+    has_pellet_fgf_bead_thermal_evidence: bool,
     has_material_jetting_text_context: bool,
     has_material_jetting_material_evidence: bool,
     has_material_jetting_support_evidence: bool,
@@ -2514,7 +2517,19 @@ fn is_polymer(material: &MaterialSpec) -> bool {
     family.as_deref() == Some("polymer")
         || matches!(
             name.as_str(),
-            "pla" | "petg" | "abs" | "nylon" | "resin" | "asa" | "pc"
+            "pla"
+                | "petg"
+                | "abs"
+                | "nylon"
+                | "resin"
+                | "asa"
+                | "pc"
+                | "polycarbonate"
+                | "hdpe"
+                | "pp"
+                | "pellet"
+                | "granulate"
+                | "regrind"
         )
 }
 
@@ -2565,6 +2580,34 @@ fn wants_material_jetting_printing(value: &str) -> bool {
         || token.contains("jetted photopolymer")
         || token.contains("digital material")
         || token.contains("full-color photopolymer")
+}
+
+fn wants_pellet_fgf_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_fgf_segment = token == "fgf"
+        || token.starts_with("fgf-")
+        || token.ends_with("-fgf")
+        || token.contains("-fgf-");
+    token.contains("pellet-fgf")
+        || has_fgf_segment
+        || token.contains("fused-granulate")
+        || token.contains("fused-granular")
+        || token.contains("fused-granule")
+        || token.contains("pellet-extrusion")
+        || token.contains("pellet-print")
+        || token.contains("pellet-additive")
+        || token.contains("large-format-additive")
+        || token.contains("large-format-print")
+        || token.contains("lfam")
+        || token.contains("baam")
+        || token == "pellet"
+        || token == "granulate"
+        || token == "regrind"
+        || (token.contains("pellet")
+            && (token.contains("print")
+                || token.contains("additive")
+                || token.contains("extrusion")))
+        || (token.contains("granulate") && token.contains("print"))
 }
 
 fn token_has_ded_segment(token: &str) -> bool {
@@ -2728,6 +2771,10 @@ fn is_material_jetting_printer_kind(kind: &str) -> bool {
     wants_material_jetting_printing(kind)
 }
 
+fn is_pellet_fgf_printer_kind(kind: &str) -> bool {
+    wants_pellet_fgf_printing(kind)
+}
+
 fn is_directed_energy_deposition_kind(kind: &str) -> bool {
     wants_directed_energy_deposition(kind)
 }
@@ -2834,6 +2881,7 @@ fn machine_class(kind: &str) -> MachineClass {
         || token.contains("fdm")
         || token.contains("sla")
         || token.contains("sls")
+        || wants_pellet_fgf_printing(&token)
         || token.contains("material-jet")
         || token.contains("polyjet")
         || token.contains("mjp")
@@ -2878,6 +2926,36 @@ fn default_machines() -> Vec<MachineProfile> {
             work_envelope_mm: Some(vec![220.0, 220.0, 250.0]),
             axes: Some(3),
             operations: Some(vec!["additive-print".to_string()]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "pellet-fgf-printer-1".to_string(),
+            kind: "pellet-fgf-printer".to_string(),
+            controller: Some("pellet-fgf-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "pla".to_string(),
+                "petg".to_string(),
+                "abs".to_string(),
+                "asa".to_string(),
+                "pc".to_string(),
+                "polycarbonate".to_string(),
+                "hdpe".to_string(),
+                "pp".to_string(),
+                "pellet".to_string(),
+                "granulate".to_string(),
+                "regrind".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![1200.0, 800.0, 600.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "pellet-fgf-print".to_string(),
+                "large-format-additive".to_string(),
+                "pellet-drying".to_string(),
+                "extruder-purge".to_string(),
+                "bead-tamping".to_string(),
+                "trim-allowance".to_string(),
+            ]),
             profile_evidence: None,
         },
         MachineProfile {
@@ -4581,6 +4659,8 @@ fn infer_requested_parts(
         wants_resin_printing(&objective_token) || wants_resin_printing(&material.name);
     let wants_material_jetting_part = wants_material_jetting_printing(&objective_token)
         || wants_material_jetting_printing(&material.name);
+    let wants_pellet_fgf_part =
+        wants_pellet_fgf_printing(&objective_token) || wants_pellet_fgf_printing(&material.name);
     let wants_ded_part = wants_directed_energy_deposition(&objective_token)
         || wants_directed_energy_deposition(&material.name);
     let wants_composite_fiber_part = wants_composite_fiber_printing(&objective_token)
@@ -4617,6 +4697,7 @@ fn infer_requested_parts(
     let needs_sheet_cut_part = wants_sheet_cutting(&objective_token);
     let needs_routed_part = !wants_resin_part
         && !wants_material_jetting_part
+        && !wants_pellet_fgf_part
         && !wants_ded_part
         && !wants_composite_fiber_part
         && !wants_binder_jet_part
@@ -4633,6 +4714,7 @@ fn infer_requested_parts(
             || is_router_material(material));
     let needs_printed_part = wants_resin_part
         || wants_material_jetting_part
+        || wants_pellet_fgf_part
         || wants_ded_part
         || wants_composite_fiber_part
         || wants_binder_jet_part
@@ -4651,6 +4733,8 @@ fn infer_requested_parts(
     if needs_printed_part {
         let preferred_method = if wants_material_jetting_part {
             "material-jetting-print"
+        } else if wants_pellet_fgf_part {
+            "pellet-fgf-print"
         } else if wants_ded_part {
             "directed-energy-deposition"
         } else if wants_resin_part {
@@ -4886,6 +4970,10 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_material_jetting_printing(value));
+    let wants_pellet_fgf_printer = preferred.as_deref().is_some_and(wants_pellet_fgf_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_pellet_fgf_printing(value));
     let wants_ded_cell = preferred
         .as_deref()
         .is_some_and(wants_directed_energy_deposition)
@@ -4972,6 +5060,13 @@ fn choose_machine<'a>(
     if wants_material_jetting_printer {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_material_jetting_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_pellet_fgf_printer {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_pellet_fgf_printer_kind(&machine.kind)
         }) {
             return machine;
         }
@@ -5189,6 +5284,7 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
     } else if tokens.iter().any(|token| {
         wants_resin_printing(token)
             || wants_material_jetting_printing(token)
+            || wants_pellet_fgf_printing(token)
             || wants_directed_energy_deposition(token)
             || wants_composite_fiber_printing(token)
             || wants_binder_jet_printing(token)
@@ -5209,6 +5305,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
     let wants_material_jetting = tokens
         .iter()
         .any(|token| wants_material_jetting_printing(token));
+    let wants_pellet_fgf = tokens.iter().any(|token| wants_pellet_fgf_printing(token));
     let wants_ded = tokens
         .iter()
         .any(|token| wants_directed_energy_deposition(token));
@@ -5230,6 +5327,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         || wants_horizontal
         || wants_resin
         || wants_material_jetting
+        || wants_pellet_fgf
         || wants_ded
         || wants_composite_fiber
         || wants_binder_jet
@@ -5248,6 +5346,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_horizontal || is_horizontal_mill_kind(&machine.kind))
         && (!wants_resin || is_resin_printer_kind(&machine.kind))
         && (!wants_material_jetting || is_material_jetting_printer_kind(&machine.kind))
+        && (!wants_pellet_fgf || is_pellet_fgf_printer_kind(&machine.kind))
         && (!wants_ded || is_directed_energy_deposition_kind(&machine.kind))
         && (!wants_composite_fiber || is_composite_fiber_printer_kind(&machine.kind))
         && (!wants_binder_jet || is_binder_jet_printer_kind(&machine.kind))
@@ -5266,6 +5365,12 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || preference.contains(operation)
         || (preference.contains("print") && operation.contains("print"))
         || (preference.contains("additive") && operation.contains("additive"))
+        || (preference.contains("pellet-fgf") && operation.contains("pellet-fgf"))
+        || (preference.contains("fused-granulate") && operation.contains("pellet-fgf"))
+        || (preference.contains("large-format") && operation.contains("large-format"))
+        || (preference.contains("lfam") && operation.contains("large-format"))
+        || (preference.contains("pellet") && operation.contains("pellet"))
+        || (preference.contains("granulate") && operation.contains("pellet-fgf"))
         || (preference.contains("material-jet") && operation.contains("material-jet"))
         || (preference.contains("polyjet") && operation.contains("polyjet"))
         || (preference.contains("mjp") && operation.contains("material-jet"))
@@ -5543,6 +5648,9 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         }
         MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => {
             "pack tray, jet photopolymer/material channels, UV cure, remove supports, and inspect color/material interfaces"
+        }
+        MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => {
+            "dry pellets, purge high-flow extruder, print large-format bead path, monitor bead/thermal state, and leave trim allowance"
         }
         MachineClass::Additive if is_directed_energy_deposition_kind(&part.machine_kind) => {
             "prepare substrate, deposit DED/WAAM beads, monitor melt pool and interpass temperature, inspect, and leave finish-machining allowance"
@@ -6164,6 +6272,38 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: final material jetting parameters must come from the printer profile, photopolymer/support-material datasheets, tray packing, material-channel map, printhead/nozzle checks, and UV calibration."
                     .to_string(),
                 "Human signoff is required for support removal, solvent or waterjet cleaning, UV exposure, color/material channel verification, fragile-feature handling, and dimensional inspection."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Additive if is_pellet_fgf_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "pellet-fgf-job".to_string()),
+            vec![
+                "; draft pellet FGF / large-format additive job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [pellet-fgf-material-boundary]: verify pellet/regrind lot, drying dew point, moisture reading, hopper feed, screen pack/nozzle, and purge strand"
+                    .to_string(),
+                "DRY_PELLETS material=operator-reviewed hours=operator-reviewed dew_point_c=operator-reviewed moisture_pct=operator-reviewed"
+                    .to_string(),
+                "PURGE_EXTRUDER nozzle_mm=operator-reviewed melt_temp_c=operator-reviewed screw_rpm=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [pellet-fgf-bead-thermal-boundary]: verify bead width, layer height, extrusion multiplier, gantry clearance, thermal soak, and cooling airflow"
+                    .to_string(),
+                "PRINT_BEAD_PATH large_format_shell bead_width_mm=operator-reviewed layer_height_mm=operator-reviewed trim_allowance_mm=operator-reviewed"
+                    .to_string(),
+                "MONITOR bead slumping, pellet feed, melt pressure, screw RPM, cooling airflow, and interlayer temperature"
+                    .to_string(),
+                "CHECKPOINT [pellet-fgf-trim-boundary]: mark trim/machining allowance, cool part on fixture, and inspect warpage before release"
+                    .to_string(),
+                "COMPLETE record pellet lot, moisture, purge, bead coupon, thermal log, warpage inspection, and trim allowance"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final pellet FGF parameters must come from the slicer or robot cell profile, screw/nozzle hardware, pellet lot, drying data, bead coupon, and thermal/cooling plan."
+                    .to_string(),
+                "Human signoff is required for pellet dust/fume controls, drying/moisture evidence, purge state, screw and melt pressure limits, gantry clearance, cooling, bead stability, warpage, and trim allowance."
                     .to_string(),
             ],
         ),
@@ -7012,6 +7152,15 @@ fn has_units_mode_change_evidence(line: &str) -> bool {
         || line_mentions(line, "program units converted")
         || line_mentions(line, "postprocessor units verified")
         || line_mentions(line, "controller unit mode verified")
+}
+
+fn has_additive_inch_units_evidence(line: &str) -> bool {
+    has_units_mode_change_evidence(line)
+        || line_mentions(line, "slicer units verified")
+        || line_mentions(line, "slicer unit conversion verified")
+        || line_mentions(line, "printer units verified")
+        || line_mentions(line, "inch-mode printer verified")
+        || line_mentions(line, "inch mode printer verified")
 }
 
 fn has_dwell_command(line: &str) -> bool {
@@ -8935,6 +9084,98 @@ fn has_text_material_jetting_uv_inspection_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_pellet_fgf_context(language: &str, line: &str) -> bool {
+    wants_pellet_fgf_printing(language)
+        || wants_pellet_fgf_printing(line)
+        || language_or_line_has_any(
+            language,
+            line,
+            &[
+                "pellet fgf",
+                "pellet-fgf",
+                "fused granulate",
+                "fused-granulate",
+                "fused granular",
+                "large format additive",
+                "large-format additive",
+                "large format print",
+                "large-format print",
+                "pellet extrusion",
+                "pellet-extrusion",
+                "pellet print",
+                "pellet-print",
+                "granulate print",
+                "regrind print",
+                "lfam",
+                "baam",
+            ],
+        )
+}
+
+fn has_text_pellet_fgf_material_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "pellet lot",
+            "pellet batch",
+            "regrind lot",
+            "regrind ratio",
+            "granulate lot",
+            "material lot",
+            "dry pellets",
+            "drying",
+            "dryer",
+            "dry-storage",
+            "moisture",
+            "moisture pct",
+            "moisture_pct",
+            "dew point",
+            "dew_point",
+            "hopper",
+            "feed throat",
+            "screen pack",
+            "screen_pack",
+            "purge",
+            "purge strand",
+            "nozzle",
+        ],
+    )
+}
+
+fn has_text_pellet_fgf_bead_thermal_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "bead width",
+            "bead_width",
+            "bead height",
+            "layer height",
+            "layer_height",
+            "extrusion multiplier",
+            "flow rate",
+            "volumetric flow",
+            "screw rpm",
+            "screw_rpm",
+            "melt temp",
+            "melt_temp",
+            "melt pressure",
+            "cooling airflow",
+            "cooling air",
+            "thermal soak",
+            "interlayer temperature",
+            "interlayer temp",
+            "bead coupon",
+            "slumping",
+            "gantry clearance",
+            "trim allowance",
+            "trim_allowance",
+            "machining allowance",
+            "warpage",
+            "warp inspection",
+        ],
+    )
+}
+
 fn has_text_ded_context(language: &str, line: &str) -> bool {
     let language_token = normalize_token(language);
     let line_token = normalize_token(line);
@@ -10531,6 +10772,18 @@ fn inspect_text_instruction_line(
         signals.has_material_jetting_uv_inspection_evidence = true;
         signals.has_process_preparation = true;
     }
+    let pellet_fgf_context = has_text_pellet_fgf_context(language, raw_line);
+    if pellet_fgf_context {
+        signals.has_pellet_fgf_text_context = true;
+    }
+    if pellet_fgf_context && has_text_pellet_fgf_material_evidence(raw_line) {
+        signals.has_pellet_fgf_material_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if pellet_fgf_context && has_text_pellet_fgf_bead_thermal_evidence(raw_line) {
+        signals.has_pellet_fgf_bead_thermal_evidence = true;
+        signals.has_process_preparation = true;
+    }
     let ded_context = has_text_ded_context(language, raw_line);
     if ded_context {
         signals.has_ded_text_context = true;
@@ -10925,6 +11178,8 @@ fn analyze_instruction_programs(
         let mut active_units_mode = None;
         let mut units_mode_motion_observed = false;
         let mut reported_units_mode_change_boundary = false;
+        let mut additive_inch_units_verified = true;
+        let mut reported_additive_inch_units_boundary = false;
         let mut has_positioning_mode = false;
         let mut reported_incremental_positioning_program_end_boundary = false;
         let mut additive_relative_positioning_verified = true;
@@ -11085,6 +11340,9 @@ fn analyze_instruction_programs(
         let mut has_slicer_mesh_topology_evidence = false;
         let mut has_slicer_high_speed_context = false;
         let mut has_slicer_high_speed_kinematic_evidence = false;
+        let mut has_pellet_fgf_text_context = false;
+        let mut has_pellet_fgf_material_evidence = false;
+        let mut has_pellet_fgf_bead_thermal_evidence = false;
         let mut has_material_jetting_text_context = false;
         let mut has_material_jetting_material_evidence = false;
         let mut has_material_jetting_support_evidence = false;
@@ -11181,6 +11439,10 @@ fn analyze_instruction_programs(
                 has_slicer_high_speed_context |= signals.has_slicer_high_speed_context;
                 has_slicer_high_speed_kinematic_evidence |=
                     signals.has_slicer_high_speed_kinematic_evidence;
+                has_pellet_fgf_text_context |= signals.has_pellet_fgf_text_context;
+                has_pellet_fgf_material_evidence |= signals.has_pellet_fgf_material_evidence;
+                has_pellet_fgf_bead_thermal_evidence |=
+                    signals.has_pellet_fgf_bead_thermal_evidence;
                 has_material_jetting_text_context |= signals.has_material_jetting_text_context;
                 has_material_jetting_material_evidence |=
                     signals.has_material_jetting_material_evidence;
@@ -11472,6 +11734,10 @@ fn analyze_instruction_programs(
 
             if let Some(next_units_mode) = line_units_mode {
                 has_units_mode = true;
+                if class == MachineClass::Additive {
+                    additive_inch_units_verified =
+                        next_units_mode != "inch" || has_additive_inch_units_evidence(raw_line);
+                }
                 if units_mode_motion_observed
                     && active_units_mode != Some(next_units_mode)
                     && !has_units_mode_change_evidence(raw_line)
@@ -12396,6 +12662,31 @@ fn analyze_instruction_programs(
                 });
             }
             if line_has_positive_additive_extrusion && first_extrusion_line.is_none() {
+                if !additive_inch_units_verified && !reported_additive_inch_units_boundary {
+                    reported_additive_inch_units_boundary = true;
+                    findings.push(ValidationFinding {
+                        severity: "warning".to_string(),
+                        code: "additive-inch-units-not-verified".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message:
+                            "first positive extrusion appears while printer G20 inch mode is active without slicer or unit-conversion evidence"
+                                .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "printer-inch-units-boundary".to_string(),
+                        severity: "warning".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "most additive printer profiles, slicers, motion limits, and extrusion calibration assume millimeters; G20 inch mode can scale travel, Z height, feed, and extrusion expectations by 25.4 unless the printer and slicer unit conversion is explicitly reviewed"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "switch back to G21 before extrusion, or record slicer-units, printer-units, extrusion-calibration, and dry-run scale verification for the inch-mode print block"
+                                .to_string(),
+                    });
+                }
                 if (!has_extrusion_mode || !has_extruder_reset)
                     && !reported_extrusion_state_boundary
                 {
@@ -14511,6 +14802,76 @@ fn analyze_instruction_programs(
                     action: "add-slicer-high-speed-kinematic-evidence".to_string(),
                     reason:
                         "high-speed FDM text instructions should retain input-shaper, acceleration, jerk, and volumetric-flow evidence before release"
+                    .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_pellet_fgf_text_context)
+                && has_pellet_fgf_text_context
+                && !has_pellet_fgf_material_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "pellet-fgf-material-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "pellet/FGF text job lacks pellet lot, drying, moisture, hopper, screen-pack, purge, or nozzle evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "pellet-fgf-material-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "large-format pellet extrusion can foam, under-extrude, jam, or contaminate the bead when pellet/regrind lot, drying, moisture, hopper feed, screen-pack/nozzle state, and purge evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach pellet or regrind lot, drying cycle, moisture/dew-point reading, hopper/feed-throat state, screen-pack/nozzle check, and purge strand evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-pellet-fgf-material-evidence".to_string(),
+                    reason:
+                        "pellet/FGF text instructions should retain pellet lot, drying, moisture, hopper, purge, and nozzle evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_pellet_fgf_text_context)
+                && has_pellet_fgf_text_context
+                && !has_pellet_fgf_bead_thermal_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "pellet-fgf-bead-thermal-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "pellet/FGF text job lacks bead, screw/melt, cooling, gantry-clearance, warpage, or trim-allowance evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "pellet-fgf-bead-thermal-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "pellet/FGF parts can slump, warp, exceed gantry clearance, miss bead dimensions, or leave no finish stock when bead width/layer height, screw RPM, melt pressure/temperature, cooling, interlayer temperature, and trim allowance are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach bead width and layer height, extrusion multiplier or volumetric flow, screw RPM, melt temperature/pressure, cooling airflow, thermal/interlayer log, gantry-clearance check, warpage review, and trim allowance before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-pellet-fgf-bead-thermal-evidence".to_string(),
+                    reason:
+                        "pellet/FGF text instructions should retain bead, thermal, cooling, clearance, warpage, and trim evidence before release"
                             .to_string(),
                 });
             }
@@ -18490,6 +18851,8 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "fanuc-turning-postprocessor"
     } else if token.contains("iso-gcode") || token == "gcode" || token.contains("-gcode-") {
         "iso-gcode-postprocessor"
+    } else if wants_pellet_fgf_printing(&token) {
+        "pellet-fgf-job-packager"
     } else if token.contains("sla") || token.contains("resin") {
         "resin-printer-job-packager"
     } else if token.contains("material-jet")
@@ -18552,6 +18915,8 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "mill-turn-controller-gcode".to_string()
     } else if token.contains("marlin") || token.contains("gcode") {
         "controller-gcode".to_string()
+    } else if wants_pellet_fgf_printing(&token) {
+        "pellet-fgf-job-package".to_string()
     } else if token.contains("sla") || token.contains("resin") {
         "resin-printer-job-package".to_string()
     } else if token.contains("material-jet")
@@ -24257,6 +24622,7 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "slicer-job",
         "sla-job",
         "resin-job",
+        "pellet-fgf-job",
         "material-jetting-job",
         "directed-energy-deposition-job",
         "composite-fiber-job",
@@ -24307,6 +24673,7 @@ async fn capabilities() -> impl IntoResponse {
         },
         "machineClasses": [
             "fdm-printer",
+            "pellet-fgf-printer",
             "sla-msla-resin-printer",
             "material-jetting-printer",
             "directed-energy-deposition-cell",
@@ -24434,6 +24801,7 @@ async fn request_schema() -> impl IntoResponse {
             "optional": ["controller", "materials", "workEnvelopeMm", "axes", "operations", "profileEvidence"],
             "supportedKinds": [
                 "fdm-printer",
+                "pellet-fgf-printer",
                 "sla-printer",
                 "material-jetting-printer",
                 "directed-energy-deposition-cell",
@@ -26310,8 +26678,10 @@ mod tests {
             .quality_plan
             .inspection_points
             .iter()
-            .any(|point| machine_class(&point.machine_kind) == MachineClass::Lathe
-                && point.method.contains("thread gauge")));
+            .any(
+                |point| machine_class(&point.machine_kind) == MachineClass::Lathe
+                    && point.method.contains("thread gauge")
+            ));
         assert!(response
             .quality_plan
             .measurement_targets
@@ -27300,6 +27670,67 @@ mod tests {
             .any(|target| {
                 target.machine_kind == "material-jetting-printer"
                     && target.output_format == "material-jetting-job-package"
+            }));
+    }
+
+    #[test]
+    fn default_additive_fleet_generates_pellet_fgf_printer_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-pellet-fgf-printer".to_string()),
+            objective:
+                "large-format pellet FGF PETG tooling pattern with thick bead walls, pellet drying, thermal cooling, and trim allowance"
+                    .to_string(),
+            material: Some(material("petg", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.24),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("pellet FGF printer plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "pellet-fgf-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("large-format bead path")));
+        let pellet_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "pellet-fgf-printer")
+            .expect("pellet FGF program should be generated");
+        assert_eq!(pellet_program.language, "pellet-fgf-job");
+        assert!(pellet_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft pellet FGF")));
+        assert!(pellet_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("DRY_PELLETS")));
+        assert!(pellet_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("PRINT_BEAD_PATH")));
+        assert!(pellet_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("drying/moisture evidence")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "pellet-fgf-printer"
+                    && target.postprocessor == "pellet-fgf-job-packager"
+                    && target.output_format == "pellet-fgf-job-package"
             }));
     }
 
@@ -31014,6 +31445,103 @@ mod tests {
     }
 
     #[test]
+    fn additive_analysis_requires_unit_conversion_evidence_for_inch_mode() {
+        let programs = vec![
+            program(
+                "inch-mode-print",
+                "fdm-printer",
+                &[
+                    "G20 G90 ; inch units selected",
+                    "M82 ; filament lot PLA-17 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
+                    "G28",
+                    "M104 S210",
+                    "M109 S210",
+                    "M140 S60",
+                    "M190 S60",
+                    "G92 E0",
+                    "G1 Z0.011 F1200",
+                    "G1 X0.5 Y0.5 E0.04 F35",
+                    "M84",
+                ],
+            ),
+            program(
+                "inch-mode-print-verified",
+                "fdm-printer",
+                &[
+                    "G20 G90 ; slicer units verified, printer units verified, inch/mm conversion verified",
+                    "M82 ; filament lot PLA-17 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
+                    "G28",
+                    "M104 S210",
+                    "M109 S210",
+                    "M140 S60",
+                    "M190 S60",
+                    "G92 E0",
+                    "G1 Z0.011 F1200",
+                    "G1 X0.5 Y0.5 E0.04 F35",
+                    "M84",
+                ],
+            ),
+            program(
+                "metric-restored-print",
+                "fdm-printer",
+                &[
+                    "G20 G90 ; temporary inch setup",
+                    "G21 ; metric printer mode restored",
+                    "M82 ; filament lot PLA-17 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
+                    "G28",
+                    "M104 S210",
+                    "M109 S210",
+                    "M140 S60",
+                    "M190 S60",
+                    "G92 E0",
+                    "G1 Z0.28 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "additive-inch-units-not-verified"
+                && finding.program_id.as_deref() == Some("inch-mode-print")
+                && finding.line == Some(10)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "printer-inch-units-boundary"
+                && boundary.program_id.as_deref() == Some("inch-mode-print")
+                && boundary.line == Some(10)
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("G21")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "additive-inch-units-not-verified"
+                && matches!(
+                    finding.program_id.as_deref(),
+                    Some("inch-mode-print-verified" | "metric-restored-print")
+                )
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-inch-units-boundary")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-inch-units-boundary")));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-inch-units-boundary")));
+    }
+
+    #[test]
     fn additive_analysis_requires_extruder_reset_after_mode_switch() {
         let programs = vec![
             program(
@@ -33879,6 +34407,98 @@ mod tests {
     }
 
     #[test]
+    fn text_pellet_fgf_jobs_require_material_and_bead_thermal_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("pellet-fgf-missing-material-evidence".to_string()),
+                machine_id: Some("pellet-fgf-1".to_string()),
+                machine_kind: Some("pellet-fgf-printer".to_string()),
+                language: Some("pellet-fgf-job".to_string()),
+                instructions: vec![
+                    "Large format pellet FGF gantry print with bead width 12mm, layer height 5mm, extrusion multiplier, screw RPM, melt temp, melt pressure, cooling airflow, interlayer temperature, gantry clearance, trim allowance, and warpage review".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("pellet-fgf-missing-bead-thermal-evidence".to_string()),
+                machine_id: Some("pellet-fgf-1".to_string()),
+                machine_kind: Some("pellet-fgf-printer".to_string()),
+                language: Some("pellet-fgf-job".to_string()),
+                instructions: vec![
+                    "Pellet FGF print from pellet lot PETG-44 with regrind ratio 10%, drying cycle, moisture pct, dew point, hopper feed, screen pack, purge strand, and nozzle check recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("pellet-fgf-with-evidence".to_string()),
+                machine_id: Some("pellet-fgf-1".to_string()),
+                machine_kind: Some("pellet-fgf-printer".to_string()),
+                language: Some("pellet-fgf-job".to_string()),
+                instructions: vec![
+                    "Pellet FGF print from pellet lot PETG-44 with regrind ratio 10%, drying cycle, moisture pct, dew point, hopper feed, screen pack, purge strand, and nozzle check recorded".to_string(),
+                    "Large format bead path with bead width 12mm, layer height 5mm, extrusion multiplier, screw RPM, melt temp, melt pressure, cooling airflow, interlayer temperature, bead coupon, gantry clearance, trim allowance, and warpage review".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "pellet-fgf-material-evidence-missing"
+                && finding.program_id.as_deref() == Some("pellet-fgf-missing-material-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "pellet-fgf-bead-thermal-evidence-missing"
+                && finding.program_id.as_deref() == Some("pellet-fgf-missing-bead-thermal-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("pellet-fgf-")
+                && finding.program_id.as_deref() == Some("pellet-fgf-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "pellet-fgf-material-boundary"
+                && boundary.program_id.as_deref() == Some("pellet-fgf-missing-material-evidence")
+                && boundary.requires_human_intervention
+                && boundary
+                    .suggested_resolution
+                    .contains("pellet or regrind lot")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "pellet-fgf-bead-thermal-boundary"
+                && boundary.program_id.as_deref()
+                    == Some("pellet-fgf-missing-bead-thermal-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("gantry-clearance")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-pellet-fgf-material-evidence"
+                && improvement.program_id.as_deref() == Some("pellet-fgf-missing-material-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-pellet-fgf-bead-thermal-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("pellet-fgf-missing-bead-thermal-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [pellet-fgf-material-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [pellet-fgf-bead-thermal-boundary]")));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [pellet-fgf-")));
+    }
+
+    #[test]
     fn text_ded_jobs_require_feedstock_energy_thermal_and_inspection_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -34621,6 +35241,7 @@ mod tests {
             "mill-turn-gcode",
             "sla-job",
             "material-jetting-job",
+            "pellet-fgf-job",
             "directed-energy-deposition-job",
             "composite-fiber-job",
             "sls-job",
