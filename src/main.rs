@@ -578,6 +578,7 @@ enum MachineClass {
     Mill,
     Lathe,
     Router,
+    SheetCut,
     Other,
 }
 
@@ -1043,11 +1044,56 @@ fn is_router_material(material: &MaterialSpec) -> bool {
         )
 }
 
+fn wants_resin_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("resin")
+        || token.contains("sla")
+        || token.contains("msla")
+        || token.contains("dlp")
+        || token.contains("photopolymer")
+}
+
+fn wants_powder_bed_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("sls")
+        || token.contains("mjf")
+        || token.contains("powder")
+        || token.contains("pa12")
+        || token.contains("nylon")
+}
+
+fn wants_sheet_cutting(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("laser")
+        || token.contains("waterjet")
+        || token.contains("water-jet")
+        || token.contains("plasma")
+        || token.contains("sheet-cut")
+        || token.contains("sheet-cutter")
+        || token.contains("knife-cut")
+        || token.contains("die-cut")
+        || token.contains("kerf")
+        || token.contains("stencil")
+        || token.contains("gasket")
+}
+
 fn is_horizontal_mill_kind(kind: &str) -> bool {
     let token = normalize_token(kind);
     token.contains("horizontal-mill")
         || token.contains("horizontal-machining")
         || (token.contains("horizontal") && token.contains("mill"))
+}
+
+fn is_resin_printer_kind(kind: &str) -> bool {
+    wants_resin_printing(kind)
+}
+
+fn is_powder_bed_printer_kind(kind: &str) -> bool {
+    wants_powder_bed_printing(kind)
+}
+
+fn is_sheet_cutter_kind(kind: &str) -> bool {
+    wants_sheet_cutting(kind)
 }
 
 fn wants_horizontal_milling(value: &str) -> bool {
@@ -1095,6 +1141,43 @@ fn default_machines() -> Vec<MachineProfile> {
             work_envelope_mm: Some(vec![220.0, 220.0, 250.0]),
             axes: Some(3),
             operations: Some(vec!["additive-print".to_string()]),
+        },
+        MachineProfile {
+            id: "sla-printer-1".to_string(),
+            kind: "sla-printer".to_string(),
+            controller: Some("sla-job".to_string()),
+            materials: Some(vec![
+                "resin".to_string(),
+                "photopolymer".to_string(),
+                "polymer".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![145.0, 145.0, 175.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "resin-print".to_string(),
+                "wash".to_string(),
+                "uv-cure".to_string(),
+                "support-removal".to_string(),
+            ]),
+        },
+        MachineProfile {
+            id: "sls-printer-1".to_string(),
+            kind: "sls-printer".to_string(),
+            controller: Some("sls-job".to_string()),
+            materials: Some(vec![
+                "nylon".to_string(),
+                "pa12".to_string(),
+                "polymer".to_string(),
+                "powder".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![300.0, 300.0, 300.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "powder-bed-print".to_string(),
+                "cooldown".to_string(),
+                "depowder".to_string(),
+                "bead-blast".to_string(),
+            ]),
         },
         MachineProfile {
             id: "vertical-mill-1".to_string(),
@@ -1324,11 +1407,21 @@ fn infer_requested_parts(
         || (!needs_milled_part && !needs_routed_part);
 
     if needs_printed_part {
+        let preferred_method =
+            if wants_resin_printing(&objective_token) || wants_resin_printing(&material.name) {
+                "resin-print"
+            } else if wants_powder_bed_printing(&objective_token)
+                || wants_powder_bed_printing(&material.name)
+            {
+                "powder-bed-print"
+            } else {
+                "additive-print"
+            };
         parts.push(RequestedPart {
             id: "printed-body".to_string(),
             description: "additive body or prototype shell inferred from objective".to_string(),
             material: Some(material.clone()),
-            preferred_method: Some("additive-print".to_string()),
+            preferred_method: Some(preferred_method.to_string()),
             tolerance_mm: Some(tolerance_mm.max(0.15)),
         });
     }
@@ -1420,10 +1513,32 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_horizontal_milling(value));
+    let wants_resin_printer = preferred.as_deref().is_some_and(wants_resin_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_resin_printing(value));
+    let wants_powder_bed_printer = preferred.as_deref().is_some_and(wants_powder_bed_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_powder_bed_printing(value));
 
     if wants_horizontal_mill {
         if let Some(machine) = machines.iter().find(|machine| {
             is_horizontal_mill_kind(&machine.kind) && material_supported(machine, material)
+        }) {
+            return machine;
+        }
+    }
+    if wants_resin_printer {
+        if let Some(machine) = machines.iter().find(|machine| {
+            is_resin_printer_kind(&machine.kind) && material_supported(machine, material)
+        }) {
+            return machine;
+        }
+    }
+    if wants_powder_bed_printer {
+        if let Some(machine) = machines.iter().find(|machine| {
+            is_powder_bed_printer_kind(&machine.kind) && material_supported(machine, material)
         }) {
             return machine;
         }
@@ -1516,6 +1631,12 @@ fn part_method(class: MachineClass) -> &'static str {
 
 fn operation_for_part(part: &PartPlan) -> &'static str {
     match machine_class(&part.machine_kind) {
+        MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => {
+            "orient, support, resin print, wash, and UV cure"
+        }
+        MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
+            "nest, powder-bed print, cool down, depowder, and finish"
+        }
         MachineClass::Additive => "slice, support, and print",
         MachineClass::Mill if is_horizontal_mill_kind(&part.machine_kind) => {
             "index fixture, side-mill slots, and finish horizontal features"
@@ -1549,6 +1670,52 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
     let class = machine_class(&machine.kind);
     let program_id = format!("{}-{}", part.id, normalize_token(&machine.kind));
     let (language, instructions, safety_notes) = match class {
+        MachineClass::Additive if is_resin_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "sla-job".to_string()),
+            vec![
+                "; draft resin SLA/MSLA job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [setup-boundary]: verify resin, vat film, build plate, PPE, and ventilation".to_string(),
+                "ORIENT part with drain paths and support touchpoints reviewed".to_string(),
+                "SLICE layer_height_mm=0.050 exposure_s=2.4 lift_mm=6.0".to_string(),
+                "PRINT resin job with operator-reviewed anti-aliasing and compensation".to_string(),
+                "CHECKPOINT [process-split-boundary]: drip, remove build plate, and transfer to wash station".to_string(),
+                "WASH ipa_minutes=8; keep uncured resin waste contained".to_string(),
+                "CHECKPOINT [human-intervention]: remove supports after wash and inspect fragile features".to_string(),
+                "UV_CURE minutes=12 rotation=on; verify material datasheet before final cure".to_string(),
+                "COMPLETE record cure cycle, dimensional inspection, and resin batch".to_string(),
+            ],
+            vec![
+                "Draft only: generate the final SLA/MSLA job from the actual mesh, resin profile, supports, and exposure calibration."
+                    .to_string(),
+                "Human signoff is required for resin handling, wash/cure timing, support removal, and dimensional inspection."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Additive if is_powder_bed_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "sls-job".to_string()),
+            vec![
+                "; draft powder-bed additive job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [setup-boundary]: verify powder lot, refresh ratio, nitrogen/thermal profile, and build volume".to_string(),
+                "NEST parts with thermal spacing and unpacking access reviewed".to_string(),
+                "PRINT powder-bed job layer_height_mm=0.100 energy_profile=operator-reviewed".to_string(),
+                "CHECKPOINT [cooldown-boundary]: hold closed build chamber until safe unpack temperature".to_string(),
+                "DEPOWDER using approved PPE, grounded vacuum, and powder recovery workflow".to_string(),
+                "CHECKPOINT [process-split-boundary]: bead blast, dye, seal, or tumble only after first-article inspection".to_string(),
+                "COMPLETE record powder reuse state, cooldown curve, and dimensional inspection".to_string(),
+            ],
+            vec![
+                "Draft only: final SLS/MJF parameters must come from the printer vendor profile and material batch validation."
+                    .to_string(),
+                "Human signoff is required for thermal cooldown, depowdering, powder reuse, and post-processing gates."
+                    .to_string(),
+            ],
+        ),
         MachineClass::Additive => (
             machine
                 .controller
@@ -3244,14 +3411,14 @@ fn apply_learning_policy_to_request(
         .map(|hint| hint.trim().is_empty())
         .unwrap_or(true)
     {
-        learning.policy_hint = Some(format!(
-            "learned-policy-prefer:{}{}",
-            learned_methods.join("+"),
-            learned_assembly_strategy
-                .as_ref()
-                .map(|strategy| format!(";assembly={strategy}"))
-                .unwrap_or_default()
-        ));
+        let mut hint_parts = Vec::new();
+        if !learned_methods.is_empty() {
+            hint_parts.push(format!("methods={}", learned_methods.join("+")));
+        }
+        if let Some(strategy) = learned_assembly_strategy.as_ref() {
+            hint_parts.push(format!("assembly={strategy}"));
+        }
+        learning.policy_hint = Some(format!("learned-policy-prefer:{}", hint_parts.join(";")));
     }
     if learning
         .prior_successes
@@ -3563,7 +3730,8 @@ fn assembly_plan(parts: &[PartPlan], constraints: Option<&FabricationConstraints
     } else {
         Vec::new()
     };
-    if let Some(strategy) = preferred_assembly_strategy {
+    if allow_multi_part && preferred_assembly_strategy.is_some() {
+        let strategy = preferred_assembly_strategy.unwrap();
         combine_candidates.push(format!(
             "reuse learned assembly strategy when interfaces permit: {strategy}"
         ));
@@ -3600,12 +3768,12 @@ fn assembly_plan(parts: &[PartPlan], constraints: Option<&FabricationConstraints
     AssemblyPlan {
         strategy: if parts.len() == 1 {
             "single-part fabrication".to_string()
+        } else if !allow_multi_part {
+            "single-piece preference; review split candidates before approving".to_string()
         } else if let Some(strategy) = preferred_assembly_strategy {
             format!("learned hybrid assembly strategy: {strategy}")
-        } else if allow_multi_part {
-            "multi-part hybrid fabrication with explicit assembly interfaces".to_string()
         } else {
-            "single-piece preference; review split candidates before approving".to_string()
+            "multi-part hybrid fabrication with explicit assembly interfaces".to_string()
         },
         combine_candidates,
         split_candidates,
@@ -5253,6 +5421,122 @@ mod tests {
     }
 
     #[test]
+    fn default_additive_fleet_generates_resin_printer_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-resin-printer".to_string()),
+            objective: "resin SLA dental guide with fine organic channels".to_string(),
+            material: Some(material("resin", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.08),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("resin printer plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "sla-printer" && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("UV cure")));
+        let resin_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "sla-printer")
+            .expect("SLA program should be generated");
+        assert_eq!(resin_program.language, "sla-job");
+        assert!(resin_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft resin SLA/MSLA job")));
+        assert!(resin_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("process-split-boundary")));
+        assert!(resin_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("wash/cure timing")));
+        assert_eq!(response.validation.severity, "warning");
+        assert!(response.validation.findings.iter().any(|finding| {
+            finding.code == "text-post-processing-boundary"
+                && finding
+                    .program_id
+                    .as_deref()
+                    .is_some_and(|id| id.contains("sla-printer"))
+        }));
+        assert!(response
+            .validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| boundary.kind == "post-processing-boundary"));
+    }
+
+    #[test]
+    fn default_additive_fleet_generates_powder_bed_printer_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-sls-printer".to_string()),
+            objective: "SLS nylon manifold with nested powder bed clips".to_string(),
+            material: Some(material("pa12", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.18),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("powder-bed printer plan should be generated");
+
+        assert!(response
+            .design
+            .parts
+            .iter()
+            .any(|part| part.machine_kind == "sls-printer"));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("depowder")));
+        let powder_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "sls-printer")
+            .expect("SLS program should be generated");
+        assert_eq!(powder_program.language, "sls-job");
+        assert!(powder_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft powder-bed additive job")));
+        assert!(powder_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("cooldown-boundary")));
+        assert!(powder_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("depowdering")));
+        assert_eq!(response.validation.severity, "warning");
+        assert!(response.validation.findings.iter().any(|finding| {
+            finding.code == "text-post-processing-boundary"
+                && finding
+                    .program_id
+                    .as_deref()
+                    .is_some_and(|id| id.contains("sls-printer"))
+        }));
+        assert!(response
+            .validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| boundary.kind == "post-processing-boundary"));
+    }
+
+    #[test]
     fn router_analysis_flags_profile_before_spindle_and_tab_stop_boundary() {
         let programs = vec![program(
             "unsafe-router",
@@ -5729,7 +6013,14 @@ mod tests {
                 average_reward: 1.7,
                 recommendation: "prefer".to_string(),
             }],
-            assembly_preferences: Vec::new(),
+            assembly_preferences: vec![LearningPreference {
+                key: "printed body plus routed clamp insert".to_string(),
+                samples: 2,
+                successes: 2,
+                failures: 0,
+                average_reward: 1.5,
+                recommendation: "prefer".to_string(),
+            }],
             neural_training_examples: vec![
                 "job=router-success-1 success=true reward=1.600 methods=routing assembly=single-piece observations=clean-tabs".to_string(),
                 "job=router-success-2 success=true reward=1.800 methods=routing assembly=single-piece observations=low-intervention".to_string(),
@@ -5751,6 +6042,13 @@ mod tests {
             .training_examples
             .iter()
             .any(|example| example.contains("router-success-1")));
+        assert!(learned.assembly.combine_candidates.iter().any(|candidate| {
+            candidate.contains("reuse learned assembly strategy")
+                && candidate.contains("printed body plus routed clamp insert")
+        }));
+        assert!(learned.learning.actions.iter().any(|action| {
+            action == "prefer-learned-assembly-printed-body-plus-routed-clamp-insert"
+        }));
     }
 
     #[test]
@@ -5807,6 +6105,22 @@ mod tests {
                 "job=hybrid-success-1 success=true reward=3.200 methods=additive-print+turning assembly=printed body plus turned insert observations=press-fit-pass".to_string(),
             ],
         };
+        let mut restricted_request = request.clone();
+        restricted_request.constraints = Some(FabricationConstraints {
+            max_setups: None,
+            allow_human_intervention: None,
+            allow_multi_part_assembly: Some(false),
+            require_dry_run: None,
+            preferred_methods: None,
+            preferred_assembly_strategy: None,
+        });
+        let restricted = plan_fabrication_with_policy(restricted_request, Some(&policy))
+            .expect("restricted learned plan should still work");
+        assert_eq!(
+            restricted.assembly.strategy,
+            "single-piece preference; review split candidates before approving"
+        );
+
         let learned =
             plan_fabrication_with_policy(request, Some(&policy)).expect("learned plan should work");
 
