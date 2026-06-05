@@ -22,6 +22,7 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-fabrication-server` (Rust fabrication planner and instruction validator for printers, mills, routers, and lathes)
 - `dd-contract-service` (Rust Solana contract gateway for `solana.contract.v1` validation)
 - `dd-trading-server` (Rust trading decision service for `trading.decision.v1` risk-gated order intents)
+- `dd-economics-server` (Rust economics dashboard and `economics.forecast.v1` theory/data projection service)
 - `dd-dev-server-api` (bootstrap Node.js coding-agent task manager for `/tasks`, `/stream`,
   `/status`, `/agents`, `/healthz`)
 - `dd-redis-cache` (cluster-local Redis cache for low-latency ephemeral runtime state)
@@ -108,6 +109,12 @@ Gateway path map:
   `dd-ai-ml-pipeline.ai-ml:8099` (internal auth required)
 - `/trading/`, `/trading/schema`, `/trading/example`, `POST /trading/decide` ->
   `dd-trading-server:8103` (internal auth required)
+- `/economics/`, `/economics/dashboard.json`, `/economics/model/equations`,
+  `/economics/sources`, `POST /economics/forecast`, `POST /economics/ingest`,
+  `POST /economics/sources/pull`, `/economics/sentiment/sources`,
+  `POST /economics/sentiment/analyze`, `/economics/macro/indicators`,
+  `/economics/vc/investment`, `POST /economics/recommendations` ->
+  `dd-economics-server:8114` (internal auth required)
 - `/scrape`, `/scrape/strategies`, `/scrape/healthz`, `/scrape/metrics` -> `dd-web-scraper:8097`
   (internal auth required)
 - `/browser-test`, `/browser-test/healthz`, `/browser-test/metrics`, `/browser-test/status`,
@@ -132,7 +139,7 @@ rolling updates with `maxUnavailable: 0` / `maxSurge: 1`, readiness probes, and 
 `PodDisruptionBudget` with `minAvailable: 1`. This covers the public/auth/API surface where normal
 rollouts previously caused intermittent gateway `502`s: `dd-remote-web-home`, `dd-remote-auth`,
 `dd-remote-rest-api`, `dd-agent-worker-broker`, `dd-des-rs`, `dd-contract-service`,
-`dd-mdp-optimizer`, `dd-fabrication-server`, `dd-trading-server`, `dd-web-scraper`, `dd-browser-test-server`,
+`dd-mdp-optimizer`, `dd-fabrication-server`, `dd-trading-server`, `dd-economics-server`, `dd-web-scraper`, `dd-browser-test-server`,
 `dd-selenium-server`, and `dd-rust-vapi-phone`. `dd-des-rs` also has a small HPA with
 `minReplicas: 2` and a long scale-down stabilization window. That service cold-builds the Rust
 server and DES engine inside the pod, so scale-to-zero drift creates a multi-minute no-endpoint

@@ -1,0 +1,278 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-economics-server
+  namespace: default
+  labels:
+    app: dd-economics-server
+spec:
+  replicas: 2
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-economics-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-05-economics-server'
+      labels:
+        app: dd-economics-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: economics-server
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              cd /opt/dd-next-1/remote/deployments/economics-server-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8114'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+            - name: ECONOMICS_HISTORY_YEARS
+              value: '15'
+            - name: ECONOMICS_PROJECTION_MONTHS
+              value: '18'
+            - name: ECONOMICS_CONFIDENCE_LEVEL
+              value: '0.90'
+            - name: ECONOMICS_ALLOW_UNAUTHENTICATED
+              value: 'false'
+            - name: ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS
+              value: 'false'
+            # Optional sentiment-provider placeholders. Values live in AWS
+            # Secrets Manager / Kubernetes secrets, never in Git.
+            - name: ECONOMICS_X_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_X_BEARER_TOKEN
+                  optional: true
+            - name: ECONOMICS_X_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_X_API_KEY
+                  optional: true
+            - name: ECONOMICS_X_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_X_API_SECRET
+                  optional: true
+            - name: ECONOMICS_X_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_X_ACCESS_TOKEN
+                  optional: true
+            - name: ECONOMICS_X_ACCESS_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_X_ACCESS_TOKEN_SECRET
+                  optional: true
+            - name: ECONOMICS_REDDIT_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_REDDIT_CLIENT_ID
+                  optional: true
+            - name: ECONOMICS_REDDIT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_REDDIT_CLIENT_SECRET
+                  optional: true
+            - name: ECONOMICS_REDDIT_USER_AGENT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_REDDIT_USER_AGENT
+                  optional: true
+            - name: ECONOMICS_NEWS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_NEWS_API_KEY
+                  optional: true
+            - name: ECONOMICS_STOCKTWITS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_STOCKTWITS_TOKEN
+                  optional: true
+            - name: ECONOMICS_GDELT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_GDELT_API_KEY
+                  optional: true
+            - name: ECONOMICS_FRED_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_FRED_API_KEY
+                  optional: true
+            - name: ECONOMICS_BEA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_BEA_API_KEY
+                  optional: true
+            - name: ECONOMICS_BLS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_BLS_API_KEY
+                  optional: true
+            - name: ECONOMICS_TREASURY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_TREASURY_API_KEY
+                  optional: true
+            - name: ECONOMICS_CENSUS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_CENSUS_API_KEY
+                  optional: true
+            - name: ECONOMICS_EIA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_EIA_API_KEY
+                  optional: true
+            - name: ECONOMICS_SEC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_SEC_API_KEY
+                  optional: true
+            - name: ECONOMICS_CRUNCHBASE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_CRUNCHBASE_API_KEY
+                  optional: true
+            - name: ECONOMICS_PITCHBOOK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_PITCHBOOK_API_KEY
+                  optional: true
+            - name: ECONOMICS_CB_INSIGHTS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_CB_INSIGHTS_API_KEY
+                  optional: true
+            - name: ECONOMICS_DEALROOM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_DEALROOM_API_KEY
+                  optional: true
+            - name: ECONOMICS_PREQIN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_PREQIN_API_KEY
+                  optional: true
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: ECONOMICS_FORECAST_REQUEST_SUBJECT
+              value: dd.remote.economics.forecast.requests
+            - name: ECONOMICS_QUEUE_GROUP
+              value: dd-economics-server
+            - name: ECONOMICS_FORECAST_RESULT_SUBJECT
+              value: dd.remote.economics.forecast.results
+            - name: ECONOMICS_MARKET_EVENT_SUBJECT
+              value: dd.remote.economics.market.events
+            - name: ECONOMICS_RUNTIME_EVENT_SUBJECT
+              value: dd.remote.events
+            # runtime-config wiring: registers this pod with the control plane
+            # so it receives /internal/update-runtime-config pushes every 5 min
+            # plus on-demand admin pushes.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-economics-server
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-economics-server
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-economics-server.default.svc.cluster.local:8114/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: dd-agent-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8114
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

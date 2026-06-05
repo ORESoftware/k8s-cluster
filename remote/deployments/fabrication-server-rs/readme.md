@@ -45,7 +45,12 @@ math/simulation/learning engine. Learning responses and optimizer artifacts
 identify the DES SDK surface, carry canonical DES MDP/POMDP schema names, and
 include DES-compatible `desMdpSpec`/`desPomdpSpec` payloads plus
 value-iteration `desMdpSolution` and QMDP-underlying `desPomdpSolution`
-previews for downstream policy workers.
+previews for downstream policy workers. Plan responses also expose a DES Studio
+`desScheduleModel` queue graph so schedulers and learning workers can analyze
+machine-lane capacity from the same machine schedule. Instruction-analysis
+responses expose a matching DES Studio `desInstructionModel` queue graph so
+imported CNC, slicer, printer, and text instruction streams can be prioritized
+by review capacity and failure-boundary pressure.
 
 The queue accepts direct plan payloads, direct instruction-analysis payloads
 containing `programs`, rich fabrication outcome payloads containing `outcome`,
@@ -110,6 +115,9 @@ is supplied.
 - A `machineSchedule` with deterministic machine lanes, operation start/end
   windows, setup/run/teardown minutes, process dependency holds, postprocessor
   holds, and operator or automation assignments before machine start.
+- A DES Studio `desScheduleModel` with per-machine `Constant -> Queue -> Sink`
+  blocks, service-rate estimates, structural analysis, and lane mappings for
+  resource-capacity simulation.
 - Draft machine programs such as Marlin-style FDM printer G-code and slicer job
   sheets, large-format pellet/FGF job sheets with pellet lot, drying/moisture,
   hopper/purge, bead/thermal/cooling, gantry-clearance, warpage, and trim-allowance
@@ -205,6 +213,9 @@ is supplied.
 - A `manufacturingHandoff` package with part-level geometry envelopes, stock
   strategy, datum scheme, fixture/setup plan, inspection gates, release blockers,
   and release gates for downstream CAD/CAM, slicer, or shop-floor review.
+- A `materialPlan` with route feedstock, stock forms, quantity estimates, scrap
+  allowances, conditioning steps, required material/stock evidence, release gates,
+  blockers, and compact `material-route:*` learning observations.
 - A `qualityPlan` with inspection points, measurement targets, records to
   capture, release gates, and learning observations for MDP/POMDP/neural outcome
   feedback after shop-floor evidence is recorded.
@@ -213,16 +224,21 @@ is supplied.
   links for each generated part route.
 - `improvements` and `improvedPrograms` review drafts for generated and
   submitted instruction streams, with conservative gates inserted before
-  machine-ready release.
+  machine-ready release and a `patchManifest` that records line-level repair
+  operations, review reasons, inserted content, and learning observations.
 - Assembly advice with a structured `assemblyGraph` of part nodes, hybrid
   interface edges, join/fit strategies, inspection gates, and sequence steps for
   deciding when parts should be combined into one job or split so tight-tolerance
   features can be machined and inspected separately.
+- A `hybridMakePlan` with part routes, join operations, split/combine decisions,
+  review-gated actions, and compact learning observations so MDP/POMDP/neural
+  workers can compare future single-piece, split-piece, and assembled outcomes.
 - A learning contract with MDP states, POMDP observations, a structured
   `pomdpBeliefState` with hidden-state probabilities and probe actions, a
   `releaseProbePlan` of priority evidence probes required before release, policy
   actions, scored `strategyCandidates`, typed `interventionSignals`, reward terms,
-  neural feature names, a deterministic neural-policy sketch, and
+  neural feature names, a DES `FeedForwardNetwork`-backed neural-policy sketch
+  with `neuralPolicy.engineInference`, and
   `neuralTrainingCorpus` feature vectors, labels, inference candidates, and
   training-example sketches. Failure boundary summaries, automation
   requirements, and resolution plans are converted into boundary-specific
@@ -239,7 +255,7 @@ is supplied.
   production plans, machine programs, validation reports, boundary summaries,
   resolution plans, intervention maps, execution plans, postprocess plans, POMDP
   belief states, release probe plans, neural training corpora, machine-release reports, manufacturing
-  handoffs, quality plans, tooling plans, machine-selection traces, improved instructions,
+  handoffs, material plans, quality plans, tooling plans, machine-selection traces, improved instructions,
   assembly plans, process graphs, assembly graphs, and optimizer-shaped MDP
   requests.
 
@@ -408,7 +424,11 @@ non-controller text instructions such as printer job sheets, setup sheets, and
 operator checklists. It returns controller-agnostic safety findings, improvement
 opportunities, and `improvedPrograms` review drafts that insert conservative
 modal defaults or explicit setup, post-processing, split, assembly, and
-human-intervention gates. Submitted machine profiles are bounded and validated,
+human-intervention gates. Each improved program includes a `patchManifest` with
+draft insert/review operations such as `insert-before-line`,
+`insert-before-program`, `insert-after-program`, and `review-line`, plus content
+snippets and `instruction-patch:*` learning observations for MDP/POMDP/neural
+workers. Submitted machine profiles are bounded and validated,
 including positive work-envelope values, unique IDs, nonzero axis counts, and
 bounded non-secret `profileEvidence` lists for calibration, tools, fixtures,
 materials, process support, maintenance, release evidence, and retained blockers.
@@ -499,7 +519,11 @@ failure boundaries, and a retained `simulation-report` or
 `analysis-simulation-report` artifact. Mill/router rapid lateral moves at or
 below the stock surface emit `simulated-rapid-below-clearance` findings and a
 `simulated-rapid-clearance` boundary so clamp, tab, fixture, and stock-collision
-risks are reviewed before release.
+risks are reviewed before release. Each simulation report also carries a
+`riskProfile` with per-program risk scores, high-risk counts, recommended
+actions, and learning observations such as `simulation-risk:*` so MDP/POMDP and
+neural workers can learn which motion traces need machine-failure or
+human-intervention gates.
 
 Plan and analysis responses include a `boundarySummary` object that rolls raw
 failure boundaries into operator-facing counts, typed `automationRequirements`,
@@ -512,21 +536,27 @@ same data is retained as `boundary-summary`, `analysis-boundary-summary`,
 `resolution-plan`, `analysis-resolution-plan`, `intervention-map`, or
 `analysis-intervention-map` artifacts. The intervention maps expose
 `interventionMap` links for human intervention points, split/combine decisions,
-automation paths, program boundary traces, and machine-failure risk scores back
-to program IDs and process nodes
+split/combine `interfacePlan` objects with joint type, fit, decomposition
+strategy, and inspection gate details, automation paths, program boundary traces,
+and machine-failure risk scores back to program IDs and process nodes
 when process graph context exists.
 Instruction-analysis responses also include a `learning` plan derived from the
 submitted programs, boundary evidence, improvements, and release probes. The
 retained `analysis-learning-plan`, `analysis-pomdp-belief-state`,
-`analysis-release-probe-plan`, `analysis-neural-training-corpus`, and
-`analysis-mdp-request` artifacts let MDP/POMDP and neural workers learn from
-imported CNC, slicer, printer, and text instruction streams without requiring a
-new generated design plan first.
+`analysis-release-probe-plan`, `analysis-neural-training-corpus`,
+`analysis-des-instruction-model`, and `analysis-mdp-request` artifacts let
+MDP/POMDP, DES, and neural workers learn from imported CNC, slicer, printer, and
+text instruction streams without requiring a new generated design plan first.
 
 Plan responses also include `assembly.assemblyGraph`; the retained
 `parametric-design` and `assembly-plan` artifacts carry the same graph so
 external CAD/CAM or learning workers can connect generated parts, manufacturing
 methods, join interfaces, dry-fit/metrology gates, and assembly sequence steps.
+The response, retained `hybrid-make-plan`, retained `parametric-design`, and
+`mdp-request` artifacts include `hybridMakePlan` routes, join operations,
+split/combine decision records, review gates, and learning observations so
+policy workers can learn whether to keep geometry as one piece, split it for
+machining/printing, or recombine it through inspected assembly interfaces.
 The response, retained `design-package`, retained `parametric-design`, and
 `mdp-request` artifacts include `designPackage` export targets, coordinate
 frames, model intent, review gates, and export blockers so CAD/CAM, slicer, mesh,
@@ -551,6 +581,11 @@ The response, retained `parametric-design`, retained `manufacturing-handoff`, an
 CAD/CAM, slicer, fixture, and learning workers can connect each part to its
 geometry primitive, stock and datum assumptions, fixture strategy, draft program,
 inspection gates, and machine-release blockers.
+The response, retained `material-plan`, retained `parametric-design`, and
+`mdp-request` artifacts include `materialPlan` route feedstock, stock forms,
+quantity estimates, scrap allowances, conditioning steps, required evidence,
+release gates, blockers, and learning observations so material/stock/feedstock
+planning state is visible to CAM, slicer, operator, and policy workers.
 The response, retained `production-plan`, retained `parametric-design`, and
 `mdp-request` artifacts include `productionPlan` quantity-aware batch data so
 schedulers can compare batch counts, setup repeats, estimated machine minutes,
@@ -649,6 +684,14 @@ quality gates before retry. Those learned remediation risks also contribute
 machine-failure hidden-state evidence and add a
 `learned-remediation-risk:review-prior-failure-outcome-before-release`
 required-before-release action in `releaseProbePlan`.
+Outcome observations that identify validation or execution boundaries, such as
+`boundary-kind:*`, `boundary-severity:*`, `resolution-action:*`,
+machine-failure, or human-intervention-required signals, are also retained in
+policy snapshots as `boundaryLearningExamples`. Matching future plans replay
+those examples as `boundary-memory` training inputs and normalized
+`learned-boundary-memory:*` observations so the neural corpus and POMDP state can
+learn which machine-envelope, split/combine, or intervention boundaries blocked
+prior jobs.
 The plan also includes scored `strategyCandidates` such as selected hybrid,
 additive consolidation, machined datum-finish, and split-for-inspection options.
 These candidates carry methods, machine kinds, estimated time, intervention
@@ -664,25 +707,27 @@ workers or operators, including required review of matching learned
 remediation-risk memory before machine release. Planning feeds those release
 probes back into `machineRelease` as `release-probe` blockers and checklist
 evidence so learned failure memory can hold the top-level machine release. A
-`neuralPolicy` sketch with a
-normalized feature vector, hidden activations, and bounded action scores lets an
+`neuralPolicy` sketch with a normalized feature vector, hidden activations,
+`neuralPolicy.engineInference` from the local DES `FeedForwardNetwork`,
+parameter counts, output scores, top signal, and bounded action scores lets an
 external neural model train from the same state or replace the local scoring
 head. `neuralTrainingCorpus` carries per-part generated examples,
 per-boundary `validation-boundary` examples linked to resolution actions,
-policy-memory examples, bounded labels, and strategy inference candidates aligned
-to `neuralFeatures`. `interventionSignals` expose automation requirements and ordered
+`instruction-patch` examples for line-level repair actions, policy-memory examples
+including replayed `boundary-memory`, bounded labels, and strategy inference
+candidates aligned to `neuralFeatures`. `interventionSignals` expose automation requirements and ordered
 `resolutionPlan` steps as learnable actions, observations, next states, and
 reward adjustments. The optimizer-shaped `mdp-request` artifact includes
 `learningEngine`, `desMdpSpec`, `desMdpSolution`, `desPomdpSpec`,
 `desPomdpSolution`, `strategyCandidates`, `interventionSignals`, `pomdpBeliefState`,
 `releaseProbePlan`, `neuralTrainingCorpus`,
 `designPackage`, `designExports`, `designInputReview`, `productionPlan`,
-`machineSchedule`, `machineSelection`, `manufacturingHandoff`, `qualityPlan`,
-`toolingPlan`, `interventionMap`, `executionPlan`, `postprocessPlan`,
+`machineSchedule`, `desScheduleModel`, `machineSelection`, `manufacturingHandoff`,
+`materialPlan`, `qualityPlan`, `toolingPlan`, `processGraph`, `hybridMakePlan`, `interventionMap`, `executionPlan`, `postprocessPlan`, `simulation`,
 `automationRequirements`, `resolutionPlan`, and `machineRelease` so external
 MDP/POMDP workers can reuse the same DES-backed policy preview, boundary evidence, design export state,
 CAD/model/slicer source assumptions, batch-planning state, machine-choice
-alternatives, machine-schedule state, quality evidence targets, tooling/setup
+alternatives, machine-schedule state, DES queue-capacity model, material/stock/feedstock planning state, hybrid make/split decisions, simulation risk profiles, quality evidence targets, tooling/setup
 requirements, intervention paths, postprocessor gates, and CAD/CAM handoff
 assumptions.
 
@@ -699,15 +744,15 @@ runtime inspection boundary while the database contract is still being designed.
   artifact summaries.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
   such as `design-summary`, `parametric-design`, `process-plan`,
-  `design-package`, `design-export-bundle`, `design-input-review`, `production-plan`, `machine-schedule`, `machine-selection`, `process-graph`,
-  `manufacturing-handoff`, `quality-plan`, `tooling-plan`, `machine-release`,
+  `design-package`, `design-export-bundle`, `design-input-review`, `production-plan`, `machine-schedule`, `des-schedule-model`, `machine-selection`, `process-graph`, `hybrid-make-plan`,
+  `manufacturing-handoff`, `material-plan`, `quality-plan`, `tooling-plan`, `machine-release`,
   `execution-plan`, `postprocess-plan`, `boundary-summary`, `intervention-map`, `simulation-report`, `learning-plan`,
   `pomdp-belief-state`, `release-probe-plan`, `neural-training-corpus`,
   `mdp-request`, a `generated-design-export`, a `program-*` generated machine program, or an
   `improved-program-*` instruction rewrite, plus instruction-analysis artifacts such as
   `analysis-boundary-summary`, `analysis-intervention-map`,
   `analysis-machine-release`, `analysis-execution-plan`, `analysis-postprocess-plan`,
-  `analysis-simulation-report`, `analysis-learning-plan`,
+  `analysis-simulation-report`, `analysis-des-instruction-model`, `analysis-learning-plan`,
   `analysis-pomdp-belief-state`, `analysis-release-probe-plan`,
   `analysis-neural-training-corpus`, `analysis-mdp-request`, and learning artifacts
   such as `reward-signal`, `mdp-experience`, `outcome-remediation-plan`,
@@ -722,26 +767,35 @@ runtime inspection boundary while the database contract is still being designed.
   inputs, preferred neutral exports, slicer targets, per-input conversion worker
   lanes, required evidence, review gates, and release blockers;
   `parametric-design` and `assembly-plan` include
-  `assemblyGraph` nodes, interfaces, and sequence gates; `parametric-design`,
+  `assemblyGraph` nodes, interfaces, and sequence gates; `hybrid-make-plan`,
+  `parametric-design`, and `mdp-request` include `hybridMakePlan` part routes,
+  join operations, split/combine decisions, review actions, and learning
+  observations; `parametric-design`,
   `production-plan`, and `mdp-request` include `productionPlan` batch counts,
   setup repeats, estimated machine minutes, review gates, release blockers, and
-  unattended-run eligibility; `machine-schedule`, `parametric-design`, and
-  `mdp-request` include `machineSchedule` machine lanes, operation windows,
-  dependency holds, postprocessor holds, and operator/automation start gates;
+  unattended-run eligibility; `des-schedule-model`, `machine-schedule`,
+  `parametric-design`, and `mdp-request` include `machineSchedule`,
+  `desScheduleModel` DES Studio queue blocks, service-rate estimates, structural
+  analysis, lane mappings, operation windows, dependency holds, postprocessor
+  holds, and operator/automation start gates;
   `parametric-design`,
   `machine-selection`, and `mdp-request` include `machineSelection` candidate
   scoring, selected-machine reasons, and rejection/review status for each part;
   `parametric-design`,
   `manufacturing-handoff`, and `mdp-request` include `manufacturingHandoff`
   part-level stock, datum, fixture, program-link, inspection, and release-blocker
-  data; `quality-plan` and `mdp-request` include `qualityPlan` inspection
+  data; `material-plan`, `parametric-design`, and `mdp-request` include
+  `materialPlan` route feedstock, stock forms, quantity estimates, conditioning
+  steps, required evidence, release gates, blockers, and learning observations;
+  `quality-plan` and `mdp-request` include `qualityPlan` inspection
   points, measurement targets, records to capture, release gates, and learning
   observations; `tooling-plan` and `mdp-request` include `toolingPlan` required
   tools, workholding, consumables, setup checks, automation dependencies,
   production-batch links, and release blockers; `intervention-map`,
   `analysis-intervention-map`, and `mdp-request` include `interventionMap`
-  human-intervention points, split/combine decisions, automation paths, program
-  boundary traces, learning observations, and machine-failure risk
+  human-intervention points, split/combine decisions with `interfacePlan`
+  decomposition/recombination gates, automation paths, program boundary traces,
+  learning observations, and machine-failure risk
   scores; `execution-plan`, `analysis-execution-plan`,
   `parametric-design`, and `mdp-request` include `executionPlan` program runs,
   checkpoints, execution stop points, unattended-run eligibility, and required
@@ -751,14 +805,22 @@ runtime inspection boundary while the database contract is still being designed.
   choices, input/output formats, dry-run evidence gates, blockers, required
   artifacts including assembly-kit travelers, robot-path or fixture simulation
   reports, final-fit metrology records, and operator signoff requirements;
+  `simulation-report`, `analysis-simulation-report`, and `mdp-request` include
+  `riskProfile` program risk scores, high-risk program counts, recommended
+  actions, and `simulation-risk:*` learning observations;
+  `analysis-des-instruction-model` and `analysis-mdp-request` include
+  `desInstructionModel` DES Studio review queues, per-program service-rate
+  signals, machine-ready candidates, and structural analysis for imported
+  instruction streams;
   `pomdp-belief-state`, `release-probe-plan`, `parametric-design`, and `mdp-request` include
   `pomdpBeliefState` hidden-state probabilities, observation likelihoods, and
   recommended probe actions for uncertain machine-failure, intervention,
   split/combine, automation, and program-valid states plus `releaseProbePlan`
   priority probes, release-blocker flags, and required-before-release actions; `learning-plan`,
-  `neural-training-corpus`, and `mdp-request` include `neuralTrainingCorpus`
-  normalized training examples, feature vectors, labels, and strategy inference
-  candidates;
+  `neural-training-corpus`, and `mdp-request` include
+  `neuralPolicy.engineInference`, DES `FeedForwardNetwork` parameter counts,
+  output scores and top signal, plus `neuralTrainingCorpus` normalized training
+  examples, feature vectors, labels, and strategy inference candidates;
   `outcome-remediation-plan` includes `outcomeRemediation` root causes,
   corrective actions, retry strategy, and learning signals from observed
   fabrication outcomes; `process-graph`, and
@@ -767,7 +829,7 @@ runtime inspection boundary while the database contract is still being designed.
   `designInputReview`, `executionPlan`, `postprocessPlan`, `pomdpBeliefState`,
   `releaseProbePlan`,
   `machineRelease`, `manufacturingHandoff`, `productionPlan`, `machineSchedule`,
-  `qualityPlan`, and `toolingPlan` for one-payload handoff review.
+  `materialPlan`, `qualityPlan`, and `toolingPlan` for one-payload handoff review.
 
 ## Local Build
 

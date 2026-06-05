@@ -1251,6 +1251,29 @@ data:
         proxy_pass http://dd-trading-server.default.svc.cluster.local:8103/;
       }
 
+      location = /economics {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /economics/;
+      }
+
+      location /economics/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-economics-server.default.svc.cluster.local:8114/;
+      }
+
       location = /scrape {
         if ($dd_gateway_auth_ok = 0) {
           return 401;

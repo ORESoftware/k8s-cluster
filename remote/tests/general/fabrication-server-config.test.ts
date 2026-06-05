@@ -44,6 +44,13 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct InstructionAnalysisRequest/);
   assert.match(source, /learning: Option<LearningHints>/);
   assert.match(source, /struct InstructionAnalysisResponse[\s\S]*learning: LearningPlan/);
+  assert.match(source, /struct ImprovedInstructionProgram[\s\S]*patch_manifest: InstructionPatchManifest/);
+  assert.match(source, /struct InstructionPatchManifest/);
+  assert.match(source, /struct InstructionPatchOperation/);
+  assert.match(source, /fn instruction_patch_manifest/);
+  assert.match(source, /dd\.fabrication\.instruction-patch-manifest\.v1/);
+  assert.match(source, /instruction-patch:/);
+  assert.match(source, /"patchManifest": program\.patch_manifest/);
   assert.match(source, /struct FabricationOutcomeRequest/);
   assert.match(source, /struct FabricationLearningResponse/);
   assert.match(source, /struct OutcomeRemediationPlan/);
@@ -60,7 +67,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct LearningMdpEnginePolicy/);
   assert.match(
     source,
-    /use des_engine::\{[\s\S]*solve_mdp[\s\S]*solve_pomdp_underlying[\s\S]*MdpSpec[\s\S]*PomdpSpec[\s\S]*MDP_SCHEMA[\s\S]*POMDP_SCHEMA[\s\S]*sdk as des_sdk[\s\S]*\};/,
+    /use des_engine::\{[\s\S]*solve_mdp[\s\S]*solve_pomdp_underlying[\s\S]*MdpSpec[\s\S]*PomdpSpec[\s\S]*MDP_SCHEMA[\s\S]*POMDP_SCHEMA[\s\S]*NeuralNetworkLike[\s\S]*ActivationName[\s\S]*DenseLayerConfig[\s\S]*FeedForwardNetwork[\s\S]*analyze_model_spec[\s\S]*StudioModelSpec[\s\S]*STUDIO_GRAPH_SCHEMA[\s\S]*sdk as des_sdk[\s\S]*\};/,
   );
   assert.match(source, /engine: LearningEngineMetadata/);
   assert.match(source, /engine_policy: LearningMdpEnginePolicy/);
@@ -91,10 +98,13 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct ProgramBoundaryTrace/);
   assert.match(source, /struct BoundaryHumanInterventionPoint/);
   assert.match(source, /struct BoundarySplitCombineDecision/);
+  assert.match(source, /struct BoundarySplitCombineInterfacePlan/);
   assert.match(source, /struct BoundaryAutomationPath/);
   assert.match(source, /struct MachineSelectionTrace/);
   assert.match(source, /struct MachineSelectionCandidate/);
   assert.match(source, /struct ManufacturingHandoff/);
+  assert.match(source, /struct MaterialPlan/);
+  assert.match(source, /struct MaterialRouteRequirement/);
   assert.match(source, /struct DesignPackage/);
   assert.match(source, /struct DesignPackagePart/);
   assert.match(source, /struct DesignAssemblyExport/);
@@ -114,6 +124,16 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct MachineScheduleLane/);
   assert.match(source, /struct MachineScheduleOperation/);
   assert.match(source, /struct MachineScheduleHold/);
+  assert.match(source, /struct FabricationDesScheduleModel/);
+  assert.match(source, /struct FabricationDesScheduleLaneModel/);
+  assert.match(source, /des_schedule_model: FabricationDesScheduleModel/);
+  assert.match(source, /fn fabrication_des_schedule_model/);
+  assert.match(source, /struct FabricationDesInstructionModel/);
+  assert.match(source, /struct FabricationDesInstructionProgramModel/);
+  assert.match(source, /des_instruction_model: FabricationDesInstructionModel/);
+  assert.match(source, /fn fabrication_des_instruction_model/);
+  assert.match(source, /StudioBlockKind::Queue/);
+  assert.match(source, /analyze_model_spec\(&model_spec\)/);
   assert.match(source, /struct MachineReleaseReport/);
   assert.match(source, /struct MachineReleaseBlocker/);
   assert.match(source, /struct MachineReleaseChecklistItem/);
@@ -125,15 +145,47 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct PostprocessTarget/);
   assert.match(source, /struct PostprocessGate/);
   assert.match(source, /struct PostprocessBlocker/);
+  assert.match(source, /struct SimulationRiskProfile/);
+  assert.match(source, /struct SimulationProgramRisk/);
+  assert.match(source, /risk_profile: SimulationRiskProfile/);
+  assert.match(source, /fn simulation_risk_profile/);
   assert.match(source, /struct AssemblyGraph/);
   assert.match(source, /struct AssemblyInterface/);
   assert.match(source, /struct AssemblySequenceStep/);
+  assert.match(source, /struct HybridMakePlan/);
+  assert.match(source, /struct HybridPartRoute/);
+  assert.match(source, /struct HybridJoinOperation/);
+  assert.match(source, /struct HybridSplitCombineDecision/);
+  assert.match(source, /hybrid_make_plan: HybridMakePlan/);
+  assert.match(source, /fn hybrid_make_plan/);
   assert.match(source, /struct NeuralPolicySketch/);
+  assert.match(source, /struct NeuralEngineInference/);
+  assert.match(source, /engine_inference: NeuralEngineInference/);
   assert.match(source, /struct NeuralTrainingCorpus/);
   assert.match(source, /struct NeuralTrainingExample/);
   assert.match(source, /struct NeuralInferenceCandidate/);
+  assert.match(source, /fn fabrication_neural_engine_network/);
+  assert.match(source, /fn neural_engine_inference/);
+  assert.match(source, /FeedForwardNetwork::new/);
+  assert.match(source, /ActivationName::Sigmoid/);
   assert.match(source, /fn neural_policy_sketch/);
+  assert.match(source, /\.predict\(&feature_vector\)/);
   assert.match(source, /fn neural_training_corpus/);
+  assert.match(source, /fn boundary_training_feature_vector/);
+  assert.match(source, /fn boundary_training_labels/);
+  assert.match(source, /fn boundary_training_reward_hint/);
+  assert.match(source, /source: "validation-boundary"/);
+  assert.match(source, /resolution-action:/);
+  assert.match(source, /fn instruction_patch_training_feature_vector/);
+  assert.match(source, /fn instruction_patch_training_labels/);
+  assert.match(source, /source: "instruction-patch"/);
+  assert.match(source, /instruction-patch-action:/);
+  assert.match(source, /patch-action:/);
+  assert.match(source, /boundary_learning_examples: Vec<String>/);
+  assert.match(source, /fn observation_has_boundary_learning_signal/);
+  assert.match(source, /fn boundary_learning_example/);
+  assert.match(source, /boundary-memory/);
+  assert.match(source, /learned-boundary-memory/);
   assert.match(source, /fn pomdp_belief_state/);
   assert.match(source, /fn strategy_candidates/);
   assert.match(source, /fn learning_engine_metadata/);
@@ -149,6 +201,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn learned_preferred_methods/);
   assert.match(source, /fn learned_preferred_assembly_strategy/);
   assert.match(source, /fn learned_remediation_risks/);
+  assert.match(source, /fn learned_boundary_memory/);
   assert.match(source, /learned-remediation-risk/);
   assert.match(source, /avoid-learned-risk/);
   assert.match(source, /fn learned_remediation_risk_observations/);
@@ -164,10 +217,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /process_graph: ProcessGraph/);
   assert.match(source, /fn intervention_map/);
   assert.match(source, /fn fallback_boundary_process_link/);
+  assert.match(source, /fn boundary_split_combine_interface_plan/);
   assert.match(source, /intervention_map: BoundaryInterventionMap/);
   assert.match(source, /program_boundaries: Vec<ProgramBoundaryTrace>/);
   assert.match(source, /human_intervention_points: Vec<BoundaryHumanInterventionPoint>/);
   assert.match(source, /split_combine_decisions: Vec<BoundarySplitCombineDecision>/);
+  assert.match(source, /interface_plan: BoundarySplitCombineInterfacePlan/);
+  assert.match(source, /split-combine-interface/);
+  assert.match(source, /boundary-decomposition-fit-and-release-check/);
   assert.match(source, /automation_paths: Vec<BoundaryAutomationPath>/);
   assert.match(source, /fn machine_selection_trace/);
   assert.match(source, /machine_selection: Vec<MachineSelectionTrace>/);
@@ -177,6 +234,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /viable-alternative/);
   assert.match(source, /fn manufacturing_handoff/);
   assert.match(source, /manufacturing_handoff: ManufacturingHandoff/);
+  assert.match(source, /fn material_plan/);
+  assert.match(source, /fn material_feedstock_kind/);
+  assert.match(source, /material_plan: MaterialPlan/);
   assert.match(source, /fn design_package/);
   assert.match(source, /design_package: DesignPackage/);
   assert.match(source, /fn design_export_bundle/);
@@ -209,6 +269,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /required_artifacts: Vec<String>/);
   assert.match(source, /fn postprocessor_for/);
   assert.match(source, /"manufacturing-handoff"/);
+  assert.match(source, /"material-plan"/);
+  assert.match(source, /dd\.fabrication\.material-plan\.v1/);
+  assert.match(source, /material-route:/);
   assert.match(source, /"design-package"/);
   assert.match(source, /"design-export-bundle"/);
   assert.match(source, /"generated-design-export"/);
@@ -324,6 +387,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"neuralTrainingCorpus": response\.learning\.neural_training_corpus/);
   assert.match(source, /"machineRelease": response\.machine_release/);
   assert.match(source, /"manufacturingHandoff": response\.manufacturing_handoff/);
+  assert.match(source, /"materialPlan": response\.material_plan/);
   assert.match(source, /assembly-interface/);
   assert.match(source, /gated-before-machine-release/);
   assert.match(source, /printed-pocket-turned-insert/);
@@ -993,6 +1057,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"analysis-boundary-summary"/);
   assert.match(source, /"resolution-plan"/);
   assert.match(source, /"process-graph"/);
+  assert.match(source, /"hybrid-make-plan"/);
   assert.match(source, /"machine-selection"/);
   assert.match(source, /"manufacturing-handoff"/);
   assert.match(source, /"analysis-resolution-plan"/);
@@ -1311,6 +1376,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /learned_parts_for_method_combination/);
   assert.match(source, /prefer-learned-method-combination/);
   assert.match(source, /dd\.fabrication\.neural-policy-sketch\.v1/);
+  assert.match(source, /dd\.fabrication\.neural-engine-inference\.v1/);
+  assert.match(source, /des_engine::des::general::neural_network::FeedForwardNetwork/);
   assert.match(source, /pomdp_belief_state: PomdpBeliefState/);
   assert.match(source, /neural_training_corpus: NeuralTrainingCorpus/);
   assert.match(source, /feature_vector: Vec<f64>/);
@@ -1324,14 +1391,18 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"designPackage": response\.design_package/);
   assert.match(source, /"productionPlan": response\.production_plan/);
   assert.match(source, /"machineSchedule": response\.machine_schedule/);
+  assert.match(source, /"desScheduleModel": response\.des_schedule_model/);
   assert.match(source, /"qualityPlan": response\.quality_plan/);
   assert.match(source, /"toolingPlan": response\.tooling_plan/);
   assert.match(source, /"machineSelection": response\.machine_selection/);
   assert.match(source, /"manufacturingHandoff": response\.manufacturing_handoff/);
+  assert.match(source, /"materialPlan": response\.material_plan/);
   assert.match(source, /"processGraph": response\.process_graph/);
+  assert.match(source, /"hybridMakePlan": response\.hybrid_make_plan/);
   assert.match(source, /"interventionMap": response\.intervention_map/);
   assert.match(source, /"interventionSignals": response\.learning\.intervention_signals/);
   assert.match(source, /"postprocessPlan": response\.postprocess_plan/);
+  assert.match(source, /"simulation": response\.simulation/);
   assert.match(source, /"pomdpBeliefState": response\.learning\.pomdp_belief_state/);
   assert.match(source, /"releaseProbePlan": response\.learning\.release_probe_plan/);
   assert.match(source, /"neuralTrainingCorpus": response\.learning\.neural_training_corpus/);
@@ -1339,6 +1410,21 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"resolutionPlan": response\.resolution_plan/);
   assert.match(source, /"automation-required"\.to_string\(\)/);
   assert.match(source, /hidden_activations/);
+  assert.match(source, /engine_inference/);
+  assert.match(source, /top_signal/);
+  assert.match(source, /dd\.fabrication\.des-schedule-model\.v1/);
+  assert.match(source, /des-schedule-model/);
+  assert.match(source, /dd\.fabrication\.hybrid-make-plan\.v1/);
+  assert.match(source, /split_combine_decisions/);
+  assert.match(source, /hybrid-boundary:/);
+  assert.match(source, /hybrid-strategy-candidate/);
+  assert.match(source, /dd\.fabrication\.simulation-risk-profile\.v1/);
+  assert.match(source, /simulation-risk:/);
+  assert.match(source, /machine-envelope-exceeded/);
+  assert.match(source, /dd\.fabrication\.des-instruction-model\.v1/);
+  assert.match(source, /analysis-des-instruction-model/);
+  assert.match(source, /"desInstructionModel": &response\.des_instruction_model/);
+  assert.match(source, /failure_boundary_count/);
   assert.match(source, /action_scores/);
   assert.match(source, /id: "cnc-router-1"/);
   assert.match(source, /preferred_method: Some\("routing"\.to_string\(\)\)/);
@@ -1449,6 +1535,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /local `des_engine` crate/);
   assert.match(readme, /remote\/submodules\/discrete-event-system\.rs/);
   assert.match(readme, /DES-compatible `desMdpSpec`\/`desPomdpSpec`/);
+  assert.match(readme, /DES Studio\s+`desScheduleModel` queue graph/);
+  assert.match(readme, /per-machine `Constant -> Queue -> Sink`/);
+  assert.match(readme, /DES Studio `desInstructionModel` queue graph/);
+  assert.match(readme, /failure-boundary pressure/);
   assert.match(
     readme,
     /value-iteration `desMdpSolution` and QMDP-underlying `desPomdpSolution`/,
@@ -1507,10 +1597,20 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /recommended probe actions/);
   assert.match(readme, /neural-example/);
   assert.match(readme, /neural-policy sketch/);
+  assert.match(readme, /DES `FeedForwardNetwork`-backed neural-policy sketch/);
+  assert.match(readme, /`neuralPolicy\.engineInference`/);
+  assert.match(readme, /parameter counts, output scores, top signal/);
   assert.match(readme, /`neuralTrainingCorpus`/);
   assert.match(readme, /`neural-training-corpus`/);
   assert.match(readme, /feature vectors, labels, inference candidates/);
+  assert.match(readme, /per-boundary `validation-boundary` examples/);
+  assert.match(readme, /linked to resolution actions/);
+  assert.match(readme, /`instruction-patch` examples/);
+  assert.match(readme, /line-level repair actions/);
   assert.match(readme, /policy-memory examples/);
+  assert.match(readme, /`boundaryLearningExamples`/);
+  assert.match(readme, /`boundary-memory`/);
+  assert.match(readme, /`learned-boundary-memory:\*`/);
   assert.match(readme, /strategy inference candidates/);
   assert.match(readme, /scored `strategyCandidates`/);
   assert.match(readme, /typed `interventionSignals`/);
@@ -1526,6 +1626,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /reuse strong learned method and assembly/);
   assert.match(readme, /structured `assemblyGraph`/);
   assert.match(readme, /hybrid\s+interface edges/);
+  assert.match(readme, /`hybridMakePlan`/);
+  assert.match(readme, /part routes, join operations, split\/combine decisions/);
+  assert.match(readme, /single-piece, split-piece, and assembled outcomes/);
+  assert.match(readme, /`materialPlan`/);
+  assert.match(readme, /route feedstock, stock forms/);
+  assert.match(readme, /material\/stock\/feedstock planning state/);
   assert.match(readme, /without explicit\s+`preferredMethods`/);
   assert.match(readme, /learned hybrid join strategies/);
   assert.match(readme, /`POST \/plan`/);
@@ -1552,6 +1658,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /release probe plans/);
   assert.match(readme, /neural training corpora/);
   assert.match(readme, /manufacturing\s+handoffs/);
+  assert.match(readme, /material plans/);
   assert.match(readme, /design packages/);
   assert.match(readme, /quality plans/);
   assert.match(readme, /tooling plans/);
@@ -1627,6 +1734,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /candidate scores, material\/process/);
   assert.match(readme, /operation gaps, and fallback warnings/);
   assert.match(readme, /`manufacturingHandoff` package/);
+  assert.match(readme, /`materialPlan` with route feedstock/);
   assert.match(readme, /checklist status, release blockers/);
   assert.match(readme, /datum scheme, fixture\/setup plan/);
   assert.match(readme, /split-job-or-part/);
@@ -1654,6 +1762,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`design-input-review`/);
   assert.match(readme, /`generated-design-export`/);
   assert.match(readme, /`production-plan`/);
+  assert.match(readme, /`des-schedule-model`/);
+  assert.match(readme, /`hybrid-make-plan`/);
+  assert.match(readme, /`material-plan`/);
+  assert.match(readme, /`analysis-des-instruction-model`/);
   assert.match(readme, /`quality-plan`/);
   assert.match(readme, /`tooling-plan`/);
   assert.match(readme, /`machine-release`/);
@@ -1676,9 +1788,15 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`desMdpSpec`\/`desPomdpSpec` payloads/);
   assert.match(readme, /QMDP-underlying `desPomdpSolution`/);
   assert.match(readme, /DES-backed policy preview/);
+  assert.match(readme, /DES queue-capacity model/);
+  assert.match(readme, /`desScheduleModel` DES Studio queue blocks/);
+  assert.match(readme, /`desInstructionModel` DES Studio review queues/);
+  assert.match(readme, /per-program service-rate\s+signals/);
+  assert.match(readme, /split\/combine `interfacePlan` objects/);
+  assert.match(readme, /decomposition\/recombination gates/);
   assert.match(
     readme,
-    /`designPackage`, `designExports`, `designInputReview`, `productionPlan`,\s+`machineSchedule`, `machineSelection`, `manufacturingHandoff`, `qualityPlan`,\s+`toolingPlan`, `interventionMap`, `executionPlan`, `postprocessPlan`,\s+`automationRequirements`, `resolutionPlan`, and `machineRelease`/,
+    /`designPackage`, `designExports`, `designInputReview`, `productionPlan`,\s+`machineSchedule`, `desScheduleModel`, `machineSelection`, `manufacturingHandoff`,\s+`materialPlan`, `qualityPlan`, `toolingPlan`, `processGraph`, `hybridMakePlan`, `interventionMap`, `executionPlan`, `postprocessPlan`, `simulation`,\s+`automationRequirements`, `resolutionPlan`, and `machineRelease`/,
   );
   assert.match(readme, /execution stop points/);
   assert.match(readme, /unattended-run eligibility/);
@@ -1686,6 +1804,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /assembly-kit travelers/);
   assert.match(readme, /robot-path or fixture simulation\s+reports/);
   assert.match(readme, /final-fit metrology records/);
+  assert.match(readme, /`riskProfile`/);
+  assert.match(readme, /per-program risk scores/);
+  assert.match(readme, /`simulation-risk:\*`/);
+  assert.match(readme, /simulation risk profiles/);
   assert.match(readme, /`designExports` generated design export payloads/);
   assert.match(readme, /source previews, media types, blockers/);
   assert.match(readme, /design export state/);
@@ -1696,6 +1818,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   assert.match(readme, /batch-planning\s+state/);
   assert.match(readme, /machine-schedule state/);
+  assert.match(readme, /hybrid make\/split decisions/);
   assert.match(readme, /`machine-schedule`/);
   assert.match(readme, /operation windows/);
   assert.match(readme, /quality evidence targets/);
@@ -1822,6 +1945,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /Submitted `existingInstructions` are analyzed beside generated drafts/);
   assert.match(readme, /resolved machine profile material lists/);
   assert.match(readme, /`improvements` and `improvedPrograms` review drafts/);
+  assert.match(readme, /`patchManifest`/);
+  assert.match(readme, /line-level repair\s+operations/);
+  assert.match(readme, /`insert-before-line`/);
+  assert.match(readme, /`instruction-patch:\*` learning observations/);
   assert.match(readme, /machine-ready release/);
   assert.match(readme, /nonzero axis counts/);
   assert.match(readme, /positioning-mode reset state/);

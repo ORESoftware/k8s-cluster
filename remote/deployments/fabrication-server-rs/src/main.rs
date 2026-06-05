@@ -33,12 +33,16 @@ use des_engine::{
             des_base::neural_network::NeuralNetworkLike,
             neural_network::{ActivationName, DenseLayerConfig, FeedForwardNetwork},
         },
+        studio::{
+            analyze_model_spec, StudioAnalysis, StudioBlockKind, StudioBlockSpec, StudioModelSpec,
+            StudioWireSpec, STUDIO_GRAPH_SCHEMA,
+        },
     },
     sdk as des_sdk,
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 const SERVICE_NAME: &str = "dd-fabrication-server";
 const SCHEMA_VERSION: &str = "fabrication.plan.v1";
@@ -278,16 +282,19 @@ struct FabricationPlanResponse {
     quantity: u32,
     production_plan: ProductionPlan,
     machine_schedule: MachineSchedule,
+    des_schedule_model: FabricationDesScheduleModel,
     design: DesignSummary,
     design_package: DesignPackage,
     design_exports: DesignExportBundle,
     design_input_review: DesignInputReview,
     machine_selection: Vec<MachineSelectionTrace>,
     manufacturing_handoff: ManufacturingHandoff,
+    material_plan: MaterialPlan,
     quality_plan: QualityPlan,
     tooling_plan: ToolingPlan,
     process_plan: Vec<ProcessStep>,
     process_graph: ProcessGraph,
+    hybrid_make_plan: HybridMakePlan,
     generated_programs: Vec<GeneratedProgram>,
     validation: ValidationReport,
     boundary_summary: BoundarySummary,
@@ -320,6 +327,7 @@ struct InstructionAnalysisResponse {
     execution_plan: ExecutionReadinessPlan,
     postprocess_plan: PostprocessPlan,
     simulation: SimulationReport,
+    des_instruction_model: FabricationDesInstructionModel,
     improvements: Vec<InstructionImprovement>,
     improved_programs: Vec<ImprovedInstructionProgram>,
     learning: LearningPlan,
@@ -478,7 +486,36 @@ struct ImprovedInstructionProgram {
     machine_ready: bool,
     source_line_count: usize,
     instructions: Vec<String>,
+    patch_manifest: InstructionPatchManifest,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionPatchManifest {
+    schema_version: &'static str,
+    status: String,
+    program_id: String,
+    machine_kind: String,
+    language: String,
+    source_line_count: usize,
+    improved_line_count: usize,
+    operation_count: usize,
+    operations: Vec<InstructionPatchOperation>,
+    learning_observations: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionPatchOperation {
+    operation_id: String,
+    operation: String,
+    line: Option<usize>,
+    action: String,
+    reason: String,
+    content: Vec<String>,
+    requires_human_review: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -814,6 +851,38 @@ struct ManufacturingHandoffGate {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct MaterialPlan {
+    schema_version: &'static str,
+    status: String,
+    review_required: bool,
+    material: MaterialSpec,
+    declared_stock: Option<StockSpec>,
+    route_requirements: Vec<MaterialRouteRequirement>,
+    release_gates: Vec<String>,
+    learning_observations: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MaterialRouteRequirement {
+    requirement_id: String,
+    part_id: String,
+    machine_kind: String,
+    manufacturing_method: String,
+    feedstock_kind: String,
+    stock_form: String,
+    estimated_quantity: f64,
+    unit: String,
+    scrap_allowance_pct: f64,
+    conditioning: Vec<String>,
+    required_evidence: Vec<String>,
+    release_blockers: Vec<String>,
+    learning_observation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct QualityPlan {
     schema_version: &'static str,
     status: String,
@@ -977,6 +1046,59 @@ struct MachineScheduleHold {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct FabricationDesScheduleModel {
+    schema_version: &'static str,
+    engine: &'static str,
+    model_kind: &'static str,
+    model_spec: StudioModelSpec,
+    analysis: StudioAnalysis,
+    lane_models: Vec<FabricationDesScheduleLaneModel>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FabricationDesScheduleLaneModel {
+    machine_id: String,
+    machine_kind: String,
+    source_block_id: String,
+    queue_block_id: String,
+    sink_block_id: String,
+    service_rate_per_minute: f64,
+    scheduled_operations: u32,
+    blocked_operations: u32,
+    utilization_ratio: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FabricationDesInstructionModel {
+    schema_version: &'static str,
+    engine: &'static str,
+    model_kind: &'static str,
+    model_spec: StudioModelSpec,
+    analysis: StudioAnalysis,
+    program_models: Vec<FabricationDesInstructionProgramModel>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FabricationDesInstructionProgramModel {
+    program_id: String,
+    machine_kind: String,
+    language: String,
+    source_block_id: String,
+    queue_block_id: String,
+    sink_block_id: String,
+    line_count: usize,
+    failure_boundary_count: usize,
+    service_rate_per_line: f64,
+    machine_ready_candidate: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct GeneratedProgram {
     program_id: String,
     part_id: String,
@@ -1109,8 +1231,22 @@ struct BoundarySplitCombineDecision {
     program_id: Option<String>,
     line: Option<usize>,
     candidate_parts: Vec<String>,
+    interface_plan: BoundarySplitCombineInterfacePlan,
     rationale: String,
     requires_human_intervention: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundarySplitCombineInterfacePlan {
+    interface_id: String,
+    from_part_id: String,
+    to_part_id: String,
+    joint_type: String,
+    fit: String,
+    inspection_gate: String,
+    decomposition_strategy: String,
+    learning_observation: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1297,6 +1433,7 @@ struct SimulationReport {
     ok: bool,
     severity: String,
     programs: Vec<SimulationProgramTrace>,
+    risk_profile: SimulationRiskProfile,
     findings: Vec<ValidationFinding>,
     failure_boundaries: Vec<FailureBoundary>,
 }
@@ -1324,6 +1461,37 @@ struct SimulationAxisExtent {
     max_mm: f64,
     limit_mm: Option<f64>,
     exceeds_limit: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SimulationRiskProfile {
+    schema_version: &'static str,
+    status: String,
+    aggregate_risk_score: f64,
+    high_risk_program_count: usize,
+    machine_failure_boundary_count: usize,
+    human_intervention_boundary_count: usize,
+    program_risks: Vec<SimulationProgramRisk>,
+    learning_observations: Vec<String>,
+    recommended_actions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SimulationProgramRisk {
+    program_id: String,
+    machine_kind: String,
+    language: String,
+    motion_line_count: usize,
+    axis_risk_count: usize,
+    envelope_violation_count: usize,
+    failure_boundary_count: usize,
+    human_intervention_boundary_count: usize,
+    risk_score: f64,
+    risk_level: String,
+    primary_risks: Vec<String>,
+    learning_observations: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1406,6 +1574,64 @@ struct AssemblySequenceStep {
     part_ids: Vec<String>,
     gate: String,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HybridMakePlan {
+    schema_version: &'static str,
+    status: String,
+    selected_strategy: String,
+    route_count: usize,
+    join_count: usize,
+    split_count: usize,
+    combine_count: usize,
+    part_routes: Vec<HybridPartRoute>,
+    join_operations: Vec<HybridJoinOperation>,
+    split_combine_decisions: Vec<HybridSplitCombineDecision>,
+    learning_observations: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HybridPartRoute {
+    part_id: String,
+    role: String,
+    manufacturing_method: String,
+    machine_kind: String,
+    process_node_id: Option<String>,
+    program_id: Option<String>,
+    route_type: String,
+    rationale: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HybridJoinOperation {
+    join_id: String,
+    interface_id: String,
+    from_part_id: String,
+    to_part_id: String,
+    joint_type: String,
+    fit: String,
+    inspection_gate: String,
+    requires_human_intervention: bool,
+    sequence_step: Option<u32>,
+    learning_observation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HybridSplitCombineDecision {
+    decision_id: String,
+    decision_type: String,
+    part_ids: Vec<String>,
+    reason: String,
+    action: String,
+    source: String,
+    learning_observation: String,
+    requires_human_review: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1693,6 +1919,7 @@ struct LearningPolicySnapshot {
     assembly_preferences: Vec<LearningPreference>,
     remediation_risks: Vec<LearningRemediationRisk>,
     neural_training_examples: Vec<String>,
+    boundary_learning_examples: Vec<String>,
 }
 
 #[derive(Default)]
@@ -2239,6 +2466,53 @@ fn remediation_action_signal(value: &str) -> Option<String> {
     }
 }
 
+fn observation_has_boundary_learning_signal(observation: &str) -> bool {
+    let trimmed = observation.trim().to_ascii_lowercase();
+    if trimmed.starts_with("boundary-kind:")
+        || trimmed.starts_with("boundary-severity:")
+        || trimmed.starts_with("boundary-program:")
+        || trimmed.starts_with("boundary-line:")
+        || trimmed.starts_with("resolution-action:")
+        || trimmed.starts_with("suggested-resolution:")
+    {
+        return true;
+    }
+    let token = normalize_token(&trimmed);
+    token.contains("machine-failure")
+        || token.contains("human-intervention-required")
+        || token.contains("split-combine")
+        || token.contains("combine-separate")
+        || token.contains("separate-piece")
+        || token.contains("split-piece")
+}
+
+fn boundary_learning_example(outcome: &LearningOutcomeRecord) -> Option<String> {
+    let observations = outcome
+        .observations
+        .iter()
+        .filter(|observation| observation_has_boundary_learning_signal(observation))
+        .take(12)
+        .map(|observation| observation.trim().to_string())
+        .filter(|observation| !observation.is_empty())
+        .collect::<Vec<_>>();
+    if observations.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "boundary-memory job={} success={} reward={:.3} methods={} machineKind={} operationSequence={} assembly={} observations={}",
+        outcome.job_id.as_deref().unwrap_or("none"),
+        outcome.success,
+        outcome.reward,
+        outcome.manufacturing_methods.join("+"),
+        outcome.machine_kind.as_deref().unwrap_or("none"),
+        outcome_operation_sequence_key(outcome)
+            .as_deref()
+            .unwrap_or("none"),
+        outcome.assembly_strategy.as_deref().unwrap_or("none"),
+        observations.join("|")
+    ))
+}
+
 impl LearningRemediationAggregate {
     fn add(&mut self, outcome: &LearningOutcomeRecord) {
         self.samples += 1;
@@ -2522,6 +2796,13 @@ impl LearningMemory {
                 )
             })
             .collect::<Vec<_>>();
+        let boundary_learning_examples = self
+            .outcomes
+            .iter()
+            .rev()
+            .filter_map(boundary_learning_example)
+            .take(32)
+            .collect::<Vec<_>>();
 
         LearningPolicySnapshot {
             outcome_count,
@@ -2535,6 +2816,7 @@ impl LearningMemory {
             assembly_preferences,
             remediation_risks,
             neural_training_examples,
+            boundary_learning_examples,
         }
     }
 }
@@ -6480,6 +6762,230 @@ fn machine_schedule(
     }
 }
 
+fn fabrication_des_schedule_model(schedule: &MachineSchedule) -> FabricationDesScheduleModel {
+    let mut blocks = Vec::new();
+    let mut wires = Vec::new();
+    let mut lane_models = Vec::new();
+    let lanes = if schedule.machine_lanes.is_empty() {
+        vec![MachineScheduleLane {
+            machine_id: "manual-review-lane".to_string(),
+            machine_kind: "manual".to_string(),
+            scheduled_operations: 0,
+            scheduled_minutes: 0,
+            blocked_operations: 0,
+            utilization_ratio: 0.0,
+            next_available_minute: 0,
+        }]
+    } else {
+        schedule.machine_lanes.clone()
+    };
+
+    for (index, lane) in lanes.iter().enumerate() {
+        let token = normalize_token(&lane.machine_id);
+        let source_block_id = format!("des-source-{token}");
+        let queue_block_id = format!("des-queue-{token}");
+        let sink_block_id = format!("des-sink-{token}");
+        let service_rate_per_minute =
+            rounded_score(lane.scheduled_operations as f64 / lane.scheduled_minutes.max(1) as f64);
+        let y = 80.0 + index as f64 * 120.0;
+
+        blocks.push(StudioBlockSpec {
+            id: source_block_id.clone(),
+            kind: StudioBlockKind::Constant,
+            label: Some(format!("{} arrivals", lane.machine_id)),
+            params: Map::from_iter([(
+                "value".to_string(),
+                Value::from(lane.scheduled_operations as f64),
+            )]),
+            x: 40.0,
+            y,
+        });
+        blocks.push(StudioBlockSpec {
+            id: queue_block_id.clone(),
+            kind: StudioBlockKind::Queue,
+            label: Some(format!("{} queue", lane.machine_id)),
+            params: Map::from_iter([(
+                "serviceRate".to_string(),
+                Value::from(service_rate_per_minute),
+            )]),
+            x: 240.0,
+            y,
+        });
+        blocks.push(StudioBlockSpec {
+            id: sink_block_id.clone(),
+            kind: StudioBlockKind::Sink,
+            label: Some(format!("{} released", lane.machine_id)),
+            params: Map::new(),
+            x: 440.0,
+            y,
+        });
+        wires.push(StudioWireSpec {
+            from: source_block_id.clone(),
+            from_port: 0,
+            to: queue_block_id.clone(),
+            to_port: 0,
+        });
+        wires.push(StudioWireSpec {
+            from: queue_block_id.clone(),
+            from_port: 0,
+            to: sink_block_id.clone(),
+            to_port: 0,
+        });
+        lane_models.push(FabricationDesScheduleLaneModel {
+            machine_id: lane.machine_id.clone(),
+            machine_kind: lane.machine_kind.clone(),
+            source_block_id,
+            queue_block_id,
+            sink_block_id,
+            service_rate_per_minute,
+            scheduled_operations: lane.scheduled_operations,
+            blocked_operations: lane.blocked_operations,
+            utilization_ratio: lane.utilization_ratio,
+        });
+    }
+
+    let model_spec = StudioModelSpec {
+        schema: STUDIO_GRAPH_SCHEMA.to_string(),
+        name: "fabrication-machine-schedule-queues".to_string(),
+        dt: 1.0,
+        steps: schedule.horizon_minutes.clamp(1, 480) as usize,
+        blocks,
+        wires,
+        design_variables: Vec::new(),
+        objectives: Vec::new(),
+        constraints: Vec::new(),
+        authoring: Default::default(),
+    };
+    let analysis = analyze_model_spec(&model_spec);
+
+    FabricationDesScheduleModel {
+        schema_version: "dd.fabrication.des-schedule-model.v1",
+        engine: "des_engine::des::studio::StudioModelSpec",
+        model_kind: "machine-lane-queue-model",
+        model_spec,
+        analysis,
+        lane_models,
+        notes: vec![
+            "DES Studio queue model mirrors the deterministic machine schedule as analyzable resource-capacity blocks".to_string(),
+            "Queue blocks are advisory planning signals for schedulers and learning workers, not certified MES dispatch simulations".to_string(),
+        ],
+    }
+}
+
+fn fabrication_des_instruction_model(
+    programs: &[AnalyzedProgram],
+    validation: &ValidationReport,
+) -> FabricationDesInstructionModel {
+    let mut blocks = Vec::new();
+    let mut wires = Vec::new();
+    let mut program_models = Vec::new();
+
+    for (index, program) in programs.iter().enumerate() {
+        let token = normalize_token(&program.program_id);
+        let source_block_id = format!("des-instruction-source-{token}");
+        let queue_block_id = format!("des-instruction-queue-{token}");
+        let sink_block_id = format!("des-instruction-sink-{token}");
+        let failure_boundary_count = validation
+            .failure_boundaries
+            .iter()
+            .filter(|boundary| boundary.program_id.as_deref() == Some(program.program_id.as_str()))
+            .count();
+        let line_count = program.line_count.max(1);
+        let service_rate_per_line =
+            rounded_score(line_count as f64 / (line_count + failure_boundary_count) as f64);
+        let machine_ready_candidate = failure_boundary_count == 0
+            && program.has_program_end
+            && program.has_units_mode
+            && program.has_positioning_mode
+            && (program.has_spindle_or_heatup || program.has_homing_or_fixture_reference);
+        let y = 80.0 + index as f64 * 120.0;
+
+        blocks.push(StudioBlockSpec {
+            id: source_block_id.clone(),
+            kind: StudioBlockKind::Constant,
+            label: Some(format!("{} lines", program.program_id)),
+            params: Map::from_iter([("value".to_string(), Value::from(program.line_count as f64))]),
+            x: 40.0,
+            y,
+        });
+        blocks.push(StudioBlockSpec {
+            id: queue_block_id.clone(),
+            kind: StudioBlockKind::Queue,
+            label: Some(format!("{} review queue", program.program_id)),
+            params: Map::from_iter([(
+                "serviceRate".to_string(),
+                Value::from(service_rate_per_line),
+            )]),
+            x: 240.0,
+            y,
+        });
+        blocks.push(StudioBlockSpec {
+            id: sink_block_id.clone(),
+            kind: StudioBlockKind::Sink,
+            label: Some(format!("{} reviewed", program.program_id)),
+            params: Map::new(),
+            x: 440.0,
+            y,
+        });
+        wires.push(StudioWireSpec {
+            from: source_block_id.clone(),
+            from_port: 0,
+            to: queue_block_id.clone(),
+            to_port: 0,
+        });
+        wires.push(StudioWireSpec {
+            from: queue_block_id.clone(),
+            from_port: 0,
+            to: sink_block_id.clone(),
+            to_port: 0,
+        });
+        program_models.push(FabricationDesInstructionProgramModel {
+            program_id: program.program_id.clone(),
+            machine_kind: program.machine_kind.clone(),
+            language: program.language.clone(),
+            source_block_id,
+            queue_block_id,
+            sink_block_id,
+            line_count: program.line_count,
+            failure_boundary_count,
+            service_rate_per_line,
+            machine_ready_candidate,
+        });
+    }
+
+    let model_spec = StudioModelSpec {
+        schema: STUDIO_GRAPH_SCHEMA.to_string(),
+        name: "fabrication-submitted-instruction-review-queues".to_string(),
+        dt: 1.0,
+        steps: programs
+            .iter()
+            .map(|program| program.line_count)
+            .max()
+            .unwrap_or(1)
+            .clamp(1, 480),
+        blocks,
+        wires,
+        design_variables: Vec::new(),
+        objectives: Vec::new(),
+        constraints: Vec::new(),
+        authoring: Default::default(),
+    };
+    let analysis = analyze_model_spec(&model_spec);
+
+    FabricationDesInstructionModel {
+        schema_version: "dd.fabrication.des-instruction-model.v1",
+        engine: "des_engine::des::studio::StudioModelSpec",
+        model_kind: "submitted-instruction-review-queue-model",
+        model_spec,
+        analysis,
+        program_models,
+        notes: vec![
+            "DES Studio queue model mirrors submitted instruction streams as review-capacity lanes".to_string(),
+            "Failure boundaries lower the advisory service-rate signal so policy workers can prioritize imported jobs that need intervention or regeneration".to_string(),
+        ],
+    }
+}
+
 fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgram {
     let class = machine_class(&machine.kind);
     let program_id = format!("{}-{}", part.id, normalize_token(&machine.kind));
@@ -8878,6 +9384,198 @@ fn simulated_arc_axis_ranges(
     None
 }
 
+fn simulation_risk_level(score: f64) -> &'static str {
+    if score >= 0.66 {
+        "high"
+    } else if score >= 0.33 {
+        "medium"
+    } else {
+        "low"
+    }
+}
+
+fn trace_needs_safe_clearance(trace: &SimulationProgramTrace) -> bool {
+    trace.motion_line_count > 0
+        && !trace.safe_clearance_observed
+        && matches!(
+            machine_class(&trace.machine_kind),
+            MachineClass::Mill | MachineClass::Router | MachineClass::Lathe
+        )
+}
+
+fn trace_needs_process_start(trace: &SimulationProgramTrace) -> bool {
+    trace.motion_line_count > 0
+        && !trace.spindle_or_heatup_observed
+        && matches!(
+            machine_class(&trace.machine_kind),
+            MachineClass::Additive
+                | MachineClass::Mill
+                | MachineClass::Router
+                | MachineClass::Lathe
+                | MachineClass::SheetCut
+        )
+}
+
+fn simulation_risk_profile(
+    traces: &[SimulationProgramTrace],
+    findings: &[ValidationFinding],
+    boundaries: &[FailureBoundary],
+) -> SimulationRiskProfile {
+    let mut learning_observations = Vec::new();
+    let mut recommended_actions = BTreeSet::new();
+    let mut program_risks = Vec::new();
+
+    for trace in traces {
+        let program_boundaries = boundaries
+            .iter()
+            .filter(|boundary| boundary.program_id.as_deref() == Some(trace.program_id.as_str()))
+            .collect::<Vec<_>>();
+        let program_finding_count = findings
+            .iter()
+            .filter(|finding| finding.program_id.as_deref() == Some(trace.program_id.as_str()))
+            .count();
+        let envelope_violation_count = trace
+            .axis_extents
+            .iter()
+            .filter(|extent| extent.exceeds_limit)
+            .count();
+        let human_intervention_boundary_count = program_boundaries
+            .iter()
+            .filter(|boundary| boundary.requires_human_intervention)
+            .count();
+        let error_boundary_count = program_boundaries
+            .iter()
+            .filter(|boundary| boundary.severity == "error")
+            .count();
+        let safe_clearance_missing = trace_needs_safe_clearance(trace);
+        let process_start_missing = trace_needs_process_start(trace);
+
+        let mut primary_risks = Vec::new();
+        if envelope_violation_count > 0 {
+            primary_risks.push("machine-envelope-exceeded".to_string());
+            recommended_actions.insert(
+                "revise machine choice, orientation, work offset, or part split before release"
+                    .to_string(),
+            );
+        }
+        if human_intervention_boundary_count > 0 {
+            primary_risks.push("human-intervention-boundary".to_string());
+            recommended_actions
+                .insert("attach operator review evidence for each simulation boundary".to_string());
+        }
+        if safe_clearance_missing {
+            primary_risks.push("safe-clearance-not-observed".to_string());
+            recommended_actions.insert(
+                "add a verified clearance move or dry-run checkpoint before lateral motion"
+                    .to_string(),
+            );
+        }
+        if process_start_missing {
+            primary_risks.push("process-start-not-observed".to_string());
+            recommended_actions
+                .insert("verify spindle, beam, jet, heater, or equivalent process start before cutting or printing motion".to_string());
+        }
+        if program_finding_count > 0 {
+            primary_risks.push("simulation-finding-present".to_string());
+        }
+        if primary_risks.is_empty() {
+            primary_risks.push("simulation-low-risk-draft".to_string());
+        }
+
+        let risk_score = rounded_score(clamp_unit(
+            envelope_violation_count as f64 * 0.28
+                + error_boundary_count as f64 * 0.24
+                + human_intervention_boundary_count as f64 * 0.14
+                + program_finding_count as f64 * 0.06
+                + if safe_clearance_missing { 0.12 } else { 0.0 }
+                + if process_start_missing { 0.10 } else { 0.0 },
+        ));
+        let risk_level = simulation_risk_level(risk_score).to_string();
+        let program_learning_observations = vec![
+            format!(
+                "simulation-risk:{}:{}:{:.3}",
+                normalize_token(&trace.program_id),
+                risk_level,
+                risk_score
+            ),
+            format!(
+                "simulation-motion:{}:{}",
+                normalize_token(&trace.program_id),
+                trace.motion_line_count
+            ),
+            format!(
+                "simulation-boundary-count:{}:{}",
+                normalize_token(&trace.program_id),
+                program_boundaries.len()
+            ),
+        ];
+        learning_observations.extend(program_learning_observations.iter().cloned());
+
+        program_risks.push(SimulationProgramRisk {
+            program_id: trace.program_id.clone(),
+            machine_kind: trace.machine_kind.clone(),
+            language: trace.language.clone(),
+            motion_line_count: trace.motion_line_count,
+            axis_risk_count: envelope_violation_count,
+            envelope_violation_count,
+            failure_boundary_count: program_boundaries.len(),
+            human_intervention_boundary_count,
+            risk_score,
+            risk_level,
+            primary_risks,
+            learning_observations: program_learning_observations,
+        });
+    }
+
+    let aggregate_risk_score = rounded_score(clamp_unit(if program_risks.is_empty() {
+        0.0
+    } else {
+        program_risks
+            .iter()
+            .map(|risk| risk.risk_score)
+            .sum::<f64>()
+            / program_risks.len() as f64
+    }));
+    let high_risk_program_count = program_risks
+        .iter()
+        .filter(|risk| risk.risk_level == "high")
+        .count();
+    let machine_failure_boundary_count = boundaries
+        .iter()
+        .filter(|boundary| boundary.severity == "error" || boundary.kind.contains("machine"))
+        .count();
+    let human_intervention_boundary_count = boundaries
+        .iter()
+        .filter(|boundary| boundary.requires_human_intervention)
+        .count();
+    let status = if high_risk_program_count > 0 || machine_failure_boundary_count > 0 {
+        "simulation-risk-blocked"
+    } else if human_intervention_boundary_count > 0 || aggregate_risk_score >= 0.33 {
+        "simulation-risk-review-required"
+    } else {
+        "simulation-risk-low"
+    };
+
+    if recommended_actions.is_empty() {
+        recommended_actions.insert(
+            "retain simulation trace with the job record and re-evaluate after postprocessing"
+                .to_string(),
+        );
+    }
+
+    SimulationRiskProfile {
+        schema_version: "dd.fabrication.simulation-risk-profile.v1",
+        status: status.to_string(),
+        aggregate_risk_score,
+        high_risk_program_count,
+        machine_failure_boundary_count,
+        human_intervention_boundary_count,
+        program_risks,
+        learning_observations,
+        recommended_actions: recommended_actions.into_iter().collect(),
+    }
+}
+
 fn simulate_instruction_programs(
     programs: &[InstructionProgram],
     machines: &[MachineProfile],
@@ -9136,10 +9834,12 @@ fn simulate_instruction_programs(
     }
 
     let severity = report_severity(&findings, &boundaries);
+    let risk_profile = simulation_risk_profile(&traces, &findings, &boundaries);
     SimulationReport {
         ok: severity != "error",
         severity,
         programs: traces,
+        risk_profile,
         findings,
         failure_boundaries: boundaries,
     }
@@ -17113,6 +17813,217 @@ fn boundary_gate_instruction(machine_code: bool, boundary: &FailureBoundary) -> 
     }
 }
 
+fn instruction_patch_operation(
+    program_id: &str,
+    index: usize,
+    operation: &str,
+    line: Option<usize>,
+    action: &str,
+    reason: &str,
+    content: Vec<String>,
+    requires_human_review: bool,
+) -> InstructionPatchOperation {
+    InstructionPatchOperation {
+        operation_id: format!("patch-{}-{}", normalize_token(program_id), index + 1),
+        operation: operation.to_string(),
+        line,
+        action: action.to_string(),
+        reason: reason.to_string(),
+        content,
+        requires_human_review,
+    }
+}
+
+fn instruction_patch_content_for_improvement(
+    action: &str,
+    machine_code: bool,
+    class: MachineClass,
+) -> Vec<String> {
+    if machine_code {
+        match action {
+            "add-units-mode" => vec!["G21 ; added review draft: metric units".to_string()],
+            "add-positioning-mode" => {
+                vec!["G90 ; added review draft: absolute positioning".to_string()]
+            }
+            "add-coordinate-reference" => {
+                let coordinate_line = match class {
+                    MachineClass::Additive => "G28 ; added review draft: home axes before motion",
+                    _ => "G54 ; added review draft: select primary work coordinate system",
+                };
+                vec![coordinate_line.to_string()]
+            }
+            _ => vec![format!("REVIEW: apply instruction improvement {action}")],
+        }
+    } else if action == "add-structured-text-checkpoints" {
+        vec![
+            "CHECKPOINT [setup-boundary]: confirm machine setup, material, PPE, and operator readiness"
+                .to_string(),
+            "CHECKPOINT [process-boundary]: declare post-processing, assembly, split, and completion gates"
+                .to_string(),
+            "CHECKPOINT [completion-boundary]: inspection, cleanup, and sign-off recorded"
+                .to_string(),
+        ]
+    } else {
+        vec![format!("REVIEW: apply instruction improvement {action}")]
+    }
+}
+
+fn finding_patch_content(finding: &ValidationFinding, class: MachineClass) -> Vec<String> {
+    let content = match finding.code.as_str() {
+        "missing-spindle-start" => match class {
+            MachineClass::SheetCut => {
+                "M0 ; REVIEW: add verified beam/jet enable, assist gas, pierce, and kerf settings before feed moves"
+            }
+            _ => "M0 ; REVIEW: add verified spindle speed and direction before feed moves",
+        },
+        "missing-printer-heatup" => {
+            "M0 ; REVIEW: add verified nozzle/bed heat-up commands before extrusion"
+        }
+        "missing-bed-temperature-wait" => {
+            "M0 ; REVIEW: add verified bed preheat/wait, build-surface prep, and adhesion strategy before first extrusion"
+        }
+        "missing-program-end" => match class {
+            MachineClass::Additive => "M84 ; added review draft: explicit printer idle/end state",
+            _ => "M30 ; added review draft: explicit program end",
+        },
+        _ => finding.message.as_str(),
+    };
+    vec![content.to_string()]
+}
+
+fn instruction_patch_manifest(
+    program_id: &str,
+    machine_kind: &str,
+    language: &str,
+    source_line_count: usize,
+    improved_line_count: usize,
+    validation: &ValidationReport,
+    improvements: &[InstructionImprovement],
+    machine_code: bool,
+) -> InstructionPatchManifest {
+    let class = machine_class(machine_kind);
+    let mut operations = Vec::new();
+    for boundary in validation
+        .failure_boundaries
+        .iter()
+        .filter(|boundary| boundary_applies(boundary, program_id, boundary.line))
+    {
+        let operation = if boundary.line.is_some() {
+            "insert-before-line"
+        } else {
+            "insert-before-program"
+        };
+        let content = vec![boundary_gate_instruction(machine_code, boundary)];
+        operations.push(instruction_patch_operation(
+            program_id,
+            operations.len(),
+            operation,
+            boundary.line,
+            &format!("gate-{}", boundary.kind),
+            &boundary.reason,
+            content,
+            boundary.requires_human_intervention,
+        ));
+    }
+    for improvement in
+        improvements
+            .iter()
+            .filter(|improvement| match improvement.program_id.as_deref() {
+                Some(value) => value == program_id,
+                None => true,
+            })
+    {
+        let operation = if improvement.line.is_some() {
+            "review-line"
+        } else if machine_code {
+            "insert-before-program"
+        } else {
+            "insert-review-checkpoint"
+        };
+        operations.push(instruction_patch_operation(
+            program_id,
+            operations.len(),
+            operation,
+            improvement.line,
+            &improvement.action,
+            &improvement.reason,
+            instruction_patch_content_for_improvement(&improvement.action, machine_code, class),
+            true,
+        ));
+    }
+    for finding in validation.findings.iter().filter(|finding| {
+        finding_applies(validation, program_id, &finding.code)
+            && matches!(
+                finding.code.as_str(),
+                "missing-spindle-start"
+                    | "missing-printer-heatup"
+                    | "missing-bed-temperature-wait"
+                    | "missing-program-end"
+            )
+    }) {
+        let operation = if finding.code == "missing-program-end" {
+            "insert-after-program"
+        } else {
+            "insert-before-first-risk-motion"
+        };
+        operations.push(instruction_patch_operation(
+            program_id,
+            operations.len(),
+            operation,
+            finding.line,
+            &format!("resolve-finding-{}", finding.code),
+            &finding.message,
+            finding_patch_content(finding, class),
+            true,
+        ));
+    }
+    operations.sort_by(|left, right| {
+        left.line
+            .unwrap_or(0)
+            .cmp(&right.line.unwrap_or(0))
+            .then_with(|| left.operation_id.cmp(&right.operation_id))
+    });
+    for (index, operation) in operations.iter_mut().enumerate() {
+        operation.operation_id = format!("patch-{}-{}", normalize_token(program_id), index + 1);
+    }
+    let operation_count = operations.len();
+    let learning_observations = operations
+        .iter()
+        .take(MAX_LEARNING_SIGNALS.min(32))
+        .map(|operation| {
+            format!(
+                "instruction-patch:{}:{}",
+                operation.operation, operation.action
+            )
+        })
+        .collect::<Vec<_>>();
+    let status = if operation_count == 0 {
+        "no-patch-required"
+    } else {
+        "review-required"
+    };
+    InstructionPatchManifest {
+        schema_version: "dd.fabrication.instruction-patch-manifest.v1",
+        status: status.to_string(),
+        program_id: program_id.to_string(),
+        machine_kind: machine_kind.to_string(),
+        language: language.to_string(),
+        source_line_count,
+        improved_line_count,
+        operation_count,
+        operations,
+        learning_observations,
+        notes: if operation_count == 0 {
+            vec!["No line-level repair operation was derived from validation".to_string()]
+        } else {
+            vec![
+                "Patch operations are draft repair intent and require simulator/operator review before machine release".to_string(),
+                "Operations preserve source instructions and add gates, defaults, or evidence checkpoints around risky boundaries".to_string(),
+            ]
+        },
+    }
+}
+
 fn improve_instruction_programs(
     programs: &[InstructionProgram],
     validation: &ValidationReport,
@@ -17342,6 +18253,16 @@ fn improve_instruction_programs(
                     "No automatic rewrite was needed beyond the validation report".to_string(),
                 );
             }
+            let patch_manifest = instruction_patch_manifest(
+                &program_id,
+                &machine_kind,
+                &language,
+                program.instructions.len(),
+                instructions.len(),
+                validation,
+                improvements,
+                machine_code,
+            );
 
             ImprovedInstructionProgram {
                 program_id,
@@ -17351,6 +18272,7 @@ fn improve_instruction_programs(
                 machine_ready: false,
                 source_line_count: program.instructions.len(),
                 instructions,
+                patch_manifest,
                 notes,
             }
         })
@@ -18167,15 +19089,18 @@ fn parametric_design_content(response: &FabricationPlanResponse) -> Value {
         },
         "productionPlan": response.production_plan,
         "machineSchedule": response.machine_schedule,
+        "desScheduleModel": response.des_schedule_model,
         "machineRelease": response.machine_release,
         "interventionMap": response.intervention_map,
         "machineSelection": response.machine_selection,
+        "materialPlan": response.material_plan,
         "qualityPlan": response.quality_plan,
         "toolingPlan": response.tooling_plan,
         "parts": parts,
         "processLinks": process_links,
         "manufacturingHandoff": response.manufacturing_handoff,
         "processGraph": response.process_graph,
+        "hybridMakePlan": response.hybrid_make_plan,
         "assembly": {
             "strategy": response.assembly.strategy,
             "combineCandidates": response.assembly.combine_candidates,
@@ -18237,6 +19162,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             response.generated_at_ms,
         ),
         json_artifact(
+            "des-schedule-model".to_string(),
+            "des-schedule-model",
+            json!(response.des_schedule_model),
+            response.generated_at_ms,
+        ),
+        json_artifact(
             "machine-selection".to_string(),
             "machine-selection",
             json!(response.machine_selection),
@@ -18249,9 +19180,21 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             response.generated_at_ms,
         ),
         json_artifact(
+            "hybrid-make-plan".to_string(),
+            "hybrid-make-plan",
+            json!(response.hybrid_make_plan),
+            response.generated_at_ms,
+        ),
+        json_artifact(
             "manufacturing-handoff".to_string(),
             "manufacturing-handoff",
             json!(response.manufacturing_handoff),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "material-plan".to_string(),
+            "material-plan",
+            json!(response.material_plan),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -18445,6 +19388,7 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
                     "changed": program.changed,
                     "sourceLineCount": program.source_line_count,
                     "instructions": program.instructions,
+                    "patchManifest": program.patch_manifest,
                 }),
                 notes: program.notes.clone(),
                 created_at_ms: response.generated_at_ms,
@@ -18504,6 +19448,12 @@ fn analysis_artifacts(response: &InstructionAnalysisResponse) -> Vec<Fabrication
             response.generated_at_ms,
         ),
         json_artifact(
+            "analysis-des-instruction-model".to_string(),
+            "analysis-des-instruction-model",
+            json!(response.des_instruction_model),
+            response.generated_at_ms,
+        ),
+        json_artifact(
             "analysis-improvements".to_string(),
             "analysis-improvements",
             json!(response.improvements),
@@ -18560,6 +19510,7 @@ fn analysis_artifacts(response: &InstructionAnalysisResponse) -> Vec<Fabrication
                     "changed": program.changed,
                     "sourceLineCount": program.source_line_count,
                     "instructions": program.instructions,
+                    "patchManifest": program.patch_manifest,
                 }),
                 notes: program.notes.clone(),
                 created_at_ms: response.generated_at_ms,
@@ -19101,6 +20052,68 @@ fn boundary_candidate_parts(
     parts.into_iter().collect()
 }
 
+fn boundary_split_combine_interface_plan(
+    action: &str,
+    boundary: &FailureBoundary,
+    candidate_parts: &[String],
+) -> BoundarySplitCombineInterfacePlan {
+    let primary = candidate_parts
+        .first()
+        .cloned()
+        .or_else(|| boundary.program_id.clone())
+        .unwrap_or_else(|| "whole-job".to_string());
+    let secondary = candidate_parts
+        .get(1)
+        .cloned()
+        .unwrap_or_else(|| match action {
+            "split-job-or-part" => format!("{}-split-segment", normalize_token(&primary)),
+            _ => format!("{}-mate", normalize_token(&primary)),
+        });
+    let machine_failure_fit = boundary_machine_failure_risk(boundary)
+        || normalize_token(&boundary.kind).contains("machine-envelope");
+    let fit = if machine_failure_fit {
+        "metrology-controlled-fit"
+    } else {
+        "controlled-clearance-fit"
+    };
+    let (joint_type, inspection_gate, decomposition_strategy) = match action {
+        "split-job-or-part" => (
+            "registration-datum-and-fastener-or-bond-joint",
+            "boundary-decomposition-fit-and-release-check",
+            format!(
+                "split {} into {} and {} with explicit datums, access clearance, and recombination witness marks before regenerating machine code",
+                primary, primary, secondary
+            ),
+        ),
+        _ => (
+            "fit-checked-assembly-joint",
+            "boundary-assembly-fit-and-release-check",
+            format!(
+                "combine {} and {} only after dry-fit, datum transfer, and interface inspection clear the boundary",
+                primary, secondary
+            ),
+        ),
+    };
+    BoundarySplitCombineInterfacePlan {
+        interface_id: format!(
+            "boundary-interface-{}-{}-{}",
+            normalize_token(action),
+            normalize_token(&boundary.kind),
+            normalize_token(&primary)
+        ),
+        from_part_id: primary,
+        to_part_id: secondary,
+        joint_type: joint_type.to_string(),
+        fit: fit.to_string(),
+        inspection_gate: inspection_gate.to_string(),
+        decomposition_strategy,
+        learning_observation: format!(
+            "split-combine-interface:{}:{}:{}",
+            action, boundary.kind, inspection_gate
+        ),
+    }
+}
+
 fn fallback_boundary_process_link(
     boundary: &FailureBoundary,
     process_graph: Option<&ProcessGraph>,
@@ -19230,6 +20243,11 @@ fn intervention_map(
             if !applies {
                 continue;
             }
+            let candidate_parts =
+                boundary_candidate_parts(part_id.as_ref(), summary, process_graph);
+            let interface_plan =
+                boundary_split_combine_interface_plan(action, boundary, &candidate_parts);
+            learning_observations.insert(interface_plan.learning_observation.clone());
             split_combine_decisions.push(BoundarySplitCombineDecision {
                 decision_id: boundary_trace_id(action, boundary, index),
                 action: action.to_string(),
@@ -19237,7 +20255,8 @@ fn intervention_map(
                 part_id: part_id.clone(),
                 program_id: boundary.program_id.clone(),
                 line: boundary.line,
-                candidate_parts: boundary_candidate_parts(part_id.as_ref(), summary, process_graph),
+                candidate_parts,
+                interface_plan,
                 rationale: boundary.suggested_resolution.clone(),
                 requires_human_intervention: boundary.requires_human_intervention,
             });
@@ -20843,6 +21862,19 @@ fn learned_remediation_risks(
         .collect()
 }
 
+fn learned_boundary_memory(policy: Option<&LearningPolicySnapshot>) -> Vec<String> {
+    policy
+        .map(|policy| {
+            policy
+                .boundary_learning_examples
+                .iter()
+                .take(8)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn merge_learning_values(target: &mut Option<Vec<String>>, additions: Vec<String>) {
     if additions.is_empty() {
         return;
@@ -20947,11 +21979,13 @@ fn apply_learning_policy_to_request(
     let learned_machine_kinds = learned_preferred_machine_kinds(policy);
     let learned_assembly_strategy = learned_preferred_assembly_strategy(policy);
     let learned_remediation_risks = learned_remediation_risks(policy, &request);
+    let learned_boundary_memory = learned_boundary_memory(policy);
     if learned_methods.is_empty()
         && learned_operation_sequence.is_empty()
         && learned_machine_kinds.is_empty()
         && learned_assembly_strategy.is_none()
         && learned_remediation_risks.is_empty()
+        && learned_boundary_memory.is_empty()
     {
         return request;
     }
@@ -21033,6 +22067,9 @@ fn apply_learning_policy_to_request(
                     .join(",")
             ));
         }
+        if !learned_boundary_memory.is_empty() {
+            hint_parts.push(format!("boundary-memory={}", learned_boundary_memory.len()));
+        }
         let has_preferred_policy = !learned_methods.is_empty()
             || !learned_operation_sequence.is_empty()
             || !learned_machine_kinds.is_empty()
@@ -21076,6 +22113,13 @@ fn apply_learning_policy_to_request(
         })
         .collect::<Vec<_>>();
     merge_learning_values(&mut learning.observations, remediation_observations);
+    merge_learning_values(
+        &mut learning.observations,
+        learned_boundary_memory
+            .iter()
+            .map(|example| format!("learned-boundary-memory:{}", normalize_token(example)))
+            .collect(),
+    );
     if learning
         .prior_successes
         .as_ref()
@@ -21089,6 +22133,7 @@ fn apply_learning_policy_to_request(
                 .take(8)
                 .cloned()
                 .collect::<Vec<_>>();
+            examples.extend(learned_boundary_memory.iter().cloned());
             examples.extend(learned_remediation_risks.iter().map(|risk| {
                 format!(
                     "remediation-risk key={} severity={} failures={} method={} observations={} actions={}",
@@ -21424,6 +22469,15 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         &validation,
         &resolution_plan,
     );
+    let hybrid_make_plan = hybrid_make_plan(
+        &part_plans,
+        &process_plan,
+        &generated_programs,
+        &assembly,
+        &process_graph,
+        &validation,
+        &learning,
+    );
     let intervention_map = intervention_map(
         &validation,
         &summary,
@@ -21455,12 +22509,21 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         &machine_release,
         &postprocess_plan,
     );
+    let des_schedule_model = fabrication_des_schedule_model(&machine_schedule);
     let manufacturing_handoff = manufacturing_handoff(
         &part_plans,
         &process_plan,
         &generated_programs,
         &validation,
         &process_graph,
+        &machine_release,
+    );
+    let material_plan = material_plan(
+        &material,
+        request.stock.as_ref(),
+        quantity,
+        &part_plans,
+        &validation,
         &machine_release,
     );
     let quality_plan = quality_plan(
@@ -21520,12 +22583,15 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         design_input_review,
         production_plan,
         machine_schedule,
+        des_schedule_model,
         machine_selection,
         manufacturing_handoff,
+        material_plan,
         quality_plan,
         tooling_plan,
         process_plan,
         process_graph,
+        hybrid_make_plan,
         generated_programs,
         validation,
         boundary_summary: summary,
@@ -21694,6 +22760,7 @@ fn analyze_instruction_request(
         &analyzed,
         None,
     );
+    let des_instruction_model = fabrication_des_instruction_model(&analyzed, &validation);
 
     Ok(InstructionAnalysisResponse {
         ok: validation.ok,
@@ -21708,6 +22775,7 @@ fn analyze_instruction_request(
         execution_plan,
         postprocess_plan,
         simulation,
+        des_instruction_model,
         improvements,
         improved_programs,
         learning,
@@ -21933,6 +23001,357 @@ fn process_graph(
     }
 }
 
+fn hybrid_candidate_part_ids(candidate: &str, parts: &[PartPlan]) -> Vec<String> {
+    let candidate_lower = candidate.to_ascii_lowercase();
+    let matching = parts
+        .iter()
+        .filter(|part| {
+            candidate_lower.contains(&part.id.to_ascii_lowercase())
+                || candidate_lower.contains(&normalize_token(&part.id))
+        })
+        .map(|part| part.id.clone())
+        .collect::<Vec<_>>();
+    if !matching.is_empty() {
+        return matching;
+    }
+    parts
+        .iter()
+        .take(4)
+        .map(|part| part.id.clone())
+        .collect::<Vec<_>>()
+}
+
+fn boundary_is_split_combine_boundary(boundary: &FailureBoundary) -> bool {
+    let combined = format!(
+        "{} {} {}",
+        boundary.kind, boundary.reason, boundary.suggested_resolution
+    )
+    .to_ascii_lowercase();
+    summary_text_has_any(
+        &combined,
+        &[
+            "assembly",
+            "combine",
+            "separate",
+            "split",
+            "multi-part",
+            "join",
+            "interface",
+            "fit",
+            "part-off",
+            "support",
+        ],
+    )
+}
+
+fn hybrid_boundary_decision_type(boundary: &FailureBoundary) -> String {
+    let combined = format!(
+        "{} {} {}",
+        boundary.kind, boundary.reason, boundary.suggested_resolution
+    )
+    .to_ascii_lowercase();
+    if summary_text_has_any(&combined, &["combine", "merge", "single piece"]) {
+        "validation-combine-boundary".to_string()
+    } else if summary_text_has_any(&combined, &["split", "separate", "multi-part", "part-off"]) {
+        "validation-split-boundary".to_string()
+    } else {
+        "validation-assembly-boundary".to_string()
+    }
+}
+
+fn strategy_candidate_is_hybrid_decision(candidate: &StrategyCandidate) -> bool {
+    let combined = format!(
+        "{} {} {}",
+        candidate.strategy_id,
+        candidate.methods.join(" "),
+        candidate.rationale.join(" ")
+    )
+    .to_ascii_lowercase();
+    summary_text_has_any(
+        &combined,
+        &[
+            "hybrid",
+            "assembly",
+            "combine",
+            "consolidation",
+            "split",
+            "inspection",
+            "multi-part",
+        ],
+    )
+}
+
+fn hybrid_make_plan(
+    parts: &[PartPlan],
+    process_plan: &[ProcessStep],
+    generated_programs: &[GeneratedProgram],
+    assembly: &AssemblyPlan,
+    process_graph: &ProcessGraph,
+    validation: &ValidationReport,
+    learning: &LearningPlan,
+) -> HybridMakePlan {
+    let node_by_part = process_graph
+        .nodes
+        .iter()
+        .map(|node| (node.part_id.clone(), node.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let program_by_part = generated_programs
+        .iter()
+        .map(|program| (program.part_id.clone(), program.program_id.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let split_candidate_text = assembly
+        .split_candidates
+        .iter()
+        .map(|candidate| candidate.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    let interface_part_ids = assembly
+        .assembly_graph
+        .interfaces
+        .iter()
+        .flat_map(|interface| [interface.from_part_id.clone(), interface.to_part_id.clone()])
+        .collect::<BTreeSet<_>>();
+
+    let part_routes = parts
+        .iter()
+        .map(|part| {
+            let node = node_by_part.get(&part.id);
+            let route_type = if parts.len() == 1 {
+                "single-piece-route"
+            } else if interface_part_ids.contains(&part.id) {
+                "hybrid-assembly-route"
+            } else if split_candidate_text
+                .iter()
+                .any(|candidate| candidate.contains(&part.id.to_ascii_lowercase()))
+            {
+                "split-inspection-route"
+            } else {
+                "independent-part-route"
+            };
+            let operation = node
+                .map(|node| node.operation.as_str())
+                .or_else(|| {
+                    process_plan
+                        .iter()
+                        .find(|step| step.part_id == part.id)
+                        .map(|step| step.operation.as_str())
+                })
+                .unwrap_or("planned operation");
+            HybridPartRoute {
+                part_id: part.id.clone(),
+                role: part.role.clone(),
+                manufacturing_method: part.manufacturing_method.clone(),
+                machine_kind: part.machine_kind.clone(),
+                process_node_id: node.map(|node| node.node_id.clone()),
+                program_id: program_by_part.get(&part.id).cloned(),
+                route_type: route_type.to_string(),
+                rationale: format!(
+                    "route {} through {} on {} for {}; preserve as a separate learnable make unit until split/combine gates pass",
+                    part.id, part.manufacturing_method, part.machine_kind, operation
+                ),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let join_operations = assembly
+        .assembly_graph
+        .interfaces
+        .iter()
+        .map(|interface| {
+            let sequence_step = assembly.assembly_graph.sequence.iter().find(|step| {
+                step.part_ids.contains(&interface.from_part_id)
+                    && step.part_ids.contains(&interface.to_part_id)
+            });
+            let learning_observation = format!(
+                "hybrid-join:{}:{}:{}:{}",
+                normalize_token(&interface.interface_id),
+                normalize_token(&interface.joint_type),
+                normalize_token(&interface.fit),
+                normalize_token(&interface.inspection_gate)
+            );
+            HybridJoinOperation {
+                join_id: format!("hybrid-join-{}", normalize_token(&interface.interface_id)),
+                interface_id: interface.interface_id.clone(),
+                from_part_id: interface.from_part_id.clone(),
+                to_part_id: interface.to_part_id.clone(),
+                joint_type: interface.joint_type.clone(),
+                fit: interface.fit.clone(),
+                inspection_gate: interface.inspection_gate.clone(),
+                requires_human_intervention: interface.requires_human_intervention,
+                sequence_step: sequence_step.map(|step| step.step),
+                learning_observation,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut split_combine_decisions = Vec::new();
+    for (index, candidate) in assembly.combine_candidates.iter().enumerate() {
+        let part_ids = hybrid_candidate_part_ids(candidate, parts);
+        let learning_observation = format!(
+            "hybrid-decision:combine:{}:{}",
+            index + 1,
+            normalize_token(candidate)
+        );
+        split_combine_decisions.push(HybridSplitCombineDecision {
+            decision_id: format!("hybrid-combine-candidate-{}", index + 1),
+            decision_type: "combine-candidate".to_string(),
+            part_ids,
+            reason: candidate.clone(),
+            action: "review-combine-before-cad-cam-freeze".to_string(),
+            source: "assembly-plan".to_string(),
+            learning_observation,
+            requires_human_review: true,
+        });
+    }
+    for (index, candidate) in assembly.split_candidates.iter().enumerate() {
+        let part_ids = hybrid_candidate_part_ids(candidate, parts);
+        let learning_observation = format!(
+            "hybrid-decision:split:{}:{}",
+            index + 1,
+            normalize_token(candidate)
+        );
+        split_combine_decisions.push(HybridSplitCombineDecision {
+            decision_id: format!("hybrid-split-candidate-{}", index + 1),
+            decision_type: "split-candidate".to_string(),
+            part_ids,
+            reason: candidate.clone(),
+            action: "preserve-separate-piece-before-cad-cam-freeze".to_string(),
+            source: "assembly-plan".to_string(),
+            learning_observation,
+            requires_human_review: true,
+        });
+    }
+    for (index, boundary) in validation
+        .failure_boundaries
+        .iter()
+        .filter(|boundary| boundary_is_split_combine_boundary(boundary))
+        .enumerate()
+    {
+        let decision_type = hybrid_boundary_decision_type(boundary);
+        let line_suffix = boundary
+            .line
+            .map(|line| format!("-line-{line}"))
+            .unwrap_or_default();
+        let reason = format!("{} boundary: {}", boundary.kind, boundary.reason.trim());
+        let learning_observation = format!(
+            "hybrid-boundary:{}:{}:{}",
+            normalize_token(&decision_type),
+            normalize_token(&boundary.kind),
+            normalize_token(&boundary.suggested_resolution)
+        );
+        split_combine_decisions.push(HybridSplitCombineDecision {
+            decision_id: format!(
+                "hybrid-boundary-{}-{}{}",
+                index + 1,
+                normalize_token(&boundary.kind),
+                line_suffix
+            ),
+            decision_type,
+            part_ids: hybrid_candidate_part_ids(&reason, parts),
+            reason,
+            action: boundary.suggested_resolution.clone(),
+            source: "validation-boundary".to_string(),
+            learning_observation,
+            requires_human_review: boundary.requires_human_intervention
+                || boundary.severity == "error",
+        });
+    }
+    for candidate in learning
+        .strategy_candidates
+        .iter()
+        .filter(|candidate| strategy_candidate_is_hybrid_decision(candidate))
+        .take(4)
+    {
+        let learning_observation = format!(
+            "hybrid-strategy-candidate:{}:score-{:.3}",
+            normalize_token(&candidate.strategy_id),
+            candidate.score
+        );
+        split_combine_decisions.push(HybridSplitCombineDecision {
+            decision_id: format!(
+                "hybrid-strategy-candidate-{}",
+                normalize_token(&candidate.strategy_id)
+            ),
+            decision_type: "learning-strategy-candidate".to_string(),
+            part_ids: parts.iter().take(4).map(|part| part.id.clone()).collect(),
+            reason: candidate.rationale.join("; "),
+            action: format!(
+                "consider learned strategy {} before CAD/CAM freeze",
+                candidate.strategy_id
+            ),
+            source: "learning-plan".to_string(),
+            learning_observation,
+            requires_human_review: candidate.human_intervention_steps > 0
+                || candidate.boundary_count > 0,
+        });
+    }
+
+    let mut learning_observations = part_routes
+        .iter()
+        .map(|route| {
+            format!(
+                "hybrid-route:{}:{}:{}",
+                normalize_token(&route.part_id),
+                normalize_token(&route.manufacturing_method),
+                normalize_token(&route.route_type)
+            )
+        })
+        .collect::<Vec<_>>();
+    learning_observations.extend(
+        join_operations
+            .iter()
+            .map(|operation| operation.learning_observation.clone()),
+    );
+    learning_observations.extend(
+        split_combine_decisions
+            .iter()
+            .map(|decision| decision.learning_observation.clone()),
+    );
+
+    let split_count = split_combine_decisions
+        .iter()
+        .filter(|decision| decision.decision_type.contains("split"))
+        .count();
+    let combine_count = split_combine_decisions
+        .iter()
+        .filter(|decision| decision.decision_type.contains("combine"))
+        .count();
+    let review_required = join_operations
+        .iter()
+        .any(|operation| operation.requires_human_intervention)
+        || split_combine_decisions
+            .iter()
+            .any(|decision| decision.requires_human_review)
+        || !process_graph.gates.is_empty();
+    let status = if validation.severity == "error" {
+        "hybrid-make-blocked"
+    } else if parts.len() <= 1 {
+        "single-route-draft"
+    } else if review_required {
+        "hybrid-make-review-required"
+    } else {
+        "hybrid-make-draft-ready"
+    };
+
+    HybridMakePlan {
+        schema_version: "dd.fabrication.hybrid-make-plan.v1",
+        status: status.to_string(),
+        selected_strategy: assembly.strategy.clone(),
+        route_count: part_routes.len(),
+        join_count: join_operations.len(),
+        split_count,
+        combine_count,
+        part_routes,
+        join_operations,
+        split_combine_decisions,
+        learning_observations,
+        notes: vec![
+            "Hybrid make routes are draft decomposition decisions for CAD, CAM, slicer, and assembly workers".to_string(),
+            "Split/combine decisions stay review-gated until tolerance stack, fixture access, and join inspection evidence are attached".to_string(),
+            "Learning observations are compact signals for MDP/POMDP/neural workers to compare future make-or-split outcomes".to_string(),
+        ],
+    }
+}
+
 fn stock_strategy_for_part(part: &PartPlan) -> String {
     match machine_class(&part.machine_kind) {
         MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => {
@@ -21973,6 +23392,439 @@ fn stock_strategy_for_part(part: &PartPlan) -> String {
             "operator-defined stock and material certificate before special-process programming"
                 .to_string()
         }
+    }
+}
+
+fn material_feedstock_kind(part: &PartPlan) -> &'static str {
+    match machine_class(&part.machine_kind) {
+        MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => "photopolymer-resin",
+        MachineClass::Additive if is_metal_pbf_printer_kind(&part.machine_kind) => {
+            "qualified-metal-powder-lot"
+        }
+        MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
+            "polymer-powder-lot"
+        }
+        MachineClass::Additive if is_composite_fiber_printer_kind(&part.machine_kind) => {
+            "matrix-material-and-fiber-spool"
+        }
+        MachineClass::Additive if wants_directed_energy_deposition(&part.machine_kind) => {
+            "wire-or-powder-feedstock"
+        }
+        MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => {
+            "material-and-support-cartridges"
+        }
+        MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => {
+            "pellet-feedstock"
+        }
+        MachineClass::Additive => "filament-spool",
+        MachineClass::Lathe => "round-bar-or-tube-stock",
+        MachineClass::Mill | MachineClass::Router => "block-plate-or-sheet-blank",
+        MachineClass::SheetCut => "sheet-plate-or-panel",
+        MachineClass::Other => "operator-declared-material-kit",
+    }
+}
+
+fn material_requirement_unit(part: &PartPlan) -> &'static str {
+    match machine_class(&part.machine_kind) {
+        MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => "ml",
+        MachineClass::Additive
+            if is_powder_bed_printer_kind(&part.machine_kind)
+                || is_metal_pbf_printer_kind(&part.machine_kind) =>
+        {
+            "cm3"
+        }
+        MachineClass::Additive => "g",
+        MachineClass::Lathe => "mm blank length",
+        MachineClass::Mill | MachineClass::Router | MachineClass::SheetCut => "blank",
+        MachineClass::Other => "kit",
+    }
+}
+
+fn material_estimated_quantity(part: &PartPlan, quantity: u32) -> f64 {
+    let base_quantity = match machine_class(&part.machine_kind) {
+        MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => 35.0,
+        MachineClass::Additive if is_metal_pbf_printer_kind(&part.machine_kind) => 55.0,
+        MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => 45.0,
+        MachineClass::Additive if is_composite_fiber_printer_kind(&part.machine_kind) => 90.0,
+        MachineClass::Additive if wants_directed_energy_deposition(&part.machine_kind) => 180.0,
+        MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => 40.0,
+        MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => 450.0,
+        MachineClass::Additive => 85.0,
+        MachineClass::Lathe => 120.0,
+        MachineClass::Mill
+        | MachineClass::Router
+        | MachineClass::SheetCut
+        | MachineClass::Other => 1.0,
+    };
+    rounded_score(base_quantity * quantity.max(1) as f64)
+}
+
+fn material_scrap_allowance_pct(part: &PartPlan) -> f64 {
+    let allowance = match machine_class(&part.machine_kind) {
+        MachineClass::Additive if is_metal_pbf_printer_kind(&part.machine_kind) => 35.0,
+        MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => 25.0,
+        MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => 20.0,
+        MachineClass::Additive if wants_directed_energy_deposition(&part.machine_kind) => 30.0,
+        MachineClass::Additive => 15.0,
+        MachineClass::Lathe => 20.0,
+        MachineClass::Mill | MachineClass::Router => 18.0,
+        MachineClass::SheetCut => 12.0,
+        MachineClass::Other => 10.0,
+    };
+    rounded_score(allowance)
+}
+
+fn material_conditioning(part: &PartPlan) -> Vec<String> {
+    let mut conditioning = match machine_class(&part.machine_kind) {
+        MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => vec![
+            "mix resin and verify batch age before fill".to_string(),
+            "confirm vat film, drain orientation, wash, and cure compatibility".to_string(),
+        ],
+        MachineClass::Additive if is_metal_pbf_printer_kind(&part.machine_kind) => vec![
+            "verify metal powder lot, sieve state, refresh ratio, and inert handling log"
+                .to_string(),
+            "reserve cooldown, depowder, and powder recovery controls".to_string(),
+        ],
+        MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => vec![
+            "verify powder lot, refresh ratio, humidity, and thermal pack spacing".to_string(),
+            "reserve cooldown and depowder handling before release".to_string(),
+        ],
+        MachineClass::Additive if is_composite_fiber_printer_kind(&part.machine_kind) => vec![
+            "load matrix material and verify continuous-fiber spool path".to_string(),
+            "confirm fiber cutoff, compaction, and cure/post-cure expectations".to_string(),
+        ],
+        MachineClass::Additive if wants_directed_energy_deposition(&part.machine_kind) => vec![
+            "verify wire or powder feed path, shielding gas, and deposition head calibration"
+                .to_string(),
+            "confirm preheat, interpass, and thermal inspection plan".to_string(),
+        ],
+        MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => vec![
+            "verify model and support cartridge levels plus purge/wipe station state".to_string(),
+            "confirm UV lamp exposure and support-removal compatibility".to_string(),
+        ],
+        MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => vec![
+            "dry pellet feedstock to material profile and verify hopper refill capacity"
+                .to_string(),
+            "confirm screw purge, bead thermal window, and trim allowance".to_string(),
+        ],
+        MachineClass::Additive => vec![
+            "dry or condition filament to material profile".to_string(),
+            "verify spool mass, diameter profile, nozzle compatibility, and runout handling"
+                .to_string(),
+        ],
+        MachineClass::Lathe => vec![
+            "cut blank with chuck/grip and cutoff allowance".to_string(),
+            "verify bar straightness, OD, stick-out, and support requirements".to_string(),
+        ],
+        MachineClass::Mill => vec![
+            "saw or square stock with roughing and finish allowance".to_string(),
+            "verify stock thickness, datum access, and workholding clamp clearance".to_string(),
+        ],
+        MachineClass::Router => vec![
+            "verify sheet flatness, spoilboard state, tab margin, and hold-down compatibility"
+                .to_string(),
+            "stage dust extraction and chip evacuation for the material".to_string(),
+        ],
+        MachineClass::SheetCut => vec![
+            "verify sheet thickness, flatness, kerf coupon area, retained tabs, and part catch"
+                .to_string(),
+            "stage process support such as gas, abrasive, fume extraction, water table, or slats"
+                .to_string(),
+        ],
+        MachineClass::Other => vec![
+            "operator-defined material handling, conditioning, and safety evidence".to_string(),
+        ],
+    };
+    let material_token = normalize_token(&part.material.name);
+    if summary_text_has_any(
+        &material_token,
+        &[
+            "nylon",
+            "pa",
+            "petg",
+            "abs",
+            "asa",
+            "pc",
+            "polycarbonate",
+            "tpu",
+        ],
+    ) && !conditioning
+        .iter()
+        .any(|item| normalize_token(item).contains("dry"))
+    {
+        conditioning.push("dry hygroscopic polymer feedstock before release".to_string());
+    }
+    conditioning.sort();
+    conditioning.dedup();
+    conditioning
+}
+
+fn material_required_evidence(part: &PartPlan) -> Vec<String> {
+    let mut evidence = vec![
+        "material lot, certificate, or operator-declared equivalent".to_string(),
+        "available quantity covers planned quantity plus scrap allowance".to_string(),
+        "material is compatible with selected machine, process, and safety controls".to_string(),
+    ];
+    match machine_class(&part.machine_kind) {
+        MachineClass::Additive => {
+            evidence.push("printer material profile, temperature/exposure settings, and feedstock level/runout evidence".to_string());
+            evidence.push(
+                "support, adhesion, purge/prime, or build-media readiness evidence".to_string(),
+            );
+        }
+        MachineClass::Mill | MachineClass::Router => {
+            evidence.push(
+                "blank or sheet size with roughing allowance and verified datum access".to_string(),
+            );
+            evidence.push(
+                "workholding, clamp clearance, and chip/dust evacuation evidence".to_string(),
+            );
+        }
+        MachineClass::Lathe => {
+            evidence.push(
+                "bar/blank diameter, length, stick-out, grip allowance, and support evidence"
+                    .to_string(),
+            );
+            evidence.push("tool, cutoff, catcher/subspindle/tailstock, or part-support evidence when applicable".to_string());
+        }
+        MachineClass::SheetCut => {
+            evidence.push(
+                "sheet thickness, cut-chart/kerf coupon, and retained-tab evidence".to_string(),
+            );
+            evidence.push(
+                "process support media, fume/fire controls, and part-catch evidence".to_string(),
+            );
+        }
+        MachineClass::Other => {
+            evidence.push(
+                "operator material handling and process-specific release signoff".to_string(),
+            );
+        }
+    }
+    evidence.sort();
+    evidence.dedup();
+    evidence
+}
+
+fn boundary_is_material_related(boundary: &FailureBoundary) -> bool {
+    let combined = format!(
+        "{} {} {}",
+        boundary.kind, boundary.reason, boundary.suggested_resolution
+    );
+    summary_text_has_any(
+        &combined,
+        &[
+            "abrasive",
+            "bar",
+            "bed",
+            "blank",
+            "certificate",
+            "coolant",
+            "datum",
+            "feedstock",
+            "filament",
+            "fixture",
+            "gas",
+            "heat",
+            "kerf",
+            "lot",
+            "material",
+            "nozzle",
+            "pellet",
+            "powder",
+            "resin",
+            "sheet",
+            "slat",
+            "stock",
+            "support",
+            "temperature",
+            "waterjet",
+            "workholding",
+        ],
+    )
+}
+
+fn material_boundary_applies(boundary: &FailureBoundary, part: &PartPlan) -> bool {
+    if !boundary_is_material_related(boundary) {
+        return false;
+    }
+    let combined = normalize_token(&format!(
+        "{} {} {} {}",
+        boundary.kind,
+        boundary.reason,
+        boundary.suggested_resolution,
+        boundary.program_id.as_deref().unwrap_or_default()
+    ));
+    [
+        part.id.as_str(),
+        part.role.as_str(),
+        part.machine_kind.as_str(),
+        part.manufacturing_method.as_str(),
+        part.material.name.as_str(),
+    ]
+    .iter()
+    .any(|value| combined.contains(&normalize_token(value)))
+        || boundary.program_id.is_none()
+}
+
+fn material_plan(
+    material: &MaterialSpec,
+    stock: Option<&StockSpec>,
+    quantity: u32,
+    parts: &[PartPlan],
+    validation: &ValidationReport,
+    machine_release: &MachineReleaseReport,
+) -> MaterialPlan {
+    let material_boundary_count = validation
+        .failure_boundaries
+        .iter()
+        .filter(|boundary| boundary_is_material_related(boundary))
+        .count();
+    let machine_release_material_blockers = machine_release
+        .blockers
+        .iter()
+        .filter(|blocker| {
+            summary_text_has_any(
+                &format!(
+                    "{} {} {}",
+                    blocker.blocker_type, blocker.reason, blocker.required_action
+                ),
+                &[
+                    "material",
+                    "stock",
+                    "feedstock",
+                    "workholding",
+                    "fixture",
+                    "support",
+                    "temperature",
+                    "gas",
+                    "abrasive",
+                    "coolant",
+                    "fume",
+                ],
+            )
+        })
+        .count();
+
+    let route_requirements = parts
+        .iter()
+        .map(|part| {
+            let mut release_blockers = validation
+                .failure_boundaries
+                .iter()
+                .filter(|boundary| material_boundary_applies(boundary, part))
+                .map(|boundary| {
+                    format!(
+                        "{}: {} -> {}",
+                        boundary.kind, boundary.reason, boundary.suggested_resolution
+                    )
+                })
+                .collect::<Vec<_>>();
+            if stock.is_none()
+                && matches!(
+                    machine_class(&part.machine_kind),
+                    MachineClass::Mill
+                        | MachineClass::Lathe
+                        | MachineClass::Router
+                        | MachineClass::SheetCut
+                )
+            {
+                release_blockers.push(
+                    "declared stock dimensions/form required before subtractive or sheet-cutting machine release"
+                        .to_string(),
+                );
+            }
+            if machine_release.machine_release_blocked && machine_release_material_blockers > 0 {
+                release_blockers.push(
+                    "machine-release blockers include material, support-media, fixture, or process-state evidence"
+                        .to_string(),
+                );
+            }
+            release_blockers.sort();
+            release_blockers.dedup();
+
+            let feedstock_kind = material_feedstock_kind(part).to_string();
+            let learning_observation = format!(
+                "material-route:{}:{}:{}",
+                normalize_token(&part.id),
+                normalize_token(&feedstock_kind),
+                normalize_token(&part.machine_kind)
+            );
+
+            MaterialRouteRequirement {
+                requirement_id: format!("material-{}", normalize_token(&part.id)),
+                part_id: part.id.clone(),
+                machine_kind: part.machine_kind.clone(),
+                manufacturing_method: part.manufacturing_method.clone(),
+                feedstock_kind,
+                stock_form: stock
+                    .map(|stock| stock.form.clone())
+                    .unwrap_or_else(|| stock_strategy_for_part(part)),
+                estimated_quantity: material_estimated_quantity(part, quantity),
+                unit: material_requirement_unit(part).to_string(),
+                scrap_allowance_pct: material_scrap_allowance_pct(part),
+                conditioning: material_conditioning(part),
+                required_evidence: material_required_evidence(part),
+                release_blockers,
+                learning_observation,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut release_gates = vec![
+        "material/stock lot and compatibility evidence reviewed".to_string(),
+        "quantity and scrap allowance reserved before dispatch".to_string(),
+        "conditioning and support-media readiness captured before machine release".to_string(),
+    ];
+    if material_boundary_count > 0 {
+        release_gates.push(
+            "material-related failure boundaries resolved or accepted by reviewer".to_string(),
+        );
+    }
+    if machine_release_material_blockers > 0 {
+        release_gates
+            .push("machine-release material blockers cleared before ready state".to_string());
+    }
+    release_gates.sort();
+    release_gates.dedup();
+
+    let mut learning_observations = route_requirements
+        .iter()
+        .map(|requirement| requirement.learning_observation.clone())
+        .collect::<Vec<_>>();
+    if material_boundary_count > 0 {
+        learning_observations.push(format!(
+            "material-boundary-count:{}",
+            material_boundary_count
+        ));
+    }
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    let release_blocked = route_requirements
+        .iter()
+        .any(|requirement| !requirement.release_blockers.is_empty());
+    let status = if release_blocked {
+        "material-blocked"
+    } else if material_boundary_count > 0 || machine_release_material_blockers > 0 {
+        "material-review-required"
+    } else {
+        "material-planned"
+    };
+
+    MaterialPlan {
+        schema_version: "dd.fabrication.material-plan.v1",
+        status: status.to_string(),
+        review_required: true,
+        material: material.clone(),
+        declared_stock: stock.cloned(),
+        route_requirements,
+        release_gates,
+        learning_observations,
+        notes: vec![
+            "Material quantities are advisory planning estimates until CAD mass properties, nesting, slicer, or CAM stock models are finalized".to_string(),
+            "Machine-ready release still requires human-reviewed material, stock, feedstock, and support-media evidence".to_string(),
+        ],
     }
 }
 
@@ -23185,10 +25037,6 @@ fn clamp_unit(value: f64) -> f64 {
     value.clamp(0.0, 1.0)
 }
 
-fn sigmoid(value: f64) -> f64 {
-    1.0 / (1.0 + (-value).exp())
-}
-
 fn fabrication_neural_engine_network() -> FeedForwardNetwork {
     FeedForwardNetwork::new(vec![DenseLayerConfig {
         weights: vec![
@@ -23481,7 +25329,14 @@ fn boundary_learning_machine_feature(boundary: &FailureBoundary) -> f64 {
         0.36
     } else if summary_text_has_any(
         &combined,
-        &["printer", "slicer", "extrusion", "resin", "powder", "additive"],
+        &[
+            "printer",
+            "slicer",
+            "extrusion",
+            "resin",
+            "powder",
+            "additive",
+        ],
     ) {
         0.18
     } else if summary_text_has_any(&combined, &["laser", "waterjet", "plasma", "edm", "sheet"]) {
@@ -23493,7 +25348,10 @@ fn boundary_learning_machine_feature(boundary: &FailureBoundary) -> f64 {
 
 fn boundary_learning_material_feature(boundary: &FailureBoundary) -> f64 {
     let combined = boundary_combined_text(boundary);
-    if summary_text_has_any(&combined, &["metal", "steel", "aluminum", "brass", "titanium"]) {
+    if summary_text_has_any(
+        &combined,
+        &["metal", "steel", "aluminum", "brass", "titanium"],
+    ) {
         0.82
     } else if summary_text_has_any(&combined, &["polymer", "plastic", "pla", "petg", "resin"]) {
         0.28
@@ -23564,12 +25422,15 @@ fn boundary_training_feature_vector(
                 0.82
             } else {
                 0.28
-            } + if boundary.severity == "error" { 0.12 } else { 0.0 },
+            } + if boundary.severity == "error" {
+                0.12
+            } else {
+                0.0
+            },
         ),
         rounded_score(if automation { 0.86 } else { 0.18 }),
         rounded_score(
-            summary.total_boundaries as f64 / 24.0
-                + if improvement.is_some() { 0.24 } else { 0.0 },
+            summary.total_boundaries as f64 / 24.0 + if improvement.is_some() { 0.24 } else { 0.0 },
         ),
     ]
 }
@@ -23625,6 +25486,136 @@ fn boundary_training_reward_hint(
         } else {
             0.0
         } + if improvement.is_some() { 0.14 } else { 0.0 },
+    )
+}
+
+fn instruction_patch_related_boundary<'a>(
+    improvement: &InstructionImprovement,
+    validation: &'a ValidationReport,
+) -> Option<&'a FailureBoundary> {
+    validation
+        .failure_boundaries
+        .iter()
+        .find(|boundary| {
+            improvement.program_id.is_none()
+                || boundary.program_id.is_none()
+                || boundary.program_id == improvement.program_id
+        })
+        .filter(|boundary| {
+            improvement.line.is_none()
+                || boundary.line.is_none()
+                || boundary.line == improvement.line
+        })
+}
+
+fn instruction_patch_training_feature_vector(
+    improvement: &InstructionImprovement,
+    validation: &ValidationReport,
+    index: usize,
+) -> Vec<f64> {
+    let action_token = normalize_token(&improvement.action);
+    let related_boundary = instruction_patch_related_boundary(improvement, validation);
+    let related_boundary_count = validation
+        .failure_boundaries
+        .iter()
+        .filter(|boundary| {
+            improvement.program_id.is_none()
+                || boundary.program_id.is_none()
+                || boundary.program_id == improvement.program_id
+        })
+        .count();
+    vec![
+        rounded_score((improvement.action.len() + improvement.reason.len()) as f64 / 180.0),
+        rounded_score(0.5),
+        rounded_score(
+            if action_token.contains("split") || action_token.contains("assembly") {
+                0.82
+            } else if improvement.line.is_some() {
+                0.52
+            } else {
+                0.34
+            },
+        ),
+        rounded_score(
+            related_boundary
+                .map(boundary_learning_machine_feature)
+                .unwrap_or(0.5),
+        ),
+        rounded_score(if improvement.line.is_some() {
+            0.74
+        } else if improvement.program_id.is_some() {
+            0.42
+        } else {
+            0.2
+        }),
+        rounded_score(
+            related_boundary_count as f64 / 12.0
+                + if related_boundary.is_some_and(boundary_machine_failure_risk) {
+                    0.24
+                } else {
+                    0.0
+                }
+                + index as f64 * 0.01,
+        ),
+        rounded_score(
+            if action_token.contains("review") || action_token.contains("evidence") {
+                0.78
+            } else {
+                0.42
+            },
+        ),
+        rounded_score(
+            if action_token.contains("automation")
+                || action_token.contains("robot")
+                || action_token.contains("probe")
+            {
+                0.86
+            } else {
+                0.2
+            },
+        ),
+        rounded_score(validation.failure_boundaries.len() as f64 / 24.0 + 0.18),
+    ]
+}
+
+fn instruction_patch_training_labels(improvement: &InstructionImprovement) -> Vec<String> {
+    let action = normalize_token(&improvement.action);
+    let mut labels = vec![
+        "instruction-patch".to_string(),
+        format!("patch-action:{action}"),
+    ];
+    if improvement.line.is_some() {
+        labels.push("line-level-repair".to_string());
+    } else {
+        labels.push("program-level-repair".to_string());
+    }
+    if action.contains("split") || action.contains("assembly") {
+        labels.push("split-or-assembly-repair".to_string());
+    }
+    if action.contains("automation") || action.contains("robot") || action.contains("probe") {
+        labels.push("automation-repair".to_string());
+    }
+    labels
+}
+
+fn instruction_patch_training_reward_hint(
+    improvement: &InstructionImprovement,
+    validation: &ValidationReport,
+) -> f64 {
+    let related_boundary = instruction_patch_related_boundary(improvement, validation);
+    let base = if related_boundary.is_some_and(|boundary| boundary.severity == "error") {
+        -0.46
+    } else if related_boundary.is_some() {
+        -0.22
+    } else {
+        0.08
+    };
+    rounded_engine_value(
+        base + if improvement.line.is_some() {
+            0.08
+        } else {
+            0.02
+        },
     )
 }
 
@@ -23759,18 +25750,74 @@ fn neural_training_corpus(
         });
     }
 
+    for (index, improvement) in improvements
+        .iter()
+        .take(MAX_LEARNING_SIGNALS.min(32))
+        .enumerate()
+    {
+        let example_labels = instruction_patch_training_labels(improvement);
+        for label in &example_labels {
+            labels.insert(label.clone());
+        }
+        let observations = vec![
+            format!(
+                "instruction-patch-action:{}",
+                normalize_token(&improvement.action)
+            ),
+            format!(
+                "instruction-patch-program:{}",
+                normalize_token(improvement.program_id.as_deref().unwrap_or("whole-job"))
+            ),
+            format!(
+                "instruction-patch-line:{}",
+                boundary_line_token(improvement.line)
+            ),
+            format!(
+                "instruction-patch-reason:{}",
+                normalize_token(&improvement.reason)
+            ),
+        ];
+        examples.push(NeuralTrainingExample {
+            example_id: format!("instruction-patch-{}", index + 1),
+            source: "instruction-patch".to_string(),
+            part_id: None,
+            machine_kind: None,
+            feature_vector: instruction_patch_training_feature_vector(
+                improvement,
+                validation,
+                index,
+            ),
+            labels: example_labels,
+            reward_hint: instruction_patch_training_reward_hint(improvement, validation),
+            observations,
+        });
+    }
+
     for (index, example) in training_examples
         .iter()
         .take(MAX_LEARNING_SIGNALS.min(32))
         .enumerate()
     {
         let token = normalize_token(example);
+        let is_boundary_memory = token.contains("boundary-memory")
+            || token.contains("boundary-kind")
+            || token.contains("boundary-severity")
+            || token.contains("resolution-action")
+            || token.contains("suggested-resolution");
+        let is_risk_memory = token.contains("failure")
+            || token.contains("risk")
+            || token.contains("remediation")
+            || token.contains("success-false")
+            || is_boundary_memory;
         let mut example_labels = vec!["policy-memory".to_string()];
         if token.contains("success") || token.contains("pass") {
             example_labels.push("success".to_string());
         }
-        if token.contains("failure") || token.contains("risk") || token.contains("remediation") {
+        if is_risk_memory {
             example_labels.push("risk-or-remediation".to_string());
+        }
+        if is_boundary_memory {
+            example_labels.push("learned-boundary-memory".to_string());
         }
         if token.contains("hybrid") || token.contains("assembly") {
             example_labels.push("learned-hybrid-assembly".to_string());
@@ -23788,11 +25835,7 @@ fn neural_training_corpus(
             machine_kind: None,
             feature_vector: prior_example_feature_vector(example),
             labels: example_labels,
-            reward_hint: if token.contains("failure") || token.contains("risk") {
-                -0.4
-            } else {
-                0.8
-            },
+            reward_hint: if is_risk_memory { -0.4 } else { 0.8 },
             observations: vec![example.clone()],
         });
     }
@@ -26193,14 +28236,18 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "releaseProbePlan": response.learning.release_probe_plan,
         "productionPlan": response.production_plan,
         "machineSchedule": response.machine_schedule,
+        "desScheduleModel": response.des_schedule_model,
         "machineSelection": response.machine_selection,
         "manufacturingHandoff": response.manufacturing_handoff,
+        "materialPlan": response.material_plan,
         "qualityPlan": response.quality_plan,
         "toolingPlan": response.tooling_plan,
         "processGraph": response.process_graph,
+        "hybridMakePlan": response.hybrid_make_plan,
         "interventionMap": response.intervention_map,
         "executionPlan": response.execution_plan,
         "postprocessPlan": response.postprocess_plan,
+        "simulation": response.simulation,
         "strategyCandidates": response.learning.strategy_candidates,
         "interventionSignals": response.learning.intervention_signals,
         "neuralTrainingCorpus": response.learning.neural_training_corpus,
@@ -26281,6 +28328,7 @@ fn instruction_analysis_mdp_request(response: &InstructionAnalysisResponse) -> V
         "executionPlan": &response.execution_plan,
         "postprocessPlan": &response.postprocess_plan,
         "simulation": &response.simulation,
+        "desInstructionModel": &response.des_instruction_model,
         "improvements": &response.improvements,
         "improvedPrograms": &response.improved_programs,
         "gamma": 0.82,
@@ -28774,6 +30822,37 @@ mod tests {
             .dependencies
             .iter()
             .any(|dependency| dependency.dependency_type == "assembly-interface"));
+        assert_eq!(
+            response.hybrid_make_plan.schema_version,
+            "dd.fabrication.hybrid-make-plan.v1"
+        );
+        assert_eq!(
+            response.hybrid_make_plan.route_count,
+            response.design.parts.len()
+        );
+        assert!(response
+            .hybrid_make_plan
+            .part_routes
+            .iter()
+            .all(|route| route.process_node_id.is_some() && route.program_id.is_some()));
+        assert!(response
+            .hybrid_make_plan
+            .join_operations
+            .iter()
+            .any(|operation| operation.requires_human_intervention
+                && operation.learning_observation.starts_with("hybrid-join:")));
+        assert!(response
+            .hybrid_make_plan
+            .split_combine_decisions
+            .iter()
+            .any(|decision| decision.decision_type.contains("split")
+                && decision.requires_human_review
+                && !decision.part_ids.is_empty()));
+        assert!(response
+            .hybrid_make_plan
+            .learning_observations
+            .iter()
+            .any(|observation| observation.starts_with("hybrid-route:")));
         assert!(response
             .process_graph
             .gates
@@ -28810,6 +30889,27 @@ mod tests {
             .any(
                 |gate| gate.boundary_kind == "inspection-gate" && gate.requires_human_intervention
             ));
+        assert_eq!(
+            response.material_plan.schema_version,
+            "dd.fabrication.material-plan.v1"
+        );
+        assert_eq!(
+            response.material_plan.route_requirements.len(),
+            response.design.parts.len()
+        );
+        assert!(response.material_plan.review_required);
+        assert!(response
+            .material_plan
+            .route_requirements
+            .iter()
+            .any(|requirement| requirement.feedstock_kind.contains("bar")
+                || requirement.feedstock_kind.contains("blank")
+                || requirement.feedstock_kind.contains("sheet")));
+        assert!(response
+            .material_plan
+            .learning_observations
+            .iter()
+            .any(|observation| observation.starts_with("material-route:")));
         assert_eq!(
             response.quality_plan.schema_version,
             "dd.fabrication.quality-plan.v1"
@@ -32987,6 +35087,28 @@ mod tests {
         assert!(trace.axis_extents.iter().any(|axis| {
             axis.axis == "X" && axis.limit_mm == Some(100.0) && axis.exceeds_limit
         }));
+        assert_eq!(
+            simulation.risk_profile.schema_version,
+            "dd.fabrication.simulation-risk-profile.v1"
+        );
+        assert_eq!(simulation.risk_profile.status, "simulation-risk-blocked");
+        assert!(simulation.risk_profile.aggregate_risk_score > 0.0);
+        assert!(simulation.risk_profile.high_risk_program_count > 0);
+        assert!(simulation
+            .risk_profile
+            .program_risks
+            .iter()
+            .any(|risk| risk.program_id == "oversize-router"
+                && risk.risk_level == "high"
+                && risk
+                    .primary_risks
+                    .iter()
+                    .any(|risk| risk == "machine-envelope-exceeded")));
+        assert!(simulation
+            .risk_profile
+            .learning_observations
+            .iter()
+            .any(|observation| observation.starts_with("simulation-risk:oversize-router:")));
     }
 
     #[test]
@@ -33401,6 +35523,19 @@ mod tests {
                 && boundary.requires_human_intervention
                 && boundary.suggested_resolution.contains("safe Z retract")
         }));
+        assert_eq!(
+            simulation.risk_profile.status,
+            "simulation-risk-review-required"
+        );
+        assert!(simulation
+            .risk_profile
+            .program_risks
+            .iter()
+            .any(|risk| risk.program_id == "low-rapid-router"
+                && risk
+                    .primary_risks
+                    .iter()
+                    .any(|risk| risk == "human-intervention-boundary")));
     }
 
     #[test]
@@ -38829,6 +40964,24 @@ mod tests {
             scheduled_units,
             response.quantity * response.process_plan.len() as u32
         );
+        assert_eq!(
+            response.des_schedule_model.schema_version,
+            "dd.fabrication.des-schedule-model.v1"
+        );
+        assert_eq!(
+            response.des_schedule_model.engine,
+            "des_engine::des::studio::StudioModelSpec"
+        );
+        assert_eq!(
+            response.des_schedule_model.model_spec.schema,
+            STUDIO_GRAPH_SCHEMA
+        );
+        assert!(response.des_schedule_model.analysis.validation.ok);
+        assert!(response
+            .des_schedule_model
+            .lane_models
+            .iter()
+            .any(|lane| lane.queue_block_id.starts_with("des-queue-")));
         assert!(response.production_plan.batches.iter().all(|batch| {
             batch.program_id.is_some()
                 && !batch.review_gates.is_empty()
@@ -38914,6 +41067,41 @@ mod tests {
         );
         assert_eq!(response.learning.neural_policy.feature_vector.len(), 9);
         assert_eq!(response.learning.neural_policy.hidden_activations.len(), 4);
+        assert_eq!(
+            response
+                .learning
+                .neural_policy
+                .engine_inference
+                .schema_version,
+            "dd.fabrication.neural-engine-inference.v1"
+        );
+        assert_eq!(
+            response.learning.neural_policy.engine_inference.engine,
+            "des_engine::des::general::neural_network::FeedForwardNetwork"
+        );
+        assert_eq!(
+            response.learning.neural_policy.engine_inference.input_dim,
+            response.learning.neural_policy.feature_vector.len()
+        );
+        assert_eq!(
+            response.learning.neural_policy.engine_inference.output_dim,
+            response.learning.neural_policy.hidden_activations.len()
+        );
+        assert!(
+            response
+                .learning
+                .neural_policy
+                .engine_inference
+                .parameter_count
+                > 0
+        );
+        assert!(response
+            .learning
+            .neural_policy
+            .engine_inference
+            .output_scores
+            .iter()
+            .any(|score| score.action == "machine-failure"));
         assert!(response
             .learning
             .neural_policy
@@ -39009,6 +41197,33 @@ mod tests {
             .get("interventionSignals")
             .and_then(Value::as_array)
             .is_some_and(|signals| !signals.is_empty()));
+        assert!(mdp_request
+            .get("desScheduleModel")
+            .and_then(|model| model.get("modelSpec"))
+            .and_then(|spec| spec.get("blocks"))
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| blocks
+                .iter()
+                .any(|block| block.get("kind").and_then(Value::as_str) == Some("queue"))));
+        assert!(mdp_request
+            .get("hybridMakePlan")
+            .and_then(|plan| plan.get("splitCombineDecisions"))
+            .and_then(Value::as_array)
+            .is_some_and(|decisions| decisions.iter().any(|decision| decision
+                .get("learningObservation")
+                .and_then(Value::as_str)
+                .is_some_and(|observation| observation.starts_with("hybrid-")))));
+        assert!(mdp_request
+            .get("materialPlan")
+            .and_then(|plan| plan.get("learningObservations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| !observations.is_empty()));
+        assert!(mdp_request
+            .get("simulation")
+            .and_then(|simulation| simulation.get("riskProfile"))
+            .and_then(|profile| profile.get("learningObservations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| !observations.is_empty()));
         assert!(mdp_request
             .get("pomdpBeliefState")
             .and_then(|state| state.get("hiddenStates"))
@@ -39361,6 +41576,11 @@ mod tests {
             observations: Some(vec![
                 "spindle alarm".to_string(),
                 "thin wall chatter".to_string(),
+                "boundary-kind:machine-envelope".to_string(),
+                "boundary-severity:error".to_string(),
+                "boundary-program:program-petg-pocket".to_string(),
+                "boundary-line:24".to_string(),
+                "resolution-action:split-job-or-part".to_string(),
             ]),
             notes: Some(vec![
                 "split thin wall into printed shell and mill datum insert".to_string(),
@@ -39382,6 +41602,11 @@ mod tests {
             .observations
             .iter()
             .any(|observation| observation.contains("machine-failure")));
+        assert!(snapshot.boundary_learning_examples.iter().any(|example| {
+            example.contains("boundary-memory")
+                && example.contains("boundary-kind:machine-envelope")
+                && example.contains("resolution-action:split-job-or-part")
+        }));
 
         let learned = plan_fabrication_with_policy(
             FabricationPlanRequest {
@@ -39432,6 +41657,31 @@ mod tests {
             .training_examples
             .iter()
             .any(|example| example.contains("remediation-risk key=milling@petg")));
+        assert!(learned
+            .learning
+            .training_examples
+            .iter()
+            .any(|example| example.contains("boundary-memory")
+                && example.contains("boundary-kind:machine-envelope")));
+        assert!(learned
+            .learning
+            .pomdp_observations
+            .iter()
+            .any(|observation| observation.starts_with("learned-boundary-memory:")));
+        assert!(learned
+            .learning
+            .neural_training_corpus
+            .examples
+            .iter()
+            .any(|example| example.source == "policy-memory"
+                && example
+                    .labels
+                    .iter()
+                    .any(|label| label == "learned-boundary-memory")
+                && example
+                    .observations
+                    .iter()
+                    .any(|observation| observation.contains("boundary-memory"))));
         assert!(learned
             .learning
             .pomdp_belief_state
@@ -39578,6 +41828,7 @@ mod tests {
                 "job=router-success-1 success=true reward=1.600 methods=routing assembly=single-piece observations=clean-tabs".to_string(),
                 "job=router-success-2 success=true reward=1.800 methods=routing assembly=single-piece observations=low-intervention".to_string(),
             ],
+            boundary_learning_examples: Vec::new(),
         };
         let learned =
             plan_fabrication_with_policy(request, Some(&policy)).expect("learned plan should work");
@@ -40038,6 +42289,7 @@ mod tests {
             neural_training_examples: vec![
                 "job=hybrid-success-1 success=true reward=3.200 methods=additive-print+turning assembly=printed body plus turned insert observations=press-fit-pass".to_string(),
             ],
+            boundary_learning_examples: Vec::new(),
         };
         let mut restricted_request = request.clone();
         restricted_request.constraints = Some(FabricationConstraints {
@@ -40114,7 +42366,9 @@ mod tests {
         assert!(job.artifacts.contains_key("postprocess-plan"));
         assert!(job.artifacts.contains_key("machine-selection"));
         assert!(job.artifacts.contains_key("process-graph"));
+        assert!(job.artifacts.contains_key("hybrid-make-plan"));
         assert!(job.artifacts.contains_key("manufacturing-handoff"));
+        assert!(job.artifacts.contains_key("material-plan"));
         assert!(job.artifacts.contains_key("production-plan"));
         assert!(job.artifacts.contains_key("machine-schedule"));
         assert!(job.artifacts.contains_key("quality-plan"));
@@ -40236,6 +42490,18 @@ mod tests {
             .and_then(|graph| graph.get("nodes"))
             .and_then(Value::as_array)
             .is_some_and(|nodes| !nodes.is_empty()));
+        assert!(parametric_design
+            .content
+            .get("hybridMakePlan")
+            .and_then(|plan| plan.get("partRoutes"))
+            .and_then(Value::as_array)
+            .is_some_and(|routes| !routes.is_empty()));
+        assert!(parametric_design
+            .content
+            .get("materialPlan")
+            .and_then(|plan| plan.get("routeRequirements"))
+            .and_then(Value::as_array)
+            .is_some_and(|requirements| !requirements.is_empty()));
         assert!(parametric_design
             .content
             .get("interventionMap")
@@ -40652,13 +42918,30 @@ mod tests {
             .iter()
             .any(|decision| decision.action == "split-job-or-part"
                 && decision.boundary_kind == "machine-envelope"
-                && !decision.candidate_parts.is_empty()));
+                && !decision.candidate_parts.is_empty()
+                && decision.interface_plan.joint_type
+                    == "registration-datum-and-fastener-or-bond-joint"
+                && decision.interface_plan.fit == "metrology-controlled-fit"
+                && decision.interface_plan.inspection_gate
+                    == "boundary-decomposition-fit-and-release-check"
+                && decision
+                    .interface_plan
+                    .decomposition_strategy
+                    .contains("recombination witness marks")));
         assert!(response
             .intervention_map
             .learning_observations
             .iter()
             .any(|observation| {
                 observation == "split-combine:split-job-or-part:machine-envelope"
+            }));
+        assert!(response
+            .intervention_map
+            .learning_observations
+            .iter()
+            .any(|observation| {
+                observation
+                    == "split-combine-interface:split-job-or-part:machine-envelope:boundary-decomposition-fit-and-release-check"
             }));
         assert!(response
             .learning
@@ -40737,6 +43020,7 @@ mod tests {
             &analyzed,
             None,
         );
+        let des_instruction_model = fabrication_des_instruction_model(&analyzed, &validation);
         let response = InstructionAnalysisResponse {
             ok: validation.ok,
             job_id: safe_job_id("analysis", "unit-analysis-artifacts", generated_at_ms),
@@ -40750,6 +43034,7 @@ mod tests {
             execution_plan,
             postprocess_plan,
             simulation,
+            des_instruction_model,
             improvements,
             improved_programs,
             learning,
@@ -40766,6 +43051,7 @@ mod tests {
         assert!(job.artifacts.contains_key("analysis-execution-plan"));
         assert!(job.artifacts.contains_key("analysis-postprocess-plan"));
         assert!(job.artifacts.contains_key("analysis-simulation-report"));
+        assert!(job.artifacts.contains_key("analysis-des-instruction-model"));
         assert!(job.artifacts.contains_key("analysis-learning-plan"));
         assert!(job.artifacts.contains_key("analysis-pomdp-belief-state"));
         assert!(job.artifacts.contains_key("analysis-release-probe-plan"));
@@ -40773,6 +43059,42 @@ mod tests {
             .artifacts
             .contains_key("analysis-neural-training-corpus"));
         assert!(job.artifacts.contains_key("analysis-mdp-request"));
+        let improved_program = response
+            .improved_programs
+            .iter()
+            .find(|program| program.program_id == "legacy-print")
+            .expect("improved legacy-print program should be present");
+        assert_eq!(
+            improved_program.patch_manifest.schema_version,
+            "dd.fabrication.instruction-patch-manifest.v1"
+        );
+        assert_eq!(improved_program.patch_manifest.status, "review-required");
+        assert!(improved_program
+            .patch_manifest
+            .operations
+            .iter()
+            .any(|operation| operation.operation == "insert-before-program"
+                && operation.action == "add-coordinate-reference"
+                && operation.content.iter().any(|line| line.contains("G28"))));
+        assert!(improved_program
+            .patch_manifest
+            .learning_observations
+            .iter()
+            .any(|observation| {
+                observation == "instruction-patch:insert-before-program:add-coordinate-reference"
+            }));
+        let improved_artifact = job
+            .artifacts
+            .get("improved-program-legacy-print")
+            .expect("improved program artifact should be retained");
+        assert_eq!(
+            improved_artifact
+                .content
+                .get("patchManifest")
+                .and_then(|manifest| manifest.get("schemaVersion"))
+                .and_then(Value::as_str),
+            Some("dd.fabrication.instruction-patch-manifest.v1")
+        );
         assert!(response
             .learning
             .pomdp_observations
@@ -40783,6 +43105,19 @@ mod tests {
             .actions
             .iter()
             .any(|action| action.contains("machine-failure-risk") || action.contains("human")));
+        assert_eq!(
+            response.des_instruction_model.schema_version,
+            "dd.fabrication.des-instruction-model.v1"
+        );
+        assert!(response.des_instruction_model.analysis.validation.ok);
+        assert!(response
+            .des_instruction_model
+            .program_models
+            .iter()
+            .any(
+                |model| model.queue_block_id.starts_with("des-instruction-queue-")
+                    && model.failure_boundary_count > 0
+            ));
         assert!(response
             .learning
             .neural_training_corpus
@@ -40797,6 +43132,20 @@ mod tests {
                     .observations
                     .iter()
                     .any(|observation| observation.starts_with("resolution-action:"))));
+        assert!(response
+            .learning
+            .neural_training_corpus
+            .examples
+            .iter()
+            .any(|example| example.source == "instruction-patch"
+                && example.feature_vector.len() == response.learning.neural_features.len()
+                && example
+                    .labels
+                    .iter()
+                    .any(|label| label == "patch-action:add-coordinate-reference")
+                && example.observations.iter().any(|observation| {
+                    observation == "instruction-patch-action:add-coordinate-reference"
+                })));
         let analysis_mdp_request = job
             .artifacts
             .get("analysis-mdp-request")
@@ -40825,6 +43174,15 @@ mod tests {
                 .and_then(Value::as_str),
             Some("des_engine")
         );
+        assert!(analysis_mdp_request
+            .content
+            .get("desInstructionModel")
+            .and_then(|model| model.get("modelSpec"))
+            .and_then(|spec| spec.get("blocks"))
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| blocks
+                .iter()
+                .any(|block| block.get("kind").and_then(Value::as_str) == Some("queue"))));
         assert_eq!(
             analysis_mdp_request
                 .content
@@ -40862,6 +43220,18 @@ mod tests {
             .get("programs")
             .and_then(Value::as_array)
             .is_some_and(|programs| !programs.is_empty()));
+        assert!(analysis_mdp_request
+            .content
+            .get("improvedPrograms")
+            .and_then(Value::as_array)
+            .is_some_and(|programs| programs.iter().any(|program| program
+                .get("patchManifest")
+                .and_then(|manifest| manifest.get("operations"))
+                .and_then(Value::as_array)
+                .is_some_and(|operations| operations.iter().any(|operation| {
+                    operation.get("action").and_then(Value::as_str)
+                        == Some("add-coordinate-reference")
+                })))));
         assert_eq!(response.execution_plan.status, "execution-blocked");
         assert!(response
             .execution_plan
