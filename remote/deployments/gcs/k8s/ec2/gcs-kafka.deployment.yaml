@@ -70,6 +70,8 @@ spec:
               value: 'true'
             - name: KAFKA_LOG_DIRS
               value: /var/lib/kafka/data
+            - name: KAFKA_NUM_RECOVERY_THREADS_PER_DATA_DIR
+              value: '8'
           ports:
             - name: kafka
               containerPort: 9092
@@ -86,7 +88,7 @@ spec:
             tcpSocket:
               port: kafka
             periodSeconds: 5
-            failureThreshold: 90
+            failureThreshold: 360
           readinessProbe:
             tcpSocket:
               port: kafka
