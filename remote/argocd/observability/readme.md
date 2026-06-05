@@ -147,7 +147,8 @@ Currently opted-in:
   The `Fabrication Planner` Grafana dashboard (uid `dd-fabrication-planner`)
   groups those signals with request intake, machine-failure boundary rates,
   NATS result fanout, MDP optimization fanout, generated-program,
-  job/artifact, and learning-event throughput, in-memory evidence ledgers,
+  job/artifact, learning-event, and artifact detail-request throughput, in-memory
+  job/artifact/learning evidence ledgers,
   runtime-config push delivery, dependency scrape health, HPA capacity, CPU and
   memory limit headroom, Loki-derived gateway guardrail rejection counters for
   `/fabrication` auth/internal-route/method/payload/rate-limit failures, gateway edge-latency

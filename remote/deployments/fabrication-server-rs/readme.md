@@ -103,7 +103,9 @@ is supplied.
   windows, setup/run/teardown minutes, process dependency holds, postprocessor
   holds, and operator or automation assignments before machine start.
 - Draft machine programs such as Marlin-style FDM printer G-code and slicer job
-  sheets, SLA/MSLA resin print-wash-cure job sheets, SLS/MJF-style powder-bed
+  sheets, SLA/MSLA resin print-wash-cure job sheets, continuous-fiber composite
+  matrix/fiber-layup job sheets with fiber orientation, cutter, spool, coupon, and
+  delamination gates, SLS/MJF-style powder-bed
   print-cooldown-depowder job sheets, DMLS/SLM/LPBF metal powder-bed fusion job
   sheets with inert-gas/recoater/stress-relief/plate-removal gates, binder-jet
   green-part cure/depowder/sinter or infiltration job sheets with binder-saturation,
@@ -137,7 +139,9 @@ is supplied.
   chamber/enclosure/thermal-soak evidence for warp-prone filament,
   bed-adhesion, first-layer, fan-timing, resin exposure/profile/layer/support evidence,
   resin layer/exposure manifest image-hash/checksum and peel/lift/recoat evidence, resin
-  vat-capacity/refill evidence, resin-handling/postprocess evidence, powder-bed build profile/powder lot/nesting evidence, powder-handling/cooldown-depowder evidence,
+  vat-capacity/refill evidence, resin-handling/postprocess evidence,
+  composite-fiber layup/orientation/load-case and spool/cutter/coupon/continuity evidence,
+  powder-bed build profile/powder lot/nesting evidence, powder-handling/cooldown-depowder evidence,
   metal powder-bed fusion alloy-lot/oxygen/recoater/stress-relief/plate-removal evidence,
   binder-jet binder-lot/saturation/printhead/green-strength and cure/debind/sinter/infiltration/shrink-compensation evidence,
   powder-bed recoater clearance/thermal spacing/cooldown evidence,
@@ -215,10 +219,10 @@ operator sign-off.
 `GET /capabilities` and the gateway-prefixed `GET /fabrication/capabilities`
 return the service capability contract before a caller submits work. The payload
 includes supported request families, built-in `defaultMachines`, machine classes
-for FDM, resin, binder jet, polymer powder-bed, metal PBF, vertical milling, five-axis milling, horizontal milling,
+for FDM, resin, continuous-fiber composite, binder jet, polymer powder-bed, metal PBF, vertical milling, five-axis milling, horizontal milling,
 routing, laser,
 waterjet, plasma, lathe, and manual/special-process work, accepted instruction
-kinds including slicer, SLA/resin, binder-jet, SLS/powder, metal-PBF, laser/waterjet/plasma,
+kinds including slicer, SLA/resin, composite-fiber, binder-jet, SLS/powder, metal-PBF, laser/waterjet/plasma,
 wire-EDM, and sinker-EDM job sheets, design input format
 families, generated artifact families, learning
 channels, bounded `profileEvidence` buckets for submitted machine profiles, and
@@ -346,12 +350,12 @@ Requests use camelCase JSON:
 ```
 
 If `machines` is omitted, the service uses a conservative default fleet with an
-FDM printer, SLA resin printer, SLS powder-bed printer, metal PBF printer, binder jet printer, vertical
+FDM printer, SLA resin printer, continuous-fiber composite printer, SLS powder-bed printer, metal PBF printer, binder jet printer, vertical
 mill,
 five-axis mill, horizontal mill, CNC router, laser cutter, waterjet cutter, plasma cutter, wire
 EDM cutter, sinker EDM cell, and lathe. If `parts` is omitted, the planner infers
 a first decomposition from the objective, material, and tolerance, including
-resin-print, binder-jet-print, polymer powder-bed-print, metal PBF-print, five-axis-milled impellers/undercuts,
+resin-print, composite-fiber-print, binder-jet-print, polymer powder-bed-print, metal PBF-print, five-axis-milled impellers/undercuts,
 horizontal-milled side slots/keyways, laser,
 waterjet, plasma, wire EDM, sinker EDM cavity burns, and kerf-controlled
 sheet-cut profiles, and routed sheet/profile parts for wood,
@@ -429,7 +433,7 @@ moves before explicit `G17`/`G18`/`G19` plane evidence, with center offsets that
 incompatibility with resolved machine profiles, and text-instruction boundaries
 where the job needs setup, subtractive text setup/process evidence for
 workholding/datum/tool-length and spindle/feed/coolant/kerf/pierce/cut-chart
-controls, slicer profile/support/orientation/first-layer evidence, missing slicer mesh unit/scale/watertight/manifold/normals/wall-thickness evidence for STL/3MF/OBJ/model inputs, slicer high-speed input-shaper/acceleration/volumetric-flow evidence, post-processing, missing resin exposure/profile/layer/support/build-plate evidence, missing resin layer/exposure manifest image hash/checksum or peel/lift/recoat evidence, missing resin vat-volume/level/refill evidence for large resin jobs, resin IPA/wash/cure/drain/PPE/
+controls, slicer profile/support/orientation/first-layer evidence, missing slicer mesh unit/scale/watertight/manifold/normals/wall-thickness evidence for STL/3MF/OBJ/model inputs, slicer high-speed input-shaper/acceleration/volumetric-flow evidence, post-processing, missing composite-fiber layup/orientation/load-case evidence, missing composite-fiber spool/cutter/matrix/coupon/continuity inspection evidence, missing resin exposure/profile/layer/support/build-plate evidence, missing resin layer/exposure manifest image hash/checksum or peel/lift/recoat evidence, missing resin vat-volume/level/refill evidence for large resin jobs, resin IPA/wash/cure/drain/PPE/
 waste controls or missing resin postprocess evidence, powder
 build profile/powder lot/nesting controls or missing powder-bed build/profile evidence,
 cooldown/depowder/recovery controls or missing powder-bed handling evidence, missing
