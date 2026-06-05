@@ -2469,7 +2469,7 @@ jobs:
           script = r'''set -euo pipefail
           proof_log="/tmp/gcs-loadtest-proof-$(date -u +%Y%m%dT%H%M%SZ).log"
           if [ "${LOADTEST_COMPACT_OUTPUT:-true}" = "true" ]; then
-            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|capacity-not-free|capacity targets are all scaled down|loader-scale|loader-rollout|loader-pod|top-sample|gcs-summary|loader-warmup|gcs_router_(active_total|routed_total|upstream_errors_total|active_conns))') 2> >(tee -a "$proof_log" >&2)
+            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|capacity-not-free|capacity targets are all scaled down|loader-scale|loader-rollout|loader-pod|loader-event|top-sample|gcs-summary|loader-warmup|gcs_router_(active_total|routed_total|upstream_errors_total|active_conns))') 2> >(tee -a "$proof_log" >&2)
           fi
           echo "PROOF remote_log=$proof_log compact_output=${LOADTEST_COMPACT_OUTPUT:-true}"
           repo=/home/ec2-user/codes/dd/dd-next-1
@@ -2509,7 +2509,9 @@ jobs:
           loadtest_apps="dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loaders="dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs"
           capacity_apps="dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam"
-          capacity_targets="dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server"
+          capacity_targets="dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-des-rs dd-fabrication-server dd-trading-server dd-web-scraper dd-selenium-server dd-rust-vapi-phone dd-remote-web-home dd-remote-rest-api dd-remote-queue-consumer dd-container-pool dd-webrtc-signaling dd-webrtc-media dd-rust-network-mutex"
+          capacity_statefulsets="dd-rust-network-mutex-raft"
+          capacity_scaledobjects="dd-remote-queue-consumer-nats-jetstream"
           mip_capacity_app="dd-in-house-mip-solver-node"
           mip_capacity_namespace="ai-ml"
           mip_capacity_targets="dd-in-house-mip-solver-node-master dd-in-house-mip-solver-node-slave"
@@ -2626,6 +2628,14 @@ jobs:
                 bad=1
               fi
             done
+            for d in $capacity_statefulsets; do
+              desired="$(kubectl -n default get "statefulset/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
+              pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
+              if [ "${desired:-missing}" != "0" ] || [ "${pods:-0}" -ne 0 ]; then
+                echo "capacity-not-free statefulset=$d desired=${desired:-unknown} pods=${pods:-0}"
+                bad=1
+              fi
+            done
             for d in $mip_capacity_targets; do
               desired="$(kubectl -n "$mip_capacity_namespace" get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
               pods="$(kubectl -n "$mip_capacity_namespace" get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
@@ -2648,6 +2658,13 @@ jobs:
             disable_mip_capacity_owner
             echo "scaling down comparison workloads: $capacity_targets"
             kubectl -n default get deploy $capacity_targets -o wide || true
+            kubectl -n default get statefulset $capacity_statefulsets -o wide || true
+            for capacity_target in $capacity_scaledobjects; do
+              kubectl -n default annotate "scaledobject/$capacity_target" \
+                autoscaling.keda.sh/paused-replicas="0" \
+                autoscaling.keda.sh/paused="true" \
+                --overwrite >/dev/null 2>&1 || true
+            done
             kubectl -n "$mip_capacity_namespace" annotate "scaledobject/$mip_capacity_scaledobject" \
               autoscaling.keda.sh/paused-replicas="0" \
               autoscaling.keda.sh/paused="true" \
@@ -2657,6 +2674,9 @@ jobs:
               for capacity_target in $capacity_targets; do
                 kubectl -n default scale "deployment/$capacity_target" --replicas=0 || true
               done
+              for capacity_target in $capacity_statefulsets; do
+                kubectl -n default scale "statefulset/$capacity_target" --replicas=0 || true
+              done
               for capacity_target in $mip_capacity_targets; do
                 kubectl -n "$mip_capacity_namespace" scale "deployment/$capacity_target" --replicas=0 || true
               done
@@ -2664,6 +2684,7 @@ jobs:
               if assert_capacity_free; then
                 echo "capacity targets are all scaled down"
                 kubectl -n default get deploy $capacity_targets -o wide || true
+                kubectl -n default get statefulset $capacity_statefulsets -o wide || true
                 kubectl -n "$mip_capacity_namespace" get deploy $mip_capacity_targets -o wide || true
                 return 0
               fi
@@ -2671,7 +2692,10 @@ jobs:
             done
             echo "ERROR: capacity targets did not stay down; refusing partial loadtest" >&2
             kubectl -n default get deploy $capacity_targets -o wide || true
-            kubectl -n default get pods -l 'app in (dd-akka-ws-server,dd-go-wss-server,dd-rust-wss-server,dd-gleamlang-ws-loadtest,dd-dart-server,dd-fsharp-ws-server,dd-gleamlang-server)' -o wide || true
+            kubectl -n default get statefulset $capacity_statefulsets -o wide || true
+            for capacity_target in $capacity_targets $capacity_statefulsets; do
+              kubectl -n default get pods -l "app=$capacity_target" -o wide || true
+            done
             kubectl -n "$mip_capacity_namespace" get deploy $mip_capacity_targets -o wide || true
             kubectl -n "$mip_capacity_namespace" get pods -l 'app in (dd-in-house-mip-solver-node-master,dd-in-house-mip-solver-node-slave)' -o wide || true
             kubectl -n argocd get application $capacity_apps "$mip_capacity_app" -o wide || true
@@ -3312,6 +3336,8 @@ jobs:
               echo
               kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null \
                 | awk -v d="$d" '{print "loader-pod deployment=" d " name="$1" ready="$2" status="$3" restarts="$4" age="$5}' || true
+              kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|Insufficient|Too many pods|Preempt|BackOff|Failed|Killing|Pulled|Created|Started" | tail -160 \
+                | while IFS= read -r event_line; do echo "loader-event deployment=$d $event_line"; done || true
               collect_loader "$d"
               kubectl -n default describe "deployment/$d" || true
               kubectl -n default describe pods -l "app=$d" || true
