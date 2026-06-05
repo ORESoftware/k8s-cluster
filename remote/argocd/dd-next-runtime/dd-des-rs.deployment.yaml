@@ -27,6 +27,7 @@ spec:
       labels:
         app: dd-des-rs
     spec:
+      priorityClassName: system-cluster-critical
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       securityContext:
