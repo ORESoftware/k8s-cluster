@@ -643,6 +643,40 @@ fn bounded(value: f64, min: f64, max: f64) -> f64 {
     value.max(min).min(max)
 }
 
+fn validate_optional_label(value: Option<String>, label: &str) -> Result<Option<String>, String> {
+    value
+        .map(|value| validate_label(&value, label))
+        .transpose()
+}
+
+fn validate_optional_text(
+    value: Option<String>,
+    label: &str,
+    max_len: usize,
+) -> Result<Option<String>, String> {
+    value
+        .map(|value| validate_text(&value, label, max_len))
+        .transpose()
+}
+
+fn validate_signal_list(
+    values: Option<Vec<String>>,
+    label: &str,
+    max_len: usize,
+) -> Result<Vec<String>, String> {
+    let values = values.unwrap_or_default();
+    if values.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "{label} must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    values
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| validate_text(&value, &format!("{label}[{index}]"), max_len))
+        .collect()
+}
+
 fn stock_envelope_excesses(
     stock_dimensions: &[f64],
     work_envelope: &[f64],
@@ -776,6 +810,146 @@ impl FabricationJobStore {
     }
 }
 
+impl LearningAggregate {
+    fn add(&mut self, outcome: &LearningOutcomeRecord) {
+        self.samples += 1;
+        if outcome.success {
+            self.successes += 1;
+        }
+        self.reward_sum += outcome.reward;
+    }
+
+    fn preference(&self, key: String) -> LearningPreference {
+        let failures = self.samples.saturating_sub(self.successes);
+        let average_reward = if self.samples == 0 {
+            0.0
+        } else {
+            self.reward_sum / self.samples as f64
+        };
+        let success_rate = if self.samples == 0 {
+            0.0
+        } else {
+            self.successes as f64 / self.samples as f64
+        };
+        let recommendation = if self.samples < 2 {
+            "explore".to_string()
+        } else if success_rate >= 0.66 && average_reward >= 0.0 {
+            "prefer".to_string()
+        } else if success_rate < 0.4 || average_reward < 0.0 {
+            "review-or-avoid".to_string()
+        } else {
+            "keep-exploring".to_string()
+        };
+        LearningPreference {
+            key,
+            samples: self.samples,
+            successes: self.successes,
+            failures,
+            average_reward,
+            recommendation,
+        }
+    }
+}
+
+impl LearningMemory {
+    fn new(max_outcomes: usize) -> Self {
+        Self {
+            outcomes: VecDeque::new(),
+            max_outcomes: max_outcomes.max(1),
+        }
+    }
+
+    fn insert(&mut self, outcome: LearningOutcomeRecord) {
+        self.outcomes.push_back(outcome);
+        while self.outcomes.len() > self.max_outcomes {
+            self.outcomes.pop_front();
+        }
+    }
+
+    fn count(&self) -> usize {
+        self.outcomes.len()
+    }
+
+    fn snapshot(&self) -> LearningPolicySnapshot {
+        let mut methods = BTreeMap::<String, LearningAggregate>::new();
+        let mut assemblies = BTreeMap::<String, LearningAggregate>::new();
+        let mut successes = 0_u64;
+        let mut reward_sum = 0.0;
+
+        for outcome in &self.outcomes {
+            if outcome.success {
+                successes += 1;
+            }
+            reward_sum += outcome.reward;
+            for method in &outcome.manufacturing_methods {
+                methods.entry(method.clone()).or_default().add(outcome);
+            }
+            if let Some(strategy) = outcome.assembly_strategy.as_ref() {
+                assemblies.entry(strategy.clone()).or_default().add(outcome);
+            }
+        }
+
+        let outcome_count = self.outcomes.len();
+        let failures = outcome_count as u64 - successes;
+        let average_reward = if outcome_count == 0 {
+            0.0
+        } else {
+            reward_sum / outcome_count as f64
+        };
+        let mut method_preferences = methods
+            .into_iter()
+            .map(|(key, aggregate)| aggregate.preference(key))
+            .collect::<Vec<_>>();
+        method_preferences.sort_by(|left, right| {
+            right
+                .average_reward
+                .partial_cmp(&left.average_reward)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.samples.cmp(&left.samples))
+                .then_with(|| left.key.cmp(&right.key))
+        });
+        let mut assembly_preferences = assemblies
+            .into_iter()
+            .map(|(key, aggregate)| aggregate.preference(key))
+            .collect::<Vec<_>>();
+        assembly_preferences.sort_by(|left, right| {
+            right
+                .average_reward
+                .partial_cmp(&left.average_reward)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.samples.cmp(&left.samples))
+                .then_with(|| left.key.cmp(&right.key))
+        });
+        let neural_training_examples = self
+            .outcomes
+            .iter()
+            .rev()
+            .take(32)
+            .map(|outcome| {
+                format!(
+                    "job={} success={} reward={:.3} methods={} assembly={} observations={}",
+                    outcome.job_id.as_deref().unwrap_or("none"),
+                    outcome.success,
+                    outcome.reward,
+                    outcome.manufacturing_methods.join("+"),
+                    outcome.assembly_strategy.as_deref().unwrap_or("none"),
+                    outcome.observations.join("|")
+                )
+            })
+            .collect::<Vec<_>>();
+
+        LearningPolicySnapshot {
+            outcome_count,
+            successes,
+            failures,
+            average_reward,
+            method_preferences,
+            assembly_preferences,
+            neural_training_examples,
+        }
+    }
+}
+
 fn material_or_default(material: Option<MaterialSpec>) -> Result<MaterialSpec, String> {
     let material = material.unwrap_or(MaterialSpec {
         name: "pla".to_string(),
@@ -792,6 +966,80 @@ fn material_or_default(material: Option<MaterialSpec>) -> Result<MaterialSpec, S
             .hardness
             .map(|hardness| validate_text(&hardness, "material.hardness", MAX_LABEL_LEN))
             .transpose()?,
+    })
+}
+
+fn validate_learning_text_list(
+    values: Option<Vec<String>>,
+    label: &str,
+    max_len: usize,
+) -> Result<Vec<String>, String> {
+    let values = values.unwrap_or_default();
+    if values.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "{label} must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    values
+        .into_iter()
+        .map(|value| validate_text(&value, label, max_len))
+        .collect()
+}
+
+fn validate_learning_outcome(
+    request: LearningOutcomeRequest,
+) -> Result<LearningOutcomeRecord, String> {
+    let request_id = request_id(request.request_id.as_ref(), "learning-outcome");
+    let generated_at_ms = now_ms();
+    let outcome_id = safe_job_id("learning-outcome", &request_id, generated_at_ms);
+    let job_id = request
+        .job_id
+        .as_ref()
+        .map(|job_id| validate_label(job_id, "jobId"))
+        .transpose()?;
+    let objective = request
+        .objective
+        .as_ref()
+        .map(|objective| validate_text(objective, "objective", MAX_TEXT_LEN))
+        .transpose()?;
+    let material = match request.material {
+        Some(material) => Some(material_or_default(Some(material))?),
+        None => None,
+    };
+    let mut manufacturing_methods = validate_learning_text_list(
+        request.manufacturing_methods,
+        "manufacturingMethods",
+        MAX_LABEL_LEN,
+    )?;
+    if manufacturing_methods.is_empty() {
+        manufacturing_methods.push("unknown-method".to_string());
+    }
+    let assembly_strategy = request
+        .assembly_strategy
+        .as_ref()
+        .map(|strategy| validate_text(strategy, "assemblyStrategy", MAX_LABEL_LEN))
+        .transpose()?;
+    let reward = request.reward.unwrap_or(if request.success { 1.0 } else { -1.0 });
+    if !reward.is_finite() {
+        return Err("reward must be finite".to_string());
+    }
+    let observations =
+        validate_learning_text_list(request.observations, "observations", MAX_TEXT_LEN)?;
+    let notes = validate_learning_text_list(request.notes, "notes", MAX_TEXT_LEN)?;
+
+    Ok(LearningOutcomeRecord {
+        outcome_id,
+        request_id,
+        job_id,
+        objective,
+        material,
+        manufacturing_methods,
+        assembly_strategy,
+        success: request.success,
+        reward,
+        observations,
+        notes,
+        created_at_ms: generated_at_ms,
     })
 }
 
@@ -2454,6 +2702,7 @@ fn stored_plan_job(response: &FabricationPlanResponse) -> StoredFabricationJob {
         },
         plan: Some(response.clone()),
         analysis: None,
+        learning: None,
         artifacts,
     }
 }
@@ -2480,6 +2729,7 @@ fn stored_analysis_job(response: &InstructionAnalysisResponse) -> StoredFabricat
         },
         plan: None,
         analysis: Some(response.clone()),
+        learning: None,
         artifacts,
     }
 }
@@ -3495,6 +3745,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         mdp_autopublish: env_bool("FABRICATION_MDP_AUTOPUBLISH", false),
         metrics: Arc::new(Metrics::default()),
         jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
+        learning: Arc::new(RwLock::new(LearningMemory::new(MAX_LEARNING_OUTCOMES))),
     };
     tokio::spawn(run_nats_loop(state.clone()));
 
