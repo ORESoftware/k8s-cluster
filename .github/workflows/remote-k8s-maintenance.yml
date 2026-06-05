@@ -2484,7 +2484,7 @@ jobs:
           script = r'''set -euo pipefail
           proof_log="/tmp/gcs-loadtest-proof-$(date -u +%Y%m%dT%H%M%SZ).log"
           if [ "${LOADTEST_COMPACT_OUTPUT:-true}" = "true" ]; then
-            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|=== go pprof|capacity-not-free|capacity targets are all scaled down|loader-scale|loader-rollout|loader-pod|loader-event|top-sample|pprof-|gcs-summary|loader-warmup|gcs_router_(active_total|routed_total|upstream_errors_total|active_conns))') 2> >(tee -a "$proof_log" >&2)
+            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|=== go pprof|capacity-not-free|capacity targets are all scaled down|loader-scale|loader-rollout|loader-pod|loader-event|pprof-|loader-warmup)') 2> >(tee -a "$proof_log" >&2)
           fi
           echo "PROOF remote_log=$proof_log compact_output=${LOADTEST_COMPACT_OUTPUT:-true}"
           repo=/home/ec2-user/codes/dd/dd-next-1
@@ -3184,12 +3184,8 @@ jobs:
           }
 
           collect_gcs_pprof() {
-            local label="${1:-sample}" cpu_seconds pf_log pf_pid pod port profile ready
+            local label="${1:-sample}" cpu_seconds pf_log pf_pid pod port profile ready pprof_base use_host_go
             if [ "$collect_pprof" != "true" ]; then
-              return 0
-            fi
-            if ! command -v go >/dev/null 2>&1; then
-              echo "WARNING: pprof-go-tool-missing"
               return 0
             fi
             pod="$(kubectl -n default get pods -l app=gcs -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
@@ -3202,44 +3198,75 @@ jobs:
             case "$cpu_seconds" in
               ''|*[!0-9]*) cpu_seconds=20 ;;
             esac
-            pf_log="/tmp/gcs-pprof-port-forward-${pod}.log"
-            kubectl -n default port-forward "pod/$pod" "${port}:3000" >"$pf_log" 2>&1 &
-            pf_pid="$!"
-            ready=0
-            for _ in $(seq 1 40); do
-              if curl -fsS "http://127.0.0.1:${port}/debug/pprof/" >/dev/null 2>&1; then
-                ready=1
-                break
+            use_host_go=false
+            if command -v go >/dev/null 2>&1; then
+              use_host_go=true
+              pprof_base="http://127.0.0.1:${port}"
+              pf_log="/tmp/gcs-pprof-port-forward-${pod}.log"
+              kubectl -n default port-forward "pod/$pod" "${port}:3000" >"$pf_log" 2>&1 &
+              pf_pid="$!"
+              ready=0
+              for _ in $(seq 1 40); do
+                if curl -fsS "${pprof_base}/debug/pprof/" >/dev/null 2>&1; then
+                  ready=1
+                  break
+                fi
+                sleep 0.25
+              done
+              if [ "$ready" -ne 1 ]; then
+                echo "WARNING: pprof-endpoint-not-ready pod=$pod label=$label"
+                if [ -s "$pf_log" ]; then
+                  grep -v 'Handling connection' "$pf_log" | tail -8 || true
+                fi
+                kill "$pf_pid" 2>/dev/null || true
+                wait "$pf_pid" 2>/dev/null || true
+                return 0
               fi
-              sleep 0.25
-            done
-            if [ "$ready" -ne 1 ]; then
-              echo "WARNING: pprof-endpoint-not-ready pod=$pod label=$label"
-              if [ -s "$pf_log" ]; then
-                grep -v 'Handling connection' "$pf_log" | tail -8 || true
+              go version 2>&1 | awk '{print "pprof-go-version host " $0}' || true
+            else
+              pprof_base="http://127.0.0.1:3000"
+              if ! kubectl -n default exec "$pod" -- /usr/local/go/bin/go version 2>&1 | awk '{print "pprof-go-version pod " $0}'; then
+                echo "WARNING: pprof-go-tool-missing pod=$pod label=$label"
+                return 0
               fi
-              kill "$pf_pid" 2>/dev/null || true
-              wait "$pf_pid" 2>/dev/null || true
-              return 0
             fi
             echo "PROOF pprof_target pod=$pod label=$label cpu_seconds=$cpu_seconds"
-            go version 2>&1 | awk '{print "pprof-go-version " $0}' || true
             echo "=== go pprof cpu: $label ==="
-            if timeout "$((cpu_seconds + 25))s" go tool pprof -top -nodecount=30 "http://127.0.0.1:${port}/debug/pprof/profile?seconds=${cpu_seconds}" 2>&1 | awk '{print "pprof-cpu " $0}'; then
+            set +e
+            if [ "$use_host_go" = "true" ]; then
+              timeout "$((cpu_seconds + 25))s" go tool pprof -top -nodecount=30 "${pprof_base}/debug/pprof/profile?seconds=${cpu_seconds}" 2>&1 | awk '{print "pprof-cpu " $0}'
+              pprof_status="${PIPESTATUS[0]}"
+            else
+              timeout "$((cpu_seconds + 35))s" kubectl -n default exec "$pod" -- /usr/local/go/bin/go tool pprof -top -nodecount=30 "${pprof_base}/debug/pprof/profile?seconds=${cpu_seconds}" 2>&1 | awk '{print "pprof-cpu " $0}'
+              pprof_status="${PIPESTATUS[0]}"
+            fi
+            set -e
+            if [ "$pprof_status" -eq 0 ]; then
               echo "PROOF pprof_profile profile=cpu status=ok"
             else
               echo "WARNING: pprof-profile-failed profile=cpu"
             fi
             for profile in goroutine heap block mutex; do
               echo "=== go pprof $profile: $label ==="
-              if timeout 45s go tool pprof -top -nodecount=25 "http://127.0.0.1:${port}/debug/pprof/${profile}" 2>&1 | awk -v p="$profile" '{print "pprof-" p " " $0}'; then
+              set +e
+              if [ "$use_host_go" = "true" ]; then
+                timeout 45s go tool pprof -top -nodecount=25 "${pprof_base}/debug/pprof/${profile}" 2>&1 | awk -v p="$profile" '{print "pprof-" p " " $0}'
+                pprof_status="${PIPESTATUS[0]}"
+              else
+                timeout 55s kubectl -n default exec "$pod" -- /usr/local/go/bin/go tool pprof -top -nodecount=25 "${pprof_base}/debug/pprof/${profile}" 2>&1 | awk -v p="$profile" '{print "pprof-" p " " $0}'
+                pprof_status="${PIPESTATUS[0]}"
+              fi
+              set -e
+              if [ "$pprof_status" -eq 0 ]; then
                 echo "PROOF pprof_profile profile=$profile status=ok"
               else
                 echo "WARNING: pprof-profile-failed profile=$profile"
               fi
             done
-            kill "$pf_pid" 2>/dev/null || true
-            wait "$pf_pid" 2>/dev/null || true
+            if [ -n "${pf_pid:-}" ]; then
+              kill "$pf_pid" 2>/dev/null || true
+              wait "$pf_pid" 2>/dev/null || true
+            fi
           }
 
           wait_loader_reports() {
