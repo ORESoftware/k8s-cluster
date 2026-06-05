@@ -213,3 +213,83 @@ fn retry_delay_seconds(attempt: u32) -> i64 {
         _ => 4,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::providers::mock_http::{ExpectedRequest, ProviderMock};
+
+    #[tokio::test]
+    async fn get_slot_posts_json_rpc_payload_to_mock() {
+        let mock = ProviderMock::start(vec![
+            ExpectedRequest::post("/")
+                .json_body(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getSlot",
+                    "params": []
+                }))
+                .respond_json(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": 42
+                })),
+        ])
+        .await;
+        let client = SolanaClient {
+            rpc_url: mock.base_url(),
+            http: reqwest::Client::new(),
+        };
+
+        let slot = client.get_slot().await.unwrap();
+
+        assert_eq!(slot, 42);
+        mock.assert_finished().await;
+    }
+
+    #[tokio::test]
+    async fn get_signatures_for_address_clamps_limit() {
+        let mock = ProviderMock::start(vec![
+            ExpectedRequest::post("/")
+                .json_body(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getSignaturesForAddress",
+                    "params": [
+                        "So11111111111111111111111111111111111111112",
+                        { "commitment": "finalized", "limit": 1000 }
+                    ]
+                }))
+                .respond_json(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": [{
+                        "signature": "sig_1",
+                        "slot": 42,
+                        "err": null,
+                        "memo": null,
+                        "blockTime": 1716423000,
+                        "confirmationStatus": "finalized"
+                    }]
+                })),
+        ])
+        .await;
+        let client = SolanaClient {
+            rpc_url: mock.base_url(),
+            http: reqwest::Client::new(),
+        };
+
+        let signatures = client
+            .get_signatures_for_address(
+                "So11111111111111111111111111111111111111112",
+                None,
+                None,
+                5000,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(signatures[0].signature, "sig_1");
+        mock.assert_finished().await;
+    }
+}

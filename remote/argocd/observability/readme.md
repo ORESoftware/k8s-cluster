@@ -47,6 +47,9 @@ The runtimes are instrumented explicitly:
   connection/channel/queue/message counters.
 - Auth, agent-worker broker, billing, formal-methods-service, and lock
   load-test trigger expose lightweight Prometheus health/work counters.
+- The Solana contract gateway exposes Prometheus counters for validation,
+  policy rejection, Solana RPC method outcomes, NATS publish outcomes, and
+  send-auth failures, plus `dd.log.v1` stdout/stderr records for Loki.
 - Rust MDP optimizer emits Prometheus metrics and accepts compact app/infra
   telemetry snapshots on `/mdp/telemetry/learn` or `dd.remote.telemetry.mdp`
   for policy learning over operational risk.

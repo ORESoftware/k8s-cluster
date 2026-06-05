@@ -30,6 +30,25 @@ transactions through a configured Solana JSON-RPC endpoint, and blocks `sendTran
 - `simulateTransaction` rejects `sigVerify=true` with `replaceRecentBlockhash=true`.
 - The deployment mounts the source checkout read-only and sends Cargo build/cache output to
   disposable `emptyDir` volumes.
+- The Kubernetes pod runs as a non-root UID with a read-only root filesystem, no service-account
+  token, dropped Linux capabilities, and a NetworkPolicy that allows only gateway/runtime-config/
+  observability ingress plus DNS, NATS, runtime-config, and public HTTPS Solana RPC egress.
+
+## Telemetry
+
+- `/metrics` exposes Prometheus counters for HTTP traffic, contract validations, safety-policy
+  rejections, Solana RPC requests/errors by fixed RPC method, NATS receive/publish outcomes,
+  send-auth failures, and aggregate service errors.
+- `dd-otel-collector` and `dd-prometheus` both scrape
+  `dd-contract-service.default.svc.cluster.local:8101/metrics`; the generic Grafana Deployment
+  Drilldown and Kubernetes Workload Fleet dashboards cover this deployment through the checked-in
+  observability allowlist.
+- Important runtime events write the shared `dd.log.v1` JSONL envelope to stdout/stderr, so
+  Promtail/Loki can label the stream by `log_schema`, `severity`, and `log_service` while keeping
+  request ids and error details as log fields.
+- Invalid/oversized NATS validation messages and result-publish failures also publish compact
+  critical events to `NATS_CRITICAL_EVENT_SUBJECT` (default `dd.remote.events.critical`) when NATS
+  is available.
 
 ## NATS API
 

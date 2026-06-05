@@ -40,7 +40,9 @@ pub struct RevolutCredential {
     /// header, format `v1=<hex>`).
     pub webhook_secret: Option<String>,
 }
-fn default_env() -> String { "production".into() }
+fn default_env() -> String {
+    "production".into()
+}
 
 impl RevolutCredential {
     pub fn base_url(&self) -> &'static str {
@@ -95,15 +97,34 @@ pub struct RevolutLeg {
 pub struct RevolutApi {
     cred: RevolutCredential,
     http: reqwest::Client,
+    base_url: String,
 }
 
 impl RevolutApi {
     pub fn new(cred: RevolutCredential) -> Self {
-        Self { cred, http: reqwest::Client::new() }
+        let base_url = cred.base_url().to_string();
+        Self {
+            cred,
+            http: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url_for_tests(cred: RevolutCredential, base_url: String) -> Self {
+        Self {
+            cred,
+            http: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     pub async fn list_accounts(&self) -> AppResult<Vec<RevolutAccount>> {
-        let url = format!("{}/accounts", self.cred.base_url());
+        let url = format!("{}/accounts", self.base_url());
         let resp = self
             .http
             .get(&url)
@@ -122,10 +143,7 @@ impl RevolutApi {
         if !status.is_success() {
             return Err(AppError::Provider {
                 provider: "revolut".into(),
-                message: format!(
-                    "accounts {status}: {}",
-                    String::from_utf8_lossy(&bytes)
-                ),
+                message: format!("accounts {status}: {}", String::from_utf8_lossy(&bytes)),
             });
         }
         let parsed: Vec<RevolutAccount> =
@@ -156,7 +174,7 @@ impl RevolutApi {
             provider: "revolut".into(),
             message: format!("encode query: {e}"),
         })?;
-        let url = format!("{}/transactions?{qs}", self.cred.base_url());
+        let url = format!("{}/transactions?{qs}", self.base_url());
 
         let resp = self
             .http
@@ -176,10 +194,7 @@ impl RevolutApi {
         if !status.is_success() {
             return Err(AppError::Provider {
                 provider: "revolut".into(),
-                message: format!(
-                    "transactions {status}: {}",
-                    String::from_utf8_lossy(&bytes)
-                ),
+                message: format!("transactions {status}: {}", String::from_utf8_lossy(&bytes)),
             });
         }
         let parsed: Vec<RevolutTransaction> =
@@ -230,7 +245,9 @@ fn parse_provided(header: &str) -> String {
 fn constant_time_eq_str(a: &str, b: &str) -> bool {
     let ab = a.as_bytes();
     let bb = b.as_bytes();
-    if ab.len() != bb.len() { return false; }
+    if ab.len() != bb.len() {
+        return false;
+    }
     let mut diff: u8 = 0;
     for (x, y) in ab.iter().zip(bb.iter()) {
         diff |= x ^ y;
@@ -244,8 +261,7 @@ mod tests {
 
     fn sign(body: &[u8], ts: &str, secret: &str) -> String {
         let signed_payload = format!("{ts}.");
-        let mut mac =
-            <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
         Mac::update(&mut mac, signed_payload.as_bytes());
         Mac::update(&mut mac, body);
         hex::encode(Mac::finalize(mac).into_bytes())
@@ -283,8 +299,7 @@ mod tests {
         let ts = "1";
         let sig = sign(body, ts, "right");
         let header = format!("v1={sig}");
-        let err =
-            verify_webhook_signature(body, ts, &header, "wrong").unwrap_err();
+        let err = verify_webhook_signature(body, ts, &header, "wrong").unwrap_err();
         assert!(matches!(err, AppError::Unauthorized));
     }
 
@@ -295,8 +310,7 @@ mod tests {
         let sig = sign(body, ts, "k");
         let header = format!("v1={sig}");
         // Verify against a different body — must fail.
-        let err = verify_webhook_signature(b"{\"amount\":99}", ts, &header, "k")
-            .unwrap_err();
+        let err = verify_webhook_signature(b"{\"amount\":99}", ts, &header, "k").unwrap_err();
         assert!(matches!(err, AppError::Unauthorized));
     }
 
@@ -418,9 +432,7 @@ pub fn normalize_transaction(
             let (cp_account, cp_kind): (&str, AccountKind) = match tx.kind.as_str() {
                 "card_payment" | "card_refund" | "topup" => (ACCT_REVENUE, AccountKind::Income),
                 "fee" => (ACCT_EXPENSE_FEES, AccountKind::Expense),
-                "atm" | "transfer" | "exchange" => {
-                    (ACCT_TRANSFERS_HOLDING, AccountKind::Asset)
-                }
+                "atm" | "transfer" | "exchange" => (ACCT_TRANSFERS_HOLDING, AccountKind::Asset),
                 "card_credit" => (ACCT_REVENUE, AccountKind::Income),
                 "payout" | "withdrawal" => (ACCT_EXPENSE_PAYOUTS, AccountKind::Expense),
                 _ => (ACCT_TRANSFERS_HOLDING, AccountKind::Asset),

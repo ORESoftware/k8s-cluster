@@ -47,11 +47,9 @@ pub async fn sync_braintree(
     let api_base = graphql_endpoint(&cred.environment);
     let http = reqwest::Client::new();
 
-    let mut cursor: Option<String> = caller_cursor.map(str::to_string).or_else(|| {
-        conn.last_sync_cursor
-            .clone()
-            .filter(|s| !s.is_empty())
-    });
+    let mut cursor: Option<String> = caller_cursor
+        .map(str::to_string)
+        .or_else(|| conn.last_sync_cursor.clone().filter(|s| !s.is_empty()));
     let mut pages = 0u32;
     let mut total_events: i64 = 0;
     let mut total_postings: i64 = 0;
@@ -281,8 +279,9 @@ async fn run_search(
 
 // --- Status classification + posting -----------------------------------
 
-#[allow(dead_code)] // Refunded only ever returns from top-level refund nodes
-                    // we haven't yet seen in real data; kept for completeness
+#[allow(dead_code)]
+// Refunded only ever returns from top-level refund nodes
+// we haven't yet seen in real data; kept for completeness
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum StatusClass {
     Authorized,
@@ -312,11 +311,7 @@ enum PostOutcome {
     Unrecognized,
 }
 
-async fn post_charge(
-    ctx: &SyncCtx<'_>,
-    merchant_id: &str,
-    n: &TxNode,
-) -> AppResult<PostOutcome> {
+async fn post_charge(ctx: &SyncCtx<'_>, merchant_id: &str, n: &TxNode) -> AppResult<PostOutcome> {
     let currency = Currency::new(&n.amount.currency_iso_code).map_err(|e| AppError::Provider {
         provider: "braintree".into(),
         message: format!("unknown currency {}: {e}", n.amount.currency_iso_code),
@@ -405,11 +400,7 @@ async fn post_charge(
     Ok(outcome)
 }
 
-async fn post_refund(
-    ctx: &SyncCtx<'_>,
-    merchant_id: &str,
-    n: &TxNode,
-) -> AppResult<PostOutcome> {
+async fn post_refund(ctx: &SyncCtx<'_>, merchant_id: &str, n: &TxNode) -> AppResult<PostOutcome> {
     let currency = Currency::new(&n.amount.currency_iso_code).map_err(|e| AppError::Provider {
         provider: "braintree".into(),
         message: format!("unknown currency {}: {e}", n.amount.currency_iso_code),
@@ -498,11 +489,15 @@ async fn post_refund_leg(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::providers::mock_http::{ExpectedRequest, ProviderMock};
 
     #[test]
     fn classifies_settled_statuses() {
         assert_eq!(classify_status("SETTLED"), StatusClass::Settled);
-        assert_eq!(classify_status("SETTLEMENT_CONFIRMED"), StatusClass::Settled);
+        assert_eq!(
+            classify_status("SETTLEMENT_CONFIRMED"),
+            StatusClass::Settled
+        );
         assert_eq!(classify_status("SETTLEMENT_PENDING"), StatusClass::Settled);
         assert_eq!(
             classify_status("SUBMITTED_FOR_SETTLEMENT"),
@@ -533,5 +528,57 @@ mod tests {
         // post on Settled/Refunded).
         assert_eq!(classify_status("MYSTERY_STATUS"), StatusClass::Authorized);
         assert_eq!(classify_status(""), StatusClass::Authorized);
+    }
+
+    #[tokio::test]
+    async fn run_search_posts_graphql_contract_to_mock() {
+        let mock = ProviderMock::start(vec![
+            ExpectedRequest::post("/")
+                .header("authorization", "Bearer bt_access")
+                .header("braintree-version", "2019-01-01")
+                .json_body(serde_json::json!({
+                    "query": SEARCH_QUERY,
+                    "variables": {
+                        "input": {},
+                        "first": PAGE_SIZE,
+                        "after": "cursor_1"
+                    }
+                }))
+                .respond_json(serde_json::json!({
+                    "data": {
+                        "search": {
+                            "transactions": {
+                                "pageInfo": {
+                                    "hasNextPage": false,
+                                    "endCursor": "cursor_2"
+                                },
+                                "edges": [{
+                                    "cursor": "cursor_2",
+                                    "node": {
+                                        "id": "bt_tx_1",
+                                        "legacyId": "legacy_1",
+                                        "status": "SETTLED",
+                                        "amount": {
+                                            "value": "12.34",
+                                            "currencyIsoCode": "USD"
+                                        },
+                                        "refunds": []
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                })),
+        ])
+        .await;
+        let http = reqwest::Client::new();
+
+        let page = run_search(&http, &mock.base_url(), "bt_access", Some("cursor_1"))
+            .await
+            .unwrap();
+
+        assert!(!page.page_info.has_next_page);
+        assert_eq!(page.edges[0].node.id, "bt_tx_1");
+        mock.assert_finished().await;
     }
 }

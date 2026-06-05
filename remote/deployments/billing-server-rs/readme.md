@@ -30,6 +30,15 @@ Postgres. Always. The `postings` table is append-only (UPDATE/DELETE are
 forbidden by trigger), and every transaction's postings must sum to zero per
 currency (enforced by a deferred constraint trigger).
 
+Customer billing-state snapshots additionally serialize through the external
+live-mutex-rs broker when `BILLING_CUSTOMER_SNAPSHOT_LOCK_ENABLED=true`. The
+read path locks `billing:customer:<tenant_id>:<customer_id>` before rolling up
+customer accounts, and `LedgerService::post_transaction` locks the same broker
+key for every customer account code it mutates (`ar/<id>`,
+`unallocated_cash/<id>`, `credit_memo(s)/<id>`, `customer/<id>/...`). This is
+what makes the snapshot true across pods: provider sync jobs, API writes, and
+the billing-state read all contend on the same external customer id.
+
 The `anchors` table records Merkle roots committed to Solana so any third
 party can independently verify a posting was present at a given on-chain
 slot via `GET /v1/verify/tenants/{tenant_id}/postings/{id}`.
@@ -104,6 +113,8 @@ export STRIPE_API_KEY=...
 # Provider webhook secrets are optional locally; set strict mode in shared envs.
 export STRIPE_WEBHOOK_SECRET=whsec_...
 export BILLING_REQUIRE_WEBHOOK_SIGNATURES=false
+export BILLING_CUSTOMER_SNAPSHOT_LOCK_ENABLED=false # set true with live-mutex-rs available
+export BILLING_LIVE_MUTEX_ADDR=127.0.0.1:6970
 export RUST_LOG=info,sqlx=warn
 
 # 3. Run
@@ -112,6 +123,15 @@ cargo run --release
 
 The server listens on `:8087` by default. Migrations run automatically on
 boot unless `BILLING_RUN_MIGRATIONS=false`.
+
+## Provider API tests
+
+Provider polling/OAuth clients should be tested against the in-process mock
+server in `src/providers/mock_http.rs`, not by calling live provider sandboxes.
+The mock asserts method, path, query, headers, and JSON bodies while returning
+provider-shaped JSON that deserializes through the same Rust DTOs used in
+production. Dedicated API structs expose `with_base_url_for_tests(...)`; inline
+Config-driven clients use the `BILLING_*_API_BASE` test/operator overrides.
 
 ## End-to-end smoke flow
 

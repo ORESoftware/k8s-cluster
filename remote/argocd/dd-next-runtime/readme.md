@@ -471,7 +471,16 @@ requires `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
 
 The deployment queue-subscribes to `dd.remote.contracts.solana.validate` with queue group
 `dd-contract-service`, publishes validation results to `dd.remote.contracts.solana.results`, and
-emits compact lifecycle events on `dd.remote.events`.
+emits compact lifecycle events on `dd.remote.events`. Invalid or oversized NATS validation messages
+and result-publish failures also emit `dd.log.v1` stderr records and compact critical events on
+`dd.remote.events.critical` when NATS is reachable. `/contracts/metrics` includes fixed-label
+Prometheus counters for validation, Solana RPC method outcomes, NATS publish outcomes, send-auth
+failures, and policy rejections; the service is scraped by both `dd-otel-collector` and
+`dd-prometheus`, with Loki/Grafana coverage through the shared observability stack.
+
+The pod runs as non-root with a read-only root filesystem, no mounted service-account token, and a
+NetworkPolicy that keeps ingress to the gateway, runtime-config, and observability, while limiting
+egress to DNS, NATS, runtime-config, and public HTTPS Solana RPC.
 
 ## AI/ML feature pipeline
 

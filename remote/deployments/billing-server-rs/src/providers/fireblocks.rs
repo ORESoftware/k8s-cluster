@@ -23,11 +23,11 @@
 
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use rsa::RsaPublicKey;
 use rsa::pkcs1v15::{Signature, VerifyingKey};
 use rsa::pkcs8::DecodePublicKey;
 use rsa::sha2::Sha512;
 use rsa::signature::Verifier;
-use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -92,6 +92,7 @@ struct FireblocksJwtClaims<'a> {
 pub struct FireblocksApi {
     cred: FireblocksCredential,
     http: reqwest::Client,
+    base_url: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -126,10 +127,25 @@ pub struct FireblocksParty {
 
 impl FireblocksApi {
     pub fn new(cred: FireblocksCredential) -> Self {
+        let base_url = cred.api_base().to_string();
         Self {
             cred,
             http: reqwest::Client::new(),
+            base_url,
         }
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url_for_tests(cred: FireblocksCredential, base_url: String) -> Self {
+        Self {
+            cred,
+            http: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     fn sign_jwt(&self, uri_with_query: &str, body: &[u8]) -> AppResult<String> {
@@ -149,9 +165,8 @@ impl FireblocksApi {
         let encoding_key = EncodingKey::from_rsa_pem(self.cred.api_secret_pem.as_bytes())
             .map_err(|e| AppError::Crypto(format!("fireblocks api_secret pem: {e}")))?;
         let header = Header::new(Algorithm::RS256);
-        jsonwebtoken::encode(&header, &claims, &encoding_key).map_err(|e| AppError::Crypto(
-            format!("fireblocks jwt encode: {e}"),
-        ))
+        jsonwebtoken::encode(&header, &claims, &encoding_key)
+            .map_err(|e| AppError::Crypto(format!("fireblocks jwt encode: {e}")))
     }
 
     /// `GET /v1/transactions` — paginated transactions for the workspace.
@@ -167,7 +182,7 @@ impl FireblocksApi {
             path.push_str(&format!("&after={after}"));
         }
         let jwt = self.sign_jwt(&path, b"")?;
-        let url = format!("{}{}", self.cred.api_base(), path);
+        let url = format!("{}{}", self.base_url(), path);
         let resp = self
             .http
             .get(&url)
@@ -188,10 +203,7 @@ impl FireblocksApi {
         if !status.is_success() {
             return Err(AppError::Provider {
                 provider: "fireblocks".into(),
-                message: format!(
-                    "transactions {status}: {}",
-                    String::from_utf8_lossy(&bytes)
-                ),
+                message: format!("transactions {status}: {}", String::from_utf8_lossy(&bytes)),
             });
         }
         let parsed: Vec<FireblocksTransaction> =
@@ -230,11 +242,11 @@ pub fn verify_webhook_signature(
 mod tests {
     use super::*;
     use base64::Engine as _;
+    use rsa::RsaPrivateKey;
     use rsa::pkcs1v15::SigningKey;
     use rsa::pkcs8::EncodePublicKey;
     use rsa::rand_core::OsRng;
     use rsa::signature::{RandomizedSigner, SignatureEncoding};
-    use rsa::RsaPrivateKey;
 
     fn keypair() -> (RsaPrivateKey, String) {
         let private = RsaPrivateKey::new(&mut OsRng, 1024).unwrap();
