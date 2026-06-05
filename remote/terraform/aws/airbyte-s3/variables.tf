@@ -10,6 +10,18 @@ variable "bucket_name" {
   default     = "dd-remote-dev-airbyte"
 }
 
+variable "iam_user_name" {
+  description = "IAM user name for Airbyte S3 credentials."
+  type        = string
+  default     = "dd-remote-dev-airbyte"
+}
+
+variable "secrets_manager_secret_name" {
+  description = "AWS Secrets Manager secret that stores Airbyte S3 credentials for External Secrets."
+  type        = string
+  default     = "dd/remote-dev/airbyte-s3"
+}
+
 variable "environment" {
   description = "Environment tag value."
   type        = string

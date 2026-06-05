@@ -11,11 +11,12 @@ It creates:
 - bucket versioning
 - default server-side encryption with S3-managed keys
 - a bucket policy that denies non-TLS requests
+- a least-privilege IAM user/access key for Airbyte object access
+- `dd/remote-dev/airbyte-s3` in AWS Secrets Manager for External Secrets
 
-It does not create CloudFront. It also does not write Airbyte access keys into
-AWS Secrets Manager. Airbyte still reads `AIRBYTE_S3_ACCESS_KEY_ID` and
-`AIRBYTE_S3_SECRET_ACCESS_KEY` from `dd/remote-dev/ai-ml-platform-secrets` via
-External Secrets.
+It does not create CloudFront. Terraform state contains the generated IAM
+secret access key because AWS only returns it at creation time; keep state in an
+operator-owned/backend location and do not commit it.
 
 ## Apply
 
