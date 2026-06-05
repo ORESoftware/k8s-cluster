@@ -1,7 +1,7 @@
 # `remote/deployments/fabrication-server-rs`
 
-Rust fabrication planning service for additive, subtractive, turning, and
-hybrid machine workflows.
+Rust fabrication planning service for additive, subtractive, turning,
+mill-turn/swiss-turning, and hybrid machine workflows.
 
 It exposes:
 
@@ -89,8 +89,8 @@ is supplied.
   required evidence, review gates, and machine-release blockers.
 - A process plan and structured `processGraph` across 3D printers,
   vertical/5-axis/horizontal mills, routers, laser, waterjet, plasma, wire EDM/sheet cutters,
-  sinker/ram EDM cells, and lathes when those machine profiles are available. The
-  graph links operations,
+  sinker/ram EDM cells, mill-turn/swiss-turning centers, and lathes when those
+  machine profiles are available. The graph links operations,
   generated programs, sequencing dependencies, assembly interfaces, and release
   gates.
 - A `machineSelection` trace for every inferred or requested part, including the
@@ -120,15 +120,16 @@ is supplied.
   job sheets with kerf tests, wire-thread/skim-pass/slug-retention gates, and
   fire/fume/dielectric/flushing gates, sinker/ram EDM cavity burn sheets with
   electrode, dielectric/flushing, orbit-finish, depth-stop, and wear-compensation
-  gates, Fanuc-style turning G-code, or operator-only instructions for unsupported
-  machine kinds.
+  gates, mill-turn/swiss G-code with C/Y-axis live-tooling and subspindle transfer
+  checkpoints, Fanuc-style turning G-code, or operator-only instructions for
+  unsupported machine kinds.
 - Validation and simulation findings plus failure boundaries for heat-up, homing,
   spindle-speed/direction/start/process-stop state, work-offset/datum evidence,
   G10 fixture/work-offset table write review state, additive material/color/tool-change,
   manual-stop, CNC tool-change automation/operator-load/spindle-stop evidence,
   subtractive text setup/process evidence, mill/router fixture/hold-down evidence, cutting feed-rate/cut-chart evidence,
   tool-life/wear/load-monitor evidence, tool-length/probe compensation/cancel state, probing-cycle setup/feed/recovery state, cutter-compensation offset/cancel state, chip/coolant/dust-collection state, lathe
-  chuck/stick-out/runout evidence, part-off catcher/support evidence including lathe text part-off support evidence, lathe text threading feed-per-rev/pitch-sync evidence, tool/turret-change stop state, tool-nose compensation evidence/cancel state, canned drilling/tapping cycle setup/cancel state, declared
+  chuck/stick-out/runout evidence, mill-turn live-tooling C/Y-axis/polar-interpolation evidence, mill-turn main/sub-spindle transfer evidence, part-off catcher/support evidence including lathe text part-off support evidence, lathe text threading feed-per-rev/pitch-sync evidence, tool/turret-change stop state, tool-nose compensation evidence/cancel state, canned drilling/tapping cycle setup/cancel state, declared
   material/machine compatibility, additive slicer profile/support/
   orientation/first-layer, mesh unit/scale/topology/wall-thickness evidence,
   high-speed kinematic evidence, additive thin-wall geometry, printer
@@ -175,8 +176,8 @@ is supplied.
   machine start.
 - A `postprocessPlan` preflight with controller-specific targets, postprocessor
   selection, input/output formats, dry-run gates, blockers, required artifacts,
-  and operator signoff requirements before any printer, mill, router, sheet
-  cutter, lathe, or manual cell can start.
+  and operator signoff requirements before any printer, mill, mill-turn center,
+  router, sheet cutter, lathe, or manual cell can start.
 - A `manufacturingHandoff` package with part-level geometry envelopes, stock
   strategy, datum scheme, fixture/setup plan, inspection gates, release blockers,
   and release gates for downstream CAD/CAM, slicer, or shop-floor review.
@@ -194,7 +195,8 @@ is supplied.
   deciding when parts should be combined into one job or split so tight-tolerance
   features can be machined and inspected separately.
 - A learning contract with MDP states, POMDP observations, a structured
-  `pomdpBeliefState` with hidden-state probabilities and probe actions, policy
+  `pomdpBeliefState` with hidden-state probabilities and probe actions, a
+  `releaseProbePlan` of priority evidence probes required before release, policy
   actions, scored `strategyCandidates`, typed `interventionSignals`, reward terms,
   neural feature names, a deterministic neural-policy sketch, and
   `neuralTrainingCorpus` feature vectors, labels, inference candidates, and
@@ -212,7 +214,7 @@ is supplied.
   parametric design payloads, design packages, design export bundles, process plans,
   production plans, machine programs, validation reports, boundary summaries,
   resolution plans, intervention maps, execution plans, postprocess plans, POMDP
-  belief states, neural training corpora, machine-release reports, manufacturing
+  belief states, release probe plans, neural training corpora, machine-release reports, manufacturing
   handoffs, quality plans, tooling plans, machine-selection traces, improved instructions,
   assembly plans, process graphs, assembly graphs, and optimizer-shaped MDP
   requests.
@@ -227,9 +229,9 @@ operator sign-off.
 return the service capability contract before a caller submits work. The payload
 includes supported request families, built-in `defaultMachines`, machine classes
 for FDM, resin, material jetting, directed-energy deposition/WAAM, continuous-fiber composite, binder jet, polymer powder-bed, metal PBF, vertical milling, five-axis milling, horizontal milling,
-routing, laser,
+mill-turn/swiss-turning, routing, laser,
 waterjet, plasma, lathe, and manual/special-process work, accepted instruction
-kinds including slicer, SLA/resin, material-jetting, DED/WAAM, composite-fiber, binder-jet, SLS/powder, metal-PBF, laser/waterjet/plasma,
+kinds including slicer, SLA/resin, material-jetting, DED/WAAM, composite-fiber, binder-jet, SLS/powder, metal-PBF, mill-turn, laser/waterjet/plasma,
 wire-EDM, and sinker-EDM job sheets, design input format
 families, generated artifact families, learning
 channels, bounded `profileEvidence` buckets for submitted machine profiles, and
@@ -449,7 +451,7 @@ cooldown/depowder/recovery controls or missing powder-bed handling evidence, mis
 metal-PBF alloy-lot/oxygen/recoater/stress-relief/plate-removal evidence, missing
 powder-bed recoater clearance/thermal spacing/cooldown evidence, missing binder-jet binder/saturation/printhead/green-strength evidence, missing binder-jet cure/debind/sinter/infiltration/shrink-compensation evidence, assembly
 dry-fit/metrology/datum/torque/cure controls or missing assembly fit/metrology evidence, missing precision tolerance/surface-finish metrology evidence, missing unattended/batch monitoring and recovery evidence, missing thermal postprocess temperature/furnace/atmosphere/cooldown/quench/inspection evidence, missing surface/chemical finishing media/masking/PPE/waste/thickness/inspection evidence, missing indexed setup clamp/brake/index-angle/clearance/re-probe evidence, unreviewed `G51` scaling/mirroring or `G68` coordinate rotation and missing `G50.1`/`G69` transform cancellation, `G43.4`/`G234` tool-center-point mode before rotary/linear motion or program end without TCP kinematic review and `G49` cancellation, `G92` work-coordinate offsets before motion or program end without temporary-offset review and `G92.1`/`G92.2` cancellation, `G10 L2`/`G10 L20` fixture/work-offset table writes without controller offset-table backup or review evidence, late or mid-program `G20`/`G21` unit-mode changes after motion without conversion review, sheet-cutting
-kerf/fire/fume checks or missing sheet-cutting material/thickness/cut-chart recipe evidence, missing wire EDM start-hole/threading/slug-retention/dielectric/flushing/skim-pass evidence, wire EDM profile/skim cuts before start-hole, wire-threading, guide/tension, conductive workholding, or slug-retention setup evidence, missing sinker EDM electrode/dielectric/flushing/debris-removal/depth/orbit-finish/recast evidence, `G4`/`G04` dwell commands without positive `P`/`S`/`X`/`U` duration or operator-timed dwell review, lathe text threading feed-per-rev/pitch/spindle-encoder evidence, lathe text part-off catcher/subspindle/tailstock/stock-support evidence, assembly, splitting, or operator intervention. Improved
+kerf/fire/fume checks or missing sheet-cutting material/thickness/cut-chart recipe evidence, missing wire EDM start-hole/threading/slug-retention/dielectric/flushing/skim-pass evidence, wire EDM profile/skim cuts before start-hole, wire-threading, guide/tension, conductive workholding, or slug-retention setup evidence, missing sinker EDM electrode/dielectric/flushing/debris-removal/depth/orbit-finish/recast evidence, missing mill-turn live-tooling C-axis/Y-axis/polar-interpolation evidence, missing mill-turn subspindle pickup/clamp/sync/pull-force/transfer-clearance evidence, `G4`/`G04` dwell commands without positive `P`/`S`/`X`/`U` duration or operator-timed dwell review, lathe text threading feed-per-rev/pitch/spindle-encoder evidence, lathe text part-off catcher/subspindle/tailstock/stock-support evidence, assembly, splitting, or operator intervention. Improved
 drafts are still marked `machineReady=false`; they are normalization aids for
 review, motion-envelope simulation, and controller-specific postprocessing.
 `resolutionPlan` converts those boundaries into ordered remediation steps before
@@ -520,7 +522,8 @@ The response, retained `machine-schedule`, retained `parametric-design`, and
 `mdp-request` artifacts include `machineSchedule` machine-lane utilization,
 operation windows, dependency holds, postprocessor holds, and operator or
 automation start gates so resource sequencers can see where generated work
-cannot enter a printer, mill, router, sheet cutter, lathe, or manual cell.
+cannot enter a printer, mill, mill-turn center, router, sheet cutter, lathe, or
+manual cell.
 The response, retained `quality-plan`, retained `parametric-design`, and
 `mdp-request` artifacts include `qualityPlan` inspection points, measurement
 targets, records to capture, release gates, and learning observations so
@@ -534,8 +537,8 @@ tooling release blockers before machine-ready release.
 The response plus retained `machine-selection`, `parametric-design`, and
 `mdp-request` artifacts include `machineSelection` candidate scores and selected
 machine reasons so learning workers can compare alternate printers, mills,
-routers, wire EDM, sinker EDM, other sheet/special-process cells, and lathes without
-rerunning the planner.
+routers, mill-turn centers, wire EDM, sinker EDM, other sheet/special-process
+cells, and lathes without rerunning the planner.
 Plan responses and the retained `process-graph`, `parametric-design`, and
 `mdp-request` artifacts include `processGraph` nodes, dependencies, and release
 gates so downstream agents can reason over operation order, generated programs,
@@ -614,7 +617,10 @@ compare alternate make strategies instead of only seeing the selected route.
 `pomdpBeliefState` converts boundary, automation, and caller observations into
 machine-failure, human-intervention, split/combine, automation-gap, and
 program-valid hidden-state probabilities with observation likelihoods and
-recommended probe actions before release. A `neuralPolicy` sketch with a
+recommended probe actions before release. `releaseProbePlan` promotes those
+POMDP probes into required/recommended/watch priorities, required-before-release
+actions, release-blocker flags, and evidence snippets for downstream POMDP
+workers or operators. A `neuralPolicy` sketch with a
 normalized feature vector, hidden activations, and bounded action scores lets an
 external neural model train from the same state or replace the local scoring
 head. `neuralTrainingCorpus` carries per-part generated examples,
@@ -622,7 +628,7 @@ policy-memory examples, bounded labels, and strategy inference candidates aligne
 to `neuralFeatures`. `interventionSignals` expose automation requirements and ordered
 `resolutionPlan` steps as learnable actions, observations, next states, and
 reward adjustments. The optimizer-shaped `mdp-request` artifact includes
-`strategyCandidates`, `interventionSignals`, `pomdpBeliefState`,
+`strategyCandidates`, `interventionSignals`, `pomdpBeliefState`, `releaseProbePlan`,
 `neuralTrainingCorpus`,
 `designPackage`, `designExports`, `designInputReview`, `productionPlan`,
 `machineSchedule`, `machineSelection`, `manufacturingHandoff`, `qualityPlan`,
@@ -650,7 +656,7 @@ runtime inspection boundary while the database contract is still being designed.
   `design-package`, `design-export-bundle`, `design-input-review`, `production-plan`, `machine-schedule`, `machine-selection`, `process-graph`,
   `manufacturing-handoff`, `quality-plan`, `tooling-plan`, `machine-release`,
   `execution-plan`, `postprocess-plan`, `boundary-summary`, `intervention-map`, `simulation-report`, `learning-plan`,
-  `pomdp-belief-state`, `neural-training-corpus`,
+  `pomdp-belief-state`, `release-probe-plan`, `neural-training-corpus`,
   `mdp-request`, a `generated-design-export`, a `program-*` generated machine program, or an
   `improved-program-*` instruction rewrite, plus instruction-analysis artifacts such as
   `analysis-boundary-summary`, `analysis-intervention-map`,
@@ -696,10 +702,11 @@ runtime inspection boundary while the database contract is still being designed.
   `mdp-request` include `postprocessPlan` controller targets, postprocessor
   choices, input/output formats, dry-run evidence gates, blockers, required
   artifacts, and operator signoff requirements;
-  `pomdp-belief-state`, `parametric-design`, and `mdp-request` include
+  `pomdp-belief-state`, `release-probe-plan`, `parametric-design`, and `mdp-request` include
   `pomdpBeliefState` hidden-state probabilities, observation likelihoods, and
   recommended probe actions for uncertain machine-failure, intervention,
-  split/combine, automation, and program-valid states; `learning-plan`,
+  split/combine, automation, and program-valid states plus `releaseProbePlan`
+  priority probes, release-blocker flags, and required-before-release actions; `learning-plan`,
   `neural-training-corpus`, and `mdp-request` include `neuralTrainingCorpus`
   normalized training examples, feature vectors, labels, and strategy inference
   candidates;
@@ -709,6 +716,7 @@ runtime inspection boundary while the database contract is still being designed.
   `mdp-request` include `processGraph` operation nodes, dependencies, and
   release gates. `parametric-design` also embeds `designPackage`, `designExports`,
   `designInputReview`, `executionPlan`, `postprocessPlan`, `pomdpBeliefState`,
+  `releaseProbePlan`,
   `machineRelease`, `manufacturingHandoff`, `productionPlan`, `machineSchedule`,
   `qualityPlan`, and `toolingPlan` for one-payload handoff review.
 

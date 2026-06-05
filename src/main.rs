@@ -1454,6 +1454,7 @@ struct LearningPlan {
     mdp_states: Vec<String>,
     pomdp_observations: Vec<String>,
     pomdp_belief_state: PomdpBeliefState,
+    release_probe_plan: ReleaseProbePlan,
     actions: Vec<String>,
     strategy_candidates: Vec<StrategyCandidate>,
     intervention_signals: Vec<InterventionLearningSignal>,
@@ -1501,6 +1502,30 @@ struct PomdpProbe {
     action: String,
     expected_information_gain: f64,
     required_before_state: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReleaseProbePlan {
+    schema_version: String,
+    release_state: String,
+    probe_count: usize,
+    required_before_release: Vec<String>,
+    probes: Vec<ReleaseProbe>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReleaseProbe {
+    probe_id: String,
+    target_state: String,
+    priority: String,
+    action: String,
+    expected_information_gain: f64,
+    required_before_state: String,
+    evidence: Vec<String>,
+    release_blocker: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -4618,7 +4643,10 @@ fn infer_requested_parts(
         || objective_token.contains("organic")
         || objective_token.contains("ergonomic")
         || (is_polymer(material) && !needs_routed_part && !needs_sheet_cut_part)
-        || (!needs_milled_part && !needs_routed_part && !needs_sheet_cut_part);
+        || (!needs_turned_part
+            && !needs_milled_part
+            && !needs_routed_part
+            && !needs_sheet_cut_part);
 
     if needs_printed_part {
         let preferred_method = if wants_material_jetting_part {
@@ -4884,6 +4912,10 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_metal_powder_bed_printing(value));
+    let wants_mill_turn_center = preferred.as_deref().is_some_and(wants_mill_turning)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_mill_turning(value));
     let wants_laser_cutter = preferred.as_deref().is_some_and(wants_laser_cutting)
         || preferred_methods
             .iter()
@@ -4909,6 +4941,13 @@ fn choose_machine<'a>(
             .iter()
             .any(|value| wants_sheet_cutting(value));
 
+    if wants_mill_turn_center {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_mill_turn_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
     if wants_five_axis_mill {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_five_axis_mill_kind(&machine.kind)
@@ -5132,7 +5171,7 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
         Some(MachineClass::Other)
     } else if tokens
         .iter()
-        .any(|token| token.contains("turn") || token.contains("lathe"))
+        .any(|token| wants_mill_turning(token) || token.contains("turn") || token.contains("lathe"))
     {
         Some(MachineClass::Lathe)
     } else if tokens.iter().any(|token| {
@@ -5186,6 +5225,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
     let wants_plasma = tokens.iter().any(|token| wants_plasma_cutting(token));
     let wants_wire_edm = tokens.iter().any(|token| wants_wire_edm_cutting(token));
     let wants_sinker_edm = tokens.iter().any(|token| wants_sinker_edm_machining(token));
+    let wants_mill_turn = tokens.iter().any(|token| wants_mill_turning(token));
     let has_special = wants_five_axis
         || wants_horizontal
         || wants_resin
@@ -5199,7 +5239,8 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         || wants_waterjet
         || wants_plasma
         || wants_wire_edm
-        || wants_sinker_edm;
+        || wants_sinker_edm
+        || wants_mill_turn;
     if !has_special {
         return true;
     }
@@ -5217,6 +5258,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_plasma || is_plasma_cutter_kind(&machine.kind))
         && (!wants_wire_edm || is_wire_edm_kind(&machine.kind))
         && (!wants_sinker_edm || is_sinker_edm_kind(&machine.kind))
+        && (!wants_mill_turn || is_mill_turn_kind(&machine.kind))
 }
 
 fn operation_token_matches(preference: &str, operation: &str) -> bool {
@@ -5268,6 +5310,12 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || (preference.contains("ram-edm") && operation.contains("edm"))
         || (preference.contains("die-sink") && operation.contains("die-sink"))
         || (preference == "edm" && operation.contains("edm"))
+        || (wants_mill_turning(preference)
+            && (operation.contains("live-tool")
+                || operation.contains("c-axis")
+                || operation.contains("y-axis")
+                || operation.contains("subspindle")
+                || operation.contains("turn")))
 }
 
 fn operation_matches(machine: &MachineProfile, tokens: &[String]) -> bool {
@@ -5519,6 +5567,9 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
             "index fixture, side-mill slots, and finish horizontal features"
         }
         MachineClass::Mill => "face, rough, contour, and finish critical features",
+        MachineClass::Lathe if is_mill_turn_kind(&part.machine_kind) => {
+            "turn, C/Y-axis live-tool mill, synchronize main/sub-spindle transfer, and inspect in one mill-turn setup"
+        }
         MachineClass::Lathe => "face, rough turn, finish turn, and bore/thread if needed",
         MachineClass::Router => "profile, pocket, and tab-cut",
         MachineClass::SheetCut => "kerf-test, pierce, cut/engrave sheet profile, and inspect",
@@ -6564,6 +6615,39 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 )
             }
         }
+        MachineClass::Lathe if is_mill_turn_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "mill-turn-gcode".to_string()),
+            vec![
+                "(draft mill-turn program generated by dd-fabrication-server)".to_string(),
+                "G21 G90 G18 ; millimeters, absolute, turning plane".to_string(),
+                "G54 ; main spindle datum, chuck pressure, stick-out, bar support, and transfer clearance verified".to_string(),
+                "T0101 ; OD turning tool".to_string(),
+                "G50 S3000 ; spindle speed limit".to_string(),
+                "G97 S900 M3 ; fixed RPM rough turn before live tooling".to_string(),
+                "G0 X42 Z2".to_string(),
+                "G1 Z-35 F0.18 ; rough turn".to_string(),
+                "M5 ; stop main spindle before C-axis clamp".to_string(),
+                "CHECKPOINT [mill-turn-live-tooling-boundary]: verify C-axis zero, C-axis clamp, Y-axis travel, live-tool holder, polar interpolation, coolant through tool, and collision clearance".to_string(),
+                "M154 ; engage C-axis / spindle orientation (verify controller-specific code)".to_string(),
+                "T1212 ; live tooling end mill".to_string(),
+                "G17 ; milling plane for live-tool cross feature".to_string(),
+                "G112 ; polar interpolation / C-axis milling mode (verify controller)".to_string(),
+                "G1 X28.0 C90.0 F120 ; live-tool mill indexed flat or cross feature".to_string(),
+                "G113 ; cancel polar interpolation".to_string(),
+                "CHECKPOINT [mill-turn-spindle-transfer-boundary]: verify subspindle pickup, clamp pressure, phase sync, pull force, grip check, and transfer clearance".to_string(),
+                "M5".to_string(),
+                "M30".to_string(),
+            ],
+            vec![
+                "Draft only: verify the mill-turn postprocessor, live-tool orientation, C/Y/B-axis limits, spindle phase sync, and transfer macros against the exact controller."
+                    .to_string(),
+                "Human signoff is required for chuck/collet pressure, live-tool holder projection, coolant, collision clearance, subspindle pickup, and main-to-sub transfer before release."
+                    .to_string(),
+            ],
+        ),
         MachineClass::Lathe => (
             machine
                 .controller
@@ -9381,6 +9465,117 @@ fn has_text_subtractive_process_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_mill_turn_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "mill-turn",
+            "turn-mill",
+            "millturn",
+            "turnmill",
+            "swiss",
+            "swiss-type",
+            "sliding headstock",
+            "sliding-headstock",
+            "live tooling",
+            "live-tooling",
+            "live tool",
+            "live-tool",
+            "driven tooling",
+            "driven-tooling",
+            "driven tool",
+            "driven-tool",
+            "c-axis",
+            "y-axis lathe",
+            "b-axis turning",
+        ],
+    )
+}
+
+fn has_text_mill_turn_live_tooling_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "live tool",
+            "live-tool",
+            "live tooling",
+            "live-tooling",
+            "driven tool",
+            "driven-tool",
+            "driven tooling",
+            "driven-tooling",
+            "c-axis zero",
+            "c-axis clamp",
+            "spindle orient",
+            "spindle orientation",
+            "polar interpolation",
+            "g112",
+            "g12.1",
+            "g13.1",
+            "m154",
+            "y-axis travel",
+            "live-tool holder",
+            "live tool holder",
+            "milling spindle",
+            "cross drill",
+            "cross-drill",
+            "coolant through tool",
+            "collision clearance",
+            "tool centerline",
+            "rotary sync",
+            "c-axis verified",
+        ],
+    )
+}
+
+fn has_text_mill_turn_transfer_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "subspindle transfer",
+            "sub-spindle transfer",
+            "subspindle",
+            "sub-spindle",
+            "pickoff",
+            "pick-off",
+            "main-to-sub",
+            "main spindle transfer",
+            "second spindle",
+            "back working",
+            "backwork",
+            "back-working",
+            "cut off transfer",
+            "cutoff transfer",
+        ],
+    )
+}
+
+fn has_text_mill_turn_spindle_transfer_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "clamp pressure",
+            "chuck pressure",
+            "collet pressure",
+            "phase sync",
+            "phase synchronization",
+            "spindle sync",
+            "spindle synchronization",
+            "pull force",
+            "bar stop",
+            "transfer clearance",
+            "part catcher",
+            "handoff",
+            "hand-off",
+            "grip check",
+            "pickup verified",
+            "pick-up verified",
+        ],
+    )
+}
+
 fn has_text_sheet_cutting_context(language: &str, line: &str) -> bool {
     language_or_line_has_any(
         language,
@@ -10448,6 +10643,27 @@ fn inspect_text_instruction_line(
         signals.has_subtractive_text_process_evidence = true;
         signals.has_process_preparation = true;
     }
+    let mill_turn_text_context = has_text_mill_turn_context(language, raw_line);
+    if mill_turn_text_context {
+        signals.has_mill_turn_text_context = true;
+        signals.has_subtractive_text_context = true;
+    }
+    if has_text_mill_turn_live_tooling_evidence(raw_line) {
+        signals.has_mill_turn_live_tooling_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    let mill_turn_transfer_context = has_text_mill_turn_transfer_context(language, raw_line);
+    if mill_turn_transfer_context {
+        signals.has_mill_turn_text_context = true;
+        signals.has_mill_turn_transfer_context = true;
+        signals.has_subtractive_text_context = true;
+    }
+    if has_text_mill_turn_spindle_transfer_evidence(raw_line) {
+        signals.has_mill_turn_spindle_transfer_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
     if has_lathe_threading_command(raw_line) {
         signals.has_lathe_text_threading_context = true;
     }
@@ -10904,6 +11120,10 @@ fn analyze_instruction_programs(
         let mut has_subtractive_text_context = false;
         let mut has_subtractive_text_setup_evidence = false;
         let mut has_subtractive_text_process_evidence = false;
+        let mut has_mill_turn_text_context = false;
+        let mut has_mill_turn_live_tooling_evidence = false;
+        let mut has_mill_turn_transfer_context = false;
+        let mut has_mill_turn_spindle_transfer_evidence = false;
         let mut has_lathe_text_threading_context = false;
         let mut has_lathe_text_threading_sync_evidence = false;
         let mut has_lathe_text_partoff_context = false;
@@ -11007,6 +11227,11 @@ fn analyze_instruction_programs(
                 has_subtractive_text_setup_evidence |= signals.has_subtractive_text_setup_evidence;
                 has_subtractive_text_process_evidence |=
                     signals.has_subtractive_text_process_evidence;
+                has_mill_turn_text_context |= signals.has_mill_turn_text_context;
+                has_mill_turn_live_tooling_evidence |= signals.has_mill_turn_live_tooling_evidence;
+                has_mill_turn_transfer_context |= signals.has_mill_turn_transfer_context;
+                has_mill_turn_spindle_transfer_evidence |=
+                    signals.has_mill_turn_spindle_transfer_evidence;
                 has_lathe_text_threading_context |= signals.has_lathe_text_threading_context;
                 has_lathe_text_threading_sync_evidence |=
                     signals.has_lathe_text_threading_sync_evidence;
@@ -14818,6 +15043,80 @@ fn analyze_instruction_programs(
                             .to_string(),
                 });
             }
+            let text_mill_turn_program = class == MachineClass::Lathe
+                && (is_mill_turn_kind(&machine_kind)
+                    || has_mill_turn_text_context
+                    || has_mill_turn_transfer_context);
+            if text_mill_turn_program
+                && has_mill_turn_text_context
+                && !has_mill_turn_live_tooling_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "mill-turn-live-tooling-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "mill-turn/swiss text job lacks live-tooling, C-axis, Y-axis, or polar-interpolation setup evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "mill-turn-live-tooling-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "mill-turn text instructions can mill in the wrong spindle phase, overtravel a Y/C/B axis, collide live tooling, or scrap off-axis features when C-axis zero/clamp, live-tool holder, polar interpolation, coolant, and collision-clearance evidence is omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach C-axis zero/clamp, Y-axis travel, live-tool holder, spindle-orientation, polar-interpolation, coolant-through-tool, and collision-clearance evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-mill-turn-live-tooling-evidence".to_string(),
+                    reason:
+                        "mill-turn text instructions should retain C/Y-axis, live-tooling, polar-interpolation, coolant, and clearance evidence before live-tool release"
+                            .to_string(),
+                });
+            }
+            if text_mill_turn_program
+                && has_mill_turn_transfer_context
+                && !has_mill_turn_spindle_transfer_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "mill-turn-spindle-transfer-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "mill-turn/swiss text job includes main/sub-spindle transfer without pickup, clamp, sync, or transfer-clearance evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "mill-turn-spindle-transfer-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "mill-turn transfer text instructions can drop the part, lose datum, mar finished surfaces, crash the cutoff tool, or desynchronize main/sub spindles when subspindle pickup, clamp pressure, phase sync, pull force, grip check, and transfer clearance are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach subspindle pickup, chuck/collet clamp pressure, phase sync, pull force, grip check, bar stop or part-catcher state, and transfer-clearance evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-mill-turn-spindle-transfer-evidence".to_string(),
+                    reason:
+                        "mill-turn text instructions should retain subspindle pickup, clamp, sync, grip, pull-force, and transfer-clearance evidence before transfer release"
+                            .to_string(),
+                });
+            }
             if class == MachineClass::Lathe
                 && has_lathe_text_threading_context
                 && !has_lathe_text_threading_sync_evidence
@@ -16484,6 +16783,7 @@ fn parametric_design_content(response: &FabricationPlanResponse) -> Value {
         "executionPlan": response.execution_plan,
         "postprocessPlan": response.postprocess_plan,
         "pomdpBeliefState": response.learning.pomdp_belief_state,
+        "releaseProbePlan": response.learning.release_probe_plan,
         "releaseState": {
             "draft": true,
             "machineReady": false,
@@ -16661,6 +16961,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             "pomdp-belief-state".to_string(),
             "pomdp-belief-state",
             json!(response.learning.pomdp_belief_state),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "release-probe-plan".to_string(),
+            "release-probe-plan",
+            json!(response.learning.release_probe_plan),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -18176,6 +18482,8 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         || token.contains("multiaxis")
     {
         "five-axis-mill-postprocessor"
+    } else if wants_mill_turning(&token) {
+        "mill-turn-gcode-postprocessor"
     } else if token.contains("haas") {
         "haas-mill-gcode-postprocessor"
     } else if token.contains("fanuc") || token.contains("lathe") {
@@ -18240,6 +18548,8 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         || token.contains("multiaxis")
     {
         "five-axis-controller-gcode".to_string()
+    } else if wants_mill_turning(&token) {
+        "mill-turn-controller-gcode".to_string()
     } else if token.contains("marlin") || token.contains("gcode") {
         "controller-gcode".to_string()
     } else if token.contains("sla") || token.contains("resin") {
@@ -21957,6 +22267,96 @@ fn pomdp_belief_state(
     }
 }
 
+fn release_probe_is_blocker(target_state: &str, summary: &BoundarySummary) -> bool {
+    match target_state {
+        "machine-failure-risk" => summary.machine_failure_risks > 0 || !summary.ok,
+        "human-intervention-needed" => summary.human_intervention_required > 0,
+        "split-combine-needed" => summary.split_recommended > 0 || summary.combine_recommended > 0,
+        "automation-capability-gap" => summary.automation_required > 0,
+        _ => false,
+    }
+}
+
+fn release_probe_priority(probe: &PomdpProbe, release_blocker: bool) -> &'static str {
+    if release_blocker || probe.expected_information_gain >= 0.20 {
+        "required"
+    } else if probe.expected_information_gain >= 0.12 {
+        "recommended"
+    } else {
+        "watch"
+    }
+}
+
+fn release_probe_plan(
+    belief_state: &PomdpBeliefState,
+    summary: &BoundarySummary,
+    validation: &ValidationReport,
+) -> ReleaseProbePlan {
+    let probes = belief_state
+        .recommended_probes
+        .iter()
+        .map(|probe| {
+            let release_blocker = release_probe_is_blocker(&probe.target_state, summary);
+            let evidence = belief_state
+                .hidden_states
+                .iter()
+                .find(|state| state.state == probe.target_state)
+                .map(|state| state.evidence.clone())
+                .unwrap_or_else(|| vec!["hidden-state-evidence-not-found".to_string()]);
+            ReleaseProbe {
+                probe_id: probe.probe_id.clone(),
+                target_state: probe.target_state.clone(),
+                priority: release_probe_priority(probe, release_blocker).to_string(),
+                action: probe.action.clone(),
+                expected_information_gain: probe.expected_information_gain,
+                required_before_state: probe.required_before_state.clone(),
+                evidence,
+                release_blocker,
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut required_before_release = probes
+        .iter()
+        .filter(|probe| probe.priority == "required")
+        .map(|probe| format!("{}:{}", probe.target_state, probe.action))
+        .collect::<Vec<_>>();
+    if required_before_release.is_empty() && !validation.ok {
+        required_before_release.extend(summary.recommended_actions.iter().take(5).map(|action| {
+            format!(
+                "review-{}:{}",
+                normalize_token(&action.boundary_kind),
+                normalize_token(&action.action)
+            )
+        }));
+    }
+    if required_before_release.is_empty() {
+        required_before_release
+            .push("confirm-no-new-machine-failure-boundaries-before-release".to_string());
+    }
+    required_before_release.sort();
+    required_before_release.dedup();
+
+    let release_state = if probes.iter().any(|probe| probe.release_blocker) || !validation.ok {
+        "blocked-pending-release-probes"
+    } else if probes.iter().any(|probe| probe.priority == "recommended") {
+        "review-probes-before-release"
+    } else {
+        "ready-for-final-release-confirmation"
+    };
+
+    ReleaseProbePlan {
+        schema_version: "dd.fabrication.release-probe-plan.v1".to_string(),
+        release_state: release_state.to_string(),
+        probe_count: probes.len(),
+        required_before_release,
+        probes,
+        notes: vec![
+            "POMDP release probes are deterministic evidence-collection requests for downstream workers or operators before machine-ready release".to_string(),
+            "Probe priorities combine hidden-state belief, information gain, and retained failure-boundary summary counts".to_string(),
+        ],
+    }
+}
+
 fn strategy_candidates(
     parts: &[PartPlan],
     process_plan: &[ProcessStep],
@@ -22327,6 +22727,7 @@ fn learning_plan(
     );
     let pomdp_belief_state =
         pomdp_belief_state(&observations, &summary, &intervention_signals, validation);
+    let release_probe_plan = release_probe_plan(&pomdp_belief_state, &summary, validation);
 
     Ok(LearningPlan {
         model_family,
@@ -22344,6 +22745,7 @@ fn learning_plan(
         ],
         pomdp_observations: observations,
         pomdp_belief_state,
+        release_probe_plan,
         actions,
         strategy_candidates,
         intervention_signals,
@@ -23372,6 +23774,7 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "rewards": rewards,
         "observations": response.learning.pomdp_observations,
         "pomdpBeliefState": response.learning.pomdp_belief_state,
+        "releaseProbePlan": response.learning.release_probe_plan,
         "productionPlan": response.production_plan,
         "machineSchedule": response.machine_schedule,
         "machineSelection": response.machine_selection,
@@ -23847,6 +24250,7 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "marlin-gcode",
         "haas-gcode",
         "fanuc-gcode",
+        "mill-turn-gcode",
         "grbl-gcode",
         "iso-gcode",
         "printer-job",
@@ -23867,6 +24271,7 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "plasma-job",
         "wire-edm-job",
         "sinker-edm-job",
+        "mill-turn-job",
         "router-profile",
         "operator-checklist",
         "setup-sheet",
@@ -23919,6 +24324,7 @@ async fn capabilities() -> impl IntoResponse {
             "plasma-sheet-cutter",
             "wire-edm-sheet-cutter",
             "sinker-edm-cell",
+            "mill-turn-center",
             "lathe",
             "manual-or-special-process"
         ],
@@ -23946,12 +24352,14 @@ async fn capabilities() -> impl IntoResponse {
             "postprocess-plan",
             "intervention-map",
             "pomdp-belief-state",
+            "release-probe-plan",
             "neural-training-corpus",
             "mdp-request"
         ],
         "learningChannels": [
             "mdp-states-actions-rewards",
             "pomdp-belief-state-and-probes",
+            "release-probe-plan",
             "neural-policy-sketch",
             "neural-training-corpus",
             "fabrication-outcome-rewards",
@@ -24042,6 +24450,7 @@ async fn request_schema() -> impl IntoResponse {
                 "plasma-cutter",
                 "wire-edm",
                 "sinker-edm",
+                "mill-turn-center",
                 "lathe",
                 "manual-cell"
             ]
@@ -25796,7 +26205,7 @@ mod tests {
             .design
             .parts
             .iter()
-            .any(|part| part.machine_kind.contains("lathe")));
+            .any(|part| machine_class(&part.machine_kind) == MachineClass::Lathe));
         assert_eq!(
             response.machine_selection.len(),
             response.design.parts.len()
@@ -25901,7 +26310,7 @@ mod tests {
             .quality_plan
             .inspection_points
             .iter()
-            .any(|point| point.machine_kind.contains("lathe")
+            .any(|point| machine_class(&point.machine_kind) == MachineClass::Lathe
                 && point.method.contains("thread gauge")));
         assert!(response
             .quality_plan
@@ -26180,6 +26589,87 @@ mod tests {
                     .and_then(Value::as_str)
                     == Some("horizontal-subtractive-feature")
             })));
+    }
+
+    #[test]
+    fn mill_turn_plan_generates_live_tool_and_transfer_program() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-mill-turn".to_string()),
+            objective: "mill-turn stainless shaft with C-axis cross holes, live tooling, subspindle transfer, and back-working".to_string(),
+            material: Some(material("stainless-steel", "metal")),
+            stock: Some(StockSpec {
+                form: "bar".to_string(),
+                dimensions_mm: Some(vec![32.0, 180.0, 32.0]),
+            }),
+            tolerance_mm: Some(0.035),
+            quantity: Some(1),
+            machines: None,
+            constraints: Some(FabricationConstraints {
+                max_setups: Some(2),
+                allow_human_intervention: Some(true),
+                allow_multi_part_assembly: Some(true),
+                require_dry_run: Some(true),
+                preferred_methods: Some(vec!["mill-turning".to_string()]),
+                preferred_assembly_strategy: None,
+            }),
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("mill-turn plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "turned-axisymmetric-insert"
+                && part.machine_kind == "mill-turn-center"
+                && part.manufacturing_method == "turning"
+        }));
+        assert!(response
+            .machine_selection
+            .iter()
+            .any(|trace| trace.selected_machine_kind == "mill-turn-center"));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("live-tool mill")
+                && step.operation.contains("main/sub-spindle")));
+
+        let mill_turn_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "mill-turn-center")
+            .expect("mill-turn program should be generated");
+        assert_eq!(mill_turn_program.language, "mill-turn-gcode");
+        assert!(mill_turn_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft mill-turn program")));
+        assert!(mill_turn_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("G112")));
+        assert!(mill_turn_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("mill-turn-live-tooling-boundary")));
+        assert!(mill_turn_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("mill-turn-spindle-transfer-boundary")));
+        assert!(mill_turn_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("subspindle")));
+
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "mill-turn-center"
+                    && target.postprocessor == "mill-turn-gcode-postprocessor"
+                    && target.output_format == "mill-turn-controller-gcode"
+            }));
     }
 
     #[test]
@@ -34019,6 +34509,101 @@ mod tests {
     }
 
     #[test]
+    fn text_mill_turn_jobs_require_live_tooling_and_spindle_transfer_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("mill-turn-text-missing-live-tooling".to_string()),
+                machine_id: Some("mill-turn-center-1".to_string()),
+                machine_kind: Some("mill-turn-center".to_string()),
+                language: Some("mill-turn-job".to_string()),
+                instructions: vec![
+                    "Clamp stainless bar in collet with stick-out, datum zero, setup sheet, tool list, spindle 1800 rpm, feed 0.12 mm/rev, and coolant on".to_string(),
+                    "Mill-turn shaft with off-axis flats and cross holes plus subspindle transfer for back working".to_string(),
+                    "Subspindle pickup verified with clamp pressure 45 bar, phase sync, pull force, grip check, and transfer clearance".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("mill-turn-text-missing-transfer-evidence".to_string()),
+                machine_id: Some("mill-turn-center-1".to_string()),
+                machine_kind: Some("mill-turn-center".to_string()),
+                language: Some("mill-turn-job".to_string()),
+                instructions: vec![
+                    "Clamp stainless bar in collet with stick-out, datum zero, setup sheet, tool list, spindle 1800 rpm, feed 0.12 mm/rev, and coolant on".to_string(),
+                    "Mill-turn shaft with C-axis zero, C-axis clamp, live-tool holder, polar interpolation G112, Y-axis travel, coolant through tool, and collision clearance".to_string(),
+                    "Run main-to-sub transfer for back working after the live-tool milling pass".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("mill-turn-text-with-evidence".to_string()),
+                machine_id: Some("mill-turn-center-1".to_string()),
+                machine_kind: Some("mill-turn-center".to_string()),
+                language: Some("mill-turn-job".to_string()),
+                instructions: vec![
+                    "Clamp stainless bar in collet with stick-out, datum zero, setup sheet, tool list, spindle 1800 rpm, feed 0.12 mm/rev, and coolant on".to_string(),
+                    "Mill-turn shaft with C-axis zero, C-axis clamp, live-tool holder, polar interpolation G112, Y-axis travel, coolant through tool, and collision clearance".to_string(),
+                    "Subspindle pickup verified with clamp pressure 45 bar, phase sync, pull force, grip check, bar stop, and transfer clearance".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "mill-turn-live-tooling-evidence-missing"
+                && finding.program_id.as_deref() == Some("mill-turn-text-missing-live-tooling")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "mill-turn-spindle-transfer-evidence-missing"
+                && finding.program_id.as_deref() == Some("mill-turn-text-missing-transfer-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("mill-turn-")
+                && finding.program_id.as_deref() == Some("mill-turn-text-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "mill-turn-live-tooling-boundary"
+                && boundary.program_id.as_deref() == Some("mill-turn-text-missing-live-tooling")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("C-axis zero")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "mill-turn-spindle-transfer-boundary"
+                && boundary.program_id.as_deref()
+                    == Some("mill-turn-text-missing-transfer-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("phase sync")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-mill-turn-live-tooling-evidence"
+                && improvement.program_id.as_deref() == Some("mill-turn-text-missing-live-tooling")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-mill-turn-spindle-transfer-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("mill-turn-text-missing-transfer-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [mill-turn-live-tooling-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [mill-turn-spindle-transfer-boundary]")));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [mill-turn-")));
+    }
+
+    #[test]
     fn accepted_instruction_languages_cover_generated_default_program_languages() {
         let accepted = accepted_instruction_languages();
         let unique = accepted.iter().copied().collect::<BTreeSet<_>>();
@@ -34033,6 +34618,7 @@ mod tests {
             "iso-gcode",
             "grbl-gcode",
             "fanuc-gcode",
+            "mill-turn-gcode",
             "sla-job",
             "material-jetting-job",
             "directed-energy-deposition-job",
@@ -34045,6 +34631,7 @@ mod tests {
             "plasma-job",
             "wire-edm-job",
             "sinker-edm-job",
+            "mill-turn-job",
             "slicer-job",
             "resin-job",
             "powder-job",
@@ -34639,6 +35226,24 @@ mod tests {
             .any(|probe| probe.target_state == "human-intervention-needed"
                 && probe.action.contains("operator-checkpoint")));
         assert_eq!(
+            response.learning.release_probe_plan.schema_version,
+            "dd.fabrication.release-probe-plan.v1"
+        );
+        assert!(response
+            .learning
+            .release_probe_plan
+            .probes
+            .iter()
+            .any(|probe| probe.target_state == "human-intervention-needed"
+                && probe.release_blocker
+                && probe.priority == "required"));
+        assert!(response
+            .learning
+            .release_probe_plan
+            .required_before_release
+            .iter()
+            .any(|requirement| requirement.contains("operator-checkpoint")));
+        assert_eq!(
             response.learning.neural_policy.schema_version,
             "dd.fabrication.neural-policy-sketch.v1"
         );
@@ -34727,6 +35332,13 @@ mod tests {
                 .iter()
                 .any(|state| state.get("state").and_then(Value::as_str)
                     == Some("human-intervention-needed"))));
+        assert!(mdp_request
+            .get("releaseProbePlan")
+            .and_then(|plan| plan.get("probes"))
+            .and_then(Value::as_array)
+            .is_some_and(|probes| probes
+                .iter()
+                .any(|probe| probe.get("priority").and_then(Value::as_str) == Some("required"))));
         assert!(mdp_request
             .get("neuralTrainingCorpus")
             .and_then(|corpus| corpus.get("examples"))
@@ -35770,6 +36382,7 @@ mod tests {
         assert!(job.artifacts.contains_key("quality-plan"));
         assert!(job.artifacts.contains_key("tooling-plan"));
         assert!(job.artifacts.contains_key("pomdp-belief-state"));
+        assert!(job.artifacts.contains_key("release-probe-plan"));
         assert!(job.artifacts.contains_key("neural-training-corpus"));
         assert!(response
             .machine_selection
@@ -35845,6 +36458,28 @@ mod tests {
             .and_then(|state| state.get("schemaVersion"))
             .and_then(Value::as_str)
             .is_some_and(|version| version == "dd.fabrication.pomdp-belief-state.v1"));
+        assert!(parametric_design
+            .content
+            .get("releaseProbePlan")
+            .and_then(|plan| plan.get("schemaVersion"))
+            .and_then(Value::as_str)
+            .is_some_and(|version| version == "dd.fabrication.release-probe-plan.v1"));
+        let release_probe_plan = job
+            .artifacts
+            .get("release-probe-plan")
+            .expect("release probe plan artifact should be retained");
+        assert_eq!(
+            release_probe_plan
+                .content
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.release-probe-plan.v1")
+        );
+        assert!(release_probe_plan
+            .content
+            .get("probes")
+            .and_then(Value::as_array)
+            .is_some_and(|probes| !probes.is_empty()));
         let neural_corpus = job
             .artifacts
             .get("neural-training-corpus")
