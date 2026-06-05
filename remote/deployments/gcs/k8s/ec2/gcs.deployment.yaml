@@ -119,7 +119,7 @@ spec:
             - name: GOMAXPROCS
               value: '8'
             - name: GOGC
-              value: '100'
+              value: '300'
             - name: GCS_PPROF_ENABLED
               value: 'true'
             - name: GCS_PPROF_BLOCK_RATE
