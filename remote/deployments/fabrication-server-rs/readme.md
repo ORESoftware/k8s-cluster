@@ -43,22 +43,24 @@ learning hints. It returns:
 - A normalized design summary with inferred additive, milling, turning, or
   special-process parts.
 - A process plan across 3D printers, vertical/horizontal mills, routers,
-  laser/sheet cutters, and lathes when those machine profiles are available.
+  laser, waterjet, plasma/sheet cutters, and lathes when those machine
+  profiles are available.
 - Draft machine programs such as Marlin-style FDM printer G-code,
   SLA/MSLA resin print-wash-cure job sheets, SLS/MJF-style powder-bed
   print-cooldown-depowder job sheets, ISO/Haas-style vertical milling G-code,
   ISO-style horizontal side-slot/keyway milling G-code, GRBL-style router
-  profile programs with tab gates, laser/sheet-cutting job sheets with kerf
-  tests and fire/fume gates, Fanuc-style turning G-code, or
+  profile programs with tab gates, laser, waterjet, and plasma sheet-cutting
+  job sheets with kerf tests and fire/fume gates, Fanuc-style turning G-code, or
   operator-only instructions for unsupported machine kinds.
 - Validation and simulation findings plus failure boundaries for heat-up,
-  homing, spindle, work-offset, tool-change, manual-stop, deep-cut, arc,
-  setup-limit, machine-envelope, sheet-cutting, inspection, and automation
-  constraints.
+  homing, spindle, work-offset, additive material/color/tool-change,
+  manual-stop, tool-length/probe compensation, deep-cut, arc, setup-limit,
+  machine-envelope, sheet-cutting, inspection, and automation constraints.
 - Assembly advice that calls out when parts should be combined into one job or
   split so tight-tolerance features can be machined and inspected separately.
 - A learning contract with MDP states, POMDP observations, policy actions,
-  reward terms, neural feature names, and training-example sketches.
+  reward terms, neural feature names, a deterministic neural-policy sketch, and
+  training-example sketches.
 - Outcome learning endpoints that accept fabrication results, shape reward
   terms, emit MDP/POMDP/neural evidence, and expose a bounded policy snapshot.
 - Open-ended planning requests reuse strong learned method and assembly
@@ -136,11 +138,12 @@ Requests use camelCase JSON:
 
 If `machines` is omitted, the service uses a conservative default fleet with an
 FDM printer, SLA resin printer, SLS powder-bed printer, vertical mill,
-horizontal mill, CNC router, laser cutter, and lathe. If `parts` is omitted, the planner
-infers a first decomposition from the objective, material, and tolerance,
-including resin-print, powder-bed-print, horizontal-milled side slots/keyways,
-laser/kerf-controlled sheet-cut profiles, and routed sheet/profile parts for
-wood, foam, acrylic, panel, sign, engraving, and tabbed-profile requests.
+horizontal mill, CNC router, laser cutter, waterjet cutter, plasma cutter, and
+lathe. If `parts` is omitted, the planner infers a first decomposition from the
+objective, material, and tolerance, including resin-print, powder-bed-print,
+horizontal-milled side slots/keyways, laser, waterjet, plasma, and
+kerf-controlled sheet-cut profiles, and routed sheet/profile parts for wood,
+foam, acrylic, panel, sign, engraving, and tabbed-profile requests.
 
 ## `POST /instructions/analyze`
 
@@ -173,13 +176,15 @@ human-intervention gates.
 
 The analyzer is intentionally conservative. It checks common `G`, `M`, and `T`
 words, missing units or positioning modes, printer extrusion before heat-up or
-homing, subtractive feed moves before spindle start, manual stops, fixture
-changes, deep negative Z moves, arc moves without I/J/R geometry, missing
-program ends, and text-instruction boundaries where the job needs setup,
-post-processing, sheet-cutting kerf/fire/fume checks, assembly, splitting, or
-operator intervention. Improved drafts are still marked `machineReady=false`;
-they are normalization aids for review, motion-envelope simulation, and
-controller-specific postprocessing.
+homing, additive material/color/tool-change stops such as `M600` or multi-tool
+selection, mill/router plunges after tool selection without explicit
+`G43`/probe/tool-length state, subtractive feed moves before spindle start,
+manual stops, fixture changes, deep negative Z moves, arc moves without I/J/R
+geometry, missing program ends, and text-instruction boundaries where the job
+needs setup, post-processing, sheet-cutting kerf/fire/fume checks, assembly,
+splitting, or operator intervention. Improved drafts are still marked
+`machineReady=false`; they are normalization aids for review, motion-envelope
+simulation, and controller-specific postprocessing.
 
 Machine-code planning and analysis also run a bounded coordinate-envelope
 simulation over `G0`/`G1`/arc motion. When a submitted or generated toolpath
@@ -212,11 +217,17 @@ current bounded in-process policy memory. `POST /learning/outcomes` and
 when callers already have their own training features.
 
 When a policy snapshot has at least two positive samples for a method such as
-`additive-print`, `milling`, `horizontal-milling`, `routing`, or `turning`,
-subsequent `/fabrication/plan` requests without explicit `preferredMethods`
-inherit those learned process preferences. Strong assembly preferences such as
+`additive-print`, `milling`, `horizontal-milling`, `routing`, `sheet-cutting`,
+or `turning`, subsequent `/fabrication/plan` requests without explicit
+`preferredMethods` inherit those learned process preferences. Repeated
+multi-method successes such as `additive-print+milling` are retained as method
+combination preferences; open future requests can be decomposed into learned
+hybrid parts before machine selection. Strong assembly preferences such as
 `printed body plus turned insert` are reused as learned hybrid join strategies,
 and recent neural training examples are carried into the returned learning plan.
+The plan also includes a `neuralPolicy` sketch with a normalized feature vector,
+hidden activations, and bounded action scores so an external neural model can be
+trained from the same MDP/POMDP state or replace the local scoring head.
 
 ## Job And Artifact Inspection
 
