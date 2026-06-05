@@ -15,9 +15,13 @@ It exposes:
 - `POST /fabrication/plan`
 - `POST /instructions/analyze`
 
-The service emits compact lifecycle events to `dd.remote.events` when
-`NATS_URL` is configured. Generated machine code is intentionally advisory:
-responses are draft planning artifacts and are not marked machine-ready.
+When `NATS_URL` is configured, the service also queue-subscribes to
+`dd.remote.fabrication.requests` with queue group `dd-fabrication-server`,
+publishes responses to `dd.remote.fabrication.results`, emits compact lifecycle
+events to `dd.remote.events`, and can publish optimizer-shaped learning jobs to
+`dd.remote.mdp.optimize` when `FABRICATION_MDP_AUTOPUBLISH=true`. Generated
+machine code is intentionally advisory: responses are draft planning artifacts
+and are not marked machine-ready.
 
 ## What It Does Today
 
@@ -145,4 +149,4 @@ cargo test
 cargo run --release
 ```
 
-The default local port is `8117`; set `PORT` to override it.
+The default local port is `8113`; set `PORT` to override it.
