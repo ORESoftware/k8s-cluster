@@ -45,8 +45,9 @@ learning hints. It returns:
 - A process plan across 3D printers, vertical/horizontal mills, routers, and
   lathes when those machine profiles are available.
 - Draft machine programs such as Marlin-style printer G-code, ISO/Haas-style
-  milling G-code, Fanuc-style turning G-code, or operator-only instructions for
-  unsupported machine kinds.
+  milling G-code, GRBL-style router profile programs with tab gates,
+  Fanuc-style turning G-code, or operator-only instructions for unsupported
+  machine kinds.
 - Validation findings and failure boundaries for heat-up, homing, spindle,
   work-offset, tool-change, manual-stop, deep-cut, arc, setup-limit,
   machine-envelope, inspection, and automation constraints.
@@ -127,9 +128,10 @@ Requests use camelCase JSON:
 ```
 
 If `machines` is omitted, the service uses a conservative default fleet with an
-FDM printer, vertical mill, horizontal mill, and lathe. If `parts` is omitted,
-the planner infers a first decomposition from the objective, material, and
-tolerance.
+FDM printer, vertical mill, horizontal mill, CNC router, and lathe. If `parts`
+is omitted, the planner infers a first decomposition from the objective,
+material, and tolerance, including routed sheet/profile parts for wood, foam,
+acrylic, panel, sign, engraving, and tabbed-profile requests.
 
 ## `POST /instructions/analyze`
 
