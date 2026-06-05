@@ -167,6 +167,24 @@ struct InstructionAnalysisRequest {
     material: Option<MaterialSpec>,
 }
 
+enum FabricationNatsRequest {
+    Plan(FabricationPlanRequest),
+    InstructionAnalysis(InstructionAnalysisRequest),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FabricationNatsEnvelope {
+    kind: Option<String>,
+    #[serde(rename = "type")]
+    message_type: Option<String>,
+    operation: Option<String>,
+    request: Option<Value>,
+    plan: Option<FabricationPlanRequest>,
+    analysis: Option<InstructionAnalysisRequest>,
+    instruction_analysis: Option<InstructionAnalysisRequest>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationOutcomeRequest {
@@ -204,9 +222,14 @@ struct FabricationPlanResponse {
     quantity: u32,
     design: DesignSummary,
     process_plan: Vec<ProcessStep>,
+    process_graph: ProcessGraph,
     generated_programs: Vec<GeneratedProgram>,
     validation: ValidationReport,
+    boundary_summary: BoundarySummary,
+    resolution_plan: BoundaryResolutionPlan,
     simulation: SimulationReport,
+    improvements: Vec<InstructionImprovement>,
+    improved_programs: Vec<ImprovedInstructionProgram>,
     assembly: AssemblyPlan,
     learning: LearningPlan,
     warnings: Vec<String>,
@@ -221,6 +244,8 @@ struct InstructionAnalysisResponse {
     request_id: String,
     programs: Vec<AnalyzedProgram>,
     validation: ValidationReport,
+    boundary_summary: BoundarySummary,
+    resolution_plan: BoundaryResolutionPlan,
     simulation: SimulationReport,
     improvements: Vec<InstructionImprovement>,
     improved_programs: Vec<ImprovedInstructionProgram>,
@@ -382,6 +407,50 @@ struct ProcessStep {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ProcessGraph {
+    release_state: String,
+    nodes: Vec<ProcessGraphNode>,
+    dependencies: Vec<ProcessGraphDependency>,
+    gates: Vec<ProcessGraphGate>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessGraphNode {
+    node_id: String,
+    step: u32,
+    part_id: String,
+    machine_id: String,
+    machine_kind: String,
+    operation: String,
+    program_id: Option<String>,
+    expected_minutes: u32,
+    requires_human_intervention: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessGraphDependency {
+    from_node_id: String,
+    to_node_id: String,
+    dependency_type: String,
+    reason: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessGraphGate {
+    gate_id: String,
+    node_id: Option<String>,
+    gate_type: String,
+    boundary_kind: String,
+    action: String,
+    requires_human_intervention: bool,
+    next_state: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct GeneratedProgram {
     program_id: String,
     part_id: String,
@@ -401,6 +470,78 @@ struct ValidationReport {
     severity: String,
     findings: Vec<ValidationFinding>,
     failure_boundaries: Vec<FailureBoundary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundarySummary {
+    ok: bool,
+    severity: String,
+    total_boundaries: usize,
+    human_intervention_required: usize,
+    machine_failure_risks: usize,
+    split_recommended: usize,
+    combine_recommended: usize,
+    automation_required: usize,
+    automation_requirements: Vec<AutomationRequirement>,
+    regeneration_recommended: usize,
+    affected_programs: Vec<String>,
+    kinds: Vec<BoundaryKindSummary>,
+    recommended_actions: Vec<BoundaryRecommendedAction>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutomationRequirement {
+    requirement_id: String,
+    boundary_kind: String,
+    program_id: Option<String>,
+    line: Option<usize>,
+    automation_type: String,
+    reason: String,
+    fallback: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundaryKindSummary {
+    kind: String,
+    count: usize,
+    severity: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundaryRecommendedAction {
+    action: String,
+    boundary_kind: String,
+    program_id: Option<String>,
+    line: Option<usize>,
+    reason: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundaryResolutionPlan {
+    status: String,
+    machine_release_blocked: bool,
+    step_count: usize,
+    steps: Vec<BoundaryResolutionStep>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundaryResolutionStep {
+    step: u32,
+    action: String,
+    phase: String,
+    next_state: String,
+    boundary_kind: String,
+    program_id: Option<String>,
+    line: Option<usize>,
+    requires_human_intervention: bool,
+    suggested_resolution: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -475,6 +616,47 @@ struct AssemblyPlan {
     combine_candidates: Vec<String>,
     split_candidates: Vec<String>,
     joints: Vec<String>,
+    assembly_graph: AssemblyGraph,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssemblyGraph {
+    nodes: Vec<AssemblyGraphNode>,
+    interfaces: Vec<AssemblyInterface>,
+    sequence: Vec<AssemblySequenceStep>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssemblyGraphNode {
+    part_id: String,
+    manufacturing_method: String,
+    machine_kind: String,
+    role: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssemblyInterface {
+    interface_id: String,
+    from_part_id: String,
+    to_part_id: String,
+    joint_type: String,
+    fit: String,
+    strategy: String,
+    inspection_gate: String,
+    requires_human_intervention: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssemblySequenceStep {
+    step: u32,
+    action: String,
+    part_ids: Vec<String>,
+    gate: String,
     notes: Vec<String>,
 }
 
@@ -503,10 +685,40 @@ struct LearningPlan {
     mdp_states: Vec<String>,
     pomdp_observations: Vec<String>,
     actions: Vec<String>,
+    strategy_candidates: Vec<StrategyCandidate>,
+    intervention_signals: Vec<InterventionLearningSignal>,
     reward_terms: Vec<String>,
     neural_features: Vec<String>,
     neural_policy: NeuralPolicySketch,
     training_examples: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StrategyCandidate {
+    strategy_id: String,
+    methods: Vec<String>,
+    machine_kinds: Vec<String>,
+    estimated_minutes: u32,
+    human_intervention_steps: usize,
+    boundary_count: usize,
+    score: f64,
+    rationale: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InterventionLearningSignal {
+    signal_id: String,
+    source: String,
+    boundary_kind: String,
+    program_id: Option<String>,
+    line: Option<usize>,
+    automation_type: Option<String>,
+    action: String,
+    observation: String,
+    next_state: String,
+    reward_adjustment: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -4068,11 +4280,13 @@ fn parametric_design_content(response: &FabricationPlanResponse) -> Value {
         },
         "parts": parts,
         "processLinks": process_links,
+        "processGraph": response.process_graph,
         "assembly": {
             "strategy": response.assembly.strategy,
             "combineCandidates": response.assembly.combine_candidates,
             "splitCandidates": response.assembly.split_candidates,
             "joints": response.assembly.joints,
+            "assemblyGraph": response.assembly.assembly_graph,
         }
     })
 }
@@ -4098,6 +4312,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             response.generated_at_ms,
         ),
         json_artifact(
+            "process-graph".to_string(),
+            "process-graph",
+            json!(response.process_graph),
+            response.generated_at_ms,
+        ),
+        json_artifact(
             "assembly-plan".to_string(),
             "assembly-plan",
             json!(response.assembly),
@@ -4110,9 +4330,27 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             response.generated_at_ms,
         ),
         json_artifact(
+            "boundary-summary".to_string(),
+            "boundary-summary",
+            json!(response.boundary_summary),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "resolution-plan".to_string(),
+            "resolution-plan",
+            json!(response.resolution_plan),
+            response.generated_at_ms,
+        ),
+        json_artifact(
             "simulation-report".to_string(),
             "simulation-report",
             json!(response.simulation),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "plan-improvements".to_string(),
+            "plan-improvements",
+            json!(response.improvements),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -4151,6 +4389,30 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
                 created_at_ms: response.generated_at_ms,
             }),
     );
+    artifacts.extend(
+        response
+            .improved_programs
+            .iter()
+            .map(|program| FabricationArtifact {
+                artifact_id: artifact_id("improved-program", &program.program_id),
+                kind: "improved-instruction-program".to_string(),
+                media_type: "application/json".to_string(),
+                part_id: None,
+                program_id: Some(program.program_id.clone()),
+                machine_kind: Some(program.machine_kind.clone()),
+                draft: true,
+                machine_ready: program.machine_ready,
+                line_count: Some(program.instructions.len()),
+                content: json!({
+                    "language": program.language,
+                    "changed": program.changed,
+                    "sourceLineCount": program.source_line_count,
+                    "instructions": program.instructions,
+                }),
+                notes: program.notes.clone(),
+                created_at_ms: response.generated_at_ms,
+            }),
+    );
     artifacts
 }
 
@@ -4160,6 +4422,18 @@ fn analysis_artifacts(response: &InstructionAnalysisResponse) -> Vec<Fabrication
             "analysis-validation-report".to_string(),
             "analysis-validation-report",
             json!(response.validation),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "analysis-boundary-summary".to_string(),
+            "analysis-boundary-summary",
+            json!(response.boundary_summary),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "analysis-resolution-plan".to_string(),
+            "analysis-resolution-plan",
+            json!(response.resolution_plan),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -4272,6 +4546,315 @@ fn report_severity(findings: &[ValidationFinding], boundaries: &[FailureBoundary
         "warning".to_string()
     } else {
         "ok".to_string()
+    }
+}
+
+fn summary_text_has_any(value: &str, needles: &[&str]) -> bool {
+    let lower = value.to_ascii_lowercase();
+    needles.iter().any(|needle| lower.contains(needle))
+}
+
+fn stricter_severity(left: &str, right: &str) -> String {
+    if left == "error" || right == "error" {
+        "error".to_string()
+    } else if left == "warning" || right == "warning" {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn automation_requirement_type(boundary: &FailureBoundary, combined: &str) -> Option<&'static str> {
+    if summary_text_has_any(
+        combined,
+        &[
+            "ams",
+            "mmu",
+            "filament",
+            "color change",
+            "material change",
+            "tool-change",
+            "tool change",
+            "multi-tool",
+        ],
+    ) {
+        Some("material-change-automation")
+    } else if summary_text_has_any(
+        combined,
+        &[
+            "resin",
+            "ipa",
+            "uv cure",
+            "waste-containment",
+            "ventilation",
+            "powder",
+            "depowder",
+            "refresh-ratio",
+            "grounded vacuum",
+            "fume",
+            "fire",
+        ],
+    ) {
+        Some("process-cell-automation")
+    } else if summary_text_has_any(combined, &["robotic", "load", "unload"]) {
+        Some("robotic-load-unload")
+    } else if summary_text_has_any(combined, &["fixture", "clamp", "workholding", "tab"]) {
+        Some("fixture-automation")
+    } else if boundary.requires_human_intervention
+        || summary_text_has_any(combined, &["automation", "operator", "manual", "human"])
+    {
+        Some("operator-gate-automation")
+    } else {
+        None
+    }
+}
+
+fn automation_requirement_id(boundary: &FailureBoundary, automation_type: &str) -> String {
+    let program_id = boundary.program_id.as_deref().unwrap_or("plan");
+    let line = boundary
+        .line
+        .map(|line| format!("line-{line}"))
+        .unwrap_or_else(|| "whole-job".to_string());
+    format!(
+        "automation-{}-{}-{}-{}",
+        normalize_token(automation_type),
+        normalize_token(&boundary.kind),
+        normalize_token(program_id),
+        normalize_token(&line)
+    )
+}
+
+fn boundary_summary(validation: &ValidationReport) -> BoundarySummary {
+    let mut affected_programs = BTreeSet::new();
+    let mut kinds = BTreeMap::<String, (usize, String)>::new();
+    let mut action_keys = BTreeSet::new();
+    let mut automation_requirement_keys = BTreeSet::new();
+    let mut recommended_actions = Vec::new();
+    let mut automation_requirements = Vec::new();
+    let mut human_intervention_required = 0;
+    let mut machine_failure_risks = 0;
+    let mut split_recommended = 0;
+    let mut combine_recommended = 0;
+    let mut regeneration_recommended = 0;
+
+    for boundary in &validation.failure_boundaries {
+        if let Some(program_id) = boundary.program_id.as_ref() {
+            affected_programs.insert(program_id.clone());
+        }
+        let entry = kinds
+            .entry(boundary.kind.clone())
+            .or_insert_with(|| (0, "ok".to_string()));
+        entry.0 += 1;
+        entry.1 = stricter_severity(&entry.1, &boundary.severity);
+
+        let combined = format!(
+            "{} {} {}",
+            boundary.kind, boundary.reason, boundary.suggested_resolution
+        );
+        let machine_failure = boundary.severity == "error"
+            || summary_text_has_any(
+                &combined,
+                &[
+                    "fail",
+                    "crash",
+                    "damage",
+                    "collision",
+                    "outside",
+                    "overspeed",
+                    "pinch",
+                    "cold extrusion",
+                    "adhesion can fail",
+                    "cannot complete",
+                ],
+            );
+        let split = summary_text_has_any(
+            &combined,
+            &["split", "separate piece", "separate printable", "decompose"],
+        );
+        let combine = summary_text_has_any(
+            &combined,
+            &[
+                "combine",
+                "assembly",
+                "assemble",
+                "join",
+                "bonding",
+                "fastening",
+            ],
+        );
+        let automation_type = automation_requirement_type(boundary, &combined);
+        let automation = automation_type.is_some();
+        let regeneration = summary_text_has_any(
+            &combined,
+            &["regenerate", "larger machine", "revise work offsets", "cam"],
+        );
+
+        if boundary.requires_human_intervention {
+            human_intervention_required += 1;
+        }
+        if machine_failure {
+            machine_failure_risks += 1;
+        }
+        if split {
+            split_recommended += 1;
+        }
+        if combine {
+            combine_recommended += 1;
+        }
+        if regeneration {
+            regeneration_recommended += 1;
+        }
+        if let Some(automation_type) = automation_type {
+            let requirement_id = automation_requirement_id(boundary, automation_type);
+            if automation_requirement_keys.insert(requirement_id.clone()) {
+                automation_requirements.push(AutomationRequirement {
+                    requirement_id,
+                    boundary_kind: boundary.kind.clone(),
+                    program_id: boundary.program_id.clone(),
+                    line: boundary.line,
+                    automation_type: automation_type.to_string(),
+                    reason: boundary.reason.clone(),
+                    fallback: boundary.suggested_resolution.clone(),
+                });
+            }
+        }
+
+        let actions = [
+            (boundary.requires_human_intervention, "human-review"),
+            (machine_failure, "resolve-machine-failure-risk"),
+            (split, "split-job-or-part"),
+            (combine, "combine-or-assemble-parts"),
+            (automation, "add-verified-automation"),
+            (regeneration, "regenerate-or-repostprocess"),
+        ];
+        for (applies, action) in actions {
+            if !applies {
+                continue;
+            }
+            let key = format!(
+                "{}|{}|{}|{:?}",
+                action,
+                boundary.kind,
+                boundary.program_id.as_deref().unwrap_or(""),
+                boundary.line
+            );
+            if action_keys.insert(key) {
+                recommended_actions.push(BoundaryRecommendedAction {
+                    action: action.to_string(),
+                    boundary_kind: boundary.kind.clone(),
+                    program_id: boundary.program_id.clone(),
+                    line: boundary.line,
+                    reason: boundary.suggested_resolution.clone(),
+                });
+            }
+        }
+    }
+
+    BoundarySummary {
+        ok: validation.ok,
+        severity: validation.severity.clone(),
+        total_boundaries: validation.failure_boundaries.len(),
+        human_intervention_required,
+        machine_failure_risks,
+        split_recommended,
+        combine_recommended,
+        automation_required: automation_requirements.len(),
+        automation_requirements,
+        regeneration_recommended,
+        affected_programs: affected_programs.into_iter().collect(),
+        kinds: kinds
+            .into_iter()
+            .map(|(kind, (count, severity))| BoundaryKindSummary {
+                kind,
+                count,
+                severity,
+            })
+            .collect(),
+        recommended_actions,
+    }
+}
+
+fn resolution_phase_and_next_state(action: &str) -> (&'static str, &'static str) {
+    match action {
+        "human-review" => ("operator-review", "inspection-required"),
+        "resolve-machine-failure-risk" => ("safety-resolution", "failed-until-resolved"),
+        "split-job-or-part" => ("decomposition", "assembly-required"),
+        "combine-or-assemble-parts" => ("assembly-planning", "assembly-required"),
+        "add-verified-automation" => ("automation-design", "automation-required"),
+        "regenerate-or-repostprocess" => ("program-regeneration", "program-generated"),
+        _ => ("review", "inspection-required"),
+    }
+}
+
+fn recommended_action_requires_human(
+    validation: &ValidationReport,
+    recommended: &BoundaryRecommendedAction,
+) -> bool {
+    if recommended.action == "human-review" {
+        return true;
+    }
+    validation.failure_boundaries.iter().any(|boundary| {
+        boundary.requires_human_intervention
+            && boundary.kind == recommended.boundary_kind
+            && boundary.program_id == recommended.program_id
+            && boundary.line == recommended.line
+    })
+}
+
+fn boundary_resolution_plan(
+    validation: &ValidationReport,
+    summary: &BoundarySummary,
+) -> BoundaryResolutionPlan {
+    let steps = summary
+        .recommended_actions
+        .iter()
+        .enumerate()
+        .map(|(index, recommended)| {
+            let (phase, next_state) = resolution_phase_and_next_state(&recommended.action);
+            BoundaryResolutionStep {
+                step: index as u32 + 1,
+                action: recommended.action.clone(),
+                phase: phase.to_string(),
+                next_state: next_state.to_string(),
+                boundary_kind: recommended.boundary_kind.clone(),
+                program_id: recommended.program_id.clone(),
+                line: recommended.line,
+                requires_human_intervention: recommended_action_requires_human(
+                    validation,
+                    recommended,
+                ),
+                suggested_resolution: recommended.reason.clone(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let machine_release_blocked = !validation.ok || !steps.is_empty();
+    let status = if validation.severity == "error" {
+        "machine-release-blocked"
+    } else if steps.is_empty() {
+        "review-ready"
+    } else {
+        "review-gates-required"
+    };
+    let notes = if steps.is_empty() {
+        vec![
+            "No boundary resolution steps were generated from the current validation report"
+                .to_string(),
+        ]
+    } else {
+        vec![
+            "Resolve every step before treating generated or improved instructions as machine-ready"
+                .to_string(),
+            "Steps are derived from validation failure boundaries and still require final CAM/slicer verification"
+                .to_string(),
+        ]
+    };
+
+    BoundaryResolutionPlan {
+        status: status.to_string(),
+        machine_release_blocked,
+        step_count: steps.len(),
+        steps,
+        notes,
     }
 }
 
@@ -4876,6 +5459,17 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
     )?;
     let generated_at_ms = now_ms();
     let job_id = safe_job_id("plan", &request_id, generated_at_ms);
+    let improved_programs =
+        improve_instruction_programs(&generated_as_input, &validation, &improvements);
+    let summary = boundary_summary(&validation);
+    let resolution_plan = boundary_resolution_plan(&validation, &summary);
+    let process_graph = process_graph(
+        &process_plan,
+        &generated_programs,
+        &assembly,
+        &validation,
+        &resolution_plan,
+    );
 
     Ok(FabricationPlanResponse {
         ok: validation.ok,
@@ -4898,14 +5492,285 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
             ],
         },
         process_plan,
+        process_graph,
         generated_programs,
         validation,
+        boundary_summary: summary,
+        resolution_plan,
         simulation,
+        improvements,
+        improved_programs,
         assembly,
         learning,
         warnings,
         generated_at_ms,
     })
+}
+
+fn analyze_instruction_request(
+    request: InstructionAnalysisRequest,
+) -> Result<InstructionAnalysisResponse, String> {
+    let request_id = request_id(request.request_id.as_ref(), "instruction-analysis");
+    let programs = validate_programs(&request.programs)?;
+    if programs.is_empty() {
+        return Err("programs must not be empty".to_string());
+    }
+    let machines = validate_machines(request.machines)?;
+    let analysis_material = match request.material {
+        Some(material) => Some(material_or_default(Some(material))?),
+        None => None,
+    };
+
+    let (analyzed, mut validation, improvements) = analyze_instruction_programs(&programs);
+    let simulation = simulate_instruction_programs(&programs, &machines);
+    if let Some(material) = analysis_material.as_ref() {
+        let (material_findings, material_boundaries) =
+            analyze_instruction_material_compatibility(&programs, &machines, material);
+        validation.findings.extend(material_findings);
+        validation.failure_boundaries.extend(material_boundaries);
+    }
+    validation.findings.extend(simulation.findings.clone());
+    validation
+        .failure_boundaries
+        .extend(simulation.failure_boundaries.clone());
+    validation.severity = report_severity(&validation.findings, &validation.failure_boundaries);
+    validation.ok = validation.severity != "error";
+    let improved_programs = improve_instruction_programs(&programs, &validation, &improvements);
+    let generated_at_ms = now_ms();
+    let summary = boundary_summary(&validation);
+    let resolution_plan = boundary_resolution_plan(&validation, &summary);
+
+    Ok(InstructionAnalysisResponse {
+        ok: validation.ok,
+        job_id: safe_job_id("analysis", &request_id, generated_at_ms),
+        request_id,
+        programs: analyzed,
+        validation,
+        boundary_summary: summary,
+        resolution_plan,
+        simulation,
+        improvements,
+        improved_programs,
+        generated_at_ms,
+    })
+}
+
+fn assembly_joint_type(left: &PartPlan, right: &PartPlan) -> &'static str {
+    let left_class = machine_class(&left.machine_kind);
+    let right_class = machine_class(&right.machine_kind);
+    if matches!(left_class, MachineClass::Additive) && matches!(right_class, MachineClass::Lathe)
+        || matches!(right_class, MachineClass::Additive)
+            && matches!(left_class, MachineClass::Lathe)
+    {
+        "printed-pocket-turned-insert"
+    } else if matches!(left_class, MachineClass::Additive)
+        && matches!(right_class, MachineClass::Mill | MachineClass::Router)
+        || matches!(right_class, MachineClass::Additive)
+            && matches!(left_class, MachineClass::Mill | MachineClass::Router)
+    {
+        "printed-shell-machined-datum"
+    } else if matches!(left_class, MachineClass::SheetCut)
+        || matches!(right_class, MachineClass::SheetCut)
+    {
+        "tabbed-sheet-register"
+    } else if left.manufacturing_method != right.manufacturing_method {
+        "hybrid-fastened-interface"
+    } else {
+        "same-process-alignment-interface"
+    }
+}
+
+fn assembly_fit(left: &PartPlan, right: &PartPlan) -> &'static str {
+    let tightest = left.tolerance_mm.min(right.tolerance_mm);
+    if tightest <= 0.05 {
+        "metrology-controlled-fit"
+    } else if tightest <= 0.12 {
+        "controlled-clearance-fit"
+    } else {
+        "bonded-or-fastened-fit"
+    }
+}
+
+fn assembly_graph(parts: &[PartPlan]) -> AssemblyGraph {
+    let nodes = parts
+        .iter()
+        .map(|part| AssemblyGraphNode {
+            part_id: part.id.clone(),
+            manufacturing_method: part.manufacturing_method.clone(),
+            machine_kind: part.machine_kind.clone(),
+            role: part.role.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    let mut interfaces = Vec::new();
+    let mut sequence = Vec::new();
+    if let Some(base) = parts.first() {
+        for (index, part) in parts.iter().enumerate().skip(1) {
+            let joint_type = assembly_joint_type(base, part);
+            let fit = assembly_fit(base, part);
+            let interface_id = format!(
+                "{}-to-{}-{}",
+                normalize_token(&base.id),
+                normalize_token(&part.id),
+                normalize_token(joint_type)
+            );
+            let inspection_gate = if fit == "metrology-controlled-fit" {
+                "first-article-metrology-and-fit-check"
+            } else {
+                "dry-fit-and-interface-witness-check"
+            };
+            interfaces.push(AssemblyInterface {
+                interface_id: interface_id.clone(),
+                from_part_id: base.id.clone(),
+                to_part_id: part.id.clone(),
+                joint_type: joint_type.to_string(),
+                fit: fit.to_string(),
+                strategy: format!(
+                    "join {} made by {} to {} made by {}",
+                    base.id, base.manufacturing_method, part.id, part.manufacturing_method
+                ),
+                inspection_gate: inspection_gate.to_string(),
+                requires_human_intervention: true,
+            });
+            sequence.push(AssemblySequenceStep {
+                step: index as u32,
+                action: format!("join-and-verify-{interface_id}"),
+                part_ids: vec![base.id.clone(), part.id.clone()],
+                gate: inspection_gate.to_string(),
+                notes: vec![
+                    "verify datums, access path, and tolerance stack before adhesive, press, or fastener lock-in"
+                        .to_string(),
+                    "record the interface result as an outcome-learning observation".to_string(),
+                ],
+            });
+        }
+    }
+
+    AssemblyGraph {
+        nodes,
+        interfaces,
+        sequence,
+    }
+}
+
+fn process_node_id(step: &ProcessStep) -> String {
+    format!(
+        "process-step-{}-{}",
+        step.step,
+        normalize_token(&step.part_id)
+    )
+}
+
+fn process_graph(
+    process_plan: &[ProcessStep],
+    generated_programs: &[GeneratedProgram],
+    assembly: &AssemblyPlan,
+    validation: &ValidationReport,
+    resolution_plan: &BoundaryResolutionPlan,
+) -> ProcessGraph {
+    let program_by_part = generated_programs
+        .iter()
+        .map(|program| (program.part_id.clone(), program.program_id.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let node_by_part = process_plan
+        .iter()
+        .map(|step| (step.part_id.clone(), process_node_id(step)))
+        .collect::<BTreeMap<_, _>>();
+    let node_by_program = generated_programs
+        .iter()
+        .filter_map(|program| {
+            node_by_part
+                .get(&program.part_id)
+                .map(|node_id| (program.program_id.clone(), node_id.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let nodes = process_plan
+        .iter()
+        .map(|step| ProcessGraphNode {
+            node_id: process_node_id(step),
+            step: step.step,
+            part_id: step.part_id.clone(),
+            machine_id: step.machine_id.clone(),
+            machine_kind: step.machine_kind.clone(),
+            operation: step.operation.clone(),
+            program_id: program_by_part.get(&step.part_id).cloned(),
+            expected_minutes: step.expected_minutes,
+            requires_human_intervention: step.requires_human_intervention,
+        })
+        .collect::<Vec<_>>();
+
+    let mut dependency_keys = BTreeSet::new();
+    let mut dependencies = Vec::new();
+    for window in process_plan.windows(2) {
+        let from_node_id = process_node_id(&window[0]);
+        let to_node_id = process_node_id(&window[1]);
+        let key = format!("order|{from_node_id}|{to_node_id}");
+        if dependency_keys.insert(key) {
+            dependencies.push(ProcessGraphDependency {
+                from_node_id,
+                to_node_id,
+                dependency_type: "process-order".to_string(),
+                reason: "preserve generated process-plan sequence before release".to_string(),
+            });
+        }
+    }
+    for interface in &assembly.assembly_graph.interfaces {
+        let Some(from_node_id) = node_by_part.get(&interface.from_part_id) else {
+            continue;
+        };
+        let Some(to_node_id) = node_by_part.get(&interface.to_part_id) else {
+            continue;
+        };
+        let key = format!("assembly|{from_node_id}|{to_node_id}");
+        if dependency_keys.insert(key) {
+            dependencies.push(ProcessGraphDependency {
+                from_node_id: from_node_id.clone(),
+                to_node_id: to_node_id.clone(),
+                dependency_type: "assembly-interface".to_string(),
+                reason: format!(
+                    "join via {} with {} before final release",
+                    interface.joint_type, interface.inspection_gate
+                ),
+            });
+        }
+    }
+
+    let gates = resolution_plan
+        .steps
+        .iter()
+        .map(|step| ProcessGraphGate {
+            gate_id: format!(
+                "process-gate-{}-{}",
+                step.step,
+                normalize_token(&step.boundary_kind)
+            ),
+            node_id: step
+                .program_id
+                .as_ref()
+                .and_then(|program_id| node_by_program.get(program_id).cloned()),
+            gate_type: step.phase.clone(),
+            boundary_kind: step.boundary_kind.clone(),
+            action: step.action.clone(),
+            requires_human_intervention: step.requires_human_intervention,
+            next_state: step.next_state.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    let release_state = if validation.severity == "error" {
+        "blocked-until-resolved"
+    } else if gates.is_empty() {
+        "graph-review-ready"
+    } else {
+        "gated-before-machine-release"
+    };
+
+    ProcessGraph {
+        release_state: release_state.to_string(),
+        nodes,
+        dependencies,
+        gates,
+    }
 }
 
 fn assembly_plan(parts: &[PartPlan], constraints: Option<&FabricationConstraints>) -> AssemblyPlan {
@@ -4953,6 +5818,7 @@ fn assembly_plan(parts: &[PartPlan], constraints: Option<&FabricationConstraints
         .iter()
         .flat_map(|part| part.interfaces.iter().cloned())
         .collect::<Vec<_>>();
+    let assembly_graph = assembly_graph(parts);
 
     let mut notes = vec![
         "Assembly choices should be promoted into CAD constraints before final CAM generation"
@@ -4978,6 +5844,7 @@ fn assembly_plan(parts: &[PartPlan], constraints: Option<&FabricationConstraints
         combine_candidates,
         split_candidates,
         joints,
+        assembly_graph,
         notes,
     }
 }
@@ -5026,6 +5893,8 @@ fn neural_policy_sketch(
         .iter()
         .filter(|boundary| boundary.requires_human_intervention)
         .count();
+    let summary = boundary_summary(validation);
+    let resolution_plan = boundary_resolution_plan(validation, &summary);
 
     let feature_vector = vec![
         clamp_unit(parts.len() as f64 / MAX_PARTS as f64),
@@ -5035,17 +5904,22 @@ fn neural_policy_sketch(
         clamp_unit(human_boundary_count as f64 / 12.0),
         clamp_unit(improvements.len() as f64 / 12.0),
         clamp_unit((DEFAULT_TOLERANCE_MM / min_tolerance.max(0.01)) / 10.0),
+        clamp_unit(summary.automation_required as f64 / 12.0),
+        clamp_unit(resolution_plan.step_count as f64 / 16.0),
     ];
     let hidden_activations = vec![
         sigmoid(feature_vector[0] * 1.2 + feature_vector[1] * 0.9 + feature_vector[6] * 0.6 - 0.8),
         sigmoid(feature_vector[2] * 1.4 + feature_vector[4] * 1.1 + feature_vector[5] * 0.7 - 0.6),
         sigmoid(feature_vector[3] * 1.6 + error_count as f64 * 0.35 - 0.5),
+        sigmoid(feature_vector[7] * 1.3 + feature_vector[8] * 0.7 + feature_vector[4] * 0.4 - 0.5),
     ];
     let action_scores = actions
         .iter()
         .map(|action| {
             let score = if action.contains("reject") {
                 hidden_activations[2]
+            } else if action.contains("automation") || action.contains("automate") {
+                hidden_activations[3]
             } else if action.contains("human") || action.contains("inspection") {
                 hidden_activations[1]
             } else if action.contains("split") || action.contains("combine") {
@@ -5073,10 +5947,353 @@ fn neural_policy_sketch(
         notes: vec![
             "Deterministic neural-network sketch for downstream training or replacement by an external model"
                 .to_string(),
-            "Inputs are normalized plan, validation, intervention, tolerance, and improvement features"
+            "Inputs are normalized plan, validation, intervention, automation, resolution, tolerance, and improvement features"
                 .to_string(),
         ],
     }
+}
+
+fn rounded_score(value: f64) -> f64 {
+    (clamp_unit(value) * 1000.0).round() / 1000.0
+}
+
+fn unique_sorted(values: impl Iterator<Item = String>) -> Vec<String> {
+    values.collect::<BTreeSet<_>>().into_iter().collect()
+}
+
+fn boundary_learning_actions(summary: &BoundarySummary) -> Vec<String> {
+    let mut actions = Vec::new();
+    for recommended in &summary.recommended_actions {
+        actions.push(format!(
+            "boundary-{}-{}",
+            normalize_token(&recommended.action),
+            normalize_token(&recommended.boundary_kind)
+        ));
+        if let Some(program_id) = recommended.program_id.as_ref() {
+            actions.push(format!(
+                "boundary-{}-program-{}",
+                normalize_token(&recommended.action),
+                normalize_token(program_id)
+            ));
+        }
+    }
+    unique_sorted(actions.into_iter())
+}
+
+fn boundary_learning_observations(summary: &BoundarySummary) -> Vec<String> {
+    let mut observations = vec![
+        format!("boundary-severity:{}", normalize_token(&summary.severity)),
+        format!("failure-boundaries:{}", summary.total_boundaries),
+        format!(
+            "human-intervention-boundaries:{}",
+            summary.human_intervention_required
+        ),
+    ];
+    observations.extend(summary.kinds.iter().map(|kind| {
+        format!(
+            "boundary-kind:{}:{}",
+            normalize_token(&kind.kind),
+            kind.count
+        )
+    }));
+    unique_sorted(observations.into_iter())
+}
+
+fn intervention_learning_signals(
+    summary: &BoundarySummary,
+    resolution_plan: &BoundaryResolutionPlan,
+) -> Vec<InterventionLearningSignal> {
+    let mut seen = BTreeSet::new();
+    let mut signals = Vec::new();
+
+    for requirement in &summary.automation_requirements {
+        let action = format!(
+            "boundary-automate-{}-{}",
+            normalize_token(&requirement.automation_type),
+            normalize_token(&requirement.boundary_kind)
+        );
+        let observation = format!(
+            "automation-required:{}:{}",
+            normalize_token(&requirement.automation_type),
+            normalize_token(&requirement.boundary_kind)
+        );
+        let signal_id = format!(
+            "intervention-{}",
+            normalize_token(&requirement.requirement_id)
+        );
+        if seen.insert(signal_id.clone()) {
+            signals.push(InterventionLearningSignal {
+                signal_id,
+                source: "automation-requirement".to_string(),
+                boundary_kind: requirement.boundary_kind.clone(),
+                program_id: requirement.program_id.clone(),
+                line: requirement.line,
+                automation_type: Some(requirement.automation_type.clone()),
+                action,
+                observation,
+                next_state: "automation-required".to_string(),
+                reward_adjustment: -0.4,
+            });
+        }
+    }
+
+    for step in &resolution_plan.steps {
+        let automation_type = summary
+            .automation_requirements
+            .iter()
+            .find(|requirement| {
+                requirement.boundary_kind == step.boundary_kind
+                    && requirement.program_id == step.program_id
+                    && requirement.line == step.line
+            })
+            .map(|requirement| requirement.automation_type.clone());
+        let action = format!(
+            "resolution-{}-{}",
+            normalize_token(&step.phase),
+            normalize_token(&step.boundary_kind)
+        );
+        let observation = format!(
+            "resolution-step:{}:{}:{}",
+            step.step,
+            normalize_token(&step.phase),
+            normalize_token(&step.boundary_kind)
+        );
+        let signal_id = format!(
+            "intervention-resolution-step-{}-{}",
+            step.step,
+            normalize_token(&step.boundary_kind)
+        );
+        let reward_adjustment = if step.next_state == "failed-until-resolved" {
+            -1.0
+        } else if step.requires_human_intervention {
+            -0.6
+        } else {
+            -0.2
+        };
+        if seen.insert(signal_id.clone()) {
+            signals.push(InterventionLearningSignal {
+                signal_id,
+                source: "resolution-step".to_string(),
+                boundary_kind: step.boundary_kind.clone(),
+                program_id: step.program_id.clone(),
+                line: step.line,
+                automation_type,
+                action,
+                observation,
+                next_state: step.next_state.clone(),
+                reward_adjustment,
+            });
+        }
+    }
+
+    signals
+}
+
+fn strategy_candidates(
+    parts: &[PartPlan],
+    process_plan: &[ProcessStep],
+    validation: &ValidationReport,
+) -> Vec<StrategyCandidate> {
+    let selected_methods =
+        unique_sorted(parts.iter().map(|part| part.manufacturing_method.clone()));
+    let selected_machines = unique_sorted(parts.iter().map(|part| part.machine_kind.clone()));
+    let selected_minutes = process_plan
+        .iter()
+        .map(|step| step.expected_minutes)
+        .sum::<u32>();
+    let selected_human_steps = process_plan
+        .iter()
+        .filter(|step| step.requires_human_intervention)
+        .count();
+    let error_count = validation
+        .failure_boundaries
+        .iter()
+        .filter(|boundary| boundary.severity == "error")
+        .count()
+        + validation
+            .findings
+            .iter()
+            .filter(|finding| finding.severity == "error")
+            .count();
+    let human_boundary_count = validation
+        .failure_boundaries
+        .iter()
+        .filter(|boundary| boundary.requires_human_intervention)
+        .count();
+    let boundary_count = validation.failure_boundaries.len();
+    let selected_score = rounded_score(
+        0.82 + selected_methods.len() as f64 * 0.035
+            - error_count as f64 * 0.22
+            - human_boundary_count as f64 * 0.035
+            - selected_human_steps as f64 * 0.025,
+    );
+
+    let mut candidates = vec![StrategyCandidate {
+        strategy_id: if selected_methods.len() > 1 {
+            "selected-hybrid-plan".to_string()
+        } else {
+            "selected-single-process-plan".to_string()
+        },
+        methods: selected_methods.clone(),
+        machine_kinds: selected_machines.clone(),
+        estimated_minutes: selected_minutes,
+        human_intervention_steps: selected_human_steps,
+        boundary_count,
+        score: selected_score,
+        rationale: vec![
+            "current deterministic planner output".to_string(),
+            format!(
+                "uses {} process method(s) across {} machine kind(s)",
+                selected_methods.len(),
+                selected_machines.len()
+            ),
+            format!("{boundary_count} retained failure boundary item(s) shape release gates"),
+        ],
+    }];
+
+    let additive_machines = unique_sorted(parts.iter().filter_map(|part| {
+        if machine_class(&part.machine_kind) == MachineClass::Additive {
+            Some(part.machine_kind.clone())
+        } else {
+            None
+        }
+    }));
+    if !additive_machines.is_empty() {
+        let additive_minutes = process_plan
+            .iter()
+            .filter(|step| machine_class(&step.machine_kind) == MachineClass::Additive)
+            .map(|step| step.expected_minutes)
+            .sum::<u32>()
+            .max(45);
+        let tight_tolerance_penalty = parts
+            .iter()
+            .map(|part| part.tolerance_mm)
+            .fold(DEFAULT_TOLERANCE_MM, f64::min)
+            < 0.08;
+        candidates.push(StrategyCandidate {
+            strategy_id: "additive-consolidation-candidate".to_string(),
+            methods: vec!["additive-print".to_string()],
+            machine_kinds: additive_machines,
+            estimated_minutes: additive_minutes + parts.len() as u32 * 8,
+            human_intervention_steps: selected_human_steps + 1,
+            boundary_count: validation
+                .failure_boundaries
+                .iter()
+                .filter(|boundary| {
+                    summary_text_has_any(
+                        &format!("{} {}", boundary.kind, boundary.reason),
+                        &["additive", "printer", "resin", "powder", "support", "first-layer"],
+                    )
+                })
+                .count(),
+            score: rounded_score(0.68 - if tight_tolerance_penalty { 0.16 } else { 0.0 }),
+            rationale: vec![
+                "candidate for combining printable geometry into fewer additive jobs".to_string(),
+                "review supports, orientation, first-layer, and post-processing boundaries before release"
+                    .to_string(),
+            ],
+        });
+    }
+
+    let subtractive_machines = unique_sorted(parts.iter().filter_map(|part| {
+        if matches!(
+            machine_class(&part.machine_kind),
+            MachineClass::Mill
+                | MachineClass::Lathe
+                | MachineClass::Router
+                | MachineClass::SheetCut
+        ) {
+            Some(part.machine_kind.clone())
+        } else {
+            None
+        }
+    }));
+    if !subtractive_machines.is_empty() {
+        let subtractive_methods = unique_sorted(parts.iter().filter_map(|part| {
+            if matches!(
+                machine_class(&part.machine_kind),
+                MachineClass::Mill
+                    | MachineClass::Lathe
+                    | MachineClass::Router
+                    | MachineClass::SheetCut
+            ) {
+                Some(part.manufacturing_method.clone())
+            } else {
+                None
+            }
+        }));
+        let subtractive_minutes = process_plan
+            .iter()
+            .filter(|step| {
+                matches!(
+                    machine_class(&step.machine_kind),
+                    MachineClass::Mill
+                        | MachineClass::Lathe
+                        | MachineClass::Router
+                        | MachineClass::SheetCut
+                )
+            })
+            .map(|step| step.expected_minutes)
+            .sum::<u32>()
+            .max(30);
+        candidates.push(StrategyCandidate {
+            strategy_id: "machined-datum-finish-candidate".to_string(),
+            methods: subtractive_methods,
+            machine_kinds: subtractive_machines,
+            estimated_minutes: subtractive_minutes + 20,
+            human_intervention_steps: selected_human_steps + 1,
+            boundary_count: validation
+                .failure_boundaries
+                .iter()
+                .filter(|boundary| {
+                    summary_text_has_any(
+                        &format!("{} {}", boundary.kind, boundary.reason),
+                        &[
+                            "tool",
+                            "spindle",
+                            "lathe",
+                            "router",
+                            "sheet",
+                            "machine-envelope",
+                        ],
+                    )
+                })
+                .count(),
+            score: rounded_score(0.72 - error_count as f64 * 0.12),
+            rationale: vec![
+                "candidate for machining datum, bore, thread, or sheet-profile features after rough fabrication"
+                    .to_string(),
+                "use when tolerance stack or material compatibility makes additive-only risky".to_string(),
+            ],
+        });
+    }
+
+    if boundary_count > 0 {
+        candidates.push(StrategyCandidate {
+            strategy_id: "split-for-inspection-candidate".to_string(),
+            methods: selected_methods,
+            machine_kinds: selected_machines,
+            estimated_minutes: selected_minutes + 25,
+            human_intervention_steps: selected_human_steps + 1,
+            boundary_count,
+            score: rounded_score(0.64 - error_count as f64 * 0.1 + human_boundary_count as f64 * 0.015),
+            rationale: vec![
+                "candidate for separating risky operations into inspected sub-jobs".to_string(),
+                "use when failure boundaries require human intervention, split pieces, or setup signoff"
+                    .to_string(),
+            ],
+        });
+    }
+
+    candidates.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.strategy_id.cmp(&right.strategy_id))
+    });
+    candidates.truncate(4);
+    candidates
 }
 
 fn learning_plan(
@@ -5104,6 +6321,9 @@ fn learning_plan(
         }
     }
 
+    let summary = boundary_summary(validation);
+    let resolution_plan = boundary_resolution_plan(validation, &summary);
+    let intervention_signals = intervention_learning_signals(&summary, &resolution_plan);
     let mut actions = vec![
         "choose-additive-process".to_string(),
         "choose-milling-process".to_string(),
@@ -5141,10 +6361,16 @@ fn learning_plan(
             normalize_token(strategy)
         ));
     }
+    actions.extend(boundary_learning_actions(&summary));
+    actions.extend(
+        intervention_signals
+            .iter()
+            .map(|signal| signal.action.clone()),
+    );
     actions.sort();
     actions.dedup();
 
-    let observations = hints
+    let mut observations = hints
         .and_then(|hints| hints.observations.clone())
         .unwrap_or_else(|| {
             vec![
@@ -5156,6 +6382,14 @@ fn learning_plan(
                 "operator-intervention".to_string(),
             ]
         });
+    observations.extend(boundary_learning_observations(&summary));
+    observations.extend(
+        intervention_signals
+            .iter()
+            .map(|signal| signal.observation.clone()),
+    );
+    observations.sort();
+    observations.dedup();
 
     let training_examples = hints
         .and_then(|hints| hints.prior_successes.clone())
@@ -5178,6 +6412,7 @@ fn learning_plan(
         validation,
         improvements,
     );
+    let strategy_candidates = strategy_candidates(parts, process_plan, validation);
 
     Ok(LearningPlan {
         model_family,
@@ -5187,12 +6422,16 @@ fn learning_plan(
             "program-generated".to_string(),
             "simulation-passed".to_string(),
             "inspection-required".to_string(),
+            "automation-required".to_string(),
             "assembly-required".to_string(),
+            "failed-until-resolved".to_string(),
             "complete".to_string(),
             "failed".to_string(),
         ],
         pomdp_observations: observations,
         actions,
+        strategy_candidates,
+        intervention_signals,
         reward_terms: vec![
             "successful-completion".to_string(),
             "surface-finish".to_string(),
@@ -5203,6 +6442,8 @@ fn learning_plan(
             "machine-time".to_string(),
             format!("validation-findings-{}", validation.findings.len()),
             format!("improvement-opportunities-{}", improvements.len()),
+            format!("automation-requirements-{}", summary.automation_required),
+            format!("resolution-steps-{}", resolution_plan.step_count),
         ],
         neural_features: vec![
             "objective-embedding".to_string(),
@@ -5212,6 +6453,8 @@ fn learning_plan(
             "toolpath-token-sequence".to_string(),
             "simulated-force-temperature-vibration".to_string(),
             "inspection-error-vector".to_string(),
+            "automation-requirement-vector".to_string(),
+            "resolution-step-policy-state".to_string(),
         ],
         neural_policy,
         training_examples,
@@ -5803,6 +7046,12 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
                 state.as_str()
             } else if action.contains("reject") {
                 "failed"
+            } else if action.contains("resolve-machine-failure-risk")
+                || action.contains("safety-resolution")
+            {
+                "failed-until-resolved"
+            } else if action.contains("automation") || action.contains("automate") {
+                "automation-required"
             } else if action.contains("insert-human-inspection") {
                 "inspection-required"
             } else if action.contains("combine") || action.contains("split") {
@@ -5831,7 +7080,9 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
                 "complete" => 4.0,
                 "failed" => -5.0,
                 "inspection-required" => 0.7,
+                "automation-required" => 0.8,
                 "assembly-required" => 1.0,
+                "failed-until-resolved" => -2.0,
                 "process-selected" => 1.5,
                 "program-generated" => 2.0,
                 _ => 0.2,
@@ -5852,6 +7103,11 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "transitions": transitions,
         "rewards": rewards,
         "observations": response.learning.pomdp_observations,
+        "processGraph": response.process_graph,
+        "strategyCandidates": response.learning.strategy_candidates,
+        "interventionSignals": response.learning.intervention_signals,
+        "automationRequirements": response.boundary_summary.automation_requirements,
+        "resolutionPlan": response.resolution_plan,
         "gamma": 0.82,
         "tolerance": 0.000001,
         "maxIterations": 1000
@@ -5878,6 +7134,20 @@ async fn publish_plan_outputs(state: &AppState, response: &FabricationPlanRespon
                 .mdp_published_total
                 .fetch_add(1, Ordering::Relaxed);
         }
+    }
+}
+
+async fn publish_analysis_outputs(state: &AppState, response: &InstructionAnalysisResponse) {
+    let result = json!({
+        "schemaVersion": "fabrication.analysis.v1",
+        "type": "fabrication.instructions.analysis.result",
+        "response": response,
+    });
+    if publish_json_to_nats(state, &state.result_subject, result).await {
+        state
+            .metrics
+            .nats_results_published_total
+            .fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -5918,6 +7188,80 @@ fn record_plan_metrics(state: &AppState, response: &FabricationPlanResponse) {
     );
 }
 
+fn record_analysis_metrics(state: &AppState, response: &InstructionAnalysisResponse) {
+    state
+        .metrics
+        .validation_findings_total
+        .fetch_add(response.validation.findings.len() as u64, Ordering::Relaxed);
+    state.metrics.failure_boundaries_total.fetch_add(
+        response.validation.failure_boundaries.len() as u64,
+        Ordering::Relaxed,
+    );
+}
+
+fn discriminator_requests_analysis(token: &str) -> bool {
+    token.contains("analysis")
+        || token.contains("analyze")
+        || token.contains("validator")
+        || token.contains("validation")
+        || (token.contains("instruction") && !token.contains("plan"))
+}
+
+fn discriminator_requests_plan(token: &str) -> bool {
+    token.contains("plan") || token.contains("fabrication-request")
+}
+
+fn parse_analysis_nats_value(value: Value) -> Result<InstructionAnalysisRequest, String> {
+    serde_json::from_value(value)
+        .map_err(|error| format!("invalid instruction analysis request: {error}"))
+}
+
+fn parse_plan_nats_value(value: Value) -> Result<FabricationPlanRequest, String> {
+    serde_json::from_value(value)
+        .map_err(|error| format!("invalid fabrication plan request: {error}"))
+}
+
+fn parse_fabrication_nats_request(payload: &[u8]) -> Result<FabricationNatsRequest, String> {
+    let value = serde_json::from_slice::<Value>(payload)
+        .map_err(|error| format!("invalid fabrication request json: {error}"))?;
+    if let Ok(envelope) = serde_json::from_value::<FabricationNatsEnvelope>(value.clone()) {
+        let FabricationNatsEnvelope {
+            kind,
+            message_type,
+            operation,
+            request,
+            plan,
+            analysis,
+            instruction_analysis,
+        } = envelope;
+        if let Some(analysis) = analysis.or(instruction_analysis) {
+            return Ok(FabricationNatsRequest::InstructionAnalysis(analysis));
+        }
+        if let Some(plan) = plan {
+            return Ok(FabricationNatsRequest::Plan(plan));
+        }
+        let discriminator = kind
+            .as_ref()
+            .or(message_type.as_ref())
+            .or(operation.as_ref())
+            .map(|value| normalize_token(value));
+        if let Some(token) = discriminator {
+            let request_value = request.unwrap_or_else(|| value.clone());
+            if discriminator_requests_analysis(&token) {
+                return parse_analysis_nats_value(request_value)
+                    .map(FabricationNatsRequest::InstructionAnalysis);
+            }
+            if discriminator_requests_plan(&token) {
+                return parse_plan_nats_value(request_value).map(FabricationNatsRequest::Plan);
+            }
+        }
+    }
+    if value.get("programs").is_some() {
+        return parse_analysis_nats_value(value).map(FabricationNatsRequest::InstructionAnalysis);
+    }
+    parse_plan_nats_value(value).map(FabricationNatsRequest::Plan)
+}
+
 async fn run_nats_loop(state: AppState) {
     let Some(nats) = state.nats.clone() else {
         println!("{SERVICE_NAME} nats loop disabled: NATS_URL is not configured");
@@ -5954,8 +7298,8 @@ async fn run_nats_loop(state: AppState) {
         }
         let task_state = state.clone();
         tokio::spawn(async move {
-            match serde_json::from_slice::<FabricationPlanRequest>(&payload) {
-                Ok(request) => {
+            match parse_fabrication_nats_request(&payload) {
+                Ok(FabricationNatsRequest::Plan(request)) => {
                     let policy_snapshot = learning_policy_snapshot(&task_state).ok();
                     match plan_fabrication_with_policy(request, policy_snapshot.as_ref()) {
                         Ok(response) => {
@@ -5980,6 +7324,33 @@ async fn run_nats_loop(state: AppState) {
                                 .errors_total
                                 .fetch_add(1, Ordering::Relaxed);
                             eprintln!("{SERVICE_NAME} failed nats fabrication plan: {error}");
+                        }
+                    }
+                }
+                Ok(FabricationNatsRequest::InstructionAnalysis(request)) => {
+                    match analyze_instruction_request(request) {
+                        Ok(response) => {
+                            task_state
+                                .metrics
+                                .analysis_requests_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            record_analysis_metrics(&task_state, &response);
+                            store_analysis_response(&task_state, &response);
+                            publish_analysis_outputs(&task_state, &response).await;
+                            publish_event(
+                                &task_state,
+                                "fabrication.instructions.analyzed",
+                                &response.request_id,
+                                response.ok,
+                            )
+                            .await;
+                        }
+                        Err(error) => {
+                            task_state
+                                .metrics
+                                .errors_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            eprintln!("{SERVICE_NAME} failed nats instruction analysis: {error}");
                         }
                     }
                 }
@@ -6256,96 +7627,29 @@ async fn analyze_http(
         .metrics
         .analysis_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let request_id = request_id(request.request_id.as_ref(), "instruction-analysis");
-    let programs = match validate_programs(&request.programs) {
-        Ok(programs) if !programs.is_empty() => programs,
-        Ok(_) => {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "ok": false, "error": "programs must not be empty" })),
+    match analyze_instruction_request(request) {
+        Ok(response) => {
+            record_analysis_metrics(&state, &response);
+            store_analysis_response(&state, &response);
+            publish_analysis_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.instructions.analyzed",
+                &response.request_id,
+                response.ok,
             )
-                .into_response();
+            .await;
+            Json(response).into_response()
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            return (
+            (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "ok": false, "error": error })),
             )
-                .into_response();
+                .into_response()
         }
-    };
-    let machines = match validate_machines(request.machines) {
-        Ok(machines) => machines,
-        Err(error) => {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "ok": false, "error": error })),
-            )
-                .into_response();
-        }
-    };
-    let analysis_material = match request.material {
-        Some(material) => match material_or_default(Some(material)) {
-            Ok(material) => Some(material),
-            Err(error) => {
-                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "ok": false, "error": error })),
-                )
-                    .into_response();
-            }
-        },
-        None => None,
-    };
-
-    let (analyzed, mut validation, improvements) = analyze_instruction_programs(&programs);
-    let simulation = simulate_instruction_programs(&programs, &machines);
-    if let Some(material) = analysis_material.as_ref() {
-        let (material_findings, material_boundaries) =
-            analyze_instruction_material_compatibility(&programs, &machines, material);
-        validation.findings.extend(material_findings);
-        validation.failure_boundaries.extend(material_boundaries);
     }
-    validation.findings.extend(simulation.findings.clone());
-    validation
-        .failure_boundaries
-        .extend(simulation.failure_boundaries.clone());
-    validation.severity = report_severity(&validation.findings, &validation.failure_boundaries);
-    validation.ok = validation.severity != "error";
-    let improved_programs = improve_instruction_programs(&programs, &validation, &improvements);
-    state
-        .metrics
-        .validation_findings_total
-        .fetch_add(validation.findings.len() as u64, Ordering::Relaxed);
-    state.metrics.failure_boundaries_total.fetch_add(
-        validation.failure_boundaries.len() as u64,
-        Ordering::Relaxed,
-    );
-    let generated_at_ms = now_ms();
-    let response = InstructionAnalysisResponse {
-        ok: validation.ok,
-        job_id: safe_job_id("analysis", &request_id, generated_at_ms),
-        request_id,
-        programs: analyzed,
-        validation,
-        simulation,
-        improvements,
-        improved_programs,
-        generated_at_ms,
-    };
-    store_analysis_response(&state, &response);
-    publish_event(
-        &state,
-        "fabrication.instructions.analyzed",
-        &response.request_id,
-        response.ok,
-    )
-    .await;
-    Json(response).into_response()
 }
 
 async fn learning_observe_http(
@@ -6550,6 +7854,100 @@ mod tests {
     }
 
     #[test]
+    fn nats_parser_accepts_plan_and_instruction_analysis_payloads() {
+        let plan_payload = json!({
+            "requestId": "nats-plan",
+            "objective": "PLA enclosure panel",
+            "material": { "name": "pla", "family": "polymer" }
+        })
+        .to_string();
+        match parse_fabrication_nats_request(plan_payload.as_bytes())
+            .expect("direct plan payload should parse")
+        {
+            FabricationNatsRequest::Plan(request) => {
+                assert_eq!(request.request_id.as_deref(), Some("nats-plan"));
+                assert_eq!(request.objective, "PLA enclosure panel");
+            }
+            FabricationNatsRequest::InstructionAnalysis(_) => {
+                panic!("direct plan payload should not parse as analysis");
+            }
+        }
+
+        let direct_analysis = json!({
+            "requestId": "nats-analysis",
+            "programs": [
+                {
+                    "id": "legacy-router",
+                    "machineKind": "cnc-router",
+                    "language": "grbl-gcode",
+                    "instructions": ["G21 G90", "G1 X5 Y5 Z-1 F200", "M30"]
+                }
+            ]
+        })
+        .to_string();
+        match parse_fabrication_nats_request(direct_analysis.as_bytes())
+            .expect("direct analysis payload should parse")
+        {
+            FabricationNatsRequest::InstructionAnalysis(request) => {
+                assert_eq!(request.request_id.as_deref(), Some("nats-analysis"));
+                assert_eq!(request.programs[0].id.as_deref(), Some("legacy-router"));
+            }
+            FabricationNatsRequest::Plan(_) => {
+                panic!("direct analysis payload should not parse as a plan");
+            }
+        }
+
+        let envelope_analysis = json!({
+            "type": "fabrication.instructions.analyze",
+            "request": {
+                "requestId": "nats-envelope-analysis",
+                "programs": [
+                    {
+                        "id": "legacy-print",
+                        "machineKind": "fdm-printer",
+                        "language": "marlin",
+                        "instructions": ["G21 G90", "G1 X1 Y1 E1 F600"]
+                    }
+                ]
+            }
+        })
+        .to_string();
+        match parse_fabrication_nats_request(envelope_analysis.as_bytes())
+            .expect("tagged analysis envelope should parse")
+        {
+            FabricationNatsRequest::InstructionAnalysis(request) => {
+                assert_eq!(
+                    request.request_id.as_deref(),
+                    Some("nats-envelope-analysis")
+                );
+                assert_eq!(
+                    request.programs[0].machine_kind.as_deref(),
+                    Some("fdm-printer")
+                );
+            }
+            FabricationNatsRequest::Plan(_) => {
+                panic!("tagged analysis envelope should not parse as a plan");
+            }
+        }
+    }
+
+    #[test]
+    fn machine_profile_validation_rejects_zero_axis_machine() {
+        let error = validate_machines(Some(vec![MachineProfile {
+            id: "bad-router".to_string(),
+            kind: "cnc-router".to_string(),
+            controller: Some("grbl-gcode".to_string()),
+            materials: Some(vec!["wood".to_string()]),
+            work_envelope_mm: Some(vec![300.0, 180.0, 80.0]),
+            axes: Some(0),
+            operations: Some(vec!["profile".to_string()]),
+        }]))
+        .expect_err("zero-axis machine profiles should be rejected");
+
+        assert!(error.contains("machine.axes must be at least 1"));
+    }
+
+    #[test]
     fn hybrid_plan_splits_tight_metal_object_across_mill_and_lathe() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-hybrid".to_string()),
@@ -6594,6 +7992,26 @@ mod tests {
             .split_candidates
             .iter()
             .any(|candidate| candidate.contains("tight features")));
+        assert_eq!(
+            response.assembly.assembly_graph.nodes.len(),
+            response.design.parts.len()
+        );
+        assert!(response
+            .assembly
+            .assembly_graph
+            .interfaces
+            .iter()
+            .any(|interface| {
+                interface.from_part_id != interface.to_part_id
+                    && interface.requires_human_intervention
+                    && interface.inspection_gate.contains("fit")
+            }));
+        assert!(response
+            .assembly
+            .assembly_graph
+            .sequence
+            .iter()
+            .any(|step| step.action.contains("join-and-verify")));
         assert!(response
             .validation
             .failure_boundaries
@@ -6606,6 +8024,25 @@ mod tests {
             .actions
             .iter()
             .any(|action| action == "combine-parts"));
+        assert!(response
+            .learning
+            .strategy_candidates
+            .iter()
+            .any(|candidate| candidate.strategy_id == "selected-hybrid-plan"
+                && candidate.methods.len() > 1
+                && candidate.score >= 0.0
+                && candidate.score <= 1.0));
+        assert!(response
+            .learning
+            .strategy_candidates
+            .iter()
+            .any(
+                |candidate| candidate.strategy_id == "machined-datum-finish-candidate"
+                    && candidate
+                        .rationale
+                        .iter()
+                        .any(|note| note.contains("datum"))
+            ));
         assert!(!response.generated_programs.is_empty());
         assert!(response
             .generated_programs
@@ -7346,6 +8783,17 @@ mod tests {
             .process_plan
             .iter()
             .any(|step| step.machine_id == "steel-mill"));
+        let improved_legacy = response
+            .improved_programs
+            .iter()
+            .find(|program| program.program_id == "legacy-steel-print")
+            .expect("legacy submitted program should have an improved review draft");
+        assert!(improved_legacy.changed);
+        assert!(!improved_legacy.machine_ready);
+        assert!(improved_legacy
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary material-machine-boundary")));
     }
 
     #[test]
@@ -7579,6 +9027,18 @@ mod tests {
                 && boundary.requires_human_intervention
                 && boundary.suggested_resolution.contains("AMS/MMU")
         }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_required > 0);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "additive-material-change-boundary"
+                && requirement.automation_type == "material-change-automation"
+                && requirement.program_id.as_deref() == Some("multi-material-print")
+                && requirement.line == Some(6)
+        }));
+        assert!(summary.recommended_actions.iter().any(|action| {
+            action.action == "add-verified-automation"
+                && action.boundary_kind == "additive-material-change-boundary"
+        }));
         assert!(validation
             .failure_boundaries
             .iter()
@@ -7731,6 +9191,77 @@ mod tests {
     }
 
     #[test]
+    fn text_printer_jobs_flag_resin_and_powder_handling_boundaries() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("sla-handling".to_string()),
+                machine_id: Some("sla-1".to_string()),
+                machine_kind: Some("sla-printer".to_string()),
+                language: Some("resin-job".to_string()),
+                instructions: vec![
+                    "Wash resin parts in IPA, contain waste, and UV cure with ventilation"
+                        .to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("sls-handling".to_string()),
+                machine_id: Some("sls-1".to_string()),
+                machine_kind: Some("sls-printer".to_string()),
+                language: Some("powder-job".to_string()),
+                instructions: vec![
+                    "Cooldown powder cake, depowder with grounded vacuum, and record refresh ratio"
+                        .to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "text-resin-handling-boundary"));
+        assert!(validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "text-powder-handling-boundary"));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "resin-handling-boundary"
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("waste-containment")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "powder-handling-boundary"
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("refresh-ratio")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "resin-handling-boundary"
+                && requirement.automation_type == "process-cell-automation"
+        }));
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "powder-handling-boundary"
+                && requirement.automation_type == "process-cell-automation"
+        }));
+        assert!(!improvements
+            .iter()
+            .any(|improvement| improvement.action == "add-units-mode"));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved.iter().all(|program| program.changed));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [resin-handling-boundary]")));
+        assert!(improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [powder-handling-boundary]")));
+    }
+
+    #[test]
     fn custom_learning_hints_feed_policy_contract() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-learning".to_string()),
@@ -7790,8 +9321,8 @@ mod tests {
             response.learning.neural_policy.model_family,
             "mdp-pomdp-neural-cam-policy"
         );
-        assert_eq!(response.learning.neural_policy.feature_vector.len(), 7);
-        assert_eq!(response.learning.neural_policy.hidden_activations.len(), 3);
+        assert_eq!(response.learning.neural_policy.feature_vector.len(), 9);
+        assert_eq!(response.learning.neural_policy.hidden_activations.len(), 4);
         assert!(response
             .learning
             .neural_policy
@@ -7800,6 +9331,44 @@ mod tests {
             .any(|score| score.action == "reject-or-repostprocess-program"
                 && score.score >= 0.0
                 && score.score <= 1.0));
+        assert!(!response.learning.strategy_candidates.is_empty());
+        assert!(response
+            .learning
+            .mdp_states
+            .iter()
+            .any(|state| state == "automation-required"));
+        assert!(response
+            .learning
+            .intervention_signals
+            .iter()
+            .any(|signal| signal.source == "automation-requirement"
+                && signal.next_state == "automation-required"));
+        assert!(response
+            .learning
+            .intervention_signals
+            .iter()
+            .any(|signal| signal.source == "resolution-step"
+                && signal.observation.starts_with("resolution-step:")));
+        let mdp_request = fabrication_mdp_request(&response);
+        assert!(mdp_request
+            .get("strategyCandidates")
+            .and_then(Value::as_array)
+            .is_some_and(|candidates| !candidates.is_empty()));
+        assert!(mdp_request
+            .get("interventionSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| !signals.is_empty()));
+        assert!(mdp_request
+            .get("automationRequirements")
+            .and_then(Value::as_array)
+            .is_some_and(|requirements| !requirements.is_empty()));
+        assert!(mdp_request.get("resolutionPlan").is_some());
+        assert!(mdp_request
+            .get("transitions")
+            .and_then(Value::as_array)
+            .is_some_and(|transitions| transitions.iter().any(|transition| {
+                transition.get("nextState").and_then(Value::as_str) == Some("automation-required")
+            })));
         assert!(response
             .validation
             .failure_boundaries
@@ -8281,11 +9850,18 @@ mod tests {
         assert!(job.artifacts.contains_key("parametric-design"));
         assert!(job.artifacts.contains_key("mdp-request"));
         assert!(job.artifacts.contains_key("simulation-report"));
+        assert!(job.artifacts.contains_key("plan-improvements"));
+        assert!(job.artifacts.contains_key("boundary-summary"));
+        assert!(job.artifacts.contains_key("resolution-plan"));
         assert!(response.simulation.ok);
         assert!(job
             .artifacts
             .keys()
             .any(|artifact_id| artifact_id.starts_with("program-")));
+        assert!(job
+            .artifacts
+            .values()
+            .any(|artifact| artifact.kind == "improved-instruction-program"));
         let parametric_design = job
             .artifacts
             .get("parametric-design")
@@ -8302,6 +9878,13 @@ mod tests {
             .get("parts")
             .and_then(Value::as_array)
             .is_some_and(|parts| !parts.is_empty()));
+        assert!(parametric_design
+            .content
+            .get("assembly")
+            .and_then(|assembly| assembly.get("assemblyGraph"))
+            .and_then(|graph| graph.get("nodes"))
+            .and_then(Value::as_array)
+            .is_some_and(|nodes| !nodes.is_empty()));
         assert_eq!(parametric_design.machine_ready, false);
 
         let mut store = FabricationJobStore::new(2);
@@ -8359,6 +9942,45 @@ mod tests {
                     && boundary.requires_human_intervention
                     && boundary.suggested_resolution.contains("split the part")
             }));
+        assert_eq!(response.boundary_summary.severity, "error");
+        assert!(response.boundary_summary.machine_failure_risks > 0);
+        assert!(response.boundary_summary.split_recommended > 0);
+        assert!(response.boundary_summary.regeneration_recommended > 0);
+        assert!(response
+            .boundary_summary
+            .recommended_actions
+            .iter()
+            .any(|action| action.action == "split-job-or-part"
+                && action.boundary_kind == "machine-envelope"));
+        assert_eq!(response.resolution_plan.status, "machine-release-blocked");
+        assert!(response.resolution_plan.machine_release_blocked);
+        assert!(response.resolution_plan.steps.iter().any(|step| {
+            step.action == "split-job-or-part"
+                && step.boundary_kind == "machine-envelope"
+                && step.phase == "decomposition"
+                && step.next_state == "assembly-required"
+        }));
+        assert!(response
+            .learning
+            .actions
+            .iter()
+            .any(|action| action == "boundary-split-job-or-part-machine-envelope"));
+        assert!(response
+            .learning
+            .actions
+            .iter()
+            .any(|action| { action == "boundary-resolve-machine-failure-risk-machine-envelope" }));
+        assert!(response
+            .learning
+            .pomdp_observations
+            .iter()
+            .any(|observation| observation.starts_with("boundary-kind:machine-envelope:")));
+        assert!(response
+            .learning
+            .neural_policy
+            .action_scores
+            .iter()
+            .any(|score| score.action == "boundary-split-job-or-part-machine-envelope"));
     }
 
     #[test]
@@ -8372,12 +9994,16 @@ mod tests {
         let simulation = simulate_instruction_programs(&programs, &default_machines());
         let improved_programs = improve_instruction_programs(&programs, &validation, &improvements);
         let generated_at_ms = now_ms();
+        let summary = boundary_summary(&validation);
+        let resolution_plan = boundary_resolution_plan(&validation, &summary);
         let response = InstructionAnalysisResponse {
             ok: validation.ok,
             job_id: safe_job_id("analysis", "unit-analysis-artifacts", generated_at_ms),
             request_id: "unit-analysis-artifacts".to_string(),
             programs: analyzed,
             validation,
+            boundary_summary: summary,
+            resolution_plan,
             simulation,
             improvements,
             improved_programs,
@@ -8387,7 +10013,16 @@ mod tests {
         let job = stored_analysis_job(&response);
         assert_eq!(job.record.kind, "instruction-analysis");
         assert!(job.artifacts.contains_key("analysis-validation-report"));
+        assert!(job.artifacts.contains_key("analysis-boundary-summary"));
+        assert!(job.artifacts.contains_key("analysis-resolution-plan"));
         assert!(job.artifacts.contains_key("analysis-simulation-report"));
+        assert!(response.boundary_summary.human_intervention_required > 0);
+        assert!(response.resolution_plan.step_count > 0);
+        assert!(response
+            .boundary_summary
+            .kinds
+            .iter()
+            .any(|kind| kind.kind == "printer-state-gate"));
         assert!(job
             .artifacts
             .keys()
