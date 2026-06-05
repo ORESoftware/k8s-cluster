@@ -45,6 +45,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'container-pool-rs',
   'contract-service-rs',
   'des-simulator-rs',
+  'fabrication-server-rs',
   'formal-methods-service-rs',
   'formal-methods-server-rs',
   'fabrication-server-rs',

@@ -42,10 +42,10 @@
     <h1>fabrication-server-rs API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>15 routes</span>
+      <span>12 routes</span>
       <span>rust</span>
-      <span>6 service</span>
-      <span>6 user-generated</span>
+      <span>7 service</span>
+      <span>2 user-generated</span>
       <span>3 runtime-config</span>
     </div>
   </header>
@@ -58,7 +58,7 @@
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/</code></td>
   <td data-label="Purpose">Service descriptor, home redirect, or root RPC endpoint.</td>
-  <td data-label="Handlers"><code>healthz</code></td>
+  <td data-label="Handlers"><code>root</code></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
@@ -87,18 +87,10 @@
 </tr>
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/example</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>example</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/fabricate</code></td>
+  <td data-label="Path"><code>/fabrication/plan</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>fabricate_http</code></td>
+  <td data-label="Handlers"><code>plan_http</code></td>
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
@@ -112,17 +104,9 @@
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/instructions/improve</code></td>
+  <td data-label="Path"><code>/instructions/analyze</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>improve_instructions_http</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/instructions/validate</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>validate_instructions_http</code></td>
+  <td data-label="Handlers"><code>analyze_http</code></td>
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
@@ -150,14 +134,6 @@
   <td data-label="Auth">X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/learn/telemetry</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>learn_telemetry_http</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
   <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/metrics</code></td>
@@ -166,12 +142,12 @@
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/schema</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>schema</code></td>
-  <td data-label="Auth">service-defined</td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
+  <td data-label="Handlers"><code>healthz</code></td>
+  <td data-label="Auth">public</td>
 </tr>
       </tbody>
     </table>

@@ -47,7 +47,7 @@
     <p>Central generated index. Each listed HTTP service must also mount <code>/docs/api</code>, <code>/api/docs</code>, and <code>/api/docs.json</code> on its own service port.</p>
     <div class="summary">
       <span>33 services</span>
-      <span>563 routes</span>
+      <span>560 routes</span>
       <span>central JSON <code>/api-docs.json</code></span>
     </div>
   </header>
@@ -1677,7 +1677,7 @@
 <details>
   <summary>
     <span><strong>fabrication-server-rs</strong> <span class="muted">rust</span></span>
-    <span>15 routes</span>
+    <span>12 routes</span>
   </summary>
   <div class="generated">
     <span>Generated JSON: <code>remote/deployments/fabrication-server-rs/generated/api-docs.json</code></span>
@@ -1717,15 +1717,8 @@
 <tr>
   <td data-label="Service"><code>fabrication-server-rs</code></td>
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/example</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-</tr>
-<tr>
-  <td data-label="Service"><code>fabrication-server-rs</code></td>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/fabricate</code></td>
+  <td data-label="Path"><code>/fabrication/plan</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
 <tr>
@@ -1739,14 +1732,7 @@
   <td data-label="Service"><code>fabrication-server-rs</code></td>
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/instructions/improve</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-</tr>
-<tr>
-  <td data-label="Service"><code>fabrication-server-rs</code></td>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/instructions/validate</code></td>
+  <td data-label="Path"><code>/instructions/analyze</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
 <tr>
@@ -1772,13 +1758,6 @@
 </tr>
 <tr>
   <td data-label="Service"><code>fabrication-server-rs</code></td>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/learn/telemetry</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-</tr>
-<tr>
-  <td data-label="Service"><code>fabrication-server-rs</code></td>
   <td data-label="Type"><span class="badge service">service</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/metrics</code></td>
@@ -1786,10 +1765,10 @@
 </tr>
 <tr>
   <td data-label="Service"><code>fabrication-server-rs</code></td>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/schema</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
 </tr>
     </tbody>
   </table>
