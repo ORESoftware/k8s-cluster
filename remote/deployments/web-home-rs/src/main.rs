@@ -8563,23 +8563,33 @@ const LAMBDA_FUNCTIONS_BODY: &str = r###"<div class="app">
         </label>
         <label>
           <span>Runtime</span>
-          <select id="runtime">
-            <option value="nodejs">nodejs</option>
-            <option value="python3">python3</option>
-            <option value="ruby">ruby</option>
-            <option value="bash">bash</option>
-          </select>
-        </label>
-        <label>
-          <span>Process profile</span>
-          <select id="process-profile">
-            <option value="nodejs">nodejs process</option>
-            <option value="python3">python3 process</option>
-            <option value="rust">rust process</option>
-            <option value="golang">golang process</option>
-            <option value="gleamlang">gleamlang process</option>
-          </select>
-        </label>
+            <select id="runtime">
+              <option value="nodejs">nodejs</option>
+              <option value="python3">python3</option>
+              <option value="ruby">ruby</option>
+              <option value="bash">bash</option>
+              <option value="golang">golang</option>
+              <option value="dart">dart</option>
+              <option value="erlang">erlang</option>
+              <option value="elixir">elixir</option>
+              <option value="java">java</option>
+            </select>
+          </label>
+          <label>
+            <span>Process profile</span>
+            <select id="process-profile">
+              <option value="nodejs">nodejs process</option>
+              <option value="python3">python3 process</option>
+              <option value="ruby">ruby process</option>
+              <option value="golang">golang process</option>
+              <option value="dart">dart process</option>
+              <option value="erlang">erlang process</option>
+              <option value="elixir">elixir process</option>
+              <option value="java">java process</option>
+              <option value="rust">rust process</option>
+              <option value="gleamlang">gleamlang process</option>
+            </select>
+          </label>
         <label>
           <span>Container runner</span>
           <select id="container-runner">
@@ -8672,6 +8682,11 @@ const entryCommands = {
   python3: "env -i PATH=\"$PATH\" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py",
   ruby: "env -i PATH=\"$PATH\" ruby child-runtimes/ruby-function-runner.rb",
   bash: "env -i PATH=\"$PATH\" NODE_NO_WARNINGS=1 node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs",
+  golang: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"golang\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  dart: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"dart\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  erlang: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"erlang\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  elixir: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"elixir\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  java: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"java\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
 };
 const processProfiles = {
   nodejs: {
@@ -8691,10 +8706,58 @@ const processProfiles = {
       "docker.io/library/dd-container-pool-python3-runtime:dev",
       "docker.io/library/python:3.12-alpine",
     ],
-  },
-  rust: {
-    runtime: "nodejs",
-    poolSlug: "rust",
+    },
+    ruby: {
+      runtime: "ruby",
+      poolSlug: "ruby",
+      baseImages: [
+        "docker.io/library/dd-lambda-ruby-runtime:dev",
+        "docker.io/library/ruby:3.3-alpine",
+      ],
+    },
+    golang: {
+      runtime: "golang",
+      poolSlug: "golang",
+      baseImages: [
+        "docker.io/library/dd-lambda-golang-runtime:dev",
+        "docker.io/library/golang:1.25-alpine",
+      ],
+    },
+    dart: {
+      runtime: "dart",
+      poolSlug: "dart",
+      baseImages: [
+        "docker.io/library/dd-lambda-dart-runtime:dev",
+        "docker.io/library/dart:stable",
+      ],
+    },
+    erlang: {
+      runtime: "erlang",
+      poolSlug: "erlang",
+      baseImages: [
+        "docker.io/library/dd-lambda-erlang-runtime:dev",
+        "docker.io/library/erlang:28-alpine",
+      ],
+    },
+    elixir: {
+      runtime: "elixir",
+      poolSlug: "elixir",
+      baseImages: [
+        "docker.io/library/dd-lambda-elixir-runtime:dev",
+        "docker.io/library/elixir:1.18-alpine",
+      ],
+    },
+    java: {
+      runtime: "java",
+      poolSlug: "java",
+      baseImages: [
+        "docker.io/library/dd-lambda-java-runtime:dev",
+        "docker.io/library/eclipse-temurin:21-jdk-alpine",
+      ],
+    },
+    rust: {
+      runtime: "nodejs",
+      poolSlug: "rust",
     requiresContainerPool: true,
     baseImages: [
       "docker.io/library/dd-container-pool-rust-runtime:dev",
@@ -8729,9 +8792,11 @@ const state = {
   functions: [],
   selectedId: null,
   queryAutofillActive: false,
-  editorDirty: false,
-  bodyProfile: "nodejs",
-};
+    editorDirty: false,
+    bodyProfile: "nodejs",
+    activeProfile: "nodejs",
+    draftLoadToken: 0,
+  };
 const queryParams = new URLSearchParams(location.search);
 const autofillParamNames = [
   "slug", "name", "displayName", "title", "description", "status", "runtime",
@@ -8755,14 +8820,42 @@ const codeKeywordSets = {
     "move", "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super",
     "trait", "true", "type", "unsafe", "use", "where", "while",
   ]),
-  golang: new Set([
-    "break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough",
-    "for", "func", "go", "goto", "if", "import", "interface", "map", "nil", "package",
-    "range", "return", "select", "struct", "switch", "type", "var",
-  ]),
-  gleamlang: new Set([
-    "as", "assert", "case", "const", "echo", "else", "external", "fn", "if", "import",
-    "let", "opaque", "panic", "pub", "todo", "type", "use",
+    golang: new Set([
+      "break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough",
+      "for", "func", "go", "goto", "if", "import", "interface", "map", "nil", "package",
+      "range", "return", "select", "struct", "switch", "type", "var",
+    ]),
+    dart: new Set([
+      "abstract", "as", "async", "await", "base", "break", "case", "catch", "class", "const",
+      "continue", "default", "deferred", "do", "dynamic", "else", "enum", "export", "extends",
+      "extension", "external", "factory", "false", "final", "finally", "for", "Function",
+      "if", "implements", "import", "in", "interface", "is", "late", "library", "mixin",
+      "new", "null", "on", "operator", "part", "required", "return", "sealed", "static",
+      "super", "switch", "sync", "this", "throw", "true", "try", "typedef", "var", "void",
+      "when", "while", "with", "yield",
+    ]),
+    erlang: new Set([
+      "after", "and", "andalso", "band", "begin", "bnot", "bor", "bsl", "bsr", "bxor",
+      "case", "catch", "cond", "div", "end", "fun", "if", "let", "not", "of", "or",
+      "orelse", "receive", "rem", "try", "when", "xor",
+    ]),
+    elixir: new Set([
+      "after", "alias", "and", "case", "catch", "cond", "def", "defmodule", "defp", "do",
+      "else", "end", "false", "fn", "for", "if", "import", "in", "nil", "not", "or",
+      "quote", "raise", "receive", "require", "rescue", "super", "throw", "true", "try",
+      "unless", "unquote", "use", "when",
+    ]),
+    java: new Set([
+      "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class",
+      "const", "continue", "default", "do", "double", "else", "enum", "extends", "false",
+      "final", "finally", "float", "for", "goto", "if", "implements", "import", "instanceof",
+      "int", "interface", "long", "native", "new", "null", "package", "private", "protected",
+      "public", "return", "short", "static", "strictfp", "super", "switch", "synchronized",
+      "this", "throw", "throws", "transient", "true", "try", "void", "volatile", "while",
+    ]),
+    gleamlang: new Set([
+      "as", "assert", "case", "const", "echo", "else", "external", "fn", "if", "import",
+      "let", "opaque", "panic", "pub", "todo", "type", "use",
   ]),
   python3: new Set([
     "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del",
@@ -8772,13 +8865,17 @@ const codeKeywordSets = {
   ]),
 };
 const commentPatterns = {
-  nodejs: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
-  rust: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
-  golang: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
-  gleamlang: String.raw`\/\/[^\n]*`,
-  python3: String.raw`#[^\n]*`,
-  bash: String.raw`#[^\n]*`,
-  ruby: String.raw`#[^\n]*`,
+    nodejs: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    rust: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    golang: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    dart: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    java: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    gleamlang: String.raw`\/\/[^\n]*`,
+    erlang: String.raw`%[^\n]*`,
+    elixir: String.raw`#[^\n]*`,
+    python3: String.raw`#[^\n]*`,
+    bash: String.raw`#[^\n]*`,
+    ruby: String.raw`#[^\n]*`,
 };
 
 function queryParam(...names) {
@@ -8839,30 +8936,38 @@ function ensureSelectValue(id, value) {
   select.value = value;
 }
 
-function normalizeRuntime(value) {
-  if (value === "javascript" || value === "typescript" || value === "node") return "nodejs";
-  if (value === "python") return "python3";
-  if (value === "shell") return "bash";
-  return entryCommands[value] ? value : "nodejs";
-}
+  function normalizeRuntime(value) {
+    if (value === "javascript" || value === "typescript" || value === "node") return "nodejs";
+    if (value === "python") return "python3";
+    if (value === "shell") return "bash";
+    if (value === "go") return "golang";
+    if (value === "erl") return "erlang";
+    if (value === "ex") return "elixir";
+    if (value === "jvm") return "java";
+    return entryCommands[value] ? value : "nodejs";
+  }
 
 function normalizeProcessProfile(value) {
   const key = String(value || "").trim().toLowerCase();
-  if (key === "gleam") return "gleamlang";
-  if (key === "go") return "golang";
-  if (key === "python") return "python3";
-  return processProfiles[key] ? key : "nodejs";
-}
+    if (key === "gleam") return "gleamlang";
+    if (key === "go") return "golang";
+    if (key === "python") return "python3";
+    if (key === "node") return "nodejs";
+    if (key === "erl") return "erlang";
+    if (key === "ex") return "elixir";
+    if (key === "jvm") return "java";
+    return processProfiles[key] ? key : "nodejs";
+  }
 
 function processProfileForRuntime(runtime) {
   const raw = String(runtime || "").trim().toLowerCase();
-  if (raw === "go" || raw === "golang") return "golang";
-  if (raw === "rust") return "rust";
-  if (raw === "gleam" || raw === "gleamlang") return "gleamlang";
-  const normalized = normalizeRuntime(runtime);
-  if (normalized === "python3") return "python3";
-  return "nodejs";
-}
+    if (raw === "go" || raw === "golang") return "golang";
+    if (raw === "rust") return "rust";
+    if (raw === "gleam" || raw === "gleamlang") return "gleamlang";
+    const normalized = normalizeRuntime(runtime);
+    if (processProfiles[normalized]) return normalized;
+    return "nodejs";
+  }
 
 function deploymentMeta(metaData) {
   const value = metaData?.lambdaDeployment;
