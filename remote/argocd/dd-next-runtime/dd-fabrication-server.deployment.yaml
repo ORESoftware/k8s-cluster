@@ -136,6 +136,9 @@ spec:
               for subject in \
                 'pub const FABRICATION_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.requests";' \
                 'pub const FABRICATION_RESULTS_SUBJECT: &str = "dd.remote.fabrication.results";' \
+                'pub const FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.design.conversion.requests";' \
+                'pub const FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-design-converters";' \
+                'pub const FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT: &str = "dd.remote.fabrication.design.conversion.results";' \
                 'pub const MDP_OPTIMIZE_SUBJECT: &str = "dd.remote.mdp.optimize";' \
                 'pub const RUNTIME_EVENTS_SUBJECT: &str = "dd.remote.events";'
               do

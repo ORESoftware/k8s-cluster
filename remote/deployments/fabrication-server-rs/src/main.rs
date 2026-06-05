@@ -18,6 +18,8 @@ use axum::{
     Json, Router,
 };
 use dd_nats_subject_defs::{
+    FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP,
+    FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT, FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
     FABRICATION_REQUESTS_QUEUE_GROUP, FABRICATION_REQUESTS_SUBJECT, FABRICATION_RESULTS_SUBJECT,
     MDP_OPTIMIZE_SUBJECT, RUNTIME_EVENTS_SUBJECT,
 };
@@ -29,11 +31,6 @@ const SERVICE_NAME: &str = "dd-fabrication-server";
 const SCHEMA_VERSION: &str = "fabrication.plan.v1";
 const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;
 const MAX_NATS_PAYLOAD_BYTES: usize = 512 * 1024;
-const FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT: &str =
-    "dd.remote.fabrication.design.conversion.requests";
-const FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-design-converters";
-const FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT: &str =
-    "dd.remote.fabrication.design.conversion.results";
 const MAX_REQUEST_ID_LEN: usize = 128;
 const MAX_TEXT_LEN: usize = 8_192;
 const MAX_LABEL_LEN: usize = 96;
@@ -239,6 +236,7 @@ struct FabricationOutcomeRequest {
     program_id: Option<String>,
     machine_id: Option<String>,
     machine_kind: Option<String>,
+    operation_sequence: Option<Vec<String>>,
     material: Option<MaterialSpec>,
     outcome: String,
     completed: Option<bool>,
@@ -1541,6 +1539,8 @@ struct LearningOutcomeRequest {
     objective: Option<String>,
     material: Option<MaterialSpec>,
     manufacturing_methods: Option<Vec<String>>,
+    machine_kind: Option<String>,
+    operation_sequence: Option<Vec<String>>,
     assembly_strategy: Option<String>,
     success: bool,
     reward: Option<f64>,
@@ -1557,6 +1557,8 @@ struct LearningOutcomeRecord {
     objective: Option<String>,
     material: Option<MaterialSpec>,
     manufacturing_methods: Vec<String>,
+    machine_kind: Option<String>,
+    operation_sequence: Vec<String>,
     assembly_strategy: Option<String>,
     success: bool,
     reward: f64,
@@ -1602,6 +1604,8 @@ struct LearningPolicySnapshot {
     average_reward: f64,
     method_preferences: Vec<LearningPreference>,
     method_combination_preferences: Vec<LearningPreference>,
+    machine_kind_preferences: Vec<LearningPreference>,
+    operation_sequence_preferences: Vec<LearningPreference>,
     assembly_preferences: Vec<LearningPreference>,
     remediation_risks: Vec<LearningRemediationRisk>,
     neural_training_examples: Vec<String>,
@@ -1668,16 +1672,38 @@ struct TextInstructionSignals {
     has_slicer_mesh_topology_evidence: bool,
     has_slicer_high_speed_context: bool,
     has_slicer_high_speed_kinematic_evidence: bool,
+    has_material_jetting_text_context: bool,
+    has_material_jetting_material_evidence: bool,
+    has_material_jetting_support_evidence: bool,
+    has_material_jetting_uv_inspection_evidence: bool,
+    has_ded_text_context: bool,
+    has_ded_feedstock_path_evidence: bool,
+    has_ded_energy_shielding_evidence: bool,
+    has_ded_thermal_inspection_evidence: bool,
+    has_composite_fiber_text_context: bool,
+    has_composite_fiber_layup_evidence: bool,
+    has_composite_fiber_process_evidence: bool,
+    has_composite_fiber_inspection_evidence: bool,
     has_resin_context: bool,
     has_resin_print_context: bool,
     has_resin_profile_evidence: bool,
     has_resin_vat_capacity_context: bool,
     has_resin_vat_capacity_evidence: bool,
+    has_resin_layer_manifest_context: bool,
+    has_resin_layer_manifest_image_evidence: bool,
+    has_resin_layer_manifest_motion_evidence: bool,
     has_resin_postprocess_evidence: bool,
     has_powder_bed_context: bool,
     has_powder_bed_print_context: bool,
     has_powder_bed_profile_evidence: bool,
+    has_powder_bed_recoater_thermal_context: bool,
+    has_powder_bed_recoater_clearance_evidence: bool,
+    has_powder_bed_thermal_pack_evidence: bool,
     has_powder_bed_handling_evidence: bool,
+    has_binder_jet_text_context: bool,
+    has_binder_jet_process_evidence: bool,
+    has_binder_jet_postprocess_evidence: bool,
+    has_binder_jet_shrinkage_evidence: bool,
     has_subtractive_text_context: bool,
     has_subtractive_text_setup_evidence: bool,
     has_subtractive_text_process_evidence: bool,
@@ -1687,6 +1713,13 @@ struct TextInstructionSignals {
     has_lathe_text_partoff_support_evidence: bool,
     has_sheet_cutting_text_context: bool,
     has_sheet_cutting_recipe_evidence: bool,
+    has_wire_edm_text_context: bool,
+    has_wire_edm_setup_evidence: bool,
+    has_wire_edm_process_evidence: bool,
+    has_sinker_edm_text_context: bool,
+    has_sinker_edm_electrode_evidence: bool,
+    has_sinker_edm_dielectric_evidence: bool,
+    has_sinker_edm_burn_control_evidence: bool,
     has_text_assembly_context: bool,
     has_text_assembly_fit_evidence: bool,
     has_text_precision_requirement_context: bool,
@@ -2208,6 +2241,8 @@ impl LearningMemory {
     fn snapshot(&self) -> LearningPolicySnapshot {
         let mut methods = BTreeMap::<String, LearningAggregate>::new();
         let mut method_combinations = BTreeMap::<String, LearningAggregate>::new();
+        let mut machine_kinds = BTreeMap::<String, LearningAggregate>::new();
+        let mut operation_sequences = BTreeMap::<String, LearningAggregate>::new();
         let mut assemblies = BTreeMap::<String, LearningAggregate>::new();
         let mut remediation_risks = BTreeMap::<
             (String, Option<String>, Option<String>),
@@ -2229,6 +2264,18 @@ impl LearningMemory {
                     .entry(combination)
                     .or_default()
                     .add(outcome);
+            }
+            if let Some(sequence) = outcome_operation_sequence_key(outcome) {
+                operation_sequences
+                    .entry(sequence)
+                    .or_default()
+                    .add(outcome);
+            }
+            if let Some(machine_kind) = outcome.machine_kind.as_ref() {
+                let machine_kind = normalize_token(machine_kind);
+                if !machine_kind.is_empty() {
+                    machine_kinds.entry(machine_kind).or_default().add(outcome);
+                }
             }
             if let Some(strategy) = outcome.assembly_strategy.as_ref() {
                 assemblies.entry(strategy.clone()).or_default().add(outcome);
@@ -2294,6 +2341,30 @@ impl LearningMemory {
                 .then_with(|| right.samples.cmp(&left.samples))
                 .then_with(|| left.key.cmp(&right.key))
         });
+        let mut machine_kind_preferences = machine_kinds
+            .into_iter()
+            .map(|(key, aggregate)| aggregate.preference(key))
+            .collect::<Vec<_>>();
+        machine_kind_preferences.sort_by(|left, right| {
+            right
+                .average_reward
+                .partial_cmp(&left.average_reward)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.samples.cmp(&left.samples))
+                .then_with(|| left.key.cmp(&right.key))
+        });
+        let mut operation_sequence_preferences = operation_sequences
+            .into_iter()
+            .map(|(key, aggregate)| aggregate.preference(key))
+            .collect::<Vec<_>>();
+        operation_sequence_preferences.sort_by(|left, right| {
+            right
+                .average_reward
+                .partial_cmp(&left.average_reward)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.samples.cmp(&left.samples))
+                .then_with(|| left.key.cmp(&right.key))
+        });
         let mut assembly_preferences = assemblies
             .into_iter()
             .map(|(key, aggregate)| aggregate.preference(key))
@@ -2341,11 +2412,15 @@ impl LearningMemory {
             .take(32)
             .map(|outcome| {
                 format!(
-                    "job={} success={} reward={:.3} methods={} assembly={} observations={}",
+                    "job={} success={} reward={:.3} methods={} machineKind={} operationSequence={} assembly={} observations={}",
                     outcome.job_id.as_deref().unwrap_or("none"),
                     outcome.success,
                     outcome.reward,
                     outcome.manufacturing_methods.join("+"),
+                    outcome.machine_kind.as_deref().unwrap_or("none"),
+                    outcome_operation_sequence_key(outcome)
+                        .as_deref()
+                        .unwrap_or("none"),
                     outcome.assembly_strategy.as_deref().unwrap_or("none"),
                     outcome.observations.join("|")
                 )
@@ -2359,6 +2434,8 @@ impl LearningMemory {
             average_reward,
             method_preferences,
             method_combination_preferences,
+            machine_kind_preferences,
+            operation_sequence_preferences,
             assembly_preferences,
             remediation_risks,
             neural_training_examples,
@@ -2426,35 +2503,149 @@ fn is_router_material(material: &MaterialSpec) -> bool {
 
 fn wants_resin_printing(value: &str) -> bool {
     let token = normalize_token(value);
-    token.contains("resin")
-        || token.contains("sla")
-        || token.contains("msla")
-        || token.contains("dlp")
-        || token.contains("photopolymer")
+    let material_jetting_context = token.contains("material-jet")
+        || token.contains("material jet")
+        || token.contains("polyjet")
+        || token.contains("poly jet")
+        || token.contains("mjp")
+        || token.contains("multi-jet")
+        || token.contains("multi jet")
+        || token.contains("photopolymer jet")
+        || token.contains("jetted photopolymer")
+        || token.contains("digital material");
+    !material_jetting_context
+        && (token.contains("resin")
+            || token.contains("sla")
+            || token.contains("msla")
+            || token.contains("dlp")
+            || token.contains("photopolymer"))
+}
+
+fn wants_material_jetting_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("material-jet")
+        || token.contains("material jet")
+        || token.contains("material-jetting")
+        || token.contains("material jetting")
+        || token.contains("polyjet")
+        || token.contains("poly jet")
+        || token.contains("mjp")
+        || token.contains("multi-jet")
+        || token.contains("multi jet")
+        || token.contains("photopolymer jet")
+        || token.contains("jetted photopolymer")
+        || token.contains("digital material")
+        || token.contains("full-color photopolymer")
+}
+
+fn token_has_ded_segment(token: &str) -> bool {
+    token == "ded"
+        || token.starts_with("ded-")
+        || token.ends_with("-ded")
+        || token.contains("-ded-")
+}
+
+fn wants_directed_energy_deposition(value: &str) -> bool {
+    let token = normalize_token(value);
+    token_has_ded_segment(&token)
+        || token.contains("directed-energy-deposition")
+        || token.contains("directed-energy")
+        || token.contains("directed-metal-deposition")
+        || token.contains("laser-metal-deposition")
+        || token.contains("laser-directed-energy")
+        || token.contains("laser-cladding")
+        || token.contains("cladding")
+        || token.contains("waam")
+        || token.contains("wire-arc-additive")
+        || token.contains("wire-arc-deposition")
+        || token.contains("wire-feed-deposition")
+        || token.contains("powder-fed-deposition")
+        || token.contains("blown-powder")
+        || token.contains("melt-pool")
+}
+
+fn wants_composite_fiber_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("continuous-fiber")
+        || token.contains("continuous-fibre")
+        || token.contains("fiber-reinforced")
+        || token.contains("fibre-reinforced")
+        || token.contains("composite-fiber")
+        || token.contains("composite-fibre")
+        || token.contains("carbon-fiber")
+        || token.contains("carbon-fibre")
+        || token.contains("carbon fiber")
+        || token.contains("carbon fibre")
+        || token.contains("fiberglass")
+        || token.contains("glass-fiber")
+        || token.contains("glass-fibre")
+        || token.contains("kevlar")
+        || token.contains("aramid")
+        || token.contains("pa-cf")
+        || token.contains("cf-nylon")
+        || token.contains("onyx")
+        || (token.contains("composite") && token.contains("print"))
+}
+
+fn wants_binder_jet_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("binder-jet")
+        || token.contains("binderjet")
+        || token.contains("binder-jetted")
+        || token.contains("binder-jetting")
+        || token.contains("bound-metal")
+        || token.contains("bound-sand")
+        || token.contains("green-part")
+        || token.contains("green-body")
+        || (token.contains("binder") && token.contains("jet"))
 }
 
 fn wants_powder_bed_printing(value: &str) -> bool {
     let token = normalize_token(value);
-    token.contains("sls")
-        || token.contains("mjf")
-        || token.contains("powder")
-        || token.contains("pa12")
-        || token.contains("nylon")
+    !wants_binder_jet_printing(&token)
+        && !wants_composite_fiber_printing(&token)
+        && !wants_directed_energy_deposition(&token)
+        && (token.contains("sls")
+            || token.contains("mjf")
+            || token.contains("powder")
+            || token.contains("pa12")
+            || token.contains("nylon")
+            || wants_metal_powder_bed_printing(&token))
+}
+
+fn wants_metal_powder_bed_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("metal-pbf")
+        || token.contains("metal-powder-bed")
+        || token.contains("powder-bed-fusion")
+        || token.contains("laser-powder-bed")
+        || token.contains("lpbf")
+        || token.contains("dmls")
+        || token == "slm"
+        || token.contains("selective-laser-melting")
+        || token.contains("direct-metal-laser")
+        || token.contains("electron-beam-melting")
+        || token == "ebm"
+        || token.contains("ti6al4v")
+        || token.contains("inconel")
+        || token.contains("cobalt-chrome")
 }
 
 fn wants_sheet_cutting(value: &str) -> bool {
     let token = normalize_token(value);
-    token.contains("laser")
-        || token.contains("waterjet")
-        || token.contains("water-jet")
-        || token.contains("plasma")
-        || token.contains("sheet-cut")
-        || token.contains("sheet-cutter")
-        || token.contains("knife-cut")
-        || token.contains("die-cut")
-        || token.contains("kerf")
-        || token.contains("stencil")
-        || token.contains("gasket")
+    !wants_directed_energy_deposition(&token)
+        && (token.contains("laser")
+            || token.contains("waterjet")
+            || token.contains("water-jet")
+            || token.contains("plasma")
+            || wants_wire_edm_cutting(&token)
+            || token.contains("sheet-cut")
+            || token.contains("sheet-cutter")
+            || token.contains("knife-cut")
+            || token.contains("die-cut")
+            || token.contains("kerf")
+            || token.contains("stencil")
+            || token.contains("gasket"))
 }
 
 fn wants_laser_cutting(value: &str) -> bool {
@@ -2470,6 +2661,29 @@ fn wants_plasma_cutting(value: &str) -> bool {
     normalize_token(value).contains("plasma")
 }
 
+fn wants_wire_edm_cutting(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("wire-edm")
+        || token.contains("edm-cut")
+        || token.contains("edm-profile")
+        || token.contains("electrical-discharge")
+        || token == "edm"
+}
+
+fn wants_sinker_edm_machining(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("sinker-edm")
+        || token.contains("sink-edm")
+        || token.contains("ram-edm")
+        || token.contains("die-sink")
+        || token.contains("die-sinking")
+        || token.contains("edm-cavity")
+        || token.contains("electrode-burn")
+        || token.contains("spark-erode")
+        || (token.contains("sinker") && token.contains("edm"))
+        || (token.contains("ram") && token.contains("edm"))
+}
+
 fn is_horizontal_mill_kind(kind: &str) -> bool {
     let token = normalize_token(kind);
     token.contains("horizontal-mill")
@@ -2481,8 +2695,28 @@ fn is_resin_printer_kind(kind: &str) -> bool {
     wants_resin_printing(kind)
 }
 
+fn is_material_jetting_printer_kind(kind: &str) -> bool {
+    wants_material_jetting_printing(kind)
+}
+
+fn is_directed_energy_deposition_kind(kind: &str) -> bool {
+    wants_directed_energy_deposition(kind)
+}
+
+fn is_composite_fiber_printer_kind(kind: &str) -> bool {
+    wants_composite_fiber_printing(kind)
+}
+
+fn is_binder_jet_printer_kind(kind: &str) -> bool {
+    wants_binder_jet_printing(kind)
+}
+
 fn is_powder_bed_printer_kind(kind: &str) -> bool {
     wants_powder_bed_printing(kind)
+}
+
+fn is_metal_pbf_printer_kind(kind: &str) -> bool {
+    wants_metal_powder_bed_printing(kind)
 }
 
 fn is_sheet_cutter_kind(kind: &str) -> bool {
@@ -2501,6 +2735,36 @@ fn is_plasma_cutter_kind(kind: &str) -> bool {
     wants_plasma_cutting(kind)
 }
 
+fn is_wire_edm_kind(kind: &str) -> bool {
+    wants_wire_edm_cutting(kind)
+}
+
+fn is_sinker_edm_kind(kind: &str) -> bool {
+    wants_sinker_edm_machining(kind)
+}
+
+fn wants_five_axis_milling(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("5-axis")
+        || token.contains("five-axis")
+        || token.contains("5axis")
+        || token.contains("multiaxis")
+        || token.contains("multi-axis")
+        || token.contains("simultaneous-5")
+        || token.contains("simultaneous-five")
+        || token.contains("trunnion")
+        || token.contains("rotary-tilt")
+        || token.contains("tilt-rotary")
+        || token.contains("impeller")
+        || token.contains("blisk")
+        || token.contains("turbine")
+        || token.contains("undercut")
+}
+
+fn is_five_axis_mill_kind(kind: &str) -> bool {
+    wants_five_axis_milling(kind)
+}
+
 fn wants_horizontal_milling(value: &str) -> bool {
     let token = normalize_token(value);
     token.contains("horizontal")
@@ -2517,6 +2781,19 @@ fn machine_class(kind: &str) -> MachineClass {
         || token.contains("fdm")
         || token.contains("sla")
         || token.contains("sls")
+        || token.contains("material-jet")
+        || token.contains("polyjet")
+        || token.contains("mjp")
+        || token.contains("directed-energy")
+        || token_has_ded_segment(&token)
+        || token.contains("waam")
+        || token.contains("wire-arc-additive")
+        || token.contains("laser-cladding")
+        || token.contains("composite")
+        || token.contains("continuous-fiber")
+        || token.contains("carbon-fiber")
+        || token.contains("binder-jet")
+        || token.contains("binderjet")
         || token.contains("additive")
     {
         MachineClass::Additive
@@ -2570,6 +2847,55 @@ fn default_machines() -> Vec<MachineProfile> {
             profile_evidence: None,
         },
         MachineProfile {
+            id: "material-jetting-printer-1".to_string(),
+            kind: "material-jetting-printer".to_string(),
+            controller: Some("material-jetting-job".to_string()),
+            materials: Some(vec![
+                "photopolymer".to_string(),
+                "polymer".to_string(),
+                "digital-material".to_string(),
+                "rubber-like".to_string(),
+                "transparent-resin".to_string(),
+                "support-material".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![300.0, 200.0, 150.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "material-jetting-print".to_string(),
+                "polyjet-print".to_string(),
+                "support-jetting".to_string(),
+                "uv-cure".to_string(),
+                "support-removal".to_string(),
+                "color-material-channel".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "composite-fiber-printer-1".to_string(),
+            kind: "composite-fiber-printer".to_string(),
+            controller: Some("composite-fiber-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "nylon".to_string(),
+                "pa-cf".to_string(),
+                "carbon-fiber-nylon".to_string(),
+                "onyx".to_string(),
+                "carbon-fiber".to_string(),
+                "fiberglass".to_string(),
+                "kevlar".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![330.0, 270.0, 200.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "composite-fiber-print".to_string(),
+                "fiber-layup".to_string(),
+                "fiber-cut".to_string(),
+                "matrix-extrusion".to_string(),
+                "coupon-inspection".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
             id: "sls-printer-1".to_string(),
             kind: "sls-printer".to_string(),
             controller: Some("sls-job".to_string()),
@@ -2590,6 +2916,64 @@ fn default_machines() -> Vec<MachineProfile> {
             profile_evidence: None,
         },
         MachineProfile {
+            id: "directed-energy-deposition-cell-1".to_string(),
+            kind: "directed-energy-deposition-cell".to_string(),
+            controller: Some("directed-energy-deposition-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "titanium".to_string(),
+                "ti6al4v".to_string(),
+                "inconel".to_string(),
+                "nickel-alloy".to_string(),
+                "aluminum".to_string(),
+                "weld-wire".to_string(),
+                "powder-feedstock".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![800.0, 500.0, 500.0]),
+            axes: Some(5),
+            operations: Some(vec![
+                "directed-energy-deposition".to_string(),
+                "laser-cladding".to_string(),
+                "waam-deposition".to_string(),
+                "wire-feed-deposition".to_string(),
+                "powder-feed-deposition".to_string(),
+                "interpass-temperature-check".to_string(),
+                "melt-pool-monitoring".to_string(),
+                "finish-machining-allowance".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "metal-pbf-printer-1".to_string(),
+            kind: "metal-pbf-printer".to_string(),
+            controller: Some("metal-pbf-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "titanium".to_string(),
+                "ti6al4v".to_string(),
+                "inconel".to_string(),
+                "cobalt-chrome".to_string(),
+                "aluminum".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![250.0, 250.0, 300.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "metal-pbf-print".to_string(),
+                "inert-gas-purge".to_string(),
+                "support-print".to_string(),
+                "recoater-check".to_string(),
+                "stress-relief".to_string(),
+                "depowder".to_string(),
+                "plate-removal".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
             id: "vertical-mill-1".to_string(),
             kind: "vertical-mill".to_string(),
             controller: Some("haas-gcode".to_string()),
@@ -2606,6 +2990,55 @@ fn default_machines() -> Vec<MachineProfile> {
                 "pocket".to_string(),
                 "drill".to_string(),
                 "contour".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "binder-jet-printer-1".to_string(),
+            kind: "binder-jet-printer".to_string(),
+            controller: Some("binder-jet-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "stainless-steel".to_string(),
+                "316l".to_string(),
+                "bronze".to_string(),
+                "ceramic".to_string(),
+                "sand".to_string(),
+                "powder".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![350.0, 250.0, 200.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "binder-jet-print".to_string(),
+                "binder-saturation-check".to_string(),
+                "green-part-cure".to_string(),
+                "depowder".to_string(),
+                "sinter-or-infiltrate".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "five-axis-mill-1".to_string(),
+            kind: "five-axis-mill".to_string(),
+            controller: Some("iso-gcode".to_string()),
+            materials: Some(vec![
+                "aluminum".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "titanium".to_string(),
+                "inconel".to_string(),
+                "brass".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![450.0, 350.0, 300.0]),
+            axes: Some(5),
+            operations: Some(vec![
+                "five-axis-milling".to_string(),
+                "3+2-indexing".to_string(),
+                "simultaneous-contour".to_string(),
+                "tool-center-point".to_string(),
+                "undercut".to_string(),
+                "impeller-finish".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -2736,6 +3169,58 @@ fn default_machines() -> Vec<MachineProfile> {
                 "arc-start".to_string(),
                 "pierce".to_string(),
                 "kerf-test".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "wire-edm-1".to_string(),
+            kind: "wire-edm".to_string(),
+            controller: Some("wire-edm-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "aluminum".to_string(),
+                "brass".to_string(),
+                "titanium".to_string(),
+                "copper".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![600.0, 400.0, 150.0]),
+            axes: Some(4),
+            operations: Some(vec![
+                "wire-edm-cut".to_string(),
+                "wire-thread".to_string(),
+                "skim-pass".to_string(),
+                "slug-retention".to_string(),
+                "taper-profile".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "sinker-edm-1".to_string(),
+            kind: "sinker-edm".to_string(),
+            controller: Some("sinker-edm-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "aluminum".to_string(),
+                "brass".to_string(),
+                "titanium".to_string(),
+                "copper".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![450.0, 300.0, 250.0]),
+            axes: Some(4),
+            operations: Some(vec![
+                "edm-cavity".to_string(),
+                "electrode-burn".to_string(),
+                "die-sinking".to_string(),
+                "orbit-finish".to_string(),
+                "dielectric-flush".to_string(),
+                "wear-compensation".to_string(),
+                "depth-stop".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -3001,9 +3486,9 @@ const DESIGN_FORMAT_SPECS: &[DesignFormatSpec] = &[
         source_system: "Siemens NX",
         ecosystem: "professional-mechanical-cad",
         category: "native-cad",
-        extensions: &["prt", "jt"],
-        aliases: &["siemens nx", "nx", "unigraphics", "jt"],
-        import_strategy: "route through an NX/JT translator or request STEP/3MF/STL export before release",
+        extensions: &["prt"],
+        aliases: &["siemens nx", "nx", "unigraphics"],
+        import_strategy: "route through an NX translator or request STEP/JT/3MF/STL export before release",
         preferred_neutral_exports: &["STEP", "JT", "3MF", "STL"],
         slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
         note: "NX .prt is ambiguous with Creo unless sourceSystem or translator metadata is supplied.",
@@ -3129,6 +3614,66 @@ const DESIGN_FORMAT_SPECS: &[DesignFormatSpec] = &[
         note: "IGES is accepted for legacy surface handoff but usually needs healing before printing.",
     },
     DesignFormatSpec {
+        normalized_format: "jt-lightweight-cad",
+        source_system: "JT",
+        ecosystem: "neutral-lightweight-cad-pmi",
+        category: "neutral-lightweight-cad",
+        extensions: &["jt"],
+        aliases: &["jt", "jt open", "lightweight cad", "pmi", "product manufacturing information"],
+        import_strategy: "inspect JT units, assembly structure, B-rep or tessellation availability, PMI, colors, and level-of-detail loss before STEP/3MF/STL or CAM setup export",
+        preferred_neutral_exports: &["JT", "STEP", "3MF", "STL", "CAM setup JSON"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "JT inputs are accepted as lightweight CAD/PMI exchange evidence and require tessellation/B-rep, PMI, and assembly review before fabrication release.",
+    },
+    DesignFormatSpec {
+        normalized_format: "parasolid-kernel",
+        source_system: "Parasolid",
+        ecosystem: "neutral-cad-kernel",
+        category: "neutral-kernel-cad",
+        extensions: &["x_t", "x_b", "xmt_txt", "xmt_bin"],
+        aliases: &["parasolid", "x_t", "x-b", "xmt", "parasolid text", "parasolid binary"],
+        import_strategy: "inspect Parasolid kernel version, units, body topology, assembly/body count, and healing needs before STEP/3MF/STL or CAM setup export",
+        preferred_neutral_exports: &["STEP", "3MF", "STL", "CAM setup JSON"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "Parasolid kernel files are common SolidWorks/NX handoffs and require kernel-version and B-rep topology review before downstream fabrication.",
+    },
+    DesignFormatSpec {
+        normalized_format: "acis-kernel",
+        source_system: "ACIS",
+        ecosystem: "neutral-cad-kernel",
+        category: "neutral-kernel-cad",
+        extensions: &["sat", "sab"],
+        aliases: &["acis", "sat", "sab", "acis text", "acis binary"],
+        import_strategy: "inspect ACIS kernel version, units, body topology, surface/solid status, and healing needs before STEP/3MF/STL or CAM setup export",
+        preferred_neutral_exports: &["STEP", "3MF", "STL", "CAM setup JSON"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "ACIS SAT/SAB files are accepted as CAD-kernel exchange sources and stay review-gated until units, topology, and healing evidence are retained.",
+    },
+    DesignFormatSpec {
+        normalized_format: "dxf-profile",
+        source_system: "DXF",
+        ecosystem: "neutral-sheet-profile-cad",
+        category: "neutral-2d-cad",
+        extensions: &["dxf"],
+        aliases: &["dxf", "drawing exchange format", "sheet profile", "laser profile"],
+        import_strategy: "inspect drawing units, layers, closed contours, bend/etch annotations, kerf offsets, and sheet-profile revision before CAM or nesting release",
+        preferred_neutral_exports: &["DXF", "SVG", "STEP", "CAM setup JSON"],
+        slicer_targets: &[],
+        note: "DXF inputs are accepted as 2D sheet/profile evidence and require layer, scale, contour, and kerf review before cutting.",
+    },
+    DesignFormatSpec {
+        normalized_format: "dwg-profile",
+        source_system: "DWG",
+        ecosystem: "neutral-sheet-profile-cad",
+        category: "neutral-2d-cad",
+        extensions: &["dwg"],
+        aliases: &["dwg", "autocad drawing", "autocad", "sheet drawing"],
+        import_strategy: "translate DWG to reviewed DXF/SVG/CAM setup, then inspect drawing units, layers, closed contours, kerf offsets, and revision state before release",
+        preferred_neutral_exports: &["DXF", "SVG", "STEP", "CAM setup JSON"],
+        slicer_targets: &[],
+        note: "DWG inputs are accepted as drawing/profile sources but remain blocked on translator provenance and 2D CAM review.",
+    },
+    DesignFormatSpec {
         normalized_format: "obj",
         source_system: "OBJ",
         ecosystem: "neutral-mesh",
@@ -3139,6 +3684,54 @@ const DESIGN_FORMAT_SPECS: &[DesignFormatSpec] = &[
         preferred_neutral_exports: &["3MF", "STL", "OBJ"],
         slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
         note: "OBJ is accepted as a mesh handoff when visual surface detail matters.",
+    },
+    DesignFormatSpec {
+        normalized_format: "ply-color-scan-mesh",
+        source_system: "PLY",
+        ecosystem: "neutral-color-scan-mesh",
+        category: "neutral-color-mesh",
+        extensions: &["ply"],
+        aliases: &["ply", "polygon file format", "stanford triangle", "scan mesh", "3d scan", "vertex color"],
+        import_strategy: "inspect units, scan scale, vertex colors, normals, manifoldness, decimation, and wall thickness before color-aware printing or mesh repair release",
+        preferred_neutral_exports: &["3MF", "PLY", "OBJ", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "PLY inputs are accepted for scan-derived or vertex-color meshes with scale, topology, and color-preservation review.",
+    },
+    DesignFormatSpec {
+        normalized_format: "vrml-wrl-color-mesh",
+        source_system: "VRML/WRL",
+        ecosystem: "neutral-color-mesh",
+        category: "neutral-color-mesh",
+        extensions: &["wrl", "vrml"],
+        aliases: &["vrml", "wrl", "vrml97", "colored mesh", "full color mesh"],
+        import_strategy: "inspect units, scale, color/material nodes, texture references, normals, manifoldness, and wall thickness before color-print or mesh repair release",
+        preferred_neutral_exports: &["3MF", "WRL", "OBJ", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "VRML/WRL inputs are retained as color mesh evidence and need color/material preservation review before printing.",
+    },
+    DesignFormatSpec {
+        normalized_format: "gltf-glb-color-mesh",
+        source_system: "glTF/GLB",
+        ecosystem: "neutral-color-textured-mesh",
+        category: "neutral-color-mesh",
+        extensions: &["gltf", "glb"],
+        aliases: &["gltf", "glb", "gl transmission format", "textured mesh"],
+        import_strategy: "inspect scene units, mesh scale, material/texture assets, transforms, normals, manifoldness, and wall thickness before additive conversion",
+        preferred_neutral_exports: &["3MF", "GLB", "OBJ", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "glTF/GLB scene inputs are accepted as textured mesh references and require transform, texture, and topology review before release.",
+    },
+    DesignFormatSpec {
+        normalized_format: "amf-additive-package",
+        source_system: "AMF",
+        ecosystem: "neutral-additive-package",
+        category: "neutral-color-mesh",
+        extensions: &["amf"],
+        aliases: &["amf", "additive manufacturing file format"],
+        import_strategy: "inspect AMF units, volumes, materials, colors, lattice/constellation data, manifoldness, and 3MF/STL conversion needs before release",
+        preferred_neutral_exports: &["AMF", "3MF", "STL"],
+        slicer_targets: &["PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio"],
+        note: "AMF inputs are accepted as additive package evidence with material/color and topology review gates before machine-code release.",
     },
     DesignFormatSpec {
         normalized_format: "prusaslicer-project",
@@ -3461,6 +4054,10 @@ fn design_input_status(spec: &DesignFormatSpec) -> &'static str {
         "open-source-cad" | "code-cad" => "supported-parametric-cad-review-required",
         "organic-model" => "supported-organic-model-review-required",
         "neutral-cad" | "neutral-print" => "supported-neutral-geometry-review-required",
+        "neutral-lightweight-cad" => "supported-lightweight-cad-pmi-review-required",
+        "neutral-kernel-cad" => "supported-cad-kernel-review-required",
+        "neutral-2d-cad" => "supported-2d-profile-review-required",
+        "neutral-color-mesh" => "supported-color-mesh-review-required",
         "slicer-project" => "supported-slicer-project-review-required",
         _ => "supported-review-required",
     }
@@ -3482,6 +4079,22 @@ fn design_input_blockers(spec: &DesignFormatSpec) -> Vec<String> {
         "slicer-project" => vec![
             "slicer project requires printer profile, material profile, support strategy, and first-layer evidence before machine release".to_string(),
         ],
+        "neutral-2d-cad" => vec![format!(
+            "{} profile source requires units, layer mapping, closed-contour, kerf, and revision review before sheet/profile CAM release",
+            spec.source_system
+        )],
+        "neutral-kernel-cad" => vec![format!(
+            "{} kernel geometry requires kernel-version, units, body-count, topology, and healing review before certified geometry release",
+            spec.source_system
+        )],
+        "neutral-lightweight-cad" => vec![format!(
+            "{} lightweight CAD/PMI source requires units, assembly tree, tessellation or B-rep, PMI, color, and level-of-detail review before fabrication release",
+            spec.source_system
+        )],
+        "neutral-color-mesh" => vec![format!(
+            "{} mesh/package source requires units, scale, manifoldness, normals, wall-thickness, and color/material/texture preservation review before additive release",
+            spec.source_system
+        )],
         _ => vec![
             "neutral geometry requires unit, scale, topology, and downstream machine-release review before use".to_string(),
         ],
@@ -3494,6 +4107,10 @@ fn design_input_conversion_worker_lane(input: &ReviewedDesignInput) -> &'static 
         "open-source-cad" | "code-cad" => "parametric-cad-converter",
         "organic-model" => "mesh-repair-converter",
         "neutral-cad" => "neutral-cad-inspector",
+        "neutral-lightweight-cad" => "lightweight-cad-pmi-inspector",
+        "neutral-kernel-cad" => "cad-kernel-inspector",
+        "neutral-2d-cad" => "sheet-profile-cad-inspector",
+        "neutral-color-mesh" => "color-mesh-package-inspector",
         "neutral-print" => "mesh-package-inspector",
         "slicer-project" => "slicer-profile-reviewer",
         _ if input.status.starts_with("unsupported") => "manual-format-triage",
@@ -3531,6 +4148,28 @@ fn design_input_conversion_required_evidence(input: &ReviewedDesignInput) -> Vec
             "B-rep or surface topology inspection with units and assembly metadata".to_string(),
             "healing/solidification report before slicer or CAM handoff".to_string(),
         ],
+        "neutral-lightweight-cad" => vec![
+            "JT units, assembly tree, occurrence transforms, and source revision evidence"
+                .to_string(),
+            "B-rep or tessellation availability, level-of-detail, color, PMI, and measurement annotation review"
+                .to_string(),
+        ],
+        "neutral-kernel-cad" => vec![
+            "CAD kernel provenance, kernel version, source system, and units evidence".to_string(),
+            "body count, solid/surface topology, assembly occurrence, and healing/boolean report"
+                .to_string(),
+        ],
+        "neutral-2d-cad" => vec![
+            "drawing units, scale, layer map, and revision/title-block evidence".to_string(),
+            "closed-contour, duplicate-entity, kerf-offset, bend/etch, and nesting-readiness review"
+                .to_string(),
+        ],
+        "neutral-color-mesh" => vec![
+            "mesh/package units, scale, manifoldness, normals, wall-thickness, and repair report"
+                .to_string(),
+            "color, material, vertex-color, texture, transform, and scan-decimation preservation evidence"
+                .to_string(),
+        ],
         "neutral-print" => vec![
             "mesh/package units, scale, manifoldness, normals, and wall-thickness report"
                 .to_string(),
@@ -3556,6 +4195,22 @@ fn design_input_conversion_review_gates(input: &ReviewedDesignInput) -> Vec<Stri
         "native-cad" | "cloud-cad" | "open-source-cad" | "code-cad" | "neutral-cad" => {
             gates.push("verify-units-assembly-topology-and-export-checksums".to_string());
             gates.push("regenerate-step-3mf-or-stl-before-instruction-generation".to_string());
+        }
+        "neutral-lightweight-cad" => {
+            gates.push("verify-jt-units-assembly-pmi-brep-or-tessellation".to_string());
+            gates.push("regenerate-step-3mf-stl-or-cam-setup-from-jt".to_string());
+        }
+        "neutral-kernel-cad" => {
+            gates.push("verify-kernel-version-units-solids-and-body-count".to_string());
+            gates.push("regenerate-step-3mf-stl-or-cam-setup-from-kernel".to_string());
+        }
+        "neutral-2d-cad" => {
+            gates.push("verify-units-layers-closed-contours-kerf-and-revision".to_string());
+            gates.push("regenerate-reviewed-dxf-svg-or-cam-setup-before-cutting".to_string());
+        }
+        "neutral-color-mesh" => {
+            gates.push("verify-color-material-texture-scale-and-manifoldness".to_string());
+            gates.push("regenerate-color-aware-3mf-or-reviewed-mesh-before-slicing".to_string());
         }
         "organic-model" | "neutral-print" => {
             gates.push("verify-mesh-scale-manifoldness-normals-and-wall-thickness".to_string());
@@ -3734,11 +4389,26 @@ fn review_design_inputs(inputs: &[DesignInputFile]) -> DesignInputReview {
         .count();
     let neutral_geometry_count = reviewed
         .iter()
-        .filter(|input| matches!(input.category.as_str(), "neutral-cad" | "neutral-print"))
+        .filter(|input| {
+            matches!(
+                input.category.as_str(),
+                "neutral-cad"
+                    | "neutral-lightweight-cad"
+                    | "neutral-kernel-cad"
+                    | "neutral-2d-cad"
+                    | "neutral-print"
+                    | "neutral-color-mesh"
+            )
+        })
         .count();
     let mesh_or_slicer_count = reviewed
         .iter()
-        .filter(|input| matches!(input.category.as_str(), "slicer-project" | "organic-model"))
+        .filter(|input| {
+            matches!(
+                input.category.as_str(),
+                "slicer-project" | "organic-model" | "neutral-print" | "neutral-color-mesh"
+            )
+        })
         .count();
     let artistic_model_count = reviewed
         .iter()
@@ -3751,11 +4421,11 @@ fn review_design_inputs(inputs: &[DesignInputFile]) -> DesignInputReview {
     let notes = if reviewed.is_empty() {
         vec![
             "No designInputs were supplied; planner will generate draft parametric design/export contracts from the objective.".to_string(),
-            "Supported inputs include native CAD, neutral CAD/mesh, organic modeling, and slicer project ecosystems.".to_string(),
+            "Supported inputs include native CAD, lightweight CAD/PMI, CAD-kernel, neutral CAD/mesh, color/scan mesh, organic modeling, 2D profile, and slicer project ecosystems.".to_string(),
         ]
     } else {
         vec![
-            "Design input review classifies CAD/model/slicer sources and retains translator, topology, scale, and profile gates.".to_string(),
+            "Design input review classifies CAD/model/slicer sources and retains translator, topology, scale, PMI/tessellation, color/material, layer/kerf, kernel, and profile gates.".to_string(),
             format!(
                 "conversionPlan queues reviewed inputs for {FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT} workers and blocks machine release until conversion results are reviewed."
             ),
@@ -3830,25 +4500,44 @@ fn infer_requested_parts(
 
     let wants_resin_part =
         wants_resin_printing(&objective_token) || wants_resin_printing(&material.name);
-    let wants_powder_bed_part =
-        wants_powder_bed_printing(&objective_token) || wants_powder_bed_printing(&material.name);
+    let wants_material_jetting_part = wants_material_jetting_printing(&objective_token)
+        || wants_material_jetting_printing(&material.name);
+    let wants_ded_part = wants_directed_energy_deposition(&objective_token)
+        || wants_directed_energy_deposition(&material.name);
+    let wants_composite_fiber_part = wants_composite_fiber_printing(&objective_token)
+        || wants_composite_fiber_printing(&material.name);
+    let wants_binder_jet_part =
+        wants_binder_jet_printing(&objective_token) || wants_binder_jet_printing(&material.name);
+    let wants_metal_pbf_part = wants_metal_powder_bed_printing(&objective_token)
+        || wants_metal_powder_bed_printing(&material.name);
+    let wants_powder_bed_part = wants_metal_pbf_part
+        || wants_powder_bed_printing(&objective_token)
+        || wants_powder_bed_printing(&material.name);
     let needs_turned_part = objective_token.contains("shaft")
         || objective_token.contains("bushing")
         || objective_token.contains("bearing")
         || objective_token.contains("cylind")
         || objective_token.contains("thread");
+    let needs_sinker_edm_part = wants_sinker_edm_machining(&objective_token);
+    let needs_five_axis_milled_part = wants_five_axis_milling(&objective_token);
     let needs_horizontal_milled_part = wants_horizontal_milling(&objective_token);
-    let needs_milled_part = objective_token.contains("bracket")
-        || objective_token.contains("plate")
-        || objective_token.contains("pocket")
-        || objective_token.contains("housing")
-        || objective_token.contains("fixture")
-        || objective_token.contains("datum")
-        || needs_horizontal_milled_part
-        || tolerance_mm <= 0.08
-        || is_metal(material);
+    let needs_milled_part = !needs_sinker_edm_part
+        && (objective_token.contains("bracket")
+            || objective_token.contains("plate")
+            || objective_token.contains("pocket")
+            || objective_token.contains("housing")
+            || objective_token.contains("fixture")
+            || objective_token.contains("datum")
+            || needs_five_axis_milled_part
+            || needs_horizontal_milled_part
+            || tolerance_mm <= 0.08
+            || is_metal(material));
     let needs_sheet_cut_part = wants_sheet_cutting(&objective_token);
     let needs_routed_part = !wants_resin_part
+        && !wants_material_jetting_part
+        && !wants_ded_part
+        && !wants_composite_fiber_part
+        && !wants_binder_jet_part
         && !wants_powder_bed_part
         && !needs_sheet_cut_part
         && (objective_token.contains("router")
@@ -3861,6 +4550,10 @@ fn infer_requested_parts(
             || objective_token.contains("tabbed")
             || is_router_material(material));
     let needs_printed_part = wants_resin_part
+        || wants_material_jetting_part
+        || wants_ded_part
+        || wants_composite_fiber_part
+        || wants_binder_jet_part
         || wants_powder_bed_part
         || objective_token.contains("prototype")
         || objective_token.contains("case")
@@ -3871,8 +4564,18 @@ fn infer_requested_parts(
         || (!needs_milled_part && !needs_routed_part && !needs_sheet_cut_part);
 
     if needs_printed_part {
-        let preferred_method = if wants_resin_part {
+        let preferred_method = if wants_material_jetting_part {
+            "material-jetting-print"
+        } else if wants_ded_part {
+            "directed-energy-deposition"
+        } else if wants_resin_part {
             "resin-print"
+        } else if wants_composite_fiber_part {
+            "composite-fiber-print"
+        } else if wants_binder_jet_part {
+            "binder-jet-print"
+        } else if wants_metal_pbf_part {
+            "metal-pbf-print"
         } else if wants_powder_bed_part {
             "powder-bed-print"
         } else {
@@ -3898,14 +4601,15 @@ fn infer_requested_parts(
         });
     }
     if needs_sheet_cut_part {
-        let preferred_method =
-            if objective_token.contains("waterjet") || objective_token.contains("water-jet") {
-                "waterjet-cutting"
-            } else if objective_token.contains("plasma") {
-                "plasma-cutting"
-            } else {
-                "laser-cutting"
-            };
+        let preferred_method = if wants_wire_edm_cutting(&objective_token) {
+            "wire-edm-cutting"
+        } else if objective_token.contains("waterjet") || objective_token.contains("water-jet") {
+            "waterjet-cutting"
+        } else if objective_token.contains("plasma") {
+            "plasma-cutting"
+        } else {
+            "laser-cutting"
+        };
         parts.push(RequestedPart {
             id: "sheet-cut-profile".to_string(),
             description: "laser, waterjet, plasma, knife, stencil, gasket, or kerf-controlled sheet profile inferred from objective"
@@ -3915,7 +4619,26 @@ fn infer_requested_parts(
             tolerance_mm: Some(tolerance_mm.max(0.10)),
         });
     }
-    if needs_horizontal_milled_part {
+    if needs_sinker_edm_part {
+        parts.push(RequestedPart {
+            id: "edm-cavity".to_string(),
+            description: "sinker EDM cavity, rib, mold insert, or electrode-burned feature inferred from objective"
+                .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("sinker-edm".to_string()),
+            tolerance_mm: Some(tolerance_mm),
+        });
+    }
+    if needs_five_axis_milled_part {
+        parts.push(RequestedPart {
+            id: "five-axis-sculpted-feature".to_string(),
+            description: "five-axis milled impeller, undercut, turbine, blisk, or sculpted contour"
+                .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("five-axis-milling".to_string()),
+            tolerance_mm: Some(tolerance_mm),
+        });
+    } else if needs_horizontal_milled_part {
         parts.push(RequestedPart {
             id: "horizontal-slotted-feature".to_string(),
             description: "horizontal-milled side slot, keyway, spline, or heavy side feature"
@@ -4042,18 +4765,55 @@ fn choose_machine<'a>(
         })
         .unwrap_or_default();
 
+    if preferred.is_none() {
+        for preferred_machine_kind in &preferred_methods {
+            if let Some(machine) = select_machine(machines, material, |machine| {
+                normalize_token(&machine.kind) == *preferred_machine_kind
+                    || normalize_token(&machine.id) == *preferred_machine_kind
+            }) {
+                return machine;
+            }
+        }
+    }
+
     let wants_horizontal_mill = preferred.as_deref().is_some_and(wants_horizontal_milling)
         || preferred_methods
             .iter()
             .any(|value| wants_horizontal_milling(value));
+    let wants_five_axis_mill = preferred.as_deref().is_some_and(wants_five_axis_milling)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_five_axis_milling(value));
     let wants_resin_printer = preferred.as_deref().is_some_and(wants_resin_printing)
         || preferred_methods
             .iter()
             .any(|value| wants_resin_printing(value));
+    let wants_material_jetting_printer = preferred
+        .as_deref()
+        .is_some_and(wants_material_jetting_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_material_jetting_printing(value));
+    let wants_composite_fiber_printer = preferred
+        .as_deref()
+        .is_some_and(wants_composite_fiber_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_composite_fiber_printing(value));
+    let wants_binder_jet_printer = preferred.as_deref().is_some_and(wants_binder_jet_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_binder_jet_printing(value));
     let wants_powder_bed_printer = preferred.as_deref().is_some_and(wants_powder_bed_printing)
         || preferred_methods
             .iter()
             .any(|value| wants_powder_bed_printing(value));
+    let wants_metal_pbf_printer = preferred
+        .as_deref()
+        .is_some_and(wants_metal_powder_bed_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_metal_powder_bed_printing(value));
     let wants_laser_cutter = preferred.as_deref().is_some_and(wants_laser_cutting)
         || preferred_methods
             .iter()
@@ -4066,11 +4826,26 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_plasma_cutting(value));
+    let wants_wire_edm = preferred.as_deref().is_some_and(wants_wire_edm_cutting)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_wire_edm_cutting(value));
+    let wants_sinker_edm = preferred.as_deref().is_some_and(wants_sinker_edm_machining)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_sinker_edm_machining(value));
     let wants_sheet_cutter = preferred.as_deref().is_some_and(wants_sheet_cutting)
         || preferred_methods
             .iter()
             .any(|value| wants_sheet_cutting(value));
 
+    if wants_five_axis_mill {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_five_axis_mill_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
     if wants_horizontal_mill {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_horizontal_mill_kind(&machine.kind)
@@ -4081,6 +4856,34 @@ fn choose_machine<'a>(
     if wants_resin_printer {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_resin_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_material_jetting_printer {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_material_jetting_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_composite_fiber_printer {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_composite_fiber_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_binder_jet_printer {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_binder_jet_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_metal_pbf_printer {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_metal_pbf_printer_kind(&machine.kind)
         }) {
             return machine;
         }
@@ -4102,6 +4905,20 @@ fn choose_machine<'a>(
     if wants_plasma_cutter {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_plasma_cutter_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_wire_edm {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_wire_edm_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_sinker_edm {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_sinker_edm_kind(&machine.kind)
         }) {
             return machine;
         }
@@ -4231,8 +5048,11 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
             || wants_laser_cutting(token)
             || wants_waterjet_cutting(token)
             || wants_plasma_cutting(token)
+            || wants_wire_edm_cutting(token)
     }) {
         Some(MachineClass::SheetCut)
+    } else if tokens.iter().any(|token| wants_sinker_edm_machining(token)) {
+        Some(MachineClass::Other)
     } else if tokens
         .iter()
         .any(|token| token.contains("turn") || token.contains("lathe"))
@@ -4243,7 +5063,8 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
     }) {
         Some(MachineClass::Router)
     } else if tokens.iter().any(|token| {
-        wants_horizontal_milling(token)
+        wants_five_axis_milling(token)
+            || wants_horizontal_milling(token)
             || token.contains("mill")
             || token.contains("machin")
             || token.contains("datum")
@@ -4251,6 +5072,9 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
         Some(MachineClass::Mill)
     } else if tokens.iter().any(|token| {
         wants_resin_printing(token)
+            || wants_material_jetting_printing(token)
+            || wants_composite_fiber_printing(token)
+            || wants_binder_jet_printing(token)
             || wants_powder_bed_printing(token)
             || token.contains("print")
             || token.contains("additive")
@@ -4262,27 +5086,54 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
 }
 
 fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool {
+    let wants_five_axis = tokens.iter().any(|token| wants_five_axis_milling(token));
     let wants_horizontal = tokens.iter().any(|token| wants_horizontal_milling(token));
     let wants_resin = tokens.iter().any(|token| wants_resin_printing(token));
+    let wants_material_jetting = tokens
+        .iter()
+        .any(|token| wants_material_jetting_printing(token));
+    let wants_composite_fiber = tokens
+        .iter()
+        .any(|token| wants_composite_fiber_printing(token));
+    let wants_binder_jet = tokens.iter().any(|token| wants_binder_jet_printing(token));
     let wants_powder = tokens.iter().any(|token| wants_powder_bed_printing(token));
+    let wants_metal_pbf = tokens
+        .iter()
+        .any(|token| wants_metal_powder_bed_printing(token));
     let wants_laser = tokens.iter().any(|token| wants_laser_cutting(token));
     let wants_waterjet = tokens.iter().any(|token| wants_waterjet_cutting(token));
     let wants_plasma = tokens.iter().any(|token| wants_plasma_cutting(token));
-    let has_special = wants_horizontal
+    let wants_wire_edm = tokens.iter().any(|token| wants_wire_edm_cutting(token));
+    let wants_sinker_edm = tokens.iter().any(|token| wants_sinker_edm_machining(token));
+    let has_special = wants_five_axis
+        || wants_horizontal
         || wants_resin
+        || wants_material_jetting
+        || wants_composite_fiber
+        || wants_binder_jet
         || wants_powder
+        || wants_metal_pbf
         || wants_laser
         || wants_waterjet
-        || wants_plasma;
+        || wants_plasma
+        || wants_wire_edm
+        || wants_sinker_edm;
     if !has_special {
         return true;
     }
-    (!wants_horizontal || is_horizontal_mill_kind(&machine.kind))
+    (!wants_five_axis || is_five_axis_mill_kind(&machine.kind))
+        && (!wants_horizontal || is_horizontal_mill_kind(&machine.kind))
         && (!wants_resin || is_resin_printer_kind(&machine.kind))
+        && (!wants_material_jetting || is_material_jetting_printer_kind(&machine.kind))
+        && (!wants_composite_fiber || is_composite_fiber_printer_kind(&machine.kind))
+        && (!wants_binder_jet || is_binder_jet_printer_kind(&machine.kind))
         && (!wants_powder || is_powder_bed_printer_kind(&machine.kind))
+        && (!wants_metal_pbf || is_metal_pbf_printer_kind(&machine.kind))
         && (!wants_laser || is_laser_cutter_kind(&machine.kind))
         && (!wants_waterjet || is_waterjet_cutter_kind(&machine.kind))
         && (!wants_plasma || is_plasma_cutter_kind(&machine.kind))
+        && (!wants_wire_edm || is_wire_edm_kind(&machine.kind))
+        && (!wants_sinker_edm || is_sinker_edm_kind(&machine.kind))
 }
 
 fn operation_token_matches(preference: &str, operation: &str) -> bool {
@@ -4290,11 +5141,31 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || preference.contains(operation)
         || (preference.contains("print") && operation.contains("print"))
         || (preference.contains("additive") && operation.contains("additive"))
+        || (preference.contains("material-jet") && operation.contains("material-jet"))
+        || (preference.contains("polyjet") && operation.contains("polyjet"))
+        || (preference.contains("mjp") && operation.contains("material-jet"))
+        || (preference.contains("composite-fiber") && operation.contains("composite-fiber"))
+        || (preference.contains("continuous-fiber") && operation.contains("composite-fiber"))
+        || (preference.contains("carbon-fiber") && operation.contains("composite-fiber"))
+        || (preference.contains("binder-jet") && operation.contains("binder-jet"))
+        || (preference.contains("binderjet") && operation.contains("binder-jet"))
+        || (preference.contains("metal-pbf") && operation.contains("metal-pbf"))
+        || (preference.contains("lpbf") && operation.contains("metal-pbf"))
+        || (preference.contains("dmls") && operation.contains("metal-pbf"))
         || (preference.contains("mill")
             && (operation.contains("mill")
                 || operation.contains("face")
                 || operation.contains("pocket")
                 || operation.contains("contour")))
+        || ((preference.contains("five-axis")
+            || preference.contains("5-axis")
+            || preference.contains("multi-axis")
+            || preference.contains("multiaxis")
+            || preference.contains("tcp"))
+            && (operation.contains("five-axis")
+                || operation.contains("simultaneous")
+                || operation.contains("tool-center")
+                || operation.contains("3+2")))
         || (preference.contains("turn")
             && (operation.contains("turn") || operation.contains("thread")))
         || (preference.contains("lathe")
@@ -4305,6 +5176,11 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || (preference.contains("laser") && operation.contains("laser"))
         || (preference.contains("waterjet") && operation.contains("waterjet"))
         || (preference.contains("plasma") && operation.contains("plasma"))
+        || (preference.contains("wire-edm") && operation.contains("wire-edm"))
+        || (preference.contains("sinker-edm") && operation.contains("edm"))
+        || (preference.contains("ram-edm") && operation.contains("edm"))
+        || (preference.contains("die-sink") && operation.contains("die-sink"))
+        || (preference == "edm" && operation.contains("edm"))
 }
 
 fn operation_matches(machine: &MachineProfile, tokens: &[String]) -> bool {
@@ -4530,10 +5406,25 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => {
             "orient, support, resin print, wash, and UV cure"
         }
+        MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => {
+            "pack tray, jet photopolymer/material channels, UV cure, remove supports, and inspect color/material interfaces"
+        }
+        MachineClass::Additive if is_composite_fiber_printer_kind(&part.machine_kind) => {
+            "slice matrix, lay continuous fiber, cut/anchor reinforcement, inspect coupons, and finish composite print"
+        }
+        MachineClass::Additive if is_binder_jet_printer_kind(&part.machine_kind) => {
+            "binder jet green part, cure, depowder, sinter/infiltrate, and inspect shrink-compensated features"
+        }
+        MachineClass::Additive if is_metal_pbf_printer_kind(&part.machine_kind) => {
+            "orient, support, inert-purge, metal powder-bed fuse, cool, depowder, stress-relieve, and remove from plate"
+        }
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
             "nest, powder-bed print, cool down, depowder, and finish"
         }
         MachineClass::Additive => "slice, support, and print",
+        MachineClass::Mill if is_five_axis_mill_kind(&part.machine_kind) => {
+            "verify rotary centers, simulate TCP, 3+2 rough, simultaneous finish, and inspect undercuts"
+        }
         MachineClass::Mill if is_horizontal_mill_kind(&part.machine_kind) => {
             "index fixture, side-mill slots, and finish horizontal features"
         }
@@ -5103,6 +5994,137 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                     .to_string(),
             ],
         ),
+        MachineClass::Additive if is_material_jetting_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "material-jetting-job".to_string()),
+            vec![
+                "; draft material jetting/PolyJet job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [setup-boundary]: verify photopolymer cartridges, material channel map, support material, tray calibration, printhead purge, and UV lamp state"
+                    .to_string(),
+                "PACK_TRAY orientation=operator-reviewed packing=operator-reviewed color_material_channels=operator-reviewed"
+                    .to_string(),
+                "JET_MATERIALS layer_height_mm=0.030 printhead_nozzles=verified support_material=loaded"
+                    .to_string(),
+                "UV_CURE_INLINE lamp_dose=operator-reviewed tack_free=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [process-split-boundary]: transfer to support-removal station only after fragile-feature, color-channel, and material-interface inspection"
+                    .to_string(),
+                "REMOVE_SUPPORT method=operator-reviewed waterjet_or_solvent=operator-reviewed protect_fine_features=true"
+                    .to_string(),
+                "FINISH verify surface tack, color/material boundaries, support residue, and dimensional stability"
+                    .to_string(),
+                "COMPLETE record cartridge lots, tray map, printhead/nozzle check, UV dose, support-removal cycle, color/material verification, and dimensional inspection"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final material jetting parameters must come from the printer profile, photopolymer/support-material datasheets, tray packing, material-channel map, printhead/nozzle checks, and UV calibration."
+                    .to_string(),
+                "Human signoff is required for support removal, solvent or waterjet cleaning, UV exposure, color/material channel verification, fragile-feature handling, and dimensional inspection."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Additive if is_composite_fiber_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "composite-fiber-job".to_string()),
+            vec![
+                "; draft continuous-fiber composite job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [setup-boundary]: verify matrix filament lot, dry-storage state, fiber spool lot, cutter calibration, nozzle purge, and bed adhesion"
+                    .to_string(),
+                "SLICE_MATRIX layer_height_mm=0.125 wall_count=operator-reviewed matrix_profile=operator-reviewed"
+                    .to_string(),
+                "FIBER_LAYUP load_direction=operator-reviewed fiber_orientation=0/90/45/-45 reinforcement_rings=operator-reviewed"
+                    .to_string(),
+                "FIBER_CUT_ANCHOR cutter_test=passed fiber_tension=operator-reviewed anchor_length_mm=operator-reviewed"
+                    .to_string(),
+                "PRINT_COMPOSITE matrix_extrusion=operator-reviewed fiber_volume=operator-reviewed void_risk=reviewed"
+                    .to_string(),
+                "CHECKPOINT [process-split-boundary]: inspect fiber continuity, coupon layup, and delamination risk before removing part"
+                    .to_string(),
+                "FINISH trim supports, protect exposed fibers, and record anisotropy/warp inspection"
+                    .to_string(),
+                "COMPLETE record matrix lot, fiber spool lot, layup schedule, coupon result, fiber cut test, and dimensional inspection"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final continuous-fiber toolpaths must come from the actual composite slicer, matrix material profile, fiber spool, and load-case layup review."
+                    .to_string(),
+                "Human signoff is required for fiber orientation, cut/anchor behavior, fiber tension, matrix bonding, coupon inspection, anisotropy, and exposed-fiber finishing."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Additive if is_metal_pbf_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "metal-pbf-job".to_string()),
+            vec![
+                "; draft metal powder-bed fusion job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [setup-boundary]: verify metal powder lot, sieve state, build plate, recoater blade, oxygen sensor, inert gas, and fire/explosion controls"
+                    .to_string(),
+                "BUILD_ORIENT supports=operator-reviewed overhangs=operator-reviewed heat-sink=operator-reviewed"
+                    .to_string(),
+                "INERT_GAS_PURGE oxygen_ppm_target=operator-reviewed leak_check=passed before laser enable"
+                    .to_string(),
+                "RECOATER_CLEARANCE_CHECK blade_gap=operator-reviewed witness_coupon=installed"
+                    .to_string(),
+                "PRINT_METAL_PBF layer_height_mm=0.030 scan_strategy=operator-reviewed laser_power=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [cooldown-boundary]: hold closed build chamber until safe oxygen and part temperature"
+                    .to_string(),
+                "DEPOWDER inert-compatible PPE, grounded vacuum, powder recovery, and contamination controls"
+                    .to_string(),
+                "STRESS_RELIEF heat_treat_cycle=operator-reviewed before cutting from build plate"
+                    .to_string(),
+                "PLATE_REMOVAL wire EDM or saw only after stress relief, support plan, and distortion risk are signed off"
+                    .to_string(),
+                "COMPLETE record powder lot, oxygen trace, recoater state, heat-treatment record, and first-article inspection"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final DMLS/SLM/LPBF/EBM parameters must come from the printer vendor profile, alloy lot validation, and build simulation."
+                    .to_string(),
+                "Human signoff is required for reactive metal powder handling, inert atmosphere, recoater clearance, supports, cooldown, depowdering, stress relief, plate removal, and dimensional inspection."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Additive if is_binder_jet_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "binder-jet-job".to_string()),
+            vec![
+                "; draft binder-jet additive job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [setup-boundary]: verify powder lot, binder lot, printhead nozzles, layer thickness, and build-box nesting"
+                    .to_string(),
+                "NEST green parts with depowder access, setter support, and shrink allowance reviewed"
+                    .to_string(),
+                "BINDER_JET_PRINT layer_height_mm=0.080 binder_saturation=operator-reviewed printhead_nozzles=verified"
+                    .to_string(),
+                "CURE_GREEN_PART time_minutes=operator-reviewed temperature=operator-reviewed before depowder"
+                    .to_string(),
+                "DEPOWDER fragile green part with approved PPE, powder recovery, and breakage controls"
+                    .to_string(),
+                "CHECKPOINT [process-split-boundary]: transfer green part to debind, sinter, infiltrate, or furnace fixture only after operator review"
+                    .to_string(),
+                "SINTER_OR_INFILTRATE shrink_compensation=operator-reviewed furnace_profile=operator-reviewed density_coupon=installed"
+                    .to_string(),
+                "COMPLETE record powder lot, binder lot, green strength, sinter shrink coupon, density/porosity, and dimensional inspection"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final binder-jet parameters must come from the printer/material binder profile, furnace cycle, and shrink-compensation validation."
+                    .to_string(),
+                "Human signoff is required for binder saturation, green-part handling, depowdering, debind/sinter/infiltration transfer, shrink compensation, and dimensional inspection."
+                    .to_string(),
+            ],
+        ),
         MachineClass::Additive if is_powder_bed_printer_kind(&machine.kind) => (
             machine
                 .controller
@@ -5156,6 +6178,39 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: slice against the actual mesh, nozzle, filament, and bed profile before running."
                     .to_string(),
                 "Human signoff is required for filament lot, dry-storage, dryer/desiccant state, temperatures, supports, bed adhesion, and collision clearance."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Mill if is_five_axis_mill_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "iso-gcode".to_string()),
+            vec![
+                "(draft five-axis milling program generated by dd-fabrication-server)".to_string(),
+                "G21 G90 G17 ; millimeters, absolute, XY plane".to_string(),
+                "G54 ; operator-verified trunnion fixture, rotary centers, clamps, and datum".to_string(),
+                "T8 M6 ; ATC/magazine or operator-loaded ball end mill evidence verified"
+                    .to_string(),
+                "S12000 M3 ; spindle on clockwise with reviewed chip-load".to_string(),
+                "M8 ; coolant active, chip evacuation verified".to_string(),
+                "G0 X0 Y0 Z75 A0 B0 ; safe rotary clearance above fixture".to_string(),
+                "G43.4H8 ; TCP kinematics verified, rotary pivot calibrated, and five-axis dry run approved"
+                    .to_string(),
+                "G93 ; inverse-time feed verified, per-block F timing reviewed for rotary blend".to_string(),
+                "G1 X20 Y0 Z20 A0 B15 F0.18 ; 3+2 roughing approach".to_string(),
+                "G1 X45 Y18 Z12 A25 B32 F0.12 ; simultaneous swarf/undercut finishing".to_string(),
+                "G1 X70 Y0 Z18 A0 B45 F0.12 ; blend out with rotary clearance".to_string(),
+                "G94 ; normal feed-per-minute restored".to_string(),
+                "G49 ; RTCP verified and cancelled".to_string(),
+                "G0 Z90 A0 B0 ; retract and unwind rotary axes".to_string(),
+                "M5".to_string(),
+                "M30".to_string(),
+            ],
+            vec![
+                "Draft only: verify CAM, postprocessor, rotary limits, pivot length, tool length, fixture clearance, and inverse-time feed before running."
+                    .to_string(),
+                "Five-axis operations require TCP/RTCP dry-run signoff, collision simulation, and inspection of undercuts or blended surfaces before release."
                     .to_string(),
             ],
         ),
@@ -5266,7 +6321,36 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
             ],
         ),
         MachineClass::SheetCut => {
-            if is_waterjet_cutter_kind(&machine.kind) {
+            if is_wire_edm_kind(&machine.kind) {
+                (
+                    machine
+                        .controller
+                        .clone()
+                        .unwrap_or_else(|| "wire-edm-job".to_string()),
+                    vec![
+                        "; draft wire EDM profile job generated by dd-fabrication-server"
+                            .to_string(),
+                        "CHECKPOINT [setup-boundary]: verify conductive stock, start hole, wire spool, dielectric, upper/lower guides, and slug retention"
+                            .to_string(),
+                        "WIRE_THREAD_CHECK confirm auto-thread, wire tension, flush nozzles, and deionized water conductivity before cutting"
+                            .to_string(),
+                        "OFFSET_TEST coupon_width_mm=10 kerf_offset=operator-reviewed taper=operator-reviewed"
+                            .to_string(),
+                        "ROUGH_CUT outside profile with lead-in, wire break recovery stop, and slug-support tabs".to_string(),
+                        "SKIM_PASS finish profile only after slug retention and offset inspection are signed off".to_string(),
+                        "CHECKPOINT [wire-edm-boundary]: inspect wire tension, flushing, taper, skim-pass allowance, slug retention, and rethread recovery"
+                            .to_string(),
+                        "COMPLETE record wire lot, dielectric conductivity, offset coupon, and edge inspection"
+                            .to_string(),
+                    ],
+                    vec![
+                        "Draft only: final wire offset, power settings, skim-pass count, taper compensation, and rethread strategy must come from the EDM controller/material database."
+                            .to_string(),
+                        "Human signoff is required for conductive workholding, dielectric/flushing state, slug retention, wire-break recovery, and skim-pass release."
+                            .to_string(),
+                    ],
+                )
+            } else if is_waterjet_cutter_kind(&machine.kind) {
                 (
                     machine
                         .controller
@@ -5385,6 +6469,36 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: verify stock stick-out, chuck clearance, tool nose radius, and spindle limits."
                     .to_string(),
                 "Human measurement is required at the programmed stop before the finish pass.".to_string(),
+            ],
+        ),
+        MachineClass::Other if is_sinker_edm_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "sinker-edm-job".to_string()),
+            vec![
+                "; draft sinker EDM cavity job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [setup-boundary]: verify conductive workpiece, electrode drawing, electrode material, polarity, dielectric filtration, flushing, and fire suppression"
+                    .to_string(),
+                "ELECTRODE_VERIFY graphite_or_copper=operator-reviewed undersize_mm=operator-reviewed wear_allowance=operator-reviewed"
+                    .to_string(),
+                "DIELECTRIC_FLUSH_TEST confirm pump flow, filtration, debris removal, and conductivity before first burn"
+                    .to_string(),
+                "ROUGH_BURN cavity with conservative power table, retract cycle, and debris evacuation"
+                    .to_string(),
+                "DEPTH_CHECK stop at witness depth for operator gauge or probe verification".to_string(),
+                "ORBIT_FINISH finish cavity only after electrode wear and sidewall taper are signed off"
+                    .to_string(),
+                "CHECKPOINT [sinker-edm-boundary]: inspect electrode wear, dielectric/flushing, burn depth, taper, recast layer, and debris traps"
+                    .to_string(),
+                "COMPLETE record electrode ID, dielectric condition, burn time, depth inspection, and surface finish"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final sinker EDM power table, orbit strategy, electrode undersize, wear compensation, and depth stops must come from the EDM controller/material database."
+                    .to_string(),
+                "Human signoff is required for electrode geometry, dielectric/flushing state, debris evacuation, fire suppression, depth verification, and surface-integrity release."
+                    .to_string(),
             ],
         ),
         MachineClass::Other => (
@@ -5552,6 +6666,187 @@ fn has_inverse_time_feed_evidence(line: &str) -> bool {
         || line_mentions(line, "feed timing dry run")
 }
 
+fn has_tool_center_point_start(line: &str) -> bool {
+    strip_comment(line).split_whitespace().any(|token| {
+        token == "G43.4"
+            || token.starts_with("G43.4H")
+            || token.starts_with("G43.4D")
+            || token == "G234"
+            || token.starts_with("G234H")
+            || token.starts_with("G234D")
+    })
+}
+
+fn has_tool_center_point_evidence(line: &str) -> bool {
+    line_mentions(line, "tool center point verified")
+        || line_mentions(line, "tool-center-point verified")
+        || line_mentions(line, "tool centre point verified")
+        || line_mentions(line, "tool-centre-point verified")
+        || line_mentions(line, "tcp kinematics verified")
+        || line_mentions(line, "rtcp verified")
+        || line_mentions(line, "g43.4 verified")
+        || line_mentions(line, "g234 verified")
+        || line_mentions(line, "rotary pivot calibrated")
+        || line_mentions(line, "rotary centerline verified")
+        || line_mentions(line, "rotary centreline verified")
+        || line_mentions(line, "machine kinematic calibration")
+        || line_mentions(line, "pivot length verified")
+        || line_mentions(line, "five-axis dry run")
+        || line_mentions(line, "5-axis dry run")
+}
+
+fn token_is_work_coordinate_offset_start(token: &str) -> bool {
+    if matches!(token, "G92" | "G92.3") {
+        return true;
+    }
+    token.strip_prefix("G92").is_some_and(|suffix| {
+        !suffix.is_empty()
+            && !suffix.starts_with('.')
+            && suffix.chars().next().is_some_and(|character| {
+                matches!(
+                    character,
+                    'X' | 'Y' | 'Z' | 'A' | 'B' | 'C' | 'U' | 'V' | 'W'
+                )
+            })
+    })
+}
+
+fn has_work_coordinate_offset_start(line: &str) -> bool {
+    strip_comment(line)
+        .split_whitespace()
+        .any(token_is_work_coordinate_offset_start)
+}
+
+fn has_work_coordinate_offset_cancel(line: &str) -> bool {
+    strip_comment(line)
+        .split_whitespace()
+        .any(|token| matches!(token, "G92.1" | "G92.2"))
+}
+
+fn has_work_coordinate_offset_evidence(line: &str) -> bool {
+    line_mentions(line, "g92 offset verified")
+        || line_mentions(line, "g92 work offset verified")
+        || line_mentions(line, "work coordinate offset verified")
+        || line_mentions(line, "work-coordinate offset verified")
+        || line_mentions(line, "coordinate offset verified")
+        || line_mentions(line, "datum shift verified")
+        || line_mentions(line, "temporary offset verified")
+        || line_mentions(line, "g92 cancel verified")
+        || line_mentions(line, "coordinate offset cancel verified")
+}
+
+fn numeric_word_value(line: &str, word: char) -> Option<f64> {
+    number_after(line, word).or_else(|| {
+        strip_comment(line)
+            .split_whitespace()
+            .find_map(|token| token_numeric_word_value(token, word))
+    })
+}
+
+fn token_numeric_word_value(token: &str, word: char) -> Option<f64> {
+    let start = token.find(word)? + word.len_utf8();
+    let mut value = String::new();
+    for character in token[start..].chars() {
+        if character.is_ascii_digit() || matches!(character, '.' | '+' | '-') {
+            value.push(character);
+        } else {
+            break;
+        }
+    }
+    (!value.is_empty())
+        .then_some(value)
+        .and_then(|value| value.parse::<f64>().ok())
+}
+
+fn has_controller_work_offset_write(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    let has_g10 = stripped
+        .split_whitespace()
+        .any(|token| token == "G10" || token.starts_with("G10L"));
+    has_g10
+        && numeric_word_value(&stripped, 'L').is_some_and(|value| value == 2.0 || value == 20.0)
+        && numeric_word_value(&stripped, 'P').is_some()
+}
+
+fn has_work_offset_write_evidence(line: &str) -> bool {
+    line_mentions(line, "g10 offset write verified")
+        || line_mentions(line, "g10 work offset verified")
+        || line_mentions(line, "g10 fixture offset verified")
+        || line_mentions(line, "g10 l2 reviewed")
+        || line_mentions(line, "g10 l20 reviewed")
+        || line_mentions(line, "work offset write verified")
+        || line_mentions(line, "fixture offset write verified")
+        || line_mentions(line, "offset table write reviewed")
+        || line_mentions(line, "controller offset table verified")
+        || line_mentions(line, "controller offset backup")
+        || line_mentions(line, "fixture offset backup")
+        || line_mentions(line, "offset table backup")
+}
+
+fn units_mode_from_line(line: &str) -> Option<&'static str> {
+    strip_comment(line)
+        .split_whitespace()
+        .fold(None, |mode, token| match token {
+            "G20" => Some("inch"),
+            "G21" => Some("millimeter"),
+            _ => mode,
+        })
+}
+
+fn has_units_mode_change_evidence(line: &str) -> bool {
+    line_mentions(line, "units mode change verified")
+        || line_mentions(line, "unit mode change verified")
+        || line_mentions(line, "units conversion verified")
+        || line_mentions(line, "unit conversion verified")
+        || line_mentions(line, "g20/g21 conversion verified")
+        || line_mentions(line, "inch/mm conversion verified")
+        || line_mentions(line, "inch to mm conversion verified")
+        || line_mentions(line, "mm to inch conversion verified")
+        || line_mentions(line, "scale conversion verified")
+        || line_mentions(line, "program units converted")
+        || line_mentions(line, "postprocessor units verified")
+        || line_mentions(line, "controller unit mode verified")
+}
+
+fn has_dwell_command(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    has_any_code(&stripped, &["G4", "G04"])
+        || stripped.split_whitespace().any(|token| {
+            token_is_compact_dwell(token, "G4") || token_is_compact_dwell(token, "G04")
+        })
+}
+
+fn token_is_compact_dwell(token: &str, prefix: &str) -> bool {
+    token.strip_prefix(prefix).is_some_and(|suffix| {
+        suffix
+            .chars()
+            .next()
+            .is_some_and(|character| matches!(character, 'P' | 'S' | 'X' | 'U'))
+    })
+}
+
+fn token_duration_word(token: &str, word: char) -> Option<f64> {
+    token.find(word).and_then(|index| {
+        let suffix = &token[index + word.len_utf8()..];
+        (!suffix.is_empty())
+            .then_some(suffix)
+            .and_then(|value| value.parse::<f64>().ok())
+    })
+}
+
+fn has_dwell_duration_or_review(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    ['P', 'S', 'X', 'U'].iter().any(|word| {
+        number_after(&stripped, *word).is_some_and(|value| value > 0.0)
+            || stripped
+                .split_whitespace()
+                .any(|token| token_duration_word(token, *word).is_some_and(|value| value > 0.0))
+    }) || line_mentions(line, "dwell duration verified")
+        || line_mentions(line, "timed dwell verified")
+        || line_mentions(line, "operator-timed dwell")
+        || line_mentions(line, "g4 duration verified")
+}
+
 fn has_printer_restart_position_evidence(line: &str) -> bool {
     line_mentions(line, "re-home")
         || line_mentions(line, "rehome")
@@ -5625,6 +6920,17 @@ fn has_additive_z_offset_evidence(line: &str) -> bool {
         || line_mentions(line, "first layer z verified")
         || line_mentions(line, "first-layer z verified")
         || line_mentions(line, "negative z clearance verified")
+}
+
+fn has_additive_bed_leveling_disable(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    (has_any_code(&stripped, &["M420"])
+        && number_after(&stripped, 'S').is_some_and(|enabled| enabled <= 0.0))
+        || line_mentions(line, "bed mesh disabled")
+        || line_mentions(line, "bed leveling disabled")
+        || line_mentions(line, "mesh leveling disabled")
+        || line_mentions(line, "leveling disabled")
+        || line_mentions(line, "mesh compensation disabled")
 }
 
 fn has_tool_length_compensation(line: &str) -> bool {
@@ -5722,6 +7028,33 @@ fn has_process_media_or_chip_evacuation(line: &str) -> bool {
         || line_mentions(line, "vacuum")
         || line_mentions(line, "dry machining approved")
         || line_mentions(line, "dry cut approved")
+}
+
+fn has_shutdown_required_process_media(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    has_any_code(&stripped, &["M7", "M07", "M8", "M08"])
+        || line_mentions(line, "coolant")
+        || line_mentions(line, "mist")
+        || line_mentions(line, "flood")
+        || line_mentions(line, "air blast")
+        || line_mentions(line, "air-blast")
+        || line_mentions(line, "chip evacuation")
+        || line_mentions(line, "chip auger")
+        || line_mentions(line, "chip conveyor")
+        || line_mentions(line, "dust collection")
+        || line_mentions(line, "vacuum")
+        || line_mentions(line, "assist gas")
+        || line_mentions(line, "assist-gas")
+        || line_mentions(line, "air assist")
+        || line_mentions(line, "fume extraction")
+        || line_mentions(line, "fume extractor")
+        || line_mentions(line, "abrasive")
+        || line_mentions(line, "garnet")
+        || line_mentions(line, "waterjet pressure")
+        || line_mentions(line, "water-jet pressure")
+        || line_mentions(line, "plasma air")
+        || line_mentions(line, "shield gas")
+        || line_mentions(line, "cut gas")
 }
 
 fn has_process_media_or_chip_evacuation_stop(line: &str) -> bool {
@@ -7224,6 +8557,278 @@ fn has_text_resin_vat_capacity_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_resin_layer_manifest_context(language: &str, line: &str) -> bool {
+    has_text_resin_context(language, line)
+        && language_or_line_has_any(
+            language,
+            line,
+            &[
+                "resin-layer-manifest",
+                "resin layer manifest",
+                "layer manifest",
+                "exposure manifest",
+                "slice manifest",
+                "slice stack",
+                "bitmap stack",
+                "image stack",
+                "mask image",
+                "slice image",
+                "ctb",
+                "cbddlp",
+                "photon",
+                "phz",
+                "pwmo",
+                "sl1",
+                "goo",
+                "lychee manifest",
+                "chitubox manifest",
+            ],
+        )
+}
+
+fn has_text_resin_layer_manifest_image_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "image hash",
+            "image checksum",
+            "slice hash",
+            "slice checksum",
+            "mask hash",
+            "mask checksum",
+            "manifest hash",
+            "manifest checksum",
+            "ctb hash",
+            "ctb checksum",
+            "photon hash",
+            "photon checksum",
+            "sha256",
+            "sha-256",
+            "crc32",
+            "slice image count",
+            "mask image count",
+            "layer image count",
+            "image count",
+            "bitmap count",
+            "png stack",
+        ],
+    )
+}
+
+fn has_text_resin_layer_manifest_motion_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "lift distance",
+            "lift speed",
+            "lift mm",
+            "retract speed",
+            "retract distance",
+            "peel",
+            "peel delay",
+            "release delay",
+            "recoat",
+            "recoat delay",
+            "light-off delay",
+            "light off delay",
+            "wait before exposure",
+            "wait after exposure",
+            "wait before lift",
+            "bottom lift",
+            "bottom layers",
+        ],
+    )
+}
+
+fn has_text_material_jetting_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "material-jetting",
+            "material jetting",
+            "material-jet",
+            "material jet",
+            "polyjet",
+            "poly jet",
+            "mjp",
+            "multi-jet",
+            "multi jet",
+            "photopolymer jet",
+            "jetted photopolymer",
+            "digital material",
+            "objet",
+            "connex",
+        ],
+    )
+}
+
+fn has_text_material_jetting_material_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "material cartridge",
+            "cartridge lot",
+            "photopolymer lot",
+            "material channel",
+            "channel map",
+            "color map",
+            "digital material",
+            "shore",
+            "transparent resin",
+            "printhead",
+            "nozzle check",
+            "purge",
+            "tray map",
+            "tray calibration",
+            "build tray",
+            "packing density",
+        ],
+    )
+}
+
+fn has_text_material_jetting_support_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "support material",
+            "support gel",
+            "support wax",
+            "sup705",
+            "sup706",
+            "support removal",
+            "remove support",
+            "waterjet",
+            "water jet",
+            "solvent",
+            "caustic bath",
+            "cleaning cycle",
+            "support residue",
+        ],
+    )
+}
+
+fn has_text_material_jetting_uv_inspection_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "uv lamp",
+            "uv dose",
+            "uv cure",
+            "post cure",
+            "tack-free",
+            "tack free",
+            "dimensional inspection",
+            "color verification",
+            "material verification",
+            "shore hardness",
+            "surface finish",
+            "material interface",
+            "first article",
+        ],
+    )
+}
+
+fn has_text_composite_fiber_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "composite-fiber",
+            "composite fiber",
+            "continuous-fiber",
+            "continuous fiber",
+            "carbon-fiber",
+            "carbon fiber",
+            "carbon-fibre",
+            "carbon fibre",
+            "fiber layup",
+            "fibre layup",
+            "fiberglass",
+            "glass fiber",
+            "kevlar",
+            "aramid",
+            "pa-cf",
+            "cf nylon",
+            "onyx",
+        ],
+    )
+}
+
+fn has_text_composite_fiber_layup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "fiber orientation",
+            "fibre orientation",
+            "fiber path",
+            "fibre path",
+            "layup schedule",
+            "fiber layup",
+            "reinforcement schedule",
+            "reinforcement rings",
+            "concentric fiber",
+            "isotropic fiber",
+            "fiber layers",
+            "load direction",
+            "load case",
+            "principal stress",
+            "anisotropy",
+            "neutral axis",
+        ],
+    )
+}
+
+fn has_text_composite_fiber_process_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "fiber spool",
+            "fibre spool",
+            "spool lot",
+            "matrix lot",
+            "matrix profile",
+            "filament lot",
+            "dry storage",
+            "dry box",
+            "fiber cutter",
+            "fibre cutter",
+            "cutter calibration",
+            "cut test",
+            "fiber tension",
+            "fiber anchor",
+            "anchor length",
+            "nozzle purge",
+            "bed adhesion",
+            "fiber volume",
+            "compaction",
+        ],
+    )
+}
+
+fn has_text_composite_fiber_inspection_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "coupon",
+            "bend test",
+            "tensile coupon",
+            "fiber continuity",
+            "fibre continuity",
+            "delamination",
+            "void",
+            "porosity",
+            "ultrasonic",
+            "warp inspection",
+            "anisotropy inspection",
+            "dimensional inspection",
+            "exposed fiber",
+            "exposed fibre",
+            "trim inspection",
+        ],
+    )
+}
+
 fn has_text_powder_bed_context(language: &str, line: &str) -> bool {
     language_or_line_has_any(
         language,
@@ -7236,6 +8841,90 @@ fn has_text_powder_bed_context(language: &str, line: &str) -> bool {
             "powder bed",
             "powder cake",
             "depowder",
+        ],
+    )
+}
+
+fn has_text_binder_jet_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "binder-jet",
+            "binder jet",
+            "binderjet",
+            "binder jetted",
+            "binder jetting",
+            "bound metal",
+            "bound-metal",
+            "green part",
+            "green-part",
+            "green body",
+            "green-body",
+        ],
+    )
+}
+
+fn has_text_binder_jet_process_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "binder lot",
+            "binder batch",
+            "binder saturation",
+            "binder profile",
+            "printhead",
+            "nozzle check",
+            "powder lot",
+            "powder batch",
+            "layer thickness",
+            "build box",
+            "build profile",
+            "green strength",
+            "saturation coupon",
+        ],
+    )
+}
+
+fn has_text_binder_jet_postprocess_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "cure",
+            "curing",
+            "debind",
+            "debinding",
+            "sinter",
+            "sintering",
+            "furnace",
+            "infiltrate",
+            "infiltration",
+            "depowder",
+            "powder recovery",
+            "setter",
+            "support setter",
+            "green part handling",
+        ],
+    )
+}
+
+fn has_text_binder_jet_shrinkage_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "shrink",
+            "shrinkage",
+            "shrink compensation",
+            "scale factor",
+            "furnace profile",
+            "sinter profile",
+            "density coupon",
+            "porosity",
+            "distortion",
+            "warp",
+            "deformation",
+            "dimensional coupon",
+            "calibration coupon",
         ],
     )
 }
@@ -7303,6 +8992,77 @@ fn has_text_powder_bed_profile_evidence(line: &str) -> bool {
             "recoat",
             "roller check",
             "calibration coupon",
+            "witness coupon",
+            "density coupon",
+        ],
+    )
+}
+
+fn has_text_powder_bed_recoater_thermal_context(language: &str, line: &str) -> bool {
+    has_text_powder_bed_context(language, line)
+        && text_has_any(
+            line,
+            &[
+                "recoater",
+                "recoat",
+                "roller",
+                "spreader",
+                "sweep",
+                "blade",
+                "dense nesting",
+                "dense pack",
+                "tight nesting",
+                "tight pack",
+                "packing density",
+                "thermal spacing",
+                "thermal gradient",
+                "curl",
+                "warp",
+                "warpage",
+                "full build",
+                "full bed",
+            ],
+        )
+}
+
+fn has_text_powder_bed_recoater_clearance_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "recoater clearance",
+            "roller clearance",
+            "spreader clearance",
+            "blade clearance",
+            "sweep clearance",
+            "collision clearance",
+            "recoater collision",
+            "recoater check",
+            "roller check",
+            "blade check",
+            "height map",
+            "part height verified",
+            "max z height",
+            "powder spread test",
+            "spreader test",
+        ],
+    )
+}
+
+fn has_text_powder_bed_thermal_pack_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "thermal spacing",
+            "part spacing",
+            "nesting clearance",
+            "packing review",
+            "packing density reviewed",
+            "thermal simulation",
+            "thermal profile",
+            "cooldown curve",
+            "unpack temperature",
+            "curl risk reviewed",
+            "warpage review",
             "witness coupon",
             "density coupon",
         ],
@@ -7406,6 +9166,13 @@ fn has_text_sheet_cutting_context(language: &str, line: &str) -> bool {
             "plasma",
             "knife cut",
             "die cut",
+            "wire-edm",
+            "wire edm",
+            "edm-cut",
+            "edm profile",
+            "edm-profile",
+            "electrical-discharge",
+            "electrical discharge",
             "kerf",
             "pierce",
             "vector cut",
@@ -7444,6 +9211,179 @@ fn has_text_sheet_cutting_recipe_evidence(line: &str) -> bool {
             "abrasive flow",
             "torch height",
             "lens",
+            "start hole",
+            "starter hole",
+            "wire thread",
+            "auto-thread",
+            "wire diameter",
+            "wire tension",
+            "dielectric",
+            "deionized water",
+            "flushing",
+            "flush pressure",
+            "spark gap",
+            "skim pass",
+            "skim-pass",
+        ],
+    )
+}
+
+fn has_text_wire_edm_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "wire-edm",
+            "wire edm",
+            "edm-cut",
+            "edm profile",
+            "edm-profile",
+            "electrical-discharge",
+            "electrical discharge",
+        ],
+    )
+}
+
+fn has_text_wire_edm_setup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "start hole",
+            "starter hole",
+            "wire thread",
+            "thread wire",
+            "auto-thread",
+            "wire diameter",
+            "wire tension",
+            "wire spool",
+            "upper/lower guide",
+            "slug retention",
+            "slug tab",
+            "slug clamp",
+            "slug pickup",
+            "conductive stock",
+        ],
+    )
+}
+
+fn has_text_wire_edm_process_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "dielectric",
+            "deionized water",
+            "di water",
+            "conductivity",
+            "flushing",
+            "flush pressure",
+            "spark gap",
+            "skim pass",
+            "skim-pass",
+            "offset coupon",
+            "taper compensation",
+            "wire-break recovery",
+            "rethread recovery",
+        ],
+    )
+}
+
+fn has_text_wire_edm_cut_command(line: &str) -> bool {
+    let token = normalize_token(line);
+    token.starts_with("cut-profile")
+        || token.starts_with("cut-contour")
+        || token.starts_with("rough-cut")
+        || token.starts_with("finish-cut")
+        || token.starts_with("skim-cut")
+        || token.starts_with("skim-pass-cut")
+        || token.starts_with("skim-pass-finish")
+        || token.starts_with("skim-pass-profile")
+        || token.contains("-cut-profile")
+        || token.contains("-cut-contour")
+        || token.contains("-rough-cut")
+        || token.contains("-finish-cut")
+        || token.contains("-skim-cut")
+        || token.contains("-skim-pass-cut")
+}
+
+fn has_text_sinker_edm_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "sinker-edm",
+            "sinker edm",
+            "sink-edm",
+            "sink edm",
+            "ram-edm",
+            "ram edm",
+            "die-sink",
+            "die sink",
+            "die-sinking",
+            "edm-cavity",
+            "edm cavity",
+            "electrode burn",
+            "electrode-burn",
+            "spark erode",
+            "spark-erode",
+            "orbit finish",
+            "orbit-finish",
+        ],
+    )
+}
+
+fn has_text_sinker_edm_electrode_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "electrode drawing",
+            "electrode material",
+            "electrode id",
+            "electrode geometry",
+            "electrode verify",
+            "graphite",
+            "copper electrode",
+            "polarity",
+            "undersize",
+            "wear allowance",
+            "wear compensation",
+        ],
+    )
+}
+
+fn has_text_sinker_edm_dielectric_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "dielectric",
+            "dielectric flush",
+            "flushing",
+            "filtration",
+            "pump flow",
+            "debris removal",
+            "debris evacuation",
+            "conductivity",
+            "fire suppression",
+        ],
+    )
+}
+
+fn has_text_sinker_edm_burn_control_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "power table",
+            "burn depth",
+            "depth check",
+            "depth stop",
+            "witness depth",
+            "retract cycle",
+            "rough burn",
+            "finish burn",
+            "orbit finish",
+            "orbit strategy",
+            "sidewall taper",
+            "recast layer",
+            "surface finish",
         ],
     )
 }
@@ -8097,12 +10037,16 @@ fn inspect_text_instruction_line(
     }
     let resin_context = has_text_resin_context(language, raw_line);
     let resin_print_context = has_text_resin_print_context(language, raw_line);
+    let resin_layer_manifest_context = has_text_resin_layer_manifest_context(language, raw_line);
     let resin_postprocess_evidence = has_text_resin_postprocess_evidence(raw_line);
     if resin_context {
         signals.has_resin_context = true;
     }
     if resin_print_context {
         signals.has_resin_print_context = true;
+    }
+    if resin_layer_manifest_context {
+        signals.has_resin_layer_manifest_context = true;
     }
     if resin_context && has_text_resin_profile_evidence(raw_line) {
         signals.has_resin_profile_evidence = true;
@@ -8113,6 +10057,14 @@ fn inspect_text_instruction_line(
     }
     if resin_context && has_text_resin_vat_capacity_evidence(raw_line) {
         signals.has_resin_vat_capacity_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if resin_layer_manifest_context && has_text_resin_layer_manifest_image_evidence(raw_line) {
+        signals.has_resin_layer_manifest_image_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if resin_layer_manifest_context && has_text_resin_layer_manifest_motion_evidence(raw_line) {
+        signals.has_resin_layer_manifest_motion_evidence = true;
         signals.has_process_preparation = true;
     }
     if resin_context && resin_postprocess_evidence {
@@ -8140,17 +10092,63 @@ fn inspect_text_instruction_line(
                     .to_string(),
         });
     }
+    let material_jetting_context = has_text_material_jetting_context(language, raw_line);
+    if material_jetting_context {
+        signals.has_material_jetting_text_context = true;
+    }
+    if material_jetting_context && has_text_material_jetting_material_evidence(raw_line) {
+        signals.has_material_jetting_material_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if material_jetting_context && has_text_material_jetting_support_evidence(raw_line) {
+        signals.has_material_jetting_support_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if material_jetting_context && has_text_material_jetting_uv_inspection_evidence(raw_line) {
+        signals.has_material_jetting_uv_inspection_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let composite_fiber_context = has_text_composite_fiber_context(language, raw_line);
+    if composite_fiber_context {
+        signals.has_composite_fiber_text_context = true;
+    }
+    if composite_fiber_context && has_text_composite_fiber_layup_evidence(raw_line) {
+        signals.has_composite_fiber_layup_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if composite_fiber_context && has_text_composite_fiber_process_evidence(raw_line) {
+        signals.has_composite_fiber_process_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if composite_fiber_context && has_text_composite_fiber_inspection_evidence(raw_line) {
+        signals.has_composite_fiber_inspection_evidence = true;
+        signals.has_process_preparation = true;
+    }
     let powder_context = has_text_powder_bed_context(language, raw_line);
     let powder_print_context = has_text_powder_bed_print_context(language, raw_line);
+    let powder_recoater_thermal_context =
+        has_text_powder_bed_recoater_thermal_context(language, raw_line);
     let powder_handling_evidence = has_text_powder_bed_handling_evidence(raw_line);
+    let binder_jet_context = has_text_binder_jet_context(language, raw_line);
     if powder_context {
         signals.has_powder_bed_context = true;
     }
     if powder_print_context {
         signals.has_powder_bed_print_context = true;
     }
+    if powder_recoater_thermal_context {
+        signals.has_powder_bed_recoater_thermal_context = true;
+    }
     if powder_context && has_text_powder_bed_profile_evidence(raw_line) {
         signals.has_powder_bed_profile_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if powder_context && has_text_powder_bed_recoater_clearance_evidence(raw_line) {
+        signals.has_powder_bed_recoater_clearance_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if powder_context && has_text_powder_bed_thermal_pack_evidence(raw_line) {
+        signals.has_powder_bed_thermal_pack_evidence = true;
         signals.has_process_preparation = true;
     }
     if powder_context && powder_handling_evidence {
@@ -8178,6 +10176,21 @@ fn inspect_text_instruction_line(
                 "split cooldown, depowdering, powder recovery, refresh-ratio, PPE, and atmosphere checks into explicit operator or automation checkpoints"
                     .to_string(),
         });
+    }
+    if binder_jet_context {
+        signals.has_binder_jet_text_context = true;
+    }
+    if binder_jet_context && has_text_binder_jet_process_evidence(raw_line) {
+        signals.has_binder_jet_process_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if binder_jet_context && has_text_binder_jet_postprocess_evidence(raw_line) {
+        signals.has_binder_jet_postprocess_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if binder_jet_context && has_text_binder_jet_shrinkage_evidence(raw_line) {
+        signals.has_binder_jet_shrinkage_evidence = true;
+        signals.has_process_preparation = true;
     }
     let subtractive_context = has_text_subtractive_context(language, raw_line);
     if subtractive_context {
@@ -8211,6 +10224,35 @@ fn inspect_text_instruction_line(
     }
     if has_text_sheet_cutting_recipe_evidence(raw_line) {
         signals.has_sheet_cutting_recipe_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let wire_edm_text_context = has_text_wire_edm_context(language, raw_line);
+    if wire_edm_text_context {
+        signals.has_wire_edm_text_context = true;
+        signals.has_sheet_cutting_text_context = true;
+    }
+    if wire_edm_text_context && has_text_wire_edm_setup_evidence(raw_line) {
+        signals.has_wire_edm_setup_evidence = true;
+        signals.has_setup_reference = true;
+    }
+    if wire_edm_text_context && has_text_wire_edm_process_evidence(raw_line) {
+        signals.has_wire_edm_process_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let sinker_edm_text_context = has_text_sinker_edm_context(language, raw_line);
+    if sinker_edm_text_context {
+        signals.has_sinker_edm_text_context = true;
+    }
+    if sinker_edm_text_context && has_text_sinker_edm_electrode_evidence(raw_line) {
+        signals.has_sinker_edm_electrode_evidence = true;
+        signals.has_setup_reference = true;
+    }
+    if sinker_edm_text_context && has_text_sinker_edm_dielectric_evidence(raw_line) {
+        signals.has_sinker_edm_dielectric_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if sinker_edm_text_context && has_text_sinker_edm_burn_control_evidence(raw_line) {
+        signals.has_sinker_edm_burn_control_evidence = true;
         signals.has_process_preparation = true;
     }
     let assembly_context = has_text_assembly_context(language, raw_line);
@@ -8420,6 +10462,9 @@ fn analyze_instruction_programs(
         let class = machine_class(&machine_kind);
         let mut absolute = true;
         let mut has_units_mode = false;
+        let mut active_units_mode = None;
+        let mut units_mode_motion_observed = false;
+        let mut reported_units_mode_change_boundary = false;
         let mut has_positioning_mode = false;
         let mut reported_incremental_positioning_program_end_boundary = false;
         let mut additive_relative_positioning_verified = true;
@@ -8428,7 +10473,9 @@ fn analyze_instruction_programs(
         let mut printer_position_reference_active = false;
         let mut printer_stepper_disable_observed = false;
         let mut additive_z_offset_evidence_observed = false;
+        let mut additive_bed_leveling_disabled = false;
         let mut reported_additive_negative_z_extrusion_boundary = false;
+        let mut reported_additive_bed_leveling_boundary = false;
         let mut has_spindle_or_heatup = false;
         let mut subtractive_spindle_speed_evidence_observed = false;
         let mut reported_spindle_speed_boundary = false;
@@ -8436,6 +10483,7 @@ fn analyze_instruction_programs(
         let mut reported_spindle_direction_change_boundary = false;
         let mut reported_rapid_plunge_before_spindle_boundary = false;
         let mut reported_rapid_plunge_after_process_stop_boundary = false;
+        let mut reported_process_end_boundary = false;
         let mut controller_dependency_review_observed = false;
         let mut reported_controller_dependency_boundary = false;
         let mut subtractive_process_active = false;
@@ -8500,6 +10548,7 @@ fn analyze_instruction_programs(
         let mut current_arc_plane = None;
         let mut reported_arc_plane_boundary = false;
         let mut reported_arc_plane_offset_boundary = false;
+        let mut reported_arc_plane_reset_boundary = false;
         let mut tool_change_automation_evidence_observed = false;
         let mut reported_tool_change_automation_boundary = false;
         let mut reported_tool_change_spindle_stop_boundary = false;
@@ -8513,6 +10562,16 @@ fn analyze_instruction_programs(
         let mut inverse_time_feed_evidence_observed = false;
         let mut reported_inverse_time_feed_motion_boundary = false;
         let mut reported_inverse_time_feed_cancel_boundary = false;
+        let mut tool_center_point_active = false;
+        let mut tool_center_point_evidence_observed = false;
+        let mut reported_tool_center_point_motion_boundary = false;
+        let mut reported_tool_center_point_cancel_boundary = false;
+        let mut work_coordinate_offset_active = false;
+        let mut work_coordinate_offset_evidence_observed = false;
+        let mut reported_work_coordinate_offset_motion_boundary = false;
+        let mut reported_work_coordinate_offset_cancel_boundary = false;
+        let mut reported_work_offset_write_boundary = false;
+        let mut reported_dwell_duration_boundary = false;
         let mut mill_router_workholding_evidence_observed = false;
         let mut reported_mill_router_workholding_boundary = false;
         let mut reported_fan_timing_boundary = false;
@@ -8542,8 +10601,10 @@ fn analyze_instruction_programs(
         let mut reported_lathe_tool_nose_compensation_cancel_boundary = false;
         let mut process_media_or_chip_evacuation_observed = false;
         let mut process_media_or_chip_evacuation_active = false;
+        let mut shutdown_required_process_media_active = false;
         let mut reported_chip_evacuation_boundary = false;
         let mut reported_chip_evacuation_stopped_boundary = false;
+        let mut reported_process_media_end_boundary = false;
         let mut sheet_cutting_process_evidence_observed = false;
         let mut reported_sheet_cutting_process_boundary = false;
         let mut sheet_cutting_part_retention_evidence_observed = false;
@@ -8564,16 +10625,34 @@ fn analyze_instruction_programs(
         let mut has_slicer_mesh_topology_evidence = false;
         let mut has_slicer_high_speed_context = false;
         let mut has_slicer_high_speed_kinematic_evidence = false;
+        let mut has_material_jetting_text_context = false;
+        let mut has_material_jetting_material_evidence = false;
+        let mut has_material_jetting_support_evidence = false;
+        let mut has_material_jetting_uv_inspection_evidence = false;
+        let mut has_composite_fiber_text_context = false;
+        let mut has_composite_fiber_layup_evidence = false;
+        let mut has_composite_fiber_process_evidence = false;
+        let mut has_composite_fiber_inspection_evidence = false;
         let mut has_resin_context = false;
         let mut has_resin_print_context = false;
         let mut has_resin_profile_evidence = false;
         let mut has_resin_vat_capacity_context = false;
         let mut has_resin_vat_capacity_evidence = false;
+        let mut has_resin_layer_manifest_context = false;
+        let mut has_resin_layer_manifest_image_evidence = false;
+        let mut has_resin_layer_manifest_motion_evidence = false;
         let mut has_resin_postprocess_evidence = false;
         let mut has_powder_bed_context = false;
         let mut has_powder_bed_print_context = false;
         let mut has_powder_bed_profile_evidence = false;
+        let mut has_powder_bed_recoater_thermal_context = false;
+        let mut has_powder_bed_recoater_clearance_evidence = false;
+        let mut has_powder_bed_thermal_pack_evidence = false;
         let mut has_powder_bed_handling_evidence = false;
+        let mut has_binder_jet_text_context = false;
+        let mut has_binder_jet_process_evidence = false;
+        let mut has_binder_jet_postprocess_evidence = false;
+        let mut has_binder_jet_shrinkage_evidence = false;
         let mut has_subtractive_text_context = false;
         let mut has_subtractive_text_setup_evidence = false;
         let mut has_subtractive_text_process_evidence = false;
@@ -8583,6 +10662,14 @@ fn analyze_instruction_programs(
         let mut has_lathe_text_partoff_support_evidence = false;
         let mut has_sheet_cutting_text_context = false;
         let mut has_sheet_cutting_recipe_evidence = false;
+        let mut has_wire_edm_text_context = false;
+        let mut has_wire_edm_setup_evidence = false;
+        let mut has_wire_edm_process_evidence = false;
+        let mut reported_wire_edm_cut_setup_boundary = false;
+        let mut has_sinker_edm_text_context = false;
+        let mut has_sinker_edm_electrode_evidence = false;
+        let mut has_sinker_edm_dielectric_evidence = false;
+        let mut has_sinker_edm_burn_control_evidence = false;
         let mut has_text_assembly_context = false;
         let mut has_text_assembly_fit_evidence = false;
         let mut has_text_precision_requirement_context = false;
@@ -8626,16 +10713,44 @@ fn analyze_instruction_programs(
                 has_slicer_high_speed_context |= signals.has_slicer_high_speed_context;
                 has_slicer_high_speed_kinematic_evidence |=
                     signals.has_slicer_high_speed_kinematic_evidence;
+                has_material_jetting_text_context |= signals.has_material_jetting_text_context;
+                has_material_jetting_material_evidence |=
+                    signals.has_material_jetting_material_evidence;
+                has_material_jetting_support_evidence |=
+                    signals.has_material_jetting_support_evidence;
+                has_material_jetting_uv_inspection_evidence |=
+                    signals.has_material_jetting_uv_inspection_evidence;
+                has_composite_fiber_text_context |= signals.has_composite_fiber_text_context;
+                has_composite_fiber_layup_evidence |= signals.has_composite_fiber_layup_evidence;
+                has_composite_fiber_process_evidence |=
+                    signals.has_composite_fiber_process_evidence;
+                has_composite_fiber_inspection_evidence |=
+                    signals.has_composite_fiber_inspection_evidence;
                 has_resin_context |= signals.has_resin_context;
                 has_resin_print_context |= signals.has_resin_print_context;
                 has_resin_profile_evidence |= signals.has_resin_profile_evidence;
                 has_resin_vat_capacity_context |= signals.has_resin_vat_capacity_context;
                 has_resin_vat_capacity_evidence |= signals.has_resin_vat_capacity_evidence;
+                has_resin_layer_manifest_context |= signals.has_resin_layer_manifest_context;
+                has_resin_layer_manifest_image_evidence |=
+                    signals.has_resin_layer_manifest_image_evidence;
+                has_resin_layer_manifest_motion_evidence |=
+                    signals.has_resin_layer_manifest_motion_evidence;
                 has_resin_postprocess_evidence |= signals.has_resin_postprocess_evidence;
                 has_powder_bed_context |= signals.has_powder_bed_context;
                 has_powder_bed_print_context |= signals.has_powder_bed_print_context;
                 has_powder_bed_profile_evidence |= signals.has_powder_bed_profile_evidence;
+                has_powder_bed_recoater_thermal_context |=
+                    signals.has_powder_bed_recoater_thermal_context;
+                has_powder_bed_recoater_clearance_evidence |=
+                    signals.has_powder_bed_recoater_clearance_evidence;
+                has_powder_bed_thermal_pack_evidence |=
+                    signals.has_powder_bed_thermal_pack_evidence;
                 has_powder_bed_handling_evidence |= signals.has_powder_bed_handling_evidence;
+                has_binder_jet_text_context |= signals.has_binder_jet_text_context;
+                has_binder_jet_process_evidence |= signals.has_binder_jet_process_evidence;
+                has_binder_jet_postprocess_evidence |= signals.has_binder_jet_postprocess_evidence;
+                has_binder_jet_shrinkage_evidence |= signals.has_binder_jet_shrinkage_evidence;
                 has_subtractive_text_context |= signals.has_subtractive_text_context;
                 has_subtractive_text_setup_evidence |= signals.has_subtractive_text_setup_evidence;
                 has_subtractive_text_process_evidence |=
@@ -8648,6 +10763,14 @@ fn analyze_instruction_programs(
                     signals.has_lathe_text_partoff_support_evidence;
                 has_sheet_cutting_text_context |= signals.has_sheet_cutting_text_context;
                 has_sheet_cutting_recipe_evidence |= signals.has_sheet_cutting_recipe_evidence;
+                has_wire_edm_text_context |= signals.has_wire_edm_text_context;
+                has_wire_edm_setup_evidence |= signals.has_wire_edm_setup_evidence;
+                has_wire_edm_process_evidence |= signals.has_wire_edm_process_evidence;
+                has_sinker_edm_text_context |= signals.has_sinker_edm_text_context;
+                has_sinker_edm_electrode_evidence |= signals.has_sinker_edm_electrode_evidence;
+                has_sinker_edm_dielectric_evidence |= signals.has_sinker_edm_dielectric_evidence;
+                has_sinker_edm_burn_control_evidence |=
+                    signals.has_sinker_edm_burn_control_evidence;
                 has_text_assembly_context |= signals.has_text_assembly_context;
                 has_text_assembly_fit_evidence |= signals.has_text_assembly_fit_evidence;
                 has_text_precision_requirement_context |=
@@ -8665,6 +10788,35 @@ fn analyze_instruction_programs(
                 has_text_surface_finishing_evidence |= signals.has_text_surface_finishing_evidence;
                 has_text_indexed_setup_context |= signals.has_text_indexed_setup_context;
                 has_text_indexed_setup_evidence |= signals.has_text_indexed_setup_evidence;
+                if signals.has_wire_edm_text_context
+                    && has_text_wire_edm_cut_command(raw_line)
+                    && !has_wire_edm_setup_evidence
+                    && !reported_wire_edm_cut_setup_boundary
+                {
+                    reported_wire_edm_cut_setup_boundary = true;
+                    findings.push(ValidationFinding {
+                        severity: "error".to_string(),
+                        code: "wire-edm-cut-before-threading-setup".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message:
+                            "wire-EDM profile cut appears before start-hole, wire-threading, or slug-retention setup evidence"
+                                .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "wire-edm-cut-setup-boundary".to_string(),
+                        severity: "error".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "wire-EDM cutting before start-hole, wire-threading, guide/tension, conductive workholding, or slug-retention evidence can break wire, drop the slug, lose datum, or scrap the profile before the job can recover unattended"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "move the profile/skim cut after verified start-hole, wire-threading, guide/tension, conductive workholding, and slug-retention evidence, then rerun instruction analysis before release"
+                                .to_string(),
+                    });
+                }
                 continue;
             }
             let stripped = strip_comment(raw_line);
@@ -8678,6 +10830,9 @@ fn analyze_instruction_programs(
                 &stripped,
                 &["G0", "G00", "G1", "G01", "G2", "G02", "G3", "G03"],
             );
+            let line_has_rotary_axis_word = ['A', 'B', 'C']
+                .iter()
+                .any(|axis| number_after(&stripped, *axis).is_some());
             let line_has_rapid_move = has_any_code(&stripped, &["G0", "G00"]);
             let line_has_mill_router_negative_z_rapid =
                 matches!(class, MachineClass::Mill | MachineClass::Router)
@@ -8763,6 +10918,42 @@ fn analyze_instruction_programs(
                 MachineClass::Mill | MachineClass::Router | MachineClass::Lathe
             ) && has_inverse_time_feed_cancel(&stripped);
             let line_has_inverse_time_feed_evidence = has_inverse_time_feed_evidence(raw_line);
+            let line_has_tool_center_point_start =
+                matches!(class, MachineClass::Mill | MachineClass::Router)
+                    && has_tool_center_point_start(&stripped);
+            let line_cancels_tool_center_point =
+                matches!(class, MachineClass::Mill | MachineClass::Router)
+                    && has_any_code(&stripped, &["G49"]);
+            let line_has_tool_center_point_evidence = has_tool_center_point_evidence(raw_line);
+            let line_has_work_coordinate_offset_start =
+                matches!(
+                    class,
+                    MachineClass::Mill | MachineClass::Router | MachineClass::SheetCut
+                ) && has_work_coordinate_offset_start(&stripped);
+            let line_cancels_work_coordinate_offset =
+                matches!(
+                    class,
+                    MachineClass::Mill | MachineClass::Router | MachineClass::SheetCut
+                ) && has_work_coordinate_offset_cancel(&stripped);
+            let line_has_work_coordinate_offset_evidence =
+                has_work_coordinate_offset_evidence(raw_line);
+            let line_has_work_offset_write = matches!(
+                class,
+                MachineClass::Mill
+                    | MachineClass::Router
+                    | MachineClass::Lathe
+                    | MachineClass::SheetCut
+            ) && has_controller_work_offset_write(&stripped);
+            let line_units_mode = units_mode_from_line(&stripped);
+            let line_has_dwell_without_duration = matches!(
+                class,
+                MachineClass::Additive
+                    | MachineClass::Mill
+                    | MachineClass::Router
+                    | MachineClass::Lathe
+                    | MachineClass::SheetCut
+            ) && has_dwell_command(&stripped)
+                && !has_dwell_duration_or_review(raw_line);
             let line_has_program_end =
                 has_any_code(&stripped, &["M2", "M02", "M30"]) || contains_code(&stripped, "M84");
             let line_stops_subtractive_process = has_any_code(&stripped, &["M5", "M05"]);
@@ -8802,8 +10993,38 @@ fn analyze_instruction_programs(
             ) && number_after(&stripped, 'S')
                 .is_some_and(|speed| speed > 0.0);
 
-            if has_any_code(&stripped, &["G20", "G21"]) {
+            if let Some(next_units_mode) = line_units_mode {
                 has_units_mode = true;
+                if units_mode_motion_observed
+                    && active_units_mode != Some(next_units_mode)
+                    && !has_units_mode_change_evidence(raw_line)
+                    && !reported_units_mode_change_boundary
+                {
+                    reported_units_mode_change_boundary = true;
+                    findings.push(ValidationFinding {
+                        severity: "warning".to_string(),
+                        code: "units-mode-change-after-motion".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message:
+                            "G20/G21 units mode changes after programmed motion without unit-conversion review evidence"
+                                .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "units-mode-change-boundary".to_string(),
+                        severity: "warning".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "G20/G21 changes scale subsequent coordinates and feed assumptions by 25.4; switching or declaring units after motion has started can machine the rest of the job at the wrong scale"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "move the intended G20/G21 units mode before motion, or record unit-conversion, postprocessor-units, and dry-run review evidence before machine-ready release"
+                                .to_string(),
+                    });
+                }
+                active_units_mode = Some(next_units_mode);
             }
             if let Some(line_absolute) = positioning_absolute_from_line(&stripped) {
                 has_positioning_mode = true;
@@ -8821,6 +11042,10 @@ fn analyze_instruction_programs(
             }
             if class == MachineClass::Additive && has_additive_z_offset_evidence(raw_line) {
                 additive_z_offset_evidence_observed = true;
+                additive_bed_leveling_disabled = false;
+            }
+            if class == MachineClass::Additive && has_additive_bed_leveling_disable(raw_line) {
+                additive_bed_leveling_disabled = true;
             }
             if has_any_code(
                 &stripped,
@@ -8830,6 +11055,35 @@ fn analyze_instruction_programs(
             }
             if has_controller_dependency_review_evidence(raw_line) {
                 controller_dependency_review_observed = true;
+            }
+            if machine_code_language
+                && line_has_work_offset_write
+                && !has_work_offset_write_evidence(raw_line)
+                && !reported_work_offset_write_boundary
+            {
+                reported_work_offset_write_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "work-offset-write-not-verified".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "G10 L2/L20 fixture or work-offset table write appears without controller offset-table review evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "work-offset-write-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "G10 L2/L20 can rewrite fixture or work-coordinate offsets in the controller; unreviewed offset-table writes can shift the active datum for the current program, the next setup, or an imported subprogram into the wrong fixture frame"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record the intended G10 target offset, controller offset-table backup, fixture/datum measurement evidence, and dry-run review before machine-ready release"
+                            .to_string(),
+                });
             }
             if machine_code_language
                 && matches!(
@@ -8864,6 +11118,34 @@ fn analyze_instruction_programs(
                     requires_human_intervention: true,
                     suggested_resolution:
                         "attach the referenced subprograms or macro library, record controller parameter and macro-variable review evidence, then rerun dry-run simulation before machine release"
+                            .to_string(),
+                });
+            }
+            if machine_code_language
+                && line_has_dwell_without_duration
+                && !reported_dwell_duration_boundary
+            {
+                reported_dwell_duration_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "dwell-duration-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "G4/G04 dwell command appears without a positive P/S/X/U duration or operator-timed dwell review"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "dwell-duration-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "controller dwell commands without an explicit duration can halt, controller-alarm, or wait indefinitely, leaving the machine unable to complete the job without operator intervention"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "add a positive G4/G04 P/S/X/U duration word, document the controller time units, or split the dwell into an operator-approved stop before machine-ready release"
                             .to_string(),
                 });
             }
@@ -8951,6 +11233,89 @@ fn analyze_instruction_programs(
                     suggested_resolution:
                         "record inverse-time feed review evidence, verify every cutting block has an intended F timing value, dry-run rotary/linear blend motion, and cancel with G94 before machine-ready release"
                             .to_string(),
+                    });
+            }
+            if line_has_tool_center_point_evidence {
+                tool_center_point_evidence_observed = true;
+            }
+            if line_cancels_tool_center_point {
+                tool_center_point_active = false;
+            }
+            if line_has_tool_center_point_start {
+                tool_center_point_active = true;
+            }
+            if machine_code_language
+                && matches!(class, MachineClass::Mill | MachineClass::Router)
+                && tool_center_point_active
+                && (line_has_rotary_axis_word || line_has_motion_move)
+                && !tool_center_point_evidence_observed
+                && !reported_tool_center_point_motion_boundary
+            {
+                reported_tool_center_point_motion_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "tool-center-point-not-verified".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "motion runs while G43.4/G234 tool-center-point mode is active without TCP kinematic review evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "tool-center-point-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "G43.4/G234 tool-center-point control depends on rotary pivot length, machine kinematic calibration, fixture offsets, and postprocessor assumptions; unreviewed rotary or linear motion can gouge fixtures, overtravel axes, or cut the combined part in the wrong frame"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record TCP/RTCP kinematic calibration, rotary pivot and centerline verification, fixture clearance, five-axis dry-run evidence, and cancel with G49 before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if line_has_work_coordinate_offset_evidence {
+                work_coordinate_offset_evidence_observed = true;
+            }
+            if line_cancels_work_coordinate_offset {
+                work_coordinate_offset_active = false;
+            }
+            if line_has_work_coordinate_offset_start {
+                work_coordinate_offset_active = true;
+            }
+            if machine_code_language
+                && matches!(
+                    class,
+                    MachineClass::Mill | MachineClass::Router | MachineClass::SheetCut
+                )
+                && work_coordinate_offset_active
+                && line_has_motion_move
+                && !work_coordinate_offset_evidence_observed
+                && !reported_work_coordinate_offset_motion_boundary
+            {
+                reported_work_coordinate_offset_motion_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "work-coordinate-offset-not-verified".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "motion runs while G92 work-coordinate offset mode is active without offset review evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "work-coordinate-offset-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "G92 work-coordinate offsets temporarily shift the programmed datum; unreviewed motion can cut or burn the wrong fixture or sheet-origin location when imported jobs inherit hidden coordinate shifts"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record the intended G92 coordinate shift, verify the active fixture or sheet-origin datum and dry-run path, then cancel with G92.1/G92.2 before machine-ready release"
+                            .to_string(),
                 });
             }
             if class == MachineClass::Additive
@@ -9024,6 +11389,13 @@ fn analyze_instruction_programs(
             } else if has_process_media_or_chip_evacuation(raw_line) {
                 process_media_or_chip_evacuation_observed = true;
                 process_media_or_chip_evacuation_active = true;
+            }
+            let shutdown_required_process_media_stopped = process_media_or_chip_evacuation_stopped
+                || has_sheet_cutting_support_media_stop(raw_line);
+            if shutdown_required_process_media_stopped {
+                shutdown_required_process_media_active = false;
+            } else if has_shutdown_required_process_media(raw_line) {
+                shutdown_required_process_media_active = true;
             }
             if matches!(
                 class,
@@ -9268,6 +11640,80 @@ fn analyze_instruction_programs(
                         | MachineClass::SheetCut
                 )
                 && line_has_program_end
+                && subtractive_process_active
+                && !line_stops_subtractive_process
+                && !reported_process_end_boundary
+            {
+                reported_process_end_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "process-not-stopped-before-program-end".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "program ends while spindle, beam, jet, or cutting process is still active"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "machine-process-end-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "M2/M30 controller reset behavior varies; ending a subtractive or sheet-cutting program with the spindle, beam, jet, torch, or pump still active can leave machine-release cleanup to implicit controller state or operator intervention"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "insert M5/M05 or the machine-specific process-stop command before M2/M30, verify stopped-state feedback, and rerun analysis before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if machine_code_language
+                && matches!(
+                    class,
+                    MachineClass::Mill
+                        | MachineClass::Router
+                        | MachineClass::Lathe
+                        | MachineClass::SheetCut
+                )
+                && line_has_program_end
+                && shutdown_required_process_media_active
+                && !shutdown_required_process_media_stopped
+                && !reported_process_media_end_boundary
+            {
+                reported_process_media_end_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "process-media-not-stopped-before-program-end".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "program ends while coolant, chip evacuation, fume extraction, assist gas, or process support media is still active"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "process-media-end-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "coolant, mist, chip conveyors, dust collection, fume extraction, assist gas, abrasive flow, or plasma/waterjet support can continue running past program release unless shutdown is explicit and verified"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "insert M9/M09 or the machine-specific media shutdown before M2/M30, verify coolant/support-media off state, and rerun analysis before release"
+                            .to_string(),
+                });
+            }
+            if machine_code_language
+                && matches!(
+                    class,
+                    MachineClass::Mill
+                        | MachineClass::Router
+                        | MachineClass::Lathe
+                        | MachineClass::SheetCut
+                )
+                && line_has_program_end
                 && !absolute
                 && !reported_incremental_positioning_program_end_boundary
             {
@@ -9356,6 +11802,67 @@ fn analyze_instruction_programs(
                     suggested_resolution:
                         "insert G94 before M2/M30, verify normal feed-per-minute mode and per-block timing evidence, then rerun dry-run simulation before release"
                             .to_string(),
+                    });
+            }
+            if machine_code_language
+                && matches!(class, MachineClass::Mill | MachineClass::Router)
+                && line_has_program_end
+                && tool_center_point_active
+                && !reported_tool_center_point_cancel_boundary
+            {
+                reported_tool_center_point_cancel_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "tool-center-point-not-cancelled-before-end".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message: "program ends while G43.4/G234 tool-center-point mode is still active"
+                        .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "tool-center-point-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "tool-center-point mode can remain modal until G49 on some controls, so ending with TCP active can make the next setup or imported subprogram inherit a rotary kinematic transform"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "insert G49 before M2/M30, verify TCP/RTCP cancellation and rotary datum state, then rerun dry-run simulation before release"
+                            .to_string(),
+                });
+            }
+            if machine_code_language
+                && matches!(
+                    class,
+                    MachineClass::Mill | MachineClass::Router | MachineClass::SheetCut
+                )
+                && line_has_program_end
+                && work_coordinate_offset_active
+                && !reported_work_coordinate_offset_cancel_boundary
+            {
+                reported_work_coordinate_offset_cancel_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "work-coordinate-offset-not-cancelled-before-end".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message: "program ends while G92 work-coordinate offset state is still active"
+                        .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "work-coordinate-offset-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "G92 work-coordinate offsets can persist as controller state after program end; leaving them active can shift the next fixture, sheet origin, imported subprogram, or setup datum into the wrong coordinate frame"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "insert G92.1/G92.2 before M2/M30, verify the active datum and fixture/sheet origin are restored, then rerun dry-run simulation before release"
+                            .to_string(),
                 });
             }
             if class == MachineClass::Additive && has_any_code(&stripped, &["M18", "M84"]) {
@@ -9364,6 +11871,12 @@ fn analyze_instruction_programs(
             }
             if line_has_feed_move {
                 has_feed_move = true;
+            }
+            if line_has_motion_move
+                || line_has_rotary_axis_word
+                || line_has_additive_positioned_motion
+            {
+                units_mode_motion_observed = true;
             }
             if number_after(&stripped, 'E').is_some() {
                 has_extrusion = true;
@@ -9643,6 +12156,34 @@ fn analyze_instruction_programs(
                     requires_human_intervention: true,
                     suggested_resolution:
                         "restore nonnegative first-layer Z, run and record probe/bed-mesh or measured Z-offset verification, or split the print into an operator-approved calibration checkpoint before extrusion"
+                        .to_string(),
+                });
+            }
+            if line_has_positive_additive_extrusion
+                && additive_bed_leveling_disabled
+                && !reported_additive_bed_leveling_boundary
+            {
+                reported_additive_bed_leveling_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "error".to_string(),
+                    code: "additive-bed-leveling-disabled-before-extrusion".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "positive extrusion occurs after bed mesh or leveling compensation was disabled"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "printer-bed-leveling-boundary".to_string(),
+                    severity: "error".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "extruding after M420 S0 or equivalent bed-leveling disable can drag the nozzle, lose first-layer adhesion, or print a warped first layer when the job assumes mesh compensation is still active"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "re-enable and verify bed leveling with M420 S1, rerun G29 probing, or record measured bed-mesh/Z-offset evidence before positive extrusion resumes"
                             .to_string(),
                 });
             }
@@ -10541,6 +13082,34 @@ fn analyze_instruction_programs(
                     requires_human_intervention: true,
                     suggested_resolution:
                         "regenerate the arc with plane-matched I/J, I/K, or J/K center offsets or an R radius, verify the active G17/G18/G19 plane, and rerun simulation before release"
+                            .to_string(),
+                });
+            }
+            if matches!(class, MachineClass::Mill | MachineClass::Router)
+                && line_has_program_end
+                && current_arc_plane.is_some_and(|plane| plane != "G17")
+                && !reported_arc_plane_reset_boundary
+            {
+                reported_arc_plane_reset_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "arc-plane-not-reset-before-end".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message: "mill/router program ends while a non-G17 arc plane is still active"
+                        .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "arc-plane-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "G18/G19 arc-plane selection remains modal on many controls; ending a mill/router program outside G17 can make the next imported job interpret G2/G3 center offsets in the wrong plane"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "insert G17 before M2/M30, verify XY-plane restoration and arc-center offset state, then rerun simulation before release"
                             .to_string(),
                 });
             }
@@ -11468,6 +14037,148 @@ fn analyze_instruction_programs(
                             .to_string(),
                 });
             }
+            if (class == MachineClass::Additive || has_material_jetting_text_context)
+                && has_material_jetting_text_context
+                && !has_material_jetting_material_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "material-jetting-material-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "material-jetting text job lacks cartridge, material-channel, printhead, tray, or packing evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "material-jetting-material-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "material jetting can mix color/material channels, mis-pack the tray, or lose fine details when cartridge lots, channel maps, printhead/nozzle checks, tray calibration, and packing evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach cartridge lots, material/color channel map, printhead/nozzle purge check, tray map, tray calibration, and packing review before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-material-jetting-material-evidence".to_string(),
+                    reason:
+                        "material-jetting text instructions should retain material-channel, cartridge, printhead, and tray evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_material_jetting_text_context)
+                && has_material_jetting_text_context
+                && (!has_material_jetting_support_evidence
+                    || !has_material_jetting_uv_inspection_evidence)
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "material-jetting-support-uv-inspection-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "material-jetting text job lacks support-removal, UV-cure, color/material, or dimensional-inspection evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "material-jetting-support-uv-inspection-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "PolyJet/MJP parts can remain tacky, trap support residue, lose color/material interfaces, or break fine features when support removal, UV exposure, and inspection are not separated from the print cycle"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "split material jetting release into support-removal method, solvent or waterjet cleaning, UV dose/post-cure, color/material verification, surface tack review, and dimensional inspection"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-material-jetting-support-uv-inspection-evidence".to_string(),
+                    reason:
+                        "material-jetting text instructions should retain support-removal, UV/post-cure, color/material verification, and inspection evidence before release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_composite_fiber_text_context)
+                && has_composite_fiber_text_context
+                && !has_composite_fiber_layup_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "composite-fiber-layup-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "continuous-fiber composite text job lacks fiber orientation, layup, load-direction, or anisotropy evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "composite-fiber-layup-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "continuous-fiber printed parts can fail along the wrong axis, delaminate, or miss stiffness targets when fiber orientation, reinforcement schedule, load direction, and anisotropy review are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach the fiber layup schedule, fiber orientation paths, load-case direction, reinforcement-ring plan, and anisotropy review before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-composite-fiber-layup-evidence".to_string(),
+                    reason:
+                        "continuous-fiber composite text instructions should retain fiber orientation and load-case layup evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_composite_fiber_text_context)
+                && has_composite_fiber_text_context
+                && (!has_composite_fiber_process_evidence
+                    || !has_composite_fiber_inspection_evidence)
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "composite-fiber-process-inspection-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "continuous-fiber composite text job lacks fiber spool/cutter/process or coupon/continuity inspection evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "composite-fiber-process-inspection-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "continuous-fiber composite printers can jam, cut fibers short, lose anchoring, trap voids, or hide delamination when fiber spool, cutter calibration, matrix profile, tension, coupon, and continuity inspection evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach fiber spool and matrix lot records, cutter calibration/cut-test evidence, tension or anchor checks, coupon result, fiber-continuity and void/delamination inspection, and finishing review before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-composite-fiber-process-inspection-evidence".to_string(),
+                    reason:
+                        "continuous-fiber composite text instructions should retain process, cut/anchor, coupon, and continuity inspection evidence before release"
+                            .to_string(),
+                });
+            }
             if (class == MachineClass::Additive || has_resin_context)
                 && has_resin_print_context
                 && !has_resin_profile_evidence
@@ -11500,6 +14211,42 @@ fn analyze_instruction_programs(
                     action: "add-resin-print-profile-evidence".to_string(),
                     reason:
                         "resin text print instructions should retain profile, exposure, support, orientation, and calibration evidence before release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_resin_context)
+                && has_resin_layer_manifest_context
+                && (!has_resin_layer_manifest_image_evidence
+                    || !has_resin_layer_manifest_motion_evidence)
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "resin-layer-manifest-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "resin layer/exposure manifest lacks slice-image hash/count or peel/lift/recoat timing evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "resin-layer-manifest-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "resin layer/exposure manifests can expose the wrong bitmap stack, skip corrupted slice images, or stall during peel/recoat when image/hash and lift/retract timing evidence is omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach layer image count plus image hash/checksum evidence and verified peel/lift/recoat/light-off timing before releasing the resin manifest"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-resin-layer-manifest-evidence".to_string(),
+                    reason:
+                        "resin layer manifests should retain slice image hash/count and peel/lift/recoat timing evidence before machine-ready release"
                             .to_string(),
                 });
             }
@@ -11609,6 +14356,42 @@ fn analyze_instruction_programs(
                 });
             }
             if (class == MachineClass::Additive || has_powder_bed_context)
+                && has_powder_bed_recoater_thermal_context
+                && (!has_powder_bed_recoater_clearance_evidence
+                    || !has_powder_bed_thermal_pack_evidence)
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "powder-bed-recoater-thermal-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "powder-bed text job mentions recoater, dense packing, or thermal risk without recoater clearance and thermal spacing/cooldown evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "powder-bed-recoater-thermal-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "SLS/MJF builds can curl into the recoater, crash the roller/spreader, fuse densely packed parts, or overheat when recoater clearance, nesting thermal spacing, cooldown curve, and unpack-temperature evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach recoater/roller/spreader clearance checks, collision or height-map evidence, thermal spacing and packing review, cooldown curve, and unpack-temperature evidence before releasing the powder-bed job"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-powder-bed-recoater-thermal-evidence".to_string(),
+                    reason:
+                        "powder-bed text instructions should retain recoater clearance, thermal spacing, packing, cooldown, and unpack-temperature evidence before release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_powder_bed_context)
                 && has_powder_bed_context
                 && !has_powder_bed_handling_evidence
             {
@@ -11640,6 +14423,76 @@ fn analyze_instruction_programs(
                     action: "add-powder-bed-handling-evidence".to_string(),
                     reason:
                         "powder-bed text instructions should retain cooldown, depowder, atmosphere, and powder-recovery evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_binder_jet_text_context)
+                && has_binder_jet_text_context
+                && !has_binder_jet_process_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "binder-jet-process-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "binder-jet text job lacks binder lot, saturation, printhead, layer, powder lot, or green-strength evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "binder-jet-process-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "binder-jet jobs can under-bind, bleed, crumble as green parts, or lose feature fidelity when binder saturation, printhead/nozzle checks, powder lot, layer thickness, and green-strength evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach binder lot/profile, powder lot, layer thickness, printhead/nozzle checks, saturation coupon, and green-strength evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-binder-jet-process-evidence".to_string(),
+                    reason:
+                        "binder-jet text instructions should retain binder/powder/process evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_binder_jet_text_context)
+                && has_binder_jet_text_context
+                && (!has_binder_jet_postprocess_evidence || !has_binder_jet_shrinkage_evidence)
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "binder-jet-postprocess-shrinkage-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "binder-jet text job lacks cure/debind/sinter/infiltration and shrink-compensation evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "binder-jet-postprocess-shrinkage-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "binder-jetted green parts often require fragile depowdering, curing, debinding, sintering or infiltration, and shrink/distortion compensation that cannot be treated as one uninterrupted print"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "split binder-jet release into green-part handling, cure/debind/sinter or infiltration transfer, furnace/profile evidence, shrink-compensation coupons, density/porosity checks, and dimensional inspection"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-binder-jet-postprocess-shrinkage-evidence".to_string(),
+                    reason:
+                        "binder-jet text instructions should retain postprocess, shrink-compensation, density, and inspection evidence before release"
                             .to_string(),
                 });
             }
@@ -11715,6 +14568,80 @@ fn analyze_instruction_programs(
             }
             let text_sheet_cutting_program =
                 class == MachineClass::SheetCut || has_sheet_cutting_text_context;
+            if text_sheet_cutting_program
+                && has_wire_edm_text_context
+                && (!has_wire_edm_setup_evidence || !has_wire_edm_process_evidence)
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "wire-edm-text-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "wire-EDM text job lacks setup or dielectric/flushing process evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "wire-edm-text-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "wire-EDM text instructions can break wire, scrap conductive stock, drop slugs, drift taper, or miss tolerance when start-hole, wire-threading, slug-retention, dielectric, flushing, spark-gap, or skim-pass evidence is omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach start-hole and wire-thread setup, conductive stock/workholding, slug-retention, dielectric conductivity, flushing pressure, spark-gap/offset, taper, and skim-pass evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-wire-edm-text-evidence".to_string(),
+                    reason:
+                        "wire-EDM text instructions should retain start-hole, threading, slug-retention, dielectric/flushing, and skim-pass evidence before release"
+                            .to_string(),
+                });
+            }
+            let text_sinker_edm_program =
+                is_sinker_edm_kind(&machine_kind) || has_sinker_edm_text_context;
+            if text_sinker_edm_program
+                && has_sinker_edm_text_context
+                && (!has_sinker_edm_electrode_evidence
+                    || !has_sinker_edm_dielectric_evidence
+                    || !has_sinker_edm_burn_control_evidence)
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "sinker-edm-text-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "sinker EDM text job lacks electrode, dielectric/flushing, or burn-control evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "sinker-edm-text-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "sinker EDM text instructions can burn the wrong cavity, short through debris, overcut depth, damage the electrode, leave recast damage, or create fire risk when electrode geometry/material/polarity, dielectric filtration/flushing, debris removal, burn depth, taper, recast, or orbit-finish evidence is omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach electrode drawing/material/polarity/undersize and wear evidence, dielectric filtration/flushing/debris-removal checks, fire suppression, power-table, depth-stop, taper/recast, and orbit-finish evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-sinker-edm-text-evidence".to_string(),
+                    reason:
+                        "sinker EDM text instructions should retain electrode, dielectric/flushing, burn-depth, wear-compensation, and orbit-finish evidence before release"
+                            .to_string(),
+                });
+            }
             if text_sheet_cutting_program && !has_sheet_cutting_recipe_evidence {
                 findings.push(ValidationFinding {
                     severity: "warning".to_string(),
@@ -12207,6 +15134,12 @@ fn finding_applies(validation: &ValidationReport, program_id: &str, code: &str) 
 }
 
 fn boundary_applies(boundary: &FailureBoundary, program_id: &str, line: Option<usize>) -> bool {
+    if matches!(
+        boundary.kind.as_str(),
+        "machine-process-end-boundary" | "process-media-end-boundary"
+    ) {
+        return false;
+    }
     match boundary.program_id.as_deref() {
         Some(value) if value != program_id => return false,
         _ => {}
@@ -12479,12 +15412,25 @@ fn json_artifact(
 
 fn design_primitive_for_part(part: &PartPlan) -> Value {
     match machine_class(&part.machine_kind) {
+        MachineClass::Additive if is_binder_jet_printer_kind(&part.machine_kind) => json!({
+            "primitive": "binder-jet-green-body",
+            "operation": "binder-jet-cure-depowder-sinter-or-infiltrate",
+            "buildOrientation": "nest-for-green-strength-and-depowdering",
+            "supportStrategy": "setter-or-sinter-fixture-review-required",
+            "datums": ["build-box-origin", "green-part-shrink-frame", "sinter-coupon"],
+        }),
         MachineClass::Additive => json!({
             "primitive": "additive-shell",
             "operation": "slice-print",
             "buildOrientation": "auto-upright",
             "supportStrategy": "generated-review-required",
             "datums": ["build-plate-z", "front-left-origin"],
+        }),
+        MachineClass::Mill if is_five_axis_mill_kind(&part.machine_kind) => json!({
+            "primitive": "five-axis-sculpted-body",
+            "operation": "3+2-index-simultaneous-contour-finish",
+            "stockAllowanceMm": 2.0,
+            "datums": ["G54-trunnion-center", "rotary-pivot", "tool-center-point-frame"],
         }),
         MachineClass::Mill if is_horizontal_mill_kind(&part.machine_kind) => json!({
             "primitive": "horizontal-subtractive-feature",
@@ -12526,10 +15472,20 @@ fn design_primitive_for_part(part: &PartPlan) -> Value {
 
 fn design_coordinate_frame_for_part(part: &PartPlan) -> Vec<String> {
     match machine_class(&part.machine_kind) {
+        MachineClass::Additive if is_binder_jet_printer_kind(&part.machine_kind) => vec![
+            "origin=build-box-front-left".to_string(),
+            "z=powder-bed-layer-normal".to_string(),
+            "shrink-frame=sinter-or-infiltration-coupon".to_string(),
+        ],
         MachineClass::Additive => vec![
             "origin=front-left-build-plate".to_string(),
             "z=build-plate-normal".to_string(),
             "units=mm".to_string(),
+        ],
+        MachineClass::Mill if is_five_axis_mill_kind(&part.machine_kind) => vec![
+            "origin=G54-trunnion-center".to_string(),
+            "z=tool-center-point-axis".to_string(),
+            "rotary=A/B-or-B/C-pivot-calibrated".to_string(),
         ],
         MachineClass::Mill if is_horizontal_mill_kind(&part.machine_kind) => vec![
             "origin=G54-tombstone-face".to_string(),
@@ -12576,6 +15532,12 @@ fn design_model_intent_for_part(part: &PartPlan) -> Vec<String> {
                     .to_string(),
             );
         }
+        MachineClass::Additive if is_binder_jet_printer_kind(&part.machine_kind) => {
+            intent.push(
+                "preserve green-part handling tabs, depowder access, setter contact surfaces, and shrinkage coupons"
+                    .to_string(),
+            );
+        }
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
             intent.push(
                 "preserve depowder access, thermal spacing, and warp witness features".to_string(),
@@ -12590,6 +15552,12 @@ fn design_model_intent_for_part(part: &PartPlan) -> Vec<String> {
         MachineClass::Mill if is_horizontal_mill_kind(&part.machine_kind) => {
             intent.push(
                 "preserve indexed side features, arbor clearance, and finish-pass datum surfaces"
+                    .to_string(),
+            );
+        }
+        MachineClass::Mill if is_five_axis_mill_kind(&part.machine_kind) => {
+            intent.push(
+                "preserve rotary pivot frame, collision envelopes, blended surface normals, and undercut reach limits"
                     .to_string(),
             );
         }
@@ -13683,6 +16651,9 @@ fn automation_requirement_type(boundary: &FailureBoundary, combined: &str) -> Op
             "grounded vacuum",
             "fume",
             "fire",
+            "dielectric",
+            "flushing",
+            "skim-pass",
         ],
     ) {
         Some("process-cell-automation")
@@ -14877,6 +17848,12 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "marlin-additive-gcode-postprocessor"
     } else if token.contains("grbl") {
         "grbl-router-postprocessor"
+    } else if token.contains("five-axis")
+        || token.contains("5-axis")
+        || token.contains("multi-axis")
+        || token.contains("multiaxis")
+    {
+        "five-axis-mill-postprocessor"
     } else if token.contains("haas") {
         "haas-mill-gcode-postprocessor"
     } else if token.contains("fanuc") || token.contains("lathe") {
@@ -14885,8 +17862,35 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "iso-gcode-postprocessor"
     } else if token.contains("sla") || token.contains("resin") {
         "resin-printer-job-packager"
+    } else if token.contains("material-jet")
+        || token.contains("polyjet")
+        || token.contains("mjp")
+        || token.contains("multi-jet")
+    {
+        "material-jetting-job-packager"
+    } else if token.contains("composite-fiber")
+        || token.contains("continuous-fiber")
+        || token.contains("carbon-fiber")
+        || token.contains("pa-cf")
+    {
+        "composite-fiber-job-packager"
+    } else if token.contains("binder-jet") || token.contains("binderjet") {
+        "binder-jet-job-packager"
+    } else if token.contains("metal-pbf")
+        || token.contains("lpbf")
+        || token.contains("dmls")
+        || token.contains("metal-powder-bed")
+    {
+        "metal-pbf-job-packager"
     } else if token.contains("sls") || token.contains("powder") {
         "powder-bed-job-packager"
+    } else if token.contains("sinker-edm")
+        || token.contains("ram-edm")
+        || token.contains("die-sink")
+    {
+        "sinker-edm-cavity-postprocessor"
+    } else if token.contains("wire-edm") || token.contains("edm") {
+        "wire-edm-profile-postprocessor"
     } else if token.contains("laser") {
         "laser-sheet-cut-postprocessor"
     } else if token.contains("waterjet") {
@@ -14901,12 +17905,45 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
 
 fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
     let token = normalize_token(&format!("{language}-{machine_kind}"));
-    if token.contains("marlin") || token.contains("gcode") {
+    if token.contains("five-axis")
+        || token.contains("5-axis")
+        || token.contains("multi-axis")
+        || token.contains("multiaxis")
+    {
+        "five-axis-controller-gcode".to_string()
+    } else if token.contains("marlin") || token.contains("gcode") {
         "controller-gcode".to_string()
     } else if token.contains("sla") || token.contains("resin") {
         "resin-printer-job-package".to_string()
+    } else if token.contains("material-jet")
+        || token.contains("polyjet")
+        || token.contains("mjp")
+        || token.contains("multi-jet")
+    {
+        "material-jetting-job-package".to_string()
+    } else if token.contains("composite-fiber")
+        || token.contains("continuous-fiber")
+        || token.contains("carbon-fiber")
+        || token.contains("pa-cf")
+    {
+        "composite-fiber-job-package".to_string()
+    } else if token.contains("binder-jet") || token.contains("binderjet") {
+        "binder-jet-job-package".to_string()
+    } else if token.contains("metal-pbf")
+        || token.contains("lpbf")
+        || token.contains("dmls")
+        || token.contains("metal-powder-bed")
+    {
+        "metal-pbf-job-package".to_string()
     } else if token.contains("sls") || token.contains("powder") {
         "powder-bed-printer-job-package".to_string()
+    } else if token.contains("sinker-edm")
+        || token.contains("ram-edm")
+        || token.contains("die-sink")
+    {
+        "sinker-edm-job".to_string()
+    } else if token.contains("wire-edm") || token.contains("edm") {
+        "wire-edm-job".to_string()
     } else if token.contains("laser") || token.contains("waterjet") || token.contains("plasma") {
         "sheet-cut-job-package".to_string()
     } else {
@@ -15357,7 +18394,9 @@ fn add_additive_design_boundaries(
 
 fn canonical_policy_method(value: &str) -> Option<String> {
     let token = normalize_token(value);
-    if wants_horizontal_milling(&token) {
+    if wants_five_axis_milling(&token) {
+        Some("five-axis-milling".to_string())
+    } else if wants_horizontal_milling(&token) {
         Some("horizontal-milling".to_string())
     } else if token.contains("router") || token.contains("routing") || token.contains("rout") {
         Some("routing".to_string())
@@ -15378,10 +18417,11 @@ fn method_rank(method: &str) -> u8 {
     match method {
         "additive-print" => 0,
         "milling" => 1,
-        "horizontal-milling" => 2,
-        "routing" => 3,
-        "sheet-cutting" => 4,
-        "turning" => 5,
+        "five-axis-milling" => 2,
+        "horizontal-milling" => 3,
+        "routing" => 4,
+        "sheet-cutting" => 5,
+        "turning" => 6,
         _ => 100,
     }
 }
@@ -15407,6 +18447,35 @@ fn method_combination_key(values: &[String]) -> Option<String> {
         Some(methods.join("+"))
     } else {
         None
+    }
+}
+
+fn normalized_operation_sequence(values: &[String]) -> Vec<String> {
+    let mut sequence = Vec::new();
+    for value in values.iter().take(MAX_PARTS) {
+        let token = normalize_token(value);
+        if token.is_empty() || sequence.last().is_some_and(|last| last == &token) {
+            continue;
+        }
+        sequence.push(token);
+    }
+    sequence
+}
+
+fn operation_sequence_key(values: &[String]) -> Option<String> {
+    let sequence = normalized_operation_sequence(values);
+    if sequence.len() > 1 {
+        Some(sequence.join(">"))
+    } else {
+        None
+    }
+}
+
+fn outcome_operation_sequence_key(outcome: &LearningOutcomeRecord) -> Option<String> {
+    if outcome.operation_sequence.is_empty() {
+        operation_sequence_key(&outcome.manufacturing_methods)
+    } else {
+        operation_sequence_key(&outcome.operation_sequence)
     }
 }
 
@@ -15451,6 +18520,48 @@ fn learned_preferred_method_combination(policy: Option<&LearningPolicySnapshot>)
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default()
+}
+
+fn learned_preferred_operation_sequence(policy: Option<&LearningPolicySnapshot>) -> Vec<String> {
+    let Some(policy) = policy else {
+        return Vec::new();
+    };
+    policy
+        .operation_sequence_preferences
+        .iter()
+        .find(|preference| {
+            preference.recommendation == "prefer"
+                && preference.samples >= 2
+                && preference.average_reward >= 0.0
+        })
+        .map(|preference| {
+            preference
+                .key
+                .split('>')
+                .map(str::to_string)
+                .filter(|step| !step.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|sequence| sequence.len() > 1)
+        .unwrap_or_default()
+}
+
+fn learned_preferred_machine_kinds(policy: Option<&LearningPolicySnapshot>) -> Vec<String> {
+    let Some(policy) = policy else {
+        return Vec::new();
+    };
+    policy
+        .machine_kind_preferences
+        .iter()
+        .filter(|preference| {
+            preference.recommendation == "prefer"
+                && preference.samples >= 2
+                && preference.average_reward >= 0.0
+        })
+        .map(|preference| normalize_token(&preference.key))
+        .filter(|machine_kind| !machine_kind.is_empty())
+        .take(4)
+        .collect()
 }
 
 fn learned_preferred_assembly_strategy(policy: Option<&LearningPolicySnapshot>) -> Option<String> {
@@ -15550,6 +18661,9 @@ fn learned_part_description(method: &str) -> &'static str {
     match method {
         "additive-print" => "learned additive component inferred from successful hybrid outcomes",
         "milling" => "learned milled datum, pocket, or precision face inferred from successful hybrid outcomes",
+        "five-axis-milling" => {
+            "learned five-axis milled impeller, undercut, or sculpted contour inferred from successful hybrid outcomes"
+        }
         "horizontal-milling" => {
             "learned horizontal-milled side slot or keyway inferred from successful hybrid outcomes"
         }
@@ -15589,6 +18703,36 @@ fn learned_parts_for_method_combination(
     }
 }
 
+fn learned_parts_for_operation_sequence(
+    request: &FabricationPlanRequest,
+    sequence: &[String],
+) -> Option<Vec<RequestedPart>> {
+    if sequence.len() < 2 {
+        return None;
+    }
+    let parts = sequence
+        .iter()
+        .take(MAX_PARTS)
+        .enumerate()
+        .map(|(index, step)| {
+            let token = normalize_token(step);
+            let description_key = canonical_policy_method(&token).unwrap_or_else(|| token.clone());
+            RequestedPart {
+                id: format!("learned-sequence-{}-{}-part", index + 1, token),
+                description: learned_part_description(&description_key).to_string(),
+                material: request.material.clone(),
+                preferred_method: Some(token),
+                tolerance_mm: request.tolerance_mm,
+            }
+        })
+        .collect::<Vec<_>>();
+    if parts.len() > 1 {
+        Some(parts)
+    } else {
+        None
+    }
+}
+
 fn apply_learning_policy_to_request(
     mut request: FabricationPlanRequest,
     policy: Option<&LearningPolicySnapshot>,
@@ -15599,9 +18743,13 @@ fn apply_learning_policy_to_request(
     } else {
         learned_method_combination.clone()
     };
+    let learned_operation_sequence = learned_preferred_operation_sequence(policy);
+    let learned_machine_kinds = learned_preferred_machine_kinds(policy);
     let learned_assembly_strategy = learned_preferred_assembly_strategy(policy);
     let learned_remediation_risks = learned_remediation_risks(policy, &request);
     if learned_methods.is_empty()
+        && learned_operation_sequence.is_empty()
+        && learned_machine_kinds.is_empty()
         && learned_assembly_strategy.is_none()
         && learned_remediation_risks.is_empty()
     {
@@ -15613,6 +18761,9 @@ fn apply_learning_policy_to_request(
         .as_ref()
         .and_then(|constraints| constraints.preferred_methods.as_ref())
         .is_some_and(|methods| !methods.is_empty());
+    if request.parts.is_none() && !has_request_preferences && learned_operation_sequence.len() > 1 {
+        request.parts = learned_parts_for_operation_sequence(&request, &learned_operation_sequence);
+    }
     if request.parts.is_none() && !has_request_preferences && learned_method_combination.len() > 1 {
         request.parts = learned_parts_for_method_combination(&request, &learned_method_combination);
     }
@@ -15626,8 +18777,15 @@ fn apply_learning_policy_to_request(
             preferred_methods: None,
             preferred_assembly_strategy: None,
         });
-    if !has_request_preferences && !learned_methods.is_empty() {
-        constraints.preferred_methods = Some(learned_methods.clone());
+    if !has_request_preferences {
+        let mut preferred_methods = learned_operation_sequence.clone();
+        preferred_methods.extend(learned_machine_kinds.clone());
+        preferred_methods.extend(learned_methods.clone());
+        preferred_methods.sort();
+        preferred_methods.dedup();
+        if !preferred_methods.is_empty() {
+            constraints.preferred_methods = Some(preferred_methods);
+        }
     }
     if constraints.preferred_assembly_strategy.is_none() {
         constraints.preferred_assembly_strategy = learned_assembly_strategy.clone();
@@ -15653,6 +18811,15 @@ fn apply_learning_policy_to_request(
         if !learned_methods.is_empty() {
             hint_parts.push(format!("methods={}", learned_methods.join("+")));
         }
+        if !learned_operation_sequence.is_empty() {
+            hint_parts.push(format!(
+                "operationSequence={}",
+                learned_operation_sequence.join(">")
+            ));
+        }
+        if !learned_machine_kinds.is_empty() {
+            hint_parts.push(format!("machineKinds={}", learned_machine_kinds.join("+")));
+        }
         if let Some(strategy) = learned_assembly_strategy.as_ref() {
             hint_parts.push(format!("assembly={strategy}"));
         }
@@ -15666,13 +18833,35 @@ fn apply_learning_policy_to_request(
                     .join(",")
             ));
         }
-        let hint_prefix = if learned_methods.is_empty() && learned_assembly_strategy.is_none() {
-            "learned-policy-review"
-        } else {
+        let has_preferred_policy = !learned_methods.is_empty()
+            || !learned_operation_sequence.is_empty()
+            || !learned_machine_kinds.is_empty()
+            || learned_assembly_strategy.is_some();
+        let hint_prefix = if has_preferred_policy {
             "learned-policy-prefer"
+        } else {
+            "learned-policy-review"
         };
         learning.policy_hint = Some(format!("{hint_prefix}:{}", hint_parts.join(";")));
     }
+    merge_learning_values(
+        &mut learning.observations,
+        if learned_operation_sequence.is_empty() {
+            Vec::new()
+        } else {
+            vec![format!(
+                "learned-operation-sequence-preference:{}",
+                learned_operation_sequence.join(">")
+            )]
+        },
+    );
+    merge_learning_values(
+        &mut learning.observations,
+        learned_machine_kinds
+            .iter()
+            .map(|machine_kind| format!("learned-machine-kind-preference:{machine_kind}"))
+            .collect(),
+    );
     let remediation_observations = learned_remediation_risks
         .iter()
         .flat_map(|risk| {
@@ -18738,6 +21927,21 @@ fn learning_plan(
             .strip_prefix("learned-remediation-action:")
             .map(str::to_string)
     }));
+    actions.extend(observations.iter().filter_map(|observation| {
+        observation
+            .strip_prefix("learned-machine-kind-preference:")
+            .map(|machine_kind| format!("prefer-learned-machine-kind-{machine_kind}"))
+    }));
+    actions.extend(observations.iter().filter_map(|observation| {
+        observation
+            .strip_prefix("learned-operation-sequence-preference:")
+            .map(|sequence| {
+                format!(
+                    "prefer-learned-operation-sequence-{}",
+                    normalize_token(sequence)
+                )
+            })
+    }));
     actions.sort();
     actions.dedup();
 
@@ -19184,6 +22388,12 @@ fn learn_from_outcome(
     let program_id = validate_optional_label(request.program_id, "programId")?;
     let machine_id = validate_optional_label(request.machine_id, "machineId")?;
     let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let operation_sequence = validate_signal_list(
+        request.operation_sequence,
+        "operationSequence",
+        MAX_LABEL_LEN,
+    )?;
+    let operation_sequence = normalized_operation_sequence(&operation_sequence);
     let material = request
         .material
         .map(|material| material_or_default(Some(material)))
@@ -19249,6 +22459,9 @@ fn learn_from_outcome(
     }
     if let Some(quality) = surface_quality {
         observations.push(format!("surface-quality:{quality:.3}"));
+    }
+    if let Some(sequence_key) = operation_sequence_key(&operation_sequence) {
+        observations.push(format!("operation-sequence:{sequence_key}"));
     }
     observations.sort();
     observations.dedup();
@@ -19353,6 +22566,12 @@ fn learn_from_outcome(
     let generated_at_ms = now_ms();
     let job_id = safe_job_id("learning", &request_id, generated_at_ms);
     let method = process_method_for_machine(machine_kind.as_ref());
+    let mut manufacturing_methods = vec![method.clone()];
+    for sequence_method in canonical_policy_methods(&operation_sequence) {
+        if !manufacturing_methods.contains(&sequence_method) {
+            manufacturing_methods.push(sequence_method);
+        }
+    }
     let material_name = material.as_ref().map(|material| material.name.clone());
     let material_family = material
         .as_ref()
@@ -19367,6 +22586,7 @@ fn learn_from_outcome(
         "programId": program_id,
         "machineId": machine_id,
         "machineKind": machine_kind,
+        "operationSequence": operation_sequence.clone(),
         "state": "program-generated",
         "action": recommended_action,
         "reward": reward,
@@ -19381,6 +22601,8 @@ fn learn_from_outcome(
         "features": {
             "machineKind": machine_kind,
             "manufacturingMethod": method,
+            "manufacturingMethods": manufacturing_methods.clone(),
+            "operationSequence": operation_sequence.clone(),
             "materialName": material_name,
             "materialFamily": material_family,
             "completed": completed,
@@ -19459,7 +22681,9 @@ fn learn_from_outcome(
         job_id: response.source_job_id.clone(),
         objective: Some(summary_text(&outcome)),
         material,
-        manufacturing_methods: vec![method],
+        manufacturing_methods,
+        machine_kind,
+        operation_sequence,
         assembly_strategy: Some(recommended_action),
         success: response.ok,
         reward,
@@ -19493,6 +22717,14 @@ fn learning_outcome_record(
             .map(|method| normalize_token(&method))
             .collect()
     };
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?
+        .map(|machine_kind| normalize_token(&machine_kind));
+    let operation_sequence = validate_signal_list(
+        request.operation_sequence,
+        "operationSequence",
+        MAX_LABEL_LEN,
+    )?;
+    let mut operation_sequence = normalized_operation_sequence(&operation_sequence);
     let assembly_strategy =
         validate_optional_text(request.assembly_strategy, "assemblyStrategy", MAX_TEXT_LEN)?;
     let reward = request
@@ -19508,6 +22740,9 @@ fn learning_outcome_record(
         .unwrap_or(if request.success { 1.0 } else { -1.0 });
     let observations = validate_signal_list(request.observations, "observations", MAX_TEXT_LEN)?;
     let notes = validate_signal_list(request.notes, "notes", MAX_TEXT_LEN)?;
+    if operation_sequence.is_empty() && manufacturing_methods.len() > 1 {
+        operation_sequence = normalized_operation_sequence(&manufacturing_methods);
+    }
     let created_at_ms = now_ms();
     Ok(LearningOutcomeRecord {
         outcome_id: safe_job_id("outcome", &request_id, created_at_ms),
@@ -19516,6 +22751,8 @@ fn learning_outcome_record(
         objective,
         material,
         manufacturing_methods,
+        machine_kind,
+        operation_sequence,
         assembly_strategy,
         success: request.success,
         reward,
@@ -20268,6 +23505,37 @@ async fn root() -> impl IntoResponse {
     }))
 }
 
+fn accepted_instruction_languages() -> Vec<&'static str> {
+    vec![
+        "gcode",
+        "marlin-gcode",
+        "haas-gcode",
+        "fanuc-gcode",
+        "grbl-gcode",
+        "iso-gcode",
+        "printer-job",
+        "slicer-job",
+        "sla-job",
+        "resin-job",
+        "material-jetting-job",
+        "composite-fiber-job",
+        "binder-jet-job",
+        "sls-job",
+        "powder-job",
+        "powder-bed-job",
+        "metal-pbf-job",
+        "sheet-cutting-job",
+        "laser-job",
+        "waterjet-job",
+        "plasma-job",
+        "wire-edm-job",
+        "sinker-edm-job",
+        "router-profile",
+        "operator-checklist",
+        "setup-sheet",
+    ]
+}
+
 async fn capabilities() -> impl IntoResponse {
     Json(json!({
         "ok": true,
@@ -20298,31 +23566,26 @@ async fn capabilities() -> impl IntoResponse {
         "machineClasses": [
             "fdm-printer",
             "sla-msla-resin-printer",
+            "material-jetting-printer",
+            "continuous-fiber-composite-printer",
+            "binder-jet-printer",
             "sls-mjf-powder-bed-printer",
+            "metal-pbf-printer",
+            "dmls-slm-lpbf-metal-powder-bed-printer",
             "vertical-mill",
+            "five-axis-mill",
             "horizontal-mill",
             "cnc-router",
             "laser-sheet-cutter",
             "waterjet-sheet-cutter",
             "plasma-sheet-cutter",
+            "wire-edm-sheet-cutter",
+            "sinker-edm-cell",
             "lathe",
             "manual-or-special-process"
         ],
         "defaultMachines": default_machines(),
-        "acceptedInstructionKinds": [
-            "gcode",
-            "marlin-gcode",
-            "haas-gcode",
-            "fanuc-gcode",
-            "grbl-gcode",
-            "printer-job",
-            "resin-job",
-            "powder-bed-job",
-            "sheet-cutting-job",
-            "router-profile",
-            "operator-checklist",
-            "setup-sheet"
-        ],
+        "acceptedInstructionKinds": accepted_instruction_languages(),
         "designInputFormats": design_format_catalog(),
         "generatedArtifacts": [
             "design-summary",
@@ -20426,13 +23689,20 @@ async fn request_schema() -> impl IntoResponse {
             "supportedKinds": [
                 "fdm-printer",
                 "sla-printer",
+                "material-jetting-printer",
+                "composite-fiber-printer",
+                "binder-jet-printer",
                 "sls-printer",
+                "metal-pbf-printer",
                 "vertical-mill",
+                "five-axis-mill",
                 "horizontal-mill",
                 "cnc-router",
                 "laser-cutter",
                 "waterjet-cutter",
                 "plasma-cutter",
+                "wire-edm",
+                "sinker-edm",
                 "lathe",
                 "manual-cell"
             ]
@@ -20457,20 +23727,7 @@ async fn request_schema() -> impl IntoResponse {
         "instructionProgram": {
             "required": ["instructions"],
             "optional": ["id", "machineId", "machineKind", "language"],
-            "acceptedLanguages": [
-                "gcode",
-                "marlin-gcode",
-                "haas-gcode",
-                "fanuc-gcode",
-                "grbl-gcode",
-                "printer-job",
-                "resin-job",
-                "powder-bed-job",
-                "sheet-cutting-job",
-                "router-profile",
-                "operator-checklist",
-                "setup-sheet"
-            ]
+            "acceptedLanguages": accepted_instruction_languages()
         },
         "learningObserveRequest": {
             "required": ["outcome"],
@@ -21678,12 +24935,93 @@ mod tests {
                     notes: None,
                 },
                 DesignInputFile {
+                    id: Some("jt-lightweight-handoff".to_string()),
+                    file_name: Some("fixture-review.jt".to_string()),
+                    source_uri: None,
+                    format: Some("JT".to_string()),
+                    source_system: None,
+                    role: Some("lightweight CAD PMI exchange".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("parasolid-kernel-source".to_string()),
+                    file_name: Some("machined-housing.x_t".to_string()),
+                    source_uri: None,
+                    format: Some("Parasolid".to_string()),
+                    source_system: Some("Parasolid".to_string()),
+                    role: Some("cad kernel handoff".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("acis-kernel-source".to_string()),
+                    file_name: Some("fixture-body.sat".to_string()),
+                    source_uri: None,
+                    format: Some("ACIS".to_string()),
+                    source_system: Some("ACIS".to_string()),
+                    role: Some("cad kernel handoff".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("sheet-dxf-profile".to_string()),
+                    file_name: Some("laser-nest.dxf".to_string()),
+                    source_uri: None,
+                    format: Some("DXF".to_string()),
+                    source_system: None,
+                    role: Some("sheet profile drawing".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("shop-dwg-drawing".to_string()),
+                    file_name: Some("router-panel.dwg".to_string()),
+                    source_uri: None,
+                    format: Some("DWG".to_string()),
+                    source_system: None,
+                    role: Some("router sheet drawing".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
                     id: Some("neutral-stl".to_string()),
                     file_name: Some("draft_mesh.stl".to_string()),
                     source_uri: None,
                     format: Some("STL".to_string()),
                     source_system: None,
                     role: Some("neutral mesh handoff".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("scan-ply-mesh".to_string()),
+                    file_name: Some("scan-shell.ply".to_string()),
+                    source_uri: None,
+                    format: Some("PLY".to_string()),
+                    source_system: None,
+                    role: Some("3d scan color mesh".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("full-color-wrl".to_string()),
+                    file_name: Some("figurine.wrl".to_string()),
+                    source_uri: None,
+                    format: Some("VRML".to_string()),
+                    source_system: None,
+                    role: Some("full color mesh".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("textured-gltf".to_string()),
+                    file_name: Some("assembly-scene.glb".to_string()),
+                    source_uri: None,
+                    format: Some("glTF".to_string()),
+                    source_system: None,
+                    role: Some("textured mesh scene".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("legacy-amf-package".to_string()),
+                    file_name: Some("multimaterial.amf".to_string()),
+                    source_uri: None,
+                    format: Some("AMF".to_string()),
+                    source_system: None,
+                    role: Some("additive manufacturing package".to_string()),
                     notes: None,
                 },
                 DesignInputFile {
@@ -21732,10 +25070,10 @@ mod tests {
             response.design_input_review.schema_version,
             "dd.fabrication.design-input-review.v1"
         );
-        assert_eq!(response.design_input_review.input_count, 16);
-        assert_eq!(response.design_input_review.supported_count, 16);
+        assert_eq!(response.design_input_review.input_count, 25);
+        assert_eq!(response.design_input_review.supported_count, 25);
         assert_eq!(response.design_input_review.unsupported_count, 0);
-        assert_eq!(response.design_input_review.review_required_count, 16);
+        assert_eq!(response.design_input_review.review_required_count, 25);
         let systems = response
             .design_input_review
             .inputs
@@ -21754,7 +25092,16 @@ mod tests {
             "Blender",
             "ZBrush",
             "STEP",
+            "JT",
+            "Parasolid",
+            "ACIS",
+            "DXF",
+            "DWG",
             "STL",
+            "PLY",
+            "VRML/WRL",
+            "glTF/GLB",
+            "AMF",
             "PrusaSlicer",
             "OrcaSlicer",
             "Cura",
@@ -21767,7 +25114,7 @@ mod tests {
             .supported_formats
             .iter()
             .any(|format| format.source_system == "SOLIDWORKS"));
-        assert_eq!(response.design_input_review.conversion_plan.len(), 16);
+        assert_eq!(response.design_input_review.conversion_plan.len(), 25);
         let conversion_for = |id: &str| {
             response
                 .design_input_review
@@ -21808,6 +25155,95 @@ mod tests {
             .any(|blocker| {
                 blocker.contains("SOLIDWORKS native source requires licensed translator")
             }));
+        let jt_conversion = conversion_for("jt-lightweight-handoff");
+        assert_eq!(jt_conversion.worker_lane, "lightweight-cad-pmi-inspector");
+        assert!(jt_conversion.target_exports.contains(&"JT".to_string()));
+        assert!(jt_conversion
+            .target_exports
+            .contains(&"CAM setup JSON".to_string()));
+        assert!(jt_conversion
+            .required_evidence
+            .iter()
+            .any(|item| { item.contains("PMI") && item.contains("tessellation") }));
+        assert!(jt_conversion
+            .review_gates
+            .contains(&"verify-jt-units-assembly-pmi-brep-or-tessellation".to_string()));
+        assert!(jt_conversion
+            .review_gates
+            .contains(&"regenerate-step-3mf-stl-or-cam-setup-from-jt".to_string()));
+        assert!(jt_conversion
+            .release_blockers
+            .iter()
+            .any(|blocker| blocker.contains("lightweight CAD/PMI")));
+        let parasolid_conversion = conversion_for("parasolid-kernel-source");
+        assert_eq!(parasolid_conversion.worker_lane, "cad-kernel-inspector");
+        assert!(parasolid_conversion
+            .target_exports
+            .contains(&"STEP".to_string()));
+        assert!(parasolid_conversion
+            .required_evidence
+            .iter()
+            .any(|item| { item.contains("kernel version") && item.contains("units") }));
+        assert!(parasolid_conversion
+            .review_gates
+            .contains(&"verify-kernel-version-units-solids-and-body-count".to_string()));
+        assert!(parasolid_conversion
+            .release_blockers
+            .iter()
+            .any(|blocker| blocker.contains("kernel-version")));
+        let acis_conversion = conversion_for("acis-kernel-source");
+        assert_eq!(acis_conversion.worker_lane, "cad-kernel-inspector");
+        assert!(acis_conversion
+            .target_exports
+            .contains(&"CAM setup JSON".to_string()));
+        assert!(acis_conversion
+            .review_gates
+            .contains(&"regenerate-step-3mf-stl-or-cam-setup-from-kernel".to_string()));
+        let dxf_conversion = conversion_for("sheet-dxf-profile");
+        assert_eq!(dxf_conversion.worker_lane, "sheet-profile-cad-inspector");
+        assert!(dxf_conversion.target_exports.contains(&"DXF".to_string()));
+        assert!(dxf_conversion
+            .required_evidence
+            .iter()
+            .any(|item| { item.contains("drawing units") && item.contains("layer map") }));
+        assert!(dxf_conversion.review_gates.iter().any(|gate| {
+            gate.contains("verify-units-layers-closed-contours-kerf-and-revision")
+        }));
+        assert!(dxf_conversion
+            .release_blockers
+            .iter()
+            .any(|blocker| blocker.contains("closed-contour")));
+        let dwg_conversion = conversion_for("shop-dwg-drawing");
+        assert_eq!(dwg_conversion.worker_lane, "sheet-profile-cad-inspector");
+        assert!(dwg_conversion
+            .target_exports
+            .contains(&"CAM setup JSON".to_string()));
+        assert!(dwg_conversion
+            .review_gates
+            .contains(&"regenerate-reviewed-dxf-svg-or-cam-setup-before-cutting".to_string()));
+        let ply_conversion = conversion_for("scan-ply-mesh");
+        assert_eq!(ply_conversion.worker_lane, "color-mesh-package-inspector");
+        assert!(ply_conversion.target_exports.contains(&"3MF".to_string()));
+        assert!(ply_conversion
+            .required_evidence
+            .iter()
+            .any(|item| { item.contains("vertex-color") && item.contains("scan-decimation") }));
+        assert!(ply_conversion
+            .review_gates
+            .contains(&"verify-color-material-texture-scale-and-manifoldness".to_string()));
+        assert!(ply_conversion
+            .release_blockers
+            .iter()
+            .any(|blocker| blocker.contains("color/material/texture")));
+        let gltf_conversion = conversion_for("textured-gltf");
+        assert_eq!(gltf_conversion.worker_lane, "color-mesh-package-inspector");
+        assert!(gltf_conversion.target_exports.contains(&"GLB".to_string()));
+        assert!(gltf_conversion
+            .review_gates
+            .contains(&"regenerate-color-aware-3mf-or-reviewed-mesh-before-slicing".to_string()));
+        let amf_conversion = conversion_for("legacy-amf-package");
+        assert_eq!(amf_conversion.worker_lane, "color-mesh-package-inspector");
+        assert!(amf_conversion.target_exports.contains(&"AMF".to_string()));
         let prusa_conversion = conversion_for("prusa-project");
         assert_eq!(prusa_conversion.worker_lane, "slicer-profile-reviewer");
         assert!(prusa_conversion
@@ -22408,6 +25844,105 @@ mod tests {
     }
 
     #[test]
+    fn five_axis_mill_plan_generates_tcp_reviewed_program_and_artifacts() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-five-axis-mill".to_string()),
+            objective:
+                "titanium five-axis impeller with undercut blades and simultaneous contour finish"
+                    .to_string(),
+            material: Some(material("titanium", "metal")),
+            stock: Some(StockSpec {
+                form: "billet".to_string(),
+                dimensions_mm: Some(vec![160.0, 160.0, 80.0]),
+            }),
+            tolerance_mm: Some(0.035),
+            quantity: Some(1),
+            machines: None,
+            constraints: Some(FabricationConstraints {
+                max_setups: Some(2),
+                allow_human_intervention: Some(true),
+                allow_multi_part_assembly: Some(true),
+                require_dry_run: Some(true),
+                preferred_methods: Some(vec!["five-axis-milling".to_string()]),
+                preferred_assembly_strategy: None,
+            }),
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("five-axis mill plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "five-axis-sculpted-feature"
+                && part.machine_kind == "five-axis-mill"
+                && part.manufacturing_method == "subtractive-milling"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("simulate TCP")));
+        let five_axis_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "five-axis-mill")
+            .expect("five-axis mill program should be generated");
+        assert_eq!(five_axis_program.language, "iso-gcode");
+        assert!(five_axis_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft five-axis milling program")));
+        assert!(five_axis_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("G43.4H8") && line.contains("TCP kinematics verified")));
+        assert!(five_axis_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("G93") && line.contains("inverse-time feed verified")));
+        assert!(five_axis_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("G49") && line.contains("RTCP verified and cancelled")));
+        assert!(five_axis_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("collision simulation")));
+        assert!(!response.validation.findings.iter().any(|finding| {
+            finding.code.starts_with("tool-center-point")
+                && finding
+                    .program_id
+                    .as_deref()
+                    .is_some_and(|id| id.contains("five-axis-mill"))
+        }));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "five-axis-mill"
+                    && target.postprocessor == "five-axis-mill-postprocessor"
+                    && target.output_format == "five-axis-controller-gcode"
+            }));
+
+        let job = stored_plan_job(&response);
+        let parametric_design = job
+            .artifacts
+            .get("parametric-design")
+            .expect("parametric design artifact should be retained");
+        assert!(parametric_design
+            .content
+            .get("parts")
+            .and_then(Value::as_array)
+            .is_some_and(|parts| parts.iter().any(|part| {
+                part.get("primitive")
+                    .and_then(|primitive| primitive.get("primitive"))
+                    .and_then(Value::as_str)
+                    == Some("five-axis-sculpted-body")
+            })));
+    }
+
+    #[test]
     fn router_plan_uses_default_cnc_router_and_tabbed_profile_program() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-router".to_string()),
@@ -22642,6 +26177,126 @@ mod tests {
     }
 
     #[test]
+    fn default_sheet_cut_fleet_generates_wire_edm_job_for_conductive_profile() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-wire-edm".to_string()),
+            objective: "wire EDM stainless punch insert profile with skim pass and slug retention"
+                .to_string(),
+            material: Some(material("stainless-steel", "metal")),
+            stock: Some(StockSpec {
+                form: "plate".to_string(),
+                dimensions_mm: Some(vec![120.0, 80.0, 18.0]),
+            }),
+            tolerance_mm: Some(0.025),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("wire EDM plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "sheet-cut-profile"
+                && part.machine_kind == "wire-edm"
+                && part.manufacturing_method == "sheet-cutting"
+        }));
+        let edm_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "wire-edm")
+            .expect("wire EDM program should be generated");
+        assert_eq!(edm_program.language, "wire-edm-job");
+        assert!(edm_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft wire EDM profile job")));
+        assert!(edm_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("WIRE_THREAD_CHECK")));
+        assert!(edm_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("SKIM_PASS")));
+        assert!(edm_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("dielectric/flushing")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "wire-edm" && target.output_format == "wire-edm-job"
+            }));
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_sinker_edm_cavity_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-sinker-edm".to_string()),
+            objective: "sinker EDM tool-steel mold cavity with graphite electrode orbit finish and dielectric flushing"
+                .to_string(),
+            material: Some(material("tool-steel", "metal")),
+            stock: Some(StockSpec {
+                form: "block".to_string(),
+                dimensions_mm: Some(vec![160.0, 120.0, 45.0]),
+            }),
+            tolerance_mm: Some(0.018),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("sinker EDM plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "edm-cavity"
+                && part.machine_kind == "sinker-edm"
+                && part.manufacturing_method == "manual-or-special-process"
+        }));
+        let edm_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "sinker-edm")
+            .expect("sinker EDM program should be generated");
+        assert_eq!(edm_program.language, "sinker-edm-job");
+        assert!(edm_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft sinker EDM cavity job")));
+        assert!(edm_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("ELECTRODE_VERIFY")));
+        assert!(edm_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("DIELECTRIC_FLUSH_TEST")));
+        assert!(edm_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("ORBIT_FINISH")));
+        assert!(edm_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("electrode geometry")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "sinker-edm" && target.output_format == "sinker-edm-job"
+            }));
+    }
+
+    #[test]
     fn default_additive_fleet_generates_resin_printer_job() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-resin-printer".to_string()),
@@ -22697,6 +26352,126 @@ mod tests {
             .failure_boundaries
             .iter()
             .any(|boundary| boundary.kind == "post-processing-boundary"));
+    }
+
+    #[test]
+    fn default_additive_fleet_generates_composite_fiber_printer_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-composite-fiber-printer".to_string()),
+            objective:
+                "continuous-fiber carbon fiber nylon drone arm with load-direction layup and coupon inspection"
+                    .to_string(),
+            material: Some(material("pa-cf", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.14),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("composite fiber printer plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "composite-fiber-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("lay continuous fiber")));
+        let composite_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "composite-fiber-printer")
+            .expect("composite fiber program should be generated");
+        assert_eq!(composite_program.language, "composite-fiber-job");
+        assert!(composite_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft continuous-fiber composite job")));
+        assert!(composite_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("FIBER_LAYUP")));
+        assert!(composite_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("FIBER_CUT_ANCHOR")));
+        assert!(composite_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("fiber orientation")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "composite-fiber-printer"
+                    && target.output_format == "composite-fiber-job-package"
+            }));
+    }
+
+    #[test]
+    fn default_additive_fleet_generates_material_jetting_printer_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-material-jetting-printer".to_string()),
+            objective:
+                "PolyJet material jetting full-color photopolymer anatomical model with support removal and UV inspection"
+                    .to_string(),
+            material: Some(material("photopolymer", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.12),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("material jetting printer plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "material-jetting-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("jet photopolymer")));
+        let material_jetting_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "material-jetting-printer")
+            .expect("material jetting program should be generated");
+        assert_eq!(material_jetting_program.language, "material-jetting-job");
+        assert!(material_jetting_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft material jetting/PolyJet job")));
+        assert!(material_jetting_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("JET_MATERIALS")));
+        assert!(material_jetting_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("REMOVE_SUPPORT")));
+        assert!(material_jetting_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("material-channel map")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "material-jetting-printer"
+                    && target.output_format == "material-jetting-job-package"
+            }));
     }
 
     #[test]
@@ -22757,6 +26532,130 @@ mod tests {
             .failure_boundaries
             .iter()
             .any(|boundary| boundary.kind == "post-processing-boundary"));
+    }
+
+    #[test]
+    fn default_additive_fleet_generates_metal_pbf_printer_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-metal-pbf-printer".to_string()),
+            objective: "DMLS Ti6Al4V lattice heat exchanger with support strategy, inert gas purge, stress relief, and plate removal"
+                .to_string(),
+            material: Some(material("ti6al4v", "metal")),
+            stock: None,
+            tolerance_mm: Some(0.12),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("metal PBF printer plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "metal-pbf-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("metal powder-bed fuse")));
+        let metal_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "metal-pbf-printer")
+            .expect("metal PBF program should be generated");
+        assert_eq!(metal_program.language, "metal-pbf-job");
+        assert!(metal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft metal powder-bed fusion job")));
+        assert!(metal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("INERT_GAS_PURGE")));
+        assert!(metal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("RECOATER_CLEARANCE_CHECK")));
+        assert!(metal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("STRESS_RELIEF")));
+        assert!(metal_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("reactive metal powder handling")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "metal-pbf-printer"
+                    && target.output_format == "metal-pbf-job-package"
+            }));
+    }
+
+    #[test]
+    fn default_additive_fleet_generates_binder_jet_printer_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-binder-jet-printer".to_string()),
+            objective:
+                "Binder jet stainless-steel latch with green part cure, sinter shrink compensation, and density coupon"
+                    .to_string(),
+            material: Some(material("stainless-steel", "metal")),
+            stock: None,
+            tolerance_mm: Some(0.16),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("binder-jet printer plan should be generated");
+
+        assert!(response
+            .design
+            .parts
+            .iter()
+            .any(|part| part.machine_kind == "binder-jet-printer"));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("sinter/infiltrate")));
+        let binder_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "binder-jet-printer")
+            .expect("binder-jet program should be generated");
+        assert_eq!(binder_program.language, "binder-jet-job");
+        assert!(binder_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft binder-jet additive job")));
+        assert!(binder_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("BINDER_JET_PRINT")));
+        assert!(binder_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("SINTER_OR_INFILTRATE")));
+        assert!(binder_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("green-part handling")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "binder-jet-printer"
+                    && target.output_format == "binder-jet-job-package"
+            }));
     }
 
     #[test]
@@ -22929,6 +26828,14 @@ mod tests {
                 ],
             ),
         ];
+
+        assert!(has_work_coordinate_offset_start("G92 X0 Y0"));
+        assert!(has_work_coordinate_offset_start("G92X0Y0"));
+        assert!(has_work_coordinate_offset_start("G92.3"));
+        assert!(!has_work_coordinate_offset_start("G92.1"));
+        assert!(!has_work_coordinate_offset_start("G92.2"));
+        assert!(has_work_coordinate_offset_cancel("G92.1"));
+        assert!(has_work_coordinate_offset_cancel("G92.2"));
 
         let (_, validation, improvements) = analyze_instruction_programs(&programs);
 
@@ -23286,6 +27193,78 @@ mod tests {
     }
 
     #[test]
+    fn cnc_analysis_requires_units_mode_review_after_motion() {
+        let programs = vec![
+            program(
+                "late-units-change-mill",
+                "vertical-mill",
+                &[
+                    "G21 G90 G54 ; datum probed, vise clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1",
+                    "S8000 M3",
+                    "M8 ; coolant active",
+                    "G1 X10 Y0 F120",
+                    "G20",
+                    "G1 X1 Y0 F5",
+                    "M30",
+                ],
+            ),
+            program(
+                "reviewed-units-change-router",
+                "cnc-router",
+                &[
+                    "G21 G90 G54 ; edge finder datum probed, vacuum hold-down, tabs, and chip-load evidence verified",
+                    "S18000 M3",
+                    "M8 ; dust collection active",
+                    "G1 X60 Y0 F900",
+                    "G20 ; units mode change verified, inch/mm conversion verified, and scale conversion verified",
+                    "G1 X1 Y0 F35",
+                    "M30",
+                ],
+            ),
+        ];
+
+        assert_eq!(units_mode_from_line("G20"), Some("inch"));
+        assert_eq!(units_mode_from_line("G21"), Some("millimeter"));
+        assert_eq!(units_mode_from_line("G90 G21"), Some("millimeter"));
+        assert_eq!(units_mode_from_line("G21 G20"), Some("inch"));
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "units-mode-change-after-motion"
+                && finding.program_id.as_deref() == Some("late-units-change-mill")
+                && finding.line == Some(7)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "units-mode-change-boundary"
+                && boundary.program_id.as_deref() == Some("late-units-change-mill")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("G20/G21")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "units-mode-change-boundary"
+                && requirement.automation_type == "operator-gate-automation"
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "units-mode-change-after-motion"
+                && finding.program_id.as_deref() == Some("reviewed-units-change-router")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary units-mode-change-boundary")));
+        assert!(!improved[1].changed);
+    }
+
+    #[test]
     fn cnc_analysis_requires_coordinate_transform_review_and_cancel() {
         let programs = vec![
             program(
@@ -23429,6 +27408,253 @@ mod tests {
             .iter()
             .any(|line| line.contains("boundary inverse-time-feed-boundary")));
         assert!(!improved[1].changed);
+    }
+
+    #[test]
+    fn cnc_analysis_requires_tool_center_point_review_and_cancel() {
+        let programs = vec![
+            program(
+                "unreviewed-tcp-mill",
+                "horizontal-mill",
+                &[
+                    "G21 G90 G54 ; datum probed, tombstone clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "S7000 M3",
+                    "M8 ; coolant active",
+                    "G43.4 H1",
+                    "G1 X10 Y0 A25 F320",
+                    "M30",
+                ],
+            ),
+            program(
+                "reviewed-tcp-mill",
+                "horizontal-mill",
+                &[
+                    "G21 G90 G54 ; datum probed, tombstone clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "S7000 M3",
+                    "M8 ; coolant active",
+                    "G43.4H1 ; TCP kinematics verified, rotary pivot calibrated, and five-axis dry run approved",
+                    "G1 X10 Y0 A25 F320",
+                    "G49 ; RTCP verified and cancelled",
+                    "M30",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "tool-center-point-not-verified"
+                && finding.program_id.as_deref() == Some("unreviewed-tcp-mill")
+                && finding.line == Some(6)
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "tool-center-point-not-cancelled-before-end"
+                && finding.program_id.as_deref() == Some("unreviewed-tcp-mill")
+                && finding.line == Some(7)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "tool-center-point-boundary"
+                && boundary.program_id.as_deref() == Some("unreviewed-tcp-mill")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("G49")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("tool-center-point")
+                && finding.program_id.as_deref() == Some("reviewed-tcp-mill")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary tool-center-point-boundary")));
+        assert!(!improved[1].changed);
+    }
+
+    #[test]
+    fn cnc_analysis_requires_work_coordinate_offset_review_and_cancel() {
+        let programs = vec![
+            program(
+                "unreviewed-g92-offset",
+                "vertical-mill",
+                &[
+                    "G21 G90 G54 ; datum probed, vise clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1",
+                    "S8000 M3",
+                    "M8 ; coolant active",
+                    "G92 X0 Y0",
+                    "G1 X10 Y0 F120",
+                    "M30",
+                ],
+            ),
+            program(
+                "reviewed-g92-offset",
+                "vertical-mill",
+                &[
+                    "G21 G90 G54 ; datum probed, vise clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1",
+                    "S8000 M3",
+                    "M8 ; coolant active",
+                    "G92X0Y0 ; G92 offset verified, temporary offset verified, and active datum dry run approved",
+                    "G1 X10 Y0 F120",
+                    "G92.1 ; G92 cancel verified",
+                    "M30",
+                ],
+            ),
+            program(
+                "lathe-g92-threading-cycle",
+                "lathe",
+                &[
+                    "G21 G90 G54 ; datum probed, chuck clamped, tool list verified, chip-load evidence, and coolant active",
+                    "T0101",
+                    "G50 S2500",
+                    "S900 M3",
+                    "G95 ; feed-per-rev verified, thread pitch verified, and spindle encoder verified",
+                    "G92 X9.8 Z-12.0 F1.5",
+                    "M30",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "work-coordinate-offset-not-verified"
+                && finding.program_id.as_deref() == Some("unreviewed-g92-offset")
+                && finding.line == Some(7)
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "work-coordinate-offset-not-cancelled-before-end"
+                && finding.program_id.as_deref() == Some("unreviewed-g92-offset")
+                && finding.line == Some(8)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "work-coordinate-offset-boundary"
+                && boundary.program_id.as_deref() == Some("unreviewed-g92-offset")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("G92.1/G92.2")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "work-coordinate-offset-boundary"
+                && requirement.automation_type == "fixture-automation"
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("work-coordinate-offset")
+                && finding.program_id.as_deref() == Some("reviewed-g92-offset")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("work-coordinate-offset")
+                && finding.program_id.as_deref() == Some("lathe-g92-threading-cycle")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary work-coordinate-offset-boundary")));
+        assert!(!improved[1].changed);
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary work-coordinate-offset-boundary")));
+    }
+
+    #[test]
+    fn cnc_analysis_requires_dwell_duration_evidence() {
+        let programs = vec![
+            program(
+                "unbounded-dwell-mill",
+                "vertical-mill",
+                &[
+                    "G21 G90 G54 ; datum probed, vise clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1",
+                    "S8000 M3",
+                    "M8 ; coolant active",
+                    "G4",
+                    "G1 X10 Y0 F120",
+                    "M30",
+                ],
+            ),
+            program(
+                "timed-dwell-mill",
+                "vertical-mill",
+                &[
+                    "G21 G90 G54 ; datum probed, vise clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1",
+                    "S8000 M3",
+                    "M8 ; coolant active",
+                    "G4 P1.5 ; controller dwell units verified",
+                    "G1 X10 Y0 F120",
+                    "M30",
+                ],
+            ),
+            program(
+                "compact-dwell-router",
+                "router",
+                &[
+                    "G21 G90 G54 ; datum probed, spoilboard clamps, dust collection, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1",
+                    "S18000 M3",
+                    "M8 ; dust collection active",
+                    "G04P0.75",
+                    "G1 X60 Y0 F1800",
+                    "M30",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "dwell-duration-missing"
+                && finding.program_id.as_deref() == Some("unbounded-dwell-mill")
+                && finding.line == Some(6)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "dwell-duration-boundary"
+                && boundary.program_id.as_deref() == Some("unbounded-dwell-mill")
+                && boundary.line == Some(6)
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("P/S/X/U")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "dwell-duration-boundary"
+                && requirement.automation_type == "operator-gate-automation"
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "dwell-duration-missing"
+                && finding.program_id.as_deref() == Some("timed-dwell-mill")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "dwell-duration-missing"
+                && finding.program_id.as_deref() == Some("compact-dwell-router")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary dwell-duration-boundary")));
+        assert!(!improved[1].changed);
+        assert!(!improved[2].changed);
     }
 
     #[test]
@@ -23823,6 +28049,78 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.contains("boundary work-offset-datum-boundary")));
+        assert!(!improved[1].changed);
+    }
+
+    #[test]
+    fn subtractive_analysis_requires_work_offset_write_review() {
+        let programs = vec![
+            program(
+                "unreviewed-g10-offset-write",
+                "vertical-mill",
+                &[
+                    "G21 G90 G54 ; datum probed, vise clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1",
+                    "S8000 M3",
+                    "M8 ; coolant active",
+                    "G10 L2 P1 X0 Y0 Z0",
+                    "G1 X10 Y0 F120",
+                    "M30",
+                ],
+            ),
+            program(
+                "reviewed-g10-offset-write",
+                "cnc-router",
+                &[
+                    "G21 G90 G54 ; edge finder datum probed, vacuum hold-down, tabs, and chip-load evidence verified",
+                    "S18000 M3",
+                    "M8 ; dust collection active",
+                    "G10L20P1X0Y0 ; G10 offset write verified, work offset write verified, and controller offset backup recorded",
+                    "G1 X60 Y0 F900",
+                    "M30",
+                ],
+            ),
+        ];
+
+        assert!(has_controller_work_offset_write("G10 L2 P1 X0 Y0"));
+        assert!(has_controller_work_offset_write("G10L20P2X0Y0"));
+        assert!(!has_controller_work_offset_write("G10 ; firmware retract"));
+        assert!(!has_controller_work_offset_write("G10 L1 P1"));
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "work-offset-write-not-verified"
+                && finding.program_id.as_deref() == Some("unreviewed-g10-offset-write")
+                && finding.line == Some(6)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "work-offset-write-boundary"
+                && boundary.program_id.as_deref() == Some("unreviewed-g10-offset-write")
+                && boundary.requires_human_intervention
+                && boundary
+                    .suggested_resolution
+                    .contains("offset-table backup")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "work-offset-write-boundary"
+                && requirement.automation_type == "fixture-automation"
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "work-offset-write-not-verified"
+                && finding.program_id.as_deref() == Some("reviewed-g10-offset-write")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary work-offset-write-boundary")));
         assert!(!improved[1].changed);
     }
 
@@ -25071,6 +29369,91 @@ mod tests {
     }
 
     #[test]
+    fn mill_router_analysis_requires_arc_plane_reset_before_end() {
+        let programs = vec![
+            program(
+                "xz-plane-end-mill",
+                "vertical-mill",
+                &[
+                    "G21 G90 G18 G54 ; datum probed, vise clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1 ; tool length probe verified",
+                    "S8000 M3",
+                    "M8 ; coolant active",
+                    "G2 X10 Z-2 I5 K0 F300",
+                    "M30",
+                ],
+            ),
+            program(
+                "xy-plane-restored-mill",
+                "vertical-mill",
+                &[
+                    "G21 G90 G18 G54 ; datum probed, vise clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1 ; tool length probe verified",
+                    "S8000 M3",
+                    "M8 ; coolant active",
+                    "G2 X10 Z-2 I5 K0 F300",
+                    "G17 ; XY arc plane restored",
+                    "M30",
+                ],
+            ),
+            program(
+                "lathe-xz-plane-end",
+                "lathe",
+                &[
+                    "G21 G90 G18 G54 ; chuck grip stick-out runout and datum verified",
+                    "T0101",
+                    "G50 S2500",
+                    "G97 S1200 M3",
+                    "M8 ; coolant active",
+                    "G2 X20 Z-5 I1 K2 F0.10",
+                    "M30",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "arc-plane-not-reset-before-end"
+                && finding.program_id.as_deref() == Some("xz-plane-end-mill")
+                && finding.line == Some(7)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "arc-plane-boundary"
+                && boundary.program_id.as_deref() == Some("xz-plane-end-mill")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("G17")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "arc-plane-not-reset-before-end"
+                && finding.program_id.as_deref() == Some("xy-plane-restored-mill")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "arc-plane-not-reset-before-end"
+                && finding.program_id.as_deref() == Some("lathe-xz-plane-end")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary arc-plane-boundary")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.contains("arc-plane-not-reset-before-end")));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.contains("arc-plane-not-reset-before-end")));
+    }
+
+    #[test]
     fn mill_router_lathe_analysis_requires_arc_offsets_match_plane() {
         let programs = vec![
             program(
@@ -25528,6 +29911,109 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.contains("boundary printer-negative-z-extrusion-boundary")));
+    }
+
+    #[test]
+    fn additive_analysis_requires_bed_leveling_restore_after_disable() {
+        let programs = vec![
+            program(
+                "mesh-disabled-extrusion",
+                "fdm-printer",
+                &[
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
+                    "M82 ; absolute extrusion mode",
+                    "G28",
+                    "M104 S210",
+                    "M109 S210",
+                    "M140 S60",
+                    "M190 S60",
+                    "M420 S0 ; bed mesh disabled for maintenance",
+                    "G92 E0",
+                    "G1 Z0.24 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+            program(
+                "mesh-reenabled-extrusion",
+                "fdm-printer",
+                &[
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
+                    "M82 ; absolute extrusion mode",
+                    "G28",
+                    "M104 S210",
+                    "M109 S210",
+                    "M140 S60",
+                    "M190 S60",
+                    "M420 S0 ; bed mesh disabled for maintenance",
+                    "M420 S1 ; bed mesh verified and restored",
+                    "G92 E0",
+                    "G1 Z0.24 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+            program(
+                "mesh-reprobed-extrusion",
+                "fdm-printer",
+                &[
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
+                    "M82 ; absolute extrusion mode",
+                    "G28",
+                    "M104 S210",
+                    "M109 S210",
+                    "M140 S60",
+                    "M190 S60",
+                    "M420 S0 ; mesh leveling disabled for service",
+                    "G29 ; bed probe verified",
+                    "G92 E0",
+                    "G1 Z0.24 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "error");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "additive-bed-leveling-disabled-before-extrusion"
+                && finding.program_id.as_deref() == Some("mesh-disabled-extrusion")
+                && finding.line == Some(11)
+                && finding.severity == "error"
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "printer-bed-leveling-boundary"
+                && boundary.program_id.as_deref() == Some("mesh-disabled-extrusion")
+                && boundary.line == Some(11)
+                && boundary.severity == "error"
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("M420 S1")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "additive-bed-leveling-disabled-before-extrusion"
+                && matches!(
+                    finding.program_id.as_deref(),
+                    Some("mesh-reenabled-extrusion" | "mesh-reprobed-extrusion")
+                )
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-bed-leveling-boundary")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-bed-leveling-boundary")));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-bed-leveling-boundary")));
     }
 
     #[test]
@@ -27042,6 +31528,82 @@ mod tests {
     }
 
     #[test]
+    fn subtractive_analysis_requires_process_shutdown_before_program_end() {
+        let programs = vec![
+            program(
+                "active-process-at-end",
+                "vertical-mill",
+                &[
+                    "G21 G90 G54 ; ATC magazine, vise clamps, stock stop, datum probed, and chip-load evidence verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1 ; tool length probe verified",
+                    "S8000 M3",
+                    "M8 ; coolant active",
+                    "G0 X0 Y0 Z12",
+                    "G1 Z-1.0 F120",
+                    "G1 X25.0 F260",
+                    "M30",
+                ],
+            ),
+            program(
+                "stopped-process-at-end",
+                "vertical-mill",
+                &[
+                    "G21 G90 G54 ; ATC magazine, vise clamps, stock stop, datum probed, and chip-load evidence verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1 ; tool length probe verified",
+                    "S8000 M3",
+                    "M8 ; coolant active",
+                    "G0 X0 Y0 Z12",
+                    "G1 Z-1.0 F120",
+                    "G1 X25.0 F260",
+                    "M5 ; spindle stopped and verified",
+                    "M9 ; coolant off and chip conveyor stopped",
+                    "M30",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "process-not-stopped-before-program-end"
+                && finding.program_id.as_deref() == Some("active-process-at-end")
+                && finding.line == Some(9)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "machine-process-end-boundary"
+                && boundary.program_id.as_deref() == Some("active-process-at-end")
+                && boundary.line == Some(9)
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("M5/M05")
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "process-media-not-stopped-before-program-end"
+                && finding.program_id.as_deref() == Some("active-process-at-end")
+                && finding.line == Some(9)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "process-media-end-boundary"
+                && boundary.program_id.as_deref() == Some("active-process-at-end")
+                && boundary.line == Some(9)
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("M9/M09")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            (finding.code == "process-not-stopped-before-program-end"
+                || finding.code == "process-media-not-stopped-before-program-end")
+                && finding.program_id.as_deref() == Some("stopped-process-at-end")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(!improved[0].changed);
+        assert!(!improved[1].changed);
+    }
+
+    #[test]
     fn lathe_analysis_flags_css_threading_and_partoff_boundaries() {
         let programs = vec![program(
             "risky-lathe",
@@ -28201,6 +32763,75 @@ mod tests {
     }
 
     #[test]
+    fn resin_layer_manifests_require_image_and_peel_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("sla-layer-manifest-missing-evidence".to_string()),
+                machine_id: Some("sla-1".to_string()),
+                machine_kind: Some("sla-printer".to_string()),
+                language: Some("resin-layer-manifest".to_string()),
+                instructions: vec![
+                    "Layer manifest for resin dental guide: 940 layers, exposure 2.4s, resin profile Dental-50, support orientation reviewed".to_string(),
+                    "Wash in IPA, UV cure, drain, and record PPE and waste controls".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("sla-layer-manifest-with-evidence".to_string()),
+                machine_id: Some("sla-1".to_string()),
+                machine_kind: Some("sla-printer".to_string()),
+                language: Some("resin-layer-manifest".to_string()),
+                instructions: vec![
+                    "Layer manifest for resin guide: 940 layers, slice image count 940, mask image SHA256 abc123, CTB checksum recorded".to_string(),
+                    "Exposure 2.4s, bottom layers 6 at 28s, lift distance 6mm, lift speed 60mm/min, retract speed 90mm/min, peel/recoat delay and light-off delay verified".to_string(),
+                    "Wash in IPA, UV cure, drain, and record PPE and waste controls".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "resin-layer-manifest-evidence-missing"
+                && finding.program_id.as_deref() == Some("sla-layer-manifest-missing-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "resin-layer-manifest-evidence-missing"
+                && finding.program_id.as_deref() == Some("sla-layer-manifest-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "resin-layer-manifest-boundary"
+                && boundary.program_id.as_deref() == Some("sla-layer-manifest-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary
+                    .suggested_resolution
+                    .contains("image hash/checksum")
+                && boundary.suggested_resolution.contains("peel/lift/recoat")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "resin-layer-manifest-boundary"
+                && requirement.automation_type == "process-cell-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-resin-layer-manifest-evidence"
+                && improvement.program_id.as_deref() == Some("sla-layer-manifest-missing-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [resin-layer-manifest-boundary]")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [resin-layer-manifest-boundary]")));
+    }
+
+    #[test]
     fn text_resin_large_jobs_require_vat_capacity_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -28258,6 +32889,189 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.starts_with("CHECKPOINT [resin-vat-capacity-boundary]")));
+    }
+
+    #[test]
+    fn text_material_jetting_jobs_require_material_support_and_uv_inspection_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("material-jetting-missing-material-evidence".to_string()),
+                machine_id: Some("polyjet-1".to_string()),
+                machine_kind: Some("material-jetting-printer".to_string()),
+                language: Some("material-jetting-job".to_string()),
+                instructions: vec![
+                    "PolyJet material jetting anatomical model with support material removal, waterjet cleaning, UV cure, color verification, surface finish, and dimensional inspection recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("material-jetting-missing-support-uv-evidence".to_string()),
+                machine_id: Some("polyjet-1".to_string()),
+                machine_kind: Some("material-jetting-printer".to_string()),
+                language: Some("material-jetting-job".to_string()),
+                instructions: vec![
+                    "PolyJet material jetting tray with material cartridge lot Vero-22, photopolymer lot RGD-8, material channel map, color map, printhead nozzle check, purge, tray map, tray calibration, and packing density reviewed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("material-jetting-with-evidence".to_string()),
+                machine_id: Some("polyjet-1".to_string()),
+                machine_kind: Some("material-jetting-printer".to_string()),
+                language: Some("material-jetting-job".to_string()),
+                instructions: vec![
+                    "PolyJet material jetting tray with material cartridge lot Vero-22, photopolymer lot RGD-8, material channel map, color map, printhead nozzle check, purge, tray map, tray calibration, and packing density reviewed".to_string(),
+                    "Support material SUP706 loaded, support removal method approved, waterjet cleaning cycle and solvent wipe recorded with support residue inspection".to_string(),
+                    "UV lamp state, UV dose, tack-free review, color verification, material interface inspection, shore hardness, first article, and dimensional inspection recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "material-jetting-material-evidence-missing"
+                && finding.program_id.as_deref()
+                    == Some("material-jetting-missing-material-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "material-jetting-support-uv-inspection-evidence-missing"
+                && finding.program_id.as_deref()
+                    == Some("material-jetting-missing-support-uv-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("material-jetting-")
+                && finding.program_id.as_deref() == Some("material-jetting-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "material-jetting-material-boundary"
+                && boundary.program_id.as_deref()
+                    == Some("material-jetting-missing-material-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("cartridge lots")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "material-jetting-support-uv-inspection-boundary"
+                && boundary.program_id.as_deref()
+                    == Some("material-jetting-missing-support-uv-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("support-removal")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-material-jetting-material-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("material-jetting-missing-material-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-material-jetting-support-uv-inspection-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("material-jetting-missing-support-uv-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [material-jetting-material-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1].instructions.iter().any(|line| {
+            line.starts_with("CHECKPOINT [material-jetting-support-uv-inspection-boundary]")
+        }));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [material-jetting-")));
+    }
+
+    #[test]
+    fn text_composite_fiber_jobs_require_layup_process_and_inspection_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("composite-missing-layup".to_string()),
+                machine_id: Some("composite-1".to_string()),
+                machine_kind: Some("composite-fiber-printer".to_string()),
+                language: Some("composite-fiber-job".to_string()),
+                instructions: vec![
+                    "Continuous fiber carbon fiber nylon drone arm with matrix lot PA-CF-7, fiber spool lot CF-44, fiber cutter calibration, cut test, nozzle purge, bed adhesion, and fiber tension verified".to_string(),
+                    "Continuous fiber coupon bend test, fiber continuity, void inspection, delamination review, exposed fiber trim inspection, and dimensional inspection recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("composite-missing-process-inspection".to_string()),
+                machine_id: Some("composite-1".to_string()),
+                machine_kind: Some("composite-fiber-printer".to_string()),
+                language: Some("composite-fiber-job".to_string()),
+                instructions: vec![
+                    "Continuous fiber carbon fiber nylon bracket with fiber orientation 0/90/45/-45, layup schedule L-12, reinforcement rings, load direction, neutral axis, and anisotropy review".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("composite-with-evidence".to_string()),
+                machine_id: Some("composite-1".to_string()),
+                machine_kind: Some("composite-fiber-printer".to_string()),
+                language: Some("composite-fiber-job".to_string()),
+                instructions: vec![
+                    "Continuous fiber carbon fiber nylon bracket with fiber orientation 0/90/45/-45, fiber path, layup schedule L-12, reinforcement rings, load direction, neutral axis, and anisotropy review".to_string(),
+                    "Continuous fiber matrix lot PA-CF-7, dry box, fiber spool lot CF-44, fiber cutter calibration, cut test, fiber tension, anchor length, nozzle purge, bed adhesion, fiber volume, and compaction recorded".to_string(),
+                    "Continuous fiber coupon bend test, fiber continuity, void inspection, delamination review, exposed fiber trim inspection, and dimensional inspection recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "composite-fiber-layup-evidence-missing"
+                && finding.program_id.as_deref() == Some("composite-missing-layup")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "composite-fiber-process-inspection-evidence-missing"
+                && finding.program_id.as_deref() == Some("composite-missing-process-inspection")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("composite-fiber-")
+                && finding.program_id.as_deref() == Some("composite-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "composite-fiber-layup-boundary"
+                && boundary.program_id.as_deref() == Some("composite-missing-layup")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("fiber layup")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "composite-fiber-process-inspection-boundary"
+                && boundary.program_id.as_deref() == Some("composite-missing-process-inspection")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("cutter calibration")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-composite-fiber-layup-evidence"
+                && improvement.program_id.as_deref() == Some("composite-missing-layup")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-composite-fiber-process-inspection-evidence"
+                && improvement.program_id.as_deref() == Some("composite-missing-process-inspection")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [composite-fiber-layup-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1].instructions.iter().any(
+            |line| line.starts_with("CHECKPOINT [composite-fiber-process-inspection-boundary]")
+        ));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [composite-fiber-")));
     }
 
     #[test]
@@ -28323,6 +33137,169 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.starts_with("CHECKPOINT [powder-bed-build-profile-boundary]")));
+    }
+
+    #[test]
+    fn powder_bed_recoater_and_dense_pack_jobs_require_clearance_and_thermal_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("sls-recoater-missing-clearance".to_string()),
+                machine_id: Some("sls-1".to_string()),
+                machine_kind: Some("sls-printer".to_string()),
+                language: Some("powder-job".to_string()),
+                instructions: vec![
+                    "Print tightly nested powder-bed PA12 build with powder lot PA12-44, material profile PA12-fine, layer thickness 100um, recoater sweep across dense packing, laser power and scan speed validated".to_string(),
+                    "Cooldown, depowder with grounded vacuum, and record refresh ratio and PPE controls".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("sls-recoater-with-clearance".to_string()),
+                machine_id: Some("sls-1".to_string()),
+                machine_kind: Some("sls-printer".to_string()),
+                language: Some("powder-job".to_string()),
+                instructions: vec![
+                    "Print powder-bed PA12 build with powder lot PA12-44, material profile PA12-fine, layer thickness 100um, recoater sweep reviewed with recoater clearance 2mm, roller clearance checked, laser power and scan speed validated".to_string(),
+                    "Nested build packing density reviewed with thermal spacing 8mm, cooldown curve, unpack temperature, witness coupon, and warpage review verified".to_string(),
+                    "Depowder with grounded vacuum, record refresh ratio, and PPE controls".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "powder-bed-recoater-thermal-evidence-missing"
+                && finding.program_id.as_deref() == Some("sls-recoater-missing-clearance")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "powder-bed-recoater-thermal-evidence-missing"
+                && finding.program_id.as_deref() == Some("sls-recoater-with-clearance")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "powder-bed-recoater-thermal-boundary"
+                && boundary.program_id.as_deref() == Some("sls-recoater-missing-clearance")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("recoater")
+                && boundary.suggested_resolution.contains("thermal spacing")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "powder-bed-recoater-thermal-boundary"
+                && requirement.automation_type == "process-cell-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-powder-bed-recoater-thermal-evidence"
+                && improvement.program_id.as_deref() == Some("sls-recoater-missing-clearance")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [powder-bed-recoater-thermal-boundary]")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [powder-bed-recoater-thermal-boundary]")));
+    }
+
+    #[test]
+    fn text_binder_jet_jobs_require_process_postprocess_and_shrinkage_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("binder-jet-missing-process-evidence".to_string()),
+                machine_id: Some("binder-jet-1".to_string()),
+                machine_kind: Some("binder-jet-printer".to_string()),
+                language: Some("binder-jet-job".to_string()),
+                instructions: vec![
+                    "Binder jet stainless latch as a green part".to_string(),
+                    "Cure green part, depowder, sinter with furnace profile FP-12, shrink compensation coupon, and density coupon".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("binder-jet-missing-postprocess-evidence".to_string()),
+                machine_id: Some("binder-jet-1".to_string()),
+                machine_kind: Some("binder-jet-printer".to_string()),
+                language: Some("binder-jet-job".to_string()),
+                instructions: vec![
+                    "Binder jet stainless latch with binder lot BJ-22, binder saturation 78%, printhead nozzle check passed, layer thickness 80um, powder lot 316L-9, and green strength coupon passed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("binder-jet-with-evidence".to_string()),
+                machine_id: Some("binder-jet-1".to_string()),
+                machine_kind: Some("binder-jet-printer".to_string()),
+                language: Some("binder-jet-job".to_string()),
+                instructions: vec![
+                    "Binder jet stainless latch with binder lot BJ-22, binder saturation 78%, binder profile 316L-BJ, printhead nozzle check passed, layer thickness 80um, powder lot 316L-9, and green strength coupon passed".to_string(),
+                    "Cure green part, depowder with powder recovery, debind, sinter in furnace profile FP-12, infiltrate if density coupon fails, and inspect support setter contact".to_string(),
+                    "Apply shrink compensation scale factor 1.018 from dimensional coupon, density coupon, porosity record, and distortion review".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "binder-jet-process-evidence-missing"
+                && finding.program_id.as_deref() == Some("binder-jet-missing-process-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "binder-jet-postprocess-shrinkage-evidence-missing"
+                && finding.program_id.as_deref() == Some("binder-jet-missing-postprocess-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("binder-jet-")
+                && finding.program_id.as_deref() == Some("binder-jet-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "binder-jet-process-boundary"
+                && boundary.program_id.as_deref() == Some("binder-jet-missing-process-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("binder lot")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "binder-jet-postprocess-shrinkage-boundary"
+                && boundary.program_id.as_deref() == Some("binder-jet-missing-postprocess-evidence")
+                && boundary.requires_human_intervention
+                && boundary
+                    .suggested_resolution
+                    .contains("shrink-compensation")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-binder-jet-process-evidence"
+                && improvement.program_id.as_deref() == Some("binder-jet-missing-process-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-binder-jet-postprocess-shrinkage-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("binder-jet-missing-postprocess-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [binder-jet-process-boundary]")));
+        assert!(improved[1].changed);
+        assert!(
+            improved[1]
+                .instructions
+                .iter()
+                .any(|line| line
+                    .starts_with("CHECKPOINT [binder-jet-postprocess-shrinkage-boundary]"))
+        );
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [binder-jet-")));
     }
 
     #[test]
@@ -28545,6 +33522,239 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.starts_with("CHECKPOINT [lathe-text-partoff-support-boundary]")));
+    }
+
+    #[test]
+    fn accepted_instruction_languages_cover_generated_default_program_languages() {
+        let accepted = accepted_instruction_languages();
+        let unique = accepted.iter().copied().collect::<BTreeSet<_>>();
+        assert_eq!(
+            unique.len(),
+            accepted.len(),
+            "accepted instruction languages should not contain duplicates"
+        );
+
+        for language in [
+            "marlin-gcode",
+            "iso-gcode",
+            "grbl-gcode",
+            "fanuc-gcode",
+            "sla-job",
+            "material-jetting-job",
+            "composite-fiber-job",
+            "sls-job",
+            "metal-pbf-job",
+            "binder-jet-job",
+            "laser-job",
+            "waterjet-job",
+            "plasma-job",
+            "wire-edm-job",
+            "sinker-edm-job",
+            "slicer-job",
+            "resin-job",
+            "powder-job",
+            "powder-bed-job",
+            "printer-job",
+            "operator-checklist",
+            "setup-sheet",
+        ] {
+            assert!(
+                unique.contains(language),
+                "accepted instruction languages should include {language}"
+            );
+        }
+    }
+
+    #[test]
+    fn text_sinker_edm_jobs_require_electrode_dielectric_and_burn_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("sinker-edm-missing-evidence".to_string()),
+                machine_id: Some("sinker-edm-1".to_string()),
+                machine_kind: Some("sinker-edm".to_string()),
+                language: Some("sinker-edm-job".to_string()),
+                instructions: vec![
+                    "Sinker EDM tool-steel mold cavity from material certification and cavity tolerance 0.018mm".to_string(),
+                    "Burn the edm cavity with operator-reviewed setup and inspect the final profile".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("sinker-edm-with-evidence".to_string()),
+                machine_id: Some("sinker-edm-1".to_string()),
+                machine_kind: Some("sinker-edm".to_string()),
+                language: Some("sinker-edm-job".to_string()),
+                instructions: vec![
+                    "Sinker EDM tool-steel mold cavity with electrode drawing, graphite electrode material, polarity, undersize, and wear allowance verified".to_string(),
+                    "Dielectric filtration, pump flow, flushing, debris removal, conductivity, and fire suppression checks are complete".to_string(),
+                    "Power table, retract cycle, burn depth, depth stop, sidewall taper, recast layer, surface finish, and orbit-finish strategy are verified".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "sinker-edm-text-evidence-missing"
+                && finding.program_id.as_deref() == Some("sinker-edm-missing-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "sinker-edm-text-evidence-missing"
+                && finding.program_id.as_deref() == Some("sinker-edm-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "sinker-edm-text-boundary"
+                && boundary.program_id.as_deref() == Some("sinker-edm-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("electrode drawing")
+                && boundary.suggested_resolution.contains("dielectric")
+                && boundary.suggested_resolution.contains("orbit-finish")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "sinker-edm-text-boundary"
+                && requirement.automation_type == "process-cell-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-sinker-edm-text-evidence"
+                && improvement.program_id.as_deref() == Some("sinker-edm-missing-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [sinker-edm-text-boundary]")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [sinker-edm-text-boundary]")));
+    }
+
+    #[test]
+    fn text_wire_edm_jobs_require_threading_flushing_and_slug_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("wire-edm-missing-evidence".to_string()),
+                machine_id: Some("wire-edm-1".to_string()),
+                machine_kind: Some("wire-edm".to_string()),
+                language: Some("wire-edm-job".to_string()),
+                instructions: vec![
+                    "Wire EDM stainless punch insert profile from material certification and thickness 18mm".to_string(),
+                    "Cut the electrical-discharge contour and hold the critical profile tolerance".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("wire-edm-with-evidence".to_string()),
+                machine_id: Some("wire-edm-1".to_string()),
+                machine_kind: Some("wire-edm".to_string()),
+                language: Some("wire-edm-job".to_string()),
+                instructions: vec![
+                    "Wire EDM stainless punch insert profile with material certification, thickness 18mm, start hole verified, wire thread checked, wire diameter 0.25mm, and slug retention tabs".to_string(),
+                    "Dielectric conductivity, flushing pressure, spark gap offset, taper compensation, and skim-pass settings are verified".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "wire-edm-text-evidence-missing"
+                && finding.program_id.as_deref() == Some("wire-edm-missing-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "wire-edm-text-evidence-missing"
+                && finding.program_id.as_deref() == Some("wire-edm-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "wire-edm-text-boundary"
+                && boundary.program_id.as_deref() == Some("wire-edm-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("start-hole")
+                && boundary.suggested_resolution.contains("dielectric")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "wire-edm-text-boundary"
+                && requirement.automation_type == "process-cell-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-wire-edm-text-evidence"
+                && improvement.program_id.as_deref() == Some("wire-edm-missing-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [wire-edm-text-boundary]")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [wire-edm-text-boundary]")));
+    }
+
+    #[test]
+    fn wire_edm_jobs_require_threading_setup_before_profile_cut() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("wire-edm-cut-before-threading".to_string()),
+                machine_id: Some("wire-edm-1".to_string()),
+                machine_kind: Some("wire-edm".to_string()),
+                language: Some("wire-edm-job".to_string()),
+                instructions: vec![
+                    "CUT_PROFILE outside_contour tolerance=0.01 skim_allowance=0.05".to_string(),
+                    "Wire EDM stainless punch insert with start hole verified, wire thread checked, wire tension recorded, slug retention tabs, dielectric conductivity, flushing pressure, spark gap offset, taper compensation, and skim-pass settings verified".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("wire-edm-threaded-before-cut".to_string()),
+                machine_id: Some("wire-edm-1".to_string()),
+                machine_kind: Some("wire-edm".to_string()),
+                language: Some("wire-edm-job".to_string()),
+                instructions: vec![
+                    "Wire EDM stainless punch insert with start hole verified, wire thread checked, wire tension recorded, slug retention tabs, dielectric conductivity, flushing pressure, spark gap offset, taper compensation, and skim-pass settings verified".to_string(),
+                    "CUT_PROFILE outside_contour tolerance=0.01 skim_allowance=0.05".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "error");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "wire-edm-cut-before-threading-setup"
+                && finding.program_id.as_deref() == Some("wire-edm-cut-before-threading")
+                && finding.line == Some(1)
+                && finding.severity == "error"
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "wire-edm-cut-setup-boundary"
+                && boundary.program_id.as_deref() == Some("wire-edm-cut-before-threading")
+                && boundary.line == Some(1)
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("wire-threading")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "wire-edm-cut-before-threading-setup"
+                && finding.program_id.as_deref() == Some("wire-edm-threaded-before-cut")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [wire-edm-cut-setup-boundary]")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [wire-edm-cut-setup-boundary]")));
     }
 
     #[test]
@@ -29117,6 +34327,7 @@ mod tests {
             program_id: Some("mill-bracket".to_string()),
             machine_id: Some("vertical-mill-1".to_string()),
             machine_kind: Some("vertical-mill".to_string()),
+            operation_sequence: None,
             material: Some(material("aluminum", "metal")),
             outcome: "machine alarm; part scrapped after manual intervention".to_string(),
             completed: Some(false),
@@ -29242,6 +34453,8 @@ mod tests {
             objective: Some("printed housing with turned bearing insert".to_string()),
             material: Some(material("petg", "polymer")),
             manufacturing_methods: Some(vec!["additive-print".to_string(), "turning".to_string()]),
+            machine_kind: None,
+            operation_sequence: None,
             assembly_strategy: Some("printed body plus turned insert".to_string()),
             success: true,
             reward: Some(3.2),
@@ -29255,6 +34468,8 @@ mod tests {
             objective: Some("printed knob with turned brass threaded core".to_string()),
             material: Some(material("petg", "polymer")),
             manufacturing_methods: Some(vec!["additive-print".to_string(), "turning".to_string()]),
+            machine_kind: None,
+            operation_sequence: None,
             assembly_strategy: Some("printed body plus turned insert".to_string()),
             success: true,
             reward: Some(2.4),
@@ -29268,6 +34483,8 @@ mod tests {
             objective: Some("single-piece milled plastic housing".to_string()),
             material: Some(material("petg", "polymer")),
             manufacturing_methods: Some(vec!["milling".to_string()]),
+            machine_kind: None,
+            operation_sequence: None,
             assembly_strategy: Some("single-piece machining".to_string()),
             success: false,
             reward: Some(-1.0),
@@ -29338,6 +34555,7 @@ mod tests {
             program_id: Some("program-petg-pocket".to_string()),
             machine_id: Some("vmill-1".to_string()),
             machine_kind: Some("vertical-mill".to_string()),
+            operation_sequence: None,
             material: Some(material("petg", "polymer")),
             outcome: "tool chatter alarm scrapped thin-wall pocket".to_string(),
             completed: Some(false),
@@ -29500,6 +34718,8 @@ mod tests {
                 recommendation: "prefer".to_string(),
             }],
             method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
             assembly_preferences: vec![LearningPreference {
                 key: "printed body plus routed clamp insert".to_string(),
                 samples: 2,
@@ -29540,6 +34760,272 @@ mod tests {
     }
 
     #[test]
+    fn learned_machine_kind_preferences_steer_future_open_machine_selection() {
+        let first_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("resin-machine-success-1".to_string()),
+            job_id: Some("plan-resin-machine-1".to_string()),
+            objective: Some("polymer miniature shell".to_string()),
+            material: Some(material("polymer", "polymer")),
+            manufacturing_methods: Some(vec!["additive-print".to_string()]),
+            machine_kind: Some("resin-printer".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some("single-piece resin print".to_string()),
+            success: true,
+            reward: Some(1.8),
+            observations: Some(vec!["fine features passed".to_string()]),
+            notes: Some(vec!["reuse resin printer for miniature shells".to_string()]),
+        })
+        .expect("first machine-kind outcome should be valid");
+        let second_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("resin-machine-success-2".to_string()),
+            job_id: Some("plan-resin-machine-2".to_string()),
+            objective: Some("polymer figurine surface detail".to_string()),
+            material: Some(material("polymer", "polymer")),
+            manufacturing_methods: Some(vec!["additive-print".to_string()]),
+            machine_kind: Some("resin-printer".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some("single-piece resin print".to_string()),
+            success: true,
+            reward: Some(2.0),
+            observations: Some(vec!["surface detail passed".to_string()]),
+            notes: Some(vec!["same machine family succeeded again".to_string()]),
+        })
+        .expect("second machine-kind outcome should be valid");
+
+        let mut memory = LearningMemory::new(8);
+        memory.insert(first_success);
+        memory.insert(second_success);
+        let snapshot = memory.snapshot();
+        assert!(snapshot.machine_kind_preferences.iter().any(|preference| {
+            preference.key == "resin-printer"
+                && preference.samples == 2
+                && preference.recommendation == "prefer"
+        }));
+
+        let request = FabricationPlanRequest {
+            request_id: Some("unit-learned-machine-kind".to_string()),
+            objective: "polymer miniature shell with visible surface detail".to_string(),
+            material: Some(material("polymer", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.18),
+            quantity: Some(1),
+            machines: Some(vec![
+                MachineProfile {
+                    id: "shop-fdm".to_string(),
+                    kind: "fdm-printer".to_string(),
+                    controller: Some("marlin".to_string()),
+                    materials: Some(vec!["polymer".to_string()]),
+                    work_envelope_mm: Some(vec![220.0, 220.0, 220.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["additive-print".to_string()]),
+                    profile_evidence: None,
+                },
+                MachineProfile {
+                    id: "shop-resin".to_string(),
+                    kind: "resin-printer".to_string(),
+                    controller: Some("resin-job".to_string()),
+                    materials: Some(vec!["polymer".to_string()]),
+                    work_envelope_mm: Some(vec![120.0, 70.0, 150.0]),
+                    axes: Some(3),
+                    operations: Some(vec![
+                        "additive-print".to_string(),
+                        "resin-print".to_string(),
+                    ]),
+                    profile_evidence: None,
+                },
+            ]),
+            constraints: None,
+            parts: Some(vec![RequestedPart {
+                id: "open-miniature-shell".to_string(),
+                description: "open miniature shell with no caller-selected printer family"
+                    .to_string(),
+                material: Some(material("polymer", "polymer")),
+                preferred_method: None,
+                tolerance_mm: Some(0.18),
+            }]),
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        };
+        let baseline = plan_fabrication(request.clone()).expect("baseline plan should work");
+        assert!(baseline.design.parts.iter().any(|part| {
+            part.id == "open-miniature-shell" && part.machine_kind == "fdm-printer"
+        }));
+
+        let learned = plan_fabrication_with_policy(request, Some(&snapshot))
+            .expect("learned machine-kind plan should work");
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "open-miniature-shell" && part.machine_kind == "resin-printer"
+        }));
+        assert!(learned
+            .learning
+            .pomdp_observations
+            .iter()
+            .any(|observation| observation == "learned-machine-kind-preference:resin-printer"));
+        assert!(learned
+            .learning
+            .actions
+            .iter()
+            .any(|action| action == "prefer-learned-machine-kind-resin-printer"));
+        assert!(learned
+            .learning
+            .training_examples
+            .iter()
+            .any(|example| example.contains("machineKind=resin-printer")));
+    }
+
+    #[test]
+    fn learned_operation_sequence_preferences_order_future_hybrid_parts() {
+        let first_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("hybrid-sequence-1".to_string()),
+            job_id: Some("plan-sequence-1".to_string()),
+            objective: Some("printed handle with milled datum and turned insert".to_string()),
+            material: Some(material("petg", "polymer")),
+            manufacturing_methods: Some(vec![
+                "additive-print".to_string(),
+                "milling".to_string(),
+                "turning".to_string(),
+            ]),
+            machine_kind: None,
+            operation_sequence: Some(vec![
+                "additive-print".to_string(),
+                "milling".to_string(),
+                "turning".to_string(),
+            ]),
+            assembly_strategy: Some("print then machine datums then install insert".to_string()),
+            success: true,
+            reward: Some(3.1),
+            observations: Some(vec!["sequence inspection passed".to_string()]),
+            notes: Some(vec!["reuse ordered hybrid route".to_string()]),
+        })
+        .expect("first learned operation sequence should be valid");
+        let second_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("hybrid-sequence-2".to_string()),
+            job_id: Some("plan-sequence-2".to_string()),
+            objective: Some("printed shell with milled flange and turned bushing".to_string()),
+            material: Some(material("petg", "polymer")),
+            manufacturing_methods: Some(vec![
+                "turning".to_string(),
+                "milling".to_string(),
+                "additive-print".to_string(),
+            ]),
+            machine_kind: None,
+            operation_sequence: Some(vec![
+                "additive-print".to_string(),
+                "milling".to_string(),
+                "turning".to_string(),
+            ]),
+            assembly_strategy: Some("print then machine datums then install insert".to_string()),
+            success: true,
+            reward: Some(2.9),
+            observations: Some(vec!["ordered hybrid route completed".to_string()]),
+            notes: Some(vec!["same operation order worked again".to_string()]),
+        })
+        .expect("second learned operation sequence should be valid");
+        let mut memory = LearningMemory::new(8);
+        memory.insert(first_success);
+        memory.insert(second_success);
+        let snapshot = memory.snapshot();
+        assert!(snapshot
+            .operation_sequence_preferences
+            .iter()
+            .any(|preference| {
+                preference.key == "additive-print>milling>turning"
+                    && preference.samples == 2
+                    && preference.recommendation == "prefer"
+            }));
+
+        let request = FabricationPlanRequest {
+            request_id: Some("unit-learned-operation-sequence".to_string()),
+            objective:
+                "PETG ergonomic assembly that should reuse learned ordered hybrid fabrication"
+                    .to_string(),
+            material: Some(material("petg", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.12),
+            quantity: Some(1),
+            machines: Some(vec![
+                MachineProfile {
+                    id: "sequence-printer".to_string(),
+                    kind: "fdm-printer".to_string(),
+                    controller: Some("marlin".to_string()),
+                    materials: Some(vec!["petg".to_string()]),
+                    work_envelope_mm: Some(vec![220.0, 220.0, 220.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["additive-print".to_string()]),
+                    profile_evidence: None,
+                },
+                MachineProfile {
+                    id: "sequence-mill".to_string(),
+                    kind: "vertical-mill".to_string(),
+                    controller: Some("haas-gcode".to_string()),
+                    materials: Some(vec!["petg".to_string()]),
+                    work_envelope_mm: Some(vec![300.0, 180.0, 120.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["face".to_string(), "contour".to_string()]),
+                    profile_evidence: None,
+                },
+                MachineProfile {
+                    id: "sequence-lathe".to_string(),
+                    kind: "cnc-lathe".to_string(),
+                    controller: Some("fanuc-lathe".to_string()),
+                    materials: Some(vec!["petg".to_string()]),
+                    work_envelope_mm: Some(vec![160.0, 160.0, 260.0]),
+                    axes: Some(2),
+                    operations: Some(vec!["turning".to_string(), "threading".to_string()]),
+                    profile_evidence: None,
+                },
+            ]),
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        };
+        let learned = plan_fabrication_with_policy(request, Some(&snapshot))
+            .expect("learned operation-sequence plan should work");
+        let process_part_ids = learned
+            .process_plan
+            .iter()
+            .map(|step| step.part_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            process_part_ids,
+            vec![
+                "learned-sequence-1-additive-print-part",
+                "learned-sequence-2-milling-part",
+                "learned-sequence-3-turning-part"
+            ]
+        );
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-sequence-1-additive-print-part"
+                && part.machine_kind == "fdm-printer"
+        }));
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-sequence-2-milling-part" && part.machine_kind == "vertical-mill"
+        }));
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-sequence-3-turning-part" && part.machine_kind == "cnc-lathe"
+        }));
+        assert!(learned
+            .learning
+            .pomdp_observations
+            .iter()
+            .any(|observation| {
+                observation
+                    == "learned-operation-sequence-preference:additive-print>milling>turning"
+            }));
+        assert!(learned.learning.actions.iter().any(|action| {
+            action == "prefer-learned-operation-sequence-additive-print-milling-turning"
+        }));
+        assert!(learned
+            .learning
+            .training_examples
+            .iter()
+            .any(|example| example.contains("operationSequence=additive-print>milling>turning")));
+    }
+
+    #[test]
     fn learned_method_combinations_decompose_future_open_requests() {
         let first_success = learning_outcome_record(LearningOutcomeRequest {
             request_id: Some("hybrid-methods-1".to_string()),
@@ -29547,6 +35033,8 @@ mod tests {
             objective: Some("printed fixture body with milled datum pads".to_string()),
             material: Some(material("pla", "polymer")),
             manufacturing_methods: Some(vec!["milling".to_string(), "additive-print".to_string()]),
+            machine_kind: None,
+            operation_sequence: None,
             assembly_strategy: Some("printed body plus milled datum pads".to_string()),
             success: true,
             reward: Some(2.2),
@@ -29560,6 +35048,8 @@ mod tests {
             objective: Some("printed jig with milled reference ledges".to_string()),
             material: Some(material("pla", "polymer")),
             manufacturing_methods: Some(vec!["additive-print".to_string(), "milling".to_string()]),
+            machine_kind: None,
+            operation_sequence: None,
             assembly_strategy: Some("printed body plus milled datum pads".to_string()),
             success: true,
             reward: Some(2.6),
@@ -29689,6 +35179,8 @@ mod tests {
             average_reward: 2.8,
             method_preferences: Vec::new(),
             method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
             assembly_preferences: vec![LearningPreference {
                 key: "printed body plus turned insert".to_string(),
                 samples: 2,

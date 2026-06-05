@@ -149,8 +149,8 @@ the local NATS subject, runtime-config client, and shared-interface dependency c
 an init container checks that source layout before the release build starts and verifies the
 generated API docs still include the public plan, instruction analysis, job/artifact retrieval, and
 learning routes. It also checks the mounted generated Rust NATS subject constants for fabrication
-requests/results, runtime events, and MDP optimization fan-out, so missing hostPath dependencies,
-stale docs, or stale subject definitions fail with a clear startup log and tiny CPU/memory/ephemeral-storage bounds. Cargo cache/target output stays on pod-local `emptyDir` storage with explicit `4Gi`/`8Gi` ephemeral-storage request/limit settings plus
+requests/results, CAD design-conversion request/queue/result handoffs, runtime events, and MDP
+optimization fan-out, so missing hostPath dependencies, stale docs, or stale subject definitions fail with a clear startup log and tiny CPU/memory/ephemeral-storage bounds. Cargo cache/target output stays on pod-local `emptyDir` storage with explicit `4Gi`/`8Gi` ephemeral-storage request/limit settings plus
 per-volume `sizeLimit` caps; a dedicated release-build init container performs the single-job
 locked Cargo build into that shared target directory, then the serving container remounts that cache
 read-only and starts the compiled server binary directly. Incremental compilation stays disabled for predictable cold-start memory and disk use. The pod reserves `250m` CPU and `512Mi` memory for
