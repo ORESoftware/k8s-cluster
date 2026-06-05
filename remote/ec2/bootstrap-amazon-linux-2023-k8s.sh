@@ -11,6 +11,7 @@ CNI_VERSION="${CNI_VERSION:-1.9.1}"
 CRICTL_VERSION="${CRICTL_VERSION:-1.31.1}"
 NERDCTL_VERSION="${NERDCTL_VERSION:-2.0.2}"
 POD_CIDR="${POD_CIDR:-10.244.0.0/16}"
+KUBELET_MAX_PODS="${KUBELET_MAX_PODS:-220}"
 DD_ALLOW_UNDERSIZED="${DD_ALLOW_UNDERSIZED:-0}"
 DD_SKIP_DNF_UPDATE="${DD_SKIP_DNF_UPDATE:-0}"
 
@@ -36,10 +37,13 @@ Options:
   --manifests-dir DIR
                    Directory containing remote/k8s manifests.
   --pod-cidr CIDR  Pod CIDR passed through to kubeadm bootstrap.
+  --kubelet-max-pods N
+                   Kubelet pod ceiling for the single EC2 node. Default: 220.
   -h, --help       Show this help.
 
 Environment:
   K8S_VERSION=1.31
+  KUBELET_MAX_PODS=220
   DD_ALLOW_UNDERSIZED=1
   DD_SKIP_DNF_UPDATE=1
 
@@ -73,6 +77,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --pod-cidr)
       POD_CIDR="$2"
+      shift 2
+      ;;
+    --kubelet-max-pods)
+      KUBELET_MAX_PODS="$2"
       shift 2
       ;;
     -h|--help)
@@ -421,6 +429,7 @@ bootstrap_cluster() {
   ensure_cluster_inputs
   run_root bash "${REPO_ROOT}/remote/ami/bootstrap-cluster.sh" \
     --pod-cidr "${POD_CIDR}" \
+    --kubelet-max-pods "${KUBELET_MAX_PODS}" \
     --manifests-dir "${MANIFESTS_DIR}"
 }
 
