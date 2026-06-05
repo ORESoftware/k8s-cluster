@@ -2898,6 +2898,29 @@ fn analysis_artifacts(response: &InstructionAnalysisResponse) -> Vec<Fabrication
     artifacts
 }
 
+fn learning_artifacts(response: &FabricationLearningResponse) -> Vec<FabricationArtifact> {
+    vec![
+        json_artifact(
+            "learning-outcome".to_string(),
+            "learning-outcome",
+            json!(response),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "learning-mdp-update".to_string(),
+            "learning-mdp-update",
+            response.mdp_update.clone(),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "learning-neural-example".to_string(),
+            "learning-neural-example",
+            response.neural_example.clone(),
+            response.generated_at_ms,
+        ),
+    ]
+}
+
 fn stored_plan_job(response: &FabricationPlanResponse) -> StoredFabricationJob {
     let artifacts = plan_artifacts(response)
         .into_iter()
@@ -2921,6 +2944,40 @@ fn stored_plan_job(response: &FabricationPlanResponse) -> StoredFabricationJob {
         plan: Some(response.clone()),
         analysis: None,
         learning: None,
+        artifacts,
+    }
+}
+
+fn stored_learning_job(response: &FabricationLearningResponse) -> StoredFabricationJob {
+    let artifacts = learning_artifacts(response)
+        .into_iter()
+        .map(|artifact| (artifact.artifact_id.clone(), artifact))
+        .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id: response.job_id.clone(),
+            request_id: response.request_id.clone(),
+            kind: "fabrication-learning-outcome".to_string(),
+            status: "complete".to_string(),
+            ok: response.ok,
+            severity: if response.reward >= 0.0 {
+                "ok".to_string()
+            } else {
+                "warning".to_string()
+            },
+            summary: format!(
+                "{} -> {} ({:.3})",
+                response.outcome, response.recommended_action, response.reward
+            ),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: response.generated_at_ms,
+            updated_at_ms: response.generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: Some(response.clone()),
         artifacts,
     }
 }
@@ -4151,12 +4208,14 @@ async fn root() -> impl IntoResponse {
             "GET /jobs/:job_id",
             "GET /jobs/:job_id/artifacts/:artifact_id",
             "GET /learning/policy",
+            "GET /fabrication/learning/policy",
             "POST /plan",
             "POST /fabrication/plan",
             "POST /instructions/analyze",
             "POST /learning/observe",
             "POST /fabrication/learning/observe",
-            "POST /learning/outcomes"
+            "POST /learning/outcomes",
+            "POST /fabrication/learning/outcomes"
         ],
         "capabilities": [
             "hybrid additive/subtractive/turning process planning",
@@ -4457,6 +4516,107 @@ async fn analyze_http(
     Json(response).into_response()
 }
 
+async fn learning_observe_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationOutcomeRequest>,
+) -> Response {
+    state
+        .metrics
+        .learning_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    match learn_from_outcome(request) {
+        Ok((response, record)) => {
+            let snapshot = match store_learning_response(&state, &response, record) {
+                Ok(snapshot) => snapshot,
+                Err(error) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "ok": false, "error": error })),
+                    )
+                        .into_response();
+                }
+            };
+            publish_learning_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.learning.observed",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(json!({
+                "ok": true,
+                "learning": response,
+                "policy": snapshot,
+            }))
+            .into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn learning_outcome_http(
+    State(state): State<AppState>,
+    Json(request): Json<LearningOutcomeRequest>,
+) -> Response {
+    state
+        .metrics
+        .learning_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    match learning_outcome_record(request) {
+        Ok(record) => {
+            let outcome_id = record.outcome_id.clone();
+            let snapshot = match store_learning_record(&state, record) {
+                Ok(snapshot) => snapshot,
+                Err(error) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "ok": false, "error": error })),
+                    )
+                        .into_response();
+                }
+            };
+            publish_event(&state, "fabrication.learning.outcome", &outcome_id, true).await;
+            Json(json!({
+                "ok": true,
+                "outcomeId": outcome_id,
+                "policy": snapshot,
+            }))
+            .into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn learning_policy_http(State(state): State<AppState>) -> Response {
+    match learning_policy_snapshot(&state) {
+        Ok(snapshot) => Json(json!({
+            "ok": true,
+            "policy": snapshot,
+        }))
+        .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 async fn api_docs_html() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!("../generated/api-docs.html"))
 }
@@ -4504,9 +4664,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/jobs", get(list_jobs))
         .route("/jobs/:job_id", get(get_job))
         .route("/jobs/:job_id/artifacts/:artifact_id", get(get_artifact))
+        .route("/learning/policy", get(learning_policy_http))
+        .route("/fabrication/learning/policy", get(learning_policy_http))
         .route("/plan", post(plan_http))
         .route("/fabrication/plan", post(plan_http))
         .route("/instructions/analyze", post(analyze_http))
+        .route("/learning/observe", post(learning_observe_http))
+        .route("/fabrication/learning/observe", post(learning_observe_http))
+        .route("/learning/outcomes", post(learning_outcome_http))
+        .route("/fabrication/learning/outcomes", post(learning_outcome_http))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
         .merge(dd_runtime_config_client::router());
