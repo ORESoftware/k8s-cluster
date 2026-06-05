@@ -128,8 +128,9 @@ is supplied.
   robot path/gripper/fixture/vision evidence, press/heat-set/torque/adhesive
   join recipes, cure or clamp timing, and final metrology gates, mill-turn/swiss
   G-code with C/Y-axis live-tooling and subspindle transfer checkpoints,
-  Fanuc-style turning G-code, or operator-only instructions for unsupported
-  machine kinds.
+  Fanuc-style turning G-code with chuck/stick-out/runout, G50/G95, threading,
+  part-off catcher/support, coolant shutdown, and turret-stop checkpoints, or
+  operator-only instructions for unsupported machine kinds.
 - Validation and simulation findings plus failure boundaries for heat-up, homing,
   spindle-speed/direction/start/process-stop state, work-offset/datum evidence,
   G10 fixture/work-offset table write review state, additive material/color/tool-change,
@@ -249,7 +250,7 @@ mill-turn/swiss-turning, routing, laser,
 waterjet, plasma, robotic assembly/joining, lathe, and manual/special-process
 work, accepted instruction kinds including slicer, pellet-FGF, SLA/resin,
 material-jetting, DED/WAAM, composite-fiber, binder-jet, SLS/powder, metal-PBF,
-mill-turn, indexed-mill, assembly-cell, part-separation, laser/waterjet/plasma,
+mill-turn, lathe/turning, indexed-mill, assembly-cell, part-separation, laser/waterjet/plasma,
 wire-EDM, and sinker-EDM job sheets, design input format
 families, generated artifact families, learning
 channels, bounded `profileEvidence` buckets for submitted machine profiles, and
