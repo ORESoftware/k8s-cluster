@@ -117,8 +117,12 @@ tolerance.
 
 ## `POST /instructions/analyze`
 
-`POST /instructions/analyze` accepts existing G-code-like programs and returns
-controller-agnostic safety findings plus improvement opportunities.
+`POST /instructions/analyze` accepts existing G-code-like programs plus
+non-controller text instructions such as printer job sheets, setup sheets, and
+operator checklists. It returns controller-agnostic safety findings, improvement
+opportunities, and `improvedPrograms` review drafts that insert conservative
+modal defaults or explicit setup, post-processing, split, assembly, and
+human-intervention gates.
 
 ```json
 {
@@ -142,8 +146,11 @@ controller-agnostic safety findings plus improvement opportunities.
 The analyzer is intentionally conservative. It checks common `G`, `M`, and `T`
 words, missing units or positioning modes, printer extrusion before heat-up or
 homing, subtractive feed moves before spindle start, manual stops, fixture
-changes, deep negative Z moves, arc moves without I/J/R geometry, and missing
-program ends.
+changes, deep negative Z moves, arc moves without I/J/R geometry, missing
+program ends, and text-instruction boundaries where the job needs setup,
+post-processing, assembly, splitting, or operator intervention. Improved drafts
+are still marked `machineReady=false`; they are normalization aids for review,
+simulation, and controller-specific postprocessing.
 
 ## Local Build
 

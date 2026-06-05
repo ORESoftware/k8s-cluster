@@ -1,17 +1,17 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     env,
     error::Error,
     net::SocketAddr,
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc,
+        Arc, RwLock,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -36,6 +36,7 @@ const MAX_MACHINES: usize = 32;
 const MAX_PARTS: usize = 64;
 const MAX_PROGRAMS: usize = 32;
 const MAX_PROGRAM_LINES: usize = 8_000;
+const MAX_STORED_JOBS: usize = 128;
 const DEFAULT_TOLERANCE_MM: f64 = 0.2;
 
 #[derive(Clone)]
@@ -48,6 +49,7 @@ struct AppState {
     mdp_subject: String,
     mdp_autopublish: bool,
     metrics: Arc<Metrics>,
+    jobs: Arc<RwLock<FabricationJobStore>>,
 }
 
 #[derive(Default)]
@@ -62,6 +64,9 @@ struct Metrics {
     nats_published_total: AtomicU64,
     nats_results_published_total: AtomicU64,
     mdp_published_total: AtomicU64,
+    jobs_stored_total: AtomicU64,
+    artifacts_stored_total: AtomicU64,
+    artifact_requests_total: AtomicU64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -160,6 +165,7 @@ struct InstructionAnalysisRequest {
 #[serde(rename_all = "camelCase")]
 struct FabricationPlanResponse {
     ok: bool,
+    job_id: String,
     request_id: String,
     schema_version: &'static str,
     objective: String,
@@ -179,11 +185,99 @@ struct FabricationPlanResponse {
 #[serde(rename_all = "camelCase")]
 struct InstructionAnalysisResponse {
     ok: bool,
+    job_id: String,
     request_id: String,
     programs: Vec<AnalyzedProgram>,
     validation: ValidationReport,
     improvements: Vec<InstructionImprovement>,
+    improved_programs: Vec<ImprovedInstructionProgram>,
     generated_at_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FabricationJobRecord {
+    job_id: String,
+    request_id: String,
+    kind: String,
+    status: String,
+    ok: bool,
+    severity: String,
+    summary: String,
+    artifact_count: usize,
+    artifact_ids: Vec<String>,
+    created_at_ms: u128,
+    updated_at_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FabricationArtifactSummary {
+    artifact_id: String,
+    kind: String,
+    media_type: String,
+    part_id: Option<String>,
+    program_id: Option<String>,
+    machine_kind: Option<String>,
+    draft: bool,
+    machine_ready: bool,
+    line_count: Option<usize>,
+    created_at_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FabricationArtifact {
+    artifact_id: String,
+    kind: String,
+    media_type: String,
+    part_id: Option<String>,
+    program_id: Option<String>,
+    machine_kind: Option<String>,
+    draft: bool,
+    machine_ready: bool,
+    line_count: Option<usize>,
+    content: Value,
+    notes: Vec<String>,
+    created_at_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredFabricationJob {
+    record: FabricationJobRecord,
+    plan: Option<FabricationPlanResponse>,
+    analysis: Option<InstructionAnalysisResponse>,
+    artifacts: BTreeMap<String, FabricationArtifact>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FabricationJobDetail {
+    record: FabricationJobRecord,
+    plan: Option<FabricationPlanResponse>,
+    analysis: Option<InstructionAnalysisResponse>,
+    artifacts: Vec<FabricationArtifactSummary>,
+}
+
+#[derive(Default)]
+struct FabricationJobStore {
+    order: VecDeque<String>,
+    jobs: BTreeMap<String, StoredFabricationJob>,
+    max_jobs: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ImprovedInstructionProgram {
+    program_id: String,
+    machine_kind: String,
+    language: String,
+    changed: bool,
+    machine_ready: bool,
+    source_line_count: usize,
+    instructions: Vec<String>,
+    notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -419,6 +513,101 @@ fn normalize_token(value: &str) -> String {
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("-")
+}
+
+fn safe_job_id(kind: &str, request_id: &str, generated_at_ms: u128) -> String {
+    let request = normalize_token(request_id);
+    let request = if request.is_empty() {
+        "request".to_string()
+    } else {
+        request
+    };
+    format!("{}-{}-{}", normalize_token(kind), request, generated_at_ms)
+        .chars()
+        .take(180)
+        .collect()
+}
+
+fn summary_text(value: &str) -> String {
+    let text = value.trim();
+    if text.chars().count() <= 240 {
+        text.to_string()
+    } else {
+        format!("{}...", text.chars().take(237).collect::<String>())
+    }
+}
+
+impl FabricationArtifact {
+    fn summary(&self) -> FabricationArtifactSummary {
+        FabricationArtifactSummary {
+            artifact_id: self.artifact_id.clone(),
+            kind: self.kind.clone(),
+            media_type: self.media_type.clone(),
+            part_id: self.part_id.clone(),
+            program_id: self.program_id.clone(),
+            machine_kind: self.machine_kind.clone(),
+            draft: self.draft,
+            machine_ready: self.machine_ready,
+            line_count: self.line_count,
+            created_at_ms: self.created_at_ms,
+        }
+    }
+}
+
+impl FabricationJobStore {
+    fn new(max_jobs: usize) -> Self {
+        Self {
+            order: VecDeque::new(),
+            jobs: BTreeMap::new(),
+            max_jobs: max_jobs.max(1),
+        }
+    }
+
+    fn insert(&mut self, job: StoredFabricationJob) {
+        let job_id = job.record.job_id.clone();
+        self.order.retain(|existing| existing != &job_id);
+        self.order.push_back(job_id.clone());
+        self.jobs.insert(job_id, job);
+        while self.order.len() > self.max_jobs {
+            if let Some(oldest) = self.order.pop_front() {
+                self.jobs.remove(&oldest);
+            }
+        }
+    }
+
+    fn list(&self) -> Vec<FabricationJobRecord> {
+        self.order
+            .iter()
+            .rev()
+            .filter_map(|job_id| self.jobs.get(job_id))
+            .map(|job| job.record.clone())
+            .collect()
+    }
+
+    fn detail(&self, job_id: &str) -> Option<FabricationJobDetail> {
+        self.jobs.get(job_id).map(|job| FabricationJobDetail {
+            record: job.record.clone(),
+            plan: job.plan.clone(),
+            analysis: job.analysis.clone(),
+            artifacts: job
+                .artifacts
+                .values()
+                .map(FabricationArtifact::summary)
+                .collect(),
+        })
+    }
+
+    fn artifact(&self, job_id: &str, artifact_id: &str) -> Option<FabricationArtifact> {
+        self.jobs
+            .get(job_id)
+            .and_then(|job| job.artifacts.get(artifact_id))
+            .cloned()
+    }
+
+    fn counts(&self) -> (usize, usize) {
+        let artifact_count = self.jobs.values().map(|job| job.artifacts.len()).sum();
+        (self.jobs.len(), artifact_count)
+    }
 }
 
 fn material_or_default(material: Option<MaterialSpec>) -> Result<MaterialSpec, String> {
@@ -1658,6 +1847,379 @@ fn analyze_instruction_programs(
     )
 }
 
+fn improvement_applies(
+    improvements: &[InstructionImprovement],
+    program_id: &str,
+    action: &str,
+) -> bool {
+    improvements.iter().any(|improvement| {
+        improvement.action == action
+            && match improvement.program_id.as_deref() {
+                Some(value) => value == program_id,
+                None => true,
+            }
+    })
+}
+
+fn finding_applies(validation: &ValidationReport, program_id: &str, code: &str) -> bool {
+    validation.findings.iter().any(|finding| {
+        finding.code == code
+            && match finding.program_id.as_deref() {
+                Some(value) => value == program_id,
+                None => true,
+            }
+    })
+}
+
+fn boundary_applies(boundary: &FailureBoundary, program_id: &str, line: Option<usize>) -> bool {
+    match boundary.program_id.as_deref() {
+        Some(value) if value != program_id => return false,
+        _ => {}
+    }
+    boundary.line == line
+}
+
+fn boundary_gate_instruction(machine_code: bool, boundary: &FailureBoundary) -> String {
+    if machine_code {
+        if boundary.requires_human_intervention {
+            format!("M0 ; boundary {}: {}", boundary.kind, boundary.reason)
+        } else {
+            format!("; boundary {}: {}", boundary.kind, boundary.reason)
+        }
+    } else {
+        format!(
+            "CHECKPOINT [{}]: {} Resolution: {}",
+            boundary.kind, boundary.reason, boundary.suggested_resolution
+        )
+    }
+}
+
+fn improve_instruction_programs(
+    programs: &[InstructionProgram],
+    validation: &ValidationReport,
+    improvements: &[InstructionImprovement],
+) -> Vec<ImprovedInstructionProgram> {
+    programs
+        .iter()
+        .enumerate()
+        .map(|(program_index, program)| {
+            let program_id = program
+                .id
+                .clone()
+                .unwrap_or_else(|| format!("program-{}", program_index + 1));
+            let machine_kind = program
+                .machine_kind
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string());
+            let language = program
+                .language
+                .clone()
+                .unwrap_or_else(|| "gcode".to_string());
+            let class = machine_class(&machine_kind);
+            let machine_code = is_machine_code_language(&language);
+            let mut instructions = Vec::new();
+            let mut notes = Vec::new();
+
+            for boundary in validation
+                .failure_boundaries
+                .iter()
+                .filter(|boundary| boundary_applies(boundary, &program_id, None))
+            {
+                instructions.push(boundary_gate_instruction(machine_code, boundary));
+            }
+
+            if machine_code {
+                if improvement_applies(improvements, &program_id, "add-units-mode") {
+                    instructions.push("G21 ; added review draft: metric units".to_string());
+                }
+                if improvement_applies(improvements, &program_id, "add-positioning-mode") {
+                    instructions.push("G90 ; added review draft: absolute positioning".to_string());
+                }
+                if improvement_applies(improvements, &program_id, "add-coordinate-reference") {
+                    let coordinate_line = match class {
+                        MachineClass::Additive => "G28 ; added review draft: home axes before motion",
+                        _ => "G54 ; added review draft: select primary work coordinate system",
+                    };
+                    instructions.push(coordinate_line.to_string());
+                }
+                if finding_applies(validation, &program_id, "missing-spindle-start") {
+                    instructions.push(
+                        "M0 ; REVIEW: add verified spindle speed and direction before feed moves"
+                            .to_string(),
+                    );
+                }
+                if finding_applies(validation, &program_id, "missing-printer-heatup") {
+                    instructions.push(
+                        "M0 ; REVIEW: add verified nozzle/bed heat-up commands before extrusion"
+                            .to_string(),
+                    );
+                }
+            } else {
+                if improvement_applies(improvements, &program_id, "normalize-text-setup-sheet") {
+                    notes.push(
+                        "Program reads like a setup sheet; label it as setup-sheet before release"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(improvements, &program_id, "add-structured-text-checkpoints")
+                {
+                    instructions.push(
+                        "CHECKPOINT [setup-boundary]: confirm machine setup, material, PPE, and operator readiness"
+                            .to_string(),
+                    );
+                    instructions.push(
+                        "CHECKPOINT [process-boundary]: declare post-processing, assembly, split, and completion gates"
+                            .to_string(),
+                    );
+                }
+            }
+
+            for (line_index, line) in program.instructions.iter().enumerate() {
+                let line_number = line_index + 1;
+                for boundary in validation
+                    .failure_boundaries
+                    .iter()
+                    .filter(|boundary| boundary_applies(boundary, &program_id, Some(line_number)))
+                {
+                    instructions.push(boundary_gate_instruction(machine_code, boundary));
+                }
+                instructions.push(line.clone());
+            }
+
+            if machine_code && finding_applies(validation, &program_id, "missing-program-end") {
+                let end_line = match class {
+                    MachineClass::Additive => {
+                        "M84 ; added review draft: explicit printer idle/end state"
+                    }
+                    _ => "M30 ; added review draft: explicit program end",
+                };
+                instructions.push(end_line.to_string());
+            } else if !machine_code
+                && improvement_applies(improvements, &program_id, "add-structured-text-checkpoints")
+            {
+                instructions.push(
+                    "CHECKPOINT [completion-boundary]: inspection, cleanup, and sign-off recorded"
+                        .to_string(),
+                );
+            }
+
+            let changed = instructions != program.instructions;
+            if changed {
+                notes.push(
+                    "Improved draft inserts validation gates and conservative defaults; human review and simulation are still required"
+                        .to_string(),
+                );
+            } else {
+                notes.push(
+                    "No automatic rewrite was needed beyond the validation report".to_string(),
+                );
+            }
+
+            ImprovedInstructionProgram {
+                program_id,
+                machine_kind,
+                language,
+                changed,
+                machine_ready: false,
+                source_line_count: program.instructions.len(),
+                instructions,
+                notes,
+            }
+        })
+        .collect()
+}
+
+fn artifact_id(prefix: &str, raw: &str) -> String {
+    let token = normalize_token(raw);
+    if token.is_empty() {
+        prefix.to_string()
+    } else {
+        format!("{}-{}", normalize_token(prefix), token)
+    }
+}
+
+fn json_artifact(
+    artifact_id: String,
+    kind: &str,
+    content: Value,
+    created_at_ms: u128,
+) -> FabricationArtifact {
+    FabricationArtifact {
+        artifact_id,
+        kind: kind.to_string(),
+        media_type: "application/json".to_string(),
+        part_id: None,
+        program_id: None,
+        machine_kind: None,
+        draft: false,
+        machine_ready: false,
+        line_count: None,
+        content,
+        notes: Vec::new(),
+        created_at_ms,
+    }
+}
+
+fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact> {
+    let mut artifacts = vec![
+        json_artifact(
+            "design-summary".to_string(),
+            "design-summary",
+            json!(response.design),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "process-plan".to_string(),
+            "process-plan",
+            json!(response.process_plan),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "assembly-plan".to_string(),
+            "assembly-plan",
+            json!(response.assembly),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "validation-report".to_string(),
+            "validation-report",
+            json!(response.validation),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "learning-plan".to_string(),
+            "learning-plan",
+            json!(response.learning),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "mdp-request".to_string(),
+            "mdp-request",
+            fabrication_mdp_request(response),
+            response.generated_at_ms,
+        ),
+    ];
+
+    artifacts.extend(
+        response
+            .generated_programs
+            .iter()
+            .map(|program| FabricationArtifact {
+                artifact_id: artifact_id("program", &program.program_id),
+                kind: "generated-machine-program".to_string(),
+                media_type: "application/json".to_string(),
+                part_id: Some(program.part_id.clone()),
+                program_id: Some(program.program_id.clone()),
+                machine_kind: Some(program.machine_kind.clone()),
+                draft: program.draft,
+                machine_ready: program.machine_ready,
+                line_count: Some(program.instructions.len()),
+                content: json!({
+                    "language": program.language,
+                    "instructions": program.instructions,
+                }),
+                notes: program.safety_notes.clone(),
+                created_at_ms: response.generated_at_ms,
+            }),
+    );
+    artifacts
+}
+
+fn analysis_artifacts(response: &InstructionAnalysisResponse) -> Vec<FabricationArtifact> {
+    let mut artifacts = vec![
+        json_artifact(
+            "analysis-validation-report".to_string(),
+            "analysis-validation-report",
+            json!(response.validation),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "analysis-improvements".to_string(),
+            "analysis-improvements",
+            json!(response.improvements),
+            response.generated_at_ms,
+        ),
+    ];
+
+    artifacts.extend(
+        response
+            .improved_programs
+            .iter()
+            .map(|program| FabricationArtifact {
+                artifact_id: artifact_id("improved-program", &program.program_id),
+                kind: "improved-instruction-program".to_string(),
+                media_type: "application/json".to_string(),
+                part_id: None,
+                program_id: Some(program.program_id.clone()),
+                machine_kind: Some(program.machine_kind.clone()),
+                draft: true,
+                machine_ready: program.machine_ready,
+                line_count: Some(program.instructions.len()),
+                content: json!({
+                    "language": program.language,
+                    "changed": program.changed,
+                    "sourceLineCount": program.source_line_count,
+                    "instructions": program.instructions,
+                }),
+                notes: program.notes.clone(),
+                created_at_ms: response.generated_at_ms,
+            }),
+    );
+    artifacts
+}
+
+fn stored_plan_job(response: &FabricationPlanResponse) -> StoredFabricationJob {
+    let artifacts = plan_artifacts(response)
+        .into_iter()
+        .map(|artifact| (artifact.artifact_id.clone(), artifact))
+        .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id: response.job_id.clone(),
+            request_id: response.request_id.clone(),
+            kind: "fabrication-plan".to_string(),
+            status: "complete".to_string(),
+            ok: response.ok,
+            severity: response.validation.severity.clone(),
+            summary: summary_text(&response.objective),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: response.generated_at_ms,
+            updated_at_ms: response.generated_at_ms,
+        },
+        plan: Some(response.clone()),
+        analysis: None,
+        artifacts,
+    }
+}
+
+fn stored_analysis_job(response: &InstructionAnalysisResponse) -> StoredFabricationJob {
+    let artifacts = analysis_artifacts(response)
+        .into_iter()
+        .map(|artifact| (artifact.artifact_id.clone(), artifact))
+        .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id: response.job_id.clone(),
+            request_id: response.request_id.clone(),
+            kind: "instruction-analysis".to_string(),
+            status: "complete".to_string(),
+            ok: response.ok,
+            severity: response.validation.severity.clone(),
+            summary: format!("{} program(s) analyzed", response.programs.len()),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: response.generated_at_ms,
+            updated_at_ms: response.generated_at_ms,
+        },
+        plan: None,
+        analysis: Some(response.clone()),
+        artifacts,
+    }
+}
+
 fn report_severity(findings: &[ValidationFinding], boundaries: &[FailureBoundary]) -> String {
     if findings.iter().any(|finding| finding.severity == "error")
         || boundaries
@@ -1852,9 +2414,12 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         &validation,
         &improvements,
     )?;
+    let generated_at_ms = now_ms();
+    let job_id = safe_job_id("plan", &request_id, generated_at_ms);
 
     Ok(FabricationPlanResponse {
         ok: validation.ok,
+        job_id,
         request_id,
         schema_version: SCHEMA_VERSION,
         objective,
@@ -1878,7 +2443,7 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         assembly,
         learning,
         warnings,
-        generated_at_ms: now_ms(),
+        generated_at_ms,
     })
 }
 
@@ -2044,6 +2609,35 @@ fn learning_plan(
         ],
         training_examples,
     })
+}
+
+fn store_job(state: &AppState, job: StoredFabricationJob) {
+    let artifact_count = job.artifacts.len() as u64;
+    match state.jobs.write() {
+        Ok(mut jobs) => {
+            jobs.insert(job);
+            state
+                .metrics
+                .jobs_stored_total
+                .fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .artifacts_stored_total
+                .fetch_add(artifact_count, Ordering::Relaxed);
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!("{SERVICE_NAME} job store lock failed: {error}");
+        }
+    }
+}
+
+fn store_plan_response(state: &AppState, response: &FabricationPlanResponse) {
+    store_job(state, stored_plan_job(response));
+}
+
+fn store_analysis_response(state: &AppState, response: &InstructionAnalysisResponse) {
+    store_job(state, stored_analysis_job(response));
 }
 
 async fn publish_event(state: &AppState, event_type: &str, request_id: &str, ok: bool) {
@@ -2248,6 +2842,7 @@ async fn run_nats_loop(state: AppState) {
                             .plan_requests_total
                             .fetch_add(1, Ordering::Relaxed);
                         record_plan_metrics(&task_state, &response);
+                        store_plan_response(&task_state, &response);
                         publish_plan_outputs(&task_state, &response).await;
                         publish_event(
                             &task_state,
@@ -2287,6 +2882,9 @@ async fn root() -> impl IntoResponse {
             "GET /docs/api",
             "GET /api/docs",
             "GET /api/docs.json",
+            "GET /jobs",
+            "GET /jobs/:job_id",
+            "GET /jobs/:job_id/artifacts/:artifact_id",
             "POST /plan",
             "POST /fabrication/plan",
             "POST /instructions/analyze"
@@ -2295,6 +2893,7 @@ async fn root() -> impl IntoResponse {
             "hybrid additive/subtractive/turning process planning",
             "draft G-code and operator instruction generation",
             "existing instruction validation and improvement hints",
+            "bounded job and artifact inspection",
             "machine-failure and human-intervention boundary detection",
             "MDP/POMDP/neural policy feature contract"
         ]
@@ -2305,7 +2904,74 @@ async fn healthz() -> impl IntoResponse {
     Json(json!({ "ok": true, "service": SERVICE_NAME }))
 }
 
+async fn list_jobs(State(state): State<AppState>) -> Response {
+    match state.jobs.read() {
+        Ok(jobs) => {
+            let records = jobs.list();
+            Json(json!({
+                "ok": true,
+                "count": records.len(),
+                "jobs": records,
+            }))
+            .into_response()
+        }
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false, "error": format!("job store lock failed: {error}") })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_job(State(state): State<AppState>, Path(job_id): Path<String>) -> Response {
+    match state.jobs.read() {
+        Ok(jobs) => match jobs.detail(&job_id) {
+            Some(detail) => Json(json!({ "ok": true, "job": detail })).into_response(),
+            None => (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "ok": false, "error": "fabrication job not found" })),
+            )
+                .into_response(),
+        },
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false, "error": format!("job store lock failed: {error}") })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_artifact(
+    State(state): State<AppState>,
+    Path((job_id, artifact_id)): Path<(String, String)>,
+) -> Response {
+    state
+        .metrics
+        .artifact_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    match state.jobs.read() {
+        Ok(jobs) => match jobs.artifact(&job_id, &artifact_id) {
+            Some(artifact) => Json(json!({ "ok": true, "artifact": artifact })).into_response(),
+            None => (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "ok": false, "error": "fabrication artifact not found" })),
+            )
+                .into_response(),
+        },
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false, "error": format!("job store lock failed: {error}") })),
+        )
+            .into_response(),
+    }
+}
+
 async fn metrics(State(state): State<AppState>) -> Response {
+    let (current_jobs, current_artifacts) = state
+        .jobs
+        .read()
+        .map(|jobs| jobs.counts())
+        .unwrap_or((0, 0));
     let body = format!(
         "# HELP dd_fabrication_server_plan_requests_total Fabrication plan requests received.\n\
          # TYPE dd_fabrication_server_plan_requests_total counter\n\
@@ -2336,7 +3002,22 @@ async fn metrics(State(state): State<AppState>) -> Response {
          dd_fabrication_server_nats_results_published_total {}\n\
          # HELP dd_fabrication_server_mdp_published_total MDP optimization requests published for fabrication policy learning.\n\
          # TYPE dd_fabrication_server_mdp_published_total counter\n\
-         dd_fabrication_server_mdp_published_total {}\n",
+         dd_fabrication_server_mdp_published_total {}\n\
+         # HELP dd_fabrication_server_jobs_stored_total Fabrication jobs recorded in the in-process artifact ledger.\n\
+         # TYPE dd_fabrication_server_jobs_stored_total counter\n\
+         dd_fabrication_server_jobs_stored_total {}\n\
+         # HELP dd_fabrication_server_artifacts_stored_total Fabrication artifacts recorded in the in-process artifact ledger.\n\
+         # TYPE dd_fabrication_server_artifacts_stored_total counter\n\
+         dd_fabrication_server_artifacts_stored_total {}\n\
+         # HELP dd_fabrication_server_artifact_requests_total Artifact detail requests served by the fabrication server.\n\
+         # TYPE dd_fabrication_server_artifact_requests_total counter\n\
+         dd_fabrication_server_artifact_requests_total {}\n\
+         # HELP dd_fabrication_server_current_jobs Current jobs retained in the bounded in-process artifact ledger.\n\
+         # TYPE dd_fabrication_server_current_jobs gauge\n\
+         dd_fabrication_server_current_jobs {}\n\
+         # HELP dd_fabrication_server_current_artifacts Current artifacts retained in the bounded in-process artifact ledger.\n\
+         # TYPE dd_fabrication_server_current_artifacts gauge\n\
+         dd_fabrication_server_current_artifacts {}\n",
         state.metrics.plan_requests_total.load(Ordering::Relaxed),
         state.metrics.analysis_requests_total.load(Ordering::Relaxed),
         state.metrics.generated_programs_total.load(Ordering::Relaxed),
@@ -2356,6 +3037,11 @@ async fn metrics(State(state): State<AppState>) -> Response {
             .nats_results_published_total
             .load(Ordering::Relaxed),
         state.metrics.mdp_published_total.load(Ordering::Relaxed),
+        state.metrics.jobs_stored_total.load(Ordering::Relaxed),
+        state.metrics.artifacts_stored_total.load(Ordering::Relaxed),
+        state.metrics.artifact_requests_total.load(Ordering::Relaxed),
+        current_jobs,
+        current_artifacts,
     );
     (
         [(
@@ -2378,6 +3064,7 @@ async fn plan_http(
     match plan_fabrication(request) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -2449,6 +3136,7 @@ async fn analyze_http(
     }
 
     let (analyzed, validation, improvements) = analyze_instruction_programs(&programs);
+    let improved_programs = improve_instruction_programs(&programs, &validation, &improvements);
     state
         .metrics
         .validation_findings_total
@@ -2457,14 +3145,18 @@ async fn analyze_http(
         validation.failure_boundaries.len() as u64,
         Ordering::Relaxed,
     );
+    let generated_at_ms = now_ms();
     let response = InstructionAnalysisResponse {
         ok: validation.ok,
+        job_id: safe_job_id("analysis", &request_id, generated_at_ms),
         request_id,
         programs: analyzed,
         validation,
         improvements,
-        generated_at_ms: now_ms(),
+        improved_programs,
+        generated_at_ms,
     };
+    store_analysis_response(&state, &response);
     publish_event(
         &state,
         "fabrication.instructions.analyzed",
@@ -2506,6 +3198,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         mdp_subject: env_value("FABRICATION_MDP_OPTIMIZE_SUBJECT", MDP_OPTIMIZE_SUBJECT),
         mdp_autopublish: env_bool("FABRICATION_MDP_AUTOPUBLISH", false),
         metrics: Arc::new(Metrics::default()),
+        jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
     };
     tokio::spawn(run_nats_loop(state.clone()));
 
@@ -2517,6 +3210,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
         .route("/metrics", get(metrics))
+        .route("/jobs", get(list_jobs))
+        .route("/jobs/:job_id", get(get_job))
+        .route("/jobs/:job_id/artifacts/:artifact_id", get(get_artifact))
         .route("/plan", post(plan_http))
         .route("/fabrication/plan", post(plan_http))
         .route("/instructions/analyze", post(analyze_http))
@@ -2649,6 +3345,17 @@ mod tests {
         assert!(improvements
             .iter()
             .any(|improvement| improvement.action == "add-coordinate-reference"));
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(!improved[0].machine_ready);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("G28 ; added review draft")));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| { line.contains("REVIEW: add verified nozzle/bed heat-up commands") }));
     }
 
     #[test]
@@ -2714,6 +3421,16 @@ mod tests {
         assert!(!improvements
             .iter()
             .any(|improvement| improvement.action == "add-units-mode"));
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [post-processing-boundary]")));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [assembly-boundary]")));
     }
 
     #[test]
@@ -2773,5 +3490,86 @@ mod tests {
             .failure_boundaries
             .iter()
             .any(|boundary| boundary.kind == "human-intervention"));
+    }
+
+    #[test]
+    fn plan_job_store_records_design_program_and_learning_artifacts() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-artifact-plan".to_string()),
+            objective: "PLA prototype cover with a machined datum face".to_string(),
+            material: Some(material("pla", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.1),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("plan should succeed");
+
+        assert!(response.job_id.starts_with("plan-unit-artifact-plan-"));
+        let job = stored_plan_job(&response);
+        assert_eq!(job.record.job_id, response.job_id);
+        assert!(job.artifacts.contains_key("design-summary"));
+        assert!(job.artifacts.contains_key("mdp-request"));
+        assert!(job
+            .artifacts
+            .keys()
+            .any(|artifact_id| artifact_id.starts_with("program-")));
+
+        let mut store = FabricationJobStore::new(2);
+        store.insert(job);
+        let (job_count, artifact_count) = store.counts();
+        assert_eq!(job_count, 1);
+        assert!(artifact_count >= 3);
+        let detail = store
+            .detail(&response.job_id)
+            .expect("stored plan should be retrievable");
+        assert_eq!(detail.record.kind, "fabrication-plan");
+        assert!(detail.plan.is_some());
+        assert!(detail
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.artifact_id == "learning-plan"));
+    }
+
+    #[test]
+    fn analysis_job_store_records_improved_instruction_artifacts() {
+        let programs = vec![program(
+            "legacy-print",
+            "fdm-printer",
+            &["G21", "G90", "G1 X10 Y10 E2.0 F900"],
+        )];
+        let (analyzed, validation, improvements) = analyze_instruction_programs(&programs);
+        let improved_programs = improve_instruction_programs(&programs, &validation, &improvements);
+        let generated_at_ms = now_ms();
+        let response = InstructionAnalysisResponse {
+            ok: validation.ok,
+            job_id: safe_job_id("analysis", "unit-analysis-artifacts", generated_at_ms),
+            request_id: "unit-analysis-artifacts".to_string(),
+            programs: analyzed,
+            validation,
+            improvements,
+            improved_programs,
+            generated_at_ms,
+        };
+
+        let job = stored_analysis_job(&response);
+        assert_eq!(job.record.kind, "instruction-analysis");
+        assert!(job.artifacts.contains_key("analysis-validation-report"));
+        assert!(job
+            .artifacts
+            .keys()
+            .any(|artifact_id| artifact_id.starts_with("improved-program-")));
+        let improved_artifact = job
+            .artifacts
+            .values()
+            .find(|artifact| artifact.kind == "improved-instruction-program")
+            .expect("improved program artifact should exist");
+        assert!(improved_artifact.draft);
+        assert!(!improved_artifact.machine_ready);
+        assert!(improved_artifact.line_count.unwrap_or_default() >= 3);
     }
 }

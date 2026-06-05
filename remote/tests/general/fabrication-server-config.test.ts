@@ -1,0 +1,132 @@
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import test from 'node:test';
+
+function findRepoRoot(): string {
+  for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
+    if (existsSync(resolve(candidate, 'remote/deployments/fabrication-server-rs/Cargo.toml'))) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`Unable to locate repo root from ${process.cwd()}`);
+}
+
+const repoRoot = findRepoRoot();
+
+async function readRepoFile(relativePath: string): Promise<string> {
+  return readFile(resolve(repoRoot, relativePath), 'utf8');
+}
+
+test('rust fabrication server exposes planning, analysis, nats, and learning hooks', async () => {
+  const cargo = await readRepoFile('remote/deployments/fabrication-server-rs/Cargo.toml');
+  const source = await readRepoFile('remote/deployments/fabrication-server-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/fabrication-server-rs/readme.md');
+  const subjectSchema = await readRepoFile(
+    'remote/libs/nats/subject-defs/schema/fabrication.schema.json',
+  );
+  const docs = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/generated/api-docs.json',
+  );
+
+  assert.match(cargo, /name\s*=\s*"dd-fabrication-server"/);
+  assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
+  assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
+  assert.match(
+    source,
+    /use dd_nats_subject_defs::\{[\s\S]*?FABRICATION_REQUESTS_QUEUE_GROUP[\s\S]*?FABRICATION_REQUESTS_SUBJECT[\s\S]*?FABRICATION_RESULTS_SUBJECT[\s\S]*?MDP_OPTIMIZE_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?\};/,
+  );
+  assert.match(source, /const SCHEMA_VERSION: &str = "fabrication\.plan\.v1"/);
+  assert.match(source, /struct FabricationPlanRequest/);
+  assert.match(source, /struct InstructionAnalysisRequest/);
+  assert.match(source, /struct LearningPlan/);
+  assert.match(source, /fn plan_fabrication\(request: FabricationPlanRequest\)/);
+  assert.match(source, /fn analyze_instruction_programs/);
+  assert.match(source, /fn fabrication_mdp_request/);
+  assert.match(source, /async fn run_nats_loop/);
+  assert.match(source, /queue_subscribe\(state\.request_subject\.clone\(\), state\.queue_group\.clone\(\)\)/);
+  assert.match(source, /FABRICATION_MDP_AUTOPUBLISH/);
+  assert.match(source, /dd_fabrication_server_nats_messages_total/);
+  assert.match(source, /dd_fabrication_server_nats_results_published_total/);
+  assert.match(source, /dd_fabrication_server_mdp_published_total/);
+  assert.match(source, /\.route\("\/plan", post\(plan_http\)\)/);
+  assert.match(source, /\.route\("\/fabrication\/plan", post\(plan_http\)\)/);
+  assert.match(source, /\.route\("\/instructions\/analyze", post\(analyze_http\)\)/);
+
+  assert.match(readme, /`POST \/plan`/);
+  assert.match(readme, /`POST \/fabrication\/plan`/);
+  assert.match(readme, /`POST \/instructions\/analyze`/);
+  assert.match(readme, /dd\.remote\.fabrication\.requests/);
+  assert.match(readme, /dd\.remote\.fabrication\.results/);
+  assert.match(readme, /FABRICATION_MDP_AUTOPUBLISH=true/);
+  assert.match(readme, /default local port is `8113`/);
+
+  assert.match(subjectSchema, /dd\.remote\.fabrication\.requests/);
+  assert.match(subjectSchema, /dd\.remote\.fabrication\.results/);
+  assert.match(subjectSchema, /"queueGroup": "dd-fabrication-server"/);
+
+  assert.match(docs, /"path": "\/plan"/);
+  assert.match(docs, /"path": "\/fabrication\/plan"/);
+  assert.match(docs, /"path": "\/instructions\/analyze"/);
+});
+
+test('fabrication server is deployed through runtime manifests, gateway, and observability', async () => {
+  const deployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-fabrication-server.deployment.yaml',
+  );
+  const service = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-fabrication-server.service.yaml',
+  );
+  const kustomization = await readRepoFile('remote/argocd/dd-next-runtime/kustomization.yaml');
+  const gateway = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
+  );
+  const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
+  const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
+  const availability = await readRepoFile('remote/argocd/dd-next-runtime/availability-pdbs.yaml');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
+  const remoteReadme = await readRepoFile('remote/readme.md');
+
+  assert.match(deployment, /name:\s*dd-fabrication-server/);
+  assert.match(deployment, /PORT[\s\S]*value:\s*'8113'/);
+  assert.match(deployment, /NATS_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:4222/);
+  assert.match(deployment, /FABRICATION_REQUEST_SUBJECT[\s\S]*dd\.remote\.fabrication\.requests/);
+  assert.match(deployment, /FABRICATION_QUEUE_GROUP[\s\S]*dd-fabrication-server/);
+  assert.match(deployment, /FABRICATION_RESULT_SUBJECT[\s\S]*dd\.remote\.fabrication\.results/);
+  assert.match(deployment, /FABRICATION_MDP_OPTIMIZE_SUBJECT[\s\S]*dd\.remote\.mdp\.optimize/);
+  assert.match(deployment, /FABRICATION_MDP_AUTOPUBLISH[\s\S]*value:\s*'true'/);
+  assert.match(deployment, /RUNTIME_CONFIG_APPLY_URL[\s\S]*dd-fabrication-server\.default\.svc\.cluster\.local:8113/);
+  assert.match(deployment, /startupProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(deployment, /readinessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(deployment, /livenessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(service, /name:\s*dd-fabrication-server/);
+  assert.match(service, /port:\s*8113/);
+  assert.match(service, /targetPort:\s*http/);
+  assert.match(kustomization, /dd-fabrication-server\.deployment\.yaml/);
+  assert.match(kustomization, /dd-fabrication-server\.service\.yaml/);
+  assert.match(availability, /name:\s*dd-fabrication-server[\s\S]*minAvailable:\s*1/);
+  assert.match(gateway, /location = \/fabrication[\s\S]*return 302 \/fabrication\//);
+  assert.match(
+    gateway,
+    /location \/fabrication\/[\s\S]*dd-fabrication-server\.default\.svc\.cluster\.local:8113\//,
+  );
+  assert.match(
+    prometheus,
+    /job_name:\s*dd-fabrication-server[\s\S]*dd-fabrication-server\.default\.svc\.cluster\.local:8113/,
+  );
+  assert.match(
+    otel,
+    /job_name:\s*dd-fabrication-server[\s\S]*dd-fabrication-server\.default\.svc\.cluster\.local:8113/,
+  );
+  assert.match(home, /dd-fabrication-server/);
+  assert.match(home, /POST \/fabrication\/plan/);
+  assert.match(home, /label: FABRICATION_REQUESTS_SUBJECT/);
+  assert.match(home, /label: FABRICATION_RESULTS_SUBJECT/);
+  assert.match(runtimeReadme, /dd-fabrication-server/);
+  assert.match(runtimeReadme, /`POST \/fabrication\/plan`/);
+  assert.match(runtimeReadme, /`POST \/fabrication\/instructions\/analyze`/);
+  assert.match(remoteReadme, /fabrication-server-rs/);
+});
