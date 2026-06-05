@@ -109,6 +109,7 @@ on:
         required: false
         type: string
         default: "true"
+      # Keep this workflow file in the push-trigger path for operator load-test marker commits.
 
 concurrency:
   group: ${{ ((inputs.operation == 'loadtest-gcs-wss' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]'))) && 'remote-k8s-maintenance-gcs-loadtest') || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[gcs-diagnose]') || contains(github.event.head_commit.message, '[gcs-snapshot]') || contains(github.event.head_commit.message, '[gcs-ssm]')) && 'remote-k8s-maintenance-gcs-diagnose') || 'remote-k8s-maintenance-capacity' }}
