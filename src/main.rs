@@ -453,6 +453,21 @@ struct LearningPlan {
     training_examples: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LearningOutcomeRequest {
+    request_id: Option<String>,
+    job_id: Option<String>,
+    objective: Option<String>,
+    material: Option<MaterialSpec>,
+    manufacturing_methods: Option<Vec<String>>,
+    assembly_strategy: Option<String>,
+    success: bool,
+    reward: Option<f64>,
+    observations: Option<Vec<String>>,
+    notes: Option<Vec<String>>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LearningOutcomeRecord {
@@ -629,9 +644,7 @@ fn bounded(value: f64, min: f64, max: f64) -> f64 {
 }
 
 fn validate_optional_label(value: Option<String>, label: &str) -> Result<Option<String>, String> {
-    value
-        .map(|value| validate_label(&value, label))
-        .transpose()
+    value.map(|value| validate_label(&value, label)).transpose()
 }
 
 fn validate_optional_text(
@@ -952,313 +965,6 @@ fn material_or_default(material: Option<MaterialSpec>) -> Result<MaterialSpec, S
             .map(|hardness| validate_text(&hardness, "material.hardness", MAX_LABEL_LEN))
             .transpose()?,
     })
-}
-
-fn validate_learning_text_list(
-    values: Option<Vec<String>>,
-    label: &str,
-    max_len: usize,
-) -> Result<Vec<String>, String> {
-    let values = values.unwrap_or_default();
-    if values.len() > MAX_LEARNING_SIGNALS {
-        return Err(format!(
-            "{label} must contain at most {MAX_LEARNING_SIGNALS} entries"
-        ));
-    }
-    values
-        .into_iter()
-        .map(|value| validate_text(&value, label, max_len))
-        .collect()
-}
-
-fn finite_optional_non_negative(value: Option<f64>, label: &str) -> Result<Option<f64>, String> {
-    if let Some(value) = value {
-        if !value.is_finite() || value < 0.0 {
-            return Err(format!("{label} must be finite and non-negative"));
-        }
-        Ok(Some(value))
-    } else {
-        Ok(None)
-    }
-}
-
-fn reward_weight(weights: &Option<BTreeMap<String, f64>>, key: &str, fallback: f64) -> f64 {
-    weights
-        .as_ref()
-        .and_then(|weights| weights.get(key))
-        .copied()
-        .filter(|value| value.is_finite())
-        .unwrap_or(fallback)
-}
-
-fn reward_term(
-    weights: &Option<BTreeMap<String, f64>>,
-    name: &str,
-    value: f64,
-    fallback_weight: f64,
-) -> LearningRewardTerm {
-    let weight = reward_weight(weights, name, fallback_weight);
-    LearningRewardTerm {
-        name: name.to_string(),
-        value,
-        weight,
-        contribution: value * weight,
-    }
-}
-
-fn outcome_success(request: &FabricationOutcomeRequest, outcome: &str) -> bool {
-    let token = normalize_token(outcome);
-    if request.machine_failure.unwrap_or(false)
-        || request.scrap.unwrap_or(false)
-        || token.contains("fail")
-        || token.contains("scrap")
-    {
-        false
-    } else {
-        request.completed.unwrap_or(false)
-            || token.contains("success")
-            || token.contains("complete")
-            || token.contains("pass")
-    }
-}
-
-fn outcome_state(request: &FabricationOutcomeRequest, success: bool) -> &'static str {
-    if request.machine_failure.unwrap_or(false) || request.scrap.unwrap_or(false) {
-        "failed"
-    } else if success {
-        "complete"
-    } else if request.human_intervention_required.unwrap_or(false) {
-        "intervention-required"
-    } else {
-        "inspection-required"
-    }
-}
-
-fn recommended_learning_action(request: &FabricationOutcomeRequest, success: bool, reward: f64) -> &'static str {
-    if request.machine_failure.unwrap_or(false) {
-        "revise-machine-selection-or-split-job"
-    } else if request.scrap.unwrap_or(false) {
-        "add-risk-controls-and-inspection-gates"
-    } else if request.human_intervention_required.unwrap_or(false) {
-        "model-human-checkpoint-in-policy"
-    } else if success && reward >= 0.0 {
-        "reinforce-policy"
-    } else {
-        "keep-exploring"
-    }
-}
-
-fn source_methods(
-    request: &FabricationOutcomeRequest,
-    source_plan: Option<&FabricationPlanResponse>,
-) -> Vec<String> {
-    if let Some(plan) = source_plan {
-        let methods = plan
-            .design
-            .parts
-            .iter()
-            .map(|part| part.manufacturing_method.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        if !methods.is_empty() {
-            return methods;
-        }
-    }
-    if let Some(kind) = request.machine_kind.as_ref() {
-        vec![part_method(machine_class(kind)).to_string()]
-    } else {
-        vec!["unknown-method".to_string()]
-    }
-}
-
-fn build_learning_outcome_response(
-    request: FabricationOutcomeRequest,
-    source_plan: Option<&FabricationPlanResponse>,
-    source_lookup_missing: bool,
-) -> Result<(FabricationLearningResponse, LearningOutcomeRecord), String> {
-    let request_id = request_id(request.request_id.as_ref(), "fabrication-outcome");
-    let generated_at_ms = now_ms();
-    let job_id = safe_job_id("learning", &request_id, generated_at_ms);
-    let source_job_id = request
-        .source_job_id
-        .as_ref()
-        .map(|value| validate_label(value, "sourceJobId"))
-        .transpose()?;
-    let source_artifact_id = request
-        .source_artifact_id
-        .as_ref()
-        .map(|value| validate_label(value, "sourceArtifactId"))
-        .transpose()?;
-    let part_id = request
-        .part_id
-        .as_ref()
-        .map(|value| validate_label(value, "partId"))
-        .transpose()?;
-    let program_id = request
-        .program_id
-        .as_ref()
-        .map(|value| validate_label(value, "programId"))
-        .transpose()?;
-    let machine_id = request
-        .machine_id
-        .as_ref()
-        .map(|value| validate_label(value, "machineId"))
-        .transpose()?;
-    let machine_kind = request
-        .machine_kind
-        .as_ref()
-        .map(|value| validate_text(value, "machineKind", MAX_LABEL_LEN))
-        .transpose()?;
-    let material = match request.material.clone() {
-        Some(material) => Some(material_or_default(Some(material))?),
-        None => source_plan.map(|plan| plan.material.clone()),
-    };
-    let outcome = validate_text(&request.outcome, "outcome", MAX_LABEL_LEN)?;
-    let duration_minutes = finite_optional_non_negative(request.duration_minutes, "durationMinutes")?;
-    let intervention_minutes =
-        finite_optional_non_negative(request.intervention_minutes, "interventionMinutes")?;
-    let dimensional_error_mm =
-        finite_optional_non_negative(request.dimensional_error_mm, "dimensionalErrorMm")?;
-    let surface_quality = finite_optional_non_negative(request.surface_quality, "surfaceQuality")?;
-    if let Some(surface_quality) = surface_quality {
-        if surface_quality > 1.0 {
-            return Err("surfaceQuality must be in [0, 1]".to_string());
-        }
-    }
-    if let Some(weights) = request.reward_weights.as_ref() {
-        for (key, value) in weights {
-            validate_text(key, "rewardWeights key", MAX_LABEL_LEN)?;
-            if !value.is_finite() {
-                return Err("rewardWeights values must be finite".to_string());
-            }
-        }
-    }
-
-    let success = outcome_success(&request, &outcome);
-    let completed_value = if request.completed.unwrap_or(success) { 1.0 } else { -1.0 };
-    let machine_value = if request.machine_failure.unwrap_or(false) { -1.0 } else { 0.2 };
-    let scrap_value = if request.scrap.unwrap_or(false) { -1.0 } else { 0.15 };
-    let intervention_value = if request.human_intervention_required.unwrap_or(false) {
-        -0.5 - intervention_minutes.unwrap_or(0.0).min(120.0) / 240.0
-    } else {
-        0.2
-    };
-    let duration_value = duration_minutes
-        .map(|value| -(value.min(480.0) / 240.0))
-        .unwrap_or(0.0);
-    let dimensional_value = dimensional_error_mm
-        .map(|value| -(value.min(5.0) / DEFAULT_TOLERANCE_MM.max(0.001)))
-        .unwrap_or(0.0);
-    let surface_value = surface_quality.map(|value| value - 0.5).unwrap_or(0.0);
-    let reward_terms = vec![
-        reward_term(&request.reward_weights, "completed", completed_value, 3.0),
-        reward_term(&request.reward_weights, "machineFailure", machine_value, 4.0),
-        reward_term(&request.reward_weights, "scrap", scrap_value, 4.0),
-        reward_term(
-            &request.reward_weights,
-            "humanIntervention",
-            intervention_value,
-            1.5,
-        ),
-        reward_term(&request.reward_weights, "duration", duration_value, 1.0),
-        reward_term(
-            &request.reward_weights,
-            "dimensionalAccuracy",
-            dimensional_value,
-            2.0,
-        ),
-        reward_term(&request.reward_weights, "surfaceQuality", surface_value, 1.5),
-    ];
-    let reward = reward_terms
-        .iter()
-        .map(|term| term.contribution)
-        .sum::<f64>();
-    let state = outcome_state(&request, success).to_string();
-    let recommended_action = recommended_learning_action(&request, success, reward).to_string();
-    let mut observations =
-        validate_learning_text_list(request.observations.clone(), "observations", MAX_TEXT_LEN)?;
-    observations.push(format!("outcome:{outcome}"));
-    observations.push(format!("state:{state}"));
-    let notes = validate_learning_text_list(request.notes.clone(), "notes", MAX_TEXT_LEN)?;
-    let manufacturing_methods = source_methods(&request, source_plan);
-    let assembly_strategy = source_plan.map(|plan| plan.assembly.strategy.clone());
-    let objective = source_plan.map(|plan| plan.objective.clone());
-    let warnings = if source_lookup_missing {
-        vec!["sourceJobId was provided but no retained source plan was found".to_string()]
-    } else {
-        Vec::new()
-    };
-
-    let mdp_update = json!({
-        "kind": "fabrication.mdp.outcome-update",
-        "requestId": request_id,
-        "sourceJobId": source_job_id,
-        "sourceArtifactId": source_artifact_id,
-        "state": state,
-        "action": recommended_action,
-        "reward": reward,
-        "observations": observations,
-    });
-    let neural_example = json!({
-        "kind": "fabrication.neural.training-example",
-        "jobId": job_id,
-        "features": {
-            "sourceJobId": source_job_id,
-            "partId": part_id,
-            "programId": program_id,
-            "machineId": machine_id,
-            "machineKind": machine_kind,
-            "material": material,
-            "manufacturingMethods": manufacturing_methods,
-            "assemblyStrategy": assembly_strategy,
-            "durationMinutes": duration_minutes,
-            "interventionMinutes": intervention_minutes,
-            "dimensionalErrorMm": dimensional_error_mm,
-            "surfaceQuality": surface_quality
-        },
-        "labels": {
-            "success": success,
-            "reward": reward,
-            "state": state,
-            "recommendedAction": recommended_action
-        }
-    });
-    let record = LearningOutcomeRecord {
-        outcome_id: job_id.clone(),
-        request_id: request_id.clone(),
-        job_id: source_job_id.clone(),
-        objective,
-        material,
-        manufacturing_methods,
-        assembly_strategy,
-        success,
-        reward,
-        observations: observations.clone(),
-        notes,
-        created_at_ms: generated_at_ms,
-    };
-
-    Ok((
-        FabricationLearningResponse {
-            ok: true,
-            job_id,
-            request_id,
-            source_job_id,
-            source_artifact_id,
-            outcome,
-            state,
-            recommended_action,
-            reward,
-            reward_terms,
-            observations,
-            mdp_update,
-            neural_example,
-            warnings,
-            generated_at_ms,
-        },
-        record,
-    ))
 }
 
 fn is_metal(material: &MaterialSpec) -> bool {
@@ -2898,29 +2604,6 @@ fn analysis_artifacts(response: &InstructionAnalysisResponse) -> Vec<Fabrication
     artifacts
 }
 
-fn learning_artifacts(response: &FabricationLearningResponse) -> Vec<FabricationArtifact> {
-    vec![
-        json_artifact(
-            "learning-outcome".to_string(),
-            "learning-outcome",
-            json!(response),
-            response.generated_at_ms,
-        ),
-        json_artifact(
-            "learning-mdp-update".to_string(),
-            "learning-mdp-update",
-            response.mdp_update.clone(),
-            response.generated_at_ms,
-        ),
-        json_artifact(
-            "learning-neural-example".to_string(),
-            "learning-neural-example",
-            response.neural_example.clone(),
-            response.generated_at_ms,
-        ),
-    ]
-}
-
 fn stored_plan_job(response: &FabricationPlanResponse) -> StoredFabricationJob {
     let artifacts = plan_artifacts(response)
         .into_iter()
@@ -2944,40 +2627,6 @@ fn stored_plan_job(response: &FabricationPlanResponse) -> StoredFabricationJob {
         plan: Some(response.clone()),
         analysis: None,
         learning: None,
-        artifacts,
-    }
-}
-
-fn stored_learning_job(response: &FabricationLearningResponse) -> StoredFabricationJob {
-    let artifacts = learning_artifacts(response)
-        .into_iter()
-        .map(|artifact| (artifact.artifact_id.clone(), artifact))
-        .collect::<BTreeMap<_, _>>();
-    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
-    StoredFabricationJob {
-        record: FabricationJobRecord {
-            job_id: response.job_id.clone(),
-            request_id: response.request_id.clone(),
-            kind: "fabrication-learning-outcome".to_string(),
-            status: "complete".to_string(),
-            ok: response.ok,
-            severity: if response.reward >= 0.0 {
-                "ok".to_string()
-            } else {
-                "warning".to_string()
-            },
-            summary: format!(
-                "{} -> {} ({:.3})",
-                response.outcome, response.recommended_action, response.reward
-            ),
-            artifact_count: artifact_ids.len(),
-            artifact_ids,
-            created_at_ms: response.generated_at_ms,
-            updated_at_ms: response.generated_at_ms,
-        },
-        plan: None,
-        analysis: None,
-        learning: Some(response.clone()),
         artifacts,
     }
 }
@@ -3449,7 +3098,7 @@ fn validate_reward_weights(weights: Option<&BTreeMap<String, f64>>) -> Result<()
     Ok(())
 }
 
-fn reward_weight(
+fn outcome_reward_weight(
     weights: Option<&BTreeMap<String, f64>>,
     name: &str,
     fallback: f64,
@@ -3461,7 +3110,7 @@ fn reward_weight(
     }
 }
 
-fn reward_term(name: &str, value: f64, weight: f64) -> LearningRewardTerm {
+fn outcome_reward_term(name: &str, value: f64, weight: f64) -> LearningRewardTerm {
     LearningRewardTerm {
         name: name.to_string(),
         value,
@@ -3518,7 +3167,8 @@ fn learn_from_outcome(
     let reward_weights = request.reward_weights;
     validate_reward_weights(reward_weights.as_ref())?;
     let notes = validate_signal_list(request.notes, "notes", MAX_TEXT_LEN)?;
-    let mut observations = validate_signal_list(request.observations, "observations", MAX_TEXT_LEN)?;
+    let mut observations =
+        validate_signal_list(request.observations, "observations", MAX_TEXT_LEN)?;
     let observed_text = normalize_token(&format!("{} {}", outcome, observations.join(" ")));
     let completed = request.completed.unwrap_or_else(|| {
         observed_text.contains("complete")
@@ -3579,40 +3229,40 @@ fn learn_from_outcome(
         .map(|minutes| -bounded(minutes / 480.0, 0.0, 1.0))
         .unwrap_or(0.0);
     let reward_terms = vec![
-        reward_term(
+        outcome_reward_term(
             "successfulCompletion",
             completion_value,
-            reward_weight(reward_weights.as_ref(), "successfulCompletion", 2.0)?,
+            outcome_reward_weight(reward_weights.as_ref(), "successfulCompletion", 2.0)?,
         ),
-        reward_term(
+        outcome_reward_term(
             "machineFailure",
             machine_failure_value,
-            reward_weight(reward_weights.as_ref(), "machineFailure", 3.0)?,
+            outcome_reward_weight(reward_weights.as_ref(), "machineFailure", 3.0)?,
         ),
-        reward_term(
+        outcome_reward_term(
             "scrapRisk",
             scrap_value,
-            reward_weight(reward_weights.as_ref(), "scrapRisk", 2.0)?,
+            outcome_reward_weight(reward_weights.as_ref(), "scrapRisk", 2.0)?,
         ),
-        reward_term(
+        outcome_reward_term(
             "humanInterventionCost",
             intervention_value,
-            reward_weight(reward_weights.as_ref(), "humanInterventionCost", 1.0)?,
+            outcome_reward_weight(reward_weights.as_ref(), "humanInterventionCost", 1.0)?,
         ),
-        reward_term(
+        outcome_reward_term(
             "dimensionalAccuracy",
             dimensional_value,
-            reward_weight(reward_weights.as_ref(), "dimensionalAccuracy", 1.5)?,
+            outcome_reward_weight(reward_weights.as_ref(), "dimensionalAccuracy", 1.5)?,
         ),
-        reward_term(
+        outcome_reward_term(
             "surfaceQuality",
             surface_value,
-            reward_weight(reward_weights.as_ref(), "surfaceQuality", 1.0)?,
+            outcome_reward_weight(reward_weights.as_ref(), "surfaceQuality", 1.0)?,
         ),
-        reward_term(
+        outcome_reward_term(
             "machineTime",
             duration_value,
-            reward_weight(reward_weights.as_ref(), "machineTime", 0.5)?,
+            outcome_reward_weight(reward_weights.as_ref(), "machineTime", 0.5)?,
         ),
     ];
     let reward = reward_terms
@@ -3646,7 +3296,9 @@ fn learn_from_outcome(
     let job_id = safe_job_id("learning", &request_id, generated_at_ms);
     let method = process_method_for_machine(machine_kind.as_ref());
     let material_name = material.as_ref().map(|material| material.name.clone());
-    let material_family = material.as_ref().and_then(|material| material.family.clone());
+    let material_family = material
+        .as_ref()
+        .and_then(|material| material.family.clone());
     let mdp_update = json!({
         "schemaVersion": "dd.fabrication.learning-experience.v1",
         "requestId": request_id,
@@ -3698,7 +3350,10 @@ fn learn_from_outcome(
         );
     }
     if !completed && !machine_failure && !scrap {
-        warnings.push("Outcome is non-terminal; policy update should be treated as partial evidence".to_string());
+        warnings.push(
+            "Outcome is non-terminal; policy update should be treated as partial evidence"
+                .to_string(),
+        );
     }
     let response = FabricationLearningResponse {
         ok,
@@ -3750,7 +3405,9 @@ fn learn_from_outcome(
     Ok((response, record))
 }
 
-fn learning_outcome_record(request: LearningOutcomeRequest) -> Result<LearningOutcomeRecord, String> {
+fn learning_outcome_record(
+    request: LearningOutcomeRequest,
+) -> Result<LearningOutcomeRecord, String> {
     let request_id = request_id(request.request_id.as_ref(), "learning-outcome");
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let objective = validate_optional_text(request.objective, "objective", MAX_TEXT_LEN)?;
@@ -3758,8 +3415,11 @@ fn learning_outcome_record(request: LearningOutcomeRequest) -> Result<LearningOu
         .material
         .map(|material| material_or_default(Some(material)))
         .transpose()?;
-    let manufacturing_methods =
-        validate_signal_list(request.manufacturing_methods, "manufacturingMethods", MAX_LABEL_LEN)?;
+    let manufacturing_methods = validate_signal_list(
+        request.manufacturing_methods,
+        "manufacturingMethods",
+        MAX_LABEL_LEN,
+    )?;
     let manufacturing_methods = if manufacturing_methods.is_empty() {
         vec!["unknown-process".to_string()]
     } else {
@@ -4672,7 +4332,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/learning/observe", post(learning_observe_http))
         .route("/fabrication/learning/observe", post(learning_observe_http))
         .route("/learning/outcomes", post(learning_outcome_http))
-        .route("/fabrication/learning/outcomes", post(learning_outcome_http))
+        .route(
+            "/fabrication/learning/outcomes",
+            post(learning_outcome_http),
+        )
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
         .merge(dd_runtime_config_client::router());
@@ -4947,6 +4610,150 @@ mod tests {
             .failure_boundaries
             .iter()
             .any(|boundary| boundary.kind == "human-intervention"));
+    }
+
+    #[test]
+    fn fabrication_outcome_creates_reward_and_training_artifacts() {
+        let (response, record) = learn_from_outcome(FabricationOutcomeRequest {
+            request_id: Some("unit-outcome".to_string()),
+            source_job_id: Some("plan-unit-artifact-plan-123".to_string()),
+            source_artifact_id: Some("program-main".to_string()),
+            part_id: Some("bracket".to_string()),
+            program_id: Some("mill-bracket".to_string()),
+            machine_id: Some("vertical-mill-1".to_string()),
+            machine_kind: Some("vertical-mill".to_string()),
+            material: Some(material("aluminum", "metal")),
+            outcome: "machine alarm; part scrapped after manual intervention".to_string(),
+            completed: Some(false),
+            machine_failure: Some(true),
+            scrap: Some(true),
+            human_intervention_required: Some(true),
+            intervention_minutes: Some(18.0),
+            duration_minutes: Some(42.0),
+            dimensional_error_mm: Some(0.42),
+            surface_quality: Some(0.25),
+            observations: Some(vec!["spindle load spike".to_string()]),
+            notes: Some(vec!["revise feeds and split the finish pass".to_string()]),
+            reward_weights: None,
+        })
+        .expect("fabrication outcome should produce learning evidence");
+
+        assert!(!response.ok);
+        assert_eq!(response.state, "failed");
+        assert_eq!(
+            response.recommended_action,
+            "reject-or-repostprocess-program"
+        );
+        assert!(response.reward < 0.0);
+        assert!(response
+            .observations
+            .iter()
+            .any(|observation| observation == "machine-failure"));
+        assert_eq!(
+            response
+                .mdp_update
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.learning-experience.v1")
+        );
+        assert_eq!(
+            response
+                .neural_example
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.neural-example.v1")
+        );
+
+        let job = stored_learning_job(&response);
+        assert_eq!(job.record.kind, "fabrication-learning-outcome");
+        assert!(job.artifacts.contains_key("outcome-learning-event"));
+        assert!(job.artifacts.contains_key("reward-signal"));
+        assert!(job.artifacts.contains_key("mdp-experience"));
+        assert!(job.artifacts.contains_key("pomdp-observations"));
+        assert!(job.artifacts.contains_key("neural-example"));
+
+        let mut memory = LearningMemory::new(8);
+        memory.insert(record);
+        let snapshot = memory.snapshot();
+        assert_eq!(snapshot.outcome_count, 1);
+        assert_eq!(snapshot.failures, 1);
+        assert!(snapshot.average_reward < 0.0);
+        assert!(snapshot
+            .method_preferences
+            .iter()
+            .any(|preference| preference.key == "milling"));
+    }
+
+    #[test]
+    fn compact_learning_outcomes_prefer_successful_hybrid_strategy() {
+        let first_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("hybrid-success-1".to_string()),
+            job_id: Some("plan-hybrid-1".to_string()),
+            objective: Some("printed housing with turned bearing insert".to_string()),
+            material: Some(material("petg", "polymer")),
+            manufacturing_methods: Some(vec!["additive-print".to_string(), "turning".to_string()]),
+            assembly_strategy: Some("printed body plus turned insert".to_string()),
+            success: true,
+            reward: Some(3.2),
+            observations: Some(vec!["press-fit passed".to_string()]),
+            notes: Some(vec!["reuse insert allowance".to_string()]),
+        })
+        .expect("first compact learning outcome should be valid");
+        let second_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("hybrid-success-2".to_string()),
+            job_id: Some("plan-hybrid-2".to_string()),
+            objective: Some("printed knob with turned brass threaded core".to_string()),
+            material: Some(material("petg", "polymer")),
+            manufacturing_methods: Some(vec!["additive-print".to_string(), "turning".to_string()]),
+            assembly_strategy: Some("printed body plus turned insert".to_string()),
+            success: true,
+            reward: Some(2.4),
+            observations: Some(vec!["thread gauge passed".to_string()]),
+            notes: Some(vec!["recorded for reuse".to_string()]),
+        })
+        .expect("second compact learning outcome should be valid");
+        let failed_milling = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("hybrid-failure-1".to_string()),
+            job_id: Some("plan-hybrid-3".to_string()),
+            objective: Some("single-piece milled plastic housing".to_string()),
+            material: Some(material("petg", "polymer")),
+            manufacturing_methods: Some(vec!["milling".to_string()]),
+            assembly_strategy: Some("single-piece machining".to_string()),
+            success: false,
+            reward: Some(-1.0),
+            observations: Some(vec!["thin wall chatter".to_string()]),
+            notes: Some(vec!["split into printed body and turned insert".to_string()]),
+        })
+        .expect("failed compact learning outcome should still be valid evidence");
+
+        let mut memory = LearningMemory::new(8);
+        memory.insert(first_success);
+        memory.insert(second_success);
+        memory.insert(failed_milling);
+        let snapshot = memory.snapshot();
+
+        assert_eq!(snapshot.outcome_count, 3);
+        assert_eq!(snapshot.successes, 2);
+        assert_eq!(snapshot.failures, 1);
+        assert!(snapshot.method_preferences.iter().any(|preference| {
+            preference.key == "additive-print"
+                && preference.samples == 2
+                && preference.recommendation == "prefer"
+        }));
+        assert!(snapshot.method_preferences.iter().any(|preference| {
+            preference.key == "turning"
+                && preference.samples == 2
+                && preference.recommendation == "prefer"
+        }));
+        assert!(snapshot.assembly_preferences.iter().any(|preference| {
+            preference.key == "printed body plus turned insert"
+                && preference.samples == 2
+                && preference.recommendation == "prefer"
+        }));
+        assert!(snapshot
+            .neural_training_examples
+            .iter()
+            .any(|example| example.contains("methods=additive-print+turning")));
     }
 
     #[test]
