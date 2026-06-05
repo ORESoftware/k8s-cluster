@@ -21,24 +21,23 @@ spec:
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 60
-      initContainers:
-        - name: init-kafka-data
-          image: busybox:1.36
-          imagePullPolicy: IfNotPresent
-          command:
-            - sh
-            - -c
-            - chown -R 1000:1000 /var/lib/kafka/data
-          securityContext:
-            runAsUser: 0
-            runAsGroup: 0
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/kafka/data
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: kafka
           image: docker.io/confluentinc/cp-kafka:7.6.1
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
           env:
             - name: CLUSTER_ID
               value: MkU3OEVBNTcwNTJENDM2Qk
