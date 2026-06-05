@@ -226,6 +226,7 @@ struct FabricationPlanResponse {
     material: MaterialSpec,
     quantity: u32,
     design: DesignSummary,
+    manufacturing_handoff: ManufacturingHandoff,
     process_plan: Vec<ProcessStep>,
     process_graph: ProcessGraph,
     generated_programs: Vec<GeneratedProgram>,
@@ -454,6 +455,48 @@ struct ProcessGraphGate {
     action: String,
     requires_human_intervention: bool,
     next_state: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManufacturingHandoff {
+    schema_version: &'static str,
+    release_state: String,
+    units: String,
+    machine_ready: bool,
+    review_required: bool,
+    parts: Vec<ManufacturingHandoffPart>,
+    release_gates: Vec<ManufacturingHandoffGate>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManufacturingHandoffPart {
+    part_id: String,
+    manufacturing_method: String,
+    machine_kind: String,
+    geometry: Value,
+    program_id: Option<String>,
+    process_node_id: Option<String>,
+    stock_strategy: String,
+    datum_scheme: Vec<String>,
+    fixture_strategy: String,
+    setup_plan: String,
+    inspection_gates: Vec<String>,
+    release_blockers: Vec<String>,
+    machine_ready: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManufacturingHandoffGate {
+    gate_id: String,
+    part_id: Option<String>,
+    program_id: Option<String>,
+    boundary_kind: String,
+    action: String,
+    next_state: String,
+    requires_human_intervention: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -4321,8 +4364,10 @@ fn parametric_design_content(response: &FabricationPlanResponse) -> Value {
             "requiresSimulation": true,
             "requiresHumanReview": true
         },
+        "machineRelease": response.machine_release,
         "parts": parts,
         "processLinks": process_links,
+        "manufacturingHandoff": response.manufacturing_handoff,
         "processGraph": response.process_graph,
         "assembly": {
             "strategy": response.assembly.strategy,
@@ -4361,6 +4406,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             response.generated_at_ms,
         ),
         json_artifact(
+            "manufacturing-handoff".to_string(),
+            "manufacturing-handoff",
+            json!(response.manufacturing_handoff),
+            response.generated_at_ms,
+        ),
+        json_artifact(
             "assembly-plan".to_string(),
             "assembly-plan",
             json!(response.assembly),
@@ -4382,6 +4433,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             "resolution-plan".to_string(),
             "resolution-plan",
             json!(response.resolution_plan),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "machine-release".to_string(),
+            "machine-release",
+            json!(response.machine_release),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -4477,6 +4534,12 @@ fn analysis_artifacts(response: &InstructionAnalysisResponse) -> Vec<Fabrication
             "analysis-resolution-plan".to_string(),
             "analysis-resolution-plan",
             json!(response.resolution_plan),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "analysis-machine-release".to_string(),
+            "analysis-machine-release",
+            json!(response.machine_release),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -4898,6 +4961,207 @@ fn boundary_resolution_plan(
         step_count: steps.len(),
         steps,
         notes,
+    }
+}
+
+fn machine_release_blocker_id(
+    source: &str,
+    blocker_type: &str,
+    program_id: Option<&str>,
+    line: Option<usize>,
+    index: usize,
+) -> String {
+    let program = program_id.unwrap_or("whole-job");
+    let line = line
+        .map(|line| format!("line-{line}"))
+        .unwrap_or_else(|| "whole-job".to_string());
+    format!(
+        "release-blocker-{}-{}-{}-{}-{}",
+        normalize_token(source),
+        normalize_token(blocker_type),
+        normalize_token(program),
+        normalize_token(&line),
+        index + 1
+    )
+}
+
+fn release_checklist_status(blocked: bool, review: bool) -> &'static str {
+    if blocked {
+        "blocked"
+    } else if review {
+        "review"
+    } else {
+        "pass"
+    }
+}
+
+fn machine_release_report(
+    validation: &ValidationReport,
+    simulation: &SimulationReport,
+    generated_programs: &[GeneratedProgram],
+    improved_programs: &[ImprovedInstructionProgram],
+    resolution_plan: &BoundaryResolutionPlan,
+) -> MachineReleaseReport {
+    let generated_programs_ready = generated_programs
+        .iter()
+        .filter(|program| program.machine_ready)
+        .count();
+    let generated_programs_blocked = generated_programs.len() - generated_programs_ready;
+    let improved_programs_ready = improved_programs
+        .iter()
+        .filter(|program| program.machine_ready)
+        .count();
+    let improved_programs_blocked = improved_programs.len() - improved_programs_ready;
+
+    let mut blockers = validation
+        .failure_boundaries
+        .iter()
+        .enumerate()
+        .map(|(index, boundary)| MachineReleaseBlocker {
+            blocker_id: machine_release_blocker_id(
+                "validation-boundary",
+                &boundary.kind,
+                boundary.program_id.as_deref(),
+                boundary.line,
+                index,
+            ),
+            source: "validation-boundary".to_string(),
+            blocker_type: boundary.kind.clone(),
+            severity: boundary.severity.clone(),
+            program_id: boundary.program_id.clone(),
+            line: boundary.line,
+            reason: boundary.reason.clone(),
+            required_action: boundary.suggested_resolution.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    blockers.extend(
+        validation
+            .findings
+            .iter()
+            .filter(|finding| finding.severity == "error")
+            .enumerate()
+            .map(|(index, finding)| MachineReleaseBlocker {
+                blocker_id: machine_release_blocker_id(
+                    "validation-finding",
+                    &finding.code,
+                    finding.program_id.as_deref(),
+                    finding.line,
+                    index,
+                ),
+                source: "validation-finding".to_string(),
+                blocker_type: finding.code.clone(),
+                severity: finding.severity.clone(),
+                program_id: finding.program_id.clone(),
+                line: finding.line,
+                reason: finding.message.clone(),
+                required_action: "resolve the validation error and regenerate or re-review the affected instruction stream".to_string(),
+            }),
+    );
+
+    let validation_review = validation.ok && !validation.failure_boundaries.is_empty();
+    let simulation_review = simulation.ok
+        && (!simulation.findings.is_empty() || !simulation.failure_boundaries.is_empty());
+    let machine_release_blocked = resolution_plan.machine_release_blocked
+        || !simulation.ok
+        || generated_programs_blocked > 0
+        || improved_programs_blocked > 0;
+    let status = if !validation.ok || !simulation.ok {
+        "machine-release-blocked"
+    } else if machine_release_blocked || !blockers.is_empty() {
+        "review-gates-required"
+    } else {
+        "machine-release-ready"
+    };
+
+    let checklist = vec![
+        MachineReleaseChecklistItem {
+            item: "validation".to_string(),
+            status: release_checklist_status(!validation.ok, validation_review).to_string(),
+            evidence: format!(
+                "validation severity={} findings={} failureBoundaries={}",
+                validation.severity,
+                validation.findings.len(),
+                validation.failure_boundaries.len()
+            ),
+            program_id: None,
+        },
+        MachineReleaseChecklistItem {
+            item: "simulation".to_string(),
+            status: release_checklist_status(!simulation.ok, simulation_review).to_string(),
+            evidence: format!(
+                "simulation severity={} programs={} findings={} failureBoundaries={}",
+                simulation.severity,
+                simulation.programs.len(),
+                simulation.findings.len(),
+                simulation.failure_boundaries.len()
+            ),
+            program_id: None,
+        },
+        MachineReleaseChecklistItem {
+            item: "boundary-resolution".to_string(),
+            status: release_checklist_status(
+                resolution_plan.status == "machine-release-blocked",
+                resolution_plan.machine_release_blocked,
+            )
+            .to_string(),
+            evidence: format!(
+                "resolution status={} steps={}",
+                resolution_plan.status, resolution_plan.step_count
+            ),
+            program_id: None,
+        },
+        MachineReleaseChecklistItem {
+            item: "generated-program-readiness".to_string(),
+            status: if generated_programs.is_empty() {
+                "not-applicable"
+            } else if generated_programs_blocked == 0 {
+                "pass"
+            } else {
+                "blocked"
+            }
+            .to_string(),
+            evidence: format!(
+                "{} of {} generated programs are machineReady",
+                generated_programs_ready,
+                generated_programs.len()
+            ),
+            program_id: None,
+        },
+        MachineReleaseChecklistItem {
+            item: "improved-program-readiness".to_string(),
+            status: if improved_programs.is_empty() {
+                "not-applicable"
+            } else if improved_programs_blocked == 0 {
+                "pass"
+            } else {
+                "blocked"
+            }
+            .to_string(),
+            evidence: format!(
+                "{} of {} improved programs are machineReady",
+                improved_programs_ready,
+                improved_programs.len()
+            ),
+            program_id: None,
+        },
+    ];
+
+    MachineReleaseReport {
+        status: status.to_string(),
+        machine_release_blocked,
+        generated_programs_ready,
+        generated_programs_blocked,
+        improved_programs_ready,
+        improved_programs_blocked,
+        blockers,
+        checklist,
+        notes: vec![
+            "Machine release remains blocked until every checklist item is pass or explicitly signed off by the owning CAM/slicer process"
+                .to_string(),
+            "This report is a release gate summary, not a controller-specific safety certification"
+                .to_string(),
+        ],
     }
 }
 
@@ -5506,12 +5770,27 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         improve_instruction_programs(&generated_as_input, &validation, &improvements);
     let summary = boundary_summary(&validation);
     let resolution_plan = boundary_resolution_plan(&validation, &summary);
+    let machine_release = machine_release_report(
+        &validation,
+        &simulation,
+        &generated_programs,
+        &improved_programs,
+        &resolution_plan,
+    );
     let process_graph = process_graph(
         &process_plan,
         &generated_programs,
         &assembly,
         &validation,
         &resolution_plan,
+    );
+    let manufacturing_handoff = manufacturing_handoff(
+        &part_plans,
+        &process_plan,
+        &generated_programs,
+        &validation,
+        &process_graph,
+        &machine_release,
     );
 
     Ok(FabricationPlanResponse {
@@ -5534,12 +5813,14 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
                     .to_string(),
             ],
         },
+        manufacturing_handoff,
         process_plan,
         process_graph,
         generated_programs,
         validation,
         boundary_summary: summary,
         resolution_plan,
+        machine_release,
         simulation,
         improvements,
         improved_programs,
@@ -5582,6 +5863,13 @@ fn analyze_instruction_request(
     let generated_at_ms = now_ms();
     let summary = boundary_summary(&validation);
     let resolution_plan = boundary_resolution_plan(&validation, &summary);
+    let machine_release = machine_release_report(
+        &validation,
+        &simulation,
+        &[],
+        &improved_programs,
+        &resolution_plan,
+    );
 
     Ok(InstructionAnalysisResponse {
         ok: validation.ok,
@@ -5591,6 +5879,7 @@ fn analyze_instruction_request(
         validation,
         boundary_summary: summary,
         resolution_plan,
+        machine_release,
         simulation,
         improvements,
         improved_programs,
@@ -5813,6 +6102,277 @@ fn process_graph(
         nodes,
         dependencies,
         gates,
+    }
+}
+
+fn stock_strategy_for_part(part: &PartPlan) -> String {
+    match machine_class(&part.machine_kind) {
+        MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => {
+            "resin build envelope with reviewed orientation, drain paths, supports, wash, and cure allowances"
+                .to_string()
+        }
+        MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
+            "powder-bed nesting envelope with thermal spacing, cooldown allowance, and depowder access"
+                .to_string()
+        }
+        MachineClass::Additive => {
+            "filament build envelope with material profile, support strategy, and bed adhesion margin"
+                .to_string()
+        }
+        MachineClass::Mill if is_horizontal_mill_kind(&part.machine_kind) => {
+            "squared stock on tombstone or side-milling fixture with arbor and cutter-width clearance"
+                .to_string()
+        }
+        MachineClass::Mill => {
+            "squared stock with roughing allowance, finish allowance, and probed work offset"
+                .to_string()
+        }
+        MachineClass::Lathe => {
+            "round bar or turned blank with chuck/grip allowance and cutoff stock".to_string()
+        }
+        MachineClass::Router => {
+            "sheet or panel stock on spoilboard with tabs, hold-down margin, and dust extraction"
+                .to_string()
+        }
+        MachineClass::SheetCut => {
+            "sheet stock with kerf coupon, lead-ins, retained tabs, and part-catch allowance".to_string()
+        }
+        MachineClass::Other => {
+            "operator-defined stock and material certificate before special-process programming"
+                .to_string()
+        }
+    }
+}
+
+fn datum_scheme_for_part(part: &PartPlan) -> Vec<String> {
+    match machine_class(&part.machine_kind) {
+        MachineClass::Additive => vec![
+            "build-plate-z".to_string(),
+            "front-left-origin".to_string(),
+            "first-layer-witness".to_string(),
+        ],
+        MachineClass::Mill if is_horizontal_mill_kind(&part.machine_kind) => vec![
+            "G54 tombstone or fixture origin".to_string(),
+            "machined side-face datum".to_string(),
+            "keyway centerline".to_string(),
+        ],
+        MachineClass::Mill => vec![
+            "G54 stock corner or probe origin".to_string(),
+            "machined datum face".to_string(),
+            "critical feature centerline".to_string(),
+        ],
+        MachineClass::Lathe => vec![
+            "spindle centerline".to_string(),
+            "faced Z0 datum".to_string(),
+            "measured finish diameter".to_string(),
+        ],
+        MachineClass::Router | MachineClass::SheetCut => vec![
+            "sheet lower-left origin".to_string(),
+            "material top surface".to_string(),
+            "kerf/test coupon datum".to_string(),
+        ],
+        MachineClass::Other => vec![
+            "operator-declared primary datum".to_string(),
+            "operator-declared inspection datum".to_string(),
+        ],
+    }
+}
+
+fn fixture_strategy_for_part(part: &PartPlan) -> String {
+    match machine_class(&part.machine_kind) {
+        MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => {
+            "build plate leveling, resin vat inspection, support touchpoint review, and wash/cure fixtures"
+                .to_string()
+        }
+        MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
+            "powder-bed nesting, thermal pack spacing, cooldown containment, and depowder fixtures"
+                .to_string()
+        }
+        MachineClass::Additive => {
+            "slicer-generated supports with brim/raft decision and first-layer verification".to_string()
+        }
+        MachineClass::Mill if is_horizontal_mill_kind(&part.machine_kind) => {
+            "side-milling fixture or tombstone with arbor guard, index stop, and chip evacuation"
+                .to_string()
+        }
+        MachineClass::Mill => {
+            "vise or soft jaws with parallels, clamps clear of toolpath, and probe-verified offset"
+                .to_string()
+        }
+        MachineClass::Lathe => {
+            "chuck, collet, or soft jaws with stick-out and tool-clearance verification".to_string()
+        }
+        MachineClass::Router => {
+            "vacuum, clamps, tabs, or screws clear of cutter path on sacrificial spoilboard".to_string()
+        }
+        MachineClass::SheetCut => {
+            "slats, honeycomb, or water table support with fire/fume controls and retained tabs"
+                .to_string()
+        }
+        MachineClass::Other => "operator-defined fixture and dry-run approval".to_string(),
+    }
+}
+
+fn part_release_blockers(
+    part: &PartPlan,
+    program: Option<&GeneratedProgram>,
+    validation: &ValidationReport,
+) -> Vec<String> {
+    let mut blockers = validation
+        .failure_boundaries
+        .iter()
+        .filter(|boundary| {
+            boundary.program_id.as_ref().is_some_and(|program_id| {
+                program.is_some_and(|program| program.program_id == *program_id)
+            }) || boundary.reason.contains(&part.id)
+                || boundary.reason.contains(&part.role)
+        })
+        .map(|boundary| {
+            format!(
+                "{}: {} -> {}",
+                boundary.kind, boundary.reason, boundary.suggested_resolution
+            )
+        })
+        .collect::<Vec<_>>();
+    if blockers.is_empty() {
+        blockers.push(
+            "draft handoff remains blocked from machine release until CAD/CAM, simulation, and human review are complete"
+                .to_string(),
+        );
+    }
+    blockers
+}
+
+fn inspection_gates_for_part(
+    part: &PartPlan,
+    step: Option<&ProcessStep>,
+    validation: &ValidationReport,
+) -> Vec<String> {
+    let mut gates = Vec::new();
+    if part.tolerance_mm <= 0.05 {
+        gates.push("first-article metrology against datum scheme".to_string());
+    }
+    if !part.interfaces.is_empty() {
+        gates.push("dry-fit and interface inspection before final assembly".to_string());
+    }
+    if step.is_some_and(|step| step.requires_human_intervention) {
+        gates.push("operator checkpoint before machine release".to_string());
+    }
+    for boundary in &validation.failure_boundaries {
+        if boundary.kind.contains("inspection")
+            && (boundary.reason.contains(&part.id) || boundary.reason.contains(&part.role))
+        {
+            gates.push(boundary.suggested_resolution.clone());
+        }
+    }
+    if gates.is_empty() {
+        gates.push(
+            "review generated draft against final CAD/CAM before machine-ready release".to_string(),
+        );
+    }
+    gates.sort();
+    gates.dedup();
+    gates
+}
+
+fn manufacturing_handoff(
+    parts: &[PartPlan],
+    process_plan: &[ProcessStep],
+    generated_programs: &[GeneratedProgram],
+    validation: &ValidationReport,
+    process_graph: &ProcessGraph,
+    machine_release: &MachineReleaseReport,
+) -> ManufacturingHandoff {
+    let step_by_part = process_plan
+        .iter()
+        .map(|step| (step.part_id.clone(), step))
+        .collect::<BTreeMap<_, _>>();
+    let program_by_part = generated_programs
+        .iter()
+        .map(|program| (program.part_id.clone(), program))
+        .collect::<BTreeMap<_, _>>();
+    let node_by_part = process_graph
+        .nodes
+        .iter()
+        .map(|node| (node.part_id.clone(), node))
+        .collect::<BTreeMap<_, _>>();
+    let node_by_id = process_graph
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.clone(), node))
+        .collect::<BTreeMap<_, _>>();
+
+    let parts = parts
+        .iter()
+        .map(|part| {
+            let step = step_by_part.get(&part.id).copied();
+            let program = program_by_part.get(&part.id).copied();
+            let node = node_by_part.get(&part.id).copied();
+            let mut release_blockers = part_release_blockers(part, program, validation);
+            if let Some(program) = program {
+                release_blockers.extend(
+                    machine_release
+                        .blockers
+                        .iter()
+                        .filter(|blocker| {
+                            blocker.program_id.as_deref() == Some(&program.program_id)
+                        })
+                        .map(|blocker| blocker.blocker_id.clone()),
+                );
+            }
+            release_blockers.sort();
+            release_blockers.dedup();
+            ManufacturingHandoffPart {
+                part_id: part.id.clone(),
+                manufacturing_method: part.manufacturing_method.clone(),
+                machine_kind: part.machine_kind.clone(),
+                geometry: design_primitive_for_part(part),
+                program_id: program.map(|program| program.program_id.clone()),
+                process_node_id: node.map(|node| node.node_id.clone()),
+                stock_strategy: stock_strategy_for_part(part),
+                datum_scheme: datum_scheme_for_part(part),
+                fixture_strategy: fixture_strategy_for_part(part),
+                setup_plan: step
+                    .map(|step| step.setup.clone())
+                    .unwrap_or_else(|| "operator-reviewed setup required".to_string()),
+                inspection_gates: inspection_gates_for_part(part, step, validation),
+                release_blockers,
+                machine_ready: program
+                    .map(|program| program.machine_ready)
+                    .unwrap_or(false)
+                    && !machine_release.machine_release_blocked,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let release_gates = process_graph
+        .gates
+        .iter()
+        .map(|gate| {
+            let node = gate
+                .node_id
+                .as_ref()
+                .and_then(|node_id| node_by_id.get(node_id).copied());
+            ManufacturingHandoffGate {
+                gate_id: gate.gate_id.clone(),
+                part_id: node.map(|node| node.part_id.clone()),
+                program_id: node.and_then(|node| node.program_id.clone()),
+                boundary_kind: gate.boundary_kind.clone(),
+                action: gate.action.clone(),
+                next_state: gate.next_state.clone(),
+                requires_human_intervention: gate.requires_human_intervention,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    ManufacturingHandoff {
+        schema_version: "dd.fabrication.manufacturing-handoff.v1",
+        release_state: machine_release.status.clone(),
+        units: "mm".to_string(),
+        machine_ready: !machine_release.machine_release_blocked,
+        review_required: machine_release.machine_release_blocked || !release_gates.is_empty(),
+        parts,
+        release_gates,
     }
 }
 
@@ -7146,11 +7706,13 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "transitions": transitions,
         "rewards": rewards,
         "observations": response.learning.pomdp_observations,
+        "manufacturingHandoff": response.manufacturing_handoff,
         "processGraph": response.process_graph,
         "strategyCandidates": response.learning.strategy_candidates,
         "interventionSignals": response.learning.intervention_signals,
         "automationRequirements": response.boundary_summary.automation_requirements,
         "resolutionPlan": response.resolution_plan,
+        "machineRelease": response.machine_release,
         "gamma": 0.82,
         "tolerance": 0.000001,
         "maxIterations": 1000
@@ -8280,6 +8842,35 @@ mod tests {
         assert!(response
             .process_graph
             .gates
+            .iter()
+            .any(
+                |gate| gate.boundary_kind == "inspection-gate" && gate.requires_human_intervention
+            ));
+        assert_eq!(
+            response.manufacturing_handoff.schema_version,
+            "dd.fabrication.manufacturing-handoff.v1"
+        );
+        assert_eq!(
+            response.manufacturing_handoff.parts.len(),
+            response.design.parts.len()
+        );
+        assert!(response
+            .manufacturing_handoff
+            .parts
+            .iter()
+            .all(|part| part.program_id.is_some()
+                && part.process_node_id.is_some()
+                && !part.machine_ready
+                && !part.datum_scheme.is_empty()
+                && !part.release_blockers.is_empty()));
+        assert!(response.manufacturing_handoff.parts.iter().any(|part| part
+            .fixture_strategy
+            .contains("chuck")
+            || part.fixture_strategy.contains("vise")
+            || part.fixture_strategy.contains("tombstone")));
+        assert!(response
+            .manufacturing_handoff
+            .release_gates
             .iter()
             .any(
                 |gate| gate.boundary_kind == "inspection-gate" && gate.requires_human_intervention
@@ -9635,6 +10226,11 @@ mod tests {
             .and_then(Value::as_array)
             .is_some_and(|requirements| !requirements.is_empty()));
         assert!(mdp_request
+            .get("manufacturingHandoff")
+            .and_then(|handoff| handoff.get("parts"))
+            .and_then(Value::as_array)
+            .is_some_and(|parts| !parts.is_empty()));
+        assert!(mdp_request
             .get("processGraph")
             .and_then(|graph| graph.get("nodes"))
             .and_then(Value::as_array)
@@ -10130,7 +10726,11 @@ mod tests {
         assert!(job.artifacts.contains_key("plan-improvements"));
         assert!(job.artifacts.contains_key("boundary-summary"));
         assert!(job.artifacts.contains_key("resolution-plan"));
+        assert!(job.artifacts.contains_key("machine-release"));
         assert!(job.artifacts.contains_key("process-graph"));
+        assert!(job.artifacts.contains_key("manufacturing-handoff"));
+        assert!(response.machine_release.machine_release_blocked);
+        assert!(response.machine_release.generated_programs_blocked > 0);
         assert!(response.simulation.ok);
         assert!(job
             .artifacts
@@ -10164,11 +10764,36 @@ mod tests {
             .is_some_and(|nodes| !nodes.is_empty()));
         assert!(parametric_design
             .content
+            .get("manufacturingHandoff")
+            .and_then(|handoff| handoff.get("parts"))
+            .and_then(Value::as_array)
+            .is_some_and(|parts| !parts.is_empty()));
+        assert!(parametric_design
+            .content
+            .get("machineRelease")
+            .and_then(|release| release.get("status"))
+            .and_then(Value::as_str)
+            .is_some());
+        assert!(parametric_design
+            .content
             .get("assembly")
             .and_then(|assembly| assembly.get("assemblyGraph"))
             .and_then(|graph| graph.get("nodes"))
             .and_then(Value::as_array)
             .is_some_and(|nodes| !nodes.is_empty()));
+        let handoff = job
+            .artifacts
+            .get("manufacturing-handoff")
+            .expect("manufacturing handoff artifact should be retained");
+        assert_eq!(
+            handoff.content.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.manufacturing-handoff.v1")
+        );
+        assert!(handoff
+            .content
+            .get("parts")
+            .and_then(Value::as_array)
+            .is_some_and(|parts| !parts.is_empty()));
         assert_eq!(parametric_design.machine_ready, false);
 
         let mut store = FabricationJobStore::new(2);
@@ -10238,6 +10863,14 @@ mod tests {
                 && action.boundary_kind == "machine-envelope"));
         assert_eq!(response.resolution_plan.status, "machine-release-blocked");
         assert!(response.resolution_plan.machine_release_blocked);
+        assert_eq!(response.machine_release.status, "machine-release-blocked");
+        assert!(response.machine_release.machine_release_blocked);
+        assert!(response
+            .machine_release
+            .blockers
+            .iter()
+            .any(|blocker| blocker.blocker_type == "machine-envelope"
+                && blocker.source == "validation-boundary"));
         assert!(response.resolution_plan.steps.iter().any(|step| {
             step.action == "split-job-or-part"
                 && step.boundary_kind == "machine-envelope"
@@ -10280,6 +10913,13 @@ mod tests {
         let generated_at_ms = now_ms();
         let summary = boundary_summary(&validation);
         let resolution_plan = boundary_resolution_plan(&validation, &summary);
+        let machine_release = machine_release_report(
+            &validation,
+            &simulation,
+            &[],
+            &improved_programs,
+            &resolution_plan,
+        );
         let response = InstructionAnalysisResponse {
             ok: validation.ok,
             job_id: safe_job_id("analysis", "unit-analysis-artifacts", generated_at_ms),
@@ -10288,6 +10928,7 @@ mod tests {
             validation,
             boundary_summary: summary,
             resolution_plan,
+            machine_release,
             simulation,
             improvements,
             improved_programs,
@@ -10299,9 +10940,16 @@ mod tests {
         assert!(job.artifacts.contains_key("analysis-validation-report"));
         assert!(job.artifacts.contains_key("analysis-boundary-summary"));
         assert!(job.artifacts.contains_key("analysis-resolution-plan"));
+        assert!(job.artifacts.contains_key("analysis-machine-release"));
         assert!(job.artifacts.contains_key("analysis-simulation-report"));
         assert!(response.boundary_summary.human_intervention_required > 0);
         assert!(response.resolution_plan.step_count > 0);
+        assert!(response.machine_release.machine_release_blocked);
+        assert!(response
+            .machine_release
+            .checklist
+            .iter()
+            .any(|item| item.item == "improved-program-readiness" && item.status == "blocked"));
         assert!(response
             .boundary_summary
             .kinds
