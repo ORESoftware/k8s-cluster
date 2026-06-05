@@ -325,8 +325,13 @@ kubectl -n default get networkpolicy/dd-redis-cache -o json 2>/dev/null \
       podSelector: .spec.podSelector,
       ingress: .spec.ingress
     }' || true
-rg -n "dd.dev/redis-cache-client|REDIS_URL|MIP_SOLVER_COORDINATION_BACKENDS" \
-  /tmp/dd-mip-solver-render.yaml || true
+if command -v rg >/dev/null 2>&1; then
+  rg -n "dd.dev/redis-cache-client|REDIS_URL|MIP_SOLVER_COORDINATION_BACKENDS" \
+    /tmp/dd-mip-solver-render.yaml || true
+else
+  grep -nE "dd.dev/redis-cache-client|REDIS_URL|MIP_SOLVER_COORDINATION_BACKENDS" \
+    /tmp/dd-mip-solver-render.yaml || true
+fi
 
 echo "=== apply and force Argo CD sync ==="
 pre_sync_phase="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
