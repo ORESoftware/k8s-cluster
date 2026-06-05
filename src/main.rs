@@ -453,21 +453,6 @@ struct LearningPlan {
     training_examples: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LearningOutcomeRequest {
-    request_id: Option<String>,
-    job_id: Option<String>,
-    objective: Option<String>,
-    material: Option<MaterialSpec>,
-    manufacturing_methods: Option<Vec<String>>,
-    assembly_strategy: Option<String>,
-    success: bool,
-    reward: Option<f64>,
-    observations: Option<Vec<String>>,
-    notes: Option<Vec<String>>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LearningOutcomeRecord {
@@ -986,61 +971,294 @@ fn validate_learning_text_list(
         .collect()
 }
 
-fn validate_learning_outcome(
-    request: LearningOutcomeRequest,
-) -> Result<LearningOutcomeRecord, String> {
-    let request_id = request_id(request.request_id.as_ref(), "learning-outcome");
-    let generated_at_ms = now_ms();
-    let outcome_id = safe_job_id("learning-outcome", &request_id, generated_at_ms);
-    let job_id = request
-        .job_id
-        .as_ref()
-        .map(|job_id| validate_label(job_id, "jobId"))
-        .transpose()?;
-    let objective = request
-        .objective
-        .as_ref()
-        .map(|objective| validate_text(objective, "objective", MAX_TEXT_LEN))
-        .transpose()?;
-    let material = match request.material {
-        Some(material) => Some(material_or_default(Some(material))?),
-        None => None,
-    };
-    let mut manufacturing_methods = validate_learning_text_list(
-        request.manufacturing_methods,
-        "manufacturingMethods",
-        MAX_LABEL_LEN,
-    )?;
-    if manufacturing_methods.is_empty() {
-        manufacturing_methods.push("unknown-method".to_string());
+fn finite_optional_non_negative(value: Option<f64>, label: &str) -> Result<Option<f64>, String> {
+    if let Some(value) = value {
+        if !value.is_finite() || value < 0.0 {
+            return Err(format!("{label} must be finite and non-negative"));
+        }
+        Ok(Some(value))
+    } else {
+        Ok(None)
     }
-    let assembly_strategy = request
-        .assembly_strategy
-        .as_ref()
-        .map(|strategy| validate_text(strategy, "assemblyStrategy", MAX_LABEL_LEN))
-        .transpose()?;
-    let reward = request.reward.unwrap_or(if request.success { 1.0 } else { -1.0 });
-    if !reward.is_finite() {
-        return Err("reward must be finite".to_string());
-    }
-    let observations =
-        validate_learning_text_list(request.observations, "observations", MAX_TEXT_LEN)?;
-    let notes = validate_learning_text_list(request.notes, "notes", MAX_TEXT_LEN)?;
+}
 
-    Ok(LearningOutcomeRecord {
-        outcome_id,
-        request_id,
-        job_id,
+fn reward_weight(weights: &Option<BTreeMap<String, f64>>, key: &str, fallback: f64) -> f64 {
+    weights
+        .as_ref()
+        .and_then(|weights| weights.get(key))
+        .copied()
+        .filter(|value| value.is_finite())
+        .unwrap_or(fallback)
+}
+
+fn reward_term(
+    weights: &Option<BTreeMap<String, f64>>,
+    name: &str,
+    value: f64,
+    fallback_weight: f64,
+) -> LearningRewardTerm {
+    let weight = reward_weight(weights, name, fallback_weight);
+    LearningRewardTerm {
+        name: name.to_string(),
+        value,
+        weight,
+        contribution: value * weight,
+    }
+}
+
+fn outcome_success(request: &FabricationOutcomeRequest, outcome: &str) -> bool {
+    let token = normalize_token(outcome);
+    if request.machine_failure.unwrap_or(false)
+        || request.scrap.unwrap_or(false)
+        || token.contains("fail")
+        || token.contains("scrap")
+    {
+        false
+    } else {
+        request.completed.unwrap_or(false)
+            || token.contains("success")
+            || token.contains("complete")
+            || token.contains("pass")
+    }
+}
+
+fn outcome_state(request: &FabricationOutcomeRequest, success: bool) -> &'static str {
+    if request.machine_failure.unwrap_or(false) || request.scrap.unwrap_or(false) {
+        "failed"
+    } else if success {
+        "complete"
+    } else if request.human_intervention_required.unwrap_or(false) {
+        "intervention-required"
+    } else {
+        "inspection-required"
+    }
+}
+
+fn recommended_learning_action(request: &FabricationOutcomeRequest, success: bool, reward: f64) -> &'static str {
+    if request.machine_failure.unwrap_or(false) {
+        "revise-machine-selection-or-split-job"
+    } else if request.scrap.unwrap_or(false) {
+        "add-risk-controls-and-inspection-gates"
+    } else if request.human_intervention_required.unwrap_or(false) {
+        "model-human-checkpoint-in-policy"
+    } else if success && reward >= 0.0 {
+        "reinforce-policy"
+    } else {
+        "keep-exploring"
+    }
+}
+
+fn source_methods(
+    request: &FabricationOutcomeRequest,
+    source_plan: Option<&FabricationPlanResponse>,
+) -> Vec<String> {
+    if let Some(plan) = source_plan {
+        let methods = plan
+            .design
+            .parts
+            .iter()
+            .map(|part| part.manufacturing_method.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        if !methods.is_empty() {
+            return methods;
+        }
+    }
+    if let Some(kind) = request.machine_kind.as_ref() {
+        vec![part_method(machine_class(kind)).to_string()]
+    } else {
+        vec!["unknown-method".to_string()]
+    }
+}
+
+fn build_learning_outcome_response(
+    request: FabricationOutcomeRequest,
+    source_plan: Option<&FabricationPlanResponse>,
+    source_lookup_missing: bool,
+) -> Result<(FabricationLearningResponse, LearningOutcomeRecord), String> {
+    let request_id = request_id(request.request_id.as_ref(), "fabrication-outcome");
+    let generated_at_ms = now_ms();
+    let job_id = safe_job_id("learning", &request_id, generated_at_ms);
+    let source_job_id = request
+        .source_job_id
+        .as_ref()
+        .map(|value| validate_label(value, "sourceJobId"))
+        .transpose()?;
+    let source_artifact_id = request
+        .source_artifact_id
+        .as_ref()
+        .map(|value| validate_label(value, "sourceArtifactId"))
+        .transpose()?;
+    let part_id = request
+        .part_id
+        .as_ref()
+        .map(|value| validate_label(value, "partId"))
+        .transpose()?;
+    let program_id = request
+        .program_id
+        .as_ref()
+        .map(|value| validate_label(value, "programId"))
+        .transpose()?;
+    let machine_id = request
+        .machine_id
+        .as_ref()
+        .map(|value| validate_label(value, "machineId"))
+        .transpose()?;
+    let machine_kind = request
+        .machine_kind
+        .as_ref()
+        .map(|value| validate_text(value, "machineKind", MAX_LABEL_LEN))
+        .transpose()?;
+    let material = match request.material.clone() {
+        Some(material) => Some(material_or_default(Some(material))?),
+        None => source_plan.map(|plan| plan.material.clone()),
+    };
+    let outcome = validate_text(&request.outcome, "outcome", MAX_LABEL_LEN)?;
+    let duration_minutes = finite_optional_non_negative(request.duration_minutes, "durationMinutes")?;
+    let intervention_minutes =
+        finite_optional_non_negative(request.intervention_minutes, "interventionMinutes")?;
+    let dimensional_error_mm =
+        finite_optional_non_negative(request.dimensional_error_mm, "dimensionalErrorMm")?;
+    let surface_quality = finite_optional_non_negative(request.surface_quality, "surfaceQuality")?;
+    if let Some(surface_quality) = surface_quality {
+        if surface_quality > 1.0 {
+            return Err("surfaceQuality must be in [0, 1]".to_string());
+        }
+    }
+    if let Some(weights) = request.reward_weights.as_ref() {
+        for (key, value) in weights {
+            validate_text(key, "rewardWeights key", MAX_LABEL_LEN)?;
+            if !value.is_finite() {
+                return Err("rewardWeights values must be finite".to_string());
+            }
+        }
+    }
+
+    let success = outcome_success(&request, &outcome);
+    let completed_value = if request.completed.unwrap_or(success) { 1.0 } else { -1.0 };
+    let machine_value = if request.machine_failure.unwrap_or(false) { -1.0 } else { 0.2 };
+    let scrap_value = if request.scrap.unwrap_or(false) { -1.0 } else { 0.15 };
+    let intervention_value = if request.human_intervention_required.unwrap_or(false) {
+        -0.5 - intervention_minutes.unwrap_or(0.0).min(120.0) / 240.0
+    } else {
+        0.2
+    };
+    let duration_value = duration_minutes
+        .map(|value| -(value.min(480.0) / 240.0))
+        .unwrap_or(0.0);
+    let dimensional_value = dimensional_error_mm
+        .map(|value| -(value.min(5.0) / DEFAULT_TOLERANCE_MM.max(0.001)))
+        .unwrap_or(0.0);
+    let surface_value = surface_quality.map(|value| value - 0.5).unwrap_or(0.0);
+    let reward_terms = vec![
+        reward_term(&request.reward_weights, "completed", completed_value, 3.0),
+        reward_term(&request.reward_weights, "machineFailure", machine_value, 4.0),
+        reward_term(&request.reward_weights, "scrap", scrap_value, 4.0),
+        reward_term(
+            &request.reward_weights,
+            "humanIntervention",
+            intervention_value,
+            1.5,
+        ),
+        reward_term(&request.reward_weights, "duration", duration_value, 1.0),
+        reward_term(
+            &request.reward_weights,
+            "dimensionalAccuracy",
+            dimensional_value,
+            2.0,
+        ),
+        reward_term(&request.reward_weights, "surfaceQuality", surface_value, 1.5),
+    ];
+    let reward = reward_terms
+        .iter()
+        .map(|term| term.contribution)
+        .sum::<f64>();
+    let state = outcome_state(&request, success).to_string();
+    let recommended_action = recommended_learning_action(&request, success, reward).to_string();
+    let mut observations =
+        validate_learning_text_list(request.observations.clone(), "observations", MAX_TEXT_LEN)?;
+    observations.push(format!("outcome:{outcome}"));
+    observations.push(format!("state:{state}"));
+    let notes = validate_learning_text_list(request.notes.clone(), "notes", MAX_TEXT_LEN)?;
+    let manufacturing_methods = source_methods(&request, source_plan);
+    let assembly_strategy = source_plan.map(|plan| plan.assembly.strategy.clone());
+    let objective = source_plan.map(|plan| plan.objective.clone());
+    let warnings = if source_lookup_missing {
+        vec!["sourceJobId was provided but no retained source plan was found".to_string()]
+    } else {
+        Vec::new()
+    };
+
+    let mdp_update = json!({
+        "kind": "fabrication.mdp.outcome-update",
+        "requestId": request_id,
+        "sourceJobId": source_job_id,
+        "sourceArtifactId": source_artifact_id,
+        "state": state,
+        "action": recommended_action,
+        "reward": reward,
+        "observations": observations,
+    });
+    let neural_example = json!({
+        "kind": "fabrication.neural.training-example",
+        "jobId": job_id,
+        "features": {
+            "sourceJobId": source_job_id,
+            "partId": part_id,
+            "programId": program_id,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "material": material,
+            "manufacturingMethods": manufacturing_methods,
+            "assemblyStrategy": assembly_strategy,
+            "durationMinutes": duration_minutes,
+            "interventionMinutes": intervention_minutes,
+            "dimensionalErrorMm": dimensional_error_mm,
+            "surfaceQuality": surface_quality
+        },
+        "labels": {
+            "success": success,
+            "reward": reward,
+            "state": state,
+            "recommendedAction": recommended_action
+        }
+    });
+    let record = LearningOutcomeRecord {
+        outcome_id: job_id.clone(),
+        request_id: request_id.clone(),
+        job_id: source_job_id.clone(),
         objective,
         material,
         manufacturing_methods,
         assembly_strategy,
-        success: request.success,
+        success,
         reward,
-        observations,
+        observations: observations.clone(),
         notes,
         created_at_ms: generated_at_ms,
-    })
+    };
+
+    Ok((
+        FabricationLearningResponse {
+            ok: true,
+            job_id,
+            request_id,
+            source_job_id,
+            source_artifact_id,
+            outcome,
+            state,
+            recommended_action,
+            reward,
+            reward_terms,
+            observations,
+            mdp_update,
+            neural_example,
+            warnings,
+            generated_at_ms,
+        },
+        record,
+    ))
 }
 
 fn is_metal(material: &MaterialSpec) -> bool {
@@ -3157,6 +3375,446 @@ fn learning_plan(
     })
 }
 
+fn validate_reward_weights(weights: Option<&BTreeMap<String, f64>>) -> Result<(), String> {
+    if let Some(weights) = weights {
+        if weights.len() > MAX_LEARNING_SIGNALS {
+            return Err(format!(
+                "rewardWeights must contain at most {MAX_LEARNING_SIGNALS} entries"
+            ));
+        }
+        for (name, value) in weights {
+            validate_label(name, "rewardWeights key")?;
+            if !value.is_finite() {
+                return Err("rewardWeights values must be finite".to_string());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn reward_weight(
+    weights: Option<&BTreeMap<String, f64>>,
+    name: &str,
+    fallback: f64,
+) -> Result<f64, String> {
+    match weights.and_then(|weights| weights.get(name)) {
+        Some(weight) if weight.is_finite() => Ok(*weight),
+        Some(_) => Err(format!("rewardWeights.{name} must be finite")),
+        None => Ok(fallback),
+    }
+}
+
+fn reward_term(name: &str, value: f64, weight: f64) -> LearningRewardTerm {
+    LearningRewardTerm {
+        name: name.to_string(),
+        value,
+        weight,
+        contribution: value * weight,
+    }
+}
+
+fn process_method_for_machine(machine_kind: Option<&String>) -> String {
+    machine_kind
+        .map(|kind| match machine_class(kind) {
+            MachineClass::Additive => "additive-print",
+            MachineClass::Mill => "milling",
+            MachineClass::Lathe => "turning",
+            MachineClass::Router => "routing",
+            MachineClass::Other => "unknown-process",
+        })
+        .unwrap_or("unknown-process")
+        .to_string()
+}
+
+fn learn_from_outcome(
+    request: FabricationOutcomeRequest,
+) -> Result<(FabricationLearningResponse, LearningOutcomeRecord), String> {
+    let request_id = request_id(request.request_id.as_ref(), "fabrication-outcome");
+    let outcome = validate_text(&request.outcome, "outcome", MAX_TEXT_LEN)?;
+    let source_job_id = validate_optional_label(request.source_job_id, "sourceJobId")?;
+    let source_artifact_id =
+        validate_optional_label(request.source_artifact_id, "sourceArtifactId")?;
+    let part_id = validate_optional_label(request.part_id, "partId")?;
+    let program_id = validate_optional_label(request.program_id, "programId")?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let material = request
+        .material
+        .map(|material| material_or_default(Some(material)))
+        .transpose()?;
+    let intervention_minutes = request
+        .intervention_minutes
+        .map(|value| finite_non_negative(value, "interventionMinutes"))
+        .transpose()?;
+    let duration_minutes = request
+        .duration_minutes
+        .map(|value| finite_non_negative(value, "durationMinutes"))
+        .transpose()?;
+    let dimensional_error_mm = request
+        .dimensional_error_mm
+        .map(|value| finite_non_negative(value, "dimensionalErrorMm"))
+        .transpose()?;
+    let surface_quality = request
+        .surface_quality
+        .map(|value| finite_ratio(value, "surfaceQuality"))
+        .transpose()?;
+    let reward_weights = request.reward_weights;
+    validate_reward_weights(reward_weights.as_ref())?;
+    let notes = validate_signal_list(request.notes, "notes", MAX_TEXT_LEN)?;
+    let mut observations = validate_signal_list(request.observations, "observations", MAX_TEXT_LEN)?;
+    let observed_text = normalize_token(&format!("{} {}", outcome, observations.join(" ")));
+    let completed = request.completed.unwrap_or_else(|| {
+        observed_text.contains("complete")
+            || observed_text.contains("success")
+            || observed_text.contains("pass")
+    });
+    let machine_failure = request.machine_failure.unwrap_or_else(|| {
+        observed_text.contains("fail")
+            || observed_text.contains("alarm")
+            || observed_text.contains("crash")
+    });
+    let scrap = request
+        .scrap
+        .unwrap_or_else(|| observed_text.contains("scrap") || observed_text.contains("reject"));
+    let human_intervention_required = request.human_intervention_required.unwrap_or_else(|| {
+        intervention_minutes.unwrap_or(0.0) > 0.0
+            || observed_text.contains("manual")
+            || observed_text.contains("operator")
+            || observed_text.contains("intervention")
+    });
+    if observations.is_empty() {
+        observations.push(format!("outcome:{}", normalize_token(&outcome)));
+    }
+    if completed {
+        observations.push("completed".to_string());
+    }
+    if machine_failure {
+        observations.push("machine-failure".to_string());
+    }
+    if scrap {
+        observations.push("scrap".to_string());
+    }
+    if human_intervention_required {
+        observations.push("human-intervention-required".to_string());
+    }
+    if let Some(error_mm) = dimensional_error_mm {
+        observations.push(format!("dimensional-error-mm:{error_mm:.4}"));
+    }
+    if let Some(quality) = surface_quality {
+        observations.push(format!("surface-quality:{quality:.3}"));
+    }
+    observations.sort();
+    observations.dedup();
+
+    let completion_value = if completed { 1.0 } else { -0.5 };
+    let machine_failure_value = if machine_failure { -1.0 } else { 0.0 };
+    let scrap_value = if scrap { -1.0 } else { 0.0 };
+    let intervention_value = if human_intervention_required {
+        -bounded(intervention_minutes.unwrap_or(15.0) / 120.0, 0.0, 1.0)
+    } else {
+        0.0
+    };
+    let dimensional_value = dimensional_error_mm
+        .map(|error| 1.0 - bounded(error / DEFAULT_TOLERANCE_MM.max(0.001), 0.0, 2.0))
+        .unwrap_or(0.0);
+    let surface_value = surface_quality.map(|quality| quality - 0.5).unwrap_or(0.0);
+    let duration_value = duration_minutes
+        .map(|minutes| -bounded(minutes / 480.0, 0.0, 1.0))
+        .unwrap_or(0.0);
+    let reward_terms = vec![
+        reward_term(
+            "successfulCompletion",
+            completion_value,
+            reward_weight(reward_weights.as_ref(), "successfulCompletion", 2.0)?,
+        ),
+        reward_term(
+            "machineFailure",
+            machine_failure_value,
+            reward_weight(reward_weights.as_ref(), "machineFailure", 3.0)?,
+        ),
+        reward_term(
+            "scrapRisk",
+            scrap_value,
+            reward_weight(reward_weights.as_ref(), "scrapRisk", 2.0)?,
+        ),
+        reward_term(
+            "humanInterventionCost",
+            intervention_value,
+            reward_weight(reward_weights.as_ref(), "humanInterventionCost", 1.0)?,
+        ),
+        reward_term(
+            "dimensionalAccuracy",
+            dimensional_value,
+            reward_weight(reward_weights.as_ref(), "dimensionalAccuracy", 1.5)?,
+        ),
+        reward_term(
+            "surfaceQuality",
+            surface_value,
+            reward_weight(reward_weights.as_ref(), "surfaceQuality", 1.0)?,
+        ),
+        reward_term(
+            "machineTime",
+            duration_value,
+            reward_weight(reward_weights.as_ref(), "machineTime", 0.5)?,
+        ),
+    ];
+    let reward = reward_terms
+        .iter()
+        .map(|term| term.contribution)
+        .sum::<f64>();
+    let state = if machine_failure || scrap {
+        "failed"
+    } else if human_intervention_required {
+        "inspection-required"
+    } else if completed {
+        "complete"
+    } else {
+        "program-generated"
+    }
+    .to_string();
+    let recommended_action = if machine_failure || scrap {
+        "reject-or-repostprocess-program"
+    } else if human_intervention_required {
+        "insert-human-inspection"
+    } else if dimensional_error_mm.is_some_and(|error| error > DEFAULT_TOLERANCE_MM) {
+        "split-part"
+    } else if completed {
+        "reuse-successful-policy"
+    } else {
+        "continue-fabrication-or-simulation"
+    }
+    .to_string();
+    let ok = completed && !machine_failure && !scrap;
+    let generated_at_ms = now_ms();
+    let job_id = safe_job_id("learning", &request_id, generated_at_ms);
+    let method = process_method_for_machine(machine_kind.as_ref());
+    let material_name = material.as_ref().map(|material| material.name.clone());
+    let material_family = material.as_ref().and_then(|material| material.family.clone());
+    let mdp_update = json!({
+        "schemaVersion": "dd.fabrication.learning-experience.v1",
+        "requestId": request_id,
+        "jobId": job_id,
+        "sourceJobId": source_job_id,
+        "sourceArtifactId": source_artifact_id,
+        "partId": part_id,
+        "programId": program_id,
+        "machineId": machine_id,
+        "machineKind": machine_kind,
+        "state": "program-generated",
+        "action": recommended_action,
+        "reward": reward,
+        "nextState": state,
+        "terminal": completed || machine_failure || scrap,
+        "observations": observations,
+        "rewardTerms": reward_terms,
+    });
+    let neural_example = json!({
+        "schemaVersion": "dd.fabrication.neural-example.v1",
+        "features": {
+            "machineKind": machine_kind,
+            "manufacturingMethod": method,
+            "materialName": material_name,
+            "materialFamily": material_family,
+            "completed": completed,
+            "machineFailure": machine_failure,
+            "scrap": scrap,
+            "humanInterventionRequired": human_intervention_required,
+            "interventionMinutes": intervention_minutes,
+            "durationMinutes": duration_minutes,
+            "dimensionalErrorMm": dimensional_error_mm,
+            "surfaceQuality": surface_quality,
+            "observations": observations,
+            "notes": notes,
+        },
+        "labels": {
+            "reward": reward,
+            "state": state,
+            "recommendedAction": recommended_action,
+            "ok": ok,
+        }
+    });
+    let mut warnings = Vec::new();
+    if machine_failure || scrap {
+        warnings.push(
+            "Outcome marks a failed fabrication attempt; generated reward is intentionally negative"
+                .to_string(),
+        );
+    }
+    if !completed && !machine_failure && !scrap {
+        warnings.push("Outcome is non-terminal; policy update should be treated as partial evidence".to_string());
+    }
+    let response = FabricationLearningResponse {
+        ok,
+        job_id: job_id.clone(),
+        request_id: request_id.clone(),
+        source_job_id: mdp_update
+            .get("sourceJobId")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        source_artifact_id: mdp_update
+            .get("sourceArtifactId")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        outcome: outcome.clone(),
+        state: state.clone(),
+        recommended_action: recommended_action.clone(),
+        reward,
+        reward_terms,
+        observations: mdp_update
+            .get("observations")
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        mdp_update,
+        neural_example,
+        warnings,
+        generated_at_ms,
+    };
+    let record = LearningOutcomeRecord {
+        outcome_id: job_id,
+        request_id,
+        job_id: response.source_job_id.clone(),
+        objective: Some(summary_text(&outcome)),
+        material,
+        manufacturing_methods: vec![method],
+        assembly_strategy: Some(recommended_action),
+        success: response.ok,
+        reward,
+        observations: response.observations.clone(),
+        notes,
+        created_at_ms: generated_at_ms,
+    };
+    Ok((response, record))
+}
+
+fn learning_outcome_record(request: LearningOutcomeRequest) -> Result<LearningOutcomeRecord, String> {
+    let request_id = request_id(request.request_id.as_ref(), "learning-outcome");
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let objective = validate_optional_text(request.objective, "objective", MAX_TEXT_LEN)?;
+    let material = request
+        .material
+        .map(|material| material_or_default(Some(material)))
+        .transpose()?;
+    let manufacturing_methods =
+        validate_signal_list(request.manufacturing_methods, "manufacturingMethods", MAX_LABEL_LEN)?;
+    let manufacturing_methods = if manufacturing_methods.is_empty() {
+        vec!["unknown-process".to_string()]
+    } else {
+        manufacturing_methods
+            .into_iter()
+            .map(|method| normalize_token(&method))
+            .collect()
+    };
+    let assembly_strategy =
+        validate_optional_text(request.assembly_strategy, "assemblyStrategy", MAX_TEXT_LEN)?;
+    let reward = request
+        .reward
+        .map(|value| {
+            if value.is_finite() {
+                Ok(value)
+            } else {
+                Err("reward must be finite".to_string())
+            }
+        })
+        .transpose()?
+        .unwrap_or(if request.success { 1.0 } else { -1.0 });
+    let observations = validate_signal_list(request.observations, "observations", MAX_TEXT_LEN)?;
+    let notes = validate_signal_list(request.notes, "notes", MAX_TEXT_LEN)?;
+    let created_at_ms = now_ms();
+    Ok(LearningOutcomeRecord {
+        outcome_id: safe_job_id("outcome", &request_id, created_at_ms),
+        request_id,
+        job_id,
+        objective,
+        material,
+        manufacturing_methods,
+        assembly_strategy,
+        success: request.success,
+        reward,
+        observations,
+        notes,
+        created_at_ms,
+    })
+}
+
+fn learning_artifacts(response: &FabricationLearningResponse) -> Vec<FabricationArtifact> {
+    vec![
+        json_artifact(
+            "outcome-learning-event".to_string(),
+            "outcome-learning-event",
+            json!(response),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "reward-signal".to_string(),
+            "reward-signal",
+            json!({
+                "reward": response.reward,
+                "terms": &response.reward_terms,
+                "state": response.state,
+                "recommendedAction": response.recommended_action,
+            }),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "mdp-experience".to_string(),
+            "mdp-experience",
+            response.mdp_update.clone(),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "pomdp-observations".to_string(),
+            "pomdp-observations",
+            json!({
+                "observations": &response.observations,
+                "state": response.state,
+                "sourceJobId": response.source_job_id,
+                "sourceArtifactId": response.source_artifact_id,
+            }),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "neural-example".to_string(),
+            "neural-example",
+            response.neural_example.clone(),
+            response.generated_at_ms,
+        ),
+    ]
+}
+
+fn stored_learning_job(response: &FabricationLearningResponse) -> StoredFabricationJob {
+    let artifacts = learning_artifacts(response)
+        .into_iter()
+        .map(|artifact| (artifact.artifact_id.clone(), artifact))
+        .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id: response.job_id.clone(),
+            request_id: response.request_id.clone(),
+            kind: "fabrication-learning-outcome".to_string(),
+            status: response.state.clone(),
+            ok: response.ok,
+            severity: if response.ok { "ok" } else { "warning" }.to_string(),
+            summary: summary_text(&response.outcome),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: response.generated_at_ms,
+            updated_at_ms: response.generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: Some(response.clone()),
+        artifacts,
+    }
+}
+
 fn store_job(state: &AppState, job: StoredFabricationJob) {
     let artifact_count = job.artifacts.len() as u64;
     match state.jobs.write() {
@@ -3184,6 +3842,45 @@ fn store_plan_response(state: &AppState, response: &FabricationPlanResponse) {
 
 fn store_analysis_response(state: &AppState, response: &InstructionAnalysisResponse) {
     store_job(state, stored_analysis_job(response));
+}
+
+fn store_learning_record(
+    state: &AppState,
+    record: LearningOutcomeRecord,
+) -> Result<LearningPolicySnapshot, String> {
+    match state.learning.write() {
+        Ok(mut learning) => {
+            learning.insert(record);
+            state
+                .metrics
+                .learning_events_stored_total
+                .fetch_add(1, Ordering::Relaxed);
+            Ok(learning.snapshot())
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            Err(format!("learning memory lock failed: {error}"))
+        }
+    }
+}
+
+fn store_learning_response(
+    state: &AppState,
+    response: &FabricationLearningResponse,
+    record: LearningOutcomeRecord,
+) -> Result<LearningPolicySnapshot, String> {
+    store_job(state, stored_learning_job(response));
+    store_learning_record(state, record)
+}
+
+fn learning_policy_snapshot(state: &AppState) -> Result<LearningPolicySnapshot, String> {
+    match state.learning.read() {
+        Ok(learning) => Ok(learning.snapshot()),
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            Err(format!("learning memory lock failed: {error}"))
+        }
+    }
 }
 
 async fn publish_event(state: &AppState, event_type: &str, request_id: &str, ok: bool) {
@@ -3329,6 +4026,28 @@ async fn publish_plan_outputs(state: &AppState, response: &FabricationPlanRespon
     }
 }
 
+async fn publish_learning_outputs(state: &AppState, response: &FabricationLearningResponse) {
+    let result = json!({
+        "schemaVersion": "fabrication.learning.v1",
+        "type": "fabrication.learning.result",
+        "response": response,
+    });
+    if publish_json_to_nats(state, &state.result_subject, result).await {
+        state
+            .metrics
+            .nats_results_published_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+    if state.mdp_autopublish {
+        if publish_json_to_nats(state, &state.mdp_subject, response.mdp_update.clone()).await {
+            state
+                .metrics
+                .mdp_published_total
+                .fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 fn record_plan_metrics(state: &AppState, response: &FabricationPlanResponse) {
     state
         .metrics
@@ -3431,15 +4150,20 @@ async fn root() -> impl IntoResponse {
             "GET /jobs",
             "GET /jobs/:job_id",
             "GET /jobs/:job_id/artifacts/:artifact_id",
+            "GET /learning/policy",
             "POST /plan",
             "POST /fabrication/plan",
-            "POST /instructions/analyze"
+            "POST /instructions/analyze",
+            "POST /learning/observe",
+            "POST /fabrication/learning/observe",
+            "POST /learning/outcomes"
         ],
         "capabilities": [
             "hybrid additive/subtractive/turning process planning",
             "draft G-code and operator instruction generation",
             "existing instruction validation and improvement hints",
             "bounded job and artifact inspection",
+            "fabrication outcome reward ingestion and policy snapshots",
             "machine-failure and human-intervention boundary detection",
             "MDP/POMDP/neural policy feature contract"
         ]
@@ -3518,6 +4242,11 @@ async fn metrics(State(state): State<AppState>) -> Response {
         .read()
         .map(|jobs| jobs.counts())
         .unwrap_or((0, 0));
+    let current_learning_outcomes = state
+        .learning
+        .read()
+        .map(|learning| learning.count())
+        .unwrap_or(0);
     let body = format!(
         "# HELP dd_fabrication_server_plan_requests_total Fabrication plan requests received.\n\
          # TYPE dd_fabrication_server_plan_requests_total counter\n\
@@ -3525,6 +4254,9 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_fabrication_server_analysis_requests_total Instruction analysis requests received.\n\
          # TYPE dd_fabrication_server_analysis_requests_total counter\n\
          dd_fabrication_server_analysis_requests_total {}\n\
+         # HELP dd_fabrication_server_learning_requests_total Learning outcome requests received.\n\
+         # TYPE dd_fabrication_server_learning_requests_total counter\n\
+         dd_fabrication_server_learning_requests_total {}\n\
          # HELP dd_fabrication_server_generated_programs_total Draft machine programs generated.\n\
          # TYPE dd_fabrication_server_generated_programs_total counter\n\
          dd_fabrication_server_generated_programs_total {}\n\
@@ -3558,14 +4290,21 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_fabrication_server_artifact_requests_total Artifact detail requests served by the fabrication server.\n\
          # TYPE dd_fabrication_server_artifact_requests_total counter\n\
          dd_fabrication_server_artifact_requests_total {}\n\
+         # HELP dd_fabrication_server_learning_events_stored_total Learning events recorded in the in-process policy memory.\n\
+         # TYPE dd_fabrication_server_learning_events_stored_total counter\n\
+         dd_fabrication_server_learning_events_stored_total {}\n\
          # HELP dd_fabrication_server_current_jobs Current jobs retained in the bounded in-process artifact ledger.\n\
          # TYPE dd_fabrication_server_current_jobs gauge\n\
          dd_fabrication_server_current_jobs {}\n\
          # HELP dd_fabrication_server_current_artifacts Current artifacts retained in the bounded in-process artifact ledger.\n\
          # TYPE dd_fabrication_server_current_artifacts gauge\n\
-         dd_fabrication_server_current_artifacts {}\n",
+         dd_fabrication_server_current_artifacts {}\n\
+         # HELP dd_fabrication_server_current_learning_outcomes Current outcomes retained in bounded policy memory.\n\
+         # TYPE dd_fabrication_server_current_learning_outcomes gauge\n\
+         dd_fabrication_server_current_learning_outcomes {}\n",
         state.metrics.plan_requests_total.load(Ordering::Relaxed),
         state.metrics.analysis_requests_total.load(Ordering::Relaxed),
+        state.metrics.learning_requests_total.load(Ordering::Relaxed),
         state.metrics.generated_programs_total.load(Ordering::Relaxed),
         state
             .metrics
@@ -3586,8 +4325,13 @@ async fn metrics(State(state): State<AppState>) -> Response {
         state.metrics.jobs_stored_total.load(Ordering::Relaxed),
         state.metrics.artifacts_stored_total.load(Ordering::Relaxed),
         state.metrics.artifact_requests_total.load(Ordering::Relaxed),
+        state
+            .metrics
+            .learning_events_stored_total
+            .load(Ordering::Relaxed),
         current_jobs,
         current_artifacts,
+        current_learning_outcomes,
     );
     (
         [(
