@@ -263,7 +263,10 @@ command_for_definition(FallbackCommand, DefinitionJson) ->
     end.
 
 supported_runtime(Runtime) ->
-    lists:member(Runtime, [<<"nodejs">>, <<"python3">>, <<"ruby">>, <<"bash">>]).
+    lists:member(Runtime, [
+        <<"nodejs">>, <<"python3">>, <<"ruby">>, <<"bash">>,
+        <<"golang">>, <<"dart">>, <<"erlang">>, <<"elixir">>, <<"java">>
+    ]).
 
 host_command(<<"nodejs">>) ->
     host_command_from_env(
@@ -403,6 +406,16 @@ default_container_image(<<"ruby">>) ->
     env_binary("LAMBDA_RUBY_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-ruby-runtime:dev">>);
 default_container_image(<<"bash">>) ->
     env_binary("LAMBDA_BASH_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-bash-runtime:dev">>);
+default_container_image(<<"golang">>) ->
+    env_binary("LAMBDA_GOLANG_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-golang-runtime:dev">>);
+default_container_image(<<"dart">>) ->
+    env_binary("LAMBDA_DART_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-dart-runtime:dev">>);
+default_container_image(<<"erlang">>) ->
+    env_binary("LAMBDA_ERLANG_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-erlang-runtime:dev">>);
+default_container_image(<<"elixir">>) ->
+    env_binary("LAMBDA_ELIXIR_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-elixir-runtime:dev">>);
+default_container_image(<<"java">>) ->
+    env_binary("LAMBDA_JAVA_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-java-runtime:dev">>);
 default_container_image(_Runtime) ->
     <<>>.
 
@@ -451,6 +464,15 @@ canonical_runtime(<<"python3">>) -> <<"python3">>;
 canonical_runtime(<<"shell">>) -> <<"bash">>;
 canonical_runtime(<<"bash">>) -> <<"bash">>;
 canonical_runtime(<<"ruby">>) -> <<"ruby">>;
+canonical_runtime(<<"go">>) -> <<"golang">>;
+canonical_runtime(<<"golang">>) -> <<"golang">>;
+canonical_runtime(<<"dart">>) -> <<"dart">>;
+canonical_runtime(<<"erl">>) -> <<"erlang">>;
+canonical_runtime(<<"erlang">>) -> <<"erlang">>;
+canonical_runtime(<<"ex">>) -> <<"elixir">>;
+canonical_runtime(<<"elixir">>) -> <<"elixir">>;
+canonical_runtime(<<"jvm">>) -> <<"java">>;
+canonical_runtime(<<"java">>) -> <<"java">>;
 canonical_runtime(<<>>) -> <<"nodejs">>;
 canonical_runtime(Runtime) -> Runtime.
 

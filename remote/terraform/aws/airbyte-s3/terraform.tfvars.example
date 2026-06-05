@@ -1,5 +1,7 @@
 aws_region    = "us-east-1"
 bucket_name   = "dd-remote-dev-airbyte"
+iam_user_name = "dd-remote-dev-airbyte"
+secrets_manager_secret_name = "dd/remote-dev/airbyte-s3"
 environment   = "remote-dev"
 force_destroy = false
 

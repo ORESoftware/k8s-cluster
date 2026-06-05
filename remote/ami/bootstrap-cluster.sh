@@ -11,11 +11,12 @@
 # nodes; see remote/k8s/readme.md for sizing.
 #
 # Usage (from a repo checkout):
-#   sudo ./remote/ami/bootstrap-cluster.sh [--pod-cidr CIDR] [--manifests-dir DIR]
+#   sudo ./remote/ami/bootstrap-cluster.sh [--pod-cidr CIDR] [--kubelet-max-pods N] [--manifests-dir DIR]
 #
 # Defaults:
 #   --pod-cidr        10.244.0.0/16
-#   --manifests-dir   $(dirname "$0")/../k8s     (i.e. remote/k8s/)
+#   --kubelet-max-pods 220
+#   --manifests-dir    $(dirname "$0")/../k8s     (i.e. remote/k8s/)
 #
 # Before running, fill in real secret values:
 #   cp $MANIFESTS_DIR/02-secrets.template.yaml $MANIFESTS_DIR/02-secrets.yaml
@@ -35,6 +36,7 @@
 set -euo pipefail
 
 POD_CIDR="10.244.0.0/16"
+KUBELET_MAX_PODS="${KUBELET_MAX_PODS:-220}"
 DD_NAMESPACE="dd-dev"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANIFESTS_DIR="${MANIFESTS_DIR:-$SCRIPT_DIR/../k8s}"
@@ -42,6 +44,7 @@ MANIFESTS_DIR="${MANIFESTS_DIR:-$SCRIPT_DIR/../k8s}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --pod-cidr) POD_CIDR="$2"; shift 2 ;;
+    --kubelet-max-pods) KUBELET_MAX_PODS="$2"; shift 2 ;;
     --manifests-dir) MANIFESTS_DIR="$2"; shift 2 ;;
     -h|--help)
       awk 'NR >= 2 && NR <= 33 { sub(/^# ?/, ""); print }' "$0"
@@ -68,11 +71,46 @@ TARGET_USER="${SUDO_USER:-$(whoami)}"
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 NODE_IP="$(hostname -I | awk '{print $1}')"
 
+configure_kubelet_max_pods() {
+  local config="/var/lib/kubelet/config.yaml"
+
+  if [[ ! "${KUBELET_MAX_PODS}" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: --kubelet-max-pods must be a positive integer." >&2
+    exit 1
+  fi
+
+  if (( KUBELET_MAX_PODS < 110 || KUBELET_MAX_PODS > 240 )); then
+    cat >&2 <<EOF
+ERROR: --kubelet-max-pods=${KUBELET_MAX_PODS} is outside the supported range.
+
+This single-node Cilium cluster gets a /24 pod CIDR by default, so keep the
+kubelet ceiling between 110 and 240 pods unless the pod CIDR sizing changes too.
+EOF
+    exit 1
+  fi
+
+  if [[ ! -f "${config}" ]]; then
+    echo "ERROR: kubelet config not found at ${config}" >&2
+    exit 1
+  fi
+
+  echo "==> Setting kubelet maxPods=${KUBELET_MAX_PODS}"
+  awk -v max_pods="${KUBELET_MAX_PODS}" '
+    BEGIN { wrote = 0 }
+    /^maxPods:/ { print "maxPods: " max_pods; wrote = 1; next }
+    { print }
+    END { if (wrote == 0) print "maxPods: " max_pods }
+  ' "${config}" > /tmp/dd-kubelet-config.yaml
+  cp /tmp/dd-kubelet-config.yaml "${config}"
+  systemctl restart kubelet
+}
+
 echo "============================================"
 echo "  DD K8s Cluster Bootstrap (single-node)"
 echo "============================================"
 echo "  Node IP:    $NODE_IP"
 echo "  Pod CIDR:   $POD_CIDR"
+echo "  Max pods:   $KUBELET_MAX_PODS"
 echo "  Namespace:  $DD_NAMESPACE"
 echo "  Manifests:  $MANIFESTS_DIR"
 echo "  kubectl-as: $TARGET_USER"
@@ -97,6 +135,7 @@ kubeadm init \
   --skip-phases=addon/kube-proxy \
   --cri-socket=unix:///run/containerd/containerd.sock \
   2>&1 | tee /tmp/kubeadm-init.log
+configure_kubelet_max_pods
 
 # ---- 3. Configure kubectl for the invoking user ----
 echo "==> Configuring kubectl for $TARGET_USER"
