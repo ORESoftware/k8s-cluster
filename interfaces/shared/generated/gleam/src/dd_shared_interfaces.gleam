@@ -28,6 +28,185 @@ pub type AgentTaskQueueMessage {
   )
 }
 
+/// A blocker discovered while splitting, combining, joining, sequencing, or learning from a hybrid fabrication plan.
+pub type FabricationAssemblyBlocker {
+  FabricationAssemblyBlocker(
+    code: String,
+    message: String,
+    part_id: Option(String),
+    interface_id: Option(String),
+    step_id: Option(String),
+    machine_ready_impact: Option(String)
+  )
+}
+
+/// One proposed part, subpart, insert, fixture-dependent feature group, or subassembly in a hybrid fabrication plan.
+pub type FabricationAssemblyCandidatePart {
+  FabricationAssemblyCandidatePart(
+    part_id: String,
+    parent_part_id: Option(String),
+    role: String,
+    preferred_process: String,
+    material: Option(String),
+    source_artifact_ids: Option(List(String)),
+    rationale: Option(String)
+  )
+}
+
+/// One join, datum, mating surface, press-fit, fastener pattern, adhesive joint, heat-set insert, weld, or operator alignment interface.
+pub type FabricationAssemblyJoinInterface {
+  FabricationAssemblyJoinInterface(
+    interface_id: String,
+    from_part_id: String,
+    to_part_id: String,
+    join_method: String,
+    datum_or_fit: Option(String),
+    required_evidence: Option(List(String))
+  )
+}
+
+/// Compact MDP/POMDP or neural-learning hint emitted by an assembly worker for future outcome attribution.
+pub type FabricationAssemblyLearningSignal {
+  FabricationAssemblyLearningSignal(
+    signal_id: String,
+    signal_kind: String,
+    state_features: Option(List(String)),
+    observations: Option(List(String)),
+    recommended_action: Option(String),
+    reward_hint: Option(Float)
+  )
+}
+
+/// Available fabrication or postprocess capability that can be used when splitting or combining parts.
+pub type FabricationAssemblyMachineCapability {
+  FabricationAssemblyMachineCapability(
+    capability_id: String,
+    machine_class: String,
+    materials: Option(List(String)),
+    limits: Option(List(String)),
+    required_evidence: Option(List(String))
+  )
+}
+
+/// One proposed hybrid assembly and process decomposition plan.
+pub type FabricationAssemblyPlanCandidate {
+  FabricationAssemblyPlanCandidate(
+    plan_id: String,
+    strategy: String,
+    score: Float,
+    machine_ready: Option(Bool),
+    parts: List(FabricationAssemblyCandidatePart),
+    interfaces: List(FabricationAssemblyJoinInterface),
+    process_steps: List(FabricationAssemblyProcessStep),
+    blockers: Option(List(FabricationAssemblyBlocker))
+  )
+}
+
+/// Body published on dd.remote.fabrication.assembly.planning.requests for hybrid assembly and process-decomposition workers.
+pub type FabricationAssemblyPlanningRequest {
+  FabricationAssemblyPlanningRequest(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    producer: Option(String),
+    result_subject: Option(String),
+    objective: String,
+    source_artifacts: List(FabricationAssemblySourceArtifact),
+    capabilities: List(FabricationAssemblyMachineCapability),
+    candidate_parts: List(FabricationAssemblyCandidatePart),
+    constraints: Option(List(String)),
+    blockers: Option(List(FabricationAssemblyBlocker)),
+    priority: Option(Int),
+    notes: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.assembly.planning.results with hybrid part decomposition, combine/split decisions, joins, process sequence, learning hints, blockers, and machine-ready posture.
+pub type FabricationAssemblyPlanningResult {
+  FabricationAssemblyPlanningResult(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    worker_id: String,
+    planner: Option(String),
+    planner_version: Option(String),
+    success: Bool,
+    machine_ready: Bool,
+    selected_plan_id: Option(String),
+    candidates: List(FabricationAssemblyPlanCandidate),
+    learning_signals: Option(List(FabricationAssemblyLearningSignal)),
+    blockers: Option(List(FabricationAssemblyBlocker)),
+    warnings: Option(List(String)),
+    review_metadata: Option(Dynamic)
+  )
+}
+
+/// One generated operation, inspection, postprocess, or assembly sequencing step proposed by an assembly planner.
+pub type FabricationAssemblyProcessStep {
+  FabricationAssemblyProcessStep(
+    step_id: String,
+    sequence: Int,
+    process: String,
+    part_ids: Option(List(String)),
+    capability_id: Option(String),
+    operator_intervention: Option(String),
+    output_artifact_targets: Option(List(String))
+  )
+}
+
+/// Verified source artifact that can drive part splitting, joining, assembly graph generation, process sequencing, or learning-state updates.
+pub type FabricationAssemblySourceArtifact {
+  FabricationAssemblySourceArtifact(
+    artifact_id: String,
+    format: String,
+    uri: Option(String),
+    sha256: Option(String),
+    part_ids: Option(List(String)),
+    evidence: Option(List(String))
+  )
+}
+
+/// One generated design candidate and its recommended downstream manufacturing posture.
+pub type FabricationDesignCandidate {
+  FabricationDesignCandidate(
+    candidate_id: String,
+    candidate_kind: String,
+    title: String,
+    score: Float,
+    machine_ready: Option(Bool),
+    manufacturing_strategy: String,
+    artifact_ids: Option(List(String)),
+    cleared_constraint_ids: Option(List(String)),
+    retained_blockers: Option(List(FabricationDesignSynthesisBlocker))
+  )
+}
+
+/// Design, translation, simulation, manufacturing, or inspection capability available while synthesizing candidates.
+pub type FabricationDesignCapability {
+  FabricationDesignCapability(
+    capability_id: String,
+    capability_kind: String,
+    supported_formats: Option(List(String)),
+    machine_classes: Option(List(String)),
+    limits: Option(List(String))
+  )
+}
+
+/// Constraint or evidence requirement the worker must satisfy or retain as a blocker.
+pub type FabricationDesignConstraint {
+  FabricationDesignConstraint(
+    constraint_id: String,
+    constraint_kind: String,
+    description: String,
+    severity: String,
+    evidence_required: Option(List(String))
+  )
+}
+
 /// A release or conversion blocker reported by a planner or worker.
 pub type FabricationDesignConversionBlocker {
   FabricationDesignConversionBlocker(
@@ -105,6 +284,125 @@ pub type FabricationDesignInputRef {
   )
 }
 
+/// The object, function, dimensions, material preferences, and manufacturing posture a design-synthesis worker should satisfy.
+pub type FabricationDesignIntent {
+  FabricationDesignIntent(
+    intent_id: String,
+    object_name: String,
+    objective: String,
+    functional_requirements: Option(List(String)),
+    dimensional_constraints: Option(List(String)),
+    material_preferences: Option(List(String)),
+    manufacturing_preferences: Option(List(String))
+  )
+}
+
+/// Compact MDP/POMDP/neural-policy hint available during design synthesis.
+pub type FabricationDesignLearningHint {
+  FabricationDesignLearningHint(
+    hint_id: String,
+    hint_kind: String,
+    features: Option(List(String)),
+    recommended_action: Option(String),
+    confidence: Option(Float)
+  )
+}
+
+/// Existing CAD, mesh, drawing, scan, slicer, CAM, job-sheet, image, measurement, or text reference available to a design-synthesis worker.
+pub type FabricationDesignReference {
+  FabricationDesignReference(
+    ref_id: String,
+    ref_kind: String,
+    format: String,
+    uri: Option(String),
+    sha256: Option(String),
+    evidence: Option(List(String))
+  )
+}
+
+/// A blocker discovered while generating or selecting a design candidate.
+pub type FabricationDesignSynthesisBlocker {
+  FabricationDesignSynthesisBlocker(
+    code: String,
+    message: String,
+    candidate_id: Option(String),
+    constraint_id: Option(String),
+    machine_ready_impact: Option(String)
+  )
+}
+
+/// Body published on dd.remote.fabrication.design.synthesis.requests for design-generation workers.
+pub type FabricationDesignSynthesisRequest {
+  FabricationDesignSynthesisRequest(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    producer: Option(String),
+    result_subject: Option(String),
+    intent: FabricationDesignIntent,
+    references: List(FabricationDesignReference),
+    templates: Option(List(FabricationDesignTemplate)),
+    capabilities: List(FabricationDesignCapability),
+    constraints: List(FabricationDesignConstraint),
+    target_formats: List(String),
+    learning_hints: Option(List(FabricationDesignLearningHint)),
+    blockers: Option(List(FabricationDesignSynthesisBlocker)),
+    priority: Option(Int),
+    notes: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.design.synthesis.results with generated design candidates, artifacts, blockers, and downstream readiness evidence.
+pub type FabricationDesignSynthesisResult {
+  FabricationDesignSynthesisResult(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    worker_id: String,
+    synthesizer: Option(String),
+    synthesizer_version: Option(String),
+    success: Bool,
+    machine_ready: Bool,
+    selected_candidate_id: Option(String),
+    candidates: List(FabricationDesignCandidate),
+    artifacts: List(FabricationGeneratedDesignArtifact),
+    blockers: Option(List(FabricationDesignSynthesisBlocker)),
+    learning_hints: Option(List(FabricationDesignLearningHint)),
+    warnings: Option(List(String)),
+    review_metadata: Option(Dynamic)
+  )
+}
+
+/// Parametric or procedural design template a worker may instantiate or adapt.
+pub type FabricationDesignTemplate {
+  FabricationDesignTemplate(
+    template_id: String,
+    template_kind: String,
+    source_format: String,
+    uri: Option(String),
+    parameters: Option(List(String)),
+    evidence: Option(List(String))
+  )
+}
+
+/// Generated design artifact retained by a synthesis worker for later CAD conversion, assembly planning, instruction generation, inspection, or review.
+pub type FabricationGeneratedDesignArtifact {
+  FabricationGeneratedDesignArtifact(
+    artifact_id: String,
+    candidate_id: String,
+    artifact_kind: String,
+    format: String,
+    uri: Option(String),
+    sha256: Option(String),
+    units: Option(String),
+    evidence: Option(List(String))
+  )
+}
+
 /// Generated machine code, setup sheet, inspection plan, simulation report, postprocess plan, or operator instruction returned by a worker.
 pub type FabricationGeneratedInstructionArtifact {
   FabricationGeneratedInstructionArtifact(
@@ -132,6 +430,21 @@ pub type FabricationInstructionBlocker {
     target_id: Option(String),
     machine_id: Option(String),
     machine_ready_impact: Option(String)
+  )
+}
+
+/// A boundary where submitted instructions may fail, pause, require human intervention, require splitting/combining, or need extra machine/setup evidence.
+pub type FabricationInstructionFailureBoundary {
+  FabricationInstructionFailureBoundary(
+    boundary_id: String,
+    boundary_kind: String,
+    code: String,
+    message: String,
+    instruction_id: Option(String),
+    line_ref: Option(String),
+    human_intervention_required: Option(Bool),
+    recommended_action: Option(String),
+    evidence: Option(List(String))
   )
 }
 
@@ -187,6 +500,20 @@ pub type FabricationInstructionGenerationTarget {
   )
 }
 
+/// A proposed safe improvement, patch, rewrite, split, or operator instruction change for submitted instructions.
+pub type FabricationInstructionImprovementDraft {
+  FabricationInstructionImprovementDraft(
+    draft_id: String,
+    instruction_id: String,
+    draft_kind: String,
+    summary: String,
+    patch_uri: Option(String),
+    preview_lines: Option(List(String)),
+    requires_human_approval: Option(Bool),
+    evidence: Option(List(String))
+  )
+}
+
 /// Machine, controller, slicer, or postprocessor profile requested for instruction generation.
 pub type FabricationInstructionMachineProfile {
   FabricationInstructionMachineProfile(
@@ -213,6 +540,112 @@ pub type FabricationInstructionOperation {
   )
 }
 
+/// One validation finding, warning, risk, or informational note from a submitted instruction review.
+pub type FabricationInstructionReviewFinding {
+  FabricationInstructionReviewFinding(
+    finding_id: String,
+    severity: String,
+    code: String,
+    message: String,
+    instruction_id: Option(String),
+    scope_id: Option(String),
+    line_ref: Option(String),
+    machine_ready_impact: Option(String),
+    evidence: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.instructions.review.requests for workers that validate and improve imported fabrication instructions.
+pub type FabricationInstructionReviewRequest {
+  FabricationInstructionReviewRequest(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    producer: Option(String),
+    result_subject: Option(String),
+    instructions: List(FabricationSubmittedInstruction),
+    review_scopes: List(FabricationInstructionReviewScope),
+    known_evidence: Option(List(String)),
+    priority: Option(Int),
+    notes: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.instructions.review.results with validation findings, failure boundaries, improvement drafts, warnings, and release posture.
+pub type FabricationInstructionReviewResult {
+  FabricationInstructionReviewResult(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    worker_id: String,
+    reviewer: Option(String),
+    reviewer_version: Option(String),
+    success: Bool,
+    machine_ready: Bool,
+    findings: List(FabricationInstructionReviewFinding),
+    failure_boundaries: Option(List(FabricationInstructionFailureBoundary)),
+    improvement_drafts: Option(List(FabricationInstructionImprovementDraft)),
+    warnings: Option(List(String)),
+    review_metadata: Option(Dynamic)
+  )
+}
+
+/// Review scope requested for one submitted instruction.
+pub type FabricationInstructionReviewScope {
+  FabricationInstructionReviewScope(
+    scope_id: String,
+    instruction_id: String,
+    review_kind: String,
+    machine_id: Option(String),
+    required_evidence: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.instructions.simulation.requests for simulation and verification workers.
+pub type FabricationInstructionSimulationRequest {
+  FabricationInstructionSimulationRequest(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    producer: Option(String),
+    result_subject: Option(String),
+    instructions: List(FabricationSimulationInstructionArtifact),
+    machine_contexts: List(FabricationSimulationMachineContext),
+    scopes: List(FabricationSimulationScope),
+    known_evidence: Option(List(String)),
+    priority: Option(Int),
+    notes: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.instructions.simulation.results with envelope checks, findings, failure boundaries, simulation artifacts, warnings, and release posture.
+pub type FabricationInstructionSimulationResult {
+  FabricationInstructionSimulationResult(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    worker_id: String,
+    simulator: Option(String),
+    simulator_version: Option(String),
+    success: Bool,
+    machine_ready: Bool,
+    envelope_checks: List(FabricationSimulationEnvelopeCheck),
+    findings: List(FabricationSimulationFinding),
+    failure_boundaries: List(FabricationSimulationFailureBoundary),
+    artifacts: List(FabricationSimulationArtifact),
+    warnings: Option(List(String)),
+    review_metadata: Option(Dynamic)
+  )
+}
+
 /// Verified geometry, slicer project, CAM setup, sheet nesting, mesh report, or assembly graph artifact that an instruction-generation worker can consume.
 pub type FabricationInstructionSourceArtifact {
   FabricationInstructionSourceArtifact(
@@ -222,6 +655,249 @@ pub type FabricationInstructionSourceArtifact {
     uri: Option(String),
     sha256: Option(String),
     units: Option(String),
+    evidence: Option(List(String))
+  )
+}
+
+/// Observed or retained boundary where the machine could not complete without human intervention, process split/combine change, extra evidence, or rework.
+pub type FabricationLearningFailureBoundary {
+  FabricationLearningFailureBoundary(
+    boundary_id: String,
+    boundary_kind: String,
+    code: String,
+    message: String,
+    operation_id: Option(String),
+    part_id: Option(String),
+    human_intervention_required: Option(Bool),
+    recommended_action: Option(String),
+    evidence: Option(List(String))
+  )
+}
+
+/// Accepted or rejected model, policy, replay, memory, or boundary update returned by a learning worker.
+pub type FabricationLearningModelUpdate {
+  FabricationLearningModelUpdate(
+    update_id: String,
+    model_kind: String,
+    model_name: Option(String),
+    model_version: Option(String),
+    update_kind: String,
+    accepted: Bool,
+    artifact_uri: Option(String),
+    metrics: Option(List(String)),
+    notes: Option(List(String))
+  )
+}
+
+/// One observed manufacturing outcome, measurement, human intervention, machine state, or inspection fact.
+pub type FabricationLearningObservation {
+  FabricationLearningObservation(
+    observation_id: String,
+    observation_kind: String,
+    machine_id: Option(String),
+    machine_class: Option(String),
+    operation_id: Option(String),
+    part_id: Option(String),
+    outcome: String,
+    metrics: Option(List(String)),
+    notes: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.learning.outcomes.requests after a fabrication attempt, simulation, operator review, or inspection produces learning evidence.
+pub type FabricationLearningOutcomeRequest {
+  FabricationLearningOutcomeRequest(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: String,
+    emitted_at_ms: Int,
+    producer: Option(String),
+    result_subject: Option(String),
+    outcome_status: String,
+    selected_plan_id: Option(String),
+    sources: List(FabricationLearningSourceRef),
+    observations: List(FabricationLearningObservation),
+    failure_boundaries: Option(List(FabricationLearningFailureBoundary)),
+    reward_signals: Option(List(FabricationLearningRewardSignal)),
+    priority: Option(Int),
+    notes: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.learning.outcomes.results with accepted learning updates, replay labels, reward summaries, retained boundaries, and model-memory metadata.
+pub type FabricationLearningOutcomeResult {
+  FabricationLearningOutcomeResult(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: String,
+    emitted_at_ms: Int,
+    worker_id: String,
+    learner: Option(String),
+    learner_version: Option(String),
+    success: Bool,
+    updates: List(FabricationLearningModelUpdate),
+    retained_boundaries: Option(List(FabricationLearningFailureBoundary)),
+    reward_summary: Option(String),
+    warnings: Option(List(String)),
+    review_metadata: Option(Dynamic)
+  )
+}
+
+/// Reward, penalty, action, state-feature, or observation hint for MDP/POMDP/neural learning.
+pub type FabricationLearningRewardSignal {
+  FabricationLearningRewardSignal(
+    signal_id: String,
+    signal_kind: String,
+    state_features: Option(List(String)),
+    action: Option(String),
+    value: Option(Float),
+    confidence: Option(Float),
+    observations: Option(List(String))
+  )
+}
+
+/// Reference to an artifact, plan, operation, boundary, or worker result that produced evidence for learning.
+pub type FabricationLearningSourceRef {
+  FabricationLearningSourceRef(
+    ref_id: String,
+    ref_kind: String,
+    uri: Option(String),
+    sha256: Option(String),
+    evidence: Option(List(String))
+  )
+}
+
+/// Calibration, datum, probe, tool-length, extrusion, beam, pump, or inspection state for a machine.
+pub type FabricationMachineCalibrationState {
+  FabricationMachineCalibrationState(
+    calibration_id: String,
+    machine_id: String,
+    calibration_kind: String,
+    status: String,
+    measured_at_ms: Option(Int),
+    expires_at_ms: Option(Int),
+    metrics: Option(List(String)),
+    evidence: Option(List(String))
+  )
+}
+
+/// Current machine capability snapshot usable by design, instruction generation, simulation, assembly planning, and release gates.
+pub type FabricationMachineCapabilitySnapshot {
+  FabricationMachineCapabilitySnapshot(
+    machine_id: String,
+    display_name: Option(String),
+    machine_class: String,
+    controller: Option(String),
+    profile_status: String,
+    axis_limits: Option(List(String)),
+    process_capabilities: Option(List(String)),
+    required_evidence: Option(List(String))
+  )
+}
+
+/// Fixture, vise, chuck, pallet, build plate, slat bed, tailstock, catcher, subspindle, vacuum, clamp, or support-media readiness.
+pub type FabricationMachineFixtureState {
+  FabricationMachineFixtureState(
+    fixture_id: String,
+    machine_id: String,
+    fixture_kind: String,
+    status: String,
+    part_ids: Option(List(String)),
+    evidence: Option(List(String))
+  )
+}
+
+/// Material, stock, filament, resin, powder, sheet, coolant, gas, abrasive, water, or postprocess media readiness.
+pub type FabricationMachineMaterialState {
+  FabricationMachineMaterialState(
+    material_state_id: String,
+    machine_id: String,
+    material_kind: String,
+    status: String,
+    material: Option(String),
+    metrics: Option(List(String)),
+    evidence: Option(List(String))
+  )
+}
+
+/// Machine-profile blocker that prevents or constrains use of a machine, tool, fixture, calibration, material, or process state.
+pub type FabricationMachineProfileBlocker {
+  FabricationMachineProfileBlocker(
+    blocker_id: String,
+    code: String,
+    message: String,
+    severity: String,
+    machine_ready_impact: String,
+    machine_id: Option(String),
+    evidence_required: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.machine.profiles.requests for machine profile workers.
+pub type FabricationMachineProfileRequest {
+  FabricationMachineProfileRequest(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    producer: Option(String),
+    result_subject: Option(String),
+    scopes: List(FabricationMachineProfileScope),
+    preferred_machine_ids: Option(List(String)),
+    required_machine_classes: Option(List(String)),
+    known_evidence: Option(List(String)),
+    priority: Option(Int),
+    notes: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.machine.profiles.results with current machine capabilities, calibration, tool/fixture/material state, blockers, and release evidence.
+pub type FabricationMachineProfileResult {
+  FabricationMachineProfileResult(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    worker_id: String,
+    profiler: Option(String),
+    profiler_version: Option(String),
+    success: Bool,
+    machine_ready: Bool,
+    machines: List(FabricationMachineCapabilitySnapshot),
+    calibrations: Option(List(FabricationMachineCalibrationState)),
+    tools: Option(List(FabricationMachineToolState)),
+    fixtures: Option(List(FabricationMachineFixtureState)),
+    materials: Option(List(FabricationMachineMaterialState)),
+    blockers: Option(List(FabricationMachineProfileBlocker)),
+    warnings: Option(List(String)),
+    review_metadata: Option(Dynamic)
+  )
+}
+
+/// One requested profile or evidence scope for a machine or process class.
+pub type FabricationMachineProfileScope {
+  FabricationMachineProfileScope(
+    scope_id: String,
+    machine_id: Option(String),
+    machine_class: Option(String),
+    scope_kind: String,
+    requested_evidence: Option(List(String))
+  )
+}
+
+/// Tool, nozzle, extruder, cutter, insert, magazine, turret, beam, jet, or inspection probe readiness.
+pub type FabricationMachineToolState {
+  FabricationMachineToolState(
+    tool_id: String,
+    machine_id: String,
+    tool_kind: String,
+    status: String,
+    station: Option(String),
+    materials: Option(List(String)),
     evidence: Option(List(String))
   )
 }
@@ -239,6 +915,247 @@ pub type FabricationNeutralExportArtifact {
     units: Option(String),
     tolerance_mm: Option(Float),
     evidence: Option(List(String))
+  )
+}
+
+/// A retained blocker that prevents or constrains machine-ready release.
+pub type FabricationReleaseBlocker {
+  FabricationReleaseBlocker(
+    blocker_id: String,
+    code: String,
+    message: String,
+    severity: String,
+    machine_ready_impact: String,
+    evidence_required: List(String),
+    operation_id: Option(String),
+    part_id: Option(String),
+    machine_id: Option(String)
+  )
+}
+
+/// One release decision for a job, plan, part, operation, machine, process group, or artifact set.
+pub type FabricationReleaseDecision {
+  FabricationReleaseDecision(
+    decision_id: String,
+    scope: String,
+    machine_ready: Bool,
+    release_status: String,
+    approved_by: Option(String),
+    expires_at: Option(String),
+    blockers: List(String),
+    message: Option(String)
+  )
+}
+
+/// Evidence retained from a source artifact, worker result, operator action, inspection, simulation, machine observation, or learning outcome.
+pub type FabricationReleaseEvidenceRef {
+  FabricationReleaseEvidenceRef(
+    evidence_id: String,
+    evidence_kind: String,
+    source_ref_id: Option(String),
+    uri: Option(String),
+    sha256: Option(String),
+    status: String,
+    labels: Option(List(String))
+  )
+}
+
+/// Human setup, handoff, verification, measurement, approval, assembly, recovery, or inspection required before release.
+pub type FabricationReleaseHumanIntervention {
+  FabricationReleaseHumanIntervention(
+    intervention_id: String,
+    intervention_kind: String,
+    description: String,
+    required: Bool,
+    status: String,
+    operation_id: Option(String),
+    part_id: Option(String),
+    evidence_required: List(String)
+  )
+}
+
+/// One machine, process, station, assembly, inspection, or operator gate that must be satisfied before release.
+pub type FabricationReleaseMachineGate {
+  FabricationReleaseMachineGate(
+    gate_id: String,
+    machine_id: Option(String),
+    machine_class: String,
+    gate_kind: String,
+    status: String,
+    required_evidence: List(String),
+    satisfied_evidence: List(String),
+    message: Option(String)
+  )
+}
+
+/// Artifact retained in the final release manifest or requested for release review.
+pub type FabricationReleaseManifestArtifact {
+  FabricationReleaseManifestArtifact(
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option(String),
+    uri: Option(String),
+    sha256: Option(String),
+    machine_id: Option(String),
+    format: Option(String),
+    release_role: String,
+    evidence: List(String)
+  )
+}
+
+/// Body published on dd.remote.fabrication.release.readiness.requests for final release-readiness workers.
+pub type FabricationReleaseReadinessRequest {
+  FabricationReleaseReadinessRequest(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    producer: Option(String),
+    result_subject: Option(String),
+    candidate_plan_id: Option(String),
+    release_scope: String,
+    evidence_refs: List(FabricationReleaseEvidenceRef),
+    machine_gates: List(FabricationReleaseMachineGate),
+    human_interventions: List(FabricationReleaseHumanIntervention),
+    requested_artifacts: List(FabricationReleaseManifestArtifact),
+    known_blockers: List(FabricationReleaseBlocker),
+    priority: Option(Int),
+    notes: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.release.readiness.results with final machine-ready decisions, release manifest artifacts, retained blockers, and human-intervention requirements.
+pub type FabricationReleaseReadinessResult {
+  FabricationReleaseReadinessResult(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    worker_id: String,
+    release_gate: Option(String),
+    release_gate_version: Option(String),
+    success: Bool,
+    machine_ready: Bool,
+    decisions: List(FabricationReleaseDecision),
+    manifest_artifacts: List(FabricationReleaseManifestArtifact),
+    blockers: List(FabricationReleaseBlocker),
+    human_interventions: List(FabricationReleaseHumanIntervention),
+    warnings: Option(List(String)),
+    review_metadata: Option(Dynamic)
+  )
+}
+
+/// Simulation or verification artifact retained for release readiness, review, or learning.
+pub type FabricationSimulationArtifact {
+  FabricationSimulationArtifact(
+    artifact_id: String,
+    artifact_kind: String,
+    instruction_id: Option(String),
+    uri: Option(String),
+    sha256: Option(String),
+    format: String,
+    evidence: Option(List(String))
+  )
+}
+
+/// One machine, build, travel, stock, fixture, or process envelope check result.
+pub type FabricationSimulationEnvelopeCheck {
+  FabricationSimulationEnvelopeCheck(
+    check_id: String,
+    machine_id: String,
+    instruction_id: Option(String),
+    check_kind: String,
+    status: String,
+    metrics: Option(List(String)),
+    evidence: Option(List(String))
+  )
+}
+
+/// Boundary where the simulated machine or process cannot proceed safely without human intervention, different sequencing, extra evidence, or part splitting/combining.
+pub type FabricationSimulationFailureBoundary {
+  FabricationSimulationFailureBoundary(
+    boundary_id: String,
+    boundary_kind: String,
+    code: String,
+    message: String,
+    instruction_id: Option(String),
+    operation_id: Option(String),
+    machine_id: Option(String),
+    human_intervention_required: Option(Bool),
+    recommended_action: Option(String),
+    evidence: Option(List(String))
+  )
+}
+
+/// A simulation or verification finding that may become a release blocker, warning, improvement input, or learning signal.
+pub type FabricationSimulationFinding {
+  FabricationSimulationFinding(
+    finding_id: String,
+    severity: String,
+    finding_kind: String,
+    code: String,
+    message: String,
+    instruction_id: Option(String),
+    operation_id: Option(String),
+    machine_id: Option(String),
+    segment_ref: Option(String),
+    machine_ready_impact: Option(String)
+  )
+}
+
+/// Generated or imported instruction artifact that needs simulation, dry-run review, machine-envelope checks, or process verification.
+pub type FabricationSimulationInstructionArtifact {
+  FabricationSimulationInstructionArtifact(
+    instruction_id: String,
+    artifact_kind: String,
+    format: String,
+    uri: Option(String),
+    sha256: Option(String),
+    machine_id: Option(String),
+    operation_id: Option(String),
+    controller_dialect: Option(String),
+    preview_lines: Option(List(String)),
+    evidence: Option(List(String))
+  )
+}
+
+/// Machine, controller, fixture, material, and process context used during simulation or verification.
+pub type FabricationSimulationMachineContext {
+  FabricationSimulationMachineContext(
+    machine_id: String,
+    machine_class: String,
+    controller: Option(String),
+    axis_limits: Option(List(String)),
+    process_limits: Option(List(String)),
+    known_evidence: Option(List(String))
+  )
+}
+
+/// One requested simulation, dry-run, or verification scope.
+pub type FabricationSimulationScope {
+  FabricationSimulationScope(
+    scope_id: String,
+    instruction_id: String,
+    scope_kind: String,
+    checks: List(String),
+    required_evidence: Option(List(String))
+  )
+}
+
+/// One submitted instruction artifact or inline snippet that needs validation, boundary analysis, or improvement.
+pub type FabricationSubmittedInstruction {
+  FabricationSubmittedInstruction(
+    instruction_id: String,
+    file_name: Option(String),
+    format: String,
+    source_uri: Option(String),
+    sha256: Option(String),
+    machine_class: Option(String),
+    controller_dialect: Option(String),
+    preview_lines: Option(List(String)),
+    notes: Option(List(String))
   )
 }
 

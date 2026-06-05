@@ -2,8 +2,15 @@
   "$comment": "Index of every JSON Schema file in this directory. The generator iterates this list (alphabetised) so adding a new schema is a one-line change.",
   "schemas": [
     "agent-orchestration.schema.json",
+    "fabrication-assembly-planning.schema.json",
     "fabrication-cad-conversion.schema.json",
+    "fabrication-design-synthesis.schema.json",
     "fabrication-instruction-generation.schema.json",
+    "fabrication-instruction-review.schema.json",
+    "fabrication-instruction-simulation.schema.json",
+    "fabrication-learning-outcomes.schema.json",
+    "fabrication-machine-profiles.schema.json",
+    "fabrication-release-readiness.schema.json",
     "runtime-config.schema.json"
   ]
 }

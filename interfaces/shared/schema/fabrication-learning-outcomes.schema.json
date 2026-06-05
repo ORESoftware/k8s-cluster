@@ -1,0 +1,364 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/fabrication-learning-outcomes.schema.json",
+  "title": "FabricationLearningOutcomeInterfaces",
+  "description": "Shared cross-runtime JSON payloads for fabrication outcome learning workers that update MDP, POMDP, neural-policy, reward, replay, and failure-boundary memory from observed print, mill, lathe, sheet-cutting, postprocess, and assembly attempts.",
+  "type": "object",
+  "$defs": {
+    "FabricationLearningSourceRef": {
+      "type": "object",
+      "title": "FabricationLearningSourceRef",
+      "description": "Reference to an artifact, plan, operation, boundary, or worker result that produced evidence for learning.",
+      "additionalProperties": false,
+      "required": ["refId", "refKind"],
+      "properties": {
+        "refId": {
+          "type": "string",
+          "description": "Stable id of the referenced object."
+        },
+        "refKind": {
+          "type": "string",
+          "description": "Reference kind such as assembly-plan, instruction-artifact, machine-observation, inspection-report, operator-note, failure-boundary, or generated-result."
+        },
+        "uri": {
+          "type": ["string", "null"],
+          "description": "Sanitized URI or object key when the source has a retained artifact. Do not include credentials, query strings, or fragments."
+        },
+        "sha256": {
+          "type": ["string", "null"],
+          "description": "SHA-256 of the referenced artifact when available."
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evidence labels attached to this source reference."
+        }
+      }
+    },
+    "FabricationLearningObservation": {
+      "type": "object",
+      "title": "FabricationLearningObservation",
+      "description": "One observed manufacturing outcome, measurement, human intervention, machine state, or inspection fact.",
+      "additionalProperties": false,
+      "required": ["observationId", "observationKind", "outcome"],
+      "properties": {
+        "observationId": {
+          "type": "string",
+          "description": "Stable observation id."
+        },
+        "observationKind": {
+          "type": "string",
+          "description": "Observation kind such as machine-log, inspection-measurement, operator-intervention, failure-boundary, part-quality, assembly-fit, simulation-delta, or material-state."
+        },
+        "machineId": {
+          "type": ["string", "null"],
+          "description": "Machine, station, or capability id associated with this observation."
+        },
+        "machineClass": {
+          "type": ["string", "null"],
+          "description": "Machine class such as additive-fdm, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, plasma, postprocess-station, inspection, or assembly."
+        },
+        "operationId": {
+          "type": ["string", "null"],
+          "description": "Operation id associated with this observation when known."
+        },
+        "partId": {
+          "type": ["string", "null"],
+          "description": "Part or subassembly id associated with this observation when known."
+        },
+        "outcome": {
+          "type": "string",
+          "description": "Outcome label such as success, failure, partial-success, operator-intervention-required, rework-required, scrap, blocked-before-start, or simulation-only."
+        },
+        "metrics": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Compact metric labels or key=value strings, e.g. runtimeSec=2480, boreErrorMm=0.035, filamentMoisture=high, collisionCount=0."
+        },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-secret observation notes."
+        }
+      }
+    },
+    "FabricationLearningFailureBoundary": {
+      "type": "object",
+      "title": "FabricationLearningFailureBoundary",
+      "description": "Observed or retained boundary where the machine could not complete without human intervention, process split/combine change, extra evidence, or rework.",
+      "additionalProperties": false,
+      "required": ["boundaryId", "boundaryKind", "code", "message"],
+      "properties": {
+        "boundaryId": {
+          "type": "string",
+          "description": "Stable failure-boundary id."
+        },
+        "boundaryKind": {
+          "type": "string",
+          "description": "Boundary kind such as human-intervention, split-required, combine-required, workholding, material-conditioning, thermal-state, toolpath, postprocess, inspection, assembly-fit, or controller-state."
+        },
+        "code": {
+          "type": "string",
+          "description": "Stable boundary code."
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable boundary summary safe for logs."
+        },
+        "operationId": {
+          "type": ["string", "null"],
+          "description": "Operation id associated with this boundary when known."
+        },
+        "partId": {
+          "type": ["string", "null"],
+          "description": "Part id associated with this boundary when known."
+        },
+        "humanInterventionRequired": {
+          "type": "boolean",
+          "description": "True when the boundary required explicit human action or review."
+        },
+        "recommendedAction": {
+          "type": ["string", "null"],
+          "description": "Recommended action such as split-part, combine-parts, add-inspection-step, reroute-process, request-human-review, retry-with-new-setup, or mark-scrap."
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evidence labels supporting this boundary."
+        }
+      }
+    },
+    "FabricationLearningRewardSignal": {
+      "type": "object",
+      "title": "FabricationLearningRewardSignal",
+      "description": "Reward, penalty, action, state-feature, or observation hint for MDP/POMDP/neural learning.",
+      "additionalProperties": false,
+      "required": ["signalId", "signalKind"],
+      "properties": {
+        "signalId": {
+          "type": "string",
+          "description": "Stable reward or policy signal id."
+        },
+        "signalKind": {
+          "type": "string",
+          "description": "Signal kind such as mdp-state, pomdp-observation, policy-action, reward, penalty, replay-label, neural-feature, or outcome-label."
+        },
+        "stateFeatures": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Compact state features retained for learning."
+        },
+        "action": {
+          "type": ["string", "null"],
+          "description": "Action taken or recommended, such as split-part, keep-monolithic, add-fixture, wait-for-temperature, stop-for-human-review, or reroute-to-lathe."
+        },
+        "value": {
+          "type": ["number", "null"],
+          "description": "Reward or penalty value when available."
+        },
+        "confidence": {
+          "type": ["number", "null"],
+          "description": "Optional confidence for the signal."
+        },
+        "observations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "POMDP observations, uncertainty labels, or human-review notes."
+        }
+      }
+    },
+    "FabricationLearningModelUpdate": {
+      "type": "object",
+      "title": "FabricationLearningModelUpdate",
+      "description": "Accepted or rejected model, policy, replay, memory, or boundary update returned by a learning worker.",
+      "additionalProperties": false,
+      "required": ["updateId", "modelKind", "updateKind", "accepted"],
+      "properties": {
+        "updateId": {
+          "type": "string",
+          "description": "Stable update id."
+        },
+        "modelKind": {
+          "type": "string",
+          "description": "Model kind such as mdp-policy, pomdp-belief, neural-policy, reward-model, replay-buffer, failure-boundary-memory, split-combine-policy, or quality-predictor."
+        },
+        "modelName": {
+          "type": ["string", "null"],
+          "description": "Model, memory, policy, replay buffer, or boundary table name."
+        },
+        "modelVersion": {
+          "type": ["string", "null"],
+          "description": "Model version after applying or proposing the update."
+        },
+        "updateKind": {
+          "type": "string",
+          "description": "Update kind such as append-replay, update-policy, update-belief, label-boundary, adjust-reward, quarantine-sample, or reject-sample."
+        },
+        "accepted": {
+          "type": "boolean",
+          "description": "True when the learning worker accepted this update for retention."
+        },
+        "artifactUri": {
+          "type": ["string", "null"],
+          "description": "Sanitized retained model, replay, or label artifact URI when available."
+        },
+        "metrics": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Compact update metrics or labels."
+        },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-secret update notes."
+        }
+      }
+    },
+    "FabricationLearningOutcomeRequest": {
+      "type": "object",
+      "title": "FabricationLearningOutcomeRequest",
+      "description": "Body published on dd.remote.fabrication.learning.outcomes.requests after a fabrication attempt, simulation, operator review, or inspection produces learning evidence.",
+      "additionalProperties": false,
+      "required": ["schema", "requestId", "planRequestId", "jobId", "emittedAtMs", "outcomeStatus", "sources", "observations"],
+      "properties": {
+        "schema": {
+          "type": "string",
+          "description": "Envelope schema id. Producers should emit dd.fabrication.learning-outcome.request.v1."
+        },
+        "requestId": {
+          "type": "string",
+          "description": "Unique id for this learning outcome job, suitable for dedupe and result correlation."
+        },
+        "planRequestId": {
+          "type": "string",
+          "description": "Fabrication planning request id that produced the outcome."
+        },
+        "jobId": {
+          "type": "string",
+          "description": "Fabrication job id that produced the outcome."
+        },
+        "emittedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix epoch milliseconds when the planner published this learning outcome request."
+        },
+        "producer": {
+          "type": ["string", "null"],
+          "description": "Producer service instance or deployment name."
+        },
+        "resultSubject": {
+          "type": ["string", "null"],
+          "description": "Subject workers should publish the result to; defaults to dd.remote.fabrication.learning.outcomes.results."
+        },
+        "outcomeStatus": {
+          "type": "string",
+          "description": "Overall outcome status such as success, failure, partial-success, rework-required, operator-intervention-required, scrap, blocked-before-start, or simulation-only."
+        },
+        "selectedPlanId": {
+          "type": ["string", "null"],
+          "description": "Assembly or process plan id used for the attempt when known."
+        },
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationLearningSourceRef" },
+          "description": "Referenced plans, instruction artifacts, inspection reports, operator notes, or machine logs."
+        },
+        "observations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationLearningObservation" },
+          "description": "Observed facts and outcomes from the fabrication attempt."
+        },
+        "failureBoundaries": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationLearningFailureBoundary" },
+          "description": "Observed or retained failure boundaries."
+        },
+        "rewardSignals": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationLearningRewardSignal" },
+          "description": "Reward, penalty, state, observation, action, or replay-label hints for learning."
+        },
+        "priority": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Optional scheduling hint. Higher values mean more urgent learning update work."
+        },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-secret learning notes."
+        }
+      }
+    },
+    "FabricationLearningOutcomeResult": {
+      "type": "object",
+      "title": "FabricationLearningOutcomeResult",
+      "description": "Body published on dd.remote.fabrication.learning.outcomes.results with accepted learning updates, replay labels, reward summaries, retained boundaries, and model-memory metadata.",
+      "additionalProperties": false,
+      "required": ["schema", "requestId", "planRequestId", "jobId", "emittedAtMs", "workerId", "success", "updates"],
+      "properties": {
+        "schema": {
+          "type": "string",
+          "description": "Envelope schema id. Workers should emit dd.fabrication.learning-outcome.result.v1."
+        },
+        "requestId": {
+          "type": "string",
+          "description": "Learning outcome request id this result answers."
+        },
+        "planRequestId": {
+          "type": "string",
+          "description": "Fabrication planning request id from the original learning outcome request."
+        },
+        "jobId": {
+          "type": "string",
+          "description": "Fabrication job id from the original learning outcome request."
+        },
+        "emittedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix epoch milliseconds when the learning worker published this result."
+        },
+        "workerId": {
+          "type": "string",
+          "description": "Worker id, pod name, or adapter instance that produced this result."
+        },
+        "learner": {
+          "type": ["string", "null"],
+          "description": "Learner, policy, replay, memory, boundary, or model adapter used."
+        },
+        "learnerVersion": {
+          "type": ["string", "null"],
+          "description": "Learner or adapter version used for repeatability and audit."
+        },
+        "success": {
+          "type": "boolean",
+          "description": "True when the worker completed its requested learning update or review work."
+        },
+        "updates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationLearningModelUpdate" },
+          "description": "Accepted or rejected learning updates."
+        },
+        "retainedBoundaries": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FabricationLearningFailureBoundary" },
+          "description": "Failure boundaries retained for future planner and analyzer decisions."
+        },
+        "rewardSummary": {
+          "type": ["string", "null"],
+          "description": "Compact human-readable reward or penalty summary."
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-blocking warnings that should be retained with the learning evidence."
+        },
+        "reviewMetadata": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Free-form non-secret metadata such as replay ids, policy names, training split, quarantine reason, confidence, or model registry pointers."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "schema": "dd.fabrication.instruction-generation.request.v1",
+  "requestId": "instr-gen-gearbox-001",
+  "planRequestId": "fab-plan-gearbox-001",
+  "jobId": "fab-job-gearbox-001",
+  "emittedAtMs": 1791168120000,
+  "producer": "dd-fabrication-server",
+  "resultSubject": "dd.remote.fabrication.instructions.generation.results",
+  "sourceArtifacts": [
+    {
+      "artifactId": "housing-step-mm-artifact",
+      "sourceInputId": "gearbox-housing-native",
+      "format": "STEP",
+      "uri": "s3://operator-controlled-cad/gearbox/exports/gearbox-housing.step",
+      "sha256": "32f0d363ed863d2b22e9da8e46f10f9cb1cdf0c2d90fed216a31184970ca3f2e",
+      "units": "mm",
+      "evidence": [
+        "units-verified",
+        "configuration-verified",
+        "assembly-references-resolved",
+        "topology-exported",
+        "cam-setup-reviewed"
+      ]
+    },
+    {
+      "artifactId": "housing-3mf-verified-artifact",
+      "sourceInputId": "gearbox-print-project",
+      "format": "3MF",
+      "uri": "s3://operator-controlled-cad/gearbox/exports/gearbox-housing.verified.3mf",
+      "sha256": "c7a1dfef1b4c11cf6152237681fbfae8aa41f83d48d86e9a193bf6eb5f8ae3f9",
+      "units": "mm",
+      "evidence": [
+        "mesh-manifold",
+        "wall-thickness-checked",
+        "orientation-reviewed",
+        "support-strategy-reviewed",
+        "slicer-profile-verified"
+      ]
+    }
+  ],
+  "machineProfiles": [
+    {
+      "machineId": "prusa-mk4-01",
+      "machineClass": "additive-fdm",
+      "controllerDialect": "Marlin",
+      "postProcessor": "PrusaSlicer 2.9.1 mk4-0.20mm",
+      "material": "PETG",
+      "workEnvelope": "250x210x220mm build volume",
+      "requiredEvidence": [
+        "nozzle-temperature-verified",
+        "bed-temperature-verified",
+        "material-conditioning-verified",
+        "printer-profile-release-approved"
+      ]
+    },
+    {
+      "machineId": "haas-vf2-03",
+      "machineClass": "vertical-mill",
+      "controllerDialect": "Haas NGC",
+      "postProcessor": "fusion-haas-ngc-mm",
+      "material": "6061-T6 aluminum",
+      "workEnvelope": "762x406x508mm travel",
+      "requiredEvidence": [
+        "workholding-reviewed",
+        "tool-list-verified",
+        "stock-datum-verified",
+        "toolpath-simulation-required"
+      ]
+    }
+  ],
+  "operations": [
+    {
+      "operationId": "op-print-housing",
+      "partId": "gearbox-housing",
+      "process": "fdm-print",
+      "machineClass": "additive-fdm",
+      "description": "Generate printer job for the verified 3MF housing candidate.",
+      "sourceArtifactIds": ["housing-3mf-verified-artifact"],
+      "requirements": [
+        "material-conditioning-verified",
+        "slicer-profile-release-approved",
+        "support-strategy-reviewed"
+      ]
+    },
+    {
+      "operationId": "op-machine-bearing-bores",
+      "partId": "gearbox-housing",
+      "process": "vertical-mill-finishing",
+      "machineClass": "vertical-mill",
+      "description": "Generate finish-bore NC program and setup sheet for bearing bores.",
+      "sourceArtifactIds": ["housing-step-mm-artifact"],
+      "requirements": [
+        "workholding-reviewed",
+        "tool-list-verified",
+        "stock-datum-verified",
+        "toolpath-simulated"
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "targetId": "printer-gcode-mk4",
+      "operationId": "op-print-housing",
+      "machineId": "prusa-mk4-01",
+      "format": "GCODE",
+      "purpose": "printer job",
+      "evidenceRequired": [
+        "slicer-profile-verified",
+        "temperature-state-verified",
+        "extrusion-state-verified"
+      ]
+    },
+    {
+      "targetId": "mill-finish-bores-nc",
+      "operationId": "op-machine-bearing-bores",
+      "machineId": "haas-vf2-03",
+      "format": "NC",
+      "purpose": "mill finishing",
+      "evidenceRequired": [
+        "postprocessor-verified",
+        "toolpath-simulated",
+        "workholding-reviewed",
+        "tool-list-verified"
+      ]
+    },
+    {
+      "targetId": "mill-setup-sheet",
+      "operationId": "op-machine-bearing-bores",
+      "machineId": "haas-vf2-03",
+      "format": "SETUP_SHEET_MD",
+      "purpose": "operator setup verification",
+      "evidenceRequired": [
+        "stock-datum-verified",
+        "fixture-offsets-reviewed",
+        "operator-intervention-boundaries-marked"
+      ]
+    }
+  ],
+  "blockers": [
+    {
+      "code": "workholding-release-required",
+      "message": "Mill output requires reviewed vise/fixture, stock datum, and tool-length setup evidence before release.",
+      "operationId": "op-machine-bearing-bores",
+      "targetId": "mill-finish-bores-nc",
+      "machineId": "haas-vf2-03",
+      "machineReadyImpact": "blocks-machine-ready"
+    },
+    {
+      "code": "material-conditioning-required",
+      "message": "Printer output requires filament drying and material-conditioning evidence before release.",
+      "operationId": "op-print-housing",
+      "targetId": "printer-gcode-mk4",
+      "machineId": "prusa-mk4-01",
+      "machineReadyImpact": "needs-operator-review"
+    }
+  ],
+  "priority": 45,
+  "notes": [
+    "Return short preview lines only; store full programs as artifacts.",
+    "Final machineReady authority stays with the Rust planner."
+  ]
+}

@@ -1,0 +1,154 @@
+{
+  "schema": "dd.fabrication.design-synthesis.result.v1",
+  "requestId": "design-synth-gearbox-001",
+  "planRequestId": "fab-plan-gearbox-001",
+  "jobId": "fab-job-gearbox-001",
+  "emittedAtMs": 1762347603500,
+  "workerId": "design-synth-worker-gearbox-01",
+  "synthesizer": "hybrid-cad-policy-synthesizer",
+  "synthesizerVersion": "2026.06.05",
+  "success": true,
+  "machineReady": false,
+  "selectedCandidateId": "candidate-split-print-machine-insert",
+  "candidates": [
+    {
+      "candidateId": "candidate-split-print-machine-insert",
+      "candidateKind": "split-print-and-machine",
+      "title": "Printed PETG-CF shell with milled aluminum bearing insert",
+      "score": 0.91,
+      "machineReady": false,
+      "manufacturingStrategy": "Print the housing shell, mill a precision bearing insert, turn spacer hardware, then verify datum transfer during assembly.",
+      "artifactIds": [
+        "design-openscad-parametric-source",
+        "design-step-neutral-candidate",
+        "design-3mf-print-candidate",
+        "design-assembly-graph-candidate",
+        "design-inspection-plan-candidate"
+      ],
+      "clearedConstraintIds": ["constraint-print-support-removal", "constraint-datum-transfer"],
+      "retainedBlockers": [
+        {
+          "code": "bearing-tolerance-needs-machining",
+          "message": "Bearing bores are represented as machine-finish features and require the downstream mill operation plus inspection evidence.",
+          "candidateId": "candidate-split-print-machine-insert",
+          "constraintId": "constraint-bearing-tolerance",
+          "machineReadyImpact": "needs-operator-review"
+        }
+      ]
+    },
+    {
+      "candidateId": "candidate-monolithic-fdm",
+      "candidateKind": "monolithic-print",
+      "title": "Single-piece FDM housing with printed bearing seats",
+      "score": 0.42,
+      "machineReady": false,
+      "manufacturingStrategy": "Print as one part and postprocess bearing seats by hand.",
+      "artifactIds": ["design-monolithic-3mf-preview"],
+      "clearedConstraintIds": ["constraint-print-support-removal"],
+      "retainedBlockers": [
+        {
+          "code": "bearing-tolerance-needs-machining",
+          "message": "Printed bearing seats cannot prove tolerance without machining or inspection evidence.",
+          "candidateId": "candidate-monolithic-fdm",
+          "constraintId": "constraint-bearing-tolerance",
+          "machineReadyImpact": "blocks-design-release"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "artifactId": "design-openscad-parametric-source",
+      "candidateId": "candidate-split-print-machine-insert",
+      "artifactKind": "parametric-source",
+      "format": "OPENSCAD",
+      "uri": "s3://operator-controlled-cad/gearbox/generated/gearbox-housing.scad",
+      "sha256": "sha256-generated-openscad",
+      "units": "mm",
+      "evidence": ["parametric-source-retained", "units-verified", "learning-tunable"]
+    },
+    {
+      "artifactId": "design-step-neutral-candidate",
+      "candidateId": "candidate-split-print-machine-insert",
+      "artifactKind": "neutral-cad",
+      "format": "STEP",
+      "uri": "s3://operator-controlled-cad/gearbox/generated/gearbox-housing-split.step",
+      "sha256": "sha256-generated-step",
+      "units": "mm",
+      "evidence": ["neutral-export-ready", "datum-transfer-feature", "post-machining-plan"]
+    },
+    {
+      "artifactId": "design-3mf-print-candidate",
+      "candidateId": "candidate-split-print-machine-insert",
+      "artifactKind": "mesh",
+      "format": "3MF",
+      "uri": "s3://operator-controlled-cad/gearbox/generated/gearbox-housing-shell.3mf",
+      "sha256": "sha256-generated-3mf",
+      "units": "mm",
+      "evidence": ["mesh-manifold", "support-removal-reviewed", "print-shell-only"]
+    },
+    {
+      "artifactId": "design-assembly-graph-candidate",
+      "candidateId": "candidate-split-print-machine-insert",
+      "artifactKind": "assembly-graph",
+      "format": "JSON",
+      "uri": "s3://operator-controlled-cad/gearbox/generated/gearbox-assembly-graph.json",
+      "sha256": "sha256-generated-assembly-graph",
+      "units": null,
+      "evidence": ["assembly-graph-generated", "split-boundary-recorded", "datum-transfer-feature"]
+    },
+    {
+      "artifactId": "design-inspection-plan-candidate",
+      "candidateId": "candidate-split-print-machine-insert",
+      "artifactKind": "inspection-plan",
+      "format": "JSON",
+      "uri": "s3://operator-controlled-cad/gearbox/generated/gearbox-inspection-plan.json",
+      "sha256": "sha256-generated-inspection",
+      "units": "mm",
+      "evidence": ["inspection-plan-reviewed", "bearing-bore-check", "datum-transfer-check"]
+    },
+    {
+      "artifactId": "design-monolithic-3mf-preview",
+      "candidateId": "candidate-monolithic-fdm",
+      "artifactKind": "mesh",
+      "format": "3MF",
+      "uri": "s3://operator-controlled-cad/gearbox/generated/gearbox-monolithic-preview.3mf",
+      "sha256": "sha256-generated-monolithic",
+      "units": "mm",
+      "evidence": ["mesh-manifold", "preview-only"]
+    }
+  ],
+  "blockers": [
+    {
+      "code": "bearing-tolerance-needs-machining",
+      "message": "Selected design still requires downstream mill finishing and inspection evidence before machine-ready release.",
+      "candidateId": "candidate-split-print-machine-insert",
+      "constraintId": "constraint-bearing-tolerance",
+      "machineReadyImpact": "needs-operator-review"
+    }
+  ],
+  "learningHints": [
+    {
+      "hintId": "hint-split-bearing-insert-retained",
+      "hintKind": "policy-action",
+      "features": ["selected-split-plan", "post-machining-plan", "datum-transfer-feature"],
+      "recommendedAction": "split-part",
+      "confidence": 0.91
+    }
+  ],
+  "warnings": [
+    "Generated STEP and 3MF artifacts require CAD conversion/re-export verification before instruction generation.",
+    "The selected candidate is design-ready but not machine-ready until machining and inspection evidence are retained."
+  ],
+  "reviewMetadata": {
+    "sourceReferenceIds": [
+      "ref-solidworks-legacy-assembly",
+      "ref-creo-shaft-proe",
+      "ref-bearing-datasheet",
+      "ref-scan-cover"
+    ],
+    "supportedNativeCadFamilies": ["SOLIDWORKS", "CREO", "PROE", "FUSION", "NX", "CATIA", "ONSHAPE"],
+    "supportedOpenOrArtisticFamilies": ["FREECAD", "OPENSCAD", "BLENDER", "ZBRUSH"],
+    "policyConfidence": 0.91
+  }
+}

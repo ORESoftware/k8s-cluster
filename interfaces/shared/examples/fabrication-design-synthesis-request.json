@@ -1,0 +1,156 @@
+{
+  "schema": "dd.fabrication.design-synthesis.request.v1",
+  "requestId": "design-synth-gearbox-001",
+  "planRequestId": "fab-plan-gearbox-001",
+  "jobId": "fab-job-gearbox-001",
+  "emittedAtMs": 1762347600000,
+  "producer": "dd-fabrication-server-rs",
+  "resultSubject": "dd.remote.fabrication.design.synthesis.results",
+  "intent": {
+    "intentId": "intent-gearbox-housing",
+    "objectName": "hybrid printable gearbox housing",
+    "objective": "Generate a CAD-ready gearbox housing that can be split into a printed shell plus precision-machined bearing insert.",
+    "functionalRequirements": [
+      "Hold two 608 bearings on a 42 mm shaft spacing",
+      "Provide four M4 mounting bosses and a removable inspection cover",
+      "Retain an alignment datum that survives print-to-mill handoff"
+    ],
+    "dimensionalConstraints": [
+      "Overall envelope <= 120x80x55 mm",
+      "Minimum printed wall thickness >= 2.4 mm",
+      "Bearing bore tolerance target H7 after machining",
+      "Milled insert stock envelope <= 70x45x16 mm"
+    ],
+    "materialPreferences": ["PETG-CF printed shell", "6061-T6 aluminum bearing insert", "steel dowel pins"],
+    "manufacturingPreferences": ["fdm-print", "vertical-mill", "lathe-turning", "heat-set-inserts", "inspection"]
+  },
+  "references": [
+    {
+      "refId": "ref-solidworks-legacy-assembly",
+      "refKind": "native-cad",
+      "format": "SOLIDWORKS",
+      "uri": "s3://operator-controlled-cad/gearbox/native/legacy-gearbox.SLDASM",
+      "sha256": "sha256-solidworks-assembly",
+      "evidence": ["native-source-authorized", "units-verified"]
+    },
+    {
+      "refId": "ref-creo-shaft-proe",
+      "refKind": "native-cad",
+      "format": "PROE",
+      "uri": "s3://operator-controlled-cad/gearbox/native/input-shaft.prt",
+      "sha256": "sha256-creo-shaft",
+      "evidence": ["legacy-pro-engineer-source", "operator-reviewed"]
+    },
+    {
+      "refId": "ref-bearing-datasheet",
+      "refKind": "drawing",
+      "format": "PDF",
+      "uri": "s3://operator-controlled-cad/gearbox/references/608-bearing-datasheet.pdf",
+      "sha256": "sha256-bearing-datasheet",
+      "evidence": ["drawing-reviewed"]
+    },
+    {
+      "refId": "ref-scan-cover",
+      "refKind": "scan",
+      "format": "OBJ",
+      "uri": "s3://operator-controlled-cad/gearbox/scans/inspection-cover.obj",
+      "sha256": "sha256-cover-scan",
+      "evidence": ["scan-scaled", "mesh-manifold"]
+    }
+  ],
+  "templates": [
+    {
+      "templateId": "template-openscad-bearing-boss",
+      "templateKind": "openscad-module",
+      "sourceFormat": "OPENSCAD",
+      "uri": "s3://operator-controlled-cad/templates/bearing-boss.scad",
+      "parameters": ["bearing_od_mm=22", "boss_wall_mm=3.2", "insert_clearance_mm=0.18"],
+      "evidence": ["reviewed-source", "unit-tested", "known-good-prior"]
+    },
+    {
+      "templateId": "template-freecad-heatset-boss",
+      "templateKind": "freecad-macro",
+      "sourceFormat": "FREECAD",
+      "uri": "s3://operator-controlled-cad/templates/heatset-boss.py",
+      "parameters": ["insert_size=M4", "boss_height_mm=8", "pilot_diameter_mm=5.6"],
+      "evidence": ["reviewed-source", "manufacturability-reviewed"]
+    }
+  ],
+  "capabilities": [
+    {
+      "capabilityId": "cap-native-cad-intake",
+      "capabilityKind": "cad-kernel",
+      "supportedFormats": ["SOLIDWORKS", "CREO", "PROE", "FUSION", "NX", "CATIA", "ONSHAPE", "FREECAD", "OPENSCAD", "BLENDER", "ZBRUSH"],
+      "machineClasses": ["design", "conversion"],
+      "limits": ["native sources remain in isolated workers", "exports require sanitized artifact URIs"]
+    },
+    {
+      "capabilityId": "cap-hybrid-manufacturing",
+      "capabilityKind": "machine-process",
+      "supportedFormats": ["STEP", "3MF", "STL", "DXF", "ASSEMBLY_GRAPH_JSON"],
+      "machineClasses": ["additive-fdm", "vertical-mill", "lathe", "inspection", "assembly"],
+      "limits": ["printer build volume 250x210x220 mm", "mill travel 760x400x500 mm", "bearing bores require post-machining"]
+    },
+    {
+      "capabilityId": "cap-split-policy",
+      "capabilityKind": "learning-policy",
+      "supportedFormats": ["JSON"],
+      "machineClasses": ["additive-fdm", "vertical-mill", "assembly"],
+      "limits": ["policy suggestions require release-readiness evidence before machine-ready output"]
+    }
+  ],
+  "constraints": [
+    {
+      "constraintId": "constraint-bearing-tolerance",
+      "constraintKind": "tolerance",
+      "description": "Bearing bores must be machined or reamed after print to meet tolerance.",
+      "severity": "blocker",
+      "evidenceRequired": ["post-machining-plan", "inspection-plan-reviewed"]
+    },
+    {
+      "constraintId": "constraint-print-support-removal",
+      "constraintKind": "support-removal",
+      "description": "Internal channels should avoid trapped support material.",
+      "severity": "high",
+      "evidenceRequired": ["support-removal-reviewed"]
+    },
+    {
+      "constraintId": "constraint-datum-transfer",
+      "constraintKind": "assembly",
+      "description": "Design must include a datum transfer feature between printed shell and milled insert.",
+      "severity": "high",
+      "evidenceRequired": ["datum-transfer-feature", "inspection-datum-verified"]
+    }
+  ],
+  "targetFormats": ["OPENSCAD", "STEP", "3MF", "ASSEMBLY_GRAPH_JSON", "INSPECTION_PLAN_JSON"],
+  "learningHints": [
+    {
+      "hintId": "hint-split-bearing-insert",
+      "hintKind": "policy-action",
+      "features": ["bearing-bores-tight-tolerance", "fdm-shell", "milled-insert-prior-success"],
+      "recommendedAction": "split-part",
+      "confidence": 0.86
+    },
+    {
+      "hintId": "hint-workholding-boundary",
+      "hintKind": "failure-boundary-memory",
+      "features": ["mill-workholding-proof-required", "datum-transfer-required"],
+      "recommendedAction": "add-fixture",
+      "confidence": 0.78
+    }
+  ],
+  "blockers": [
+    {
+      "code": "bearing-tolerance-needs-machining",
+      "message": "A monolithic FDM design cannot prove the bearing bore tolerance without a post-machining plan.",
+      "candidateId": null,
+      "constraintId": "constraint-bearing-tolerance",
+      "machineReadyImpact": "blocks-design-release"
+    }
+  ],
+  "priority": 8,
+  "notes": [
+    "Prefer a design that downstream CAD conversion can export to STEP and 3MF.",
+    "Retain OpenSCAD or FreeCAD parametric source so future learning updates can tune the split boundary."
+  ]
+}

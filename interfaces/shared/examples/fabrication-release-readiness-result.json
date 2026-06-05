@@ -1,0 +1,187 @@
+{
+  "schema": "dd.fabrication.release-readiness.result.v1",
+  "requestId": "release-readiness-gearbox-001",
+  "planRequestId": "fab-plan-gearbox-001",
+  "jobId": "fab-job-gearbox-001",
+  "emittedAtMs": 1762348202500,
+  "workerId": "release-gate-worker-gearbox-01",
+  "releaseGate": "hybrid-fabrication-release-gate",
+  "releaseGateVersion": "2026.06.05",
+  "success": true,
+  "machineReady": false,
+  "decisions": [
+    {
+      "decisionId": "decision-selected-plan",
+      "scope": "selected-plan",
+      "machineReady": false,
+      "releaseStatus": "blocked",
+      "approvedBy": null,
+      "expiresAt": null,
+      "blockers": ["blocker-mill-workholding", "blocker-datum-transfer", "blocker-material-conditioning"],
+      "message": "Selected hybrid split plan cannot be released until workholding, datum-transfer, and material-conditioning evidence are attached."
+    },
+    {
+      "decisionId": "decision-printer-operation",
+      "scope": "operation:op-print-housing",
+      "machineReady": false,
+      "releaseStatus": "needs-human-review",
+      "approvedBy": null,
+      "expiresAt": null,
+      "blockers": ["blocker-material-conditioning"],
+      "message": "Printer G-code is retained, but positive extrusion release waits for filament-conditioning evidence."
+    },
+    {
+      "decisionId": "decision-mill-operation",
+      "scope": "operation:op-machine-bearing-bores",
+      "machineReady": false,
+      "releaseStatus": "blocked",
+      "approvedBy": null,
+      "expiresAt": null,
+      "blockers": ["blocker-mill-workholding"],
+      "message": "Mill NC remains blocked by missing operator fixture proof."
+    },
+    {
+      "decisionId": "decision-assembly-handoff",
+      "scope": "assembly",
+      "machineReady": false,
+      "releaseStatus": "blocked",
+      "approvedBy": null,
+      "expiresAt": null,
+      "blockers": ["blocker-datum-transfer"],
+      "message": "Final assembly waits for datum-transfer inspection between printed and milled pieces."
+    }
+  ],
+  "manifestArtifacts": [
+    {
+      "artifactId": "release-manifest-gearbox-blocked",
+      "artifactKind": "release-manifest",
+      "sourceRefId": "split-print-machine-insert-plan",
+      "uri": "s3://operator-controlled-cad/gearbox/release/release-manifest-blocked.json",
+      "sha256": "sha256-release-manifest",
+      "machineId": null,
+      "format": "JSON",
+      "releaseRole": "release-summary",
+      "evidence": [
+        "evidence-assembly-plan-selected",
+        "evidence-instruction-generation",
+        "evidence-instruction-review",
+        "evidence-learning-outcome"
+      ]
+    },
+    {
+      "artifactId": "printer-gcode-mk4-artifact",
+      "artifactKind": "gcode",
+      "sourceRefId": "instr-gen-gearbox-001",
+      "uri": "s3://operator-controlled-cad/gearbox/instructions/gearbox-housing.mk4.gcode",
+      "sha256": "sha256-printer-gcode",
+      "machineId": "prusa-mk4-01",
+      "format": "GCODE",
+      "releaseRole": "blocked-evidence",
+      "evidence": ["evidence-instruction-generation", "blocker-material-conditioning"]
+    },
+    {
+      "artifactId": "mill-setup-sheet-artifact",
+      "artifactKind": "setup-sheet",
+      "sourceRefId": "instr-gen-gearbox-001",
+      "uri": "s3://operator-controlled-cad/gearbox/instructions/finish-bearing-bores-setup.md",
+      "sha256": "sha256-setup-sheet",
+      "machineId": "haas-vf2-01",
+      "format": "MD",
+      "releaseRole": "setup-sheet",
+      "evidence": ["evidence-instruction-generation", "evidence-instruction-review", "blocker-mill-workholding"]
+    },
+    {
+      "artifactId": "datum-transfer-inspection-request",
+      "artifactKind": "inspection-plan",
+      "sourceRefId": "intervention-datum-transfer-inspection",
+      "uri": "s3://operator-controlled-cad/gearbox/inspection/datum-transfer-request.json",
+      "sha256": "sha256-datum-request",
+      "machineId": null,
+      "format": "JSON",
+      "releaseRole": "operator-proof",
+      "evidence": ["blocker-datum-transfer", "evidence-datum-transfer-inspection"]
+    }
+  ],
+  "blockers": [
+    {
+      "blockerId": "blocker-mill-workholding",
+      "code": "workholding-release-required",
+      "message": "Mill feed moves require operator fixture proof before machine-ready release.",
+      "severity": "blocker",
+      "machineReadyImpact": "blocks-machine-ready",
+      "evidenceRequired": ["evidence-operator-fixture-photo", "workholding-release-required"],
+      "operationId": "op-machine-bearing-bores",
+      "partId": "milled-bearing-insert",
+      "machineId": "haas-vf2-01"
+    },
+    {
+      "blockerId": "blocker-datum-transfer",
+      "code": "datum-transfer-required",
+      "message": "Split printed and milled parts require datum-transfer inspection before assembly release.",
+      "severity": "high",
+      "machineReadyImpact": "needs-human-release",
+      "evidenceRequired": ["evidence-datum-transfer-inspection", "datum-transfer-required"],
+      "operationId": "op-final-assembly",
+      "partId": "gearbox-final-assembly",
+      "machineId": null
+    },
+    {
+      "blockerId": "blocker-material-conditioning",
+      "code": "material-conditioning-required",
+      "message": "Printer release requires dried filament evidence before positive extrusion is authorized.",
+      "severity": "medium",
+      "machineReadyImpact": "needs-human-release",
+      "evidenceRequired": ["material-conditioning-verified"],
+      "operationId": "op-print-housing",
+      "partId": "printed-housing-shell",
+      "machineId": "prusa-mk4-01"
+    }
+  ],
+  "humanInterventions": [
+    {
+      "interventionId": "intervention-fixture-confirmation",
+      "interventionKind": "workholding-confirmation",
+      "description": "Operator must attach fixture photo and clamp checklist before mill feed moves are released.",
+      "required": true,
+      "status": "pending",
+      "operationId": "op-machine-bearing-bores",
+      "partId": "milled-bearing-insert",
+      "evidenceRequired": ["evidence-operator-fixture-photo", "workholding-release-required"]
+    },
+    {
+      "interventionId": "intervention-filament-conditioning",
+      "interventionKind": "material-conditioning",
+      "description": "Operator must verify dried filament lot before the printer job is considered releasable.",
+      "required": true,
+      "status": "pending",
+      "operationId": "op-print-housing",
+      "partId": "printed-housing-shell",
+      "evidenceRequired": ["material-conditioning-verified"]
+    },
+    {
+      "interventionId": "intervention-datum-transfer-inspection",
+      "interventionKind": "datum-transfer",
+      "description": "Inspector must verify datum transfer between the printed shell and milled bearing insert.",
+      "required": true,
+      "status": "blocked",
+      "operationId": "op-final-assembly",
+      "partId": "gearbox-final-assembly",
+      "evidenceRequired": ["evidence-datum-transfer-inspection", "datum-transfer-required"]
+    }
+  ],
+  "warnings": [
+    "Printer artifact is retained only as blocked evidence until material conditioning is verified.",
+    "The selected split plan remains preferred for learning, but release gate keeps machineReady false."
+  ],
+  "reviewMetadata": {
+    "evaluatedGateIds": [
+      "gate-prusa-material-state",
+      "gate-haas-workholding",
+      "gate-lathe-partoff-support",
+      "gate-assembly-datum-transfer"
+    ],
+    "selectedPlanId": "split-print-machine-insert-plan",
+    "releaseManifestId": "release-manifest-gearbox-blocked",
+    "policyConfidence": 0.91
+  }
+}
