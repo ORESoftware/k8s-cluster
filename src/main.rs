@@ -125,6 +125,7 @@ struct FabricationConstraints {
     allow_multi_part_assembly: Option<bool>,
     require_dry_run: Option<bool>,
     preferred_methods: Option<Vec<String>>,
+    preferred_assembly_strategy: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -3144,6 +3145,142 @@ fn report_severity(findings: &[ValidationFinding], boundaries: &[FailureBoundary
     }
 }
 
+fn canonical_policy_method(value: &str) -> Option<String> {
+    let token = normalize_token(value);
+    if wants_horizontal_milling(&token) {
+        Some("horizontal-milling".to_string())
+    } else if token.contains("router") || token.contains("routing") || token.contains("rout") {
+        Some("routing".to_string())
+    } else if token.contains("turn") || token.contains("lathe") {
+        Some("turning".to_string())
+    } else if token.contains("mill") || token.contains("machin") {
+        Some("milling".to_string())
+    } else if token.contains("print") || token.contains("additive") || token.contains("fdm") {
+        Some("additive-print".to_string())
+    } else {
+        None
+    }
+}
+
+fn learned_preferred_methods(policy: Option<&LearningPolicySnapshot>) -> Vec<String> {
+    let mut methods = Vec::new();
+    let Some(policy) = policy else {
+        return methods;
+    };
+    for preference in &policy.method_preferences {
+        if preference.recommendation != "prefer"
+            || preference.samples < 2
+            || preference.average_reward < 0.0
+        {
+            continue;
+        }
+        if let Some(method) = canonical_policy_method(&preference.key) {
+            if !methods.contains(&method) {
+                methods.push(method);
+            }
+        }
+    }
+    methods
+}
+
+fn learned_preferred_assembly_strategy(policy: Option<&LearningPolicySnapshot>) -> Option<String> {
+    let policy = policy?;
+    policy
+        .assembly_preferences
+        .iter()
+        .find(|preference| {
+            preference.recommendation == "prefer"
+                && preference.samples >= 2
+                && preference.average_reward >= 0.0
+        })
+        .map(|preference| preference.key.clone())
+}
+
+fn apply_learning_policy_to_request(
+    mut request: FabricationPlanRequest,
+    policy: Option<&LearningPolicySnapshot>,
+) -> FabricationPlanRequest {
+    let learned_methods = learned_preferred_methods(policy);
+    let learned_assembly_strategy = learned_preferred_assembly_strategy(policy);
+    if learned_methods.is_empty() && learned_assembly_strategy.is_none() {
+        return request;
+    }
+
+    let has_request_preferences = request
+        .constraints
+        .as_ref()
+        .and_then(|constraints| constraints.preferred_methods.as_ref())
+        .is_some_and(|methods| !methods.is_empty());
+    let constraints = request
+        .constraints
+        .get_or_insert_with(|| FabricationConstraints {
+            max_setups: None,
+            allow_human_intervention: None,
+            allow_multi_part_assembly: None,
+            require_dry_run: None,
+            preferred_methods: None,
+            preferred_assembly_strategy: None,
+        });
+    if !has_request_preferences && !learned_methods.is_empty() {
+        constraints.preferred_methods = Some(learned_methods.clone());
+    }
+    if constraints.preferred_assembly_strategy.is_none() {
+        constraints.preferred_assembly_strategy = learned_assembly_strategy.clone();
+    }
+    if learned_assembly_strategy.is_some() && constraints.allow_multi_part_assembly.is_none() {
+        constraints.allow_multi_part_assembly = Some(true);
+    }
+
+    let learning = request.learning.get_or_insert_with(|| LearningHints {
+        policy_hint: None,
+        model_family: None,
+        reward_weights: None,
+        observations: None,
+        prior_successes: None,
+    });
+    if learning
+        .policy_hint
+        .as_ref()
+        .map(|hint| hint.trim().is_empty())
+        .unwrap_or(true)
+    {
+        learning.policy_hint = Some(format!(
+            "learned-policy-prefer:{}{}",
+            learned_methods.join("+"),
+            learned_assembly_strategy
+                .as_ref()
+                .map(|strategy| format!(";assembly={strategy}"))
+                .unwrap_or_default()
+        ));
+    }
+    if learning
+        .prior_successes
+        .as_ref()
+        .map(|examples| examples.is_empty())
+        .unwrap_or(true)
+    {
+        if let Some(policy) = policy {
+            let examples = policy
+                .neural_training_examples
+                .iter()
+                .take(8)
+                .cloned()
+                .collect::<Vec<_>>();
+            if !examples.is_empty() {
+                learning.prior_successes = Some(examples);
+            }
+        }
+    }
+    request
+}
+
+fn plan_fabrication_with_policy(
+    request: FabricationPlanRequest,
+    policy: Option<&LearningPolicySnapshot>,
+) -> Result<FabricationPlanResponse, String> {
+    plan_fabrication(apply_learning_policy_to_request(request, policy))
+}
+
 fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanResponse, String> {
     let request_id = request_id(request.request_id.as_ref(), "fabrication-plan");
     let objective = validate_text(&request.objective, "objective", MAX_TEXT_LEN)?;
@@ -3175,6 +3312,15 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
     let existing_programs =
         validate_programs(request.existing_instructions.as_deref().unwrap_or_default())?;
     let constraints = request.constraints.as_ref();
+    if let Some(strategy) =
+        constraints.and_then(|constraints| constraints.preferred_assembly_strategy.as_ref())
+    {
+        validate_text(
+            strategy,
+            "constraints.preferredAssemblyStrategy",
+            MAX_TEXT_LEN,
+        )?;
+    }
 
     let mut part_plans = Vec::with_capacity(requested_parts.len());
     let mut process_plan = Vec::with_capacity(requested_parts.len());
@@ -3398,12 +3544,15 @@ fn assembly_plan(parts: &[PartPlan], constraints: Option<&FabricationConstraints
     let allow_multi_part = constraints
         .and_then(|constraints| constraints.allow_multi_part_assembly)
         .unwrap_or(true);
+    let preferred_assembly_strategy = constraints
+        .and_then(|constraints| constraints.preferred_assembly_strategy.as_ref())
+        .filter(|strategy| !strategy.trim().is_empty());
     let methods = parts
         .iter()
         .map(|part| part.manufacturing_method.as_str())
         .collect::<BTreeSet<_>>();
 
-    let combine_candidates = if methods.len() > 1 {
+    let mut combine_candidates = if methods.len() > 1 {
         vec![
             "combine printed shells with machined datum inserts when tolerance stack allows"
                 .to_string(),
@@ -3413,6 +3562,11 @@ fn assembly_plan(parts: &[PartPlan], constraints: Option<&FabricationConstraints
     } else {
         Vec::new()
     };
+    if let Some(strategy) = preferred_assembly_strategy {
+        combine_candidates.push(format!(
+            "reuse learned assembly strategy when interfaces permit: {strategy}"
+        ));
+    }
     let split_candidates = parts
         .iter()
         .filter(|part| {
@@ -3431,9 +3585,22 @@ fn assembly_plan(parts: &[PartPlan], constraints: Option<&FabricationConstraints
         .flat_map(|part| part.interfaces.iter().cloned())
         .collect::<Vec<_>>();
 
+    let mut notes = vec![
+        "Assembly choices should be promoted into CAD constraints before final CAM generation"
+            .to_string(),
+        "Every join interface needs tolerance stack-up and access-path validation".to_string(),
+    ];
+    if let Some(strategy) = preferred_assembly_strategy {
+        notes.push(format!(
+            "Learned policy prefers assembly strategy: {strategy}"
+        ));
+    }
+
     AssemblyPlan {
         strategy: if parts.len() == 1 {
             "single-part fabrication".to_string()
+        } else if let Some(strategy) = preferred_assembly_strategy {
+            format!("learned hybrid assembly strategy: {strategy}")
         } else if allow_multi_part {
             "multi-part hybrid fabrication with explicit assembly interfaces".to_string()
         } else {
@@ -3442,11 +3609,7 @@ fn assembly_plan(parts: &[PartPlan], constraints: Option<&FabricationConstraints
         combine_candidates,
         split_candidates,
         joints,
-        notes: vec![
-            "Assembly choices should be promoted into CAD constraints before final CAM generation"
-                .to_string(),
-            "Every join interface needs tolerance stack-up and access-path validation".to_string(),
-        ],
+        notes,
     }
 }
 
@@ -4295,31 +4458,34 @@ async fn run_nats_loop(state: AppState) {
         let task_state = state.clone();
         tokio::spawn(async move {
             match serde_json::from_slice::<FabricationPlanRequest>(&payload) {
-                Ok(request) => match plan_fabrication(request) {
-                    Ok(response) => {
-                        task_state
-                            .metrics
-                            .plan_requests_total
-                            .fetch_add(1, Ordering::Relaxed);
-                        record_plan_metrics(&task_state, &response);
-                        store_plan_response(&task_state, &response);
-                        publish_plan_outputs(&task_state, &response).await;
-                        publish_event(
-                            &task_state,
-                            "fabrication.plan.completed",
-                            &response.request_id,
-                            response.ok,
-                        )
-                        .await;
+                Ok(request) => {
+                    let policy_snapshot = learning_policy_snapshot(&task_state).ok();
+                    match plan_fabrication_with_policy(request, policy_snapshot.as_ref()) {
+                        Ok(response) => {
+                            task_state
+                                .metrics
+                                .plan_requests_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            record_plan_metrics(&task_state, &response);
+                            store_plan_response(&task_state, &response);
+                            publish_plan_outputs(&task_state, &response).await;
+                            publish_event(
+                                &task_state,
+                                "fabrication.plan.completed",
+                                &response.request_id,
+                                response.ok,
+                            )
+                            .await;
+                        }
+                        Err(error) => {
+                            task_state
+                                .metrics
+                                .errors_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            eprintln!("{SERVICE_NAME} failed nats fabrication plan: {error}");
+                        }
                     }
-                    Err(error) => {
-                        task_state
-                            .metrics
-                            .errors_total
-                            .fetch_add(1, Ordering::Relaxed);
-                        eprintln!("{SERVICE_NAME} failed nats fabrication plan: {error}");
-                    }
-                },
+                }
                 Err(error) => {
                     task_state
                         .metrics
@@ -4549,7 +4715,18 @@ async fn plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    match plan_fabrication(request) {
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
             store_plan_response(&state, &response);
@@ -4886,6 +5063,7 @@ mod tests {
                 allow_multi_part_assembly: Some(true),
                 require_dry_run: Some(true),
                 preferred_methods: None,
+                preferred_assembly_strategy: None,
             }),
             parts: None,
             existing_instructions: None,
@@ -4947,6 +5125,7 @@ mod tests {
                 allow_multi_part_assembly: Some(true),
                 require_dry_run: Some(true),
                 preferred_methods: Some(vec!["horizontal-milling".to_string()]),
+                preferred_assembly_strategy: None,
             }),
             parts: None,
             existing_instructions: None,
@@ -5019,6 +5198,7 @@ mod tests {
                 allow_multi_part_assembly: Some(true),
                 require_dry_run: Some(true),
                 preferred_methods: Some(vec!["routing".to_string()]),
+                preferred_assembly_strategy: None,
             }),
             parts: None,
             existing_instructions: None,
@@ -5475,6 +5655,92 @@ mod tests {
             .neural_training_examples
             .iter()
             .any(|example| example.contains("methods=additive-print+turning")));
+    }
+
+    #[test]
+    fn learned_policy_preferences_steer_future_plans_when_request_is_open() {
+        let machines = vec![
+            MachineProfile {
+                id: "polymer-printer".to_string(),
+                kind: "fdm-printer".to_string(),
+                controller: Some("marlin".to_string()),
+                materials: Some(vec!["pla".to_string()]),
+                work_envelope_mm: Some(vec![220.0, 220.0, 220.0]),
+                axes: Some(3),
+                operations: Some(vec!["additive-print".to_string()]),
+            },
+            MachineProfile {
+                id: "polymer-router".to_string(),
+                kind: "cnc-router".to_string(),
+                controller: Some("grbl-gcode".to_string()),
+                materials: Some(vec!["pla".to_string()]),
+                work_envelope_mm: Some(vec![600.0, 400.0, 80.0]),
+                axes: Some(3),
+                operations: Some(vec!["profile".to_string(), "pocket".to_string()]),
+            },
+        ];
+        let request = FabricationPlanRequest {
+            request_id: Some("unit-learned-policy-routing".to_string()),
+            objective: "PLA clamp blank that can be fabricated by several cells".to_string(),
+            material: Some(material("pla", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.25),
+            quantity: Some(1),
+            machines: Some(machines),
+            constraints: None,
+            parts: Some(vec![RequestedPart {
+                id: "open-clamp-blank".to_string(),
+                description: "open process blank with no caller-specified preferred method"
+                    .to_string(),
+                material: Some(material("pla", "polymer")),
+                preferred_method: None,
+                tolerance_mm: Some(0.25),
+            }]),
+            existing_instructions: None,
+            learning: None,
+        };
+        let baseline = plan_fabrication(request.clone()).expect("baseline plan should succeed");
+        assert!(baseline
+            .design
+            .parts
+            .iter()
+            .any(|part| part.id == "open-clamp-blank" && part.machine_kind == "fdm-printer"));
+
+        let policy = LearningPolicySnapshot {
+            outcome_count: 2,
+            successes: 2,
+            failures: 0,
+            average_reward: 1.7,
+            method_preferences: vec![LearningPreference {
+                key: "routing".to_string(),
+                samples: 2,
+                successes: 2,
+                failures: 0,
+                average_reward: 1.7,
+                recommendation: "prefer".to_string(),
+            }],
+            assembly_preferences: Vec::new(),
+            neural_training_examples: vec![
+                "job=router-success-1 success=true reward=1.600 methods=routing assembly=single-piece observations=clean-tabs".to_string(),
+                "job=router-success-2 success=true reward=1.800 methods=routing assembly=single-piece observations=low-intervention".to_string(),
+            ],
+        };
+        let learned =
+            plan_fabrication_with_policy(request, Some(&policy)).expect("learned plan should work");
+
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "open-clamp-blank"
+                && part.machine_kind == "cnc-router"
+                && part.manufacturing_method == "subtractive-routing"
+        }));
+        assert!(learned.generated_programs.iter().any(|program| {
+            program.part_id == "open-clamp-blank" && program.language == "grbl-gcode"
+        }));
+        assert!(learned
+            .learning
+            .training_examples
+            .iter()
+            .any(|example| example.contains("router-success-1")));
     }
 
     #[test]

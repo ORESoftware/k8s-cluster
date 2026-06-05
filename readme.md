@@ -57,6 +57,9 @@ learning hints. It returns:
   reward terms, neural feature names, and training-example sketches.
 - Outcome learning endpoints that accept fabrication results, shape reward
   terms, emit MDP/POMDP/neural evidence, and expose a bounded policy snapshot.
+- Open-ended planning requests reuse strong learned method preferences from the
+  bounded policy snapshot unless the caller supplies explicit process
+  preferences.
 - A bounded in-process job and artifact ledger for generated design summaries,
   parametric design payloads, process plans, machine programs, validation
   reports, improved instructions, assembly plans, and optimizer-shaped MDP
@@ -201,6 +204,12 @@ Learning outcomes are also recorded as job artifacts: `outcome-learning-event`,
 current bounded in-process policy memory. `POST /learning/outcomes` and
 `POST /fabrication/learning/outcomes` accept a compact success/reward record
 when callers already have their own training features.
+
+When a policy snapshot has at least two positive samples for a method such as
+`additive-print`, `milling`, `horizontal-milling`, `routing`, or `turning`,
+subsequent `/fabrication/plan` requests without explicit `preferredMethods`
+inherit those learned process preferences and carry recent neural training
+examples into the returned learning plan.
 
 ## Job And Artifact Inspection
 
