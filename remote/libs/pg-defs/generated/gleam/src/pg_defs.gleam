@@ -803,6 +803,15 @@ pub type LambdaFunctionRuntime {
   LambdaFunctionRuntimeRuby
   LambdaFunctionRuntimeBash
   LambdaFunctionRuntimeShell
+  LambdaFunctionRuntimeGolang
+  LambdaFunctionRuntimeGo
+  LambdaFunctionRuntimeDart
+  LambdaFunctionRuntimeErlang
+  LambdaFunctionRuntimeErl
+  LambdaFunctionRuntimeElixir
+  LambdaFunctionRuntimeEx
+  LambdaFunctionRuntimeJava
+  LambdaFunctionRuntimeJvm
 }
 
 pub fn lambda_functions_runtime_to_string(value: LambdaFunctionRuntime) -> String {
@@ -815,6 +824,15 @@ pub fn lambda_functions_runtime_to_string(value: LambdaFunctionRuntime) -> Strin
     LambdaFunctionRuntimeRuby -> "ruby"
     LambdaFunctionRuntimeBash -> "bash"
     LambdaFunctionRuntimeShell -> "shell"
+    LambdaFunctionRuntimeGolang -> "golang"
+    LambdaFunctionRuntimeGo -> "go"
+    LambdaFunctionRuntimeDart -> "dart"
+    LambdaFunctionRuntimeErlang -> "erlang"
+    LambdaFunctionRuntimeErl -> "erl"
+    LambdaFunctionRuntimeElixir -> "elixir"
+    LambdaFunctionRuntimeEx -> "ex"
+    LambdaFunctionRuntimeJava -> "java"
+    LambdaFunctionRuntimeJvm -> "jvm"
   }
 }
 
@@ -828,6 +846,15 @@ pub fn parse_lambda_functions_runtime(value: String) -> Result(LambdaFunctionRun
     "ruby" -> Ok(LambdaFunctionRuntimeRuby)
     "bash" -> Ok(LambdaFunctionRuntimeBash)
     "shell" -> Ok(LambdaFunctionRuntimeShell)
+    "golang" -> Ok(LambdaFunctionRuntimeGolang)
+    "go" -> Ok(LambdaFunctionRuntimeGo)
+    "dart" -> Ok(LambdaFunctionRuntimeDart)
+    "erlang" -> Ok(LambdaFunctionRuntimeErlang)
+    "erl" -> Ok(LambdaFunctionRuntimeErl)
+    "elixir" -> Ok(LambdaFunctionRuntimeElixir)
+    "ex" -> Ok(LambdaFunctionRuntimeEx)
+    "java" -> Ok(LambdaFunctionRuntimeJava)
+    "jvm" -> Ok(LambdaFunctionRuntimeJvm)
     _ -> Error("unsupported lambda_functions.runtime: " <> value)
   }
 }
@@ -929,7 +956,7 @@ pub fn validate_lambda_functions_slug(value: String) -> Result(String, String) {
 }
 
 pub fn validate_lambda_functions_runtime(value: String) -> Result(String, String) {
-  case list.contains(["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"], value) {
+  case list.contains(["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"], value) {
     True -> Ok(value)
     False -> Error("unsupported lambda_functions.runtime: " <> value)
   }

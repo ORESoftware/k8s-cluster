@@ -8581,6 +8581,7 @@ const LAMBDA_FUNCTIONS_BODY: &str = r###"<div class="app">
               <option value="nodejs">nodejs process</option>
               <option value="python3">python3 process</option>
               <option value="ruby">ruby process</option>
+              <option value="bash">bash process</option>
               <option value="golang">golang process</option>
               <option value="dart">dart process</option>
               <option value="erlang">erlang process</option>
@@ -8715,11 +8716,20 @@ const processProfiles = {
         "docker.io/library/ruby:3.3-alpine",
       ],
     },
+    bash: {
+      runtime: "bash",
+      poolSlug: "bash",
+      baseImages: [
+        "docker.io/library/dd-lambda-bash-runtime:dev",
+        "docker.io/library/bash:5.3-alpine",
+      ],
+    },
     golang: {
       runtime: "golang",
       poolSlug: "golang",
       baseImages: [
         "docker.io/library/dd-lambda-golang-runtime:dev",
+        "docker.io/library/dd-container-pool-golang-runtime:dev",
         "docker.io/library/golang:1.25-alpine",
       ],
     },
@@ -8763,15 +8773,6 @@ const processProfiles = {
       "docker.io/library/dd-container-pool-rust-runtime:dev",
       "docker.io/library/rust:1.90-bookworm",
       "docker.io/library/rust:1.90-alpine",
-    ],
-  },
-  golang: {
-    runtime: "nodejs",
-    poolSlug: "golang",
-    requiresContainerPool: true,
-    baseImages: [
-      "docker.io/library/dd-container-pool-golang-runtime:dev",
-      "docker.io/library/golang:1.25-alpine",
     ],
   },
   gleamlang: {
@@ -8872,7 +8873,7 @@ const codeKeywordSets = {
     ]),
     bash: new Set([
       "case", "coproc", "do", "done", "elif", "else", "esac", "fi", "for", "function", "if",
-      "in", "select", "then", "time", "until", "while",
+      "in", "return", "select", "then", "time", "until", "while",
     ]),
   };
 const commentPatterns = {

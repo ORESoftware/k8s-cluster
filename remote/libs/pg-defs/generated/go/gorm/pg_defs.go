@@ -775,7 +775,7 @@ const LambdaFunctionSelectSQL = `select
       updated_by::text as updated_by
     from lambda_functions`
 
-var LambdaFunctionRuntimeValues = []string{"nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"}
+var LambdaFunctionRuntimeValues = []string{"nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"}
 var LambdaFunctionContainerBuildStatusValues = []string{"not_requested", "pending", "building", "built", "failed", "skipped"}
 var LambdaFunctionStatusValues = []string{"draft", "active", "paused", "archived"}
 
