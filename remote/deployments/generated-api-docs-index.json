@@ -359,10 +359,10 @@
     {
       "service": "rust-vapi-phone-rs",
       "language": "rust",
-      "routeCount": 13,
+      "routeCount": 15,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 4,
+        "user-generated": 6,
         "runtime-config": 3
       },
       "generated": [

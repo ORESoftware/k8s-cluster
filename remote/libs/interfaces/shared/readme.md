@@ -12,6 +12,8 @@ new languages is one render function in `src/generate.mjs`).
 remote/libs/interfaces/shared/
 ├── schema/                       # source of truth — JSON Schema (Draft 2020-12)
 │   ├── index.json                # alphabetised list of every schema file
+│   ├── agent-orchestration.schema.json
+│   ├── fabrication-cad-conversion.schema.json
 │   └── runtime-config.schema.json
 ├── src/
 │   └── generate.mjs              # JSON Schema → per-language types
@@ -20,6 +22,7 @@ remote/libs/interfaces/shared/
 │   ├── rust/
 │   ├── python/
 │   └── gleam/
+├── examples/                     # checked payload fixtures for worker contracts
 └── package.json
 ```
 
@@ -47,6 +50,36 @@ The generator handles a deliberately small subset of JSON Schema:
 
 If you find yourself wanting `oneOf`, polymorphism, or recursive types, prefer either a flatter
 shape or a small Rust/TS type adapter rather than expanding the generator.
+
+## Fabrication CAD Conversion
+
+The fabrication CAD conversion schema defines the JSON bodies published on the NATS subjects from
+`@dd/nats-subject-defs`:
+
+- `FabricationDesignConversionRequest` travels on
+  `dd.remote.fabrication.design.conversion.requests`.
+- `FabricationDesignConversionResult` travels on
+  `dd.remote.fabrication.design.conversion.results`.
+
+Those payloads carry reviewed `designInputs`, requested STEP/STL/3MF/DXF/CAM setup/sheet nesting
+targets, sanitized source and artifact references, translator versions, generated neutral-export
+artifacts, blockers, warnings, and non-secret review metadata. Native professional CAD systems such
+as SOLIDWORKS, Creo/Pro/Engineer, NX, CATIA, Fusion, and Onshape stay behind isolated converter
+workers; open/scriptable and artistic sources such as FreeCAD, OpenSCAD, Blender, and ZBrush use the
+same envelope when a worker can produce verified manufacturing evidence.
+
+The checked example pair in `examples/fabrication-design-conversion-request.json` and
+`examples/fabrication-design-conversion-result.json` models a SOLIDWORKS native source request, STEP
+and 3MF target exports, sanitized object references, translator version evidence, generated artifact
+hashes, and the remaining machine-ready blocker that keeps final release with the Rust planner.
+
+```bash
+pnpm --filter @dd/shared-interfaces run validate:examples
+```
+
+That command validates the example pair against the checked schema, verifies request/result
+correlation, rejects credential-bearing URIs, and confirms the result still carries a machine-ready
+blocker for final planner release.
 
 ## Consumers
 

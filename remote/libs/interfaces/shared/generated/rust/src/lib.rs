@@ -74,6 +74,488 @@ pub struct AgentTaskQueueMessage {
     pub created_at_ms: Option<i64>,
 }
 
+/// A release or conversion blocker reported by a planner or worker.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationDesignConversionBlocker {
+    /// Stable blocker code, e.g. supported-native-cad-translator-required, ambiguous-native-extension, missing-units, non-manifold-mesh, or exporter-license-unavailable.
+    pub code: String,
+    /// Human-readable blocker summary safe for operator logs.
+    pub message: String,
+    /// Design input id associated with this blocker when applicable.
+    #[serde(rename = "inputId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_id: Option<String>,
+    /// Requested target id associated with this blocker when applicable.
+    #[serde(rename = "targetId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+    /// Effect on release posture, e.g. blocks-machine-ready, needs-operator-review, or warning-only.
+    #[serde(rename = "machineReadyImpact")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_ready_impact: Option<String>,
+}
+
+/// Body published on dd.remote.fabrication.design.conversion.requests for external CAD, mesh, slicer, CAM setup, and neutral-export workers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationDesignConversionRequest {
+    /// Envelope schema id. Producers should emit dd.fabrication.design-conversion.request.v1.
+    pub schema: String,
+    /// Unique id for this conversion job, suitable for dedupe and result correlation.
+    #[serde(rename = "requestId")]
+    pub request_id: String,
+    /// Fabrication planning request id that spawned this conversion job.
+    #[serde(rename = "planRequestId")]
+    pub plan_request_id: String,
+    /// Optional fabrication job id when the planner has already persisted one.
+    #[serde(rename = "jobId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    /// Unix epoch milliseconds when the planner published this request.
+    #[serde(rename = "emittedAtMs")]
+    pub emitted_at_ms: i64,
+    /// Producer service instance or deployment name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer: Option<String>,
+    /// Subject workers should publish the result to; defaults to dd.remote.fabrication.design.conversion.results.
+    #[serde(rename = "resultSubject")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_subject: Option<String>,
+    /// Reviewed source inputs that need conversion, export, repair, or review evidence.
+    #[serde(rename = "designInputs")]
+    pub design_inputs: Vec<FabricationDesignInputRef>,
+    /// Requested STEP/STL/3MF/DXF/CAM setup/sheet nesting targets, slicer projects, mesh reports, and assembly graphs requested from workers.
+    pub targets: Vec<FabricationDesignConversionTarget>,
+    /// Planner-known blockers that workers may clear by returning verified artifacts or evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blockers: Option<Vec<FabricationDesignConversionBlocker>>,
+    /// Optional scheduling hint. Higher values mean more urgent conversion work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i64>,
+    /// Non-secret planning notes for the worker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<Vec<String>>,
+}
+
+/// Body published on dd.remote.fabrication.design.conversion.results with generated artifacts, translator evidence, blockers, and machine-ready posture.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationDesignConversionResult {
+    /// Envelope schema id. Workers should emit dd.fabrication.design-conversion.result.v1.
+    pub schema: String,
+    /// Conversion request id this result answers.
+    #[serde(rename = "requestId")]
+    pub request_id: String,
+    /// Fabrication planning request id from the original conversion job.
+    #[serde(rename = "planRequestId")]
+    pub plan_request_id: String,
+    /// Optional persisted fabrication job id from the original request.
+    #[serde(rename = "jobId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    /// Unix epoch milliseconds when the worker published this result.
+    #[serde(rename = "emittedAtMs")]
+    pub emitted_at_ms: i64,
+    /// Worker id, pod name, or adapter instance that produced this result.
+    #[serde(rename = "workerId")]
+    pub worker_id: String,
+    /// Translator, exporter, slicer, mesh repair, or CAM adapter used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translator: Option<String>,
+    /// Translator or adapter version used for repeatability and learning attribution.
+    #[serde(rename = "translatorVersion")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translator_version: Option<String>,
+    /// True when the worker completed its requested conversion or review work.
+    pub success: bool,
+    /// True only when the returned artifacts and evidence are sufficient for the planner to consider the conversion lane releasable.
+    #[serde(rename = "machineReady")]
+    pub machine_ready: bool,
+    /// Generated artifacts and review evidence returned by the worker.
+    pub artifacts: Vec<FabricationNeutralExportArtifact>,
+    /// Remaining blockers or new worker-discovered blockers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blockers: Option<Vec<FabricationDesignConversionBlocker>>,
+    /// Non-blocking warnings that should be retained with the design evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warnings: Option<Vec<String>>,
+    /// Free-form non-secret metadata such as source configuration, Onshape document/version/element ids, exporter settings, repair statistics, or CAM/slicer profile names.
+    #[serde(rename = "reviewMetadata")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_metadata: Option<Value>,
+}
+
+/// One neutral-export or review artifact requested from conversion workers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationDesignConversionTarget {
+    /// Stable target id used to correlate worker outputs with requested artifacts.
+    #[serde(rename = "targetId")]
+    pub target_id: String,
+    /// Design input id this target should be generated from, when the target is input-specific.
+    #[serde(rename = "sourceInputId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_input_id: Option<String>,
+    /// Requested output or evidence format such as STEP, STL, 3MF, DXF, CAM_SETUP_JSON, SHEET_NESTING_JSON, SLICER_PROJECT, MESH_REPAIR_REPORT, or ASSEMBLY_GRAPH_JSON.
+    pub format: String,
+    /// Why this target is needed, e.g. additive slicing, subtractive CAM, sheet nesting, assembly planning, simulation, or learning replay.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+    /// Requested unit system when known, e.g. mm or inch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub units: Option<String>,
+    /// Requested export tolerance in millimeters when the planner needs bounded geometry.
+    #[serde(rename = "toleranceMm")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tolerance_mm: Option<f64>,
+    /// Optional target machine class such as additive-fdm, additive-resin, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, or plasma.
+    #[serde(rename = "machineClass")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_class: Option<String>,
+    /// Evidence labels that must be returned before the planner can consider this artifact releasable.
+    #[serde(rename = "evidenceRequired")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_required: Option<Vec<String>>,
+}
+
+/// One reviewed design input handed to an external conversion worker. URIs should already be sanitized for logs and artifacts; proprietary source files remain operator-controlled references.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationDesignInputRef {
+    /// Stable designInputs id from the fabrication planning request, or a generated id when the original input was anonymous.
+    #[serde(rename = "inputId")]
+    pub input_id: String,
+    /// Original or normalized source filename, e.g. housing.sldprt, bracket.step, sculpt.blend, or setup.json.
+    #[serde(rename = "fileName")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
+    /// Sanitized source location. Userinfo, query strings, and fragments must be removed before publishing this payload.
+    #[serde(rename = "sourceUri")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_uri: Option<String>,
+    /// Declared or inferred source format token such as SLDPRT, SLDASM, PRT, ASM, STEP, STL, 3MF, DXF, FCStd, SCAD, BLEND, ZTL, or CAM_SETUP_JSON.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    /// Declared or inferred authoring system, e.g. SOLIDWORKS, PTC Creo, Siemens NX, CATIA, Fusion, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, PrusaSlicer, OrcaSlicer, Cura, or Bambu Studio.
+    #[serde(rename = "sourceSystem")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_system: Option<String>,
+    /// Planning role for this input, for example editable native source CAD, verified neutral export candidate, slicer project evidence, or CAM setup evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// Supplemental operator or planner notes retained as non-secret evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<Vec<String>>,
+    /// Optional SHA-256 of the referenced source object when the producer has already resolved the content.
+    #[serde(rename = "sourceSha256")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_sha256: Option<String>,
+}
+
+/// Generated machine code, setup sheet, inspection plan, simulation report, postprocess plan, or operator instruction returned by a worker.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationGeneratedInstructionArtifact {
+    /// Stable generated artifact id retained by the planner.
+    #[serde(rename = "artifactId")]
+    pub artifact_id: String,
+    /// Requested target id this artifact satisfies.
+    #[serde(rename = "targetId")]
+    pub target_id: String,
+    /// Operation id this artifact belongs to.
+    #[serde(rename = "operationId")]
+    pub operation_id: String,
+    /// Machine id this artifact targets when machine-specific.
+    #[serde(rename = "machineId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_id: Option<String>,
+    /// Generated instruction format such as GCODE, NC, TAP, SETUP_SHEET_MD, TOOL_LIST_JSON, INSPECTION_PLAN_JSON, POSTPROCESS_PLAN_MD, or SIMULATION_REPORT_JSON.
+    pub format: String,
+    /// Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+    /// SHA-256 of the generated instruction artifact when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// MIME type or controlled media label for the artifact.
+    #[serde(rename = "mediaType")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+    /// Controller dialect or slicer/postprocessor target used for this artifact.
+    #[serde(rename = "controllerDialect")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller_dialect: Option<String>,
+    /// Estimated runtime in seconds when the worker can provide it.
+    #[serde(rename = "estimatedRuntimeSec")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_runtime_sec: Option<i64>,
+    /// Evidence labels attached to this instruction artifact, such as toolpath-simulated, collision-check-passed, slicer-profile-verified, tool-list-verified, workholding-reviewed, or human-intervention-boundary-marked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<Vec<String>>,
+    /// Short sanitized preview lines for operator review. Do not include full programs here.
+    #[serde(rename = "previewLines")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_lines: Option<Vec<String>>,
+}
+
+/// A release or instruction-generation blocker reported by a planner or worker.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationInstructionBlocker {
+    /// Stable blocker code, e.g. missing-postprocessor, toolpath-simulation-required, workholding-release-required, printer-profile-release-required, material-conditioning-required, tool-list-required, or human-intervention-required.
+    pub code: String,
+    /// Human-readable blocker summary safe for operator logs.
+    pub message: String,
+    /// Operation id associated with this blocker when applicable.
+    #[serde(rename = "operationId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
+    /// Instruction target id associated with this blocker when applicable.
+    #[serde(rename = "targetId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+    /// Machine id associated with this blocker when applicable.
+    #[serde(rename = "machineId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_id: Option<String>,
+    /// Effect on release posture, e.g. blocks-machine-ready, needs-operator-review, warning-only, or can-run-with-supervision.
+    #[serde(rename = "machineReadyImpact")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_ready_impact: Option<String>,
+}
+
+/// Body published on dd.remote.fabrication.instructions.generation.requests for slicer, CAM, postprocess, setup-sheet, inspection, and machine-code workers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationInstructionGenerationRequest {
+    /// Envelope schema id. Producers should emit dd.fabrication.instruction-generation.request.v1.
+    pub schema: String,
+    /// Unique id for this instruction generation job, suitable for dedupe and result correlation.
+    #[serde(rename = "requestId")]
+    pub request_id: String,
+    /// Fabrication planning request id that spawned this instruction generation job.
+    #[serde(rename = "planRequestId")]
+    pub plan_request_id: String,
+    /// Optional fabrication job id when the planner has already persisted one.
+    #[serde(rename = "jobId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    /// Unix epoch milliseconds when the planner published this request.
+    #[serde(rename = "emittedAtMs")]
+    pub emitted_at_ms: i64,
+    /// Producer service instance or deployment name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer: Option<String>,
+    /// Subject workers should publish the result to; defaults to dd.remote.fabrication.instructions.generation.results.
+    #[serde(rename = "resultSubject")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_subject: Option<String>,
+    /// Verified geometry, slicer, CAM, nesting, mesh, or assembly artifacts that instruction workers can consume.
+    #[serde(rename = "sourceArtifacts")]
+    pub source_artifacts: Vec<FabricationInstructionSourceArtifact>,
+    /// Machine profiles, controller dialects, postprocessors, slicer profiles, materials, and release evidence requested for generation.
+    #[serde(rename = "machineProfiles")]
+    pub machine_profiles: Vec<FabricationInstructionMachineProfile>,
+    /// Operations that need machine code, setup sheets, inspection instructions, postprocess plans, or assembly instructions.
+    pub operations: Vec<FabricationInstructionOperation>,
+    /// Requested printer jobs, G-code, NC programs, lathe cycles, sheet-cutting files, setup sheets, tool lists, inspection plans, simulation reports, postprocess plans, and operator instructions.
+    pub targets: Vec<FabricationInstructionGenerationTarget>,
+    /// Planner-known blockers that workers may clear by returning verified instruction artifacts or evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blockers: Option<Vec<FabricationInstructionBlocker>>,
+    /// Optional scheduling hint. Higher values mean more urgent generation work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i64>,
+    /// Non-secret planning notes for the worker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<Vec<String>>,
+}
+
+/// Body published on dd.remote.fabrication.instructions.generation.results with generated machine code, setup/operator instructions, simulation evidence, blockers, and machine-ready posture.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationInstructionGenerationResult {
+    /// Envelope schema id. Workers should emit dd.fabrication.instruction-generation.result.v1.
+    pub schema: String,
+    /// Instruction generation request id this result answers.
+    #[serde(rename = "requestId")]
+    pub request_id: String,
+    /// Fabrication planning request id from the original instruction generation job.
+    #[serde(rename = "planRequestId")]
+    pub plan_request_id: String,
+    /// Optional persisted fabrication job id from the original request.
+    #[serde(rename = "jobId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    /// Unix epoch milliseconds when the worker published this result.
+    #[serde(rename = "emittedAtMs")]
+    pub emitted_at_ms: i64,
+    /// Worker id, pod name, or adapter instance that produced this result.
+    #[serde(rename = "workerId")]
+    pub worker_id: String,
+    /// Slicer, CAM, postprocessor, simulator, setup-sheet, inspection-plan, or operator-instruction adapter used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generator: Option<String>,
+    /// Generator or adapter version used for repeatability and learning attribution.
+    #[serde(rename = "generatorVersion")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generator_version: Option<String>,
+    /// True when the worker completed its requested instruction generation or review work.
+    pub success: bool,
+    /// True only when returned instructions and evidence are sufficient for the planner to consider the instruction lane releasable.
+    #[serde(rename = "machineReady")]
+    pub machine_ready: bool,
+    /// Generated machine-code, setup, simulation, inspection, postprocess, or operator-instruction artifacts returned by the worker.
+    pub artifacts: Vec<FabricationGeneratedInstructionArtifact>,
+    /// Remaining blockers or new worker-discovered blockers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blockers: Option<Vec<FabricationInstructionBlocker>>,
+    /// Non-blocking warnings that should be retained with the instruction evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warnings: Option<Vec<String>>,
+    /// Free-form non-secret metadata such as postprocessor settings, slicer profile names, simulation summaries, machine envelope checks, tool libraries, fixture ids, or detected human-intervention boundaries.
+    #[serde(rename = "reviewMetadata")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_metadata: Option<Value>,
+}
+
+/// One machine-code, setup, inspection, postprocess, or operator-instruction artifact requested from a worker.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationInstructionGenerationTarget {
+    /// Stable target id used to correlate generated outputs with requested instruction artifacts.
+    #[serde(rename = "targetId")]
+    pub target_id: String,
+    /// Operation id this target belongs to.
+    #[serde(rename = "operationId")]
+    pub operation_id: String,
+    /// Machine profile id this target should use when machine-specific output is requested.
+    #[serde(rename = "machineId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_id: Option<String>,
+    /// Requested instruction format such as GCODE, NC, TAP, 3MF, BAMBUPROJECT, SETUP_SHEET_MD, TOOL_LIST_JSON, INSPECTION_PLAN_JSON, POSTPROCESS_PLAN_MD, WORKHOLDING_PLAN_JSON, or SIMULATION_REPORT_JSON.
+    pub format: String,
+    /// Why this artifact is needed, e.g. printer job, mill roughing, lathe finishing, sheet cutting, setup verification, inspection release, postprocess, or assembly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+    /// Evidence labels that must be returned before the planner can consider this instruction artifact releasable.
+    #[serde(rename = "evidenceRequired")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_required: Option<Vec<String>>,
+}
+
+/// Machine, controller, slicer, or postprocessor profile requested for instruction generation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationInstructionMachineProfile {
+    /// Planner-local or fleet machine id, e.g. prusa-mk4-01, haas-vf2-03, okuma-lathe-02, waterjet-01.
+    #[serde(rename = "machineId")]
+    pub machine_id: String,
+    /// Machine class such as additive-fdm, additive-resin, powder-bed, vertical-mill, horizontal-mill, lathe, router, laser, waterjet, plasma, or postprocess-station.
+    #[serde(rename = "machineClass")]
+    pub machine_class: String,
+    /// Controller or dialect target such as Marlin, RepRap, Klipper, Haas NGC, Fanuc, LinuxCNC, GRBL, Heidenhain, Okuma, PrusaSlicer, OrcaSlicer, Cura, Bambu Studio, or vendor-specific profile.
+    #[serde(rename = "controllerDialect")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller_dialect: Option<String>,
+    /// Postprocessor, slicer, CAM template, or adapter id used to generate instructions.
+    #[serde(rename = "postProcessor")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_processor: Option<String>,
+    /// Requested material or stock profile, e.g. PETG, 6061-T6 aluminum, 316 stainless, acrylic sheet, resin, nylon powder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<String>,
+    /// Human-readable work envelope or build volume summary retained for review.
+    #[serde(rename = "workEnvelope")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_envelope: Option<String>,
+    /// Evidence labels required before generated instructions can be considered for release on this machine.
+    #[serde(rename = "requiredEvidence")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_evidence: Option<Vec<String>>,
+}
+
+/// One additive, subtractive, sheet-cutting, inspection, postprocess, or assembly operation for instruction generation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationInstructionOperation {
+    /// Stable operation id used to correlate generated machine code and setup evidence.
+    #[serde(rename = "operationId")]
+    pub operation_id: String,
+    /// Part, subassembly, or stock id affected by this operation.
+    #[serde(rename = "partId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part_id: Option<String>,
+    /// Process label such as fdm-print, resin-print, powder-bed-print, vertical-mill-roughing, horizontal-mill-indexing, lathe-turning, router-profile, laser-cut, waterjet-cut, deburr, heat-set-inserts, inspection, or assembly.
+    pub process: String,
+    /// Machine class required for this operation.
+    #[serde(rename = "machineClass")]
+    pub machine_class: String,
+    /// Operator-readable operation summary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Source artifact ids consumed by this operation.
+    #[serde(rename = "sourceArtifactIds")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_artifact_ids: Option<Vec<String>>,
+    /// Operation-specific release requirements such as verified workholding, tool list, coolant, material conditioning, support media, simulation, inspection datum, or operator resume evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requirements: Option<Vec<String>>,
+}
+
+/// Verified geometry, slicer project, CAM setup, sheet nesting, mesh report, or assembly graph artifact that an instruction-generation worker can consume.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationInstructionSourceArtifact {
+    /// Stable artifact id, usually returned by a design conversion worker or retained by the Rust planner.
+    #[serde(rename = "artifactId")]
+    pub artifact_id: String,
+    /// Original design input id when the artifact traces back to a specific CAD, mesh, slicer, or CAM source.
+    #[serde(rename = "sourceInputId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_input_id: Option<String>,
+    /// Artifact format such as STEP, STL, 3MF, DXF, CAM_SETUP_JSON, SHEET_NESTING_JSON, SLICER_PROJECT, MESH_REPAIR_REPORT, or ASSEMBLY_GRAPH_JSON.
+    pub format: String,
+    /// Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+    /// SHA-256 of the source artifact when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// Artifact units when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub units: Option<String>,
+    /// Evidence labels already attached to this artifact, such as units-verified, mesh-manifold, profile-closed, cam-setup-reviewed, or slicer-profile-verified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<Vec<String>>,
+}
+
+/// One generated neutral export, slicer project, CAM setup, sheet nesting file, mesh report, or review artifact returned by a conversion worker.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FabricationNeutralExportArtifact {
+    /// Stable generated artifact id retained by the planner.
+    #[serde(rename = "artifactId")]
+    pub artifact_id: String,
+    /// Requested target id this artifact satisfies when known.
+    #[serde(rename = "targetId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+    /// Design input id used to create this artifact when known.
+    #[serde(rename = "sourceInputId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_input_id: Option<String>,
+    /// Generated format token such as STEP, STL, 3MF, DXF, CAM_SETUP_JSON, SHEET_NESTING_JSON, SLICER_PROJECT, MESH_REPAIR_REPORT, or ASSEMBLY_GRAPH_JSON.
+    pub format: String,
+    /// Sanitized artifact URI or object key. Do not include credentials, query strings, or fragments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+    /// SHA-256 of the generated artifact when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// MIME type or controlled media label for the artifact.
+    #[serde(rename = "mediaType")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+    /// Artifact units when the format does not prove them unambiguously.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub units: Option<String>,
+    /// Measured or exporter-declared tolerance in millimeters.
+    #[serde(rename = "toleranceMm")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tolerance_mm: Option<f64>,
+    /// Evidence labels attached to this artifact, such as units-verified, mesh-manifold, watertight, profile-closed, slicer-profile-verified, or cam-setup-reviewed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<Vec<String>>,
+}
+
 /// Why this push happened. 'cron' = periodic sweep, 'admin' = on-demand UI button, 'register' = subscriber just joined, 'manual' = explicit API call, 'initial' = subscriber boot-time pull.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "rust-vapi-phone-rs",
   "language": "rust",
-  "routeCount": 13,
+  "routeCount": 15,
   "routeTypeCounts": {
     "service": 6,
-    "user-generated": 4,
+    "user-generated": 6,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -94,6 +94,40 @@
       "purpose": "Human-readable generated API documentation.",
       "handlers": [
         "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rust-vapi-phone-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/flamegraph",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "flamegraph_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rust-vapi-phone-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/flamegraph.svg",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "flamegraph_svg"
       ],
       "sourceFiles": [
         "remote/deployments/rust-vapi-phone-rs/src/main.rs"

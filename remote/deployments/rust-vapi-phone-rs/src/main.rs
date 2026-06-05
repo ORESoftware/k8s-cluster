@@ -21,7 +21,9 @@
 use std::{
     env,
     error::Error,
+    fs,
     net::SocketAddr,
+    path::{Component, Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -87,6 +89,7 @@ struct Config {
     server_auth_secret: Option<String>,
     allow_unauthenticated: bool,
     allow_unsigned_webhooks: bool,
+    flamegraph_dir: String,
 }
 
 #[derive(Clone)]
@@ -116,6 +119,11 @@ struct VapiError {
     upstream: Option<Value>,
 }
 
+struct FlamegraphSnapshot {
+    svg_path: PathBuf,
+    metadata: Option<Value>,
+}
+
 impl VapiError {
     fn new(status: StatusCode, message: impl Into<String>) -> Self {
         Self {
@@ -139,6 +147,12 @@ fn env_opt(key: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn default_flamegraph_dir() -> String {
+    env_opt("CARGO_TARGET_DIR")
+        .map(|path| format!("{}/flamegraphs", path.trim_end_matches('/')))
+        .unwrap_or_else(|| "target/flamegraphs".to_string())
 }
 
 fn env_bool(key: &str, fallback: bool) -> bool {
@@ -275,6 +289,7 @@ fn load_config() -> Result<Config, String> {
     let server_secret = env_opt("VAPI_SERVER_SECRET");
     let server_credential_id = env_opt("VAPI_SERVER_CREDENTIAL_ID");
     let allow_unsigned_webhooks = env_bool("VAPI_ALLOW_UNSIGNED_WEBHOOKS", false);
+    let flamegraph_dir_default = default_flamegraph_dir();
 
     // A BYO carrier import needs a concrete number to import (unless an
     // already-imported phone-number id is supplied) plus a way to authenticate
@@ -330,6 +345,7 @@ fn load_config() -> Result<Config, String> {
         server_auth_secret: env_opt("SERVER_AUTH_SECRET"),
         allow_unauthenticated: env_bool("VAPI_ALLOW_UNAUTHENTICATED", false),
         allow_unsigned_webhooks,
+        flamegraph_dir: env_value("VAPI_FLAMEGRAPH_DIR", &flamegraph_dir_default),
     })
 }
 
@@ -712,6 +728,258 @@ fn vapi_error_response(error: VapiError) -> Response {
     json_response(error.status, body)
 }
 
+fn html_escape(raw: &str) -> String {
+    let mut escaped = String::with_capacity(raw.len());
+    for character in raw.chars() {
+        match character {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            _ => escaped.push(character),
+        }
+    }
+    escaped
+}
+
+fn metadata_svg_path(root: &Path, file: &str) -> Option<PathBuf> {
+    let mut components = Path::new(file).components();
+    match components.next()? {
+        Component::Normal(_) => {}
+        _ => return None,
+    }
+    if components.next().is_some() {
+        return None;
+    }
+
+    let path = root.join(file);
+    let file_type = fs::symlink_metadata(&path).ok()?.file_type();
+    if path.extension().and_then(|value| value.to_str()) == Some("svg") && file_type.is_file() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn latest_flamegraph(dir: &str) -> Option<FlamegraphSnapshot> {
+    let root = Path::new(dir);
+    let latest_metadata_path = root.join("latest.json");
+    if let Ok(raw) = fs::read_to_string(&latest_metadata_path) {
+        if let Ok(metadata) = serde_json::from_str::<Value>(&raw) {
+            if let Some(file) = metadata.get("svgFile").and_then(Value::as_str) {
+                if let Some(path) = metadata_svg_path(root, file) {
+                    return Some(FlamegraphSnapshot {
+                        svg_path: path,
+                        metadata: Some(metadata),
+                    });
+                }
+            }
+        }
+    }
+
+    fs::read_dir(root)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let file_type = entry.file_type().ok()?;
+            if !file_type.is_file() {
+                return None;
+            }
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("svg") {
+                return None;
+            }
+            let modified = entry.metadata().ok()?.modified().ok()?;
+            Some((modified, path))
+        })
+        .max_by_key(|(modified, _)| *modified)
+        .map(|(_, svg_path)| FlamegraphSnapshot {
+            svg_path,
+            metadata: None,
+        })
+}
+
+fn metadata_string(metadata: Option<&Value>, key: &str) -> String {
+    metadata
+        .and_then(|value| value.get(key))
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| value.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn flamegraph_missing_html(dir: &str) -> String {
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>dd Vapi flamegraph</title>
+    <style>
+      :root {{ color-scheme: dark; --bg:#0b1117; --panel:#111923; --line:rgba(148,163,184,.24); --text:#eef2f6; --muted:#a8b3c1; --accent:#5eead4; }}
+      * {{ box-sizing: border-box; }}
+      body {{ margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; padding:24px; }}
+      main {{ max-width:920px; margin:0 auto; }}
+      h1 {{ margin:0 0 10px; font-size:30px; }}
+      p {{ color:var(--muted); line-height:1.55; }}
+      a {{ color:var(--accent); text-decoration:none; }}
+      a:hover {{ text-decoration:underline; }}
+      section {{ border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:16px; margin:16px 0; }}
+      code {{ display:inline-block; max-width:100%; overflow-wrap:anywhere; border:1px solid rgba(148,163,184,.2); border-radius:6px; padding:2px 5px; background:#0a1017; color:#d7fbf4; font-size:12px; }}
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>dd Vapi flamegraph</h1>
+      <section>
+        <p>No flamegraph has been captured yet.</p>
+        <p>The server looks for the latest profile at <code>{dir}</code>. Run the opt-in profiling helper to generate an SVG plus <code>latest.json</code> metadata, then refresh this page.</p>
+      </section>
+      <p><a href="/vapi/">Back to Vapi phone screener</a></p>
+    </main>
+  </body>
+</html>"#,
+        dir = html_escape(dir),
+    )
+}
+
+fn flamegraph_page_html(dir: &str, metadata: Option<&Value>, svg_file: &str) -> String {
+    let started_at = metadata_string(metadata, "runStartedAtUtc");
+    let finished_at = metadata_string(metadata, "runFinishedAtUtc");
+    let duration = metadata_string(metadata, "durationSeconds");
+    let mode = metadata_string(metadata, "mode");
+    let pid = metadata_string(metadata, "pid");
+    let svg_href = format!("flamegraph.svg?file={}", html_escape(svg_file));
+
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>dd Vapi flamegraph</title>
+    <style>
+      :root {{ color-scheme: dark; --bg:#0b1117; --panel:#111923; --line:rgba(148,163,184,.24); --text:#eef2f6; --muted:#a8b3c1; --accent:#5eead4; }}
+      * {{ box-sizing: border-box; }}
+      body {{ margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; padding:24px; }}
+      main {{ max-width:1200px; margin:0 auto; }}
+      h1 {{ margin:0 0 10px; font-size:30px; }}
+      h2 {{ margin:0 0 10px; font-size:17px; }}
+      p, td, th {{ color:var(--muted); line-height:1.55; }}
+      a {{ color:var(--accent); text-decoration:none; }}
+      a:hover {{ text-decoration:underline; }}
+      section {{ border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:16px; margin:16px 0; }}
+      code {{ display:inline-block; max-width:100%; overflow-wrap:anywhere; border:1px solid rgba(148,163,184,.2); border-radius:6px; padding:2px 5px; background:#0a1017; color:#d7fbf4; font-size:12px; }}
+      table {{ width:100%; border-collapse:collapse; margin-top:4px; }}
+      th {{ width:190px; text-align:left; font-weight:600; color:var(--text); }}
+      th, td {{ border-top:1px solid var(--line); padding:8px 0; vertical-align:top; }}
+      object {{ display:block; width:100%; min-height:760px; border:1px solid var(--line); border-radius:8px; background:#fff; }}
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>dd Vapi flamegraph</h1>
+      <section>
+        <h2>Latest Run</h2>
+        <table aria-label="Latest flamegraph run metadata">
+          <tbody>
+            <tr><th scope="row">Started UTC</th><td>{started_at}</td></tr>
+            <tr><th scope="row">Finished UTC</th><td>{finished_at}</td></tr>
+            <tr><th scope="row">Duration Seconds</th><td>{duration}</td></tr>
+            <tr><th scope="row">Mode</th><td>{mode}</td></tr>
+            <tr><th scope="row">PID</th><td>{pid}</td></tr>
+            <tr><th scope="row">SVG</th><td><a href="{svg_href}"><code>{svg_file}</code></a></td></tr>
+            <tr><th scope="row">Directory</th><td><code>{dir}</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+      <section>
+        <object data="{svg_href}" type="image/svg+xml">
+          <p><a href="{svg_href}">Open latest flamegraph SVG</a></p>
+        </object>
+      </section>
+      <p><a href="/vapi/">Back to Vapi phone screener</a></p>
+    </main>
+  </body>
+</html>"#,
+        started_at = html_escape(&started_at),
+        finished_at = html_escape(&finished_at),
+        duration = html_escape(&duration),
+        mode = html_escape(&mode),
+        pid = html_escape(&pid),
+        svg_href = svg_href,
+        svg_file = html_escape(svg_file),
+        dir = html_escape(dir),
+    )
+}
+
+async fn flamegraph_html(State(state): State<AppState>) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+
+    let Some(snapshot) = latest_flamegraph(&state.config.flamegraph_dir) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Html(flamegraph_missing_html(&state.config.flamegraph_dir)),
+        )
+            .into_response();
+    };
+
+    (
+        StatusCode::OK,
+        Html(flamegraph_page_html(
+            &state.config.flamegraph_dir,
+            snapshot.metadata.as_ref(),
+            snapshot
+                .svg_path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("flamegraph.svg"),
+        )),
+    )
+        .into_response()
+}
+
+async fn flamegraph_svg(State(state): State<AppState>) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+
+    let Some(snapshot) = latest_flamegraph(&state.config.flamegraph_dir) else {
+        return json_response(
+            StatusCode::NOT_FOUND,
+            json!({
+                "ok": false,
+                "error": "no flamegraph has been captured yet",
+                "flamegraphDir": &state.config.flamegraph_dir,
+            }),
+        );
+    };
+
+    match fs::read_to_string(&snapshot.svg_path) {
+        Ok(svg) => (
+            [(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+            svg,
+        )
+            .into_response(),
+        Err(error) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({
+                "ok": false,
+                "error": format!("failed to read flamegraph SVG: {error}"),
+            }),
+        ),
+    }
+}
+
 async fn home(State(state): State<AppState>) -> impl IntoResponse {
     state
         .metrics
@@ -1086,6 +1354,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
+        .route("/flamegraph", get(flamegraph_html))
+        .route("/flamegraph.svg", get(flamegraph_svg))
         .route("/metrics", get(metrics))
         .route("/config", get(config_http))
         .route("/status", get(status_http))
@@ -1150,6 +1420,7 @@ fn home_html(config: &Config) -> String {
         <p>
           <a href="/vapi/healthz"><code>/vapi/healthz</code></a>
           <a href="/vapi/config"><code>/vapi/config</code></a>
+          <a href="/vapi/flamegraph"><code>/vapi/flamegraph</code></a>
           <a href="/vapi/metrics"><code>/vapi/metrics</code></a>
           <a href="/vapi/docs/api"><code>/vapi/docs/api</code></a>
         </p>
@@ -1196,6 +1467,7 @@ mod tests {
             server_auth_secret: Some("server-secret".to_string()),
             allow_unauthenticated: false,
             allow_unsigned_webhooks: false,
+            flamegraph_dir: "target/flamegraphs".to_string(),
         }
     }
 
@@ -1306,6 +1578,24 @@ mod tests {
         assert!(validate_vapi_path_id("id", "asst_123-ABC").is_ok());
         assert!(validate_vapi_path_id("id", "../assistant").is_err());
         assert!(validate_vapi_path_id("id", "asst_123?limit=100").is_err());
+    }
+
+    #[test]
+    fn flamegraph_metadata_svg_file_must_stay_in_profile_dir() {
+        let dir = std::env::temp_dir().join(format!("dd-vapi-flamegraph-{}", now_ms()));
+        fs::create_dir_all(&dir).expect("create flamegraph test dir");
+        fs::write(dir.join("profile.svg"), "<svg></svg>").expect("write flamegraph svg");
+
+        assert_eq!(
+            metadata_svg_path(&dir, "profile.svg").unwrap(),
+            dir.join("profile.svg")
+        );
+        assert!(metadata_svg_path(&dir, "../profile.svg").is_none());
+        assert!(metadata_svg_path(&dir, "/tmp/profile.svg").is_none());
+        assert!(metadata_svg_path(&dir, "nested/profile.svg").is_none());
+        assert!(metadata_svg_path(&dir, "profile.txt").is_none());
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

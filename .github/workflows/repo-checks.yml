@@ -67,6 +67,7 @@ jobs:
             general/contract-service-config.test.ts
             general/des-simulator-config.test.ts
             general/dev-server-container-pool-config.test.ts
+            general/fabrication-cad-source-intake.test.ts
             general/fsharp-ws-server-config.test.ts
             general/gateway-service-directory.test.ts
             general/gcs-chat-config.test.ts
