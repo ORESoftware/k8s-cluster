@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: dd-dagster-postgresql-data
+  labels:
+    app.kubernetes.io/name: dd-dagster-postgresql
+    app.kubernetes.io/part-of: dd-dagster
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 10Gi
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: data-dd-dagster-postgresql-0
+    namespace: ai-ml
+  hostPath:
+    path: /home/ec2-user/dd-ai-ml-platform/dagster-postgresql
+    type: DirectoryOrCreate
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: dd-mlflow-postgresql-data
+  labels:
+    app.kubernetes.io/name: dd-mlflow-postgresql
+    app.kubernetes.io/part-of: dd-mlflow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 10Gi
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: data-dd-mlflow-postgresql-0
+    namespace: ai-ml
+  hostPath:
+    path: /home/ec2-user/dd-ai-ml-platform/mlflow-postgresql
+    type: DirectoryOrCreate
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: dd-mlflow-artifacts
+  labels:
+    app.kubernetes.io/name: dd-mlflow
+    app.kubernetes.io/part-of: dd-mlflow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 10Gi
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: dd-mlflow-artifacts
+    namespace: ai-ml
+  hostPath:
+    path: /home/ec2-user/dd-ai-ml-platform/mlflow-artifacts
+    type: DirectoryOrCreate
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: dd-airbyte-postgresql-data
+  labels:
+    app.kubernetes.io/name: dd-airbyte-postgresql
+    app.kubernetes.io/part-of: dd-airbyte
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 10Gi
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: data-dd-airbyte-postgresql-0
+    namespace: airbyte
+  hostPath:
+    path: /home/ec2-user/dd-ai-ml-platform/airbyte-postgresql
+    type: DirectoryOrCreate
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem

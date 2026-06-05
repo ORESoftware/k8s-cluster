@@ -6,6 +6,7 @@ resources:
   - airbyte.namespace.yaml
   - kafka.namespace.yaml
   - spark.namespace.yaml
+  - local-persistentvolumes.yaml
   - resource-controls.yaml
   - availability-controls.yaml
   - dd-airbyte-postgresql.statefulset.yaml
