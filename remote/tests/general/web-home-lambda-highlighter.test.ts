@@ -83,13 +83,13 @@ test('lambda function code highlighter covers every process profile language', a
     ['python3', 'def handler(request, context):\n# ok\n    return True', /tok-keyword">def/, /tok-comment"># ok/],
     ['ruby', 'def handler(request, context)\n# ok\n  return true\nend', /tok-keyword">def/, /tok-comment"># ok/],
     ['bash', 'handler() {\n# ok\nreturn 0\n}', /tok-keyword">return/, /tok-comment"># ok/],
-    ['golang', 'func Handler() {\n// ok\nreturn\n}', /tok-keyword">func/, /tok-comment">\/\/ ok/],
-    ['dart', 'dynamic handler() {\n// ok\nreturn true;\n}', /tok-keyword">dynamic/, /tok-comment">\/\/ ok/],
-    ['erlang', 'handle(_Request, _Context) ->\n% ok\ncase true of true -> ok end.', /tok-keyword">case/, /tok-comment">% ok/],
-    ['elixir', 'defmodule Handler do\n# ok\n  def handle(), do: true\nend', /tok-keyword">defmodule/, /tok-comment"># ok/],
-    ['java', 'public final class Handler {\n// ok\nreturn;\n}', /tok-keyword">public/, /tok-comment">\/\/ ok/],
+    ['golang', 'func Handler(request map[string]any, context map[string]any) (any, error) {\n// ok\nreturn nil, nil\n}', /tok-keyword">func/, /tok-comment">\/\/ ok/],
+    ['dart', 'dynamic handler(Map<String, dynamic> request, Map<String, dynamic> context) {\n// ok\nreturn true;\n}', /tok-keyword">dynamic/, /tok-comment">\/\/ ok/],
+    ['erlang', '-spec handle(binary(), binary()) -> binary().\nhandle(_Request, _Context) ->\n% ok\ncase true of true -> <<"ok">> end.', /tok-keyword">case/, /tok-comment">% ok/],
+    ['elixir', 'defmodule Handler do\n# ok\n  @spec handle(binary(), binary()) :: binary()\n  def handle(_request, _context), do: "ok"\nend', /tok-keyword">defmodule/, /tok-comment"># ok/],
+    ['java', 'public final class Handler {\n// ok\npublic static String handle(String requestJson, String contextJson) throws Exception { return "{}"; }\n}', /tok-keyword">public/, /tok-comment">\/\/ ok/],
     ['rust', 'fn main() {\n// ok\nreturn;\n}', /tok-keyword">fn/, /tok-comment">\/\/ ok/],
-    ['gleamlang', 'pub fn handler() {\n// ok\ntodo\n}', /tok-keyword">pub/, /tok-comment">\/\/ ok/],
+    ['gleamlang', 'import gleam/dynamic.{type Dynamic}\npub fn handler(request: Dynamic, context: Dynamic) -> Dynamic {\n// ok\ntodo\n}', /tok-keyword">pub/, /tok-comment">\/\/ ok/],
   ];
 
   for (const [language, source, keywordPattern, commentPattern] of samples) {

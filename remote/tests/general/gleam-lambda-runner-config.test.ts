@@ -368,6 +368,11 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(webHome, /dd-lambda-function-draft:v2/);
   assert.match(webHome, /localStorage\.setItem/);
   assert.match(webHome, /dd-lambda-draft-save/);
+  assert.match(webHome, /func Handler\(request map\[string\]any, context map\[string\]any\) \(any, error\)/);
+  assert.match(webHome, /dynamic handler\(Map<String, dynamic> request, Map<String, dynamic> context\)/);
+  assert.match(webHome, /-spec handle\(binary\(\), binary\(\)\) -> binary\(\)\./);
+  assert.match(webHome, /@spec handle\(binary\(\), binary\(\)\) :: binary\(\)/);
+  assert.match(webHome, /public static String handle\(String requestJson, String contextJson\) throws Exception/);
   assert.match(webHome, /id="container-runner"/);
   assert.match(webHome, /containerd \/ ctr/);
   assert.match(webHome, /containerd \/ nerdctl/);

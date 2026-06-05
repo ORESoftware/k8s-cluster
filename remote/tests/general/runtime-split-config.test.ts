@@ -199,10 +199,19 @@ test("gateway-backed stateless services use HA rolling deployment profile", asyn
   }
 
   const desRs = await readRepoFile("remote/argocd/dd-next-runtime/dd-des-rs.deployment.yaml");
+  const desRsHpa = await readRepoFile("remote/argocd/dd-next-runtime/dd-des-rs.hpa.yaml");
+  const kustomization = await readRepoFile("remote/argocd/dd-next-runtime/kustomization.yaml");
   assert.match(
     desRs,
     /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/,
   );
+  assert.match(kustomization, /dd-des-rs\.hpa\.yaml/);
+  assert.match(desRsHpa, /kind:\s*HorizontalPodAutoscaler/);
+  assert.match(desRsHpa, /name:\s*dd-des-rs/);
+  assert.match(desRsHpa, /scaleTargetRef:[\s\S]*kind:\s*Deployment[\s\S]*name:\s*dd-des-rs/);
+  assert.match(desRsHpa, /minReplicas:\s*2/);
+  assert.match(desRsHpa, /maxReplicas:\s*3/);
+  assert.match(desRsHpa, /scaleDown:[\s\S]*stabilizationWindowSeconds:\s*900/);
 });
 
 test("single-owner runtime workloads stay intentionally recreate", async () => {
