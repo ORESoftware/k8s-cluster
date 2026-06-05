@@ -34,6 +34,13 @@ events to `dd.remote.events`, and can publish optimizer-shaped learning jobs to
 machine code is intentionally advisory: responses are draft planning artifacts
 and are not marked machine-ready.
 
+The queue accepts direct plan payloads, direct instruction-analysis payloads
+containing `programs`, and tagged envelopes such as
+`{"type":"fabrication.instructions.analyze","request":{...}}`. Plan and
+instruction-analysis results are both published to the fabrication result
+subject with their full validation, boundary, resolution, artifact, and learning
+surfaces.
+
 ## What It Does Today
 
 `POST /fabrication/plan` accepts a fabrication intent, optional machine fleet,
@@ -46,9 +53,11 @@ resolved machine profile material lists before the plan is marked OK.
 
 - A normalized design summary with inferred additive, milling, turning, or
   special-process parts.
-- A process plan across 3D printers, vertical/horizontal mills, routers,
-  laser, waterjet, plasma/sheet cutters, and lathes when those machine
-  profiles are available.
+- A process plan and structured `processGraph` across 3D printers,
+  vertical/horizontal mills, routers, laser, waterjet, plasma/sheet cutters, and
+  lathes when those machine profiles are available. The graph links operations,
+  generated programs, sequencing dependencies, assembly interfaces, and release
+  gates.
 - Draft machine programs such as Marlin-style FDM printer G-code,
   SLA/MSLA resin print-wash-cure job sheets, SLS/MJF-style powder-bed
   print-cooldown-depowder job sheets, ISO/Haas-style vertical milling G-code,
@@ -61,13 +70,26 @@ resolved machine profile material lists before the plan is marked OK.
   manual-stop, tool-length/probe compensation, canned drilling/tapping cycles,
   declared material/machine compatibility, additive support/orientation,
   additive thin-wall geometry, printer bed-adhesion, first-layer, fan-timing,
-  deep-cut, arc, setup-limit, machine-envelope, sheet-cutting, inspection, and
-  automation constraints.
-- Assembly advice that calls out when parts should be combined into one job or
-  split so tight-tolerance features can be machined and inspected separately.
+  resin-handling, powder-handling, deep-cut, arc, setup-limit,
+  machine-envelope, sheet-cutting, inspection, and automation constraints.
+- A `resolutionPlan` with ordered release-blocking remediation steps derived
+  from failure boundaries, including split/combine, human review, automation,
+  and regeneration phases.
+- `improvements` and `improvedPrograms` review drafts for generated and
+  submitted instruction streams, with conservative gates inserted before
+  machine-ready release.
+- Assembly advice with a structured `assemblyGraph` of part nodes, hybrid
+  interface edges, join/fit strategies, inspection gates, and sequence steps for
+  deciding when parts should be combined into one job or split so tight-tolerance
+  features can be machined and inspected separately.
 - A learning contract with MDP states, POMDP observations, policy actions,
-  reward terms, neural feature names, a deterministic neural-policy sketch, and
-  training-example sketches.
+  scored `strategyCandidates`, typed `interventionSignals`, reward terms,
+  neural feature names, a deterministic neural-policy sketch, and
+  training-example sketches. Failure boundary summaries, automation
+  requirements, and resolution plans are converted into boundary-specific
+  policy actions and observations so split, combine, human intervention,
+  automation, and regeneration decisions can be learned from validation
+  evidence.
 - Outcome learning endpoints that accept fabrication results, shape reward
   terms, emit MDP/POMDP/neural evidence, and expose a bounded policy snapshot.
 - Open-ended planning requests reuse strong learned method and assembly
@@ -75,7 +97,8 @@ resolved machine profile material lists before the plan is marked OK.
   explicit process or join-strategy preferences.
 - A bounded in-process job and artifact ledger for generated design summaries,
   parametric design payloads, process plans, machine programs, validation
-  reports, improved instructions, assembly plans, and optimizer-shaped MDP
+  reports, boundary summaries, resolution plans, improved instructions,
+  assembly plans, process graphs, assembly graphs, and optimizer-shaped MDP
   requests.
 
 Real production use still requires CAD/CAM generation, controller-specific
@@ -163,7 +186,8 @@ non-controller text instructions such as printer job sheets, setup sheets, and
 operator checklists. It returns controller-agnostic safety findings, improvement
 opportunities, and `improvedPrograms` review drafts that insert conservative
 modal defaults or explicit setup, post-processing, split, assembly, and
-human-intervention gates.
+human-intervention gates. Submitted machine profiles are bounded and validated,
+including positive work-envelope values, unique IDs, and nonzero axis counts.
 
 ```json
 {
@@ -195,10 +219,13 @@ lathe constant-surface-speed without a spindle cap, threading cycles, part-off
 or cutoff operations, manual stops, fixture changes, deep negative Z moves, arc
 moves without I/J/R geometry, missing program ends, declared material
 incompatibility with resolved machine profiles, and text-instruction boundaries
-where the job needs setup, post-processing, sheet-cutting kerf/fire/fume checks,
+where the job needs setup, post-processing, resin IPA/wash/cure/waste controls,
+powder cooldown/depowder/recovery controls, sheet-cutting kerf/fire/fume checks,
 assembly, splitting, or operator intervention. Improved drafts are still marked
 `machineReady=false`; they are normalization aids for review, motion-envelope
 simulation, and controller-specific postprocessing.
+`resolutionPlan` converts those boundaries into ordered remediation steps before
+a human or downstream agent attempts machine-ready release.
 
 Machine-code planning and analysis also run a bounded coordinate-envelope
 simulation over `G0`/`G1`/arc motion. When a submitted or generated toolpath
@@ -209,6 +236,25 @@ failure boundaries, and a retained `simulation-report` or
 below the stock surface emit `simulated-rapid-below-clearance` findings and a
 `simulated-rapid-clearance` boundary so clamp, tab, fixture, and stock-collision
 risks are reviewed before release.
+
+Plan and analysis responses include a `boundarySummary` object that rolls raw
+failure boundaries into operator-facing counts, typed `automationRequirements`,
+and recommended actions: human-review, split-job-or-part,
+combine-or-assemble-parts, add-verified-automation,
+regenerate-or-repostprocess, and resolve-machine-failure-risk. Each response
+also includes a `resolutionPlan` that orders those actions into release gates
+before generated or improved instructions can be treated as machine-ready. The
+same data is retained as `boundary-summary`, `analysis-boundary-summary`,
+`resolution-plan`, or `analysis-resolution-plan` artifacts.
+
+Plan responses also include `assembly.assemblyGraph`; the retained
+`parametric-design` and `assembly-plan` artifacts carry the same graph so
+external CAD/CAM or learning workers can connect generated parts, manufacturing
+methods, join interfaces, dry-fit/metrology gates, and assembly sequence steps.
+Plan responses and the retained `process-graph`, `parametric-design`, and
+`mdp-request` artifacts include `processGraph` nodes, dependencies, and release
+gates so downstream agents can reason over operation order, generated programs,
+assembly-interface dependencies, and validation gates without reparsing prose.
 
 ## Outcome Learning
 
@@ -242,9 +288,19 @@ combination preferences; open future requests can be decomposed into learned
 hybrid parts before machine selection. Strong assembly preferences such as
 `printed body plus turned insert` are reused as learned hybrid join strategies,
 and recent neural training examples are carried into the returned learning plan.
-The plan also includes a `neuralPolicy` sketch with a normalized feature vector,
-hidden activations, and bounded action scores so an external neural model can be
-trained from the same MDP/POMDP state or replace the local scoring head.
+The plan also includes scored `strategyCandidates` such as selected hybrid,
+additive consolidation, machined datum-finish, and split-for-inspection options.
+These candidates carry methods, machine kinds, estimated time, intervention
+counts, boundary counts, scores, and rationale so the MDP/POMDP optimizer can
+compare alternate make strategies instead of only seeing the selected route. A
+`neuralPolicy` sketch with a normalized feature vector, hidden activations, and
+bounded action scores lets an external neural model train from the same state or
+replace the local scoring head. `interventionSignals` expose automation
+requirements and ordered `resolutionPlan` steps as learnable actions,
+observations, next states, and reward adjustments. The optimizer-shaped
+`mdp-request` artifact includes `strategyCandidates`, `interventionSignals`,
+`automationRequirements`, and `resolutionPlan` so external MDP/POMDP workers can
+learn from the same boundary evidence.
 
 ## Job And Artifact Inspection
 
@@ -259,11 +315,15 @@ runtime inspection boundary while the database contract is still being designed.
   artifact summaries.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
   such as `design-summary`, `parametric-design`, `process-plan`,
-  `simulation-report`, `learning-plan`, `mdp-request`, a `program-*` generated
-  machine program, or an `improved-program-*` instruction rewrite, plus
-  instruction-analysis artifacts such as `analysis-simulation-report` and
-  learning artifacts such as `reward-signal`, `mdp-experience`,
-  `pomdp-observations`, and `neural-example`.
+  `process-graph`, `boundary-summary`, `simulation-report`, `learning-plan`,
+  `mdp-request`, a `program-*` generated machine program, or an
+  `improved-program-*` instruction rewrite, plus instruction-analysis artifacts such as
+  `analysis-boundary-summary`, `analysis-simulation-report`, and learning
+  artifacts such as `reward-signal`, `mdp-experience`, `pomdp-observations`, and
+  `neural-example`. `parametric-design` and `assembly-plan` include
+  `assemblyGraph` nodes, interfaces, and sequence gates; `parametric-design`,
+  `process-graph`, and `mdp-request` include `processGraph` operation nodes,
+  dependencies, and release gates.
 
 ## Local Build
 
