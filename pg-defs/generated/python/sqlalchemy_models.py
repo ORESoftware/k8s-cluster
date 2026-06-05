@@ -1270,7 +1270,7 @@ class MipSolverEventsInsert(BaseModel):
     payload: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
 
-LambdaFunctionRuntime = Literal["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"]
+LambdaFunctionRuntime = Literal["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"]
 LambdaFunctionContainerBuildStatus = Literal["not_requested", "pending", "building", "built", "failed", "skipped"]
 LambdaFunctionStatus = Literal["draft", "active", "paused", "archived"]
 
@@ -1286,7 +1286,7 @@ class LambdaFunction(Base):
         CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="lambda_functions_meta_object_chk"),
         CheckConstraint("jsonb_typeof(env) = 'object'", name="lambda_functions_env_object_chk"),
         CheckConstraint("status in ('draft', 'active', 'paused', 'archived')", name="lambda_functions_status_chk"),
-        CheckConstraint("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell')", name="lambda_functions_runtime_chk"),
+        CheckConstraint("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm')", name="lambda_functions_runtime_chk"),
         CheckConstraint("container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped')", name="lambda_functions_container_build_status_chk"),
         Index("lambda_functions_slug_active_uq", "slug", unique=True, postgresql_where=text("is_soft_deleted = false")),
         Index("lambda_functions_status_idx", "status", postgresql_where=text("is_soft_deleted = false")),

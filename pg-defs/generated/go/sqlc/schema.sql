@@ -642,7 +642,7 @@ create table if not exists lambda_functions (
   constraint lambda_functions_status_chk
     check (status in ('draft', 'active', 'paused', 'archived')),
   constraint lambda_functions_runtime_chk
-    check (runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell')),
+    check (runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm')),
   constraint lambda_functions_container_build_status_chk
     check (container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped'))
 );

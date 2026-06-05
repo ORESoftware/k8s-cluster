@@ -1346,7 +1346,7 @@ class MipSolverEventsRow {
 const lambdaFunctionTable = "lambda_functions";
 const lambdaFunctionSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      status,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_functions";
 
-const lambdaFunctionRuntimeValues = <String>["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"];
+const lambdaFunctionRuntimeValues = <String>["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"];
 const lambdaFunctionContainerBuildStatusValues = <String>["not_requested", "pending", "building", "built", "failed", "skipped"];
 const lambdaFunctionStatusValues = <String>["draft", "active", "paused", "archived"];
 

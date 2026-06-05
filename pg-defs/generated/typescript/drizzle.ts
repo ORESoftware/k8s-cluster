@@ -1028,7 +1028,7 @@ export type MipSolverEventsRow = z.infer<typeof mipSolverEventsRowSchema>;
 export type MipSolverEventsInsert = z.infer<typeof mipSolverEventsInsertSchema>;
 export type MipSolverEventsUpdate = z.infer<typeof mipSolverEventsUpdateSchema>;
 
-export const lambdaFunctionRuntimeValues = ["nodejs","javascript","typescript","python3","python","ruby","bash","shell"] as const;
+export const lambdaFunctionRuntimeValues = ["nodejs","javascript","typescript","python3","python","ruby","bash","shell","golang","go","dart","erlang","erl","elixir","ex","java","jvm"] as const;
 export const lambdaFunctionRuntimeSchema = z.enum(lambdaFunctionRuntimeValues);
 export type LambdaFunctionRuntime = z.infer<typeof lambdaFunctionRuntimeSchema>;
 
@@ -1079,7 +1079,7 @@ export const lambdaFunctions = pgTable(
     lambdaFunctionsMetaObjectChk: check("lambda_functions_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
     lambdaFunctionsEnvObjectChk: check("lambda_functions_env_object_chk", sql.raw("jsonb_typeof(env) = 'object'")),
     lambdaFunctionsStatusChk: check("lambda_functions_status_chk", sql.raw("status in ('draft', 'active', 'paused', 'archived')")),
-    lambdaFunctionsRuntimeChk: check("lambda_functions_runtime_chk", sql.raw("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell')")),
+    lambdaFunctionsRuntimeChk: check("lambda_functions_runtime_chk", sql.raw("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm')")),
     lambdaFunctionsContainerBuildStatusChk: check("lambda_functions_container_build_status_chk", sql.raw("container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped')")),
     lambdaFunctionsSlugActiveUq: uniqueIndex("lambda_functions_slug_active_uq").on(table.slug).where(sql.raw("is_soft_deleted = false")),
     lambdaFunctionsStatusIdx: index("lambda_functions_status_idx").on(table.status).where(sql.raw("is_soft_deleted = false")),
