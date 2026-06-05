@@ -29,6 +29,11 @@ const SERVICE_NAME: &str = "dd-fabrication-server";
 const SCHEMA_VERSION: &str = "fabrication.plan.v1";
 const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;
 const MAX_NATS_PAYLOAD_BYTES: usize = 512 * 1024;
+const FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT: &str =
+    "dd.remote.fabrication.design.conversion.requests";
+const FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-design-converters";
+const FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT: &str =
+    "dd.remote.fabrication.design.conversion.results";
 const MAX_REQUEST_ID_LEN: usize = 128;
 const MAX_TEXT_LEN: usize = 8_192;
 const MAX_LABEL_LEN: usize = 96;
@@ -593,6 +598,7 @@ struct DesignInputReview {
     mesh_or_slicer_count: usize,
     artistic_model_count: usize,
     inputs: Vec<ReviewedDesignInput>,
+    conversion_plan: Vec<DesignInputConversionStep>,
     supported_formats: Vec<SupportedDesignFormat>,
     notes: Vec<String>,
 }
@@ -616,6 +622,23 @@ struct ReviewedDesignInput {
     slicer_targets: Vec<String>,
     blockers: Vec<String>,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignInputConversionStep {
+    input_id: String,
+    status: String,
+    worker_lane: String,
+    request_subject: &'static str,
+    queue_group: &'static str,
+    result_subject: &'static str,
+    source_system: String,
+    source_format: String,
+    target_exports: Vec<String>,
+    required_evidence: Vec<String>,
+    review_gates: Vec<String>,
+    release_blockers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1674,6 +1697,8 @@ struct TextInstructionSignals {
     has_text_thermal_postprocess_evidence: bool,
     has_text_surface_finishing_context: bool,
     has_text_surface_finishing_evidence: bool,
+    has_text_indexed_setup_context: bool,
+    has_text_indexed_setup_evidence: bool,
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
@@ -3463,6 +3488,112 @@ fn design_input_blockers(spec: &DesignFormatSpec) -> Vec<String> {
     }
 }
 
+fn design_input_conversion_worker_lane(input: &ReviewedDesignInput) -> &'static str {
+    match input.category.as_str() {
+        "native-cad" | "cloud-cad" => "professional-cad-converter",
+        "open-source-cad" | "code-cad" => "parametric-cad-converter",
+        "organic-model" => "mesh-repair-converter",
+        "neutral-cad" => "neutral-cad-inspector",
+        "neutral-print" => "mesh-package-inspector",
+        "slicer-project" => "slicer-profile-reviewer",
+        _ if input.status.starts_with("unsupported") => "manual-format-triage",
+        _ => "fabrication-design-converter",
+    }
+}
+
+fn design_input_conversion_required_evidence(input: &ReviewedDesignInput) -> Vec<String> {
+    match input.category.as_str() {
+        "native-cad" => vec![
+            "licensed translator, vendor export log, or explicit neutral export provenance"
+                .to_string(),
+            "source system, version, configuration, and units evidence".to_string(),
+            "export artifact checksum plus topology/assembly inspection report".to_string(),
+        ],
+        "cloud-cad" => vec![
+            "authenticated document/version/element export audit".to_string(),
+            "export artifact checksum plus units and assembly metadata".to_string(),
+            "operator confirmation that the exported version matches the requested release"
+                .to_string(),
+        ],
+        "open-source-cad" => vec![
+            "reproducible FreeCAD/exporter version and parameter set".to_string(),
+            "neutral export checksum plus units/topology inspection".to_string(),
+        ],
+        "code-cad" => vec![
+            "OpenSCAD or scripted CAD parameter values and evaluator version".to_string(),
+            "generated mesh/solid manifold report plus export checksum".to_string(),
+        ],
+        "organic-model" => vec![
+            "units, scale, wall-thickness, manifold, and normals repair report".to_string(),
+            "decimation or surface-preservation review before slicing".to_string(),
+        ],
+        "neutral-cad" => vec![
+            "B-rep or surface topology inspection with units and assembly metadata".to_string(),
+            "healing/solidification report before slicer or CAM handoff".to_string(),
+        ],
+        "neutral-print" => vec![
+            "mesh/package units, scale, manifoldness, normals, and wall-thickness report"
+                .to_string(),
+            "material/profile metadata review before slicing".to_string(),
+        ],
+        "slicer-project" => vec![
+            "printer, material, support, orientation, and first-layer profile evidence".to_string(),
+            "generated machine-code provenance and profile checksum".to_string(),
+        ],
+        _ => vec![
+            "manual source-format identification before conversion worker dispatch".to_string(),
+        ],
+    }
+}
+
+fn design_input_conversion_review_gates(input: &ReviewedDesignInput) -> Vec<String> {
+    let mut gates = vec![
+        "attach-source-identity".to_string(),
+        "produce-reviewed-conversion-result".to_string(),
+        "block-machine-release-until-cad-conversion-result".to_string(),
+    ];
+    match input.category.as_str() {
+        "native-cad" | "cloud-cad" | "open-source-cad" | "code-cad" | "neutral-cad" => {
+            gates.push("verify-units-assembly-topology-and-export-checksums".to_string());
+            gates.push("regenerate-step-3mf-or-stl-before-instruction-generation".to_string());
+        }
+        "organic-model" | "neutral-print" => {
+            gates.push("verify-mesh-scale-manifoldness-normals-and-wall-thickness".to_string());
+            gates.push("regenerate-slicer-ready-3mf-or-stl-before-machine-code".to_string());
+        }
+        "slicer-project" => {
+            gates.push("verify-printer-material-support-and-first-layer-profile".to_string());
+            gates.push("regenerate-or-review-machine-code-before-release".to_string());
+        }
+        _ => {
+            gates.push("route-to-human-format-review-before-export".to_string());
+        }
+    }
+    gates
+}
+
+fn design_input_conversion_step(input: &ReviewedDesignInput) -> DesignInputConversionStep {
+    let status = if input.status.starts_with("unsupported") || input.status.contains("ambiguous") {
+        "blocked-human-format-review"
+    } else {
+        "ready-for-conversion-worker"
+    };
+    DesignInputConversionStep {
+        input_id: input.input_id.clone(),
+        status: status.to_string(),
+        worker_lane: design_input_conversion_worker_lane(input).to_string(),
+        request_subject: FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
+        queue_group: FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP,
+        result_subject: FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
+        source_system: input.source_system.clone(),
+        source_format: input.normalized_format.clone(),
+        target_exports: input.preferred_neutral_exports.clone(),
+        required_evidence: design_input_conversion_required_evidence(input),
+        review_gates: design_input_conversion_review_gates(input),
+        release_blockers: input.blockers.clone(),
+    }
+}
+
 fn ambiguous_design_input(input: &DesignInputFile, index: usize) -> ReviewedDesignInput {
     ReviewedDesignInput {
         input_id: design_input_id(input, index),
@@ -3588,6 +3719,10 @@ fn review_design_inputs(inputs: &[DesignInputFile]) -> DesignInputReview {
         .enumerate()
         .map(|(index, input)| reviewed_design_input(input, index))
         .collect::<Vec<_>>();
+    let conversion_plan = reviewed
+        .iter()
+        .map(design_input_conversion_step)
+        .collect::<Vec<_>>();
     let supported_count = reviewed
         .iter()
         .filter(|input| input.status.starts_with("supported"))
@@ -3621,6 +3756,9 @@ fn review_design_inputs(inputs: &[DesignInputFile]) -> DesignInputReview {
     } else {
         vec![
             "Design input review classifies CAD/model/slicer sources and retains translator, topology, scale, and profile gates.".to_string(),
+            format!(
+                "conversionPlan queues reviewed inputs for {FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT} workers and blocks machine release until conversion results are reviewed."
+            ),
             "Recognized inputs remain draft evidence until downstream CAD/CAM regeneration, slicer validation, simulation, and machine-release blockers are resolved.".to_string(),
         ]
     };
@@ -3636,6 +3774,7 @@ fn review_design_inputs(inputs: &[DesignInputFile]) -> DesignInputReview {
         mesh_or_slicer_count,
         artistic_model_count,
         inputs: reviewed,
+        conversion_plan,
         supported_formats: design_format_catalog(),
         notes,
     }
@@ -7625,6 +7764,75 @@ fn has_text_surface_finishing_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_indexed_setup_context(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "rotary table",
+            "rotary axis",
+            "rotary fixture",
+            "4th axis",
+            "fourth axis",
+            "a-axis",
+            "b-axis",
+            "c-axis",
+            "trunnion",
+            "indexer",
+            "indexing fixture",
+            "indexed setup",
+            "index angle",
+            "index all sides",
+            "index every side",
+            "tombstone",
+            "side-milling fixture",
+            "side milling fixture",
+            "multi-face machining",
+            "multi face machining",
+            "rotate fixture",
+            "fixture rotation",
+        ],
+    )
+}
+
+fn has_text_indexed_setup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "clamp state",
+            "clamp/unclamp",
+            "unclamp",
+            "re-clamp",
+            "reclamp",
+            "rotary brake",
+            "brake locked",
+            "index lock",
+            "index stop",
+            "index pin",
+            "index angle verified",
+            "angle verified",
+            "rotary zero",
+            "a-axis zero",
+            "b-axis zero",
+            "c-axis zero",
+            "fixture travel",
+            "safe clearance",
+            "sweep clearance",
+            "clearance verified",
+            "collision check",
+            "dry run",
+            "re-probe",
+            "reprobe",
+            "re-indicate",
+            "reindicate",
+            "datum re-probe",
+            "datum reprobe",
+            "tombstone offset",
+            "face offset",
+            "side face datum",
+        ],
+    )
+}
+
 fn inspect_text_instruction_line(
     raw_line: &str,
     program_id: &str,
@@ -8010,6 +8218,14 @@ fn inspect_text_instruction_line(
     if has_text_surface_finishing_evidence(raw_line) {
         signals.has_text_surface_finishing_evidence = true;
         signals.has_process_preparation = true;
+    }
+    if has_text_indexed_setup_context(raw_line) {
+        signals.has_text_indexed_setup_context = true;
+        signals.has_setup_reference = true;
+    }
+    if has_text_indexed_setup_evidence(raw_line) {
+        signals.has_text_indexed_setup_evidence = true;
+        signals.has_setup_reference = true;
     }
     if text_has_any(
         raw_line,
@@ -21280,6 +21496,55 @@ mod tests {
             .supported_formats
             .iter()
             .any(|format| format.source_system == "SOLIDWORKS"));
+        assert_eq!(response.design_input_review.conversion_plan.len(), 16);
+        let conversion_for = |id: &str| {
+            response
+                .design_input_review
+                .conversion_plan
+                .iter()
+                .find(|step| step.input_id == id)
+                .unwrap_or_else(|| panic!("missing design conversion step {id}"))
+        };
+        let solidworks_conversion = conversion_for("solidworks-part");
+        assert_eq!(
+            solidworks_conversion.request_subject,
+            FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT
+        );
+        assert_eq!(
+            solidworks_conversion.queue_group,
+            FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP
+        );
+        assert_eq!(
+            solidworks_conversion.result_subject,
+            FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT
+        );
+        assert_eq!(
+            solidworks_conversion.worker_lane,
+            "professional-cad-converter"
+        );
+        assert!(solidworks_conversion
+            .target_exports
+            .contains(&"STEP".to_string()));
+        assert!(solidworks_conversion.required_evidence.iter().any(|item| {
+            item.contains("licensed translator") && item.contains("neutral export provenance")
+        }));
+        assert!(solidworks_conversion
+            .review_gates
+            .contains(&"regenerate-step-3mf-or-stl-before-instruction-generation".to_string()));
+        assert!(solidworks_conversion
+            .release_blockers
+            .iter()
+            .any(|blocker| {
+                blocker.contains("SOLIDWORKS native source requires licensed translator")
+            }));
+        let prusa_conversion = conversion_for("prusa-project");
+        assert_eq!(prusa_conversion.worker_lane, "slicer-profile-reviewer");
+        assert!(prusa_conversion
+            .target_exports
+            .contains(&"G-code".to_string()));
+        assert!(prusa_conversion.review_gates.iter().any(|gate| {
+            gate.contains("verify-printer-material-support-and-first-layer-profile")
+        }));
         assert!(response
             .warnings
             .iter()
@@ -21376,6 +21641,21 @@ mod tests {
         let ambiguous = review_for("ambiguous-prt");
         assert_eq!(ambiguous.normalized_format, "ambiguous-native-cad");
         assert_eq!(ambiguous.status, "review-required-ambiguous-source-system");
+        let ambiguous_conversion = response
+            .design_input_review
+            .conversion_plan
+            .iter()
+            .find(|step| step.input_id == "ambiguous-prt")
+            .expect("ambiguous native CAD should still produce a blocked conversion step");
+        assert_eq!(ambiguous_conversion.status, "blocked-human-format-review");
+        assert_eq!(
+            ambiguous_conversion.worker_lane,
+            "professional-cad-converter"
+        );
+        assert!(ambiguous_conversion
+            .review_gates
+            .iter()
+            .any(|gate| { gate.contains("verify-units-assembly-topology-and-export-checksums") }));
 
         let plain_3mf = review_for("plain-3mf");
         assert_eq!(plain_3mf.normalized_format, "3mf");
