@@ -98,7 +98,7 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
 | `DES_SERVER_GIT_URL` | k8s repo HTTPS URL | *(deployment startup script, not the server)* clone this repo at pod start and copy `remote/deployments/des-rs` from it; set empty to use the mounted repo |
 | `DES_SERVER_GIT_REF` | `dev` | *(deployment startup script)* branch/tag/sha to clone for the server crate |
 | `DES_ENGINE_GIT_URL` | engine repo HTTPS URL | *(deployment startup script, not the server)* clone this engine repo at pod start and build against it; set empty to use the pinned submodule instead |
-| `DES_ENGINE_GIT_REF` | `fad10854fc8e4aa19a8dd667cbe0a6075440a3d4` | *(deployment startup script)* branch/tag/sha to clone for the engine |
+| `DES_ENGINE_GIT_REF` | `2a26a21d8190657d4245dba7754541d0b72d839b` | *(deployment startup script)* branch/tag/sha to clone for the engine |
 
 ## Run locally
 
@@ -122,7 +122,7 @@ and `dd-des-rs.service.yaml` (registered in that overlay's `kustomization.yaml`)
 `DES_ENGINE_GIT_REF` from `DES_ENGINE_GIT_URL` into `/tmp/engine`, copies this
 crate into the writable `/tmp/des-rs`, repoints its `des_engine` path dependency
 at the clone, and builds. The deployment currently pins the engine at
-`fad10854fc8e4aa19a8dd667cbe0a6075440a3d4`, so it does **not** depend on the
+`2a26a21d8190657d4245dba7754541d0b72d839b`, so it does **not** depend on the
 node having the git submodule checked out (the push-time `reconcile-runtime`
 only fast-forwards the repo; it does not `git submodule update --init`). If the
 clone fails — or `DES_ENGINE_GIT_URL` is set empty — it falls back to the pinned
