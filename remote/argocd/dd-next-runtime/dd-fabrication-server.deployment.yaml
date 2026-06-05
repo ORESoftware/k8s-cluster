@@ -106,6 +106,8 @@ spec:
                 /opt/dd-remote/deployments/fabrication-server-rs/src/main.rs \
                 /opt/dd-remote/deployments/fabrication-server-rs/generated/api-docs.html \
                 /opt/dd-remote/deployments/fabrication-server-rs/generated/api-docs.json \
+                /opt/dd-remote/submodules/discrete-event-system.rs/Cargo.toml \
+                /opt/dd-remote/submodules/discrete-event-system.rs/src/lib.rs \
                 /opt/dd-remote/libs/nats/subject-defs/generated/rust/Cargo.toml \
                 /opt/dd-remote/libs/nats/subject-defs/generated/rust/src/lib.rs \
                 /opt/dd-remote/libs/runtime-config-client-rs/Cargo.toml \
@@ -177,6 +179,9 @@ spec:
           volumeMounts:
             - name: fabrication-source
               mountPath: /opt/dd-remote/deployments/fabrication-server-rs
+              readOnly: true
+            - name: des-engine-source
+              mountPath: /opt/dd-remote/submodules/discrete-event-system.rs
               readOnly: true
             - name: nats-subject-defs-source
               mountPath: /opt/dd-remote/libs/nats/subject-defs/generated/rust
@@ -267,6 +272,9 @@ spec:
           volumeMounts:
             - name: fabrication-source
               mountPath: /opt/dd-remote/deployments/fabrication-server-rs
+              readOnly: true
+            - name: des-engine-source
+              mountPath: /opt/dd-remote/submodules/discrete-event-system.rs
               readOnly: true
             - name: nats-subject-defs-source
               mountPath: /opt/dd-remote/libs/nats/subject-defs/generated/rust
@@ -454,6 +462,9 @@ spec:
             - name: fabrication-source
               mountPath: /opt/dd-remote/deployments/fabrication-server-rs
               readOnly: true
+            - name: des-engine-source
+              mountPath: /opt/dd-remote/submodules/discrete-event-system.rs
+              readOnly: true
             - name: nats-subject-defs-source
               mountPath: /opt/dd-remote/libs/nats/subject-defs/generated/rust
               readOnly: true
@@ -472,6 +483,10 @@ spec:
         - name: fabrication-source
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1/remote/deployments/fabrication-server-rs
+            type: Directory
+        - name: des-engine-source
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/submodules/discrete-event-system.rs
             type: Directory
         - name: nats-subject-defs-source
           hostPath:
