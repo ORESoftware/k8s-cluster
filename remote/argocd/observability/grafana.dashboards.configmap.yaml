@@ -962,6 +962,21 @@ data:
           "targets": [ { "expr": "{deployment=\"dd-remote-gateway\"} |= \"/fabrication\" |~ \"(?i)(401|404|405|413|429|limit|too large|unauthorized|method|internal)\"", "refId": "A" } ],
           "title": "Fabrication Gateway Access and Guardrail Logs",
           "type": "logs"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 95 },
+          "id": 22,
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_fabrication_server_generated_programs_total[5m]))", "legendFormat": "generated programs", "refId": "A" },
+            { "expr": "sum(rate(dd_fabrication_server_jobs_stored_total[5m]))", "legendFormat": "jobs stored", "refId": "B" },
+            { "expr": "sum(rate(dd_fabrication_server_artifacts_stored_total[5m]))", "legendFormat": "artifacts stored", "refId": "C" },
+            { "expr": "sum(rate(dd_fabrication_server_learning_events_stored_total[5m]))", "legendFormat": "learning events stored", "refId": "D" }
+          ],
+          "title": "Generated Programs, Artifacts, and Learning Events",
+          "type": "timeseries"
         }
       ],
       "refresh": "10s",
