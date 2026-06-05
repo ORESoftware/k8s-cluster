@@ -3872,6 +3872,7 @@ async fn root() -> impl IntoResponse {
             "POST /plan",
             "POST /fabrication/plan",
             "POST /instructions/analyze",
+            "POST /fabrication/instructions/analyze",
             "POST /learning/observe",
             "POST /fabrication/learning/observe",
             "POST /learning/outcomes",
@@ -4329,6 +4330,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/plan", post(plan_http))
         .route("/fabrication/plan", post(plan_http))
         .route("/instructions/analyze", post(analyze_http))
+        .route("/fabrication/instructions/analyze", post(analyze_http))
         .route("/learning/observe", post(learning_observe_http))
         .route("/fabrication/learning/observe", post(learning_observe_http))
         .route("/learning/outcomes", post(learning_outcome_http))
