@@ -668,6 +668,7 @@ evidence so learned failure memory can hold the top-level machine release. A
 normalized feature vector, hidden activations, and bounded action scores lets an
 external neural model train from the same state or replace the local scoring
 head. `neuralTrainingCorpus` carries per-part generated examples,
+per-boundary `validation-boundary` examples linked to resolution actions,
 policy-memory examples, bounded labels, and strategy inference candidates aligned
 to `neuralFeatures`. `interventionSignals` expose automation requirements and ordered
 `resolutionPlan` steps as learnable actions, observations, next states, and
