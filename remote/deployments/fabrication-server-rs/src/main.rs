@@ -25,7 +25,8 @@ use dd_nats_subject_defs::{
 };
 use des_engine::{
     des::decision::{
-        solve_mdp, MdpMethod, MdpSpec, MdpTransition, TerminalState, MDP_SCHEMA, POMDP_SCHEMA,
+        solve_mdp, solve_pomdp_underlying, MdpMethod, MdpSpec, MdpTransition, PomdpSpec,
+        TerminalState, MDP_SCHEMA, POMDP_SCHEMA,
     },
     sdk as des_sdk,
 };
@@ -25646,11 +25647,223 @@ fn des_learning_mdp_solution(spec: &MdpSpec) -> Value {
     }
 }
 
+fn normalized_probability_distribution(mut weights: Vec<f64>) -> Vec<f64> {
+    if weights.is_empty() {
+        return vec![1.0];
+    }
+    for weight in &mut weights {
+        if !weight.is_finite() || *weight < 0.0 {
+            *weight = 0.0;
+        }
+    }
+    let sum = weights.iter().sum::<f64>();
+    if sum <= f64::EPSILON {
+        return vec![1.0 / weights.len() as f64; weights.len()];
+    }
+    let mut normalized = weights
+        .into_iter()
+        .map(|weight| weight / sum)
+        .collect::<Vec<_>>();
+    let normalized_sum = normalized.iter().sum::<f64>();
+    if let Some(last) = normalized.last_mut() {
+        *last += 1.0 - normalized_sum;
+    }
+    normalized
+}
+
+fn probability_distribution_with_primary(
+    count: usize,
+    primary_index: usize,
+    primary_probability: f64,
+) -> Vec<f64> {
+    if count <= 1 {
+        return vec![1.0];
+    }
+    let primary_probability = primary_probability.clamp(0.0, 1.0);
+    let remainder = (1.0 - primary_probability) / (count - 1) as f64;
+    let mut distribution = vec![remainder; count];
+    if let Some(primary) = distribution.get_mut(primary_index.min(count - 1)) {
+        *primary = primary_probability;
+    }
+    normalized_probability_distribution(distribution)
+}
+
+fn learning_action_matches_hidden_state(action: &str, state: &PomdpHiddenStateBelief) -> bool {
+    let action_token = normalize_token(action);
+    let preferred_token = normalize_token(&state.preferred_action);
+    action_token.contains(&preferred_token)
+        || preferred_token.contains(&action_token)
+        || action_token.contains(&normalize_token(&state.state))
+}
+
+fn des_learning_pomdp_spec(
+    belief: &PomdpBeliefState,
+    actions: &[String],
+    observations: &[String],
+) -> PomdpSpec {
+    let hidden_states = if belief.hidden_states.is_empty() {
+        vec![PomdpHiddenStateBelief {
+            state: "program-valid".to_string(),
+            probability: 1.0,
+            evidence: vec!["fallback-program-valid-state".to_string()],
+            preferred_action: "release-reviewed-program".to_string(),
+            if_true_next_state: "complete".to_string(),
+        }]
+    } else {
+        belief.hidden_states.clone()
+    };
+    let action_labels = if actions.is_empty() {
+        vec!["release-review-and-sample-inspection".to_string()]
+    } else {
+        actions.to_vec()
+    };
+    let observation_labels = {
+        let mut labels = observations
+            .iter()
+            .take(MAX_LEARNING_SIGNALS)
+            .cloned()
+            .collect::<Vec<_>>();
+        if labels.is_empty() {
+            labels.push("no-observation".to_string());
+        }
+        labels
+    };
+    let state_labels = hidden_states
+        .iter()
+        .map(|state| state.state.clone())
+        .collect::<Vec<_>>();
+    let program_valid_index = state_labels
+        .iter()
+        .position(|state| state == "program-valid")
+        .unwrap_or(0);
+    let num_states = state_labels.len();
+    let num_actions = action_labels.len();
+    let num_observations = observation_labels.len();
+
+    let transition = hidden_states
+        .iter()
+        .enumerate()
+        .map(|(state_index, state)| {
+            action_labels
+                .iter()
+                .map(|action| {
+                    if state.state == "program-valid" {
+                        probability_distribution_with_primary(num_states, state_index, 0.86)
+                    } else if learning_action_matches_hidden_state(action, state) {
+                        let mut distribution = probability_distribution_with_primary(
+                            num_states,
+                            program_valid_index,
+                            0.72,
+                        );
+                        if num_states > 1 {
+                            distribution[state_index] += 0.12;
+                            distribution = normalized_probability_distribution(distribution);
+                        }
+                        distribution
+                    } else {
+                        probability_distribution_with_primary(num_states, state_index, 0.68)
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    let observation = hidden_states
+        .iter()
+        .map(|state| {
+            action_labels
+                .iter()
+                .map(|_| {
+                    normalized_probability_distribution(
+                        observation_labels
+                            .iter()
+                            .map(|label| {
+                                belief
+                                    .observation_model
+                                    .iter()
+                                    .find(|model| {
+                                        model.observation == *label
+                                            && model.supports_state == state.state
+                                    })
+                                    .map(|model| model.likelihood.max(0.05))
+                                    .unwrap_or(0.08)
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    let reward = hidden_states
+        .iter()
+        .map(|state| {
+            action_labels
+                .iter()
+                .map(|action| {
+                    if action.contains("reject") {
+                        -4.0
+                    } else if state.state == "program-valid" && action.contains("release") {
+                        3.0
+                    } else if learning_action_matches_hidden_state(action, state) {
+                        1.4
+                    } else if state.state.contains("failure") {
+                        -1.8
+                    } else {
+                        0.1
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    PomdpSpec {
+        schema: POMDP_SCHEMA.to_string(),
+        num_states,
+        num_actions,
+        num_observations,
+        transition,
+        observation,
+        reward,
+        discount: 0.82,
+        initial_belief: Some(normalized_probability_distribution(
+            hidden_states
+                .iter()
+                .map(|state| state.probability)
+                .collect::<Vec<_>>(),
+        )),
+        state_labels,
+        action_labels,
+        observation_labels,
+    }
+}
+
+fn des_learning_pomdp_solution(spec: &PomdpSpec) -> Value {
+    match solve_pomdp_underlying(spec) {
+        Ok(solution) => json!({
+            "status": "solved",
+            "method": "des_engine::decision::solve_pomdp_underlying:qmdp-underlying-preview",
+            "solution": solution,
+        }),
+        Err(error) => json!({
+            "status": "invalid",
+            "method": "des_engine::decision::solve_pomdp_underlying:qmdp-underlying-preview",
+            "error": error,
+        }),
+    }
+}
+
 fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
     let states = response.learning.mdp_states.clone();
     let actions = response.learning.actions.clone();
     let des_mdp_spec = des_learning_mdp_spec(&states, &actions);
     let des_mdp_solution = des_learning_mdp_solution(&des_mdp_spec);
+    let des_pomdp_spec = des_learning_pomdp_spec(
+        &response.learning.pomdp_belief_state,
+        &actions,
+        &response.learning.pomdp_observations,
+    );
+    let des_pomdp_solution = des_learning_pomdp_solution(&des_pomdp_spec);
     let mut transitions = Vec::new();
     let mut rewards = Vec::new();
 
@@ -25687,6 +25900,8 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "learningEngine": &response.learning.engine,
         "desMdpSpec": des_mdp_spec,
         "desMdpSolution": des_mdp_solution,
+        "desPomdpSpec": des_pomdp_spec,
+        "desPomdpSolution": des_pomdp_solution,
         "designPackage": response.design_package,
         "designExports": response.design_exports,
         "designInputReview": response.design_input_review,
@@ -25724,6 +25939,12 @@ fn instruction_analysis_mdp_request(response: &InstructionAnalysisResponse) -> V
     let actions = response.learning.actions.clone();
     let des_mdp_spec = des_learning_mdp_spec(&states, &actions);
     let des_mdp_solution = des_learning_mdp_solution(&des_mdp_spec);
+    let des_pomdp_spec = des_learning_pomdp_spec(
+        &response.learning.pomdp_belief_state,
+        &actions,
+        &response.learning.pomdp_observations,
+    );
+    let des_pomdp_solution = des_learning_pomdp_solution(&des_pomdp_spec);
     let mut transitions = Vec::new();
     let mut rewards = Vec::new();
 
@@ -25760,6 +25981,8 @@ fn instruction_analysis_mdp_request(response: &InstructionAnalysisResponse) -> V
         "learningEngine": &response.learning.engine,
         "desMdpSpec": des_mdp_spec,
         "desMdpSolution": des_mdp_solution,
+        "desPomdpSpec": des_pomdp_spec,
+        "desPomdpSolution": des_pomdp_solution,
         "programs": &response.programs,
         "states": states,
         "actions": actions,
@@ -39644,6 +39867,22 @@ mod tests {
                 .and_then(Value::as_str),
             Some("solved")
         );
+        assert_eq!(
+            mdp_request
+                .content
+                .get("desPomdpSpec")
+                .and_then(|spec| spec.get("$schema"))
+                .and_then(Value::as_str),
+            Some(POMDP_SCHEMA)
+        );
+        assert_eq!(
+            mdp_request
+                .content
+                .get("desPomdpSolution")
+                .and_then(|solution| solution.get("status"))
+                .and_then(Value::as_str),
+            Some("solved")
+        );
         assert!(response
             .machine_selection
             .iter()
@@ -40281,6 +40520,22 @@ mod tests {
             analysis_mdp_request
                 .content
                 .get("desMdpSolution")
+                .and_then(|solution| solution.get("status"))
+                .and_then(Value::as_str),
+            Some("solved")
+        );
+        assert_eq!(
+            analysis_mdp_request
+                .content
+                .get("desPomdpSpec")
+                .and_then(|spec| spec.get("$schema"))
+                .and_then(Value::as_str),
+            Some(POMDP_SCHEMA)
+        );
+        assert_eq!(
+            analysis_mdp_request
+                .content
+                .get("desPomdpSolution")
                 .and_then(|solution| solution.get("status"))
                 .and_then(Value::as_str),
             Some("solved")
