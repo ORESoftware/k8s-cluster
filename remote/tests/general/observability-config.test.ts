@@ -538,9 +538,10 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(dashboardText, /dd_fabrication_server_plan_requests_total/);
   assert.match(dashboardText, /dd_fabrication_server_analysis_requests_total/);
   assert.match(dashboardText, /dd_fabrication_server_failure_boundaries_total/);
+  assert.match(dashboardText, /dd_fabrication_server_validation_findings_total/);
   assert.match(dashboardText, /dd_fabrication_server_nats_results_published_total/);
   assert.match(dashboardText, /dd_fabrication_server_mdp_published_total/);
-  assert.match(dashboardText, /Generated Programs, Artifacts, and Learning Events/);
+  assert.match(dashboardText, /Generated Programs, Artifacts, Learning Events, and Fetches/);
   assert.match(dashboardText, /dd_fabrication_server_generated_programs_total/);
   assert.match(dashboardText, /dd_fabrication_server_jobs_stored_total/);
   assert.match(dashboardText, /dd_fabrication_server_artifacts_stored_total/);
@@ -584,7 +585,11 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(dashboardText, /429 rate limit/);
   assert.match(dashboardText, /dd-remote-gateway/);
   assert.match(dashboardText, /401\|404\|405\|413\|429/);
-  assert.match(observabilityReadme, /generated-program,\s+job\/artifact, and learning-event throughput/);
+  assert.match(observabilityReadme, /validation-finding and\s+machine-failure boundary rates/);
+  assert.match(
+    observabilityReadme,
+    /generated-program,\s+job\/artifact, learning-event, and artifact detail-request throughput/,
+  );
   assert.match(observabilityReadme, /Loki-derived gateway guardrail rejection counters/);
   assert.match(observabilityReadme, /auth\/internal-route\/method\/payload\/rate-limit failures/);
   assert.match(observabilityReadme, /gateway edge-latency/);
@@ -648,6 +653,7 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(runtimeReadme, /GET, HEAD` for the canonical `\/fabrication` redirect/);
   assert.match(runtimeReadme, /GET, HEAD, POST` for `\/fabrication\/`/);
   assert.match(runtimeReadme, /explicitly preserve the gateway security header set/);
+  assert.match(runtimeReadme, /validation findings, machine-failure boundaries/);
   assert.match(runtimeReadme, /X-Content-Type-Options/);
   assert.match(runtimeReadme, /Retry-After: 60/);
   assert.match(dashboardText, /Kubernetes Startup, Warning, and Termination Evidence/);
