@@ -54,19 +54,22 @@ curl -s http://localhost:8099/analyze \
 - `ML_EVENT_SUBJECT=dd.remote.events`
 - `ML_DEAD_LETTER_SUBJECT=dd.remote.ml.deadletter`
 
-## Container image
+## EC2 runtime image
 
-The EC2 Kubernetes overlay runs `docker.io/library/dd-ai-ml-pipeline:dev` from the image contents
-instead of mounting the repo checkout. Build it from the k8s-cluster repo root so the Dockerfile can
-bake in the generated API docs and generated Python NATS subject constants:
+The EC2 Kubernetes overlay runs `docker.io/library/python:3.12-slim` and mounts the
+host checkout at `/opt/dd-next-1`, then starts `src/dd_ai_ml_pipeline.py` from this directory. This
+keeps the single-node cluster from depending on a locally prebuilt `docker.io/library/dd-ai-ml-pipeline:dev`
+image that may not exist in containerd.
+
+The Dockerfile remains useful for local image testing. Build it from the k8s-cluster repo root so it
+can bake in the generated API docs and generated Python NATS subject constants:
 
 ```bash
 docker build -f remote/deployments/ai-ml-pipeline/Dockerfile \
   -t docker.io/library/dd-ai-ml-pipeline:dev .
 ```
 
-On the EC2 node/containerd path, build the first-party AI/ML images in one pass before syncing
-Argo CD:
+For local containerd image testing on the EC2 node, build the first-party AI/ML images in one pass:
 
 ```bash
 bash remote/tools/build-ai-ml-platform-images.sh

@@ -4,6 +4,5 @@ metadata:
   name: ai-ml
   labels:
     name: ai-ml
-    pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted

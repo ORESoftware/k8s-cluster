@@ -10,8 +10,10 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      # The EC2 cluster is single-node and pod-slot constrained, so roll
+      # this singleton in-place instead of requiring a surge pod.
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-ai-ml-pipeline
@@ -35,7 +37,7 @@ spec:
       terminationGracePeriodSeconds: 20
       containers:
         - name: ai-ml-pipeline
-          image: docker.io/library/dd-ai-ml-pipeline:dev
+          image: docker.io/library/python:3.12-slim
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -49,6 +51,14 @@ spec:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/deployments/ai-ml-pipeline
+              exec python3 -u src/dd_ai_ml_pipeline.py
           env:
             - name: HOME
               value: /tmp
@@ -140,9 +150,16 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
         - name: tmp
           emptyDir:
             sizeLimit: 512Mi

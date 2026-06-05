@@ -5502,6 +5502,32 @@ fn has_controller_macro_or_subprogram_dependency(line: &str) -> bool {
         || stripped.split_whitespace().any(|token| token == "IF")
 }
 
+fn has_coordinate_transform_start(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    has_any_code(&stripped, &["G51", "G68"])
+}
+
+fn has_coordinate_transform_cancel(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    has_any_code(&stripped, &["G50.1", "G69"])
+}
+
+fn has_coordinate_transform_evidence(line: &str) -> bool {
+    line_mentions(line, "coordinate transform verified")
+        || line_mentions(line, "coordinate-transform verified")
+        || line_mentions(line, "coordinate rotation verified")
+        || line_mentions(line, "coordinate-rotation verified")
+        || line_mentions(line, "g68 verified")
+        || line_mentions(line, "g51 verified")
+        || line_mentions(line, "rotation center verified")
+        || line_mentions(line, "rotation-centre verified")
+        || line_mentions(line, "scale factor verified")
+        || line_mentions(line, "scaling verified")
+        || line_mentions(line, "mirror transform verified")
+        || line_mentions(line, "mirroring verified")
+        || line_mentions(line, "transform cancel verified")
+}
+
 fn has_printer_restart_position_evidence(line: &str) -> bool {
     line_mentions(line, "re-home")
         || line_mentions(line, "rehome")
@@ -8455,6 +8481,10 @@ fn analyze_instruction_programs(
         let mut reported_tool_change_spindle_stop_boundary = false;
         let mut modal_canned_cycle_active = false;
         let mut reported_modal_canned_cycle_boundary = false;
+        let mut coordinate_transform_active = false;
+        let mut coordinate_transform_evidence_observed = false;
+        let mut reported_coordinate_transform_motion_boundary = false;
+        let mut reported_coordinate_transform_cancel_boundary = false;
         let mut mill_router_workholding_evidence_observed = false;
         let mut reported_mill_router_workholding_boundary = false;
         let mut reported_fan_timing_boundary = false;
@@ -8535,6 +8565,8 @@ fn analyze_instruction_programs(
         let mut has_text_thermal_postprocess_evidence = false;
         let mut has_text_surface_finishing_context = false;
         let mut has_text_surface_finishing_evidence = false;
+        let mut has_text_indexed_setup_context = false;
+        let mut has_text_indexed_setup_evidence = false;
         let findings_at_program_start = findings.len();
         let boundaries_at_program_start = boundaries.len();
 
@@ -8603,6 +8635,8 @@ fn analyze_instruction_programs(
                     signals.has_text_thermal_postprocess_evidence;
                 has_text_surface_finishing_context |= signals.has_text_surface_finishing_context;
                 has_text_surface_finishing_evidence |= signals.has_text_surface_finishing_evidence;
+                has_text_indexed_setup_context |= signals.has_text_indexed_setup_context;
+                has_text_indexed_setup_evidence |= signals.has_text_indexed_setup_evidence;
                 continue;
             }
             let stripped = strip_comment(raw_line);
@@ -8681,6 +8715,17 @@ fn analyze_instruction_programs(
             let line_cancels_canned_cycle =
                 matches!(class, MachineClass::Mill | MachineClass::Router)
                     && has_any_code(&stripped, &["G80"]);
+            let line_has_coordinate_transform_start =
+                matches!(
+                    class,
+                    MachineClass::Mill | MachineClass::Router | MachineClass::Lathe
+                ) && has_coordinate_transform_start(&stripped);
+            let line_cancels_coordinate_transform = matches!(
+                class,
+                MachineClass::Mill | MachineClass::Router | MachineClass::Lathe
+            ) && has_coordinate_transform_cancel(&stripped);
+            let line_has_coordinate_transform_evidence =
+                has_coordinate_transform_evidence(raw_line);
             let line_has_program_end =
                 has_any_code(&stripped, &["M2", "M02", "M30"]) || contains_code(&stripped, "M84");
             let line_stops_subtractive_process = has_any_code(&stripped, &["M5", "M05"]);
@@ -8782,6 +8827,49 @@ fn analyze_instruction_programs(
                     requires_human_intervention: true,
                     suggested_resolution:
                         "attach the referenced subprograms or macro library, record controller parameter and macro-variable review evidence, then rerun dry-run simulation before machine release"
+                            .to_string(),
+                });
+            }
+            if line_has_coordinate_transform_evidence {
+                coordinate_transform_evidence_observed = true;
+            }
+            if line_cancels_coordinate_transform {
+                coordinate_transform_active = false;
+            }
+            if line_has_coordinate_transform_start {
+                coordinate_transform_active = true;
+            }
+            if machine_code_language
+                && matches!(
+                    class,
+                    MachineClass::Mill | MachineClass::Router | MachineClass::Lathe
+                )
+                && coordinate_transform_active
+                && line_has_motion_move
+                && !coordinate_transform_evidence_observed
+                && !reported_coordinate_transform_motion_boundary
+            {
+                reported_coordinate_transform_motion_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "coordinate-transform-not-verified".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "motion runs while G51/G68 coordinate scaling, mirroring, or rotation is active without transform review evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "coordinate-transform-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "G51 scaling/mirroring and G68 coordinate rotation are modal controller transforms; unreviewed motion can cut mirrored, scaled, or rotated geometry into stock, fixtures, or already-finished features"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record transform center, scale/mirror factors, rotation angle, datum/fixture clearance, dry-run evidence, and cancel with G50.1/G69 before machine-ready release"
                             .to_string(),
                 });
             }
@@ -9123,6 +9211,38 @@ fn analyze_instruction_programs(
                     requires_human_intervention: true,
                     suggested_resolution:
                         "insert G90 before M2/M30 or split the handoff into an operator-approved reset checkpoint, then rerun analysis before release"
+                            .to_string(),
+                });
+            }
+            if machine_code_language
+                && matches!(
+                    class,
+                    MachineClass::Mill | MachineClass::Router | MachineClass::Lathe
+                )
+                && line_has_program_end
+                && coordinate_transform_active
+                && !reported_coordinate_transform_cancel_boundary
+            {
+                reported_coordinate_transform_cancel_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "coordinate-transform-not-cancelled-before-end".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message: "program ends while G51/G68 coordinate transform mode is still active"
+                        .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "coordinate-transform-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "coordinate scaling, mirroring, or rotation can remain modal on some controls until G50.1/G69 cancellation, so ending with the transform active can misplace the next setup or imported subprogram"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "insert G50.1/G69 before M2/M30, verify transform cancellation and datum state, then rerun dry-run simulation before release"
                             .to_string(),
                 });
             }
@@ -11743,6 +11863,38 @@ fn analyze_instruction_programs(
                     action: "add-surface-finishing-evidence".to_string(),
                     reason:
                         "surface finishing text instructions should retain chemistry/media, masking, PPE, ventilation, waste, cure/dry, thickness, and inspection evidence before release"
+                        .to_string(),
+                });
+            }
+            if has_text_indexed_setup_context && !has_text_indexed_setup_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "indexed-setup-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "text job declares rotary, trunnion, tombstone, indexer, or multi-face setup work without indexed setup evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "indexed-setup-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "4th-axis, trunnion, tombstone, and indexed fixture setups can rotate stock, clamps, arbors, vises, or fixtures into collision and lose datums when clamp state, index angle, travel clearance, dry-run, and re-probe evidence are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record clamp/unclamp and brake state, index angle verification, index stop or pin state, fixture travel and sweep clearance, collision dry run, rotary zero, face offsets, and datum re-probe evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-indexed-setup-evidence".to_string(),
+                    reason:
+                        "indexed setup text instructions should retain clamp/brake, index-angle, clearance, dry-run, face-offset, and re-probe evidence before release"
                             .to_string(),
                 });
             }
@@ -12104,6 +12256,13 @@ fn improve_instruction_programs(
                 {
                     notes.push(
                         "Surface finishing job needs chemistry/media, masking, PPE, ventilation, waste, cure/dry, thickness, and inspection evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(improvements, &program_id, "add-indexed-setup-evidence")
+                {
+                    notes.push(
+                        "Indexed setup job needs clamp/brake, index-angle, clearance, dry-run, face-offset, and re-probe evidence"
                             .to_string(),
                     );
                 }
@@ -23015,6 +23174,79 @@ mod tests {
     }
 
     #[test]
+    fn cnc_analysis_requires_coordinate_transform_review_and_cancel() {
+        let programs = vec![
+            program(
+                "unreviewed-coordinate-transform",
+                "vertical-mill",
+                &[
+                    "G21 G90 G54 ; datum probed, vise clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1",
+                    "S8000 M3",
+                    "M8 ; coolant active",
+                    "G68 X0 Y0 R45",
+                    "G1 X10 Y0 F120",
+                    "M30",
+                ],
+            ),
+            program(
+                "reviewed-coordinate-transform",
+                "vertical-mill",
+                &[
+                    "G21 G90 G54 ; datum probed, vise clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1",
+                    "S8000 M3",
+                    "M8 ; coolant active",
+                    "G68 X0 Y0 R45 ; coordinate rotation verified, rotation center verified, scale factor verified, and dry run approved",
+                    "G1 X10 Y0 F120",
+                    "G69 ; transform cancel verified",
+                    "M30",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "coordinate-transform-not-verified"
+                && finding.program_id.as_deref() == Some("unreviewed-coordinate-transform")
+                && finding.line == Some(7)
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "coordinate-transform-not-cancelled-before-end"
+                && finding.program_id.as_deref() == Some("unreviewed-coordinate-transform")
+                && finding.line == Some(8)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "coordinate-transform-boundary"
+                && boundary.program_id.as_deref() == Some("unreviewed-coordinate-transform")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("G50.1/G69")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "coordinate-transform-boundary"
+                && requirement.automation_type == "fixture-automation"
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("coordinate-transform")
+                && finding.program_id.as_deref() == Some("reviewed-coordinate-transform")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary coordinate-transform-boundary")));
+        assert!(!improved[1].changed);
+    }
+
+    #[test]
     fn cnc_analysis_flags_unverified_controller_macro_dependencies() {
         let programs = vec![
             program(
@@ -27255,6 +27487,78 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.starts_with("CHECKPOINT [surface-finishing-boundary]")));
+    }
+
+    #[test]
+    fn text_indexed_setup_jobs_require_clamp_clearance_and_datum_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("indexed-setup-missing-evidence".to_string()),
+                machine_id: Some("horizontal-mill-1".to_string()),
+                machine_kind: Some("horizontal-mill".to_string()),
+                language: Some("setup-checklist".to_string()),
+                instructions: vec![
+                    "Machine four faces on tombstone fixture with A-axis index angles 0, 90, 180, and 270 degrees".to_string(),
+                    "Datum G54, tool list, spindle 6000 rpm, feed 0.05 mm/tooth, and coolant on".to_string(),
+                    "Finish when complete".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("indexed-setup-with-evidence".to_string()),
+                machine_id: Some("horizontal-mill-1".to_string()),
+                machine_kind: Some("horizontal-mill".to_string()),
+                language: Some("setup-checklist".to_string()),
+                instructions: vec![
+                    "Machine four faces on tombstone fixture with A-axis index angles 0, 90, 180, and 270 degrees".to_string(),
+                    "Datum G54, tool list, spindle 6000 rpm, feed 0.05 mm/tooth, and coolant on".to_string(),
+                    "Clamp/unclamp state, rotary brake locked, index angle verified, index stop, safe clearance, collision check dry run, rotary zero, tombstone offset, and datum re-probe recorded".to_string(),
+                    "Finish when complete".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "indexed-setup-evidence-missing"
+                && finding.program_id.as_deref() == Some("indexed-setup-missing-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "indexed-setup-evidence-missing"
+                && finding.program_id.as_deref() == Some("indexed-setup-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "indexed-setup-boundary"
+                && boundary.program_id.as_deref() == Some("indexed-setup-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("clamp/unclamp")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "indexed-setup-boundary"
+                && requirement.automation_type == "fixture-automation"
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-indexed-setup-evidence"
+                && improvement.program_id.as_deref() == Some("indexed-setup-missing-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [indexed-setup-boundary]")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Indexed setup job needs clamp/brake")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [indexed-setup-boundary]")));
     }
 
     #[test]
