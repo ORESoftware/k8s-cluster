@@ -514,13 +514,18 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn has_text_wire_edm_context/);
   assert.match(source, /fn has_text_wire_edm_setup_evidence/);
   assert.match(source, /fn has_text_wire_edm_process_evidence/);
+  assert.match(source, /fn has_text_wire_edm_cut_command/);
   assert.match(source, /has_wire_edm_text_context/);
   assert.match(source, /has_wire_edm_setup_evidence/);
   assert.match(source, /has_wire_edm_process_evidence/);
+  assert.match(source, /reported_wire_edm_cut_setup_boundary/);
   assert.match(source, /wire-edm-text-evidence-missing/);
   assert.match(source, /wire-edm-text-boundary/);
   assert.match(source, /add-wire-edm-text-evidence/);
   assert.match(source, /text_wire_edm_jobs_require_threading_flushing_and_slug_evidence/);
+  assert.match(source, /wire-edm-cut-before-threading-setup/);
+  assert.match(source, /wire-edm-cut-setup-boundary/);
+  assert.match(source, /wire_edm_jobs_require_threading_setup_before_profile_cut/);
   assert.match(source, /fn has_text_sinker_edm_context/);
   assert.match(source, /fn has_text_sinker_edm_electrode_evidence/);
   assert.match(source, /fn has_text_sinker_edm_dielectric_evidence/);
@@ -1731,7 +1736,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   assert.match(
     readme,
-    /sheet-cutting material\/thickness\/cut-chart\/recipe evidence, pierce\/kerf\/focus\/gas\/fume\/support, retained-tab\/microjoint\/part-release evidence, waterjet pressure\/abrasive-flow, plasma work-clamp evidence, wire EDM start-hole\/thread\/tension\/dielectric\/flushing\/slug-retention\/skim-pass evidence, and sinker EDM electrode\/dielectric\/depth\/wear\/orbit-finish\/recast release-gate evidence/,
+    /sheet-cutting material\/thickness\/cut-chart\/recipe evidence, pierce\/kerf\/focus\/gas\/fume\/support, retained-tab\/microjoint\/part-release evidence, waterjet pressure\/abrasive-flow, plasma work-clamp evidence, wire EDM start-hole\/thread\/tension\/dielectric\/flushing\/slug-retention\/skim-pass evidence plus profile\/skim-cut setup-order evidence, and sinker EDM electrode\/dielectric\/depth\/wear\/orbit-finish\/recast release-gate evidence/,
   );
   assert.match(
     readme,
@@ -1740,6 +1745,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(
     readme,
     /missing wire EDM start-hole\/threading\/slug-retention\/dielectric\/flushing\/skim-pass evidence/,
+  );
+  assert.match(
+    readme,
+    /wire EDM profile\/skim cuts before start-hole, wire-threading, guide\/tension, conductive workholding, or slug-retention setup evidence/,
   );
   assert.match(
     readme,

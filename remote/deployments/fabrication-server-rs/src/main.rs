@@ -4794,6 +4794,12 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_material_jetting_printing(value));
+    let wants_ded_cell = preferred
+        .as_deref()
+        .is_some_and(wants_directed_energy_deposition)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_directed_energy_deposition(value));
     let wants_composite_fiber_printer = preferred
         .as_deref()
         .is_some_and(wants_composite_fiber_printing)
@@ -4863,6 +4869,13 @@ fn choose_machine<'a>(
     if wants_material_jetting_printer {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_material_jetting_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_ded_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_directed_energy_deposition_kind(&machine.kind)
         }) {
             return machine;
         }
@@ -5073,6 +5086,7 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
     } else if tokens.iter().any(|token| {
         wants_resin_printing(token)
             || wants_material_jetting_printing(token)
+            || wants_directed_energy_deposition(token)
             || wants_composite_fiber_printing(token)
             || wants_binder_jet_printing(token)
             || wants_powder_bed_printing(token)
@@ -5092,6 +5106,9 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
     let wants_material_jetting = tokens
         .iter()
         .any(|token| wants_material_jetting_printing(token));
+    let wants_ded = tokens
+        .iter()
+        .any(|token| wants_directed_energy_deposition(token));
     let wants_composite_fiber = tokens
         .iter()
         .any(|token| wants_composite_fiber_printing(token));
@@ -5109,6 +5126,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         || wants_horizontal
         || wants_resin
         || wants_material_jetting
+        || wants_ded
         || wants_composite_fiber
         || wants_binder_jet
         || wants_powder
@@ -5125,6 +5143,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_horizontal || is_horizontal_mill_kind(&machine.kind))
         && (!wants_resin || is_resin_printer_kind(&machine.kind))
         && (!wants_material_jetting || is_material_jetting_printer_kind(&machine.kind))
+        && (!wants_ded || is_directed_energy_deposition_kind(&machine.kind))
         && (!wants_composite_fiber || is_composite_fiber_printer_kind(&machine.kind))
         && (!wants_binder_jet || is_binder_jet_printer_kind(&machine.kind))
         && (!wants_powder || is_powder_bed_printer_kind(&machine.kind))
@@ -5144,6 +5163,10 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || (preference.contains("material-jet") && operation.contains("material-jet"))
         || (preference.contains("polyjet") && operation.contains("polyjet"))
         || (preference.contains("mjp") && operation.contains("material-jet"))
+        || (preference.contains("directed-energy") && operation.contains("directed-energy"))
+        || (preference.contains("laser-cladding") && operation.contains("laser-cladding"))
+        || (preference.contains("waam") && operation.contains("waam"))
+        || (token_has_ded_segment(preference) && operation.contains("directed-energy"))
         || (preference.contains("composite-fiber") && operation.contains("composite-fiber"))
         || (preference.contains("continuous-fiber") && operation.contains("composite-fiber"))
         || (preference.contains("carbon-fiber") && operation.contains("composite-fiber"))
@@ -5408,6 +5431,9 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         }
         MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => {
             "pack tray, jet photopolymer/material channels, UV cure, remove supports, and inspect color/material interfaces"
+        }
+        MachineClass::Additive if is_directed_energy_deposition_kind(&part.machine_kind) => {
+            "prepare substrate, deposit DED/WAAM beads, monitor melt pool and interpass temperature, inspect, and leave finish-machining allowance"
         }
         MachineClass::Additive if is_composite_fiber_printer_kind(&part.machine_kind) => {
             "slice matrix, lay continuous fiber, cut/anchor reinforcement, inspect coupons, and finish composite print"
@@ -6055,6 +6081,38 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: final continuous-fiber toolpaths must come from the actual composite slicer, matrix material profile, fiber spool, and load-case layup review."
                     .to_string(),
                 "Human signoff is required for fiber orientation, cut/anchor behavior, fiber tension, matrix bonding, coupon inspection, anisotropy, and exposed-fiber finishing."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Additive if is_directed_energy_deposition_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "directed-energy-deposition-job".to_string()),
+            vec![
+                "; draft directed-energy deposition/WAAM job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [setup-boundary]: verify substrate, fixture, datum, wire/powder feedstock lot, nozzle standoff, shielding gas, laser/arc source, and fire controls"
+                    .to_string(),
+                "PREP_SUBSTRATE clean=true preheat=operator-reviewed datum=operator-reviewed finish_allowance_mm=operator-reviewed"
+                    .to_string(),
+                "PLAN_BEADS bead_width_mm=operator-reviewed overlap_pct=operator-reviewed path_strategy=operator-reviewed collision_clearance=simulated"
+                    .to_string(),
+                "START_DEPOSITION source=laser_or_arc feedstock=wire_or_powder power=operator-reviewed travel_speed=operator-reviewed"
+                    .to_string(),
+                "MONITOR_MELT_POOL coaxial_camera=required pyrometer=required shielding_gas_flow=verified oxygen_ppm=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [interpass-boundary]: record interpass temperature, distortion, bead height, and stop/restart tie-in before next layer"
+                    .to_string(),
+                "INSPECT_DEPOSIT nde=operator-reviewed coupon=installed finish_machining_allowance=verified"
+                    .to_string(),
+                "COMPLETE record feedstock lot, bead path, power/travel/feed rates, shielding gas, preheat/interpass log, NDE/coupon result, and machining allowance"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final DED/WAAM parameters must come from the machine head, feedstock, substrate, shielding-gas, thermal model, path simulation, and repair/additive procedure qualification."
+                    .to_string(),
+                "Human signoff is required for laser/arc safety, fire controls, substrate fixturing, bead path, melt-pool monitoring, interpass temperature, distortion, NDE/coupons, and downstream machining allowance."
                     .to_string(),
             ],
         ),
@@ -8729,6 +8787,112 @@ fn has_text_material_jetting_uv_inspection_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_ded_context(language: &str, line: &str) -> bool {
+    let language_token = normalize_token(language);
+    let line_token = normalize_token(line);
+    token_has_ded_segment(&language_token)
+        || token_has_ded_segment(&line_token)
+        || language_or_line_has_any(
+            language,
+            line,
+            &[
+                "directed-energy-deposition",
+                "directed energy deposition",
+                "directed energy",
+                "laser metal deposition",
+                "laser-metal-deposition",
+                "laser cladding",
+                "laser-cladding",
+                "cladding",
+                "waam",
+                "wire arc additive",
+                "wire-arc additive",
+                "wire arc deposition",
+                "wire-feed deposition",
+                "powder-fed deposition",
+                "blown powder",
+                "melt pool",
+            ],
+        )
+}
+
+fn has_text_ded_feedstock_path_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "feedstock lot",
+            "wire lot",
+            "powder lot",
+            "powder batch",
+            "wire feed",
+            "powder feed",
+            "bead path",
+            "bead width",
+            "bead height",
+            "overlap",
+            "standoff",
+            "tool center",
+            "deposition path",
+            "path strategy",
+            "finish allowance",
+            "machining allowance",
+            "substrate",
+            "fixture",
+            "datum",
+        ],
+    )
+}
+
+fn has_text_ded_energy_shielding_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "laser power",
+            "arc current",
+            "arc voltage",
+            "travel speed",
+            "feed rate",
+            "energy density",
+            "heat input",
+            "shielding gas",
+            "argon",
+            "oxygen ppm",
+            "gas flow",
+            "melt pool",
+            "pyrometer",
+            "coaxial camera",
+            "preheat",
+            "fire control",
+        ],
+    )
+}
+
+fn has_text_ded_thermal_inspection_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "interpass",
+            "interpass temperature",
+            "cooldown",
+            "thermal log",
+            "distortion",
+            "residual stress",
+            "stop restart",
+            "tie-in",
+            "coupon",
+            "nde",
+            "non-destructive",
+            "dye penetrant",
+            "ultrasonic",
+            "ct scan",
+            "hardness",
+            "porosity",
+            "crack inspection",
+            "dimensional inspection",
+        ],
+    )
+}
+
 fn has_text_composite_fiber_context(language: &str, line: &str) -> bool {
     language_or_line_has_any(
         language,
@@ -10108,6 +10272,22 @@ fn inspect_text_instruction_line(
         signals.has_material_jetting_uv_inspection_evidence = true;
         signals.has_process_preparation = true;
     }
+    let ded_context = has_text_ded_context(language, raw_line);
+    if ded_context {
+        signals.has_ded_text_context = true;
+    }
+    if ded_context && has_text_ded_feedstock_path_evidence(raw_line) {
+        signals.has_ded_feedstock_path_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if ded_context && has_text_ded_energy_shielding_evidence(raw_line) {
+        signals.has_ded_energy_shielding_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if ded_context && has_text_ded_thermal_inspection_evidence(raw_line) {
+        signals.has_ded_thermal_inspection_evidence = true;
+        signals.has_process_preparation = true;
+    }
     let composite_fiber_context = has_text_composite_fiber_context(language, raw_line);
     if composite_fiber_context {
         signals.has_composite_fiber_text_context = true;
@@ -10629,6 +10809,10 @@ fn analyze_instruction_programs(
         let mut has_material_jetting_material_evidence = false;
         let mut has_material_jetting_support_evidence = false;
         let mut has_material_jetting_uv_inspection_evidence = false;
+        let mut has_ded_text_context = false;
+        let mut has_ded_feedstock_path_evidence = false;
+        let mut has_ded_energy_shielding_evidence = false;
+        let mut has_ded_thermal_inspection_evidence = false;
         let mut has_composite_fiber_text_context = false;
         let mut has_composite_fiber_layup_evidence = false;
         let mut has_composite_fiber_process_evidence = false;
@@ -10720,6 +10904,10 @@ fn analyze_instruction_programs(
                     signals.has_material_jetting_support_evidence;
                 has_material_jetting_uv_inspection_evidence |=
                     signals.has_material_jetting_uv_inspection_evidence;
+                has_ded_text_context |= signals.has_ded_text_context;
+                has_ded_feedstock_path_evidence |= signals.has_ded_feedstock_path_evidence;
+                has_ded_energy_shielding_evidence |= signals.has_ded_energy_shielding_evidence;
+                has_ded_thermal_inspection_evidence |= signals.has_ded_thermal_inspection_evidence;
                 has_composite_fiber_text_context |= signals.has_composite_fiber_text_context;
                 has_composite_fiber_layup_evidence |= signals.has_composite_fiber_layup_evidence;
                 has_composite_fiber_process_evidence |=
@@ -14105,6 +14293,76 @@ fn analyze_instruction_programs(
                     action: "add-material-jetting-support-uv-inspection-evidence".to_string(),
                     reason:
                         "material-jetting text instructions should retain support-removal, UV/post-cure, color/material verification, and inspection evidence before release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_ded_text_context)
+                && has_ded_text_context
+                && !has_ded_feedstock_path_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "ded-feedstock-path-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "DED/WAAM text job lacks feedstock, substrate, bead path, standoff, datum, or machining-allowance evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "ded-feedstock-path-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "directed-energy deposition can overbuild, underbuild, crash the head, or leave no finish-machining stock when feedstock lot, substrate datum, bead path, standoff, overlap, and machining allowance evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach feedstock lot, substrate fixture/datum, bead path, bead width/height or overlap, nozzle standoff, collision simulation, and finish-machining allowance before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-ded-feedstock-path-evidence".to_string(),
+                    reason:
+                        "DED/WAAM text instructions should retain feedstock, bead path, substrate datum, and finish-machining allowance evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_ded_text_context)
+                && has_ded_text_context
+                && (!has_ded_energy_shielding_evidence || !has_ded_thermal_inspection_evidence)
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "ded-energy-thermal-inspection-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "DED/WAAM text job lacks laser/arc energy, shielding gas, melt-pool, interpass, distortion, NDE, or coupon evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "ded-energy-thermal-inspection-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "DED/WAAM jobs can crack, overheat, oxidize, distort, or hide lack-of-fusion defects when energy input, shielding gas, melt-pool monitoring, interpass temperature, and inspection evidence are missing"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "split DED release into energy input, shielding gas/oxygen, melt-pool monitoring, preheat/interpass temperature, stop-restart tie-ins, distortion review, NDE/coupon, and downstream inspection checkpoints"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-ded-energy-thermal-inspection-evidence".to_string(),
+                    reason:
+                        "DED/WAAM text instructions should retain energy, shielding, melt-pool, interpass, distortion, NDE, and coupon evidence before release"
                             .to_string(),
                 });
             }
@@ -17868,6 +18126,13 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         || token.contains("multi-jet")
     {
         "material-jetting-job-packager"
+    } else if token.contains("directed-energy")
+        || token_has_ded_segment(&token)
+        || token.contains("waam")
+        || token.contains("wire-arc-additive")
+        || token.contains("laser-cladding")
+    {
+        "directed-energy-deposition-job-packager"
     } else if token.contains("composite-fiber")
         || token.contains("continuous-fiber")
         || token.contains("carbon-fiber")
@@ -17921,6 +18186,13 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         || token.contains("multi-jet")
     {
         "material-jetting-job-package".to_string()
+    } else if token.contains("directed-energy")
+        || token_has_ded_segment(&token)
+        || token.contains("waam")
+        || token.contains("wire-arc-additive")
+        || token.contains("laser-cladding")
+    {
+        "directed-energy-deposition-job-package".to_string()
     } else if token.contains("composite-fiber")
         || token.contains("continuous-fiber")
         || token.contains("carbon-fiber")
@@ -23518,6 +23790,7 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "sla-job",
         "resin-job",
         "material-jetting-job",
+        "directed-energy-deposition-job",
         "composite-fiber-job",
         "binder-jet-job",
         "sls-job",
@@ -23567,6 +23840,7 @@ async fn capabilities() -> impl IntoResponse {
             "fdm-printer",
             "sla-msla-resin-printer",
             "material-jetting-printer",
+            "directed-energy-deposition-cell",
             "continuous-fiber-composite-printer",
             "binder-jet-printer",
             "sls-mjf-powder-bed-printer",
@@ -23690,6 +23964,7 @@ async fn request_schema() -> impl IntoResponse {
                 "fdm-printer",
                 "sla-printer",
                 "material-jetting-printer",
+                "directed-energy-deposition-cell",
                 "composite-fiber-printer",
                 "binder-jet-printer",
                 "sls-printer",
@@ -26471,6 +26746,70 @@ mod tests {
             .any(|target| {
                 target.machine_kind == "material-jetting-printer"
                     && target.output_format == "material-jetting-job-package"
+            }));
+    }
+
+    #[test]
+    fn default_additive_fleet_generates_directed_energy_deposition_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-ded-cell".to_string()),
+            objective:
+                "laser directed energy deposition Inconel turbine blade repair with WAAM bead path, melt pool monitoring, interpass temperature, NDE coupon, and finish machining allowance"
+                    .to_string(),
+            material: Some(material("inconel", "metal")),
+            stock: None,
+            tolerance_mm: Some(0.10),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("DED cell plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "directed-energy-deposition-cell"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("deposit DED/WAAM beads")));
+        let ded_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "directed-energy-deposition-cell")
+            .expect("DED program should be generated");
+        assert_eq!(ded_program.language, "directed-energy-deposition-job");
+        assert!(ded_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft directed-energy deposition/WAAM job")));
+        assert!(ded_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("START_DEPOSITION")));
+        assert!(ded_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("MONITOR_MELT_POOL")));
+        assert!(ded_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("interpass-boundary")));
+        assert!(ded_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("interpass temperature")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "directed-energy-deposition-cell"
+                    && target.output_format == "directed-energy-deposition-job-package"
             }));
     }
 
@@ -32986,6 +33325,97 @@ mod tests {
     }
 
     #[test]
+    fn text_ded_jobs_require_feedstock_energy_thermal_and_inspection_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("ded-missing-feedstock-path-evidence".to_string()),
+                machine_id: Some("ded-1".to_string()),
+                machine_kind: Some("directed-energy-deposition-cell".to_string()),
+                language: Some("directed-energy-deposition-job".to_string()),
+                instructions: vec![
+                    "Laser DED repair with laser power 1200W, travel speed 8mm/s, shielding gas argon, oxygen ppm, melt pool pyrometer, coaxial camera, preheat, and fire control verified".to_string(),
+                    "DED interpass temperature, cooldown log, distortion review, stop restart tie-in, NDE ultrasonic, coupon, hardness, porosity, crack inspection, and dimensional inspection recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("ded-missing-energy-thermal-evidence".to_string()),
+                machine_id: Some("ded-1".to_string()),
+                machine_kind: Some("directed-energy-deposition-cell".to_string()),
+                language: Some("directed-energy-deposition-job".to_string()),
+                instructions: vec![
+                    "WAAM directed energy deposition with feedstock lot W-44, wire lot ER316, wire feed, bead path, bead width, bead height, overlap, standoff, deposition path, substrate fixture, datum, finish allowance, machining allowance, and collision simulation reviewed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("ded-with-evidence".to_string()),
+                machine_id: Some("ded-1".to_string()),
+                machine_kind: Some("directed-energy-deposition-cell".to_string()),
+                language: Some("directed-energy-deposition-job".to_string()),
+                instructions: vec![
+                    "Laser directed energy deposition with feedstock lot IN718-9, powder lot P-88, bead path, bead width, bead height, overlap, standoff, deposition path, substrate fixture, datum, finish allowance, machining allowance, and collision simulation reviewed".to_string(),
+                    "Laser power, travel speed, powder feed, shielding gas argon, oxygen ppm, gas flow, melt pool pyrometer, coaxial camera, preheat, and fire control verified".to_string(),
+                    "Interpass temperature, cooldown thermal log, distortion, residual stress, stop restart tie-in, NDE ultrasonic, coupon, hardness, porosity, crack inspection, and dimensional inspection recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "ded-feedstock-path-evidence-missing"
+                && finding.program_id.as_deref() == Some("ded-missing-feedstock-path-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "ded-energy-thermal-inspection-evidence-missing"
+                && finding.program_id.as_deref() == Some("ded-missing-energy-thermal-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("ded-")
+                && finding.program_id.as_deref() == Some("ded-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "ded-feedstock-path-boundary"
+                && boundary.program_id.as_deref() == Some("ded-missing-feedstock-path-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("feedstock lot")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "ded-energy-thermal-inspection-boundary"
+                && boundary.program_id.as_deref() == Some("ded-missing-energy-thermal-evidence")
+                && boundary.requires_human_intervention
+                && boundary
+                    .suggested_resolution
+                    .contains("interpass temperature")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-ded-feedstock-path-evidence"
+                && improvement.program_id.as_deref() == Some("ded-missing-feedstock-path-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-ded-energy-thermal-inspection-evidence"
+                && improvement.program_id.as_deref() == Some("ded-missing-energy-thermal-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [ded-feedstock-path-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1].instructions.iter().any(|line| {
+            line.starts_with("CHECKPOINT [ded-energy-thermal-inspection-boundary]")
+        }));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [ded-")));
+    }
+
+    #[test]
     fn text_composite_fiber_jobs_require_layup_process_and_inspection_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -33541,6 +33971,7 @@ mod tests {
             "fanuc-gcode",
             "sla-job",
             "material-jetting-job",
+            "directed-energy-deposition-job",
             "composite-fiber-job",
             "sls-job",
             "metal-pbf-job",
