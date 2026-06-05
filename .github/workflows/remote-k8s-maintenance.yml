@@ -138,7 +138,7 @@ jobs:
           OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[verify-mip-solver]') && 'verify-mip-solver-node') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-ssm]') && 'inspect-gcs-ssm') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-bisect]') && 'bisect-gcs-wss') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-recover]') && 'recover-gcs') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-diagnose]') && 'diagnose-gcs-scheduler') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-snapshot]') && 'snapshot-gcs-loadtest') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && github.sha) || 'dev' }}
           SSM_COMMAND_ID: ${{ inputs.ssm_command_id || github.event.head_commit.message || '' }}
-          CANCEL_SSM_COMMAND: ${{ inputs.cancel_ssm_command || 'false' }}
+          CANCEL_SSM_COMMAND: ${{ inputs.cancel_ssm_command || (github.event_name == 'push' && contains(github.event.head_commit.message, 'cancel_ssm_command=true') && 'true') || 'false' }}
           REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
           REMOTE_DEV_DEEPSEEK_API_KEY: ${{ secrets.REMOTE_DEV_DEEPSEEK_API_KEY }}
           REMOTE_DEV_DASHSCOPE_API_KEY: ${{ secrets.REMOTE_DEV_DASHSCOPE_API_KEY }}
