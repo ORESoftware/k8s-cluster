@@ -510,6 +510,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /coordinate-transform-not-cancelled-before-end/);
   assert.match(source, /coordinate-transform-boundary/);
   assert.match(source, /cnc_analysis_requires_coordinate_transform_review_and_cancel/);
+  assert.match(source, /fn has_inverse_time_feed_start/);
+  assert.match(source, /fn has_inverse_time_feed_cancel/);
+  assert.match(source, /fn has_inverse_time_feed_evidence/);
+  assert.match(source, /inverse_time_feed_active/);
+  assert.match(source, /inverse-time-feed-not-verified/);
+  assert.match(source, /inverse-time-feed-not-cancelled-before-end/);
+  assert.match(source, /inverse-time-feed-boundary/);
+  assert.match(source, /cnc_analysis_requires_inverse_time_feed_review_and_cancel/);
   assert.match(source, /fn has_additive_relative_positioning_evidence/);
   assert.match(source, /additive_relative_positioning_verified/);
   assert.match(source, /additive-relative-positioning-extrusion-not-verified/);
@@ -1191,9 +1199,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /nonzero axis counts/);
   assert.match(readme, /positioning-mode reset state/);
   assert.match(readme, /coordinate transform rotation\/scaling\/mirroring review and cancel state/);
+  assert.match(readme, /inverse-time feed review and G94 cancel state/);
   assert.match(
     readme,
     /unreviewed `G51` scaling\/mirroring or `G68` coordinate rotation and missing `G50\.1`\/`G69` transform cancellation/,
+  );
+  assert.match(
+    readme,
+    /CNC inverse-time `G93` feed motion without timing review or program end before `G94` cancel/,
   );
   assert.match(
     readme,

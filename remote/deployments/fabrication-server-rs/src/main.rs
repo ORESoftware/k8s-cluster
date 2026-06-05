@@ -8910,6 +8910,49 @@ fn analyze_instruction_programs(
                             .to_string(),
                 });
             }
+            if line_has_inverse_time_feed_evidence {
+                inverse_time_feed_evidence_observed = true;
+            }
+            if line_cancels_inverse_time_feed {
+                inverse_time_feed_active = false;
+            }
+            if line_has_inverse_time_feed_start {
+                inverse_time_feed_active = true;
+            }
+            if machine_code_language
+                && matches!(
+                    class,
+                    MachineClass::Mill | MachineClass::Router | MachineClass::Lathe
+                )
+                && inverse_time_feed_active
+                && line_has_feed_move
+                && !inverse_time_feed_evidence_observed
+                && !reported_inverse_time_feed_motion_boundary
+            {
+                reported_inverse_time_feed_motion_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "inverse-time-feed-not-verified".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "cutting motion runs while G93 inverse-time feed mode is active without feed timing review evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "inverse-time-feed-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "G93 inverse-time feed mode changes F words from feed rate to move-time commands; unreviewed imported motion can overload tools, desynchronize rotary/linear axes, or scrap geometry when timing assumptions are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record inverse-time feed review evidence, verify every cutting block has an intended F timing value, dry-run rotary/linear blend motion, and cancel with G94 before machine-ready release"
+                            .to_string(),
+                });
+            }
             if class == MachineClass::Additive
                 && (has_any_code(&stripped, &["G28"])
                     || has_printer_restart_position_evidence(raw_line))
@@ -9280,6 +9323,38 @@ fn analyze_instruction_programs(
                     requires_human_intervention: true,
                     suggested_resolution:
                         "insert G50.1/G69 before M2/M30, verify transform cancellation and datum state, then rerun dry-run simulation before release"
+                            .to_string(),
+                });
+            }
+            if machine_code_language
+                && matches!(
+                    class,
+                    MachineClass::Mill | MachineClass::Router | MachineClass::Lathe
+                )
+                && line_has_program_end
+                && inverse_time_feed_active
+                && !reported_inverse_time_feed_cancel_boundary
+            {
+                reported_inverse_time_feed_cancel_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "inverse-time-feed-not-cancelled-before-end".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message: "program ends while G93 inverse-time feed mode is still active"
+                        .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "inverse-time-feed-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "inverse-time feed can remain modal until G94 cancellation, so ending with G93 active can make the next setup or imported subprogram interpret F words as move-time commands"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "insert G94 before M2/M30, verify normal feed-per-minute mode and per-block timing evidence, then rerun dry-run simulation before release"
                             .to_string(),
                 });
             }
@@ -23280,6 +23355,79 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.contains("boundary coordinate-transform-boundary")));
+        assert!(!improved[1].changed);
+    }
+
+    #[test]
+    fn cnc_analysis_requires_inverse_time_feed_review_and_cancel() {
+        let programs = vec![
+            program(
+                "unreviewed-inverse-time-feed",
+                "horizontal-mill",
+                &[
+                    "G21 G90 G54 ; datum probed, vise clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1",
+                    "S7000 M3",
+                    "M8 ; coolant active",
+                    "G93",
+                    "G1 X10 Y0 A90 F0.08",
+                    "M30",
+                ],
+            ),
+            program(
+                "reviewed-inverse-time-feed",
+                "horizontal-mill",
+                &[
+                    "G21 G90 G54 ; datum probed, vise clamps, chip-load evidence, and ATC magazine verified",
+                    "T1 M6 ; ATC magazine verified",
+                    "G43 H1",
+                    "S7000 M3",
+                    "M8 ; coolant active",
+                    "G93 ; inverse-time feed verified, per-move F word verified, rotary blend feed verified, and feed timing dry run approved",
+                    "G1 X10 Y0 A90 F0.08",
+                    "G94 ; normal feed-per-minute restored",
+                    "M30",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "inverse-time-feed-not-verified"
+                && finding.program_id.as_deref() == Some("unreviewed-inverse-time-feed")
+                && finding.line == Some(7)
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "inverse-time-feed-not-cancelled-before-end"
+                && finding.program_id.as_deref() == Some("unreviewed-inverse-time-feed")
+                && finding.line == Some(8)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "inverse-time-feed-boundary"
+                && boundary.program_id.as_deref() == Some("unreviewed-inverse-time-feed")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("G94")
+        }));
+        let summary = boundary_summary(&validation);
+        assert!(summary.automation_requirements.iter().any(|requirement| {
+            requirement.boundary_kind == "inverse-time-feed-boundary"
+                && requirement.automation_type == "operator-gate-automation"
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("inverse-time-feed")
+                && finding.program_id.as_deref() == Some("reviewed-inverse-time-feed")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary inverse-time-feed-boundary")));
         assert!(!improved[1].changed);
     }
 
