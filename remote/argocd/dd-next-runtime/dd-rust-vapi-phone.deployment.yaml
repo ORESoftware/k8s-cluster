@@ -47,9 +47,10 @@ spec:
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
               export CARGO_HOME=/var/cache/dd-rust-vapi-phone/cargo
               export CARGO_TARGET_DIR=/var/cache/dd-rust-vapi-phone/target
+              export VAPI_FLAMEGRAPH_DIR="${VAPI_FLAMEGRAPH_DIR:-/var/cache/dd-rust-vapi-phone/flamegraphs}"
               export VAPI_SERVER_SECRET="${VAPI_SERVER_SECRET:-dummy-vapi-server-secret}"
               export HOME=/tmp
-              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR" "$VAPI_FLAMEGRAPH_DIR"
               source_root=/opt/dd-next-1
               if [ -n "${VAPI_PHONE_GIT_URL:-}" ]; then
                 clone_root="$(mktemp -d /tmp/dd-rust-vapi-phone-source.XXXXXX)"
@@ -69,6 +70,8 @@ spec:
               value: /var/cache/dd-rust-vapi-phone/cargo
             - name: CARGO_TARGET_DIR
               value: /var/cache/dd-rust-vapi-phone/target
+            - name: VAPI_FLAMEGRAPH_DIR
+              value: /var/cache/dd-rust-vapi-phone/flamegraphs
             - name: VAPI_PHONE_GIT_URL
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: VAPI_PHONE_GIT_REF

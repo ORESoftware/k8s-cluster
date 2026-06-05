@@ -185,4 +185,6 @@ Airflow metadata `connection` key through the External Secrets Operator template
 Airbyte's chart is configured with `postgresql.enabled=false`, `global.database.type=external`, and
 `global.storage.type=s3`. The external database endpoint is the `dd-airbyte-postgresql` StatefulSet
 in the `airbyte` namespace, and all DB/S3 credentials come from External Secrets. The S3 bucket name
-is `dd-remote-dev-airbyte` in `us-east-1`; create or verify that bucket before syncing Airbyte.
+is `dd-remote-dev-airbyte` in `us-east-1`; create or verify that bucket before syncing Airbyte. The
+version-controlled Terraform stack for that bucket lives at
+`remote/terraform/aws/airbyte-s3`.

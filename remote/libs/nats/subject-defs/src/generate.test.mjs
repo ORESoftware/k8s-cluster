@@ -29,6 +29,12 @@ test('typescript output exposes constants for known static subjects', async () =
     'export const TRADING_SIGNALS_SUBJECT = "dd.remote.trading.signals";',
     'export const LAMBDAS_FUNCTIONS_SUBJECT = "dd.remote.lambdas.functions";',
     'export const WEBSOCKET_EVENTS_SUBJECT = "dd.remote.websocket.events";',
+    'export const FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT = "dd.remote.fabrication.design.conversion.requests";',
+    'export const FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP = "dd-fabrication-design-converters";',
+    'export const FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT = "dd.remote.fabrication.design.conversion.results";',
+    'export const FABRICATION_INSTRUCTION_GENERATION_REQUESTS_SUBJECT = "dd.remote.fabrication.instructions.generation.requests";',
+    'export const FABRICATION_INSTRUCTION_GENERATION_REQUESTS_QUEUE_GROUP = "dd-fabrication-instruction-generators";',
+    'export const FABRICATION_INSTRUCTION_GENERATION_RESULTS_SUBJECT = "dd.remote.fabrication.instructions.generation.results";',
   ]) {
     assert.ok(ts.includes(literal), `missing TS constant: ${literal}`);
   }
@@ -126,6 +132,12 @@ test('rust output exposes snake_case formatters + parsers + constants', async ()
     'pub const THREAD_TASKS_WILDCARD: &str = "dd.remote.thread.*.tasks";',
     'pub const THREAD_TASKS_QUEUE_GROUP: &str = "dd-remote-thread-preparer";',
     'pub const DD_REMOTE_TASKS_STREAM_NAME: &str = "DD_REMOTE_TASKS";',
+    'pub const FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.design.conversion.requests";',
+    'pub const FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-design-converters";',
+    'pub const FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT: &str = "dd.remote.fabrication.design.conversion.results";',
+    'pub const FABRICATION_INSTRUCTION_GENERATION_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.instructions.generation.requests";',
+    'pub const FABRICATION_INSTRUCTION_GENERATION_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-instruction-generators";',
+    'pub const FABRICATION_INSTRUCTION_GENERATION_RESULTS_SUBJECT: &str = "dd.remote.fabrication.instructions.generation.results";',
   ]) {
     assert.ok(rs.includes(c), `missing Rust constant: ${c}`);
   }
@@ -286,6 +298,9 @@ for fmt, parser, kwargs in cases:
     assert parser(bad) is None
 print('OK')
   `;
-  const out = execFileSync('python3', ['-c', code], { encoding: 'utf8' });
+  const out = execFileSync('python3', ['-c', code], {
+    encoding: 'utf8',
+    env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+  });
   assert.match(out, /OK/);
 });

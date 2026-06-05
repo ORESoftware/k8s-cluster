@@ -664,6 +664,318 @@ data:
       "version": 1,
       "weekStart": ""
     }
+  fabrication-planner.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [
+        { "title": "Fabrication Gateway", "type": "link", "url": "/fabrication/" },
+        { "title": "Fabrication API Docs", "type": "link", "url": "/fabrication/docs/api" },
+        { "title": "Fabrication Jobs", "type": "link", "url": "/fabrication/jobs" },
+        { "title": "Dashboard Shortcut", "type": "link", "url": "/grafana/fabrication" },
+        { "title": "Deployment Drilldown", "type": "link", "url": "/grafana/depl/dd-fabrication-server" }
+      ],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "id": 1,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "up{job=\"dd-fabrication-server\"}", "refId": "A" } ],
+          "title": "Service Scrape Up",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "id": 2,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(up{job=\"dd-fabrication-server-pods\"} == bool 0) or vector(0)", "refId": "A" } ],
+          "title": "Pod Scrape Targets Down",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "id": 3,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(ALERTS{alertstate=\"firing\",service=\"dd-fabrication-server\"}) or vector(0)", "refId": "A" } ],
+          "title": "Firing Fabrication Alerts",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "id": 4,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "max(dd_k8s_hpa_current_at_max{namespace=\"default\",app=\"dd-fabrication-server\",hpa=\"dd-fabrication-server\"}) or vector(0)", "refId": "A" } ],
+          "title": "HPA At Max",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 4 },
+          "id": 5,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_desired_replicas{workload=\"dd-fabrication-server\"})", "legendFormat": "desired {{namespace}}/{{kind}}/{{workload}}", "refId": "A" },
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_available_replicas{workload=\"dd-fabrication-server\"})", "legendFormat": "available {{namespace}}/{{kind}}/{{workload}}", "refId": "B" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_current_replicas{target=\"dd-fabrication-server\"})", "legendFormat": "hpa current {{namespace}}/{{hpa}}", "refId": "C" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_desired_replicas{target=\"dd-fabrication-server\"})", "legendFormat": "hpa desired {{namespace}}/{{hpa}}", "refId": "D" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_max_replicas{target=\"dd-fabrication-server\"})", "legendFormat": "hpa max {{namespace}}/{{hpa}}", "refId": "E" },
+            { "expr": "sum by (namespace, deployment, app) (dd_k8s_deployment_updated_replicas{namespace=\"default\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"})", "legendFormat": "updated {{namespace}}/{{deployment}}", "refId": "F" },
+            { "expr": "sum by (namespace, deployment, app) (dd_k8s_deployment_unavailable_replicas{namespace=\"default\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"})", "legendFormat": "unavailable {{namespace}}/{{deployment}}", "refId": "G" }
+          ],
+          "title": "Replica and Autoscaler State",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "reqps" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 4 },
+          "id": 6,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_fabrication_server_plan_requests_total[5m]))", "legendFormat": "plan", "refId": "A" },
+            { "expr": "sum(rate(dd_fabrication_server_analysis_requests_total[5m]))", "legendFormat": "analysis", "refId": "B" },
+            { "expr": "sum(rate(dd_fabrication_server_learning_requests_total[5m]))", "legendFormat": "learning", "refId": "C" }
+          ],
+          "title": "Request Intake",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 11 },
+          "id": 7,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_fabrication_server_failure_boundaries_total[10m]))", "legendFormat": "machine-failure boundaries", "refId": "A" },
+            { "expr": "sum(rate(dd_fabrication_server_errors_total[5m]))", "legendFormat": "server errors", "refId": "B" }
+          ],
+          "title": "Failure Boundaries and Errors",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 11 },
+          "id": 8,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_fabrication_server_nats_results_published_total[5m]))", "legendFormat": "fabrication results", "refId": "A" },
+            { "expr": "sum(rate(dd_fabrication_server_mdp_published_total[5m]))", "legendFormat": "mdp optimize jobs", "refId": "B" }
+          ],
+          "title": "Result and Learning Fanout",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 18 },
+          "id": 9,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "max(dd_fabrication_server_current_jobs)", "legendFormat": "retained jobs", "refId": "A" },
+            { "expr": "max(dd_fabrication_server_current_learning_outcomes)", "legendFormat": "learning outcomes", "refId": "B" }
+          ],
+          "title": "In-Memory Evidence Ledgers",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 18 },
+          "id": 10,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "up{job=~\"dd-fabrication-server|dd-fabrication-server-pods|dd-nats|dd-mdp-optimizer|dd-runtime-config\"}", "legendFormat": "{{job}} {{instance}}", "refId": "A" }
+          ],
+          "title": "Service, Pod, and Dependency Scrapes",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 25 },
+          "id": 11,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_runtime_config_push_total{env=\"stage\",subscriber=\"dd-fabrication-server\",result=~\"transport_error|http_error\"}[10m]))", "legendFormat": "fabrication push errors", "refId": "A" },
+            { "expr": "sum(rate(dd_runtime_config_push_total{env=\"stage\",subscriber=\"dd-fabrication-server\",result=\"success\"}[10m]))", "legendFormat": "fabrication push success", "refId": "B" }
+          ],
+          "title": "Runtime Config Push Delivery",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 25 },
+          "id": 12,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [ { "expr": "{deployment=\"dd-fabrication-server\"} |~ \"(?i)(warn|error|fatal|panic|failed|boundary|timeout|unavailable)\"", "refId": "A" } ],
+          "title": "Recent Fabrication Warning and Error Logs",
+          "type": "logs"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 32 },
+          "id": 13,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, init_container, reason) (dd_k8s_pod_init_container_waiting{namespace=\"default\",app=\"dd-fabrication-server\"})", "legendFormat": "init waiting {{namespace}}/{{init_container}} {{reason}}", "refId": "A" },
+            { "expr": "sum by (namespace, init_container) (increase(dd_k8s_pod_init_container_restarts_total{namespace=\"default\",app=\"dd-fabrication-server\"}[15m]))", "legendFormat": "init restarts {{namespace}}/{{init_container}}", "refId": "B" },
+            { "expr": "sum by (namespace, app, involved_kind, type, reason) (dd_k8s_event_count{namespace=\"default\",app=\"dd-fabrication-server\",type=\"Warning\"})", "legendFormat": "warning {{namespace}}/{{app}} {{reason}}", "refId": "C" },
+            { "expr": "sum by (namespace, app, container, reason, exit_code) (dd_k8s_pod_container_last_terminated{namespace=\"default\",app=\"dd-fabrication-server\"})", "legendFormat": "last terminated {{namespace}}/{{container}} {{reason}} {{exit_code}}", "refId": "D" },
+            { "expr": "sum by (namespace, app, init_container, reason, exit_code) (dd_k8s_pod_init_container_last_terminated{namespace=\"default\",app=\"dd-fabrication-server\"})", "legendFormat": "init last terminated {{namespace}}/{{init_container}} {{reason}} {{exit_code}}", "refId": "E" },
+            { "expr": "sum by (namespace, app, container, reason) (dd_k8s_pod_container_waiting{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"})", "legendFormat": "serving waiting {{namespace}}/{{container}} {{reason}}", "refId": "F" }
+          ],
+          "title": "Kubernetes Startup, Warning, and Termination Evidence",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "percentunit" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 39 },
+          "id": 14,
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "max(dd_k8s_pod_container_cpu_usage_cores{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"}) / max(dd_k8s_pod_container_cpu_limit_cores{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"})", "legendFormat": "cpu / limit", "refId": "A" },
+            { "expr": "max(dd_k8s_pod_container_memory_usage_bytes{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"}) / max(dd_k8s_pod_container_memory_limit_bytes{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"})", "legendFormat": "memory / limit", "refId": "B" }
+          ],
+          "title": "Runtime CPU and Memory Limit Headroom",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 46 },
+          "id": 15,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"status\\\":401\" [$__interval]))", "legendFormat": "401 auth", "refId": "A" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/internal\" |= \"\\\"status\\\":404\" [$__interval]))", "legendFormat": "404 internal route", "refId": "B" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"status\\\":405\" [$__interval]))", "legendFormat": "405 method", "refId": "C" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"status\\\":413\" [$__interval]))", "legendFormat": "413 payload", "refId": "D" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"status\\\":429\" [$__interval]))", "legendFormat": "429 rate limit", "refId": "E" }
+          ],
+          "title": "Fabrication Gateway Guardrail Rejections",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 53 },
+          "id": 16,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "s" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "quantile_over_time(0.95, {deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap request_time | __error__=\"\" [$__interval])", "legendFormat": "request p95", "refId": "A" },
+            { "expr": "max_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap request_time | __error__=\"\" [$__interval])", "legendFormat": "request max", "refId": "B" }
+          ],
+          "title": "Fabrication Gateway Edge Latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 60 },
+          "id": 17,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "s" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "quantile_over_time(0.95, {deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap upstream_response_time | __error__=\"\" [$__interval])", "legendFormat": "upstream p95", "refId": "A" },
+            { "expr": "max_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap upstream_response_time | __error__=\"\" [$__interval])", "legendFormat": "upstream max", "refId": "B" }
+          ],
+          "title": "Fabrication Gateway Upstream Latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 67 },
+          "id": 18,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"upstream_status\\\":\\\"500\\\"\" [$__interval]))", "legendFormat": "upstream 500", "refId": "A" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"upstream_status\\\":\\\"502\\\"\" [$__interval]))", "legendFormat": "upstream 502", "refId": "B" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"upstream_status\\\":\\\"503\\\"\" [$__interval]))", "legendFormat": "upstream 503", "refId": "C" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"upstream_status\\\":\\\"504\\\"\" [$__interval]))", "legendFormat": "upstream 504", "refId": "D" }
+          ],
+          "title": "Fabrication Gateway Upstream Failures",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 74 },
+          "id": 19,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "bytes" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "quantile_over_time(0.95, {deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap request_length | __error__=\"\" [$__interval])", "legendFormat": "request bytes p95", "refId": "A" },
+            { "expr": "max_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap request_length | __error__=\"\" [$__interval])", "legendFormat": "request bytes max", "refId": "B" }
+          ],
+          "title": "Fabrication Gateway Request Size",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 81 },
+          "id": 20,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "bytes" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "quantile_over_time(0.95, {deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap body_bytes_sent | __error__=\"\" [$__interval])", "legendFormat": "response bytes p95", "refId": "A" },
+            { "expr": "max_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap body_bytes_sent | __error__=\"\" [$__interval])", "legendFormat": "response bytes max", "refId": "B" }
+          ],
+          "title": "Fabrication Gateway Response Size",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 88 },
+          "id": 21,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [ { "expr": "{deployment=\"dd-remote-gateway\"} |= \"/fabrication\" |~ \"(?i)(401|404|405|413|429|limit|too large|unauthorized|method|internal)\"", "refId": "A" } ],
+          "title": "Fabrication Gateway Access and Guardrail Logs",
+          "type": "logs"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 39,
+      "tags": [ "fabrication", "rust", "planner", "mdp", "nats" ],
+      "templating": { "list": [] },
+      "time": { "from": "now-30m", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Fabrication Planner",
+      "uid": "dd-fabrication-planner",
+      "version": 1,
+      "weekStart": ""
+    }
   dart-wss-runtime.json: |
     {
       "annotations": {
@@ -1221,9 +1533,12 @@ data:
           "targets": [
             { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_desired_replicas{workload=\"$deployment\"})", "legendFormat": "desired {{namespace}}/{{kind}}/{{workload}}", "refId": "A" },
             { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_available_replicas{workload=\"$deployment\"})", "legendFormat": "available {{namespace}}/{{kind}}/{{workload}}", "refId": "B" },
-            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_ready_replicas{workload=\"$deployment\"})", "legendFormat": "ready {{namespace}}/{{kind}}/{{workload}}", "refId": "C" }
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_ready_replicas{workload=\"$deployment\"})", "legendFormat": "ready {{namespace}}/{{kind}}/{{workload}}", "refId": "C" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_current_replicas{target=\"$deployment\"})", "legendFormat": "hpa current {{namespace}}/{{hpa}} -> {{target}}", "refId": "D" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_desired_replicas{target=\"$deployment\"})", "legendFormat": "hpa desired {{namespace}}/{{hpa}} -> {{target}}", "refId": "E" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_max_replicas{target=\"$deployment\"})", "legendFormat": "hpa max {{namespace}}/{{hpa}} -> {{target}}", "refId": "F" }
           ],
-          "title": "Desired, Available, Ready",
+          "title": "Workload and HPA Replicas",
           "type": "timeseries"
         },
         {
@@ -1428,9 +1743,12 @@ data:
           "targets": [
             { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_desired_replicas{workload=~\"${workload:regex}\"})", "legendFormat": "desired {{namespace}}/{{kind}}/{{workload}}", "refId": "A" },
             { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_available_replicas{workload=~\"${workload:regex}\"})", "legendFormat": "available {{namespace}}/{{kind}}/{{workload}}", "refId": "B" },
-            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_ready_replicas{workload=~\"${workload:regex}\"})", "legendFormat": "ready {{namespace}}/{{kind}}/{{workload}}", "refId": "C" }
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_ready_replicas{workload=~\"${workload:regex}\"})", "legendFormat": "ready {{namespace}}/{{kind}}/{{workload}}", "refId": "C" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_current_replicas{target=~\"${workload:regex}\"})", "legendFormat": "hpa current {{namespace}}/{{hpa}} -> {{target}}", "refId": "D" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_desired_replicas{target=~\"${workload:regex}\"})", "legendFormat": "hpa desired {{namespace}}/{{hpa}} -> {{target}}", "refId": "E" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_max_replicas{target=~\"${workload:regex}\"})", "legendFormat": "hpa max {{namespace}}/{{hpa}} -> {{target}}", "refId": "F" }
           ],
-          "title": "Desired, Available, Ready",
+          "title": "Workload and HPA Replicas",
           "type": "timeseries"
         },
         {
@@ -1442,9 +1760,10 @@ data:
           "targets": [
             { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_unavailable_replicas{workload=~\"${workload:regex}\"})", "legendFormat": "unavailable {{namespace}}/{{kind}}/{{workload}}", "refId": "A" },
             { "expr": "sum by (namespace, app, container) (dd_k8s_pod_container_restarts_total{app=~\"${workload:regex}\"})", "legendFormat": "restarts {{namespace}}/{{app}}/{{container}}", "refId": "B" },
-            { "expr": "sum by (namespace, app, container, reason) (dd_k8s_pod_container_waiting{app=~\"${workload:regex}\"})", "legendFormat": "waiting {{namespace}}/{{app}}/{{container}} {{reason}}", "refId": "C" }
+            { "expr": "sum by (namespace, app, container, reason) (dd_k8s_pod_container_waiting{app=~\"${workload:regex}\"})", "legendFormat": "waiting {{namespace}}/{{app}}/{{container}} {{reason}}", "refId": "C" },
+            { "expr": "max by (namespace, hpa, target) (dd_k8s_hpa_current_at_max{target=~\"${workload:regex}\"})", "legendFormat": "hpa at max {{namespace}}/{{hpa}} -> {{target}}", "refId": "D" }
           ],
-          "title": "Unavailable, Restarts, Waiting",
+          "title": "Unavailable, Restarts, Waiting, HPA Ceiling",
           "type": "timeseries"
         },
         {

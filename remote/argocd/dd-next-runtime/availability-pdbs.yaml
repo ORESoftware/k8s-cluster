@@ -83,6 +83,9 @@ metadata:
   namespace: default
   labels:
     app: dd-fabrication-server
+    app.kubernetes.io/name: dd-fabrication-server
+    app.kubernetes.io/part-of: dd-next-runtime
+    app.kubernetes.io/component: fabrication-planner
 spec:
   minAvailable: 1
   selector:

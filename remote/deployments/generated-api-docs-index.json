@@ -179,10 +179,10 @@
     {
       "service": "fabrication-server-rs",
       "language": "rust",
-      "routeCount": 23,
+      "routeCount": 29,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 13,
+        "user-generated": 19,
         "runtime-config": 3
       },
       "generated": [
@@ -359,10 +359,10 @@
     {
       "service": "rust-vapi-phone-rs",
       "language": "rust",
-      "routeCount": 13,
+      "routeCount": 15,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 4,
+        "user-generated": 6,
         "runtime-config": 3
       },
       "generated": [
@@ -413,10 +413,10 @@
     {
       "service": "web-home-rs",
       "language": "rust",
-      "routeCount": 41,
+      "routeCount": 43,
       "routeTypeCounts": {
         "service": 10,
-        "user-generated": 28,
+        "user-generated": 30,
         "runtime-config": 3
       },
       "generated": [

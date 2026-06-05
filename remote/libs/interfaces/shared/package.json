@@ -7,7 +7,8 @@
   "scripts": {
     "generate": "node src/generate.mjs",
     "check": "node src/generate.mjs --check",
-    "test": "node --test \"src/**/*.test.mjs\""
+    "validate:examples": "node src/validate-examples.mjs",
+    "test": "pnpm run validate:examples && node --test \"src/**/*.test.mjs\""
   },
   "exports": {
     "./schema": "./schema/index.json",

@@ -32,6 +32,13 @@ rules:
       - get
       - list
       - watch
+  - apiGroups: [autoscaling]
+    resources:
+      - horizontalpodautoscalers
+    verbs:
+      - get
+      - list
+      - watch
   - apiGroups: [metrics.k8s.io]
     resources:
       - nodes

@@ -247,3 +247,79 @@ test("queue consumer rolls replacement before terminating the old consumer", asy
   assert.match(deployment, /maxSurge:\s*1/);
   assert.match(deployment, /maxUnavailable:\s*0/);
 });
+
+test("fabrication server runtime keeps planner replicas hardened and observable", async () => {
+  const deployment = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-fabrication-server.deployment.yaml",
+  );
+  const service = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-fabrication-server.service.yaml",
+  );
+  const hpa = await readRepoFile("remote/argocd/dd-next-runtime/dd-fabrication-server.hpa.yaml");
+  const networkPolicy = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-fabrication-server.networkpolicy.yaml",
+  );
+  const serviceAccount = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-fabrication-server.serviceaccount.yaml",
+  );
+  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");
+
+  assert.match(deployment, /name:\s*dd-fabrication-server/);
+  assert.match(deployment, /replicas:\s*2/);
+  assert.match(deployment, /minReadySeconds:\s*5/);
+  assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
+  assert.match(deployment, /type:\s*RollingUpdate/);
+  assert.match(deployment, /maxSurge:\s*1/);
+  assert.match(deployment, /maxUnavailable:\s*0/);
+  assert.match(deployment, /serviceAccountName:\s*dd-fabrication-server/);
+  assert.match(deployment, /automountServiceAccountToken:\s*false/);
+  assert.match(deployment, /enableServiceLinks:\s*false/);
+  assert.match(deployment, /hostNetwork:\s*false/);
+  assert.match(deployment, /hostPID:\s*false/);
+  assert.match(deployment, /hostIPC:\s*false/);
+  assert.match(deployment, /shareProcessNamespace:\s*false/);
+  assert.match(deployment, /dnsPolicy:\s*ClusterFirst/);
+  assert.match(deployment, /runAsNonRoot:\s*true/);
+  assert.match(deployment, /seccompProfile:[\s\S]*type:\s*RuntimeDefault/);
+  assert.match(deployment, /capabilities:[\s\S]*drop:[\s\S]*- ALL/);
+  assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
+  assert.match(deployment, /startupProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
+  assert.match(deployment, /readinessProbe:[\s\S]*path:\s*\/readyz[\s\S]*port:\s*http/);
+  assert.match(deployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
+  assert.match(deployment, /requests:[\s\S]*ephemeral-storage:\s*4Gi/);
+  assert.match(deployment, /limits:[\s\S]*ephemeral-storage:\s*8Gi/);
+  assert.match(deployment, /emptyDir:[\s\S]*sizeLimit:\s*7Gi/);
+
+  assert.match(serviceAccount, /name:\s*dd-fabrication-server/);
+  assert.match(serviceAccount, /automountServiceAccountToken:\s*false/);
+
+  assert.match(service, /type:\s*ClusterIP/);
+  assert.match(service, /prometheus\.io\/scrape:\s*'true'/);
+  assert.match(service, /sessionAffinity:\s*ClientIP/);
+  assert.match(service, /port:\s*8113/);
+  assert.match(service, /targetPort:\s*http/);
+
+  assert.match(hpa, /minReplicas:\s*2/);
+  assert.match(hpa, /maxReplicas:\s*8/);
+  assert.match(hpa, /name:\s*cpu[\s\S]*averageUtilization:\s*70/);
+  assert.match(hpa, /name:\s*memory[\s\S]*averageUtilization:\s*80/);
+
+  assert.match(
+    pdbs,
+    /kind:\s*PodDisruptionBudget[\s\S]*name:\s*dd-fabrication-server[\s\S]*minAvailable:\s*1[\s\S]*app:\s*dd-fabrication-server/,
+  );
+
+  assert.match(networkPolicy, /kind:\s*NetworkPolicy/);
+  assert.match(networkPolicy, /policyTypes:[\s\S]*- Ingress[\s\S]*- Egress/);
+  assert.match(networkPolicy, /app:\s*dd-remote-gateway/);
+  assert.match(networkPolicy, /app:\s*dd-runtime-config/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*observability/);
+  assert.match(networkPolicy, /app:\s*dd-nats/);
+  assert.match(networkPolicy, /app:\s*dd-mdp-optimizer/);
+  assert.match(networkPolicy, /port:\s*8113/);
+  assert.match(networkPolicy, /port:\s*4222/);
+  assert.match(networkPolicy, /port:\s*8110/);
+  assert.match(networkPolicy, /port:\s*8096/);
+  assert.match(networkPolicy, /cidr:\s*0\.0\.0\.0\/0/);
+  assert.match(networkPolicy, /cidr:\s*::\/0/);
+});

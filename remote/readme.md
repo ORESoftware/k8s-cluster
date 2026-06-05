@@ -44,7 +44,9 @@ There are also runtime siblings for queueing, scheduling, and optimization:
   and publishes optimization results.
 - [`deployments/fabrication-server-rs/`](./deployments/fabrication-server-rs/) — Rust fabrication
   planner and instruction validator for hybrid 3D-printing, CNC milling, routing, lathe, and
-  assembly workflows.
+  assembly workflows. Native CAD/source package intake rules for SOLIDWORKS, Creo/Pro/Engineer,
+  NX, CATIA, Fusion, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, and neutral STEP/STL/3MF/DXF
+  exports are captured in [`../docs/fabrication-cad-source-intake.md`](../docs/fabrication-cad-source-intake.md).
 - [`deployments/thread-operator-go/`](./deployments/thread-operator-go/) — Go Kubernetes operator that owns the
   per-thread workspace lifecycle as a `Thread` CRD (`dd.dev/v1alpha1`). Strictly opt-in: only
   reconciles `Thread` CRs and refuses to adopt resources that lack the

@@ -28,6 +28,220 @@ pub type AgentTaskQueueMessage {
   )
 }
 
+/// A release or conversion blocker reported by a planner or worker.
+pub type FabricationDesignConversionBlocker {
+  FabricationDesignConversionBlocker(
+    code: String,
+    message: String,
+    input_id: Option(String),
+    target_id: Option(String),
+    machine_ready_impact: Option(String)
+  )
+}
+
+/// Body published on dd.remote.fabrication.design.conversion.requests for external CAD, mesh, slicer, CAM setup, and neutral-export workers.
+pub type FabricationDesignConversionRequest {
+  FabricationDesignConversionRequest(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    producer: Option(String),
+    result_subject: Option(String),
+    design_inputs: List(FabricationDesignInputRef),
+    targets: List(FabricationDesignConversionTarget),
+    blockers: Option(List(FabricationDesignConversionBlocker)),
+    priority: Option(Int),
+    notes: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.design.conversion.results with generated artifacts, translator evidence, blockers, and machine-ready posture.
+pub type FabricationDesignConversionResult {
+  FabricationDesignConversionResult(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    worker_id: String,
+    translator: Option(String),
+    translator_version: Option(String),
+    success: Bool,
+    machine_ready: Bool,
+    artifacts: List(FabricationNeutralExportArtifact),
+    blockers: Option(List(FabricationDesignConversionBlocker)),
+    warnings: Option(List(String)),
+    review_metadata: Option(Dynamic)
+  )
+}
+
+/// One neutral-export or review artifact requested from conversion workers.
+pub type FabricationDesignConversionTarget {
+  FabricationDesignConversionTarget(
+    target_id: String,
+    source_input_id: Option(String),
+    format: String,
+    purpose: Option(String),
+    units: Option(String),
+    tolerance_mm: Option(Float),
+    machine_class: Option(String),
+    evidence_required: Option(List(String))
+  )
+}
+
+/// One reviewed design input handed to an external conversion worker. URIs should already be sanitized for logs and artifacts; proprietary source files remain operator-controlled references.
+pub type FabricationDesignInputRef {
+  FabricationDesignInputRef(
+    input_id: String,
+    file_name: Option(String),
+    source_uri: Option(String),
+    format: Option(String),
+    source_system: Option(String),
+    role: Option(String),
+    notes: Option(List(String)),
+    source_sha256: Option(String)
+  )
+}
+
+/// Generated machine code, setup sheet, inspection plan, simulation report, postprocess plan, or operator instruction returned by a worker.
+pub type FabricationGeneratedInstructionArtifact {
+  FabricationGeneratedInstructionArtifact(
+    artifact_id: String,
+    target_id: String,
+    operation_id: String,
+    machine_id: Option(String),
+    format: String,
+    uri: Option(String),
+    sha256: Option(String),
+    media_type: Option(String),
+    controller_dialect: Option(String),
+    estimated_runtime_sec: Option(Int),
+    evidence: Option(List(String)),
+    preview_lines: Option(List(String))
+  )
+}
+
+/// A release or instruction-generation blocker reported by a planner or worker.
+pub type FabricationInstructionBlocker {
+  FabricationInstructionBlocker(
+    code: String,
+    message: String,
+    operation_id: Option(String),
+    target_id: Option(String),
+    machine_id: Option(String),
+    machine_ready_impact: Option(String)
+  )
+}
+
+/// Body published on dd.remote.fabrication.instructions.generation.requests for slicer, CAM, postprocess, setup-sheet, inspection, and machine-code workers.
+pub type FabricationInstructionGenerationRequest {
+  FabricationInstructionGenerationRequest(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    producer: Option(String),
+    result_subject: Option(String),
+    source_artifacts: List(FabricationInstructionSourceArtifact),
+    machine_profiles: List(FabricationInstructionMachineProfile),
+    operations: List(FabricationInstructionOperation),
+    targets: List(FabricationInstructionGenerationTarget),
+    blockers: Option(List(FabricationInstructionBlocker)),
+    priority: Option(Int),
+    notes: Option(List(String))
+  )
+}
+
+/// Body published on dd.remote.fabrication.instructions.generation.results with generated machine code, setup/operator instructions, simulation evidence, blockers, and machine-ready posture.
+pub type FabricationInstructionGenerationResult {
+  FabricationInstructionGenerationResult(
+    schema: String,
+    request_id: String,
+    plan_request_id: String,
+    job_id: Option(String),
+    emitted_at_ms: Int,
+    worker_id: String,
+    generator: Option(String),
+    generator_version: Option(String),
+    success: Bool,
+    machine_ready: Bool,
+    artifacts: List(FabricationGeneratedInstructionArtifact),
+    blockers: Option(List(FabricationInstructionBlocker)),
+    warnings: Option(List(String)),
+    review_metadata: Option(Dynamic)
+  )
+}
+
+/// One machine-code, setup, inspection, postprocess, or operator-instruction artifact requested from a worker.
+pub type FabricationInstructionGenerationTarget {
+  FabricationInstructionGenerationTarget(
+    target_id: String,
+    operation_id: String,
+    machine_id: Option(String),
+    format: String,
+    purpose: Option(String),
+    evidence_required: Option(List(String))
+  )
+}
+
+/// Machine, controller, slicer, or postprocessor profile requested for instruction generation.
+pub type FabricationInstructionMachineProfile {
+  FabricationInstructionMachineProfile(
+    machine_id: String,
+    machine_class: String,
+    controller_dialect: Option(String),
+    post_processor: Option(String),
+    material: Option(String),
+    work_envelope: Option(String),
+    required_evidence: Option(List(String))
+  )
+}
+
+/// One additive, subtractive, sheet-cutting, inspection, postprocess, or assembly operation for instruction generation.
+pub type FabricationInstructionOperation {
+  FabricationInstructionOperation(
+    operation_id: String,
+    part_id: Option(String),
+    process: String,
+    machine_class: String,
+    description: Option(String),
+    source_artifact_ids: Option(List(String)),
+    requirements: Option(List(String))
+  )
+}
+
+/// Verified geometry, slicer project, CAM setup, sheet nesting, mesh report, or assembly graph artifact that an instruction-generation worker can consume.
+pub type FabricationInstructionSourceArtifact {
+  FabricationInstructionSourceArtifact(
+    artifact_id: String,
+    source_input_id: Option(String),
+    format: String,
+    uri: Option(String),
+    sha256: Option(String),
+    units: Option(String),
+    evidence: Option(List(String))
+  )
+}
+
+/// One generated neutral export, slicer project, CAM setup, sheet nesting file, mesh report, or review artifact returned by a conversion worker.
+pub type FabricationNeutralExportArtifact {
+  FabricationNeutralExportArtifact(
+    artifact_id: String,
+    target_id: Option(String),
+    source_input_id: Option(String),
+    format: String,
+    uri: Option(String),
+    sha256: Option(String),
+    media_type: Option(String),
+    units: Option(String),
+    tolerance_mm: Option(Float),
+    evidence: Option(List(String))
+  )
+}
+
 /// Why this push happened. 'cron' = periodic sweep, 'admin' = on-demand UI button, 'register' = subscriber just joined, 'manual' = explicit API call, 'initial' = subscriber boot-time pull.
 pub type RuntimeConfigApplyReason {
   Cron

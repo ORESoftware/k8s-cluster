@@ -24,6 +24,7 @@ data:
               - dd-otel-collector.observability.svc.cluster.local:8888
       - job_name: otel-collector
         metrics_path: /metrics
+        honor_labels: true
         static_configs:
           - targets:
               - dd-otel-collector.observability.svc.cluster.local:8889
@@ -70,6 +71,11 @@ data:
         static_configs:
           - targets:
               - dd-mdp-optimizer.default.svc.cluster.local:8096
+      - job_name: dd-runtime-config
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-runtime-config.default.svc.cluster.local:8110
       - job_name: dd-fabrication-server
         metrics_path: /metrics
         static_configs:
@@ -230,6 +236,213 @@ data:
             annotations:
               summary: "Workload {{ $labels.namespace }}/{{ $labels.workload }} has unavailable replicas"
               description: "At least one watched Kubernetes workload has unavailable replicas for more than five minutes."
+          - alert: DDRuntimeConfigTargetDown
+            expr: up{job="dd-runtime-config"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-runtime-config
+            annotations:
+              summary: Runtime-config scrape target is down
+              description: "Prometheus cannot scrape dd-runtime-config /metrics; dependent planners may miss configuration subscriber, entry, and push-delivery evidence."
+          - alert: DDRuntimeConfigStageSubscribersMissing
+            expr: absent(dd_runtime_config_subscribers{env="stage"}) or dd_runtime_config_subscribers{env="stage"} < 1
+            for: 10m
+            labels:
+              severity: warning
+              service: dd-runtime-config
+            annotations:
+              summary: Runtime-config has no stage subscribers
+              description: "dd-runtime-config reports no stage subscribers, so fabrication and other runtime services may not receive pushed configuration changes."
+          - alert: DDRuntimeConfigPushErrorsIncreasing
+            expr: sum(rate(dd_runtime_config_push_total{env="stage",result=~"transport_error|http_error"}[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-runtime-config
+            annotations:
+              summary: Runtime-config push errors are increasing
+              description: "dd-runtime-config is recording failed stage push attempts; dependent services such as dd-fabrication-server may be running with stale configuration."
+          - alert: DDFabricationNatsTargetDown
+            expr: up{job="dd-nats"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication NATS dependency scrape target is down
+              description: "Prometheus cannot scrape dd-nats metrics; fabrication queue intake, result publication, runtime events, and learning fan-out may be unavailable."
+          - alert: DDFabricationMdpOptimizerTargetDown
+            expr: up{job="dd-mdp-optimizer"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication MDP optimizer dependency scrape target is down
+              description: "Prometheus cannot scrape dd-mdp-optimizer /metrics; fabrication planning may lose policy optimization and learning-feedback evidence."
+          - alert: DDFabricationRuntimeConfigPushErrorsIncreasing
+            expr: sum(rate(dd_runtime_config_push_total{env="stage",subscriber="dd-fabrication-server",result=~"transport_error|http_error"}[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication runtime-config push errors are increasing
+              description: "dd-runtime-config is failing to deliver stage snapshots to dd-fabrication-server; planning, NATS fan-out, or MDP learning behavior may be using stale runtime configuration."
+          - alert: DDFabricationServerWorkloadUnavailable
+            expr: dd:k8s_workload:available_ratio{namespace="default", workload="dd-fabrication-server"} < 1
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server deployment has unavailable replicas
+              description: "The dd-fabrication-server Deployment has fewer available replicas than desired; cold release builds, scheduling pressure, or readiness failures may be blocking fabrication planning capacity."
+          - alert: DDFabricationServerRolloutUpdatedReplicasLagging
+            expr: max(dd_k8s_deployment_updated_replicas{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"}) < max(dd_k8s_deployment_desired_replicas{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"})
+            for: 10m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server rollout has not updated all desired replicas
+              description: "The dd-fabrication-server Deployment has fewer updated replicas than desired; the hardened Rust planner image or release-build startup may not be fully rolled out even if older replicas are still serving."
+          - alert: DDFabricationServerHpaAtMaxReplicas
+            expr: max(dd_k8s_hpa_current_at_max{namespace="default",app="dd-fabrication-server",hpa="dd-fabrication-server"}) > 0
+            for: 10m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server HPA is at max replicas
+              description: "The dd-fabrication-server HorizontalPodAutoscaler has held current replicas at its configured maximum; planning or instruction-analysis demand may need a higher replica ceiling or request throttling."
+          - alert: DDFabricationServerCpuNearLimit
+            expr: (max(dd_k8s_pod_container_cpu_usage_cores{namespace="default",app="dd-fabrication-server",container="fabrication-server"}) / max(dd_k8s_pod_container_cpu_limit_cores{namespace="default",app="dd-fabrication-server",container="fabrication-server"})) > 0.85
+            for: 10m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server CPU usage is near its container limit
+              description: "The dd-fabrication-server serving container is using more than 85% of its configured CPU limit; planning, instruction analysis, NATS fan-out, or learning feedback may need more replicas or a higher limit before operators rely on generated machine work."
+          - alert: DDFabricationServerMemoryNearLimit
+            expr: (max(dd_k8s_pod_container_memory_usage_bytes{namespace="default",app="dd-fabrication-server",container="fabrication-server"}) / max(dd_k8s_pod_container_memory_limit_bytes{namespace="default",app="dd-fabrication-server",container="fabrication-server"})) > 0.85
+            for: 10m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server memory usage is near its container limit
+              description: "The dd-fabrication-server serving container is using more than 85% of its configured memory limit; retained job/artifact evidence, learning memory, and active planning work may be at risk of eviction or restart."
+          - alert: DDFabricationServerPodRestartsIncreasing
+            expr: sum(increase(dd_k8s_pod_container_restarts_total{namespace="default",app="dd-fabrication-server",container="fabrication-server"}[15m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server pods are restarting
+              description: "The dd-fabrication-server serving container has restarted recently; retained job/artifact evidence, learning memory, NATS subscriptions, or active planning work may have been interrupted."
+          - alert: DDFabricationServerServingContainerWaiting
+            expr: max(dd_k8s_pod_container_waiting{namespace="default",app="dd-fabrication-server",container="fabrication-server"}) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server serving container is waiting
+              description: "The dd-fabrication-server serving container is stuck in a Kubernetes waiting state; request planning, instruction analysis, result publication, and learning feedback may be unavailable even if init checks already completed."
+          - alert: DDFabricationServerInitContainerWaiting
+            expr: max(dd_k8s_pod_init_container_waiting{namespace="default",app="dd-fabrication-server",init_container=~"source-layout-check|release-build"}) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server init container is waiting
+              description: "A dd-fabrication-server init container is waiting; source layout validation or the locked release build may be blocked before the Rust service can become ready."
+          - alert: DDFabricationServerInitContainerRestartsIncreasing
+            expr: sum(increase(dd_k8s_pod_init_container_restarts_total{namespace="default",app="dd-fabrication-server",init_container=~"source-layout-check|release-build"}[15m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server init containers are restarting
+              description: "The dd-fabrication-server source-layout or release-build init container restarted recently; inspect init logs before trusting a rollout or capacity change."
+          - alert: DDFabricationServerTargetDown
+            expr: up{job="dd-fabrication-server"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server scrape target is down
+              description: "Prometheus cannot scrape dd-fabrication-server /metrics; planning, instruction validation, and learning telemetry may be unavailable."
+          - alert: DDFabricationServerPodScrapeTargetsMissing
+            expr: absent(up{job="dd-fabrication-server-pods"})
+            for: 10m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server pod scrape targets are missing
+              description: "OTel is not exporting direct dd-fabrication-server pod scrape targets; replica-local job/artifact ledgers, learning memory, failure-boundary counters, and NATS/MDP fan-out counters may be hidden behind the Service scrape."
+          - alert: DDFabricationServerPodScrapeTargetDown
+            expr: up{job="dd-fabrication-server-pods"} == 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server pod scrape target is down
+              description: "A direct dd-fabrication-server pod scrape target is down; one replica's retained fabrication evidence or learning counters may be invisible even if the Service scrape still succeeds."
+          - alert: DDFabricationServerErrorsIncreasing
+            expr: sum(rate(dd_fabrication_server_errors_total[5m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server errors are increasing
+              description: "dd-fabrication-server has recorded request or background-event errors in the last five minutes."
+          - alert: DDFabricationServerFailureBoundariesIncreasing
+            expr: sum(rate(dd_fabrication_server_failure_boundaries_total[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server is finding machine-failure boundaries
+              description: "dd-fabrication-server is emitting fabrication failure boundaries; review the affected plans or submitted instructions before operators run the generated machine work."
+          - alert: DDFabricationServerResultFanoutStalled
+            expr: (sum(rate(dd_fabrication_server_nats_results_published_total[10m])) == 0) and ((sum(rate(dd_fabrication_server_plan_requests_total[10m])) + sum(rate(dd_fabrication_server_analysis_requests_total[10m])) + sum(rate(dd_fabrication_server_learning_requests_total[10m]))) > 0)
+            for: 10m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server result fan-out appears stalled
+              description: "dd-fabrication-server is accepting successful plan, analysis, or learning requests but has not published fabrication result messages to NATS."
+          - alert: DDFabricationServerMdpFanoutStalled
+            expr: (sum(rate(dd_fabrication_server_mdp_published_total[10m])) == 0) and (sum(rate(dd_fabrication_server_plan_requests_total[10m])) > 0)
+            for: 10m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server MDP fan-out appears stalled
+              description: "dd-fabrication-server is accepting successful plan requests but has not published MDP optimization jobs for fabrication policy learning."
+          - alert: DDFabricationServerMemoryLedgerNearCapacity
+            expr: max(dd_fabrication_server_current_jobs) > 110 or max(dd_fabrication_server_current_learning_outcomes) > 460
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server in-memory ledgers are near capacity
+              description: "dd-fabrication-server is close to evicting retained job/artifact or learning-outcome evidence from its bounded in-process ledgers."
           - alert: DDOtelCollectorRejectedTelemetry
             expr: sum(rate({__name__=~"otelcol_receiver_refused_(spans|metric_points|log_records)"}[5m])) > 0
             for: 2m

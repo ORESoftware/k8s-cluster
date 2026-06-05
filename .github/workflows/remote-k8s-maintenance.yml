@@ -99,6 +99,7 @@ on:
         required: false
         type: string
         default: "3"
+      # gcs-loadtest marker: 2026-06-05 active-capacity-guard-3
       loadtest_gcs_replicas:
         description: Number of backend GCS pods to keep available during the load test.
         required: false
@@ -110,6 +111,7 @@ on:
         type: string
         default: "true"
       # Keep this workflow file in the push-trigger path for operator load-test marker commits.
+      # Last GCS load-test marker: 30k-medium-1pod-lock-cache-retry.
 
 concurrency:
   group: ${{ ((inputs.operation == 'loadtest-gcs-wss' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]'))) && 'remote-k8s-maintenance-gcs-loadtest') || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[gcs-diagnose]') || contains(github.event.head_commit.message, '[gcs-snapshot]') || contains(github.event.head_commit.message, '[gcs-ssm]')) && 'remote-k8s-maintenance-gcs-diagnose') || 'remote-k8s-maintenance-capacity' }}
@@ -138,7 +140,7 @@ jobs:
           OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[verify-mip-solver]') && 'verify-mip-solver-node') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-ssm]') && 'inspect-gcs-ssm') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-bisect]') && 'bisect-gcs-wss') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-recover]') && 'recover-gcs') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-diagnose]') && 'diagnose-gcs-scheduler') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-snapshot]') && 'snapshot-gcs-loadtest') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && github.sha) || 'dev' }}
           SSM_COMMAND_ID: ${{ inputs.ssm_command_id || github.event.head_commit.message || '' }}
-          CANCEL_SSM_COMMAND: ${{ inputs.cancel_ssm_command || 'false' }}
+          CANCEL_SSM_COMMAND: ${{ inputs.cancel_ssm_command || (github.event_name == 'push' && contains(github.event.head_commit.message, 'cancel_ssm_command=true') && 'true') || 'false' }}
           REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
           REMOTE_DEV_DEEPSEEK_API_KEY: ${{ secrets.REMOTE_DEV_DEEPSEEK_API_KEY }}
           REMOTE_DEV_DASHSCOPE_API_KEY: ${{ secrets.REMOTE_DEV_DASHSCOPE_API_KEY }}
@@ -2484,7 +2486,7 @@ jobs:
           script = r'''set -euo pipefail
           proof_log="/tmp/gcs-loadtest-proof-$(date -u +%Y%m%dT%H%M%SZ).log"
           if [ "${LOADTEST_COMPACT_OUTPUT:-true}" = "true" ]; then
-            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|=== go pprof|capacity-not-free|capacity targets are all scaled down|loader-scale|loader-rollout|loader-pod|loader-event|top-sample|pprof-|gcs-summary|loader-warmup|gcs_router_(active_total|routed_total|upstream_errors_total|active_conns))') 2> >(tee -a "$proof_log" >&2)
+            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|=== go pprof|capacity-not-free|capacity targets are all scaled down|loader-scale|loader-rollout|loader-pod|loader-event|pprof-|loader-warmup)') 2> >(tee -a "$proof_log" >&2)
           fi
           echo "PROOF remote_log=$proof_log compact_output=${LOADTEST_COMPACT_OUTPUT:-true}"
           repo=/home/ec2-user/codes/dd/dd-next-1
@@ -2537,13 +2539,14 @@ jobs:
           loaders="dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs"
           capacity_apps="dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam"
           capacity_targets="dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server"
-          capacity_extra_targets="dd-des-rs dd-fabrication-server dd-trading-server dd-web-scraper dd-selenium-server dd-rust-vapi-phone dd-remote-web-home dd-remote-rest-api dd-remote-queue-consumer dd-container-pool dd-webrtc-signaling dd-webrtc-media dd-rust-network-mutex"
+          capacity_extra_targets="dd-des-rs dd-fabrication-server dd-trading-server dd-web-scraper dd-selenium-server dd-rust-vapi-phone dd-remote-web-home dd-remote-rest-api dd-remote-queue-consumer dd-container-pool dd-webrtc-signaling dd-webrtc-media dd-rust-network-mutex dd-idle-reaper"
           capacity_extra_statefulsets="dd-rust-network-mutex-raft"
           capacity_scaledobjects="dd-remote-queue-consumer-nats-jetstream"
           mip_capacity_app="dd-in-house-mip-solver-node"
           mip_capacity_namespace="ai-ml"
           mip_capacity_targets="dd-in-house-mip-solver-node-master dd-in-house-mip-solver-node-slave"
           mip_capacity_scaledobject="dd-in-house-mip-solver-node-slave-nats-jetstream"
+          capacity_guard_pid=""
 
           apply_target_manifest() {
             local path="$1"
@@ -2643,25 +2646,42 @@ jobs:
             kubectl -n "$mip_capacity_namespace" delete "scaledobject/$mip_capacity_scaledobject" \
               --ignore-not-found=true \
               --wait=false || true
+            kubectl -n "$mip_capacity_namespace" delete "hpa/keda-hpa-$mip_capacity_scaledobject" \
+              --ignore-not-found=true \
+              --wait=false || true
           }
 
           assert_capacity_free() {
             local bad=0
             local d desired pods
-            for d in $capacity_targets; do
+            for d in $capacity_targets $capacity_extra_targets; do
               desired="$(kubectl -n default get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
               pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
-              if [ "${desired:-missing}" != "0" ] || [ "${pods:-0}" -ne 0 ]; then
+              if [ "${pods:-0}" -ne 0 ]; then
                 echo "capacity-not-free deployment=$d desired=${desired:-unknown} pods=${pods:-0}"
                 bad=1
+              elif [ "${desired:-missing}" != "0" ] && [ "${desired:-missing}" != "missing" ]; then
+                echo "capacity-desired-nonzero deployment=$d desired=${desired:-unknown} pods=${pods:-0}"
+              fi
+            done
+            for d in $capacity_extra_statefulsets; do
+              desired="$(kubectl -n default get "statefulset/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
+              pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
+              if [ "${pods:-0}" -ne 0 ]; then
+                echo "capacity-not-free statefulset=$d desired=${desired:-unknown} pods=${pods:-0}"
+                bad=1
+              elif [ "${desired:-missing}" != "0" ] && [ "${desired:-missing}" != "missing" ]; then
+                echo "capacity-desired-nonzero statefulset=$d desired=${desired:-unknown} pods=${pods:-0}"
               fi
             done
             for d in $mip_capacity_targets; do
               desired="$(kubectl -n "$mip_capacity_namespace" get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
               pods="$(kubectl -n "$mip_capacity_namespace" get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
-              if [ "${desired:-missing}" != "0" ] || [ "${pods:-0}" -ne 0 ]; then
+              if [ "${pods:-0}" -ne 0 ]; then
                 echo "capacity-not-free namespace=$mip_capacity_namespace deployment=$d desired=${desired:-unknown} pods=${pods:-0}"
                 bad=1
+              elif [ "${desired:-missing}" != "0" ] && [ "${desired:-missing}" != "missing" ]; then
+                echo "capacity-desired-nonzero namespace=$mip_capacity_namespace deployment=$d desired=${desired:-unknown} pods=${pods:-0}"
               fi
             done
             return "$bad"
@@ -2687,24 +2707,38 @@ jobs:
               kubectl -n default delete "scaledobject/$capacity_target" \
                 --ignore-not-found=true \
                 --wait=false || true
+              kubectl -n default delete "hpa/keda-hpa-$capacity_target" \
+                --ignore-not-found=true \
+                --wait=false || true
             done
             kubectl -n "$mip_capacity_namespace" annotate "scaledobject/$mip_capacity_scaledobject" \
               autoscaling.keda.sh/paused-replicas="0" \
               autoscaling.keda.sh/paused="true" \
               --overwrite >/dev/null 2>&1 || true
+            kubectl -n "$mip_capacity_namespace" delete "hpa/keda-hpa-$mip_capacity_scaledobject" \
+              --ignore-not-found=true \
+              --wait=false || true
             kubectl -n "$mip_capacity_namespace" get deploy $mip_capacity_targets -o wide || true
-            for attempt in $(seq 1 24); do
+            for attempt in $(seq 1 48); do
+              for capacity_target in $capacity_scaledobjects; do
+                kubectl -n default delete "scaledobject/$capacity_target" --ignore-not-found=true --wait=false || true
+                kubectl -n default delete "hpa/keda-hpa-$capacity_target" --ignore-not-found=true --wait=false || true
+              done
+              kubectl -n "$mip_capacity_namespace" delete "scaledobject/$mip_capacity_scaledobject" --ignore-not-found=true --wait=false || true
+              kubectl -n "$mip_capacity_namespace" delete "hpa/keda-hpa-$mip_capacity_scaledobject" --ignore-not-found=true --wait=false || true
               for capacity_target in $capacity_targets $capacity_extra_targets; do
                 kubectl -n default scale "deployment/$capacity_target" --replicas=0 || true
-                kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true || true
+                kubectl -n default delete "hpa/$capacity_target" --ignore-not-found=true --wait=false || true
+                kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true --grace-period=0 --force || true
               done
               for capacity_target in $capacity_extra_statefulsets; do
                 kubectl -n default scale "statefulset/$capacity_target" --replicas=0 || true
-                kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true || true
+                kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true --grace-period=0 --force || true
               done
               for capacity_target in $mip_capacity_targets; do
                 kubectl -n "$mip_capacity_namespace" scale "deployment/$capacity_target" --replicas=0 || true
-                kubectl -n "$mip_capacity_namespace" delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true || true
+                kubectl -n "$mip_capacity_namespace" delete "hpa/$capacity_target" --ignore-not-found=true --wait=false || true
+                kubectl -n "$mip_capacity_namespace" delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true --grace-period=0 --force || true
               done
               sleep 5
               if assert_capacity_free; then
@@ -2714,7 +2748,7 @@ jobs:
                 kubectl -n "$mip_capacity_namespace" get deploy $mip_capacity_targets -o wide || true
                 return 0
               fi
-              echo "waiting for capacity targets to stay down attempt=$attempt/24"
+              echo "waiting for capacity targets to stay down attempt=$attempt/48"
             done
             echo "ERROR: capacity targets did not stay down; refusing partial loadtest" >&2
             kubectl -n default get deploy $capacity_targets $capacity_extra_targets -o wide || true
@@ -2728,8 +2762,61 @@ jobs:
             exit 1
           }
 
+          start_capacity_guard() {
+            local interval="${LOADTEST_CAPACITY_GUARD_INTERVAL_SECONDS:-2}"
+            if [ -n "${capacity_guard_pid:-}" ] && kill -0 "$capacity_guard_pid" >/dev/null 2>&1; then
+              echo "capacity-guard already running pid=$capacity_guard_pid"
+              return 0
+            fi
+            case "$interval" in
+              ''|*[!0-9]*) interval=5 ;;
+            esac
+            if [ "$interval" = "0" ]; then
+              interval=5
+            fi
+            echo "=== start capacity guard interval=${interval}s ==="
+            (
+              set +e
+              while true; do
+                for capacity_target in $capacity_scaledobjects; do
+                  kubectl -n default delete "scaledobject/$capacity_target" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
+                  kubectl -n default delete "hpa/keda-hpa-$capacity_target" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
+                done
+                kubectl -n "$mip_capacity_namespace" delete "scaledobject/$mip_capacity_scaledobject" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
+                kubectl -n "$mip_capacity_namespace" delete "hpa/keda-hpa-$mip_capacity_scaledobject" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
+                for capacity_target in $capacity_targets $capacity_extra_targets; do
+                  kubectl -n default scale "deployment/$capacity_target" --replicas=0 >/dev/null 2>&1 || true
+                  kubectl -n default delete "hpa/$capacity_target" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
+                  kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true --grace-period=0 --force >/dev/null 2>&1 || true
+                done
+                for capacity_target in $capacity_extra_statefulsets; do
+                  kubectl -n default scale "statefulset/$capacity_target" --replicas=0 >/dev/null 2>&1 || true
+                  kubectl -n default delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true --grace-period=0 --force >/dev/null 2>&1 || true
+                done
+                for capacity_target in $mip_capacity_targets; do
+                  kubectl -n "$mip_capacity_namespace" scale "deployment/$capacity_target" --replicas=0 >/dev/null 2>&1 || true
+                  kubectl -n "$mip_capacity_namespace" delete "hpa/$capacity_target" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
+                  kubectl -n "$mip_capacity_namespace" delete pods -l "app=$capacity_target" --wait=false --ignore-not-found=true --grace-period=0 --force >/dev/null 2>&1 || true
+                done
+                sleep "$interval"
+              done
+            ) &
+            capacity_guard_pid="$!"
+            echo "capacity-guard pid=$capacity_guard_pid"
+          }
+
+          stop_capacity_guard() {
+            if [ -n "${capacity_guard_pid:-}" ]; then
+              echo "=== stop capacity guard pid=$capacity_guard_pid ==="
+              kill "$capacity_guard_pid" >/dev/null 2>&1 || true
+              wait "$capacity_guard_pid" >/dev/null 2>&1 || true
+              capacity_guard_pid=""
+            fi
+          }
+
           cleanup() {
             set +e
+            stop_capacity_guard
             echo "=== cleanup: scale GCS WSS loadtest deployments to 0 ==="
             for d in $loaders; do
               kubectl -n default scale "deployment/$d" --replicas=0 || true
@@ -2807,6 +2894,7 @@ jobs:
           for app in $apps; do
             sync_app "$app"
           done
+          start_capacity_guard
           free_gcs_capacity
           disable_loadtest_autosync
 
@@ -3184,12 +3272,8 @@ jobs:
           }
 
           collect_gcs_pprof() {
-            local label="${1:-sample}" cpu_seconds pf_log pf_pid pod port profile ready
+            local label="${1:-sample}" cpu_seconds pf_log pf_pid pod port profile ready pprof_base use_host_go
             if [ "$collect_pprof" != "true" ]; then
-              return 0
-            fi
-            if ! command -v go >/dev/null 2>&1; then
-              echo "WARNING: pprof-go-tool-missing"
               return 0
             fi
             pod="$(kubectl -n default get pods -l app=gcs -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
@@ -3202,44 +3286,75 @@ jobs:
             case "$cpu_seconds" in
               ''|*[!0-9]*) cpu_seconds=20 ;;
             esac
-            pf_log="/tmp/gcs-pprof-port-forward-${pod}.log"
-            kubectl -n default port-forward "pod/$pod" "${port}:3000" >"$pf_log" 2>&1 &
-            pf_pid="$!"
-            ready=0
-            for _ in $(seq 1 40); do
-              if curl -fsS "http://127.0.0.1:${port}/debug/pprof/" >/dev/null 2>&1; then
-                ready=1
-                break
+            use_host_go=false
+            if command -v go >/dev/null 2>&1; then
+              use_host_go=true
+              pprof_base="http://127.0.0.1:${port}"
+              pf_log="/tmp/gcs-pprof-port-forward-${pod}.log"
+              kubectl -n default port-forward "pod/$pod" "${port}:3000" >"$pf_log" 2>&1 &
+              pf_pid="$!"
+              ready=0
+              for _ in $(seq 1 40); do
+                if curl -fsS "${pprof_base}/debug/pprof/" >/dev/null 2>&1; then
+                  ready=1
+                  break
+                fi
+                sleep 0.25
+              done
+              if [ "$ready" -ne 1 ]; then
+                echo "WARNING: pprof-endpoint-not-ready pod=$pod label=$label"
+                if [ -s "$pf_log" ]; then
+                  grep -v 'Handling connection' "$pf_log" | tail -8 || true
+                fi
+                kill "$pf_pid" 2>/dev/null || true
+                wait "$pf_pid" 2>/dev/null || true
+                return 0
               fi
-              sleep 0.25
-            done
-            if [ "$ready" -ne 1 ]; then
-              echo "WARNING: pprof-endpoint-not-ready pod=$pod label=$label"
-              if [ -s "$pf_log" ]; then
-                grep -v 'Handling connection' "$pf_log" | tail -8 || true
+              go version 2>&1 | awk '{print "pprof-go-version host " $0}' || true
+            else
+              pprof_base="http://127.0.0.1:3000"
+              if ! kubectl -n default exec "$pod" -- /usr/local/go/bin/go version 2>&1 | awk '{print "pprof-go-version pod " $0}'; then
+                echo "WARNING: pprof-go-tool-missing pod=$pod label=$label"
+                return 0
               fi
-              kill "$pf_pid" 2>/dev/null || true
-              wait "$pf_pid" 2>/dev/null || true
-              return 0
             fi
             echo "PROOF pprof_target pod=$pod label=$label cpu_seconds=$cpu_seconds"
-            go version 2>&1 | awk '{print "pprof-go-version " $0}' || true
             echo "=== go pprof cpu: $label ==="
-            if timeout "$((cpu_seconds + 25))s" go tool pprof -top -nodecount=30 "http://127.0.0.1:${port}/debug/pprof/profile?seconds=${cpu_seconds}" 2>&1 | awk '{print "pprof-cpu " $0}'; then
+            set +e
+            if [ "$use_host_go" = "true" ]; then
+              timeout "$((cpu_seconds + 25))s" go tool pprof -top -nodecount=30 "${pprof_base}/debug/pprof/profile?seconds=${cpu_seconds}" 2>&1 | awk '{print "pprof-cpu " $0}'
+              pprof_status="${PIPESTATUS[0]}"
+            else
+              timeout "$((cpu_seconds + 35))s" kubectl -n default exec "$pod" -- /usr/local/go/bin/go tool pprof -top -nodecount=30 "${pprof_base}/debug/pprof/profile?seconds=${cpu_seconds}" 2>&1 | awk '{print "pprof-cpu " $0}'
+              pprof_status="${PIPESTATUS[0]}"
+            fi
+            set -e
+            if [ "$pprof_status" -eq 0 ]; then
               echo "PROOF pprof_profile profile=cpu status=ok"
             else
               echo "WARNING: pprof-profile-failed profile=cpu"
             fi
             for profile in goroutine heap block mutex; do
               echo "=== go pprof $profile: $label ==="
-              if timeout 45s go tool pprof -top -nodecount=25 "http://127.0.0.1:${port}/debug/pprof/${profile}" 2>&1 | awk -v p="$profile" '{print "pprof-" p " " $0}'; then
+              set +e
+              if [ "$use_host_go" = "true" ]; then
+                timeout 45s go tool pprof -top -nodecount=25 "${pprof_base}/debug/pprof/${profile}" 2>&1 | awk -v p="$profile" '{print "pprof-" p " " $0}'
+                pprof_status="${PIPESTATUS[0]}"
+              else
+                timeout 55s kubectl -n default exec "$pod" -- /usr/local/go/bin/go tool pprof -top -nodecount=25 "${pprof_base}/debug/pprof/${profile}" 2>&1 | awk -v p="$profile" '{print "pprof-" p " " $0}'
+                pprof_status="${PIPESTATUS[0]}"
+              fi
+              set -e
+              if [ "$pprof_status" -eq 0 ]; then
                 echo "PROOF pprof_profile profile=$profile status=ok"
               else
                 echo "WARNING: pprof-profile-failed profile=$profile"
               fi
             done
-            kill "$pf_pid" 2>/dev/null || true
-            wait "$pf_pid" 2>/dev/null || true
+            if [ -n "${pf_pid:-}" ]; then
+              kill "$pf_pid" 2>/dev/null || true
+              wait "$pf_pid" 2>/dev/null || true
+            fi
           }
 
           wait_loader_reports() {
