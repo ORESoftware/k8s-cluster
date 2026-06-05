@@ -71,6 +71,7 @@ use des_engine::des::general::music_production::{
     analyze_music_sample_prompt, derive_music_sample_seed_from_mp4, generate_microtonal_song,
     song_spec_from_music_sample_seed_with_prompt, ArrangementSummary,
 };
+use des_engine::des::general::soccer::{run_default_simulation, SimulationTrace};
 use des_engine::des::model::{with_builtins, CitizenError};
 use des_engine::des::service::{
     Capability, DesExtension, EndpointKind, EngineCatalogExtension, ServiceBuilder,
@@ -216,9 +217,13 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
 <div class="grid">
   <div class="sim feat">
     <div class="label">Soccer videogame</div>
-    <div class="name">out/soccer-sim.html</div>
+    <div class="name">out/soccer-sim.html &middot; json/jsonl</div>
     <div class="desc">Playable 2D 11v11 match artifact with MDP/POMDP player learning, ball physics, possession chains, shots, officials, and controller slots.</div>
-    <div class="row"><a class="open" href="out/soccer-sim.html" target="_blank" rel="noopener">Open game &#8599;</a></div>
+    <div class="row">
+      <a class="open" href="out/soccer-sim.html" target="_blank" rel="noopener">Open game &#8599;</a>
+      <a class="open" href="out/soccer-sim.json" target="_blank" rel="noopener">Trace JSON &#8599;</a>
+      <a class="open" href="out/soccer-sim.frames.jsonl" target="_blank" rel="noopener">Frames JSONL &#8599;</a>
+    </div>
   </div>
   <div class="sim feat">
     <div class="label">Interactive planner</div>
@@ -1895,6 +1900,8 @@ async fn info(State(state): State<AppState>) -> Response {
             "streamModel": "POST /streaming/:name  (JSONL in -> JSONL out)",
             "elevatorFel": "GET /elevator-fel  (new next-event elevator sim, animated)",
             "soccerVideogame": "GET /out/soccer-sim.html  (2D 11v11 soccer videogame / learning sim artifact)",
+            "soccerVideogameTrace": "GET /out/soccer-sim.json  (full soccer match trace: config, summary, frames, events)",
+            "soccerVideogameFrames": "GET /out/soccer-sim.frames.jsonl  (header + frame/event/summary records)",
             "soccerPlanner": "GET /soccer/planner  (11-a-side rotation planner UI)",
             "soccerPlannerSolve": "POST /soccer/planner/solve  (re-solve with constraints)",
             "soccerPlannerStream": "POST /soccer/planner/stream  (planner JSONL command stream)",
@@ -2498,7 +2505,87 @@ async fn out_index(State(state): State<AppState>) -> Response {
     Html(body).into_response()
 }
 
+const SOCCER_SIM_TRACE_JSON: &str = "soccer-sim.json";
+const SOCCER_SIM_FRAMES_JSONL: &str = "soccer-sim.frames.jsonl";
+
+fn soccer_trace_jsonl(trace: &SimulationTrace) -> String {
+    let mut lines = Vec::with_capacity(trace.frames.len() + trace.events.len() + 2);
+    lines.push(
+        serde_json::to_string(&json!({
+            "kind": "soccer-sim-header",
+            "schema": "dd.des.soccer.sim.trace.v1",
+            "config": &trace.config,
+            "frameCount": trace.frames.len(),
+            "eventCount": trace.events.len()
+        }))
+        .unwrap_or_else(|_| "{}".to_string()),
+    );
+    for (index, frame) in trace.frames.iter().enumerate() {
+        lines.push(
+            serde_json::to_string(&json!({
+                "kind": "soccer-sim-frame",
+                "index": index,
+                "frame": frame
+            }))
+            .unwrap_or_else(|_| "{}".to_string()),
+        );
+    }
+    for (index, event) in trace.events.iter().enumerate() {
+        lines.push(
+            serde_json::to_string(&json!({
+                "kind": "soccer-sim-event",
+                "index": index,
+                "event": event
+            }))
+            .unwrap_or_else(|_| "{}".to_string()),
+        );
+    }
+    lines.push(
+        serde_json::to_string(&json!({
+            "kind": "soccer-sim-summary",
+            "summary": &trace.summary
+        }))
+        .unwrap_or_else(|_| "{}".to_string()),
+    );
+    let mut jsonl = lines.join("\n");
+    jsonl.push('\n');
+    jsonl
+}
+
+async fn ensure_soccer_trace_artifacts(state: &AppState) -> Result<(), String> {
+    let trace_path = state.out_dir.join(SOCCER_SIM_TRACE_JSON);
+    let frames_path = state.out_dir.join(SOCCER_SIM_FRAMES_JSONL);
+    if trace_path.is_file() && frames_path.is_file() {
+        return Ok(());
+    }
+
+    let _guard = state.sim_lock.lock().await;
+    if trace_path.is_file() && frames_path.is_file() {
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(state.out_dir.as_path())
+        .map_err(|e| format!("create output dir: {e}"))?;
+    let trace = run_default_simulation();
+    let json = serde_json::to_string_pretty(&trace).map_err(|e| format!("encode trace: {e}"))?;
+    std::fs::write(&trace_path, json).map_err(|e| format!("write soccer trace json: {e}"))?;
+    std::fs::write(&frames_path, soccer_trace_jsonl(&trace))
+        .map_err(|e| format!("write soccer frames jsonl: {e}"))?;
+    Ok(())
+}
+
 async fn out_file(State(state): State<AppState>, Path(rel_path): Path<String>) -> Response {
+    if matches!(
+        rel_path.as_str(),
+        SOCCER_SIM_TRACE_JSON | SOCCER_SIM_FRAMES_JSONL
+    ) {
+        if let Err(err) = ensure_soccer_trace_artifacts(&state).await {
+            eprintln!("[dd-des-rs] soccer trace render failed: {err}");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "soccer trace render failed")
+                .into_response();
+        }
+    }
+
     let base: &StdPath = state.out_dir.as_path();
 
     let Some(target) = resolve_within(base, &base.join(&rel_path)) else {
@@ -2687,6 +2774,18 @@ fn build_descriptor() -> ServiceDescriptor {
             "GET",
             "/out/soccer-sim.html",
             "Rendered 2D 11v11 soccer videogame / learning simulation artifact.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/out/soccer-sim.json",
+            "Rendered soccer game trace JSON with config, summary, frames, and events.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/out/soccer-sim.frames.jsonl",
+            "Rendered soccer game JSONL stream with header, frame, event, and summary records.",
             EndpointKind::Service,
         )
         .endpoint(
@@ -3072,6 +3171,9 @@ mod tests {
         assert!(paths.contains(&"/soccer/planner"));
         assert!(paths.contains(&"/soccer/planner/solve"));
         assert!(paths.contains(&"/soccer/planner/stream"));
+        assert!(paths.contains(&"/out/soccer-sim.html"));
+        assert!(paths.contains(&"/out/soccer-sim.json"));
+        assert!(paths.contains(&"/out/soccer-sim.frames.jsonl"));
         // The model-registry extension contributes `model:<kind>` capabilities.
         assert!(descriptor
             .capabilities
@@ -3202,6 +3304,10 @@ mod tests {
         assert_eq!(
             content_type(StdPath::new("a.json")),
             "application/json; charset=utf-8"
+        );
+        assert_eq!(
+            content_type(StdPath::new("a.frames.jsonl")),
+            "application/x-ndjson; charset=utf-8"
         );
         assert_eq!(
             content_type(StdPath::new("a.bin")),
