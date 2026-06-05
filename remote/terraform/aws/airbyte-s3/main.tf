@@ -91,3 +91,71 @@ resource "aws_s3_bucket_policy" "airbyte" {
 
   depends_on = [aws_s3_bucket_public_access_block.airbyte]
 }
+
+resource "aws_iam_user" "airbyte" {
+  name = var.iam_user_name
+  path = "/service/airbyte/"
+
+  tags = merge(var.tags, {
+    Component   = "airbyte"
+    Environment = var.environment
+  })
+}
+
+resource "aws_iam_access_key" "airbyte" {
+  user = aws_iam_user.airbyte.name
+}
+
+data "aws_iam_policy_document" "airbyte_user" {
+  statement {
+    sid    = "AirbyteBucketAccess"
+    effect = "Allow"
+
+    actions = [
+      "s3:GetBucketLocation",
+      "s3:ListBucket",
+      "s3:ListBucketMultipartUploads",
+    ]
+
+    resources = [aws_s3_bucket.airbyte.arn]
+  }
+
+  statement {
+    sid    = "AirbyteObjectAccess"
+    effect = "Allow"
+
+    actions = [
+      "s3:AbortMultipartUpload",
+      "s3:DeleteObject",
+      "s3:GetObject",
+      "s3:ListMultipartUploadParts",
+      "s3:PutObject",
+    ]
+
+    resources = ["${aws_s3_bucket.airbyte.arn}/*"]
+  }
+}
+
+resource "aws_iam_user_policy" "airbyte" {
+  name   = "${var.iam_user_name}-s3"
+  user   = aws_iam_user.airbyte.name
+  policy = data.aws_iam_policy_document.airbyte_user.json
+}
+
+resource "aws_secretsmanager_secret" "airbyte_s3" {
+  name                    = var.secrets_manager_secret_name
+  recovery_window_in_days = 30
+
+  tags = merge(var.tags, {
+    Component   = "airbyte"
+    Environment = var.environment
+  })
+}
+
+resource "aws_secretsmanager_secret_version" "airbyte_s3" {
+  secret_id = aws_secretsmanager_secret.airbyte_s3.id
+  secret_string = jsonencode({
+    AIRBYTE_S3_ACCESS_KEY_ID     = aws_iam_access_key.airbyte.id
+    AIRBYTE_S3_SECRET_ACCESS_KEY = aws_iam_access_key.airbyte.secret
+  })
+}
