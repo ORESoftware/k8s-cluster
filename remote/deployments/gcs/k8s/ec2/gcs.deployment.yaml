@@ -120,6 +120,14 @@ spec:
               value: '8'
             - name: GOGC
               value: '100'
+            - name: GCS_PPROF_ENABLED
+              value: 'true'
+            - name: GCS_PPROF_BLOCK_RATE
+              value: '1000000'
+            - name: GCS_PPROF_MUTEX_FRACTION
+              value: '10'
+            - name: GCS_STARTUP_CPU_PROFILE
+              value: 'false'
             - name: GCS_WS_SHED_ENABLED
               value: 'true'
             # The router pins hot conversations to one pod, so keep the active
