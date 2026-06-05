@@ -4699,6 +4699,12 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_resin_printing(value));
+    let wants_material_jetting_printer = preferred
+        .as_deref()
+        .is_some_and(wants_material_jetting_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_material_jetting_printing(value));
     let wants_composite_fiber_printer = preferred
         .as_deref()
         .is_some_and(wants_composite_fiber_printing)
@@ -4761,6 +4767,13 @@ fn choose_machine<'a>(
     if wants_resin_printer {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_resin_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_material_jetting_printer {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_material_jetting_printer_kind(&machine.kind)
         }) {
             return machine;
         }
@@ -4970,6 +4983,7 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
         Some(MachineClass::Mill)
     } else if tokens.iter().any(|token| {
         wants_resin_printing(token)
+            || wants_material_jetting_printing(token)
             || wants_composite_fiber_printing(token)
             || wants_binder_jet_printing(token)
             || wants_powder_bed_printing(token)
@@ -4986,6 +5000,9 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
     let wants_five_axis = tokens.iter().any(|token| wants_five_axis_milling(token));
     let wants_horizontal = tokens.iter().any(|token| wants_horizontal_milling(token));
     let wants_resin = tokens.iter().any(|token| wants_resin_printing(token));
+    let wants_material_jetting = tokens
+        .iter()
+        .any(|token| wants_material_jetting_printing(token));
     let wants_composite_fiber = tokens
         .iter()
         .any(|token| wants_composite_fiber_printing(token));
@@ -5002,6 +5019,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
     let has_special = wants_five_axis
         || wants_horizontal
         || wants_resin
+        || wants_material_jetting
         || wants_composite_fiber
         || wants_binder_jet
         || wants_powder
@@ -5017,6 +5035,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
     (!wants_five_axis || is_five_axis_mill_kind(&machine.kind))
         && (!wants_horizontal || is_horizontal_mill_kind(&machine.kind))
         && (!wants_resin || is_resin_printer_kind(&machine.kind))
+        && (!wants_material_jetting || is_material_jetting_printer_kind(&machine.kind))
         && (!wants_composite_fiber || is_composite_fiber_printer_kind(&machine.kind))
         && (!wants_binder_jet || is_binder_jet_printer_kind(&machine.kind))
         && (!wants_powder || is_powder_bed_printer_kind(&machine.kind))
@@ -5033,6 +5052,9 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || preference.contains(operation)
         || (preference.contains("print") && operation.contains("print"))
         || (preference.contains("additive") && operation.contains("additive"))
+        || (preference.contains("material-jet") && operation.contains("material-jet"))
+        || (preference.contains("polyjet") && operation.contains("polyjet"))
+        || (preference.contains("mjp") && operation.contains("material-jet"))
         || (preference.contains("composite-fiber") && operation.contains("composite-fiber"))
         || (preference.contains("continuous-fiber") && operation.contains("composite-fiber"))
         || (preference.contains("carbon-fiber") && operation.contains("composite-fiber"))
@@ -5294,6 +5316,9 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
     match machine_class(&part.machine_kind) {
         MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => {
             "orient, support, resin print, wash, and UV cure"
+        }
+        MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => {
+            "pack tray, jet photopolymer/material channels, UV cure, remove supports, and inspect color/material interfaces"
         }
         MachineClass::Additive if is_composite_fiber_printer_kind(&part.machine_kind) => {
             "slice matrix, lay continuous fiber, cut/anchor reinforcement, inspect coupons, and finish composite print"
@@ -5877,6 +5902,38 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: generate the final SLA/MSLA job from the actual mesh, resin profile, supports, and exposure calibration."
                     .to_string(),
                 "Human signoff is required for resin handling, wash/cure timing, support removal, and dimensional inspection."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Additive if is_material_jetting_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "material-jetting-job".to_string()),
+            vec![
+                "; draft material jetting/PolyJet job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [setup-boundary]: verify photopolymer cartridges, material channel map, support material, tray calibration, printhead purge, and UV lamp state"
+                    .to_string(),
+                "PACK_TRAY orientation=operator-reviewed packing=operator-reviewed color_material_channels=operator-reviewed"
+                    .to_string(),
+                "JET_MATERIALS layer_height_mm=0.030 printhead_nozzles=verified support_material=loaded"
+                    .to_string(),
+                "UV_CURE_INLINE lamp_dose=operator-reviewed tack_free=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [process-split-boundary]: transfer to support-removal station only after fragile-feature, color-channel, and material-interface inspection"
+                    .to_string(),
+                "REMOVE_SUPPORT method=operator-reviewed waterjet_or_solvent=operator-reviewed protect_fine_features=true"
+                    .to_string(),
+                "FINISH verify surface tack, color/material boundaries, support residue, and dimensional stability"
+                    .to_string(),
+                "COMPLETE record cartridge lots, tray map, printhead/nozzle check, UV dose, support-removal cycle, color/material verification, and dimensional inspection"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final material jetting parameters must come from the printer profile, photopolymer/support-material datasheets, tray packing, material-channel map, printhead/nozzle checks, and UV calibration."
+                    .to_string(),
+                "Human signoff is required for support removal, solvent or waterjet cleaning, UV exposure, color/material channel verification, fragile-feature handling, and dimensional inspection."
                     .to_string(),
             ],
         ),
@@ -6774,6 +6831,17 @@ fn has_additive_z_offset_evidence(line: &str) -> bool {
         || line_mentions(line, "first layer z verified")
         || line_mentions(line, "first-layer z verified")
         || line_mentions(line, "negative z clearance verified")
+}
+
+fn has_additive_bed_leveling_disable(line: &str) -> bool {
+    let stripped = strip_comment(line);
+    (has_any_code(&stripped, &["M420"])
+        && number_after(&stripped, 'S').is_some_and(|enabled| enabled <= 0.0))
+        || line_mentions(line, "bed mesh disabled")
+        || line_mentions(line, "bed leveling disabled")
+        || line_mentions(line, "mesh leveling disabled")
+        || line_mentions(line, "leveling disabled")
+        || line_mentions(line, "mesh compensation disabled")
 }
 
 fn has_tool_length_compensation(line: &str) -> bool {
@@ -8483,6 +8551,95 @@ fn has_text_resin_layer_manifest_motion_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_material_jetting_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "material-jetting",
+            "material jetting",
+            "material-jet",
+            "material jet",
+            "polyjet",
+            "poly jet",
+            "mjp",
+            "multi-jet",
+            "multi jet",
+            "photopolymer jet",
+            "jetted photopolymer",
+            "digital material",
+            "objet",
+            "connex",
+        ],
+    )
+}
+
+fn has_text_material_jetting_material_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "material cartridge",
+            "cartridge lot",
+            "photopolymer lot",
+            "material channel",
+            "channel map",
+            "color map",
+            "digital material",
+            "shore",
+            "transparent resin",
+            "printhead",
+            "nozzle check",
+            "purge",
+            "tray map",
+            "tray calibration",
+            "build tray",
+            "packing density",
+        ],
+    )
+}
+
+fn has_text_material_jetting_support_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "support material",
+            "support gel",
+            "support wax",
+            "sup705",
+            "sup706",
+            "support removal",
+            "remove support",
+            "waterjet",
+            "water jet",
+            "solvent",
+            "caustic bath",
+            "cleaning cycle",
+            "support residue",
+        ],
+    )
+}
+
+fn has_text_material_jetting_uv_inspection_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "uv lamp",
+            "uv dose",
+            "uv cure",
+            "post cure",
+            "tack-free",
+            "tack free",
+            "dimensional inspection",
+            "color verification",
+            "material verification",
+            "shore hardness",
+            "surface finish",
+            "material interface",
+            "first article",
+        ],
+    )
+}
+
 fn has_text_composite_fiber_context(language: &str, line: &str) -> bool {
     language_or_line_has_any(
         language,
@@ -9828,6 +9985,22 @@ fn inspect_text_instruction_line(
                     .to_string(),
         });
     }
+    let material_jetting_context = has_text_material_jetting_context(language, raw_line);
+    if material_jetting_context {
+        signals.has_material_jetting_text_context = true;
+    }
+    if material_jetting_context && has_text_material_jetting_material_evidence(raw_line) {
+        signals.has_material_jetting_material_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if material_jetting_context && has_text_material_jetting_support_evidence(raw_line) {
+        signals.has_material_jetting_support_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if material_jetting_context && has_text_material_jetting_uv_inspection_evidence(raw_line) {
+        signals.has_material_jetting_uv_inspection_evidence = true;
+        signals.has_process_preparation = true;
+    }
     let composite_fiber_context = has_text_composite_fiber_context(language, raw_line);
     if composite_fiber_context {
         signals.has_composite_fiber_text_context = true;
@@ -10193,7 +10366,9 @@ fn analyze_instruction_programs(
         let mut printer_position_reference_active = false;
         let mut printer_stepper_disable_observed = false;
         let mut additive_z_offset_evidence_observed = false;
+        let mut additive_bed_leveling_disabled = false;
         let mut reported_additive_negative_z_extrusion_boundary = false;
+        let mut reported_additive_bed_leveling_boundary = false;
         let mut has_spindle_or_heatup = false;
         let mut subtractive_spindle_speed_evidence_observed = false;
         let mut reported_spindle_speed_boundary = false;
@@ -10719,6 +10894,10 @@ fn analyze_instruction_programs(
             }
             if class == MachineClass::Additive && has_additive_z_offset_evidence(raw_line) {
                 additive_z_offset_evidence_observed = true;
+                additive_bed_leveling_disabled = false;
+            }
+            if class == MachineClass::Additive && has_additive_bed_leveling_disable(raw_line) {
+                additive_bed_leveling_disabled = true;
             }
             if has_any_code(
                 &stripped,
@@ -11829,6 +12008,34 @@ fn analyze_instruction_programs(
                     requires_human_intervention: true,
                     suggested_resolution:
                         "restore nonnegative first-layer Z, run and record probe/bed-mesh or measured Z-offset verification, or split the print into an operator-approved calibration checkpoint before extrusion"
+                        .to_string(),
+                });
+            }
+            if line_has_positive_additive_extrusion
+                && additive_bed_leveling_disabled
+                && !reported_additive_bed_leveling_boundary
+            {
+                reported_additive_bed_leveling_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "error".to_string(),
+                    code: "additive-bed-leveling-disabled-before-extrusion".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "positive extrusion occurs after bed mesh or leveling compensation was disabled"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "printer-bed-leveling-boundary".to_string(),
+                    severity: "error".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "extruding after M420 S0 or equivalent bed-leveling disable can drag the nozzle, lose first-layer adhesion, or print a warped first layer when the job assumes mesh compensation is still active"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "re-enable and verify bed leveling with M420 S1, rerun G29 probing, or record measured bed-mesh/Z-offset evidence before positive extrusion resumes"
                             .to_string(),
                 });
             }
@@ -29410,6 +29617,109 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.contains("boundary printer-negative-z-extrusion-boundary")));
+    }
+
+    #[test]
+    fn additive_analysis_requires_bed_leveling_restore_after_disable() {
+        let programs = vec![
+            program(
+                "mesh-disabled-extrusion",
+                "fdm-printer",
+                &[
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
+                    "M82 ; absolute extrusion mode",
+                    "G28",
+                    "M104 S210",
+                    "M109 S210",
+                    "M140 S60",
+                    "M190 S60",
+                    "M420 S0 ; bed mesh disabled for maintenance",
+                    "G92 E0",
+                    "G1 Z0.24 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+            program(
+                "mesh-reenabled-extrusion",
+                "fdm-printer",
+                &[
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
+                    "M82 ; absolute extrusion mode",
+                    "G28",
+                    "M104 S210",
+                    "M109 S210",
+                    "M140 S60",
+                    "M190 S60",
+                    "M420 S0 ; bed mesh disabled for maintenance",
+                    "M420 S1 ; bed mesh verified and restored",
+                    "G92 E0",
+                    "G1 Z0.24 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+            program(
+                "mesh-reprobed-extrusion",
+                "fdm-printer",
+                &[
+                    "G21 G90 ; filament lot, dry-storage, flow calibration, and pressure-advance evidence verified",
+                    "M82 ; absolute extrusion mode",
+                    "G28",
+                    "M104 S210",
+                    "M109 S210",
+                    "M140 S60",
+                    "M190 S60",
+                    "M420 S0 ; mesh leveling disabled for service",
+                    "G29 ; bed probe verified",
+                    "G92 E0",
+                    "G1 Z0.24 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "error");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "additive-bed-leveling-disabled-before-extrusion"
+                && finding.program_id.as_deref() == Some("mesh-disabled-extrusion")
+                && finding.line == Some(11)
+                && finding.severity == "error"
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "printer-bed-leveling-boundary"
+                && boundary.program_id.as_deref() == Some("mesh-disabled-extrusion")
+                && boundary.line == Some(11)
+                && boundary.severity == "error"
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("M420 S1")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "additive-bed-leveling-disabled-before-extrusion"
+                && matches!(
+                    finding.program_id.as_deref(),
+                    Some("mesh-reenabled-extrusion" | "mesh-reprobed-extrusion")
+                )
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-bed-leveling-boundary")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-bed-leveling-boundary")));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-bed-leveling-boundary")));
     }
 
     #[test]
