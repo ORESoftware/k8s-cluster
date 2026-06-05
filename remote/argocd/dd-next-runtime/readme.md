@@ -19,6 +19,7 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-live-mutex` (single-broker Live-Mutex TCP service for cluster-local locking)
 - `dd-ai-ml-pipeline` (Python3 online telemetry feature pipeline in the `ai-ml` namespace)
 - `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
+- `dd-fabrication-server` (Rust fabrication planner and instruction validator for printers, mills, routers, and lathes)
 - `dd-contract-service` (Rust Solana contract gateway for `solana.contract.v1` validation)
 - `dd-trading-server` (Rust trading decision service for `trading.decision.v1` risk-gated order intents)
 - `dd-dev-server-api` (bootstrap Node.js coding-agent task manager for `/tasks`, `/stream`,
@@ -92,6 +93,9 @@ Gateway path map:
   (gateway auth required)
 - `/mdp/`, `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`,
   `POST /mdp/telemetry/learn` -> `dd-mdp-optimizer:8096` (gateway auth required)
+- `/fabrication/`, `/fabrication/schema`, `/fabrication/example`, `POST /fabrication/fabricate`,
+  `POST /fabrication/instructions/validate`, `POST /fabrication/instructions/improve`,
+  `POST /fabrication/learn/telemetry` -> `dd-fabrication-server:8113` (gateway auth required)
 - `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
   `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`
   (internal auth required)
@@ -123,7 +127,7 @@ rolling updates with `maxUnavailable: 0` / `maxSurge: 1`, readiness probes, and 
 `PodDisruptionBudget` with `minAvailable: 1`. This covers the public/auth/API surface where normal
 rollouts previously caused intermittent gateway `502`s: `dd-remote-web-home`, `dd-remote-auth`,
 `dd-remote-rest-api`, `dd-agent-worker-broker`, `dd-des-rs`, `dd-contract-service`,
-`dd-mdp-optimizer`, `dd-trading-server`, `dd-web-scraper`, `dd-browser-test-server`,
+`dd-mdp-optimizer`, `dd-fabrication-server`, `dd-trading-server`, `dd-web-scraper`, `dd-browser-test-server`,
 `dd-selenium-server`, and `dd-rust-vapi-phone`. `dd-des-rs` uses `/out/delivery-planner.html` as
 its readiness path so the Service does not route delivery-planner traffic to a pod before the
 startup render has produced the artifact.

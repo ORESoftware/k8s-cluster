@@ -929,6 +929,29 @@ data:
         proxy_pass http://dd-mdp-optimizer.default.svc.cluster.local:8096/;
       }
 
+      location = /fabrication {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /fabrication/;
+      }
+
+      location /fabrication/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        client_max_body_size 1m;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-fabrication-server.default.svc.cluster.local:8113/;
+      }
+
       location = /des {
         if ($dd_gateway_auth_ok = 0) {
           return 401;

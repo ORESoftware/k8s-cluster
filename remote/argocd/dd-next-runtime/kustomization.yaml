@@ -26,6 +26,8 @@ resources:
   - dd-remote-queue-consumer.scaledobject.yaml
   - dd-mdp-optimizer.deployment.yaml
   - dd-mdp-optimizer.service.yaml
+  - dd-fabrication-server.deployment.yaml
+  - dd-fabrication-server.service.yaml
   - dd-des-simulator.deployment.yaml
   - dd-des-simulator.service.yaml
   - dd-des-rs.deployment.yaml

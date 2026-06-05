@@ -79,6 +79,19 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
+  name: dd-fabrication-server
+  namespace: default
+  labels:
+    app: dd-fabrication-server
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-fabrication-server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
   name: dd-trading-server
   namespace: default
   labels:

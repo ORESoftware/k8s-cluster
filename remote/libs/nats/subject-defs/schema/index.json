@@ -5,6 +5,7 @@
     "ai-ml-platform.schema.json",
     "container-pool.schema.json",
     "contracts.schema.json",
+    "fabrication.schema.json",
     "lambdas.schema.json",
     "presence.schema.json",
     "runtime-events.schema.json",

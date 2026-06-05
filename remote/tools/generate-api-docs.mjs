@@ -47,6 +47,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'des-simulator-rs',
   'formal-methods-service-rs',
   'formal-methods-server-rs',
+  'fabrication-server-rs',
   'mdp-optimizer-rs',
   'rest-api-rs',
   'runtime-config-rs',

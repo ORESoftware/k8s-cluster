@@ -20,6 +20,9 @@
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
+    fabrication_requests_subject/0,
+    fabrication_requests_queue_group/0,
+    fabrication_results_subject/0,
     git_repos_changes_subject/0,
     lambdas_functions_subject/0,
     lambdas_results_subject/0,
@@ -106,6 +109,9 @@ cron_prompts_stream() -> <<"DD_REMOTE_CRON"/utf8>>.
 des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
 des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
+fabrication_requests_subject() -> <<"dd.remote.fabrication.requests"/utf8>>.
+fabrication_requests_queue_group() -> <<"dd-fabrication-server"/utf8>>.
+fabrication_results_subject() -> <<"dd.remote.fabrication.results"/utf8>>.
 git_repos_changes_subject() -> <<"dd.remote.git-repos.changes"/utf8>>.
 lambdas_functions_subject() -> <<"dd.remote.lambdas.functions"/utf8>>.
 lambdas_results_subject() -> <<"dd.remote.lambdas.results"/utf8>>.

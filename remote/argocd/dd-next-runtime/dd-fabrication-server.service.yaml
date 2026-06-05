@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-fabrication-server
+  namespace: default
+  labels:
+    app: dd-fabrication-server
+spec:
+  selector:
+    app: dd-fabrication-server
+  ports:
+    - name: http
+      port: 8113
+      targetPort: http

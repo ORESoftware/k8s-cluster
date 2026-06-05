@@ -42,6 +42,9 @@ There are also runtime siblings for queueing, scheduling, and optimization:
   doctor prompts, NATS watchdog work, and the daily 4am Eastern worker-image build.
 - [`deployments/mdp-optimizer-rs/`](./deployments/mdp-optimizer-rs/) — Rust MDP/POMDP/RL optimizer that consumes NATS jobs
   and publishes optimization results.
+- [`deployments/fabrication-server-rs/`](./deployments/fabrication-server-rs/) — Rust fabrication
+  planner and instruction validator for hybrid 3D-printing, CNC milling, routing, lathe, and
+  assembly workflows.
 - [`deployments/thread-operator-go/`](./deployments/thread-operator-go/) — Go Kubernetes operator that owns the
   per-thread workspace lifecycle as a `Thread` CRD (`dd.dev/v1alpha1`). Strictly opt-in: only
   reconciles `Thread` CRs and refuses to adopt resources that lack the
