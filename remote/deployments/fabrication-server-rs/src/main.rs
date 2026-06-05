@@ -2604,6 +2604,7 @@ fn wants_powder_bed_printing(value: &str) -> bool {
     let token = normalize_token(value);
     !wants_binder_jet_printing(&token)
         && !wants_composite_fiber_printing(&token)
+        && !wants_directed_energy_deposition(&token)
         && (token.contains("sls")
             || token.contains("mjf")
             || token.contains("powder")
@@ -2632,18 +2633,19 @@ fn wants_metal_powder_bed_printing(value: &str) -> bool {
 
 fn wants_sheet_cutting(value: &str) -> bool {
     let token = normalize_token(value);
-    token.contains("laser")
-        || token.contains("waterjet")
-        || token.contains("water-jet")
-        || token.contains("plasma")
-        || wants_wire_edm_cutting(&token)
-        || token.contains("sheet-cut")
-        || token.contains("sheet-cutter")
-        || token.contains("knife-cut")
-        || token.contains("die-cut")
-        || token.contains("kerf")
-        || token.contains("stencil")
-        || token.contains("gasket")
+    !wants_directed_energy_deposition(&token)
+        && (token.contains("laser")
+            || token.contains("waterjet")
+            || token.contains("water-jet")
+            || token.contains("plasma")
+            || wants_wire_edm_cutting(&token)
+            || token.contains("sheet-cut")
+            || token.contains("sheet-cutter")
+            || token.contains("knife-cut")
+            || token.contains("die-cut")
+            || token.contains("kerf")
+            || token.contains("stencil")
+            || token.contains("gasket"))
 }
 
 fn wants_laser_cutting(value: &str) -> bool {
@@ -4500,6 +4502,8 @@ fn infer_requested_parts(
         wants_resin_printing(&objective_token) || wants_resin_printing(&material.name);
     let wants_material_jetting_part = wants_material_jetting_printing(&objective_token)
         || wants_material_jetting_printing(&material.name);
+    let wants_ded_part = wants_directed_energy_deposition(&objective_token)
+        || wants_directed_energy_deposition(&material.name);
     let wants_composite_fiber_part = wants_composite_fiber_printing(&objective_token)
         || wants_composite_fiber_printing(&material.name);
     let wants_binder_jet_part =
@@ -4531,6 +4535,7 @@ fn infer_requested_parts(
     let needs_sheet_cut_part = wants_sheet_cutting(&objective_token);
     let needs_routed_part = !wants_resin_part
         && !wants_material_jetting_part
+        && !wants_ded_part
         && !wants_composite_fiber_part
         && !wants_binder_jet_part
         && !wants_powder_bed_part
@@ -4546,6 +4551,7 @@ fn infer_requested_parts(
             || is_router_material(material));
     let needs_printed_part = wants_resin_part
         || wants_material_jetting_part
+        || wants_ded_part
         || wants_composite_fiber_part
         || wants_binder_jet_part
         || wants_powder_bed_part
@@ -4560,6 +4566,8 @@ fn infer_requested_parts(
     if needs_printed_part {
         let preferred_method = if wants_material_jetting_part {
             "material-jetting-print"
+        } else if wants_ded_part {
+            "directed-energy-deposition"
         } else if wants_resin_part {
             "resin-print"
         } else if wants_composite_fiber_part {
@@ -33689,6 +33697,64 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.starts_with("CHECKPOINT [wire-edm-text-boundary]")));
+    }
+
+    #[test]
+    fn wire_edm_jobs_require_threading_setup_before_profile_cut() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("wire-edm-cut-before-threading".to_string()),
+                machine_id: Some("wire-edm-1".to_string()),
+                machine_kind: Some("wire-edm".to_string()),
+                language: Some("wire-edm-job".to_string()),
+                instructions: vec![
+                    "CUT_PROFILE outside_contour tolerance=0.01 skim_allowance=0.05".to_string(),
+                    "Wire EDM stainless punch insert with start hole verified, wire thread checked, wire tension recorded, slug retention tabs, dielectric conductivity, flushing pressure, spark gap offset, taper compensation, and skim-pass settings verified".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("wire-edm-threaded-before-cut".to_string()),
+                machine_id: Some("wire-edm-1".to_string()),
+                machine_kind: Some("wire-edm".to_string()),
+                language: Some("wire-edm-job".to_string()),
+                instructions: vec![
+                    "Wire EDM stainless punch insert with start hole verified, wire thread checked, wire tension recorded, slug retention tabs, dielectric conductivity, flushing pressure, spark gap offset, taper compensation, and skim-pass settings verified".to_string(),
+                    "CUT_PROFILE outside_contour tolerance=0.01 skim_allowance=0.05".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "error");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "wire-edm-cut-before-threading-setup"
+                && finding.program_id.as_deref() == Some("wire-edm-cut-before-threading")
+                && finding.line == Some(1)
+                && finding.severity == "error"
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "wire-edm-cut-setup-boundary"
+                && boundary.program_id.as_deref() == Some("wire-edm-cut-before-threading")
+                && boundary.line == Some(1)
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("wire-threading")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "wire-edm-cut-before-threading-setup"
+                && finding.program_id.as_deref() == Some("wire-edm-threaded-before-cut")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [wire-edm-cut-setup-boundary]")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [wire-edm-cut-setup-boundary]")));
     }
 
     #[test]
