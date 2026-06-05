@@ -99,7 +99,7 @@ spec:
                 --vnodes=160 \
                 --connect-timeout=15s \
                 --ws-idle-timeout=4h \
-                --max-active-conns=15000
+                --max-active-conns=36000
           ports:
             - name: ws
               containerPort: 3001

@@ -115,7 +115,7 @@ spec:
             - name: GCS_DIAG_LOGS
               value: 'true'
             - name: GOMEMLIMIT
-              value: 6GiB
+              value: 8GiB
             - name: GOMAXPROCS
               value: '8'
             - name: GOGC
@@ -143,10 +143,10 @@ spec:
             - name: GCS_WS_SHED_WARN_GRACE
               value: '500ms'
             - name: GCS_WS_SHED_HEAP_BYTES
-              value: '5368709120'
+              value: '7516192768'
             # RSS pressure is the cgroup OOM guard; heap telemetry can miss spikes.
             - name: GCS_WS_SHED_RSS_BYTES
-              value: '7516192768'
+              value: '9663676416'
             - name: GCS_WS_SHED_GOROUTINES
               value: '120000'
             - name: GCS_WS_SHED_MESSAGE_LATENCY
@@ -195,6 +195,20 @@ spec:
               value: ''
             - name: vibe_mongo_db_name
               value: virl_gcs
+            - name: GCS_MONGO_MIN_POOL_SIZE
+              value: '32'
+            - name: GCS_MONGO_MAX_POOL_SIZE
+              value: '128'
+            - name: GCS_WS_MONGO_BATCH_SIZE
+              value: '1024'
+            - name: GCS_WS_MONGO_BATCH_QUEUE_SIZE
+              value: '262144'
+            - name: GCS_WS_MONGO_BATCH_WORKERS
+              value: '64'
+            - name: GCS_WS_MONGO_BATCH_FLUSH_MS
+              value: '2'
+            - name: GCS_WS_MONGO_BATCH_TIMEOUT_MS
+              value: '10000'
             - name: vibe_rabbit_protocol
               value: amqp
             - name: vibe_rabbit_host
@@ -237,7 +251,7 @@ spec:
               memory: 512Mi
             limits:
               cpu: '8'
-              memory: 8Gi
+              memory: 10Gi
           startupProbe:
             httpGet:
               path: /chat/v1/health/3000
