@@ -45,12 +45,12 @@ learning hints. It returns:
 - A process plan across 3D printers, vertical/horizontal mills, routers, and
   lathes when those machine profiles are available.
 - Draft machine programs such as Marlin-style printer G-code, ISO/Haas-style
-  milling G-code, GRBL-style router profile programs with tab gates,
-  Fanuc-style turning G-code, or operator-only instructions for unsupported
-  machine kinds.
-- Validation findings and failure boundaries for heat-up, homing, spindle,
-  work-offset, tool-change, manual-stop, deep-cut, arc, setup-limit,
-  machine-envelope, inspection, and automation constraints.
+  vertical milling G-code, ISO-style horizontal side-slot/keyway milling
+  G-code, GRBL-style router profile programs with tab gates, Fanuc-style
+  turning G-code, or operator-only instructions for unsupported machine kinds.
+- Validation and simulation findings plus failure boundaries for heat-up,
+  homing, spindle, work-offset, tool-change, manual-stop, deep-cut, arc,
+  setup-limit, machine-envelope, inspection, and automation constraints.
 - Assembly advice that calls out when parts should be combined into one job or
   split so tight-tolerance features can be machined and inspected separately.
 - A learning contract with MDP states, POMDP observations, policy actions,
@@ -130,8 +130,9 @@ Requests use camelCase JSON:
 If `machines` is omitted, the service uses a conservative default fleet with an
 FDM printer, vertical mill, horizontal mill, CNC router, and lathe. If `parts`
 is omitted, the planner infers a first decomposition from the objective,
-material, and tolerance, including routed sheet/profile parts for wood, foam,
-acrylic, panel, sign, engraving, and tabbed-profile requests.
+material, and tolerance, including horizontal-milled side slots/keyways and
+routed sheet/profile parts for wood, foam, acrylic, panel, sign, engraving, and
+tabbed-profile requests.
 
 ## `POST /instructions/analyze`
 
@@ -169,7 +170,14 @@ changes, deep negative Z moves, arc moves without I/J/R geometry, missing
 program ends, and text-instruction boundaries where the job needs setup,
 post-processing, assembly, splitting, or operator intervention. Improved drafts
 are still marked `machineReady=false`; they are normalization aids for review,
-simulation, and controller-specific postprocessing.
+motion-envelope simulation, and controller-specific postprocessing.
+
+Machine-code planning and analysis also run a bounded coordinate-envelope
+simulation over `G0`/`G1`/arc motion. When a submitted or generated toolpath
+exceeds the selected machine `workEnvelopeMm`, the service emits
+`simulated-axis-envelope-exceeded` findings, `simulated-machine-envelope`
+failure boundaries, and a retained `simulation-report` or
+`analysis-simulation-report` artifact.
 
 ## Outcome Learning
 
@@ -207,10 +215,11 @@ runtime inspection boundary while the database contract is still being designed.
   artifact summaries.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
   such as `design-summary`, `parametric-design`, `process-plan`,
-  `learning-plan`, `mdp-request`, a `program-*` generated machine program, or an
-  `improved-program-*` instruction rewrite, plus learning artifacts such as
-  `reward-signal`, `mdp-experience`, `pomdp-observations`, and
-  `neural-example`.
+  `simulation-report`, `learning-plan`, `mdp-request`, a `program-*` generated
+  machine program, or an `improved-program-*` instruction rewrite, plus
+  instruction-analysis artifacts such as `analysis-simulation-report` and
+  learning artifacts such as `reward-signal`, `mdp-experience`,
+  `pomdp-observations`, and `neural-example`.
 
 ## Local Build
 
