@@ -94,6 +94,11 @@ on:
         required: false
         type: string
         default: "2.5"
+      loadtest_parallel_jobs:
+        description: Number of GCS loader branches to run concurrently.
+        required: false
+        type: string
+        default: "1"
 
 concurrency:
   group: ${{ (github.event_name == 'push' && (contains(github.event.head_commit.message, '[gcs-diagnose]') || contains(github.event.head_commit.message, '[gcs-snapshot]') || contains(github.event.head_commit.message, '[gcs-ssm]')) && 'remote-k8s-maintenance-gcs-diagnose') || 'remote-k8s-maintenance-capacity' }}
@@ -133,6 +138,7 @@ jobs:
           LOADTEST_LOADER_REPLICAS: ${{ inputs.loadtest_loader_replicas || '6' }}
           LOADTEST_CLIENTS_PER_REPLICA: ${{ inputs.loadtest_clients_per_replica || '5000' }}
           LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT: ${{ inputs.loadtest_messages_per_second_per_client || '2.5' }}
+          LOADTEST_PARALLEL_JOBS: ${{ inputs.loadtest_parallel_jobs || '1' }}
         run: |
           set -euo pipefail
 
@@ -2459,6 +2465,7 @@ jobs:
           loader_replicas = loadtest_param("loadtest_loader_replicas", os.environ.get("LOADTEST_LOADER_REPLICAS", "6") or "6")
           clients_per_replica = loadtest_param("loadtest_clients_per_replica", os.environ.get("LOADTEST_CLIENTS_PER_REPLICA", "5000") or "5000")
           messages_per_second = loadtest_param("loadtest_messages_per_second_per_client", os.environ.get("LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT", "2.5") or "2.5")
+          parallel_jobs = loadtest_param("loadtest_parallel_jobs", os.environ.get("LOADTEST_PARALLEL_JOBS", "1") or "1")
           script = r'''set -euo pipefail
           proof_log="/tmp/gcs-loadtest-proof-$(date -u +%Y%m%dT%H%M%SZ).log"
           if [ "${LOADTEST_COMPACT_OUTPUT:-true}" = "true" ]; then
@@ -2480,8 +2487,23 @@ jobs:
           esac
           messages_per_second="${LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT:-2.5}"
           load_label="${LOADTEST_LABEL:-medium}"
+          parallel_jobs="${LOADTEST_PARALLEL_JOBS:-1}"
+          case "$parallel_jobs" in
+            ''|*[!0-9]*) parallel_jobs=1 ;;
+          esac
+          if [ "$parallel_jobs" -gt 3 ]; then
+            parallel_jobs=3
+          fi
+          if [ "$parallel_jobs" -lt 1 ]; then
+            parallel_jobs=1
+          fi
           total_connections=$((loader_replicas * clients_per_replica))
-          echo "PROOF loadtest_target total_connections=$total_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second duration_seconds=$duration load_label=$load_label"
+          concurrent_loader_count=1
+          if [ "$parallel_jobs" -ge 3 ]; then
+            concurrent_loader_count=3
+          fi
+          aggregate_connections=$((total_connections * concurrent_loader_count))
+          echo "PROOF loadtest_target total_connections=$total_connections aggregate_connections=$aggregate_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second duration_seconds=$duration load_label=$load_label parallel_jobs=$parallel_jobs"
 
           apps="dd-observability gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loadtest_apps="dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
@@ -3251,7 +3273,9 @@ jobs:
             local d="$1"
             local loader_name="$2"
             echo "=== start $loader_name: ${total_connections} conns (${loader_replicas}x${clients_per_replica}), ${messages_per_second} msg/(conn*second), duration=${duration}s, load=${load_label} ==="
-            free_gcs_capacity
+            if [ "${LOADTEST_REFRESH_CAPACITY_PER_LOADER:-true}" = "true" ]; then
+              free_gcs_capacity
+            fi
             kubectl -n default set resources "deployment/$d" \
               --requests=cpu=1m,memory=512Mi \
               --limits=cpu=4,memory=8Gi || true
@@ -3331,9 +3355,44 @@ jobs:
 
           run_correctness_job
 
-          run_loader dd-ws-loadtest-rs-gcs "Rust ws-loadtest-rs"
-          run_loader dd-nodejs-ws-loadtest-gcs "Node.js ws-loadtest"
-          run_loader dd-gleamlang-ws-loadtest-gcs "Gleam ws-loadtest"
+          if [ "$parallel_jobs" -ge 3 ]; then
+            echo "=== start parallel loader jobs: rust,nodejs,gleam ==="
+            (
+              export LOADTEST_REFRESH_CAPACITY_PER_LOADER=false
+              run_loader dd-ws-loadtest-rs-gcs "Rust ws-loadtest-rs"
+            ) &
+            rust_pid="$!"
+            (
+              export LOADTEST_REFRESH_CAPACITY_PER_LOADER=false
+              run_loader dd-nodejs-ws-loadtest-gcs "Node.js ws-loadtest"
+            ) &
+            node_pid="$!"
+            (
+              export LOADTEST_REFRESH_CAPACITY_PER_LOADER=false
+              run_loader dd-gleamlang-ws-loadtest-gcs "Gleam ws-loadtest"
+            ) &
+            gleam_pid="$!"
+            loader_failure=0
+            if ! wait "$rust_pid"; then
+              loader_failure=1
+              echo "ERROR: Rust ws-loadtest-rs parallel job failed" >&2
+            fi
+            if ! wait "$node_pid"; then
+              loader_failure=1
+              echo "ERROR: Node.js ws-loadtest parallel job failed" >&2
+            fi
+            if ! wait "$gleam_pid"; then
+              loader_failure=1
+              echo "ERROR: Gleam ws-loadtest parallel job failed" >&2
+            fi
+            if [ "$loader_failure" -ne 0 ]; then
+              exit 1
+            fi
+          else
+            run_loader dd-ws-loadtest-rs-gcs "Rust ws-loadtest-rs"
+            run_loader dd-nodejs-ws-loadtest-gcs "Node.js ws-loadtest"
+            run_loader dd-gleamlang-ws-loadtest-gcs "Gleam ws-loadtest"
+          fi
 
           echo "=== final gcs/router state ==="
           kubectl -n default get deploy gcs gcs-router -o wide
@@ -3342,13 +3401,13 @@ jobs:
           router_metrics
           echo "PROOF service_health gcs_available=$(deployment_available gcs)/4 router_available=$(deployment_available gcs-router)/3"
           report_dependency_health
-          echo "PROOF loadtest_all_passed total_connections=$total_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second load_label=$load_label loaders=rust,nodejs,gleam"
+          echo "PROOF loadtest_all_passed total_connections=$total_connections aggregate_connections=$aggregate_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second load_label=$load_label parallel_jobs=$parallel_jobs loaders=rust,nodejs,gleam"
           '''
 
           print(json.dumps({
               "commands": [
                   "set -euo pipefail",
-                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} LOADTEST_DURATION_SECONDS={shlex.quote(duration)} LOADTEST_LABEL={shlex.quote(load_label)} LOADTEST_LOADER_REPLICAS={shlex.quote(loader_replicas)} LOADTEST_CLIENTS_PER_REPLICA={shlex.quote(clients_per_replica)} LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT={shlex.quote(messages_per_second)} bash -lc {shlex.quote(script)}",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} LOADTEST_DURATION_SECONDS={shlex.quote(duration)} LOADTEST_LABEL={shlex.quote(load_label)} LOADTEST_LOADER_REPLICAS={shlex.quote(loader_replicas)} LOADTEST_CLIENTS_PER_REPLICA={shlex.quote(clients_per_replica)} LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT={shlex.quote(messages_per_second)} LOADTEST_PARALLEL_JOBS={shlex.quote(parallel_jobs)} bash -lc {shlex.quote(script)}",
               ],
           }))
           PY
