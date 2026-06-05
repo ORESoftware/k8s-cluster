@@ -617,7 +617,8 @@ impl QueryRoot {
                 message: Some("redis URL is not configured".to_string()),
             });
         };
-        let client = redis::Client::open(url).map_err(|error| Error::new(error.to_string()))?;
+        let client = redis::Client::open(url)
+            .map_err(|error| graphql_backend_error("redis", error.to_string()))?;
         let lookup_key = key.clone();
         let max_value_bytes = redis_value_limit_bytes();
         let value = with_timeout(redis_timeout_ms(), async move {
@@ -651,7 +652,8 @@ impl QueryRoot {
                 value_bytes > preview_bytes.len(),
             ))
         })
-        .await?;
+        .await
+        .map_err(|error| graphql_backend_error("redis", error))?;
         let (value, value_bytes, truncated) = value;
         Ok(GraphqlRedisValue {
             ok: true,
@@ -693,8 +695,9 @@ impl MutationRoot {
             .clamp(100, 30_000);
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(timeout_ms))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|error| Error::new(error.to_string()))?;
+            .map_err(|error| graphql_backend_error("cluster subservice", error.to_string()))?;
         let url = format!("{}{}", base_url.trim_end_matches('/'), path);
         let mut request = client.request(method.clone(), url);
         request = apply_graphql_headers(request, input.headers.as_deref())?;
@@ -712,7 +715,7 @@ impl MutationRoot {
         let response = request
             .send()
             .await
-            .map_err(|error| Error::new(error.to_string()))?;
+            .map_err(|error| graphql_backend_error("cluster subservice", error.to_string()))?;
         cluster_call_response(service, method.as_str(), path, response).await
     }
 
@@ -733,8 +736,9 @@ impl MutationRoot {
             .clamp(100, 30_000);
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(timeout_ms))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|error| Error::new(error.to_string()))?;
+            .map_err(|error| graphql_backend_error("cluster subservice", error.to_string()))?;
         let url = format!("{}{}", base_url.trim_end_matches('/'), path);
         let mut body = json!({ "query": input.query });
         if let Some(operation_name) = input.operation_name {
@@ -757,7 +761,7 @@ impl MutationRoot {
         let response = request
             .send()
             .await
-            .map_err(|error| Error::new(error.to_string()))?;
+            .map_err(|error| graphql_backend_error("cluster subservice", error.to_string()))?;
         cluster_call_response(service, "POST", path, response).await
     }
 }
@@ -1223,11 +1227,16 @@ fn normalize_subservice_base_url(input: &str) -> Result<String> {
     let Some(host) = url.host_str() else {
         return Err(Error::new("service URL must include a host"));
     };
+    if subservice_host_blocked(host) {
+        return Err(Error::new(
+            "service URL host is reserved for platform metadata or link-local services",
+        ));
+    }
     if !super::env_bool("REST_API_GRAPHQL_ALLOW_EXTERNAL_SERVICES", false)
         && !subservice_host_allowed(host)
     {
         return Err(Error::new(
-            "service URL host must be cluster-local/private unless REST_API_GRAPHQL_ALLOW_EXTERNAL_SERVICES=true",
+            "service URL host must be cluster-local, private, or loopback unless REST_API_GRAPHQL_ALLOW_EXTERNAL_SERVICES=true",
         ));
     }
     if !url.username().is_empty() || url.password().is_some() {
@@ -1243,21 +1252,39 @@ fn normalize_subservice_base_url(input: &str) -> Result<String> {
     Ok(url.as_str().trim_end_matches('/').to_string())
 }
 
+fn subservice_host_blocked(host: &str) -> bool {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    if matches!(
+        host.as_str(),
+        "metadata" | "metadata.google.internal" | "169.254.169.254" | "169.254.170.2"
+    ) {
+        return true;
+    }
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(addr)) => addr.is_link_local(),
+        Ok(IpAddr::V6(addr)) => addr.is_unicast_link_local(),
+        Err(_) => false,
+    }
+}
+
 fn subservice_host_allowed(host: &str) -> bool {
     let host = host.trim_end_matches('.').to_ascii_lowercase();
-    if host == "localhost" || !host.contains('.') {
+    if host == "localhost" {
+        return true;
+    }
+    if let Ok(addr) = host.parse::<IpAddr>() {
+        return match addr {
+            IpAddr::V4(addr) => addr.is_loopback() || addr.is_private(),
+            IpAddr::V6(addr) => addr.is_loopback() || addr.is_unique_local(),
+        };
+    }
+    if !host.contains('.') {
         return true;
     }
     if host.ends_with(".svc") || host.ends_with(".svc.cluster.local") {
         return true;
     }
-    match host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(addr)) => addr.is_loopback() || addr.is_private() || addr.is_link_local(),
-        Ok(IpAddr::V6(addr)) => {
-            addr.is_loopback() || addr.is_unique_local() || addr.is_unicast_link_local()
-        }
-        Err(_) => false,
-    }
+    false
 }
 
 fn service_env_key(alias: &str) -> String {
@@ -1468,7 +1495,7 @@ async fn cluster_call_response(
     let bytes = response
         .bytes()
         .await
-        .map_err(|error| Error::new(error.to_string()))?;
+        .map_err(|error| graphql_backend_error("cluster subservice", error.to_string()))?;
     let max_bytes = subservice_response_body_limit_bytes();
     let body_bytes = if bytes.len() > max_bytes {
         &bytes[..max_bytes]
@@ -1597,6 +1624,7 @@ mod tests {
         assert!(normalize_subservice_base_url("https://user:pass@example.com").is_err());
         assert!(normalize_subservice_base_url("https://example.com?token=1").is_err());
         assert!(normalize_subservice_base_url("https://example.com").is_err());
+        assert!(normalize_subservice_base_url("http://169.254.169.254/latest/meta-data").is_err());
     }
 
     #[test]
@@ -1655,8 +1683,14 @@ mod tests {
         assert!(subservice_host_allowed("service.default.svc.cluster.local"));
         assert!(subservice_host_allowed("10.0.0.12"));
         assert!(subservice_host_allowed("127.0.0.1"));
+        assert!(subservice_host_allowed("::1"));
+        assert!(subservice_host_allowed("fd00::12"));
+        assert!(subservice_host_blocked("169.254.1.1"));
+        assert!(subservice_host_blocked("fe80::1"));
         assert!(!subservice_host_allowed("example.com"));
         assert!(!subservice_host_allowed("8.8.8.8"));
+        assert!(!subservice_host_allowed("169.254.1.1"));
+        assert!(!subservice_host_allowed("2001:4860:4860::8888"));
     }
 
     #[test]
