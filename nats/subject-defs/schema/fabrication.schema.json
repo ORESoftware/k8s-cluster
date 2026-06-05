@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/fabrication.schema.json",
+  "title": "FabricationNats",
+  "description": "NATS subjects owned by dd-fabrication-server-rs for fabrication planning, instruction validation, and learning result fan-out.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-fabrication-server",
+    "summary": "Fabrication planning and validation request/result subjects.",
+    "subjects": [
+      {
+        "name": "FabricationRequests",
+        "description": "Fabrication planning requests. Default for FABRICATION_REQUEST_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.requests",
+        "queueGroup": "dd-fabrication-server",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationResults",
+        "description": "Fabrication planning and validation results. Default for FABRICATION_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.results",
+        "direction": "both"
+      }
+    ]
+  }
+}

@@ -35,6 +35,15 @@ const String desResultsSubject = "dd.remote.des.results";
 const String desSimulateSubject = "dd.remote.des.simulate";
 const String desSimulateQueueGroup = "dd-des-simulator";
 
+/// Fabrication planning requests. Default for FABRICATION_REQUEST_SUBJECT.
+/// Service: dd-fabrication-server
+const String fabricationRequestsSubject = "dd.remote.fabrication.requests";
+const String fabricationRequestsQueueGroup = "dd-fabrication-server";
+
+/// Fabrication planning and validation results. Default for FABRICATION_RESULT_SUBJECT.
+/// Service: dd-fabrication-server
+const String fabricationResultsSubject = "dd.remote.fabrication.results";
+
 /// Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
 /// Service: shared
 const String gitReposChangesSubject = "dd.remote.git-repos.changes";

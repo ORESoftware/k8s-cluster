@@ -13,6 +13,9 @@
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
+    fabrication_requests_subject/0,
+    fabrication_requests_queue_group/0,
+    fabrication_results_subject/0,
     git_repos_changes_subject/0,
     lambdas_functions_subject/0,
     lambdas_results_subject/0,
@@ -171,6 +174,15 @@ des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 %% Service: dd-ai-ml-pipeline
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
 des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
+
+%% Fabrication planning requests. Default for FABRICATION_REQUEST_SUBJECT.
+%% Service: dd-fabrication-server
+fabrication_requests_subject() -> <<"dd.remote.fabrication.requests"/utf8>>.
+fabrication_requests_queue_group() -> <<"dd-fabrication-server"/utf8>>.
+
+%% Fabrication planning and validation results. Default for FABRICATION_RESULT_SUBJECT.
+%% Service: dd-fabrication-server
+fabrication_results_subject() -> <<"dd.remote.fabrication.results"/utf8>>.
 
 %% Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
 %% Service: shared

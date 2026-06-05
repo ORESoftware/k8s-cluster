@@ -45,6 +45,15 @@ const DesResultsSubject = "dd.remote.des.results"
 const DesSimulateSubject = "dd.remote.des.simulate"
 const DesSimulateQueueGroup = "dd-des-simulator"
 
+// Fabrication planning requests. Default for FABRICATION_REQUEST_SUBJECT.
+// Service: dd-fabrication-server
+const FabricationRequestsSubject = "dd.remote.fabrication.requests"
+const FabricationRequestsQueueGroup = "dd-fabrication-server"
+
+// Fabrication planning and validation results. Default for FABRICATION_RESULT_SUBJECT.
+// Service: dd-fabrication-server
+const FabricationResultsSubject = "dd.remote.fabrication.results"
+
 // Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
 // Service: shared
 const GitReposChangesSubject = "dd.remote.git-repos.changes"
