@@ -4606,6 +4606,55 @@ mod tests {
     }
 
     #[test]
+    fn router_analysis_flags_profile_before_spindle_and_tab_stop_boundary() {
+        let programs = vec![program(
+            "unsafe-router",
+            "cnc-router",
+            &[
+                "G21 G90 G54",
+                "G1 X120 Y0 F900",
+                "M0 inspect retained tabs and hold-down",
+                "M30",
+            ],
+        )];
+
+        let (analyzed, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(analyzed[0].machine_kind, "cnc-router");
+        assert_eq!(validation.severity, "error");
+        assert!(validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "cut-before-spindle"));
+        assert!(validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "missing-spindle-start"));
+        assert!(validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| boundary.kind == "machine-safety-gate"));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "human-intervention" && boundary.requires_human_intervention
+        }));
+        assert!(!improvements
+            .iter()
+            .any(|improvement| improvement.action == "add-coordinate-reference"));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(!improved[0].machine_ready);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("REVIEW: add verified spindle speed")));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary machine-safety-gate")));
+    }
+
+    #[test]
     fn additive_analysis_flags_extrusion_before_heatup_and_homing() {
         let programs = vec![program(
             "bad-print",
