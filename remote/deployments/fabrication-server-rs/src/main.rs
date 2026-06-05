@@ -4494,6 +4494,46 @@ fn has_sheet_cutting_support_media_stop(line: &str) -> bool {
         || line_mentions(line, "process support stopped")
 }
 
+fn has_plasma_work_clamp_evidence(line: &str) -> bool {
+    line_mentions(line, "work clamp")
+        || line_mentions(line, "work-clamp")
+        || line_mentions(line, "ground clamp")
+        || line_mentions(line, "ground-clamp")
+        || line_mentions(line, "ground return")
+        || line_mentions(line, "ground-return")
+        || line_mentions(line, "return lead")
+        || line_mentions(line, "work lead")
+        || line_mentions(line, "workpiece ground")
+        || line_mentions(line, "grounding verified")
+        || line_mentions(line, "ground verified")
+        || line_mentions(line, "table ground")
+        || line_mentions(line, "conductive clamp")
+        || line_mentions(line, "plasma return")
+        || line_mentions(line, "plasma work lead")
+}
+
+fn has_waterjet_pressure_or_abrasive_evidence(line: &str) -> bool {
+    line_mentions(line, "waterjet pressure")
+        || line_mentions(line, "water-jet pressure")
+        || line_mentions(line, "pump pressure")
+        || line_mentions(line, "cut pressure")
+        || line_mentions(line, "high-pressure pump")
+        || line_mentions(line, "pressure verified")
+        || line_mentions(line, "abrasive flow")
+        || line_mentions(line, "abrasive-flow")
+        || line_mentions(line, "abrasive_flow")
+        || line_mentions(line, "abrasive feed")
+        || line_mentions(line, "abrasive-feed")
+        || line_mentions(line, "abrasive_feed")
+        || line_mentions(line, "abrasive flow test")
+        || line_mentions(line, "abrasive_flow_test")
+        || line_mentions(line, "garnet flow")
+        || line_mentions(line, "garnet feed")
+        || line_mentions(line, "orifice verified")
+        || line_mentions(line, "nozzle verified")
+        || line_mentions(line, "mixing tube")
+}
+
 fn has_additive_material_conditioning_evidence(line: &str) -> bool {
     line_mentions(line, "filament lot")
         || line_mentions(line, "material lot")
@@ -5953,6 +5993,10 @@ fn analyze_instruction_programs(
         let mut sheet_cutting_support_media_observed = false;
         let mut sheet_cutting_support_media_active = false;
         let mut reported_sheet_cutting_support_media_stopped_boundary = false;
+        let mut plasma_work_clamp_evidence_observed = false;
+        let mut reported_plasma_work_clamp_boundary = false;
+        let mut waterjet_pressure_or_abrasive_evidence_observed = false;
+        let mut reported_waterjet_pressure_boundary = false;
         let mut has_slicer_context = false;
         let mut has_slicer_profile = false;
         let mut has_slicer_orientation = false;
@@ -6281,6 +6325,18 @@ fn analyze_instruction_programs(
             {
                 sheet_cutting_support_media_observed = true;
                 sheet_cutting_support_media_active = true;
+            }
+            if class == MachineClass::SheetCut
+                && is_plasma_cutter_kind(&machine_kind)
+                && has_plasma_work_clamp_evidence(raw_line)
+            {
+                plasma_work_clamp_evidence_observed = true;
+            }
+            if class == MachineClass::SheetCut
+                && is_waterjet_cutter_kind(&machine_kind)
+                && has_waterjet_pressure_or_abrasive_evidence(raw_line)
+            {
+                waterjet_pressure_or_abrasive_evidence_observed = true;
             }
             if class == MachineClass::Lathe && has_lathe_workholding_evidence(raw_line) {
                 lathe_workholding_evidence_observed = true;
@@ -7668,6 +7724,70 @@ fn analyze_instruction_programs(
                     requires_human_intervention: true,
                     suggested_resolution:
                         "record kerf coupon, pierce/lead-in, focus or standoff, assist-gas/abrasive, fume/fire controls, and slat/honeycomb/water-table support before feed cutting"
+                            .to_string(),
+                });
+            }
+
+            if class == MachineClass::SheetCut
+                && is_waterjet_cutter_kind(&machine_kind)
+                && has_spindle_or_heatup
+                && !waterjet_pressure_or_abrasive_evidence_observed
+                && !reported_waterjet_pressure_boundary
+                && sheet_cut_feed_needs_process_review(&stripped)
+            {
+                reported_waterjet_pressure_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "waterjet-pressure-abrasive-not-verified".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "waterjet cutting feed move appears before pump-pressure or abrasive-flow evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "waterjet-pressure-abrasive-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "waterjet cutting can fail to pierce, taper excessively, delaminate material, damage the orifice/mixing tube, or widen kerf when pump pressure, abrasive flow, garnet feed, or nozzle/orifice state is implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record pump-pressure, abrasive-flow/garnet-feed, nozzle/orifice, and material cut-chart evidence before waterjet feed cutting, then rerun analysis before release"
+                            .to_string(),
+                });
+            }
+
+            if class == MachineClass::SheetCut
+                && is_plasma_cutter_kind(&machine_kind)
+                && has_spindle_or_heatup
+                && !plasma_work_clamp_evidence_observed
+                && !reported_plasma_work_clamp_boundary
+                && sheet_cut_feed_needs_process_review(&stripped)
+            {
+                reported_plasma_work_clamp_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "plasma-work-clamp-not-verified".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "plasma cutting feed move appears before conductive work-clamp or ground-return evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "plasma-work-clamp-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "plasma cutting can fail to transfer arc, misfire, damage consumables, or arc through unsafe paths when the work clamp, table ground, or return lead state is implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record conductive work-clamp, ground-return, table-ground, or plasma work-lead evidence before pierce/cut feeds, then rerun analysis before release"
                             .to_string(),
                 });
             }
@@ -19366,6 +19486,122 @@ mod tests {
             .instructions
             .iter()
             .any(|line| { line.contains("boundary sheet-cutting-support-media-stop-boundary") }));
+    }
+
+    #[test]
+    fn sheet_cut_analysis_requires_waterjet_pressure_and_abrasive_evidence() {
+        let programs = vec![
+            program(
+                "waterjet-without-pressure",
+                "waterjet-cutter",
+                &[
+                    "G21 G90 G54 ; kerf coupon, pierce lead-in, catch tank, and sheet support verified",
+                    "M3 ; waterjet enabled",
+                    "G1 X80 Y0 F650",
+                    "M30",
+                ],
+            ),
+            program(
+                "waterjet-with-pressure",
+                "waterjet-cutter",
+                &[
+                    "G21 G90 G54 ; pump pressure, abrasive flow, kerf coupon, pierce lead-in, catch tank, and sheet support verified",
+                    "M3 ; waterjet enabled",
+                    "G1 X80 Y0 F650",
+                    "M30",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "waterjet-pressure-abrasive-not-verified"
+                && finding.program_id.as_deref() == Some("waterjet-without-pressure")
+                && finding.line == Some(3)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "waterjet-pressure-abrasive-boundary"
+                && boundary.program_id.as_deref() == Some("waterjet-without-pressure")
+                && boundary.line == Some(3)
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("abrasive-flow")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "waterjet-pressure-abrasive-not-verified"
+                && finding.program_id.as_deref() == Some("waterjet-with-pressure")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary waterjet-pressure-abrasive-boundary")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary waterjet-pressure-abrasive-boundary")));
+    }
+
+    #[test]
+    fn sheet_cut_analysis_requires_plasma_work_clamp_evidence() {
+        let programs = vec![
+            program(
+                "plasma-without-work-clamp",
+                "plasma-cutter",
+                &[
+                    "G21 G90 G54 ; kerf coupon, pierce height, cut height, fume extraction, and fire watch verified",
+                    "M3 S45 ; plasma air active",
+                    "G1 X80 Y0 F900",
+                    "M30",
+                ],
+            ),
+            program(
+                "plasma-with-work-clamp",
+                "plasma-cutter",
+                &[
+                    "G21 G90 G54 ; conductive work clamp, ground return, kerf coupon, pierce height, fume extraction, and fire watch verified",
+                    "M3 S45 ; plasma air active",
+                    "G1 X80 Y0 F900",
+                    "M30",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "plasma-work-clamp-not-verified"
+                && finding.program_id.as_deref() == Some("plasma-without-work-clamp")
+                && finding.line == Some(3)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "plasma-work-clamp-boundary"
+                && boundary.program_id.as_deref() == Some("plasma-without-work-clamp")
+                && boundary.line == Some(3)
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("ground-return")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "plasma-work-clamp-not-verified"
+                && finding.program_id.as_deref() == Some("plasma-with-work-clamp")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary plasma-work-clamp-boundary")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary plasma-work-clamp-boundary")));
     }
 
     #[test]

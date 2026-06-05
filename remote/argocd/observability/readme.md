@@ -145,7 +145,13 @@ Currently opted-in:
   groups those signals with request intake, machine-failure boundary rates,
   NATS result fanout, MDP optimization fanout, in-memory evidence ledgers,
   runtime-config push delivery, dependency scrape health, HPA capacity, CPU and
-  memory limit headroom, gateway access/guardrail logs for `/fabrication/`, and
+  memory limit headroom, Loki-derived gateway guardrail rejection counters for
+  `/fabrication` auth/internal-route/method/payload/rate-limit failures, gateway edge-latency
+  p95/max panels from redacted access-log `request_time`, upstream p95/max panels from
+  `upstream_response_time`, upstream 500/502/503/504 failure counters from
+  `upstream_status`, request-size p95/max panels from `request_length` so payload growth is visible
+  before the `512k` gateway cap returns 413s, response-size p95/max panels from
+  `body_bytes_sent` for generated design, machine-code, and artifact responses, gateway access/guardrail logs, and
   warning/error logs for the Rust planner.
   The gateway log panel reads the redacted `dd.gateway.access.v1` access-log
   lines, which include request IDs, statuses, upstream status/timing, and

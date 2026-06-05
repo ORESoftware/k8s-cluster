@@ -523,6 +523,7 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
     "remote/argocd/observability/grafana.dashboards.configmap.yaml",
   );
   const prometheus = await readRepoFile("remote/argocd/observability/prometheus.configmap.yaml");
+  const observabilityReadme = await readRepoFile("remote/argocd/observability/readme.md");
   const gateway = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
   );
@@ -547,8 +548,50 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(dashboardText, /dd_k8s_pod_container_cpu_usage_cores/);
   assert.match(dashboardText, /dd_k8s_pod_container_memory_usage_bytes/);
   assert.match(dashboardText, /Fabrication Gateway Access and Guardrail Logs/);
+  assert.match(dashboardText, /Fabrication Gateway Guardrail Rejections/);
+  assert.match(dashboardText, /Fabrication Gateway Edge Latency/);
+  assert.match(dashboardText, /Fabrication Gateway Upstream Latency/);
+  assert.match(dashboardText, /Fabrication Gateway Upstream Failures/);
+  assert.match(dashboardText, /Fabrication Gateway Request Size/);
+  assert.match(dashboardText, /Fabrication Gateway Response Size/);
+  assert.match(dashboardText, /count_over_time/);
+  assert.match(dashboardText, /quantile_over_time\(0\.95/);
+  assert.match(dashboardText, /max_over_time/);
+  assert.match(dashboardText, /unwrap request_time/);
+  assert.match(dashboardText, /unwrap upstream_response_time/);
+  assert.match(dashboardText, /unwrap request_length/);
+  assert.match(dashboardText, /unwrap body_bytes_sent/);
+  assert.match(dashboardText, /upstream_status/);
+  assert.match(dashboardText, /upstream p95/);
+  assert.match(dashboardText, /upstream max/);
+  assert.match(dashboardText, /request bytes p95/);
+  assert.match(dashboardText, /request bytes max/);
+  assert.match(dashboardText, /response bytes p95/);
+  assert.match(dashboardText, /response bytes max/);
+  assert.match(dashboardText, /upstream 500/);
+  assert.match(dashboardText, /upstream 502/);
+  assert.match(dashboardText, /upstream 503/);
+  assert.match(dashboardText, /upstream 504/);
+  assert.match(dashboardText, /401 auth/);
+  assert.match(dashboardText, /404 internal route/);
+  assert.match(dashboardText, /405 method/);
+  assert.match(dashboardText, /413 payload/);
+  assert.match(dashboardText, /429 rate limit/);
   assert.match(dashboardText, /dd-remote-gateway/);
   assert.match(dashboardText, /401\|404\|405\|413\|429/);
+  assert.match(observabilityReadme, /Loki-derived gateway guardrail rejection counters/);
+  assert.match(observabilityReadme, /auth\/internal-route\/method\/payload\/rate-limit failures/);
+  assert.match(observabilityReadme, /gateway edge-latency/);
+  assert.match(observabilityReadme, /access-log `request_time`/);
+  assert.match(observabilityReadme, /upstream p95\/max panels/);
+  assert.match(observabilityReadme, /upstream_response_time/);
+  assert.match(observabilityReadme, /upstream 500\/502\/503\/504 failure counters/);
+  assert.match(observabilityReadme, /upstream_status/);
+  assert.match(observabilityReadme, /request-size p95\/max panels/);
+  assert.match(observabilityReadme, /request_length/);
+  assert.match(observabilityReadme, /512k/);
+  assert.match(observabilityReadme, /response-size p95\/max panels/);
+  assert.match(observabilityReadme, /body_bytes_sent/);
   assert.match(gateway, /log_format dd_gateway_json escape=json/);
   assert.match(gateway, /"schema":"dd\.gateway\.access\.v1"/);
   assert.match(gateway, /"uri":"\$uri"/);

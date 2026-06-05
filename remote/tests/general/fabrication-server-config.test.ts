@@ -471,6 +471,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /lathe-threading-feed-mode-boundary/);
   assert.match(source, /lathe_analysis_requires_threading_feed_mode_evidence/);
   assert.match(source, /lathe-part-off-boundary/);
+  assert.match(source, /fn has_lathe_partoff_support_evidence/);
+  assert.match(source, /fn has_lathe_partoff_command/);
+  assert.match(source, /lathe_partoff_support_evidence_observed/);
+  assert.match(source, /lathe-partoff-support-not-verified/);
+  assert.match(source, /lathe-partoff-support-boundary/);
+  assert.match(source, /lathe_analysis_requires_partoff_support_evidence/);
   assert.match(source, /fn has_lathe_workholding_evidence/);
   assert.match(source, /lathe-workholding-not-verified/);
   assert.match(source, /lathe-workholding-boundary/);
@@ -579,11 +585,21 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn has_sheet_cutting_process_evidence/);
   assert.match(source, /fn has_sheet_cutting_support_media_evidence/);
   assert.match(source, /sheet_cutting_support_media_active/);
+  assert.match(source, /fn has_plasma_work_clamp_evidence/);
+  assert.match(source, /plasma_work_clamp_evidence_observed/);
+  assert.match(source, /plasma-work-clamp-not-verified/);
+  assert.match(source, /plasma-work-clamp-boundary/);
+  assert.match(source, /fn has_waterjet_pressure_or_abrasive_evidence/);
+  assert.match(source, /waterjet_pressure_or_abrasive_evidence_observed/);
+  assert.match(source, /waterjet-pressure-abrasive-not-verified/);
+  assert.match(source, /waterjet-pressure-abrasive-boundary/);
   assert.match(source, /sheet-cutting-process-not-verified/);
   assert.match(source, /sheet-cutting-process-boundary/);
   assert.match(source, /sheet-cutting-support-media-stopped-before-cut/);
   assert.match(source, /sheet-cutting-support-media-stop-boundary/);
   assert.match(source, /sheet_cut_analysis_requires_support_media_restart_after_stop/);
+  assert.match(source, /sheet_cut_analysis_requires_waterjet_pressure_and_abrasive_evidence/);
+  assert.match(source, /sheet_cut_analysis_requires_plasma_work_clamp_evidence/);
   assert.match(source, /kerf-controlled-sheet-profile/);
   assert.match(source, /"choose-sheet-cutting-process"\.to_string\(\)/);
   assert.match(source, /method_combination_preferences/);
@@ -945,7 +961,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   assert.match(readme, /resin IPA\/wash\/cure\/waste\s+controls/);
   assert.match(readme, /powder\s+cooldown\/depowder\/recovery controls/);
-  assert.match(readme, /sheet-cutting pierce\/kerf\/focus\/gas\/fume\/\s*support evidence/);
+  assert.match(
+    readme,
+    /sheet-cutting pierce\/kerf\/focus\/gas\/fume\/\s*support, waterjet pressure\/abrasive-flow, and plasma work-clamp evidence/,
+  );
   assert.match(readme, /CNC tool-change automation\/operator-load\/spindle-stop evidence/);
   assert.match(readme, /tool-length\/probe compensation\/cancel state/);
   assert.match(readme, /cutter-compensation offset\/cancel state/);
@@ -979,6 +998,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /spindle-speed\/direction\/start\/process-stop state/);
   assert.match(readme, /chip\/coolant\/dust-collection\s+state/);
   assert.match(readme, /lathe\s+chuck\/stick-out\/runout evidence/);
+  assert.match(readme, /part-off catcher\/support evidence/);
   assert.match(readme, /tool\/turret-change stop state/);
   assert.match(readme, /tool-nose compensation evidence\/cancel state/);
   assert.match(
@@ -987,7 +1007,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   assert.match(
     readme,
-    /sheet-cutter\s+feed\s+moves before\s+pierce\/kerf\/focus\/assist-gas\/fume\/support\s+evidence or after assist-gas\/fume\/abrasive support media is stopped/,
+    /sheet-cutter\s+feed\s+moves before\s+pierce\/kerf\/focus\/assist-gas\/fume\/support\s+evidence, waterjet pump-pressure\/abrasive-flow evidence, plasma work-clamp\/ground-return evidence, or after assist-gas\/fume\/abrasive support media is stopped/,
   );
   assert.match(readme, /canned drilling\/tapping cycle setup\/cancel state/);
   assert.match(readme, /motion before `G80` cancellation/);
@@ -1006,6 +1026,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /declared\s+material\/machine compatibility/);
   assert.match(readme, /declared material\s+incompatibility/);
   assert.match(readme, /lathe\s+chuck\/collet\/tailstock\/stick-out\/runout\s+evidence/);
+  assert.match(
+    readme,
+    /part-off or cutoff operations without catcher\/subspindle\/tailstock\/stock-support evidence/,
+  );
   assert.match(
     readme,
     /lathe `T` tool\/turret changes while spindle\/process remains active without `M5`\/`M05` stop evidence/,

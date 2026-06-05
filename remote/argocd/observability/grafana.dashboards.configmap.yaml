@@ -873,8 +873,91 @@ data:
         },
         {
           "datasource": { "type": "loki", "uid": "Loki" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
           "gridPos": { "h": 7, "w": 24, "x": 0, "y": 46 },
           "id": 15,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"status\\\":401\" [$__interval]))", "legendFormat": "401 auth", "refId": "A" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/internal\" |= \"\\\"status\\\":404\" [$__interval]))", "legendFormat": "404 internal route", "refId": "B" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"status\\\":405\" [$__interval]))", "legendFormat": "405 method", "refId": "C" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"status\\\":413\" [$__interval]))", "legendFormat": "413 payload", "refId": "D" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"status\\\":429\" [$__interval]))", "legendFormat": "429 rate limit", "refId": "E" }
+          ],
+          "title": "Fabrication Gateway Guardrail Rejections",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 53 },
+          "id": 16,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "s" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "quantile_over_time(0.95, {deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap request_time | __error__=\"\" [$__interval])", "legendFormat": "request p95", "refId": "A" },
+            { "expr": "max_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap request_time | __error__=\"\" [$__interval])", "legendFormat": "request max", "refId": "B" }
+          ],
+          "title": "Fabrication Gateway Edge Latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 60 },
+          "id": 17,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "s" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "quantile_over_time(0.95, {deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap upstream_response_time | __error__=\"\" [$__interval])", "legendFormat": "upstream p95", "refId": "A" },
+            { "expr": "max_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap upstream_response_time | __error__=\"\" [$__interval])", "legendFormat": "upstream max", "refId": "B" }
+          ],
+          "title": "Fabrication Gateway Upstream Latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 67 },
+          "id": 18,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"upstream_status\\\":\\\"500\\\"\" [$__interval]))", "legendFormat": "upstream 500", "refId": "A" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"upstream_status\\\":\\\"502\\\"\" [$__interval]))", "legendFormat": "upstream 502", "refId": "B" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"upstream_status\\\":\\\"503\\\"\" [$__interval]))", "legendFormat": "upstream 503", "refId": "C" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"upstream_status\\\":\\\"504\\\"\" [$__interval]))", "legendFormat": "upstream 504", "refId": "D" }
+          ],
+          "title": "Fabrication Gateway Upstream Failures",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 74 },
+          "id": 19,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "bytes" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "quantile_over_time(0.95, {deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap request_length | __error__=\"\" [$__interval])", "legendFormat": "request bytes p95", "refId": "A" },
+            { "expr": "max_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap request_length | __error__=\"\" [$__interval])", "legendFormat": "request bytes max", "refId": "B" }
+          ],
+          "title": "Fabrication Gateway Request Size",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 81 },
+          "id": 20,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "bytes" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "quantile_over_time(0.95, {deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap body_bytes_sent | __error__=\"\" [$__interval])", "legendFormat": "response bytes p95", "refId": "A" },
+            { "expr": "max_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap body_bytes_sent | __error__=\"\" [$__interval])", "legendFormat": "response bytes max", "refId": "B" }
+          ],
+          "title": "Fabrication Gateway Response Size",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 88 },
+          "id": 21,
           "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
           "targets": [ { "expr": "{deployment=\"dd-remote-gateway\"} |= \"/fabrication\" |~ \"(?i)(401|404|405|413|429|limit|too large|unauthorized|method|internal)\"", "refId": "A" } ],
           "title": "Fabrication Gateway Access and Guardrail Logs",
