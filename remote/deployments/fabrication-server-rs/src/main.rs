@@ -1707,6 +1707,10 @@ struct TextInstructionSignals {
     has_subtractive_text_context: bool,
     has_subtractive_text_setup_evidence: bool,
     has_subtractive_text_process_evidence: bool,
+    has_mill_turn_text_context: bool,
+    has_mill_turn_live_tooling_evidence: bool,
+    has_mill_turn_transfer_context: bool,
+    has_mill_turn_spindle_transfer_evidence: bool,
     has_lathe_text_threading_context: bool,
     has_lathe_text_threading_sync_evidence: bool,
     has_lathe_text_partoff_context: bool,
@@ -2775,6 +2779,30 @@ fn wants_horizontal_milling(value: &str) -> bool {
         || token.contains("slitting")
 }
 
+fn wants_mill_turning(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("mill-turn")
+        || token.contains("turn-mill")
+        || token.contains("millturn")
+        || token.contains("turnmill")
+        || token.contains("swiss")
+        || token.contains("swiss-type")
+        || token.contains("sliding-headstock")
+        || token.contains("live-tool")
+        || token.contains("live-tooling")
+        || token.contains("driven-tool")
+        || token.contains("driven-tooling")
+        || token.contains("c-axis-lathe")
+        || token.contains("y-axis-lathe")
+        || token.contains("b-axis-turning")
+        || token.contains("subspindle-transfer")
+        || token.contains("sub-spindle-transfer")
+}
+
+fn is_mill_turn_kind(kind: &str) -> bool {
+    wants_mill_turning(kind)
+}
+
 fn machine_class(kind: &str) -> MachineClass {
     let token = normalize_token(kind);
     if token.contains("printer")
@@ -2797,7 +2825,7 @@ fn machine_class(kind: &str) -> MachineClass {
         || token.contains("additive")
     {
         MachineClass::Additive
-    } else if token.contains("lathe") || token.contains("turn") {
+    } else if is_mill_turn_kind(&token) || token.contains("lathe") || token.contains("turn") {
         MachineClass::Lathe
     } else if token.contains("mill") || token.contains("machining-center") {
         MachineClass::Mill
@@ -3039,6 +3067,32 @@ fn default_machines() -> Vec<MachineProfile> {
                 "tool-center-point".to_string(),
                 "undercut".to_string(),
                 "impeller-finish".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "mill-turn-center-1".to_string(),
+            kind: "mill-turn-center".to_string(),
+            controller: Some("mill-turn-gcode".to_string()),
+            materials: Some(vec![
+                "aluminum".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "brass".to_string(),
+                "titanium".to_string(),
+                "plastic".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![300.0, 750.0, 120.0]),
+            axes: Some(5),
+            operations: Some(vec![
+                "turn".to_string(),
+                "face".to_string(),
+                "bore".to_string(),
+                "thread".to_string(),
+                "live-tool-mill".to_string(),
+                "c-axis-index".to_string(),
+                "y-axis-drill".to_string(),
+                "subspindle-transfer".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -4513,7 +4567,9 @@ fn infer_requested_parts(
     let wants_powder_bed_part = wants_metal_pbf_part
         || wants_powder_bed_printing(&objective_token)
         || wants_powder_bed_printing(&material.name);
-    let needs_turned_part = objective_token.contains("shaft")
+    let needs_mill_turn_part = wants_mill_turning(&objective_token);
+    let needs_turned_part = needs_mill_turn_part
+        || objective_token.contains("shaft")
         || objective_token.contains("bushing")
         || objective_token.contains("bearing")
         || objective_token.contains("cylind")
@@ -4521,7 +4577,8 @@ fn infer_requested_parts(
     let needs_sinker_edm_part = wants_sinker_edm_machining(&objective_token);
     let needs_five_axis_milled_part = wants_five_axis_milling(&objective_token);
     let needs_horizontal_milled_part = wants_horizontal_milling(&objective_token);
-    let needs_milled_part = !needs_sinker_edm_part
+    let needs_milled_part = !needs_mill_turn_part
+        && !needs_sinker_edm_part
         && (objective_token.contains("bracket")
             || objective_token.contains("plate")
             || objective_token.contains("pocket")
@@ -4662,7 +4719,14 @@ fn infer_requested_parts(
             description: "turned shaft, bushing, bearing, thread, or cylindrical insert"
                 .to_string(),
             material: Some(material.clone()),
-            preferred_method: Some("turning".to_string()),
+            preferred_method: Some(
+                if needs_mill_turn_part {
+                    "mill-turning"
+                } else {
+                    "turning"
+                }
+                .to_string(),
+            ),
             tolerance_mm: Some(tolerance_mm),
         });
     }
