@@ -52,7 +52,9 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
 - `POST /streaming/<name>` — stream JSONL commands (one per line) to a solver;
   responds with a JSONL stream of result frames.
 - `GET  /out/soccer-sim.html` — rendered 2D 11v11 soccer videogame / learning
-  simulation artifact.
+  simulation artifact. The same render also writes `/out/soccer-sim.json`
+  (full trace: config, summary, frames, events) and
+  `/out/soccer-sim.frames.jsonl` (header + frame/event/summary records).
 - `GET  /soccer/planner` — interactive soccer rotation planner UI.
 - `POST /soccer/planner/solve` — re-solve the planner request with the Rust
   IP/MIP solver.
