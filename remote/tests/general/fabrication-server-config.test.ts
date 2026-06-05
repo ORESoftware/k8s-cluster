@@ -47,6 +47,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct LearningPolicySnapshot/);
   assert.match(source, /struct LearningPlan/);
   assert.match(source, /fn plan_fabrication\(request: FabricationPlanRequest\)/);
+  assert.match(source, /fn plan_fabrication_with_policy/);
+  assert.match(source, /fn apply_learning_policy_to_request/);
+  assert.match(source, /fn learned_preferred_methods/);
   assert.match(source, /fn analyze_instruction_programs/);
   assert.match(source, /fn learn_from_outcome/);
   assert.match(source, /fn learning_artifacts/);
@@ -70,6 +73,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn stored_plan_job/);
   assert.match(source, /fn stored_analysis_job/);
   assert.match(source, /fn simulate_instruction_programs/);
+  assert.match(source, /simulated-axis-envelope-exceeded/);
+  assert.match(source, /simulated-machine-envelope/);
   assert.match(source, /fn stock_envelope_excesses/);
   assert.match(source, /id: "horizontal-mill-1"/);
   assert.match(source, /horizontal-slotted-feature/);
@@ -114,6 +119,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /reward-signal/);
   assert.match(readme, /pomdp-observations/);
   assert.match(readme, /neural-example/);
+  assert.match(readme, /reuse strong learned method preferences/);
+  assert.match(readme, /without explicit `preferredMethods`/);
   assert.match(readme, /`POST \/plan`/);
   assert.match(readme, /`POST \/fabrication\/plan`/);
   assert.match(readme, /`POST \/instructions\/analyze`/);
@@ -122,6 +129,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /horizontal side-slot\/keyway milling/);
   assert.match(readme, /horizontal-milled side slots\/keyways/);
   assert.match(readme, /analysis-simulation-report/);
+  assert.match(readme, /simulated-axis-envelope-exceeded/);
+  assert.match(readme, /simulated-machine-envelope/);
   assert.match(readme, /GRBL-style router profile programs with tab gates/);
   assert.match(readme, /CNC router/);
   assert.match(readme, /routed sheet\/profile parts/);
