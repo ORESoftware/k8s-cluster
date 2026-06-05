@@ -2060,12 +2060,110 @@ fn json_artifact(
     }
 }
 
+fn design_primitive_for_part(part: &PartPlan) -> Value {
+    match machine_class(&part.machine_kind) {
+        MachineClass::Additive => json!({
+            "primitive": "additive-shell",
+            "operation": "slice-print",
+            "buildOrientation": "auto-upright",
+            "supportStrategy": "generated-review-required",
+            "datums": ["build-plate-z", "front-left-origin"],
+        }),
+        MachineClass::Mill => json!({
+            "primitive": "subtractive-prismatic-body",
+            "operation": "face-rough-contour-finish",
+            "stockAllowanceMm": 1.5,
+            "datums": ["G54-top-face", "primary-vise-stop", "machined-datum-face"],
+        }),
+        MachineClass::Lathe => json!({
+            "primitive": "revolved-turned-body",
+            "operation": "face-turn-bore-thread",
+            "axis": "Z",
+            "datums": ["spindle-axis", "chuck-face-z0"],
+        }),
+        MachineClass::Router => json!({
+            "primitive": "subtractive-sheet-profile",
+            "operation": "profile-pocket-tab-cut",
+            "stockAllowanceMm": 0.8,
+            "datums": ["sheet-origin", "spoilboard-z"],
+        }),
+        MachineClass::Other => json!({
+            "primitive": "operator-defined-special-process",
+            "operation": "manual-review-required",
+            "datums": ["operator-defined"],
+        }),
+    }
+}
+
+fn parametric_design_content(response: &FabricationPlanResponse) -> Value {
+    let parts = response
+        .design
+        .parts
+        .iter()
+        .map(|part| {
+            json!({
+                "partId": part.id,
+                "role": part.role,
+                "material": part.material,
+                "manufacturingMethod": part.manufacturing_method,
+                "machineKind": part.machine_kind,
+                "toleranceMm": part.tolerance_mm,
+                "interfaces": part.interfaces,
+                "primitive": design_primitive_for_part(part),
+            })
+        })
+        .collect::<Vec<_>>();
+    let process_links = response
+        .process_plan
+        .iter()
+        .map(|step| {
+            json!({
+                "step": step.step,
+                "partId": step.part_id,
+                "machineId": step.machine_id,
+                "machineKind": step.machine_kind,
+                "operation": step.operation,
+                "setup": step.setup,
+                "requiresHumanIntervention": step.requires_human_intervention,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    json!({
+        "schemaVersion": "dd.fabrication.parametric-design.v1",
+        "sourceJobId": response.job_id,
+        "objectId": response.design.object_id,
+        "units": "mm",
+        "representation": response.design.representation,
+        "releaseState": {
+            "draft": true,
+            "machineReady": false,
+            "requiresSimulation": true,
+            "requiresHumanReview": true
+        },
+        "parts": parts,
+        "processLinks": process_links,
+        "assembly": {
+            "strategy": response.assembly.strategy,
+            "combineCandidates": response.assembly.combine_candidates,
+            "splitCandidates": response.assembly.split_candidates,
+            "joints": response.assembly.joints,
+        }
+    })
+}
+
 fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact> {
     let mut artifacts = vec![
         json_artifact(
             "design-summary".to_string(),
             "design-summary",
             json!(response.design),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "parametric-design".to_string(),
+            "parametric-design",
+            parametric_design_content(response),
             response.generated_at_ms,
         ),
         json_artifact(
