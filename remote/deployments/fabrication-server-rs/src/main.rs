@@ -2600,19 +2600,19 @@ fn build_mdp_request(
             ]);
             observation_labels.sort();
             observation_labels.dedup();
-        let mut observation_model = Vec::new();
-        for action in &actions {
-            for next_state in &states {
-                for observation in &observation_labels {
-                    observation_model.push(MdpObservation {
-                        action: action.clone(),
-                        next_state: next_state.clone(),
-                        observation: observation.clone(),
-                        probability: observation_probability(next_state, observation),
-                    });
+            let mut observation_model = Vec::new();
+            for action in &actions {
+                for next_state in &states {
+                    for observation in &observation_labels {
+                        observation_model.push(MdpObservation {
+                            action: action.clone(),
+                            next_state: next_state.clone(),
+                            observation: observation.clone(),
+                            probability: observation_probability(next_state, observation),
+                        });
+                    }
                 }
             }
-        }
             let belief = normalize_belief(
                 states
                     .iter()
