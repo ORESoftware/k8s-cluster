@@ -12,6 +12,7 @@ It exposes:
 - `GET /docs/api`
 - `GET /api/docs`
 - `GET /api/docs.json`
+- `POST /plan`
 - `POST /fabrication/plan`
 - `POST /instructions/analyze`
 
@@ -49,6 +50,9 @@ post-processing, simulation, workholding review, material verification, and
 operator sign-off.
 
 ## `POST /fabrication/plan`
+
+`POST /plan` is an equivalent alias used by the gateway when public
+`/fabrication/` traffic is prefix-stripped before it reaches this service.
 
 Requests use camelCase JSON:
 

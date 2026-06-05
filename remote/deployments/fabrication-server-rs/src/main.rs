@@ -2287,6 +2287,7 @@ async fn root() -> impl IntoResponse {
             "GET /docs/api",
             "GET /api/docs",
             "GET /api/docs.json",
+            "POST /plan",
             "POST /fabrication/plan",
             "POST /instructions/analyze"
         ],
@@ -2516,6 +2517,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
         .route("/metrics", get(metrics))
+        .route("/plan", post(plan_http))
         .route("/fabrication/plan", post(plan_http))
         .route("/instructions/analyze", post(analyze_http))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))

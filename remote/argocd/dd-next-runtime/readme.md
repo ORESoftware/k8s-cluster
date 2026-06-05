@@ -93,9 +93,9 @@ Gateway path map:
   (gateway auth required)
 - `/mdp/`, `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`,
   `POST /mdp/telemetry/learn` -> `dd-mdp-optimizer:8096` (gateway auth required)
-- `/fabrication/`, `/fabrication/schema`, `/fabrication/example`, `POST /fabrication/fabricate`,
-  `POST /fabrication/instructions/validate`, `POST /fabrication/instructions/improve`,
-  `POST /fabrication/learn/telemetry` -> `dd-fabrication-server:8113` (gateway auth required)
+- `/fabrication/`, `/fabrication/healthz`, `/fabrication/metrics`, `/fabrication/docs/api`,
+  `POST /fabrication/plan`, `POST /fabrication/instructions/analyze` ->
+  `dd-fabrication-server:8113` (gateway auth required)
 - `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
   `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`
   (internal auth required)
@@ -453,8 +453,9 @@ queue-subscribes to `dd.remote.mdp.optimize` for explicit optimization jobs and
 `dd.remote.mdp.results` plus compact runtime events on `dd.remote.events`.
 
 `dd-fabrication-server` is one producer of those explicit optimization jobs:
-`POST /fabrication/fabricate` includes a `learning.mdpRequest` and the deployment publishes that
-request to `dd.remote.mdp.optimize` when `FABRICATION_MDP_AUTOPUBLISH=true`.
+`POST /fabrication/plan` builds a fabrication learning contract and the deployment can publish an
+optimizer-shaped MDP request to `dd.remote.mdp.optimize` when
+`FABRICATION_MDP_AUTOPUBLISH=true`.
 
 ## Solana contract service
 
