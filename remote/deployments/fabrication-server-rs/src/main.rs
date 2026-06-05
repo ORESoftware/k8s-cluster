@@ -1121,6 +1121,8 @@ fn machine_class(kind: &str) -> MachineClass {
         MachineClass::Mill
     } else if token.contains("router") {
         MachineClass::Router
+    } else if is_sheet_cutter_kind(&token) {
+        MachineClass::SheetCut
     } else {
         MachineClass::Other
     }
@@ -1256,6 +1258,28 @@ fn default_machines() -> Vec<MachineProfile> {
                 "tab-cut".to_string(),
             ]),
         },
+        MachineProfile {
+            id: "laser-cutter-1".to_string(),
+            kind: "laser-cutter".to_string(),
+            controller: Some("laser-job".to_string()),
+            materials: Some(vec![
+                "acrylic".to_string(),
+                "plywood".to_string(),
+                "mdf".to_string(),
+                "cardboard".to_string(),
+                "paper".to_string(),
+                "leather".to_string(),
+                "plastic".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![900.0, 600.0, 12.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "laser-cut".to_string(),
+                "laser-engrave".to_string(),
+                "pierce".to_string(),
+                "kerf-test".to_string(),
+            ]),
+        },
     ]
 }
 
@@ -1389,22 +1413,24 @@ fn infer_requested_parts(
         || needs_horizontal_milled_part
         || tolerance_mm <= 0.08
         || is_metal(material);
-    let needs_routed_part = objective_token.contains("router")
-        || objective_token.contains("routed")
-        || objective_token.contains("sign")
-        || objective_token.contains("panel")
-        || objective_token.contains("sheet")
-        || objective_token.contains("profile")
-        || objective_token.contains("engrave")
-        || objective_token.contains("tabbed")
-        || is_router_material(material);
+    let needs_sheet_cut_part = wants_sheet_cutting(&objective_token);
+    let needs_routed_part = !needs_sheet_cut_part
+        && (objective_token.contains("router")
+            || objective_token.contains("routed")
+            || objective_token.contains("sign")
+            || objective_token.contains("panel")
+            || objective_token.contains("sheet")
+            || objective_token.contains("profile")
+            || objective_token.contains("engrave")
+            || objective_token.contains("tabbed")
+            || is_router_material(material));
     let needs_printed_part = objective_token.contains("prototype")
         || objective_token.contains("case")
         || objective_token.contains("cover")
         || objective_token.contains("organic")
         || objective_token.contains("ergonomic")
-        || is_polymer(material)
-        || (!needs_milled_part && !needs_routed_part);
+        || (is_polymer(material) && !needs_routed_part && !needs_sheet_cut_part)
+        || (!needs_milled_part && !needs_routed_part && !needs_sheet_cut_part);
 
     if needs_printed_part {
         let preferred_method =
@@ -1434,6 +1460,24 @@ fn infer_requested_parts(
             material: Some(material.clone()),
             preferred_method: Some("routing".to_string()),
             tolerance_mm: Some(tolerance_mm.max(0.12)),
+        });
+    }
+    if needs_sheet_cut_part {
+        let preferred_method =
+            if objective_token.contains("waterjet") || objective_token.contains("water-jet") {
+                "waterjet-cutting"
+            } else if objective_token.contains("plasma") {
+                "plasma-cutting"
+            } else {
+                "laser-cutting"
+            };
+        parts.push(RequestedPart {
+            id: "sheet-cut-profile".to_string(),
+            description: "laser, waterjet, plasma, knife, stencil, gasket, or kerf-controlled sheet profile inferred from objective"
+                .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some(preferred_method.to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.10)),
         });
     }
     if needs_horizontal_milled_part {
@@ -1521,6 +1565,10 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_powder_bed_printing(value));
+    let wants_sheet_cutter = preferred.as_deref().is_some_and(wants_sheet_cutting)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_sheet_cutting(value));
 
     if wants_horizontal_mill {
         if let Some(machine) = machines.iter().find(|machine| {
@@ -1543,6 +1591,13 @@ fn choose_machine<'a>(
             return machine;
         }
     }
+    if wants_sheet_cutter {
+        if let Some(machine) = machines.iter().find(|machine| {
+            is_sheet_cutter_kind(&machine.kind) && material_supported(machine, material)
+        }) {
+            return machine;
+        }
+    }
 
     let wants_class = if preferred
         .as_deref()
@@ -1553,6 +1608,8 @@ fn choose_machine<'a>(
         value.contains("router") || value.contains("routing") || value.contains("rout")
     }) {
         Some(MachineClass::Router)
+    } else if preferred.as_deref().is_some_and(wants_sheet_cutting) {
+        Some(MachineClass::SheetCut)
     } else if preferred
         .as_deref()
         .is_some_and(|value| value.contains("mill") || value.contains("machin"))
@@ -1572,6 +1629,11 @@ fn choose_machine<'a>(
         value.contains("router") || value.contains("routing") || value.contains("rout")
     }) {
         Some(MachineClass::Router)
+    } else if preferred_methods
+        .iter()
+        .any(|value| wants_sheet_cutting(value))
+    {
+        Some(MachineClass::SheetCut)
     } else if preferred_methods
         .iter()
         .any(|value| value.contains("mill") || value.contains("machin"))
@@ -1625,6 +1687,7 @@ fn part_method(class: MachineClass) -> &'static str {
         MachineClass::Mill => "subtractive-milling",
         MachineClass::Lathe => "turning",
         MachineClass::Router => "subtractive-routing",
+        MachineClass::SheetCut => "sheet-cutting",
         MachineClass::Other => "manual-or-special-process",
     }
 }
@@ -1644,6 +1707,7 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         MachineClass::Mill => "face, rough, contour, and finish critical features",
         MachineClass::Lathe => "face, rough turn, finish turn, and bore/thread if needed",
         MachineClass::Router => "profile, pocket, and tab-cut",
+        MachineClass::SheetCut => "kerf-test, pierce, cut/engrave sheet profile, and inspect",
         MachineClass::Other => "prepare operator-reviewed special process",
     }
 }
@@ -1654,6 +1718,7 @@ fn expected_minutes(class: MachineClass, tolerance_mm: f64) -> u32 {
         MachineClass::Mill => 55.0,
         MachineClass::Lathe => 35.0,
         MachineClass::Router => 40.0,
+        MachineClass::SheetCut => 25.0,
         MachineClass::Other => 60.0,
     };
     let tolerance_factor = if tolerance_mm <= 0.05 {
@@ -1845,6 +1910,28 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: verify hold-down, tab placement, cutter diameter, dust collection, and spoilboard clearance before running."
                     .to_string(),
                 "Router paths need a controller-specific postprocessor and dry-run because clamps and tabs are machine-specific."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::SheetCut => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "laser-job".to_string()),
+            vec![
+                "; draft sheet-cutting job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [setup-boundary]: verify sheet material, thickness, lens/focus, ventilation, fire watch, and honeycomb bed".to_string(),
+                "KERF_TEST coupon_width_mm=20 power=operator-reviewed speed=operator-reviewed".to_string(),
+                "PIERCE at lead-in points only after focus and assist-air check".to_string(),
+                "VECTOR_ENGRAVE optional marks before through-cut; preserve datums".to_string(),
+                "VECTOR_CUT outside profile with tabs/bridges and verified kerf compensation".to_string(),
+                "CHECKPOINT [sheet-cutting-boundary]: inspect flame, fumes, pierce quality, retained tabs, and part release".to_string(),
+                "COMPLETE record material lot, kerf coupon, and edge inspection".to_string(),
+            ],
+            vec![
+                "Draft only: final laser/waterjet/plasma settings must come from machine-specific material, thickness, kerf, and assist-gas validation."
+                    .to_string(),
+                "Human signoff is required for fire watch, fumes/ventilation, material certification, and sheet hold-down before cutting."
                     .to_string(),
             ],
         ),
@@ -2440,6 +2527,47 @@ fn inspect_text_instruction_line(
     }
     if text_has_any(
         raw_line,
+        &[
+            "laser",
+            "waterjet",
+            "water-jet",
+            "plasma",
+            "kerf",
+            "pierce",
+            "assist gas",
+            "assist-air",
+            "fume",
+            "fire watch",
+            "lens",
+            "focus",
+        ],
+    ) {
+        signals.has_process_preparation = true;
+        findings.push(ValidationFinding {
+            severity: "warning".to_string(),
+            code: "text-sheet-cutting-boundary".to_string(),
+            program_id: Some(program_id.to_string()),
+            line: Some(line_number),
+            message:
+                "text instruction depends on sheet-cutting kerf, fire/fume, pierce, or focus state"
+                    .to_string(),
+        });
+        boundaries.push(FailureBoundary {
+            kind: "sheet-cutting-boundary".to_string(),
+            severity: "warning".to_string(),
+            program_id: Some(program_id.to_string()),
+            line: Some(line_number),
+            reason:
+                "laser/waterjet/plasma/knife-style sheet work needs kerf, material, focus, fire/fume, and release checks outside an unattended cycle"
+                    .to_string(),
+            requires_human_intervention: true,
+            suggested_resolution:
+                "record kerf coupons, material certification, focus/assist-gas settings, ventilation/fire-watch checks, and tab/release inspection"
+                    .to_string(),
+        });
+    }
+    if text_has_any(
+        raw_line,
         &["proprietary", "vendor only", "unsupported", "unknown"],
     ) {
         findings.push(ValidationFinding {
@@ -2577,7 +2705,7 @@ fn analyze_instruction_programs(
 
             if matches!(
                 class,
-                MachineClass::Mill | MachineClass::Lathe | MachineClass::Router
+                MachineClass::Mill | MachineClass::Lathe | MachineClass::Router | MachineClass::SheetCut
             ) && has_feed_move
                 && !has_spindle_or_heatup
             {
@@ -2586,17 +2714,21 @@ fn analyze_instruction_programs(
                     code: "cut-before-spindle".to_string(),
                     program_id: Some(program_id.clone()),
                     line: Some(line_number),
-                    message: "subtractive feed move appears before spindle start".to_string(),
+                    message:
+                        "subtractive feed move appears before spindle, beam, jet, or process start"
+                            .to_string(),
                 });
                 boundaries.push(FailureBoundary {
                     kind: "machine-safety-gate".to_string(),
                     severity: "error".to_string(),
                     program_id: Some(program_id.clone()),
                     line: Some(line_number),
-                    reason: "cutting move before spindle start can crash tools or scrap stock".to_string(),
+                    reason:
+                        "cutting move before spindle, beam, jet, or process start can crash tools, misfire, or scrap stock"
+                            .to_string(),
                     requires_human_intervention: true,
                     suggested_resolution:
-                        "insert operator-verified tool, work offset, spindle, coolant, and safe approach blocks before cutting"
+                        "insert operator-verified tool/beam/jet enable, work offset, assist gas/coolant, and safe approach blocks before cutting"
                             .to_string(),
                 });
             }
@@ -2750,7 +2882,7 @@ fn analyze_instruction_programs(
         if machine_code_language
             && matches!(
                 class,
-                MachineClass::Mill | MachineClass::Lathe | MachineClass::Router
+                MachineClass::Mill | MachineClass::Lathe | MachineClass::Router | MachineClass::SheetCut
             )
             && !has_spindle_or_heatup
         {
@@ -2759,7 +2891,8 @@ fn analyze_instruction_programs(
                 code: "missing-spindle-start".to_string(),
                 program_id: Some(program_id.clone()),
                 line: None,
-                message: "subtractive program has no spindle start command".to_string(),
+                message: "subtractive program has no spindle, beam, jet, or process start command"
+                    .to_string(),
             });
         }
         if machine_code_language
@@ -2899,10 +3032,15 @@ fn improve_instruction_programs(
                     instructions.push(coordinate_line.to_string());
                 }
                 if finding_applies(validation, &program_id, "missing-spindle-start") {
-                    instructions.push(
-                        "M0 ; REVIEW: add verified spindle speed and direction before feed moves"
-                            .to_string(),
-                    );
+                    let start_review = match class {
+                        MachineClass::SheetCut => {
+                            "M0 ; REVIEW: add verified beam/jet enable, assist gas, pierce, and kerf settings before feed moves"
+                        }
+                        _ => {
+                            "M0 ; REVIEW: add verified spindle speed and direction before feed moves"
+                        }
+                    };
+                    instructions.push(start_review.to_string());
                 }
                 if finding_applies(validation, &program_id, "missing-printer-heatup") {
                     instructions.push(
@@ -3048,6 +3186,12 @@ fn design_primitive_for_part(part: &PartPlan) -> Value {
             "operation": "profile-pocket-tab-cut",
             "stockAllowanceMm": 0.8,
             "datums": ["sheet-origin", "spoilboard-z"],
+        }),
+        MachineClass::SheetCut => json!({
+            "primitive": "kerf-controlled-sheet-profile",
+            "operation": "kerf-test-pierce-cut-engrave",
+            "stockAllowanceMm": 0.2,
+            "datums": ["sheet-origin", "focus-plane", "kerf-coupon"],
         }),
         MachineClass::Other => json!({
             "primitive": "operator-defined-special-process",
@@ -3318,6 +3462,8 @@ fn canonical_policy_method(value: &str) -> Option<String> {
         Some("horizontal-milling".to_string())
     } else if token.contains("router") || token.contains("routing") || token.contains("rout") {
         Some("routing".to_string())
+    } else if wants_sheet_cutting(&token) || token.contains("sheet-cutting") {
+        Some("sheet-cutting".to_string())
     } else if token.contains("turn") || token.contains("lathe") {
         Some("turning".to_string())
     } else if token.contains("mill") || token.contains("machin") {
@@ -3945,6 +4091,7 @@ fn process_method_for_machine(machine_kind: Option<&String>) -> String {
             MachineClass::Mill => "milling",
             MachineClass::Lathe => "turning",
             MachineClass::Router => "routing",
+            MachineClass::SheetCut => "sheet-cutting",
             MachineClass::Other => "unknown-process",
         })
         .unwrap_or("unknown-process")
@@ -5418,6 +5565,64 @@ mod tests {
             .findings
             .iter()
             .any(|finding| finding.code == "missing-spindle-start"));
+    }
+
+    #[test]
+    fn default_sheet_cut_fleet_generates_laser_job_and_kerf_boundary() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-laser-cutter".to_string()),
+            objective: "acrylic laser-cut stencil with kerf test and engraved alignment marks"
+                .to_string(),
+            material: Some(material("acrylic", "plastic")),
+            stock: Some(StockSpec {
+                form: "sheet".to_string(),
+                dimensions_mm: Some(vec![300.0, 200.0, 3.0]),
+            }),
+            tolerance_mm: Some(0.18),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("laser cutter plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "sheet-cut-profile"
+                && part.machine_kind == "laser-cutter"
+                && part.manufacturing_method == "sheet-cutting"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("kerf-test")));
+        let laser_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "laser-cutter")
+            .expect("laser program should be generated");
+        assert_eq!(laser_program.language, "laser-job");
+        assert!(laser_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft sheet-cutting job")));
+        assert!(laser_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("KERF_TEST")));
+        assert!(response.validation.findings.iter().any(|finding| {
+            finding.code == "text-sheet-cutting-boundary"
+                && finding
+                    .program_id
+                    .as_deref()
+                    .is_some_and(|id| id.contains("laser-cutter"))
+        }));
+        assert!(response
+            .validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| boundary.kind == "sheet-cutting-boundary"));
     }
 
     #[test]
