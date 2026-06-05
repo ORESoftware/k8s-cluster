@@ -104,6 +104,11 @@ on:
         required: false
         type: string
         default: "1"
+      loadtest_collect_pprof:
+        description: Collect Go pprof top reports from the GCS pod during the load window.
+        required: false
+        type: string
+        default: "true"
 
 concurrency:
   group: ${{ ((inputs.operation == 'loadtest-gcs-wss' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]'))) && 'remote-k8s-maintenance-gcs-loadtest') || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[gcs-diagnose]') || contains(github.event.head_commit.message, '[gcs-snapshot]') || contains(github.event.head_commit.message, '[gcs-ssm]')) && 'remote-k8s-maintenance-gcs-diagnose') || 'remote-k8s-maintenance-capacity' }}
@@ -145,6 +150,7 @@ jobs:
           LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT: ${{ inputs.loadtest_messages_per_second_per_client || '2.5' }}
           LOADTEST_PARALLEL_JOBS: ${{ inputs.loadtest_parallel_jobs || '3' }}
           LOADTEST_GCS_REPLICAS: ${{ inputs.loadtest_gcs_replicas || '1' }}
+          LOADTEST_COLLECT_PPROF: ${{ inputs.loadtest_collect_pprof || 'true' }}
         run: |
           set -euo pipefail
 
@@ -2473,10 +2479,11 @@ jobs:
           messages_per_second = loadtest_param("loadtest_messages_per_second_per_client", os.environ.get("LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT", "2.5") or "2.5")
           parallel_jobs = loadtest_param("loadtest_parallel_jobs", os.environ.get("LOADTEST_PARALLEL_JOBS", "3") or "3")
           gcs_replicas = loadtest_param("loadtest_gcs_replicas", os.environ.get("LOADTEST_GCS_REPLICAS", "1") or "1")
+          collect_pprof = loadtest_param("loadtest_collect_pprof", os.environ.get("LOADTEST_COLLECT_PPROF", "true") or "true")
           script = r'''set -euo pipefail
           proof_log="/tmp/gcs-loadtest-proof-$(date -u +%Y%m%dT%H%M%SZ).log"
           if [ "${LOADTEST_COMPACT_OUTPUT:-true}" = "true" ]; then
-            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|capacity-not-free|capacity targets are all scaled down|loader-scale|loader-rollout|loader-pod|loader-event|top-sample|gcs-summary|loader-warmup|gcs_router_(active_total|routed_total|upstream_errors_total|active_conns))') 2> >(tee -a "$proof_log" >&2)
+            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|=== go pprof|capacity-not-free|capacity targets are all scaled down|loader-scale|loader-rollout|loader-pod|loader-event|top-sample|pprof-|gcs-summary|loader-warmup|gcs_router_(active_total|routed_total|upstream_errors_total|active_conns))') 2> >(tee -a "$proof_log" >&2)
           fi
           echo "PROOF remote_log=$proof_log compact_output=${LOADTEST_COMPACT_OUTPUT:-true}"
           repo=/home/ec2-user/codes/dd/dd-next-1
@@ -2501,6 +2508,11 @@ jobs:
           esac
           messages_per_second="${LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT:-2.5}"
           load_label="${LOADTEST_LABEL:-medium}"
+          collect_pprof="${LOADTEST_COLLECT_PPROF:-true}"
+          case "$collect_pprof" in
+            1|t|true|y|yes|on) collect_pprof=true ;;
+            *) collect_pprof=false ;;
+          esac
           parallel_jobs="${LOADTEST_PARALLEL_JOBS:-3}"
           case "$parallel_jobs" in
             ''|*[!0-9]*) parallel_jobs=3 ;;
@@ -3170,6 +3182,65 @@ jobs:
             done
           }
 
+          collect_gcs_pprof() {
+            local label="${1:-sample}" cpu_seconds pf_log pf_pid pod port profile ready
+            if [ "$collect_pprof" != "true" ]; then
+              return 0
+            fi
+            if ! command -v go >/dev/null 2>&1; then
+              echo "WARNING: pprof-go-tool-missing"
+              return 0
+            fi
+            pod="$(kubectl -n default get pods -l app=gcs -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+            if [ -z "$pod" ]; then
+              echo "WARNING: pprof-no-gcs-pod label=$label"
+              return 0
+            fi
+            port=19080
+            cpu_seconds="${LOADTEST_PPROF_CPU_SECONDS:-20}"
+            case "$cpu_seconds" in
+              ''|*[!0-9]*) cpu_seconds=20 ;;
+            esac
+            pf_log="/tmp/gcs-pprof-port-forward-${pod}.log"
+            kubectl -n default port-forward "pod/$pod" "${port}:3000" >"$pf_log" 2>&1 &
+            pf_pid="$!"
+            ready=0
+            for _ in $(seq 1 40); do
+              if curl -fsS "http://127.0.0.1:${port}/debug/pprof/" >/dev/null 2>&1; then
+                ready=1
+                break
+              fi
+              sleep 0.25
+            done
+            if [ "$ready" -ne 1 ]; then
+              echo "WARNING: pprof-endpoint-not-ready pod=$pod label=$label"
+              if [ -s "$pf_log" ]; then
+                grep -v 'Handling connection' "$pf_log" | tail -8 || true
+              fi
+              kill "$pf_pid" 2>/dev/null || true
+              wait "$pf_pid" 2>/dev/null || true
+              return 0
+            fi
+            echo "PROOF pprof_target pod=$pod label=$label cpu_seconds=$cpu_seconds"
+            go version 2>&1 | awk '{print "pprof-go-version " $0}' || true
+            echo "=== go pprof cpu: $label ==="
+            if timeout "$((cpu_seconds + 25))s" go tool pprof -top -nodecount=30 "http://127.0.0.1:${port}/debug/pprof/profile?seconds=${cpu_seconds}" 2>&1 | awk '{print "pprof-cpu " $0}'; then
+              echo "PROOF pprof_profile profile=cpu status=ok"
+            else
+              echo "WARNING: pprof-profile-failed profile=cpu"
+            fi
+            for profile in goroutine heap block mutex; do
+              echo "=== go pprof $profile: $label ==="
+              if timeout 45s go tool pprof -top -nodecount=25 "http://127.0.0.1:${port}/debug/pprof/${profile}" 2>&1 | awk -v p="$profile" '{print "pprof-" p " " $0}'; then
+                echo "PROOF pprof_profile profile=$profile status=ok"
+              else
+                echo "WARNING: pprof-profile-failed profile=$profile"
+              fi
+            done
+            kill "$pf_pid" 2>/dev/null || true
+            wait "$pf_pid" 2>/dev/null || true
+          }
+
           wait_loader_reports() {
             local d="$1"
             local loader_name="$2"
@@ -3372,6 +3443,11 @@ jobs:
             if ! wait_loader_reports "$d" "$loader_name" "$loader_replicas" "${LOADTEST_LOADER_READY_TIMEOUT_SECONDS:-600}"; then
               exit 1
             fi
+            pprof_pid=""
+            if [ "$parallel_jobs" -lt 3 ] && [ "$collect_pprof" = "true" ]; then
+              ( sleep "${LOADTEST_PPROF_DELAY_SECONDS:-45}"; collect_gcs_pprof "$loader_name" ) &
+              pprof_pid="$!"
+            fi
             echo "=== router metrics before $loader_name load window ==="
             router_metrics
             prom_compact_snapshot "before $loader_name"
@@ -3408,6 +3484,9 @@ jobs:
               diagnose_load_failure "$d" "$loader_name"
               exit 1
             fi
+            if [ -n "$pprof_pid" ]; then
+              wait "$pprof_pid" || true
+            fi
             prom_compact_snapshot "after $loader_name"
             echo "=== stop $loader_name ==="
             kubectl -n default scale "deployment/$d" --replicas=0
@@ -3434,6 +3513,11 @@ jobs:
               run_loader dd-gleamlang-ws-loadtest-gcs "Gleam ws-loadtest"
             ) &
             gleam_pid="$!"
+            pprof_pid=""
+            if [ "$collect_pprof" = "true" ]; then
+              ( sleep "${LOADTEST_PPROF_DELAY_SECONDS:-45}"; collect_gcs_pprof "parallel-rust-node-gleam" ) &
+              pprof_pid="$!"
+            fi
             loader_failure=0
             if ! wait "$rust_pid"; then
               loader_failure=1
@@ -3449,6 +3533,9 @@ jobs:
             fi
             if [ "$loader_failure" -ne 0 ]; then
               exit 1
+            fi
+            if [ -n "$pprof_pid" ]; then
+              wait "$pprof_pid" || true
             fi
           else
             run_loader dd-ws-loadtest-rs-gcs "Rust ws-loadtest-rs"
@@ -3469,7 +3556,7 @@ jobs:
           print(json.dumps({
               "commands": [
                   "set -euo pipefail",
-                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} LOADTEST_DURATION_SECONDS={shlex.quote(duration)} LOADTEST_LABEL={shlex.quote(load_label)} LOADTEST_LOADER_REPLICAS={shlex.quote(loader_replicas)} LOADTEST_CLIENTS_PER_REPLICA={shlex.quote(clients_per_replica)} LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT={shlex.quote(messages_per_second)} LOADTEST_PARALLEL_JOBS={shlex.quote(parallel_jobs)} LOADTEST_GCS_REPLICAS={shlex.quote(gcs_replicas)} bash -lc {shlex.quote(script)}",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} LOADTEST_DURATION_SECONDS={shlex.quote(duration)} LOADTEST_LABEL={shlex.quote(load_label)} LOADTEST_LOADER_REPLICAS={shlex.quote(loader_replicas)} LOADTEST_CLIENTS_PER_REPLICA={shlex.quote(clients_per_replica)} LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT={shlex.quote(messages_per_second)} LOADTEST_PARALLEL_JOBS={shlex.quote(parallel_jobs)} LOADTEST_GCS_REPLICAS={shlex.quote(gcs_replicas)} LOADTEST_COLLECT_PPROF={shlex.quote(collect_pprof)} bash -lc {shlex.quote(script)}",
               ],
           }))
           PY
