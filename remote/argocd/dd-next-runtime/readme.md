@@ -94,8 +94,13 @@ Gateway path map:
 - `/mdp/`, `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`,
   `POST /mdp/telemetry/learn` -> `dd-mdp-optimizer:8096` (gateway auth required)
 - `/fabrication/`, `/fabrication/healthz`, `/fabrication/metrics`, `/fabrication/docs/api`,
-  `/fabrication/jobs`, `POST /fabrication/plan`, `POST /fabrication/instructions/analyze` ->
+  `/fabrication/capabilities`, `/fabrication/schema`, `/fabrication/examples`,
+  `/fabrication/jobs`, `/fabrication/jobs/<jobId>`,
+  `/fabrication/jobs/<jobId>/artifacts/<artifactId>`, `/fabrication/learning/policy`, `POST /fabrication/learning/observe`,
+  `POST /fabrication/learning/outcomes`, `POST /fabrication/plan`, `POST /fabrication/instructions/analyze` ->
   `dd-fabrication-server:8113` (gateway auth required)
+- `/grafana/fabrication` -> `dd-remote-web-home:8080` redirect to the
+  `dd-fabrication-planner` Grafana dashboard
 - `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
   `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`
   (internal auth required)
@@ -131,6 +136,78 @@ rollouts previously caused intermittent gateway `502`s: `dd-remote-web-home`, `d
 `dd-selenium-server`, and `dd-rust-vapi-phone`. `dd-des-rs` uses `/out/delivery-planner.html` as
 its readiness path so the Service does not route delivery-planner traffic to a pod before the
 startup render has produced the artifact.
+
+`dd-fabrication-server` also carries explicit runtime hardening because fabrication planning can
+fan out to NATS, runtime-config, MDP optimization, and external design/instruction references. Its
+Service is an explicit cluster-local TCP `ClusterIP` with `appProtocol: http`, not-ready endpoints
+unpublished, and three-hour `ClientIP` affinity so gateway follow-up reads for in-process job and
+artifact records tend to land on the pod that accepted the original planning request. The Deployment uses
+explicit HTTP startup/liveness probes on `/healthz`, HTTP `/readyz` readiness, revision history, host and zone topology spread, soft pod anti-affinity,
+explicit non-host network/PID/IPC namespaces with pod process-namespace sharing disabled, pod/container non-root UID/GID `1000` defaults, dropped Linux capabilities, `RuntimeDefault` seccomp, a short `preStop` drain, and a named no-RBAC ServiceAccount with token automount disabled. The Deployment, pod template, Service, ServiceAccount, HPA, PDB, and NetworkPolicy also carry Kubernetes app metadata for name, component, and `dd-next-runtime` ownership so operator queries can target the fabrication planner without changing immutable selectors. It runs
+with a read-only root filesystem and read-only source mounts limited to the fabrication crate plus
+the local NATS subject, runtime-config client, and shared-interface dependency crates Cargo needs;
+an init container checks that source layout before the release build starts and verifies the
+generated API docs still include the public plan, instruction analysis, job/artifact retrieval, and
+learning routes. It also checks the mounted generated Rust NATS subject constants for fabrication
+requests/results, runtime events, and MDP optimization fan-out, so missing hostPath dependencies,
+stale docs, or stale subject definitions fail with a clear startup log and tiny CPU/memory/ephemeral-storage bounds. Cargo cache/target output stays on pod-local `emptyDir` storage with explicit `4Gi`/`8Gi` ephemeral-storage request/limit settings plus
+per-volume `sizeLimit` caps; a dedicated release-build init container performs the single-job
+locked Cargo build into that shared target directory, then the serving container remounts that cache
+read-only and starts the compiled server binary directly. Incremental compilation stays disabled for predictable cold-start memory and disk use. The pod reserves `250m` CPU and `512Mi` memory for
+cold builds and planning bursts while the `2` CPU / `2Gi` memory limits still cap runaway work. Pod
+DNS sets `ndots: 2` so NATS/runtime-config service lookups prefer the intended cluster FQDN before
+trying extra search-domain expansions. Runtime-config pushes are explicitly fail-closed:
+`RUNTIME_CONFIG_ALLOW_UNAUTHENTICATED=false`, so `/internal/update-runtime-config` requires the
+shared `SERVER_AUTH_SECRET` via `X-Server-Auth` when runtime-config delivers a snapshot.
+Cargo registry fetches use the sparse protocol plus bounded retry/timeout settings, the Deployment
+progress deadline gives a cold locked release build room to finish before a rollout is marked stalled, and the startup probe
+now gives the compiled server up to about five minutes to become healthy after the binary starts.
+Pods require two consecutive `/readyz` successes before the Service routes fabrication traffic.
+Source validation, release-build, and serving startup failures fall back to recent container logs in
+the termination message, and pod annotations make the serving container the default for `kubectl`
+logs/exec while init-container logs remain addressable by name. During pod termination, the
+60-second grace window gives the serving entrypoint time to forward SIGTERM/SIGINT into the compiled
+Rust server's graceful-shutdown path before the pod exits. The HPA keeps 2-8 replicas based on CPU/memory pressure, and the
+immediate scale-up policy can double ready capacity during planning bursts while scale-down remains
+one-pod-at-a-time after a five-minute stabilization window. The Kubernetes resource exporter also
+publishes HPA current/desired/min/max replica state and an at-max signal so Prometheus can alert
+when fabrication planning demand holds the autoscaler at its ceiling. The dedicated NetworkPolicy permits
+only gateway, runtime-config, and observability ingress plus DNS, NATS, runtime-config, in-cluster
+MDP optimizer HTTP, and public IPv4/IPv6 HTTP/S egress that excludes private and reserved ranges. The gateway keeps
+`/fabrication/` uploads bounded at `512k` to match the Rust HTTP/NATS payload caps, disables
+request buffering so submitted instruction payloads stream to the Rust service, and uses explicit
+upload/connect plus 900-second upstream read/send timeouts for longer planning and analysis responses. It forwards the NGINX `X-Request-ID`, `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-Prefix: /fabrication`, `X-Forwarded-Proto`, `X-Original-URI`, and `X-Real-IP` values to the Rust service so edge failures and downstream job evidence can be correlated even before a payload-level `requestId` is parsed and after the public route prefix is stripped. It also disables upstream retries for `/fabrication/` so non-idempotent planning or instruction-submission requests are not replayed after an upstream failure. Public `/fabrication/internal` and `/fabrication/internal/*` paths return 404 at the gateway so service-local runtime-control routes stay off the Internet-facing surface. The canonical `/fabrication` redirect is read-only (`GET`/`HEAD`); the public `/fabrication/` gateway surface allows only `GET`, `HEAD`, and `POST`, returning 405 for other methods before they reach the Rust service. Fabrication `POST` traffic also has a gateway burst guard of `12r/m` per remote address with a burst of `6`, returning 429 before expensive planning, instruction analysis, NATS fan-out, or MDP publishing can pile up.
+The gateway emits redacted JSON access logs with schema `dd.gateway.access.v1`, request IDs, statuses, upstream status/timing, and path-only `uri` values so fabrication guardrail decisions can be correlated in Loki without writing `Auth` headers, cookies, or query strings. Gateway-generated `/fabrication` redirects, internal-route 404s, auth failures, method denials, payload rejections, and rate-limit responses also return `X-Request-ID` so operators can match a client-visible edge failure to the gateway access log before the request reaches Rust. Because those fabrication-specific locations define their own headers, they explicitly preserve the gateway security header set (`Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy`) alongside `X-Request-ID` instead of relying on NGINX inheritance. Private internal-route probes return JSON `not_found` 404 responses, unsupported methods return JSON `method_not_allowed` 405 responses with exact `Allow` recovery hints (`GET, HEAD` for the canonical `/fabrication` redirect and `GET, HEAD, POST` for `/fabrication/`), oversized fabrication submissions return a JSON `payload_too_large` 413, and burst-guarded writes return a JSON `rate_limited` 429 with `Retry-After: 60`, so clients can distinguish gateway request-envelope failures from Rust planner validation failures.
+Prometheus and OTel keep static scrape jobs for `/metrics`; the Service also carries Prometheus
+scrape annotations with an explicit HTTP scheme so future discovery-based scrapers can find the
+same endpoint. OTel also discovers ready `dd-fabrication-server` pods directly as
+`dd-fabrication-server-pods`, preserving replica-local job/artifact ledgers, learning memory,
+failure-boundary counters, and NATS/MDP fan-out counters that Service-level scrapes can hide.
+Prometheus alerts if those direct pod scrape targets disappear or go down while the service-level
+scrape still looks healthy. Operators can open `/grafana/fabrication` from the web-home service
+directory to land on the dedicated `dd-fabrication-planner` dashboard for request intake,
+machine-failure boundaries, NATS/MDP fan-out, runtime-config delivery, HPA pressure, and logs.
+The observability stack also scrapes `dd-runtime-config` metrics so missed subscriber registration,
+configuration-entry, or push-delivery changes are visible alongside the fabrication planner, NATS,
+and MDP optimizer dependency metrics, and alerts when runtime-config is down, has no stage
+subscribers, records stage push errors, or fails to push stage snapshots specifically to the
+`dd-fabrication-server` subscriber. Prometheus also alerts when the NATS or MDP optimizer dependency
+scrape targets are down, covering the queue/result/event path and fabrication policy optimization
+fan-out path separately from the Rust service's own health.
+Prometheus alerts when the fabrication scrape target is down or
+`dd_fabrication_server_errors_total` starts increasing. It also alerts when machine-failure boundary
+findings are increasing, successful requests are not producing fabrication result or MDP-learning
+fan-out, the bounded in-process job/learning ledgers approach eviction, or the Deployment has
+unavailable replicas during a cold build, scheduling, or readiness problem. It also alerts on
+serving-container restarts because retained job/artifact evidence, learning memory, NATS
+subscriptions, and active planning work are in-process. Init-container waiting and restart alerts
+separate source-layout validation or release-build startup failures from running-service failures.
+`RUST_LOG=info` plus plain-text Cargo output keep stdout/stderr logs at a predictable runtime level. The init
+containers and serving entrypoint emit explicit source-check, release-build, server-start, and
+shutdown-forwarding markers so pod logs show whether a startup delay is source validation, Cargo
+compilation, or the running Rust service. Those markers include downward-API pod name, pod UID,
+namespace, and node identity so cold-build logs can be tied back to the exact runtime placement and
+recreated pods are not confused with earlier rollout attempts.
 
 Single-owner workloads stay intentionally one-replica/`Recreate`: the host-port gateway, Redis,
 mutex brokers, the bootstrap workspace worker, containerd/build managers, the runtime-config push

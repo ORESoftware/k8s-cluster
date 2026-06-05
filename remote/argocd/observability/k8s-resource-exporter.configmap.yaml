@@ -377,6 +377,37 @@ data:
             emit_workload_replicas(lines, ns, "DaemonSet", name, app, values)
 
 
+    def collect_hpas(lines, ns):
+        data = api_get("/apis/autoscaling/v2/namespaces/%s/horizontalpodautoscalers" % ns)
+        for hpa in data.get("items", []):
+            meta = hpa.get("metadata", {})
+            name = meta.get("name", "")
+            spec = hpa.get("spec", {})
+            status = hpa.get("status", {})
+            target = spec.get("scaleTargetRef", {})
+            target_kind = target.get("kind", "")
+            target_name = target.get("name", "")
+            meta_labels = meta.get("labels", {})
+            app = meta_labels.get("app") or meta_labels.get("app.kubernetes.io/name") or target_name
+            if not is_watched_workload(target_name or name, app):
+                continue
+            current = status.get("currentReplicas", 0)
+            desired = status.get("desiredReplicas", 0)
+            min_replicas = spec.get("minReplicas", 1)
+            max_replicas = spec.get("maxReplicas", 0)
+            base = {"namespace": ns, "hpa": name, "target_kind": target_kind, "target": target_name, "app": app}
+            emit(lines, "dd_k8s_hpa_min_replicas", "Watched HorizontalPodAutoscaler minimum replicas.", "gauge", min_replicas, base)
+            emit(lines, "dd_k8s_hpa_max_replicas", "Watched HorizontalPodAutoscaler maximum replicas.", "gauge", max_replicas, base)
+            emit(lines, "dd_k8s_hpa_current_replicas", "Watched HorizontalPodAutoscaler current replicas.", "gauge", current, base)
+            emit(lines, "dd_k8s_hpa_desired_replicas", "Watched HorizontalPodAutoscaler desired replicas.", "gauge", desired, base)
+            emit(lines, "dd_k8s_hpa_current_at_max", "Watched HorizontalPodAutoscaler current replicas at max replicas.", "gauge", 1 if max_replicas > 0 and current >= max_replicas else 0, base)
+            for condition in status.get("conditions", []):
+                condition_type = condition.get("type", "Unknown")
+                condition_status = 1 if condition.get("status") == "True" else 0
+                reason = safe_reason(condition.get("reason"))
+                emit(lines, "dd_k8s_hpa_condition", "Watched HorizontalPodAutoscaler condition status.", "gauge", condition_status, {**base, "condition": condition_type, "reason": reason})
+
+
     def collect_pods(lines, ns):
         data = api_get("/api/v1/namespaces/%s/pods" % ns)
         watched = {}
@@ -423,6 +454,23 @@ data:
                     parts = {**cbase, "reason": safe_reason(last_terminated.get("reason")), "exit_code": last_terminated.get("exitCode", 0)}
                     emit(lines, "dd_k8s_pod_container_last_terminated", "Watched container last termination reason.", "gauge", 1, parts)
                     emit(lines, "dd_k8s_pod_container_last_terminated_timestamp_seconds", "Watched container last termination finish time.", "gauge", parse_time(last_terminated.get("finishedAt")), parts)
+            for cs in status.get("initContainerStatuses", []):
+                cname = cs.get("name", "")
+                cbase = {**base, "init_container": cname}
+                emit(lines, "dd_k8s_pod_init_container_ready", "Watched init container ready state.", "gauge", 1 if cs.get("ready") else 0, cbase)
+                emit(lines, "dd_k8s_pod_init_container_restarts_total", "Watched init container restart count.", "counter", cs.get("restartCount", 0), cbase)
+                state = cs.get("state", {})
+                waiting = state.get("waiting")
+                if waiting:
+                    emit(lines, "dd_k8s_pod_init_container_waiting", "Watched init container waiting reason.", "gauge", 1, {**cbase, "reason": safe_reason(waiting.get("reason"))})
+                terminated = state.get("terminated")
+                if terminated:
+                    emit(lines, "dd_k8s_pod_init_container_terminated", "Watched init container current termination reason.", "gauge", 1, {**cbase, "reason": safe_reason(terminated.get("reason")), "exit_code": terminated.get("exitCode", 0)})
+                last_terminated = cs.get("lastState", {}).get("terminated")
+                if last_terminated:
+                    parts = {**cbase, "reason": safe_reason(last_terminated.get("reason")), "exit_code": last_terminated.get("exitCode", 0)}
+                    emit(lines, "dd_k8s_pod_init_container_last_terminated", "Watched init container last termination reason.", "gauge", 1, parts)
+                    emit(lines, "dd_k8s_pod_init_container_last_terminated_timestamp_seconds", "Watched init container last termination finish time.", "gauge", parse_time(last_terminated.get("finishedAt")), parts)
         return watched
 
 
@@ -509,6 +557,7 @@ data:
             collect_deployments(lines, ns)
             collect_statefulsets(lines, ns)
             collect_daemonsets(lines, ns)
+            collect_hpas(lines, ns)
             watched = collect_pods(lines, ns)
             collect_pod_metrics(lines, ns, watched)
             collect_events(lines, ns, watched)

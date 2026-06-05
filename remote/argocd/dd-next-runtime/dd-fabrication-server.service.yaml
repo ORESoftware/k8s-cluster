@@ -5,10 +5,26 @@ metadata:
   namespace: default
   labels:
     app: dd-fabrication-server
+    app.kubernetes.io/name: dd-fabrication-server
+    app.kubernetes.io/part-of: dd-next-runtime
+    app.kubernetes.io/component: fabrication-planner
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/scheme: http
+    prometheus.io/path: /metrics
+    prometheus.io/port: '8113'
 spec:
+  type: ClusterIP
+  publishNotReadyAddresses: false
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
   selector:
     app: dd-fabrication-server
   ports:
     - name: http
+      appProtocol: http
+      protocol: TCP
       port: 8113
       targetPort: http

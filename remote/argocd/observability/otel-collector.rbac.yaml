@@ -2,9 +2,9 @@
 #
 # The collector's `prometheus` receiver uses kubernetes_sd_configs to
 # discover the per-pod endpoints of selected workloads (currently
-# gcs-router, which has >1 replica and whose Service VIP would
-# round-robin between pods and hide per-pod counters from a single
-# scrape — see remote/argocd/observability/readme.md).
+# gcs-router plus dd-fabrication-server, where Service VIP scrapes
+# can hide replica-local counters and bounded in-process ledgers —
+# see remote/argocd/observability/readme.md).
 #
 # Discovery role `pod` only needs read access to `pods`, scoped
 # cluster-wide so we don't have to maintain a per-namespace allowlist.

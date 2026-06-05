@@ -43,41 +43,171 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct InstructionAnalysisRequest/);
   assert.match(source, /struct FabricationOutcomeRequest/);
   assert.match(source, /struct FabricationLearningResponse/);
+  assert.match(source, /struct OutcomeRemediationPlan/);
+  assert.match(source, /struct OutcomeRootCause/);
+  assert.match(source, /struct OutcomeRemediationAction/);
   assert.match(source, /struct LearningOutcomeRequest/);
   assert.match(source, /struct LearningPolicySnapshot/);
+  assert.match(source, /struct LearningRemediationRisk/);
+  assert.match(source, /remediation_risks: Vec<LearningRemediationRisk>/);
   assert.match(source, /struct LearningPlan/);
+  assert.match(source, /struct PomdpBeliefState/);
+  assert.match(source, /struct PomdpHiddenStateBelief/);
+  assert.match(source, /struct PomdpObservationLikelihood/);
+  assert.match(source, /struct PomdpProbe/);
   assert.match(source, /struct StrategyCandidate/);
   assert.match(source, /struct InterventionLearningSignal/);
   assert.match(source, /struct ProcessGraph/);
   assert.match(source, /struct ProcessGraphDependency/);
   assert.match(source, /struct ProcessGraphGate/);
+  assert.match(source, /struct BoundaryInterventionMap/);
+  assert.match(source, /struct ProgramBoundaryTrace/);
+  assert.match(source, /struct BoundaryHumanInterventionPoint/);
+  assert.match(source, /struct BoundarySplitCombineDecision/);
+  assert.match(source, /struct BoundaryAutomationPath/);
+  assert.match(source, /struct MachineSelectionTrace/);
+  assert.match(source, /struct MachineSelectionCandidate/);
   assert.match(source, /struct ManufacturingHandoff/);
+  assert.match(source, /struct DesignPackage/);
+  assert.match(source, /struct DesignPackagePart/);
+  assert.match(source, /struct DesignAssemblyExport/);
+  assert.match(source, /struct DesignExportTarget/);
+  assert.match(source, /struct DesignExportBundle/);
+  assert.match(source, /struct GeneratedDesignExport/);
+  assert.match(source, /struct GeneratedAssemblyDesignExport/);
+  assert.match(source, /struct DesignExportBundleSummary/);
+  assert.match(source, /struct QualityPlan/);
+  assert.match(source, /struct QualityInspectionPoint/);
+  assert.match(source, /struct QualityMeasurementTarget/);
+  assert.match(source, /struct ToolingPlan/);
+  assert.match(source, /struct ToolingRequirement/);
+  assert.match(source, /struct ProductionPlan/);
+  assert.match(source, /struct ProductionBatch/);
+  assert.match(source, /struct MachineSchedule/);
+  assert.match(source, /struct MachineScheduleLane/);
+  assert.match(source, /struct MachineScheduleOperation/);
+  assert.match(source, /struct MachineScheduleHold/);
   assert.match(source, /struct MachineReleaseReport/);
   assert.match(source, /struct MachineReleaseBlocker/);
   assert.match(source, /struct MachineReleaseChecklistItem/);
+  assert.match(source, /struct ExecutionReadinessPlan/);
+  assert.match(source, /struct ExecutionProgramRun/);
+  assert.match(source, /struct ExecutionCheckpoint/);
+  assert.match(source, /struct ExecutionStopPoint/);
+  assert.match(source, /struct PostprocessPlan/);
+  assert.match(source, /struct PostprocessTarget/);
+  assert.match(source, /struct PostprocessGate/);
+  assert.match(source, /struct PostprocessBlocker/);
   assert.match(source, /struct AssemblyGraph/);
   assert.match(source, /struct AssemblyInterface/);
   assert.match(source, /struct AssemblySequenceStep/);
   assert.match(source, /struct NeuralPolicySketch/);
+  assert.match(source, /struct NeuralTrainingCorpus/);
+  assert.match(source, /struct NeuralTrainingExample/);
+  assert.match(source, /struct NeuralInferenceCandidate/);
   assert.match(source, /fn neural_policy_sketch/);
+  assert.match(source, /fn neural_training_corpus/);
+  assert.match(source, /fn pomdp_belief_state/);
   assert.match(source, /fn strategy_candidates/);
   assert.match(source, /fn plan_fabrication\(request: FabricationPlanRequest\)/);
   assert.match(source, /fn plan_fabrication_with_policy/);
   assert.match(source, /fn apply_learning_policy_to_request/);
   assert.match(source, /fn learned_preferred_methods/);
   assert.match(source, /fn learned_preferred_assembly_strategy/);
+  assert.match(source, /fn learned_remediation_risks/);
+  assert.match(source, /learned-remediation-risk/);
+  assert.match(source, /avoid-learned-risk/);
   assert.match(source, /preferred_assembly_strategy/);
   assert.match(source, /fn assembly_graph/);
   assert.match(source, /assembly_graph: AssemblyGraph/);
   assert.match(source, /fn process_graph/);
   assert.match(source, /process_graph: ProcessGraph/);
+  assert.match(source, /fn intervention_map/);
+  assert.match(source, /fn fallback_boundary_process_link/);
+  assert.match(source, /intervention_map: BoundaryInterventionMap/);
+  assert.match(source, /program_boundaries: Vec<ProgramBoundaryTrace>/);
+  assert.match(source, /human_intervention_points: Vec<BoundaryHumanInterventionPoint>/);
+  assert.match(source, /split_combine_decisions: Vec<BoundarySplitCombineDecision>/);
+  assert.match(source, /automation_paths: Vec<BoundaryAutomationPath>/);
+  assert.match(source, /fn machine_selection_trace/);
+  assert.match(source, /machine_selection: Vec<MachineSelectionTrace>/);
+  assert.match(source, /"machine-selection"/);
+  assert.match(source, /"machineSelection": response\.machine_selection/);
+  assert.match(source, /review-operation-gap/);
+  assert.match(source, /viable-alternative/);
   assert.match(source, /fn manufacturing_handoff/);
   assert.match(source, /manufacturing_handoff: ManufacturingHandoff/);
+  assert.match(source, /fn design_package/);
+  assert.match(source, /design_package: DesignPackage/);
+  assert.match(source, /fn design_export_bundle/);
+  assert.match(source, /design_exports: DesignExportBundle/);
+  assert.match(source, /fn design_export_content/);
+  assert.match(source, /fn assembly_design_export_content/);
+  assert.match(source, /fn quality_plan/);
+  assert.match(source, /quality_plan: QualityPlan/);
+  assert.match(source, /fn tooling_plan/);
+  assert.match(source, /tooling_plan: ToolingPlan/);
+  assert.match(source, /fn tooling_required_tools/);
+  assert.match(source, /fn production_plan/);
+  assert.match(source, /production_plan: ProductionPlan/);
+  assert.match(source, /fn machine_schedule/);
+  assert.match(source, /machine_schedule: MachineSchedule/);
+  assert.match(source, /dependency_holds: Vec<MachineScheduleHold>/);
   assert.match(source, /fn machine_release_report/);
   assert.match(source, /machine_release: MachineReleaseReport/);
+  assert.match(source, /fn execution_readiness_plan/);
+  assert.match(source, /execution_plan: ExecutionReadinessPlan/);
+  assert.match(source, /program_runs: Vec<ExecutionProgramRun>/);
+  assert.match(source, /stop_points: Vec<ExecutionStopPoint>/);
+  assert.match(source, /fn postprocess_plan/);
+  assert.match(source, /postprocess_plan: PostprocessPlan/);
+  assert.match(source, /controller_targets: Vec<PostprocessTarget>/);
+  assert.match(source, /gates: Vec<PostprocessGate>/);
+  assert.match(source, /required_artifacts: Vec<String>/);
+  assert.match(source, /fn postprocessor_for/);
   assert.match(source, /"manufacturing-handoff"/);
+  assert.match(source, /"design-package"/);
+  assert.match(source, /"design-export-bundle"/);
+  assert.match(source, /"generated-design-export"/);
+  assert.match(source, /dd\.fabrication\.design-package\.v1/);
+  assert.match(source, /dd\.fabrication\.design-export-bundle\.v1/);
+  assert.match(source, /dd\.fabrication\.generated-design-export\.v1/);
+  assert.match(source, /"quality-plan"/);
+  assert.match(source, /dd\.fabrication\.quality-plan\.v1/);
+  assert.match(source, /"tooling-plan"/);
+  assert.match(source, /dd\.fabrication\.tooling-plan\.v1/);
+  assert.match(source, /"production-plan"/);
+  assert.match(source, /dd\.fabrication\.production-plan\.v1/);
+  assert.match(source, /"machine-schedule"/);
+  assert.match(source, /dd\.fabrication\.machine-schedule\.v1/);
   assert.match(source, /"machine-release"/);
   assert.match(source, /"analysis-machine-release"/);
+  assert.match(source, /"execution-plan"/);
+  assert.match(source, /"analysis-execution-plan"/);
+  assert.match(source, /dd\.fabrication\.execution-plan\.v1/);
+  assert.match(source, /"postprocess-plan"/);
+  assert.match(source, /"analysis-postprocess-plan"/);
+  assert.match(source, /dd\.fabrication\.postprocess-plan\.v1/);
+  assert.match(source, /"pomdp-belief-state"/);
+  assert.match(source, /dd\.fabrication\.pomdp-belief-state\.v1/);
+  assert.match(source, /"neural-training-corpus"/);
+  assert.match(source, /dd\.fabrication\.neural-training-corpus\.v1/);
+  assert.match(source, /"intervention-map"/);
+  assert.match(source, /"analysis-intervention-map"/);
+  assert.match(source, /dd\.fabrication\.intervention-map\.v1/);
+  assert.match(source, /"outcome-remediation-plan"/);
+  assert.match(source, /dd\.fabrication\.outcome-remediation\.v1/);
+  assert.match(source, /"productionPlan": response\.production_plan/);
+  assert.match(source, /"machineSchedule": response\.machine_schedule/);
+  assert.match(source, /"designPackage": response\.design_package/);
+  assert.match(source, /"designExports": response\.design_exports/);
+  assert.match(source, /"qualityPlan": response\.quality_plan/);
+  assert.match(source, /"toolingPlan": response\.tooling_plan/);
+  assert.match(source, /"interventionMap": response\.intervention_map/);
+  assert.match(source, /"executionPlan": response\.execution_plan/);
+  assert.match(source, /"postprocessPlan": response\.postprocess_plan/);
+  assert.match(source, /"pomdpBeliefState": response\.learning\.pomdp_belief_state/);
+  assert.match(source, /"neuralTrainingCorpus": response\.learning\.neural_training_corpus/);
   assert.match(source, /"machineRelease": response\.machine_release/);
   assert.match(source, /"manufacturingHandoff": response\.manufacturing_handoff/);
   assert.match(source, /assembly-interface/);
@@ -86,6 +216,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /first-article-metrology-and-fit-check/);
   assert.match(source, /fn analyze_instruction_programs/);
   assert.match(source, /fn learn_from_outcome/);
+  assert.match(source, /fn outcome_remediation_plan/);
+  assert.match(source, /outcome_remediation: OutcomeRemediationPlan/);
+  assert.match(source, /record_observations\.extend\(response\.outcome_remediation\.learning_signals\.clone\(\)\)/);
   assert.match(source, /fn learning_artifacts/);
   assert.match(source, /fn stored_learning_job/);
   assert.match(source, /fn fabrication_mdp_request/);
@@ -123,10 +256,35 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn stored_plan_job/);
   assert.match(source, /fn stored_analysis_job/);
   assert.match(source, /fn simulate_instruction_programs/);
+  assert.match(source, /fn simulated_arc_axis_ranges/);
+  assert.match(source, /SIMULATED_MOTION_AXES/);
+  assert.match(source, /fn simulated_axis_unit/);
+  assert.match(source, /arc sweep/);
+  assert.match(source, /fn has_arc_plane_evidence/);
+  assert.match(source, /fn arc_center_offsets_match_plane/);
+  assert.match(source, /arc-plane-not-verified/);
+  assert.match(source, /arc-plane-boundary/);
+  assert.match(source, /arc-center-offset-plane-mismatch/);
+  assert.match(source, /arc-plane-offset-boundary/);
+  assert.match(source, /arc-missing-center-or-radius/);
+  assert.match(source, /arc-geometry-boundary/);
+  assert.match(source, /number_after\(&stripped, 'K'\)/);
+  assert.match(source, /mill_router_lathe_analysis_requires_arc_plane_evidence_before_arc/);
+  assert.match(source, /mill_router_lathe_analysis_requires_arc_offsets_match_plane/);
+  assert.match(source, /cnc_analysis_flags_arc_missing_center_or_radius_boundary/);
   assert.match(source, /simulated-axis-envelope-exceeded/);
   assert.match(source, /simulated-machine-envelope/);
   assert.match(source, /simulated-rapid-below-clearance/);
   assert.match(source, /simulated-rapid-clearance/);
+  assert.match(source, /simulated-rotary-index-review/);
+  assert.match(source, /rotary-index-boundary/);
+  assert.match(source, /fn has_process_media_or_chip_evacuation/);
+  assert.match(source, /fn has_process_media_or_chip_evacuation_stop/);
+  assert.match(source, /fn feed_move_needs_chip_evacuation_review/);
+  assert.match(source, /chip-evacuation-not-verified/);
+  assert.match(source, /chip-evacuation-boundary/);
+  assert.match(source, /chip-evacuation-stopped-before-cut/);
+  assert.match(source, /chip-evacuation-stop-boundary/);
   assert.match(source, /fn stock_envelope_excesses/);
   assert.match(source, /id: "horizontal-mill-1"/);
   assert.match(source, /horizontal-slotted-feature/);
@@ -137,6 +295,15 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /draft resin SLA\/MSLA job generated by dd-fabrication-server/);
   assert.match(source, /draft powder-bed additive job generated by dd-fabrication-server/);
   assert.match(source, /text-post-processing-boundary/);
+  assert.match(source, /slicer-profile-missing/);
+  assert.match(source, /slicer-profile-boundary/);
+  assert.match(source, /slicer-orientation-support-review-missing/);
+  assert.match(source, /slicer-orientation-support-boundary/);
+  assert.match(source, /slicer-first-layer-evidence-missing/);
+  assert.match(source, /slicer-first-layer-boundary/);
+  assert.match(source, /add-slicer-profile-record/);
+  assert.match(source, /add-slicer-support-orientation-review/);
+  assert.match(source, /add-slicer-first-layer-evidence/);
   assert.match(source, /text-resin-handling-boundary/);
   assert.match(source, /resin-handling-boundary/);
   assert.match(source, /text-powder-handling-boundary/);
@@ -144,6 +311,21 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /machine\.axes must be at least 1/);
   assert.match(source, /machine_profile_validation_rejects_zero_axis_machine/);
   assert.match(source, /additive-material-change-boundary/);
+  assert.match(source, /fn has_additive_material_resume_evidence/);
+  assert.match(source, /additive_material_change_pending_resume/);
+  assert.match(source, /additive-material-resume-not-verified/);
+  assert.match(source, /additive-material-resume-boundary/);
+  assert.match(source, /additive_analysis_requires_resume_evidence_after_material_change/);
+  assert.match(source, /fn has_additive_tool_temperature_evidence/);
+  assert.match(source, /additive_tool_selection_pending_temperature/);
+  assert.match(source, /additive-tool-temperature-not-verified/);
+  assert.match(source, /printer-tool-temperature-boundary/);
+  assert.match(source, /additive_analysis_requires_selected_tool_temperature_after_tool_change/);
+  assert.match(source, /fn has_additive_pause_command/);
+  assert.match(source, /additive_pause_pending_resume/);
+  assert.match(source, /additive-pause-resume-not-verified/);
+  assert.match(source, /printer-pause-resume-boundary/);
+  assert.match(source, /additive_analysis_requires_resume_state_after_pause/);
   assert.match(source, /fn add_additive_design_boundaries/);
   assert.match(source, /additive-support-orientation-boundary/);
   assert.match(source, /additive-support-boundary/);
@@ -155,10 +337,58 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /printer-fan-timing-boundary/);
   assert.match(source, /first-layer-setup-risk/);
   assert.match(source, /printer-first-layer-boundary/);
+  assert.match(source, /fn has_additive_z_offset_evidence/);
+  assert.match(source, /additive_z_offset_evidence_observed/);
+  assert.match(source, /additive-negative-z-extrusion-not-verified/);
+  assert.match(source, /printer-negative-z-extrusion-boundary/);
+  assert.match(source, /additive_analysis_requires_z_offset_evidence_before_negative_z_extrusion/);
+  assert.match(source, /fn positioning_absolute_from_line/);
+  assert.match(source, /reported_incremental_positioning_program_end_boundary/);
+  assert.match(source, /incremental-positioning-not-reset-before-end/);
+  assert.match(source, /incremental-positioning-boundary/);
+  assert.match(source, /cnc_analysis_requires_absolute_positioning_before_program_end/);
+  assert.match(source, /fn has_additive_relative_positioning_evidence/);
+  assert.match(source, /additive_relative_positioning_verified/);
+  assert.match(source, /additive-relative-positioning-extrusion-not-verified/);
+  assert.match(source, /printer-relative-positioning-boundary/);
+  assert.match(source, /additive_analysis_requires_positioning_reset_after_relative_mode/);
+  assert.match(source, /fn has_controller_dependency_review_evidence/);
+  assert.match(source, /fn has_controller_macro_or_subprogram_dependency/);
+  assert.match(source, /controller_dependency_review_observed/);
+  assert.match(source, /controller-dependency-not-verified/);
+  assert.match(source, /controller-dependency-boundary/);
+  assert.match(source, /cnc_analysis_flags_unverified_controller_macro_dependencies/);
   assert.match(source, /missing-tool-length-compensation/);
   assert.match(source, /tool-length-boundary/);
+  assert.match(source, /mill_router_analysis_flags_rapid_tool_length_plunge_without_reference/);
+  assert.match(source, /tool_length_compensation_active/);
+  assert.match(source, /reported_tool_length_compensation_cancel_boundary/);
+  assert.match(source, /tool-length-compensation-not-cancelled-before-tool-change/);
+  assert.match(source, /tool-length-compensation-cancel-boundary/);
+  assert.match(source, /mill_router_analysis_requires_tool_length_cancel_before_tool_change/);
+  assert.match(source, /reported_tool_change_spindle_stop_boundary/);
+  assert.match(source, /tool-change-before-spindle-stop/);
+  assert.match(source, /tool-change-spindle-stop-boundary/);
+  assert.match(source, /mill_router_analysis_requires_spindle_stop_before_tool_change/);
+  assert.match(source, /fn has_cutter_compensation_evidence/);
+  assert.match(source, /cutter-compensation-offset-not-verified/);
+  assert.match(source, /cutter-compensation-boundary/);
+  assert.match(source, /cutter_compensation_active/);
+  assert.match(source, /reported_cutter_compensation_cancel_boundary/);
+  assert.match(source, /cutter-compensation-not-cancelled/);
+  assert.match(source, /cutter-compensation-cancel-boundary/);
+  assert.match(source, /mill_router_analysis_requires_cutter_compensation_offset_evidence/);
+  assert.match(source, /mill_router_analysis_requires_cutter_compensation_cancel_before_end/);
   assert.match(source, /canned-cycle-missing-plane-or-depth/);
   assert.match(source, /canned-cycle-boundary/);
+  assert.match(source, /canned-cycle-unsafe-retract-plane/);
+  assert.match(source, /canned-cycle-retract-plane-boundary/);
+  assert.match(source, /mill_analysis_requires_positive_canned_cycle_retract_plane/);
+  assert.match(source, /modal_canned_cycle_active/);
+  assert.match(source, /reported_modal_canned_cycle_boundary/);
+  assert.match(source, /motion-before-canned-cycle-cancel/);
+  assert.match(source, /canned-cycle-cancel-boundary/);
+  assert.match(source, /mill_analysis_flags_motion_before_canned_cycle_cancel/);
   assert.match(source, /tapping-cycle-boundary/);
   assert.match(source, /instruction-material-machine-incompatible/);
   assert.match(source, /material-machine-boundary/);
@@ -172,11 +402,28 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     /struct FabricationPlanResponse[\s\S]*boundary_summary: BoundarySummary[\s\S]*improvements: Vec<InstructionImprovement>[\s\S]*improved_programs: Vec<ImprovedInstructionProgram>/,
   );
   assert.match(source, /manufacturing_handoff: ManufacturingHandoff/);
+  assert.match(source, /design_package: DesignPackage/);
+  assert.match(source, /quality_plan: QualityPlan/);
+  assert.match(source, /struct DesignPackage/);
+  assert.match(source, /struct DesignPackagePart/);
+  assert.match(source, /struct DesignAssemblyExport/);
+  assert.match(source, /struct DesignExportTarget/);
+  assert.match(source, /fn design_package/);
+  assert.match(source, /export_targets: Vec<DesignExportTarget>/);
+  assert.match(source, /coordinate_frame: Vec<String>/);
+  assert.match(source, /assembly_exports: Vec<DesignAssemblyExport>/);
   assert.match(source, /struct ManufacturingHandoff/);
   assert.match(source, /struct ManufacturingHandoffPart/);
   assert.match(source, /struct ManufacturingHandoffGate/);
   assert.match(source, /fn manufacturing_handoff/);
   assert.match(source, /dd\.fabrication\.manufacturing-handoff\.v1/);
+  assert.match(source, /struct QualityPlan/);
+  assert.match(source, /struct QualityInspectionPoint/);
+  assert.match(source, /struct QualityMeasurementTarget/);
+  assert.match(source, /fn quality_plan/);
+  assert.match(source, /inspection_points: Vec<QualityInspectionPoint>/);
+  assert.match(source, /measurement_targets: Vec<QualityMeasurementTarget>/);
+  assert.match(source, /learning_observations: Vec<String>/);
   assert.match(source, /struct BoundarySummary/);
   assert.match(source, /struct AutomationRequirement/);
   assert.match(source, /struct BoundaryResolutionPlan/);
@@ -200,6 +447,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"analysis-boundary-summary"/);
   assert.match(source, /"resolution-plan"/);
   assert.match(source, /"process-graph"/);
+  assert.match(source, /"machine-selection"/);
   assert.match(source, /"manufacturing-handoff"/);
   assert.match(source, /"analysis-resolution-plan"/);
   assert.match(source, /fn boundary_learning_actions/);
@@ -217,7 +465,108 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   assert.match(source, /lathe-css-without-spindle-limit/);
   assert.match(source, /lathe-threading-boundary/);
+  assert.match(source, /fn has_lathe_threading_feed_mode_evidence/);
+  assert.match(source, /lathe_threading_feed_mode_observed/);
+  assert.match(source, /lathe-threading-feed-mode-not-verified/);
+  assert.match(source, /lathe-threading-feed-mode-boundary/);
+  assert.match(source, /lathe_analysis_requires_threading_feed_mode_evidence/);
   assert.match(source, /lathe-part-off-boundary/);
+  assert.match(source, /fn has_lathe_workholding_evidence/);
+  assert.match(source, /lathe-workholding-not-verified/);
+  assert.match(source, /lathe-workholding-boundary/);
+  assert.match(source, /fn has_lathe_tool_nose_compensation_evidence/);
+  assert.match(source, /reported_lathe_tool_change_spindle_stop_boundary/);
+  assert.match(source, /lathe-tool-change-before-spindle-stop/);
+  assert.match(source, /lathe-tool-change-spindle-stop-boundary/);
+  assert.match(source, /lathe_analysis_requires_spindle_stop_before_tool_change/);
+  assert.match(source, /lathe-tool-nose-compensation-not-verified/);
+  assert.match(source, /lathe-tool-nose-compensation-boundary/);
+  assert.match(source, /lathe_tool_nose_compensation_active/);
+  assert.match(source, /reported_lathe_tool_nose_compensation_cancel_boundary/);
+  assert.match(source, /lathe-tool-nose-compensation-not-cancelled/);
+  assert.match(source, /lathe-tool-nose-compensation-cancel-boundary/);
+  assert.match(source, /lathe_analysis_requires_tool_nose_compensation_evidence/);
+  assert.match(source, /lathe_analysis_requires_tool_nose_compensation_cancel_before_end/);
+  assert.match(source, /M82 ; absolute extrusion mode/);
+  assert.match(source, /filament dry-storage evidence verified/);
+  assert.match(source, /G92 E0 ; reset extruder before priming/);
+  assert.match(source, /missing-extrusion-mode/);
+  assert.match(source, /missing-extruder-reset-before-prime/);
+  assert.match(source, /printer-extrusion-state-boundary/);
+  assert.match(source, /fn has_additive_extrusion_reset_evidence/);
+  assert.match(source, /additive_extrusion_mode_reset_pending/);
+  assert.match(source, /additive-extrusion-mode-switch-reset-not-verified/);
+  assert.match(source, /printer-extrusion-mode-switch-boundary/);
+  assert.match(source, /additive_analysis_requires_extruder_reset_after_mode_switch/);
+  assert.match(source, /fn has_additive_nozzle_wait_evidence/);
+  assert.match(source, /additive_nozzle_wait_pending/);
+  assert.match(source, /additive-nozzle-wait-not-verified/);
+  assert.match(source, /printer-nozzle-wait-boundary/);
+  assert.match(source, /additive_analysis_requires_nozzle_wait_after_async_heat_command/);
+  assert.match(source, /nozzle_heat_active/);
+  assert.match(source, /reported_nozzle_cooldown_boundary/);
+  assert.match(source, /extrusion-after-nozzle-cooldown/);
+  assert.match(source, /printer-nozzle-cooldown-boundary/);
+  assert.match(source, /additive_analysis_flags_extrusion_after_nozzle_cooldown/);
+  assert.match(source, /bed_heat_active/);
+  assert.match(source, /bed_wait_active/);
+  assert.match(source, /fn has_additive_bed_wait_evidence/);
+  assert.match(source, /additive_bed_wait_pending/);
+  assert.match(source, /additive-bed-wait-not-verified/);
+  assert.match(source, /printer-bed-temperature-wait-boundary/);
+  assert.match(source, /additive_analysis_requires_bed_wait_after_async_target_change/);
+  assert.match(source, /bed_cooldown_observed/);
+  assert.match(source, /reported_bed_cooldown_boundary/);
+  assert.match(source, /extrusion-after-bed-cooldown/);
+  assert.match(source, /printer-bed-cooldown-boundary/);
+  assert.match(source, /additive_analysis_flags_extrusion_after_bed_cooldown/);
+  assert.match(source, /fn has_printer_restart_position_evidence/);
+  assert.match(source, /printer_position_reference_active/);
+  assert.match(source, /printer_stepper_disable_observed/);
+  assert.match(source, /reported_printer_stepper_disable_boundary/);
+  assert.match(source, /motion-after-stepper-disable/);
+  assert.match(source, /printer-stepper-idle-boundary/);
+  assert.match(source, /additive_analysis_flags_motion_after_stepper_disable/);
+  assert.match(source, /fn has_additive_material_conditioning_evidence/);
+  assert.match(source, /missing-filament-conditioning-evidence/);
+  assert.match(source, /printer-material-conditioning-boundary/);
+  assert.match(source, /fn has_tool_change_automation_evidence/);
+  assert.match(source, /tool-change-automation-not-verified/);
+  assert.match(source, /tool-change-automation-boundary/);
+  assert.match(source, /ATC\/magazine or operator-loaded/);
+  assert.match(source, /fn has_mill_router_workholding_evidence/);
+  assert.match(source, /mill-router-workholding-not-verified/);
+  assert.match(source, /mill-router-workholding-boundary/);
+  assert.match(source, /operator-verified spoilboard, vacuum\/hold-down/);
+  assert.match(source, /line_has_mill_router_negative_z_rapid/);
+  assert.match(source, /mill_router_analysis_requires_setup_evidence_before_rapid_plunge/);
+  assert.match(source, /fn has_cutting_feed_rate_evidence/);
+  assert.match(source, /cutting-feed-rate-not-verified/);
+  assert.match(source, /cutting-feed-rate-boundary/);
+  assert.match(source, /fn has_work_offset_datum_evidence/);
+  assert.match(source, /work-offset-datum-not-verified/);
+  assert.match(source, /work-offset-datum-boundary/);
+  assert.match(source, /subtractive_spindle_speed_evidence_observed/);
+  assert.match(source, /reported_spindle_speed_boundary/);
+  assert.match(source, /spindle-speed-not-verified-before-start/);
+  assert.match(source, /spindle-speed-boundary/);
+  assert.match(source, /subtractive_analysis_requires_spindle_speed_before_start/);
+  assert.match(source, /current_spindle_direction/);
+  assert.match(source, /reported_spindle_direction_change_boundary/);
+  assert.match(source, /spindle-direction-change-before-stop/);
+  assert.match(source, /spindle-direction-boundary/);
+  assert.match(source, /subtractive_analysis_requires_stop_before_spindle_direction_change/);
+  assert.match(source, /reported_rapid_plunge_before_spindle_boundary/);
+  assert.match(source, /rapid-plunge-before-spindle/);
+  assert.match(source, /rapid-plunge-spindle-boundary/);
+  assert.match(source, /mill_router_analysis_flags_rapid_plunge_before_spindle_start/);
+  assert.match(source, /reported_rapid_plunge_after_process_stop_boundary/);
+  assert.match(source, /rapid-plunge-after-process-stop/);
+  assert.match(source, /rapid-plunge-process-stop-boundary/);
+  assert.match(source, /mill_router_analysis_flags_rapid_plunge_after_process_stop/);
+  assert.match(source, /cut-after-process-stop/);
+  assert.match(source, /machine-process-stop-boundary/);
+  assert.match(source, /subtractive_analysis_flags_feed_after_process_stop/);
   assert.match(source, /id: "laser-cutter-1"/);
   assert.match(source, /id: "waterjet-cutter-1"/);
   assert.match(source, /id: "plasma-cutter-1"/);
@@ -227,21 +576,43 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /ABRASIVE_FLOW_TEST/);
   assert.match(source, /PLASMA_CUT/);
   assert.match(source, /text-sheet-cutting-boundary/);
+  assert.match(source, /fn has_sheet_cutting_process_evidence/);
+  assert.match(source, /fn has_sheet_cutting_support_media_evidence/);
+  assert.match(source, /sheet_cutting_support_media_active/);
+  assert.match(source, /sheet-cutting-process-not-verified/);
+  assert.match(source, /sheet-cutting-process-boundary/);
+  assert.match(source, /sheet-cutting-support-media-stopped-before-cut/);
+  assert.match(source, /sheet-cutting-support-media-stop-boundary/);
+  assert.match(source, /sheet_cut_analysis_requires_support_media_restart_after_stop/);
   assert.match(source, /kerf-controlled-sheet-profile/);
   assert.match(source, /"choose-sheet-cutting-process"\.to_string\(\)/);
   assert.match(source, /method_combination_preferences/);
   assert.match(source, /learned_parts_for_method_combination/);
   assert.match(source, /prefer-learned-method-combination/);
   assert.match(source, /dd\.fabrication\.neural-policy-sketch\.v1/);
+  assert.match(source, /pomdp_belief_state: PomdpBeliefState/);
+  assert.match(source, /neural_training_corpus: NeuralTrainingCorpus/);
+  assert.match(source, /feature_vector: Vec<f64>/);
+  assert.match(source, /inference_candidates: Vec<NeuralInferenceCandidate>/);
   assert.match(source, /strategy_candidates: Vec<StrategyCandidate>/);
   assert.match(source, /selected-hybrid-plan/);
   assert.match(source, /additive-consolidation-candidate/);
   assert.match(source, /machined-datum-finish-candidate/);
   assert.match(source, /split-for-inspection-candidate/);
   assert.match(source, /"strategyCandidates": response\.learning\.strategy_candidates/);
+  assert.match(source, /"designPackage": response\.design_package/);
+  assert.match(source, /"productionPlan": response\.production_plan/);
+  assert.match(source, /"machineSchedule": response\.machine_schedule/);
+  assert.match(source, /"qualityPlan": response\.quality_plan/);
+  assert.match(source, /"toolingPlan": response\.tooling_plan/);
+  assert.match(source, /"machineSelection": response\.machine_selection/);
   assert.match(source, /"manufacturingHandoff": response\.manufacturing_handoff/);
   assert.match(source, /"processGraph": response\.process_graph/);
+  assert.match(source, /"interventionMap": response\.intervention_map/);
   assert.match(source, /"interventionSignals": response\.learning\.intervention_signals/);
+  assert.match(source, /"postprocessPlan": response\.postprocess_plan/);
+  assert.match(source, /"pomdpBeliefState": response\.learning\.pomdp_belief_state/);
+  assert.match(source, /"neuralTrainingCorpus": response\.learning\.neural_training_corpus/);
   assert.match(source, /"automationRequirements": response\.boundary_summary\.automation_requirements/);
   assert.match(source, /"resolutionPlan": response\.resolution_plan/);
   assert.match(source, /"automation-required"\.to_string\(\)/);
@@ -253,11 +624,30 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /draft router profile program generated by dd-fabrication-server/);
   assert.match(source, /lift over tab boundary/);
   assert.match(source, /"machine-envelope"/);
+  assert.match(source, /async fn capabilities/);
+  assert.match(source, /"schemaVersion": "dd\.fabrication\.capabilities\.v1"/);
+  assert.match(source, /"defaultMachines": default_machines\(\)/);
+  assert.match(source, /"acceptedInstructionKinds"/);
+  assert.match(source, /"safetyBoundaryClasses"/);
+  assert.match(source, /async fn request_schema/);
+  assert.match(source, /"schemaVersion": "dd\.fabrication\.request-schema\.v1"/);
+  assert.match(source, /"planRequest"/);
+  assert.match(source, /"instructionProgram"/);
+  assert.match(source, /async fn examples/);
+  assert.match(source, /"schemaVersion": "dd\.fabrication\.examples\.v1"/);
+  assert.match(source, /"hybridPlan"/);
+  assert.match(source, /"instructionAnalysis"/);
   assert.match(source, /async fn list_jobs/);
   assert.match(source, /async fn get_artifact/);
   assert.match(source, /async fn learning_observe_http/);
   assert.match(source, /async fn learning_policy_http/);
   assert.match(source, /\.route\("\/jobs", get\(list_jobs\)\)/);
+  assert.match(source, /\.route\("\/capabilities", get\(capabilities\)\)/);
+  assert.match(source, /\.route\("\/fabrication\/capabilities", get\(capabilities\)\)/);
+  assert.match(source, /\.route\("\/schema", get\(request_schema\)\)/);
+  assert.match(source, /\.route\("\/fabrication\/schema", get\(request_schema\)\)/);
+  assert.match(source, /\.route\("\/examples", get\(examples\)\)/);
+  assert.match(source, /\.route\("\/fabrication\/examples", get\(examples\)\)/);
   assert.match(source, /\.route\("\/jobs\/:job_id", get\(get_job\)\)/);
   assert.match(
     source,
@@ -277,6 +667,17 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /\.route\("\/learning\/outcomes", post\(learning_outcome_http\)\)/);
 
   assert.match(readme, /`GET \/jobs`/);
+  assert.match(readme, /`GET \/capabilities`/);
+  assert.match(readme, /`GET \/fabrication\/capabilities`/);
+  assert.match(readme, /`GET \/schema`/);
+  assert.match(readme, /`GET \/fabrication\/schema`/);
+  assert.match(readme, /`GET \/examples`/);
+  assert.match(readme, /`GET \/fabrication\/examples`/);
+  assert.match(readme, /built-in `defaultMachines`/);
+  assert.match(readme, /accepted instruction\s+kinds/);
+  assert.match(readme, /safety boundary\s+classes/);
+  assert.match(readme, /ready-to-edit JSON examples/);
+  assert.match(readme, /hybrid\s+printed\/milled\/turned plan/);
   assert.match(readme, /`GET \/jobs\/:job_id`/);
   assert.match(readme, /`GET \/jobs\/:job_id\/artifacts\/:artifact_id`/);
   assert.match(readme, /`GET \/learning\/policy`/);
@@ -284,9 +685,26 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/fabrication\/learning\/observe`/);
   assert.match(readme, /Outcome Learning/);
   assert.match(readme, /reward-signal/);
+  assert.match(readme, /outcome-remediation-plan/);
+  assert.match(readme, /`outcomeRemediation` plan/);
+  assert.match(readme, /`remediationRisks`/);
+  assert.match(readme, /material-specific `remediationRisks`/);
+  assert.match(readme, /learned-remediation-risk/);
+  assert.match(readme, /avoid-learned-risk-milling-petg/);
+  assert.match(readme, /review\/avoid policy actions/);
   assert.match(readme, /pomdp-observations/);
+  assert.match(readme, /`pomdpBeliefState`/);
+  assert.match(readme, /`pomdp-belief-state`/);
+  assert.match(readme, /hidden-state probabilities/);
+  assert.match(readme, /observation likelihoods/);
+  assert.match(readme, /recommended probe actions/);
   assert.match(readme, /neural-example/);
   assert.match(readme, /neural-policy sketch/);
+  assert.match(readme, /`neuralTrainingCorpus`/);
+  assert.match(readme, /`neural-training-corpus`/);
+  assert.match(readme, /feature vectors, labels, inference candidates/);
+  assert.match(readme, /policy-memory examples/);
+  assert.match(readme, /strategy inference candidates/);
   assert.match(readme, /scored `strategyCandidates`/);
   assert.match(readme, /typed `interventionSignals`/);
   assert.match(readme, /boundary-specific\s+policy actions/);
@@ -321,14 +739,56 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /boundary summaries/);
   assert.match(readme, /resolution plans/);
   assert.match(readme, /machine-release reports/);
-  assert.match(readme, /manufacturing handoffs/);
-  assert.match(readme, /process graphs/);
+  assert.match(readme, /execution plans/);
+  assert.match(readme, /postprocess plans/);
+  assert.match(readme, /POMDP\s+belief states/);
+  assert.match(readme, /neural training corpora/);
+  assert.match(readme, /manufacturing\s+handoffs/);
+  assert.match(readme, /design packages/);
+  assert.match(readme, /quality plans/);
+  assert.match(readme, /tooling plans/);
+  assert.match(readme, /machine-selection traces/);
+  assert.match(readme, /production plans/);
+  assert.match(readme, /process\s+graphs/);
+  assert.match(readme, /intervention maps/);
   assert.match(readme, /assembly graphs/);
   assert.match(readme, /structured `processGraph`/);
   assert.match(readme, /`boundarySummary` object/);
   assert.match(readme, /typed `automationRequirements`/);
   assert.match(readme, /`resolutionPlan`/);
   assert.match(readme, /`machineRelease` report/);
+  assert.match(readme, /`executionPlan` preflight/);
+  assert.match(readme, /program runs, checkpoints, stop points/);
+  assert.match(readme, /`postprocessPlan` preflight/);
+  assert.match(readme, /controller-specific targets/);
+  assert.match(readme, /postprocessor selection/);
+  assert.match(readme, /dry-run gates/);
+  assert.match(readme, /operator signoff/);
+  assert.match(readme, /`machineSelection` trace/);
+  assert.match(readme, /`designPackage`/);
+  assert.match(readme, /`designExports` bundle/);
+  assert.match(readme, /generated design export payloads/);
+  assert.match(readme, /3MF\/STL\/STEP\/DXF\/CAM setup\/nesting\/assembly payloads/);
+  assert.match(readme, /neutral export targets/);
+  assert.match(readme, /coordinate frames/);
+  assert.match(readme, /3MF, STL, STEP, DXF, CAM setup JSON/);
+  assert.match(readme, /`productionPlan`/);
+  assert.match(readme, /quantity-aware batches/);
+  assert.match(readme, /`machineSchedule`/);
+  assert.match(readme, /deterministic machine lanes/);
+  assert.match(readme, /operator or automation assignments/);
+  assert.match(readme, /`qualityPlan`/);
+  assert.match(readme, /inspection points/);
+  assert.match(readme, /measurement targets/);
+  assert.match(readme, /learning observations/);
+  assert.match(readme, /`toolingPlan`/);
+  assert.match(readme, /setup traveler/);
+  assert.match(readme, /required tools/);
+  assert.match(readme, /workholding/);
+  assert.match(readme, /consumables/);
+  assert.match(readme, /automation dependencies/);
+  assert.match(readme, /candidate scores, material\/process/);
+  assert.match(readme, /operation gaps, and fallback warnings/);
   assert.match(readme, /`manufacturingHandoff` package/);
   assert.match(readme, /checklist status, release blockers/);
   assert.match(readme, /datum scheme, fixture\/setup plan/);
@@ -340,6 +800,24 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`analysis-boundary-summary`/);
   assert.match(readme, /`resolution-plan`/);
   assert.match(readme, /`analysis-resolution-plan`/);
+  assert.match(readme, /`intervention-map`/);
+  assert.match(readme, /`analysis-intervention-map`/);
+  assert.match(readme, /`execution-plan`/);
+  assert.match(readme, /`analysis-execution-plan`/);
+  assert.match(readme, /`postprocess-plan`/);
+  assert.match(readme, /`analysis-postprocess-plan`/);
+  assert.match(readme, /`neural-training-corpus`/);
+  assert.match(readme, /human intervention points/);
+  assert.match(readme, /split\/combine decisions/);
+  assert.match(readme, /automation paths/);
+  assert.match(readme, /program boundary traces/);
+  assert.match(readme, /`machine-selection`/);
+  assert.match(readme, /`design-package`/);
+  assert.match(readme, /`design-export-bundle`/);
+  assert.match(readme, /`generated-design-export`/);
+  assert.match(readme, /`production-plan`/);
+  assert.match(readme, /`quality-plan`/);
+  assert.match(readme, /`tooling-plan`/);
   assert.match(readme, /`machine-release`/);
   assert.match(readme, /`analysis-machine-release`/);
   assert.match(readme, /`manufacturing-handoff`/);
@@ -350,13 +828,27 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`process-graph`/);
   assert.match(
     readme,
-    /`mdp-request` artifact includes `strategyCandidates`, `interventionSignals`/,
+    /`mdp-request` artifact includes\s+`strategyCandidates`, `interventionSignals`, `pomdpBeliefState`,\s+`neuralTrainingCorpus`/,
   );
   assert.match(
     readme,
-    /`manufacturingHandoff`, `automationRequirements`, `resolutionPlan`, and\s+`machineRelease`/,
+    /`designPackage`, `designExports`, `productionPlan`, `machineSchedule`, `machineSelection`,\s+`manufacturingHandoff`, `qualityPlan`, `toolingPlan`, `interventionMap`,\s+`executionPlan`, `postprocessPlan`, `automationRequirements`, `resolutionPlan`,\s+and `machineRelease`/,
   );
-  assert.match(readme, /CAD\/CAM handoff assumptions/);
+  assert.match(readme, /execution stop points/);
+  assert.match(readme, /unattended-run eligibility/);
+  assert.match(readme, /postprocessor gates/);
+  assert.match(readme, /`designExports` generated design export payloads/);
+  assert.match(readme, /source previews, media types, blockers/);
+  assert.match(readme, /design export state/);
+  assert.match(readme, /batch-planning\s+state/);
+  assert.match(readme, /machine-schedule state/);
+  assert.match(readme, /`machine-schedule`/);
+  assert.match(readme, /operation windows/);
+  assert.match(readme, /quality evidence targets/);
+  assert.match(readme, /tooling\/setup\s+requirements/);
+  assert.match(readme, /intervention\s+paths/);
+  assert.match(readme, /machine-choice\s+alternatives/);
+  assert.match(readme, /CAD\/CAM\s+handoff\s+assumptions/);
   assert.match(readme, /ordered release-blocking remediation steps/);
   assert.match(readme, /attempts machine-ready release/);
   assert.match(readme, /horizontal side-slot\/keyway milling/);
@@ -372,31 +864,180 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /method\s+combination preferences/);
   assert.match(readme, /additive-print\+milling/);
   assert.match(readme, /additive material\/color\/tool-change/);
-  assert.match(readme, /additive support\/orientation/);
+  assert.match(readme, /slicer job\s+sheets/);
+  assert.match(
+    readme,
+    /additive slicer profile\/support\/\s+orientation\/first-layer evidence/,
+  );
+  assert.match(readme, /slicer profile\/support\/\s+orientation\/first-layer evidence/);
   assert.match(readme, /additive thin-wall geometry/);
-  assert.match(readme, /resin-handling, powder-handling/);
+  assert.match(readme, /resin-handling,\s+powder-handling/);
   assert.match(readme, /Submitted `existingInstructions` are analyzed beside generated drafts/);
   assert.match(readme, /resolved machine profile material lists/);
   assert.match(readme, /`improvements` and `improvedPrograms` review drafts/);
   assert.match(readme, /machine-ready release/);
   assert.match(readme, /nonzero axis counts/);
-  assert.match(readme, /printer bed-adhesion, first-layer, fan-timing/);
+  assert.match(readme, /positioning-mode reset state/);
+  assert.match(
+    readme,
+    /CNC program end while still in `G91` incremental positioning without `G90` reset/,
+  );
+  assert.match(readme, /additive relative-positioning extrusion state/);
+  assert.match(readme, /printer\s+async-nozzle-wait state/);
+  assert.match(readme, /async-bed-target re-wait state/);
+  assert.match(readme, /nozzle-cooldown\/\s*reheat state/);
+  assert.match(readme, /bed-cooldown\/\s*re-wait state/);
+  assert.match(readme, /stepper-idle\/\s*re-home state/);
+  assert.match(readme, /post-mode-switch extrusion reset state/);
+  assert.match(readme, /negative-Z extrusion\/Z-offset probe state/);
+  assert.match(
+    readme,
+    /printer\s+async-nozzle-wait state, async-bed-target re-wait state, nozzle-cooldown\/\s+reheat state, bed-cooldown\/re-wait state, stepper-idle\/re-home state,\s+extrusion-mode\/reset state, post-mode-switch extrusion reset state,\s+negative-Z extrusion\/Z-offset probe state, filament lot\/dry-storage\s+conditioning evidence, bed-adhesion, first-layer, fan-timing/,
+  );
+  assert.match(
+    readme,
+    /after async `M104` nozzle targets without `M109` or verified hotend wait/,
+  );
+  assert.match(
+    readme,
+    /after async `M140` bed target changes without `M190` or verified bed wait/,
+  );
+  assert.match(readme, /after nozzle cooldown without reheat/);
+  assert.match(readme, /after bed cooldown without re-wait/);
+  assert.match(readme, /after\s+stepper idle without re-homing/);
+  assert.match(
+    readme,
+    /missing filament lot\/dry-storage\/\s+dryer\/desiccant evidence before first\s+extrusion/,
+  );
   assert.match(readme, /overhang, bridge, cantilever, thin-wall, snap-fit/);
   assert.match(readme, /resin\s+drain\/cupping geometry/);
-  assert.match(readme, /missing bed-temperature waits/);
+  assert.match(readme, /missing bed-temperature waits or\s+re-waits/);
+  assert.match(
+    readme,
+    /later `M82`\/`M83` extrusion-mode switches without renewed `G92 E`\s+reset evidence/,
+  );
+  assert.match(
+    readme,
+    /positive extrusion while `G91` relative axis positioning remains\s+active without `G90` or coordinate-state verification/,
+  );
+  assert.match(
+    readme,
+    /positive extrusion below\s+build-surface Z without measured Z-offset\/probe evidence/,
+  );
+  assert.match(
+    readme,
+    /missing `M82`\/`M83`\s+extrusion\s+mode and `G92 E0` reset state before\s+priming/,
+  );
   assert.match(readme, /first-layer adhesion setup/);
   assert.match(readme, /early\s+part-cooling fan timing/);
-  assert.match(readme, /resin IPA\/wash\/cure\/waste controls/);
-  assert.match(readme, /powder cooldown\/depowder\/recovery controls/);
-  assert.match(readme, /tool-length\/probe compensation/);
-  assert.match(readme, /`G43`\/probe\/tool-length state/);
-  assert.match(readme, /canned drilling\/tapping cycles/);
-  assert.match(readme, /unsafe canned\s+drilling\/peck\/tapping cycles/);
-  assert.match(readme, /declared material\/machine compatibility/);
+  assert.match(readme, /post-change extrusion without purge\/prime\/resume evidence/);
+  assert.match(
+    readme,
+    /printer pauses before renewed position\/extrusion resume evidence/,
+  );
+  assert.match(
+    readme,
+    /selected-tool extrusion without `M104`\/`M109` or hotend temperature evidence/,
+  );
+  assert.match(
+    readme,
+    /CNC subprogram calls, macro variables, conditionals, or jumps before controller dependency review evidence/,
+  );
+  assert.match(readme, /resin IPA\/wash\/cure\/waste\s+controls/);
+  assert.match(readme, /powder\s+cooldown\/depowder\/recovery controls/);
+  assert.match(readme, /sheet-cutting pierce\/kerf\/focus\/gas\/fume\/\s*support evidence/);
+  assert.match(readme, /CNC tool-change automation\/operator-load\/spindle-stop evidence/);
+  assert.match(readme, /tool-length\/probe compensation\/cancel state/);
+  assert.match(readme, /cutter-compensation offset\/cancel state/);
+  assert.match(
+    readme,
+    /mill\/router rapid\/feed negative-Z plunges after tool selection without\s+explicit `G43`\/probe\/tool-length state or later `M6` tool changes before `G49` cancellation/,
+  );
+  assert.match(
+    readme,
+    /`G41`\/`G42` cutter compensation without\s+`D` offset or tool radius\/diameter evidence or without `G40` cancellation before program end/,
+  );
+  assert.match(
+    readme,
+    /`M6` tool changes before ATC\/magazine\/\s+carousel\/operator-loaded evidence or while spindle\/process remains active without `M5`\/`M05` stop evidence/,
+  );
+  assert.match(readme, /mill\/router fixture\/hold-down evidence/);
+  assert.match(readme, /cutting feed-rate\/cut-chart evidence/);
+  assert.match(readme, /work-offset\/datum evidence/);
+  assert.match(
+    readme,
+    /mill\/router\/lathe cutting feeds and mill\/router rapid negative-Z plunges before probed\s+datum\/touch-off\/edge-finder\/work-offset evidence/,
+  );
+  assert.match(
+    readme,
+    /mill\/router cutting feeds or rapid negative-Z plunges before\s+fixture\/vise\/clamp\/vacuum\/hold-down\/tab evidence/,
+  );
+  assert.match(
+    readme,
+    /cutting moves before positive\s+`F` feed-rate, chip-load, feeds-and-speeds, or cut-chart evidence/,
+  );
+  assert.match(readme, /spindle-speed\/direction\/start\/process-stop state/);
+  assert.match(readme, /chip\/coolant\/dust-collection\s+state/);
+  assert.match(readme, /lathe\s+chuck\/stick-out\/runout evidence/);
+  assert.match(readme, /tool\/turret-change stop state/);
+  assert.match(readme, /tool-nose compensation evidence\/cancel state/);
+  assert.match(
+    readme,
+    /missing\s+coolant, air blast,\s+dust\s+collection,\s+chip conveyor, or dry-machining approval\s+before cutting feed moves or after those systems are stopped/,
+  );
+  assert.match(
+    readme,
+    /sheet-cutter\s+feed\s+moves before\s+pierce\/kerf\/focus\/assist-gas\/fume\/support\s+evidence or after assist-gas\/fume\/abrasive support media is stopped/,
+  );
+  assert.match(readme, /canned drilling\/tapping cycle setup\/cancel state/);
+  assert.match(readme, /motion before `G80` cancellation/);
+  assert.match(
+    readme,
+    /unsafe\s+canned\s+drilling\/peck\/tapping cycles with missing or nonpositive `R` retract planes or motion before `G80` cancellation/,
+  );
+  assert.match(
+    readme,
+    /mill\/router\/lathe `M3`\/`M4` spindle starts without positive `S` speed evidence or changes direction while active without `M5`\/`M05` stop evidence/,
+  );
+  assert.match(
+    readme,
+    /subtractive feed moves before spindle start or after\s+explicit `M5`\/`M05` process stop/,
+  );
+  assert.match(readme, /declared\s+material\/machine compatibility/);
   assert.match(readme, /declared material\s+incompatibility/);
-  assert.match(readme, /lathe constant-surface-speed\s+without a spindle cap/);
-  assert.match(readme, /threading cycles, part-off/);
+  assert.match(readme, /lathe\s+chuck\/collet\/tailstock\/stick-out\/runout\s+evidence/);
+  assert.match(
+    readme,
+    /lathe `T` tool\/turret changes while spindle\/process remains active without `M5`\/`M05` stop evidence/,
+  );
+  assert.match(
+    readme,
+    /lathe `G41`\/`G42` tool-nose compensation without tool-nose radius\/geometry\/wear offset evidence or without `G40` cancellation before program end/,
+  );
+  assert.match(readme, /lathe\s+constant-surface-speed\s+without a spindle cap/);
+  assert.match(
+    readme,
+    /threading cycles without feed-per-rev or pitch-synchronization evidence,\s+part-off/,
+  );
+  assert.match(
+    readme,
+    /mill\/router rapid negative-Z plunges before spindle\/process start or after explicit `M5`\/`M05` process stop without restart/,
+  );
+  assert.match(readme, /deep-cut,\s+arc-plane\/geometry/);
+  assert.match(
+    readme,
+    /arc\s+moves before explicit `G17`\/`G18`\/`G19` plane evidence/,
+  );
+  assert.match(
+    readme,
+    /arc\s+moves before explicit `G17`\/`G18`\/`G19` plane evidence, with center offsets that do not match the selected plane, or without plane-matched `I`\/`J`, `I`\/`K`, or `J`\/`K` center offsets or `R` radius/,
+  );
   assert.match(readme, /analysis-simulation-report/);
+  assert.match(readme, /rotary\/index `A`\/`B`\/`C` axis words/);
+  assert.match(readme, /`axisExtents` with\s+degree units/);
+  assert.match(readme, /simulated-rotary-index-review/);
+  assert.match(readme, /rotary-index-boundary/);
+  assert.match(readme, /conservative `G2`\/`G3` arc sweeps/);
   assert.match(readme, /simulated-axis-envelope-exceeded/);
   assert.match(readme, /simulated-machine-envelope/);
   assert.match(readme, /simulated-rapid-below-clearance/);
@@ -423,6 +1064,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
 
   assert.match(docs, /"path": "\/plan"/);
   assert.match(docs, /"path": "\/fabrication\/plan"/);
+  assert.match(docs, /"path": "\/capabilities"/);
+  assert.match(docs, /"path": "\/fabrication\/capabilities"/);
+  assert.match(docs, /"path": "\/schema"/);
+  assert.match(docs, /"path": "\/fabrication\/schema"/);
+  assert.match(docs, /"path": "\/examples"/);
+  assert.match(docs, /"path": "\/fabrication\/examples"/);
   assert.match(docs, /"path": "\/instructions\/analyze"/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/analyze"/);
   assert.match(docs, /"path": "\/jobs"/);
@@ -441,6 +1088,9 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   );
   const service = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-fabrication-server.service.yaml',
+  );
+  const networkPolicy = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-fabrication-server.networkpolicy.yaml',
   );
   const kustomization = await readRepoFile('remote/argocd/dd-next-runtime/kustomization.yaml');
   const gateway = await readRepoFile(
@@ -462,20 +1112,46 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /FABRICATION_MDP_OPTIMIZE_SUBJECT[\s\S]*dd\.remote\.mdp\.optimize/);
   assert.match(deployment, /FABRICATION_MDP_AUTOPUBLISH[\s\S]*value:\s*'true'/);
   assert.match(deployment, /RUNTIME_CONFIG_APPLY_URL[\s\S]*dd-fabrication-server\.default\.svc\.cluster\.local:8113/);
+  assert.match(deployment, /revisionHistoryLimit:\s*3/);
+  assert.match(deployment, /topologySpreadConstraints:[\s\S]*topologyKey:\s*kubernetes\.io\/hostname/);
+  assert.match(deployment, /podAntiAffinity:[\s\S]*preferredDuringSchedulingIgnoredDuringExecution/);
   assert.match(deployment, /startupProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
-  assert.match(deployment, /readinessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(deployment, /readinessProbe:[\s\S]*path: \/readyz[\s\S]*port: http/);
   assert.match(deployment, /livenessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
   assert.match(service, /name:\s*dd-fabrication-server/);
+  assert.match(service, /appProtocol:\s*http/);
   assert.match(service, /port:\s*8113/);
   assert.match(service, /targetPort:\s*http/);
   assert.match(kustomization, /dd-fabrication-server\.deployment\.yaml/);
   assert.match(kustomization, /dd-fabrication-server\.service\.yaml/);
+  assert.match(kustomization, /dd-fabrication-server\.networkpolicy\.yaml/);
+  assert.match(networkPolicy, /kind:\s*NetworkPolicy/);
+  assert.match(networkPolicy, /name:\s*dd-fabrication-server/);
+  assert.match(networkPolicy, /policyTypes:[\s\S]*Ingress[\s\S]*Egress/);
+  assert.match(networkPolicy, /app:\s*dd-remote-gateway/);
+  assert.match(networkPolicy, /app:\s*dd-runtime-config/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*observability/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*kube-system[\s\S]*port:\s*53/);
+  assert.match(networkPolicy, /app:\s*dd-nats[\s\S]*port:\s*4222/);
+  assert.match(networkPolicy, /app:\s*dd-runtime-config[\s\S]*port:\s*8110/);
+  assert.match(networkPolicy, /cidr:\s*0\.0\.0\.0\/0[\s\S]*port:\s*443/);
   assert.match(availability, /name:\s*dd-fabrication-server[\s\S]*minAvailable:\s*1/);
   assert.match(gateway, /location = \/fabrication[\s\S]*return 302 \/fabrication\//);
+  assert.match(gateway, /location = \/fabrication[\s\S]*add_header X-Request-ID \$request_id always/);
+  assert.match(gateway, /location = \/fabrication[\s\S]*error_page 405 = @fabrication_method_not_allowed/);
+  assert.match(gateway, /location = \/fabrication\/internal[\s\S]*add_header X-Request-ID \$request_id always[\s\S]*return 404 '\{"error":"not_found"/);
+  assert.match(gateway, /location \^~ \/fabrication\/internal\/[\s\S]*add_header X-Request-ID \$request_id always[\s\S]*return 404 '\{"error":"not_found"/);
+  assert.match(gateway, /location @auth_required[\s\S]*add_header X-Request-ID \$request_id always/);
   assert.match(
     gateway,
-    /location \/fabrication\/[\s\S]*dd-fabrication-server\.default\.svc\.cluster\.local:8113\//,
+    /location \/fabrication\/[\s\S]*add_header X-Request-ID \$request_id always[\s\S]*dd-fabrication-server\.default\.svc\.cluster\.local:8113\//,
   );
+  assert.match(gateway, /location \/fabrication\/[\s\S]*error_page 405 = @fabrication_method_not_allowed/);
+  assert.match(gateway, /location \/fabrication\/[\s\S]*error_page 413 = @fabrication_payload_too_large/);
+  assert.match(gateway, /location \/fabrication\/[\s\S]*error_page 429 = @fabrication_rate_limited/);
+  assert.match(gateway, /location @fabrication_method_not_allowed[\s\S]*return 405 '\{"error":"method_not_allowed"/);
+  assert.match(gateway, /location @fabrication_payload_too_large[\s\S]*return 413 '\{"error":"payload_too_large"/);
+  assert.match(gateway, /location @fabrication_rate_limited[\s\S]*return 429 '\{"error":"rate_limited"/);
   assert.match(
     prometheus,
     /job_name:\s*dd-fabrication-server[\s\S]*dd-fabrication-server\.default\.svc\.cluster\.local:8113/,
@@ -490,8 +1166,19 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(home, /label: FABRICATION_REQUESTS_SUBJECT/);
   assert.match(home, /label: FABRICATION_RESULTS_SUBJECT/);
   assert.match(runtimeReadme, /dd-fabrication-server/);
+  assert.match(runtimeReadme, /\/fabrication\/capabilities/);
+  assert.match(runtimeReadme, /\/fabrication\/schema/);
+  assert.match(runtimeReadme, /\/fabrication\/examples/);
   assert.match(runtimeReadme, /\/fabrication\/jobs/);
   assert.match(runtimeReadme, /`POST \/fabrication\/plan`/);
   assert.match(runtimeReadme, /`POST \/fabrication\/instructions\/analyze`/);
+  assert.match(runtimeReadme, /Gateway-generated `\/fabrication` redirects/);
+  assert.match(runtimeReadme, /return `X-Request-ID`/);
+  assert.match(runtimeReadme, /JSON `not_found` 404/);
+  assert.match(runtimeReadme, /JSON `method_not_allowed` 405/);
+  assert.match(runtimeReadme, /JSON `payload_too_large` 413/);
+  assert.match(runtimeReadme, /JSON `rate_limited` 429/);
+  assert.match(runtimeReadme, /explicit runtime hardening/);
+  assert.match(runtimeReadme, /dedicated NetworkPolicy/);
   assert.match(remoteReadme, /fabrication-server-rs/);
 });

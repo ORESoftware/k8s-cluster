@@ -79,12 +79,45 @@ data:
               static_configs:
                 - targets:
                     - dd-mdp-optimizer.default.svc.cluster.local:8096
+            - job_name: dd-runtime-config
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-runtime-config.default.svc.cluster.local:8110
             - job_name: dd-fabrication-server
               scrape_interval: 10s
               metrics_path: /metrics
               static_configs:
                 - targets:
                     - dd-fabrication-server.default.svc.cluster.local:8113
+            - job_name: dd-fabrication-server-pods
+              scrape_interval: 10s
+              metrics_path: /metrics
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names:
+                      - default
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  action: keep
+                  regex: dd-fabrication-server
+                - source_labels: [__meta_kubernetes_pod_container_port_name]
+                  action: keep
+                  regex: http
+                - source_labels: [__meta_kubernetes_pod_phase]
+                  action: keep
+                  regex: Running
+                - source_labels: [__meta_kubernetes_pod_ready]
+                  action: keep
+                  regex: "true"
+                - source_labels: [__meta_kubernetes_namespace]
+                  target_label: namespace
+                - source_labels: [__meta_kubernetes_pod_name]
+                  target_label: pod
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  target_label: app
             - job_name: dd-des-simulator
               scrape_interval: 10s
               metrics_path: /metrics

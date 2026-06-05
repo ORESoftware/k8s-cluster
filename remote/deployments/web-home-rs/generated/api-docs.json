@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "web-home-rs",
   "language": "rust",
-  "routeCount": 41,
+  "routeCount": 43,
   "routeTypeCounts": {
     "service": 10,
-    "user-generated": 28,
+    "user-generated": 30,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -451,6 +451,40 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "grafana_deployment_redirect"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/grafana/fabrication",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "grafana_fabrication_redirect"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/grafana/fabrication/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "grafana_fabrication_redirect"
       ],
       "sourceFiles": [
         "remote/deployments/web-home-rs/src/main.rs"

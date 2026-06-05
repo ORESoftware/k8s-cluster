@@ -47,6 +47,19 @@ data:
       '' close;
     }
 
+    map $request_method $dd_fabrication_write_limit_key {
+      default "";
+      POST $binary_remote_addr;
+    }
+
+    limit_req_zone $dd_fabrication_write_limit_key zone=dd_fabrication_write:10m rate=12r/m;
+
+    # Redacted path-only access logs make gateway guardrails observable without
+    # writing Auth headers, cookies, or query strings into Loki.
+    log_format dd_gateway_json escape=json '{"schema":"dd.gateway.access.v1","service":"dd-remote-gateway","request_id":"$request_id","method":"$request_method","uri":"$uri","status":$status,"body_bytes_sent":$body_bytes_sent,"request_length":$request_length,"request_time":$request_time,"upstream_status":"$upstream_status","upstream_response_time":"$upstream_response_time","upstream_addr":"$upstream_addr"}';
+    access_log /dev/stdout dd_gateway_json;
+    error_log /dev/stderr warn;
+
     server {
       listen 80 default_server;
       server_name _;
@@ -930,26 +943,129 @@ data:
       }
 
       location = /fabrication {
+        add_header X-Request-ID $request_id always;
+        add_header Strict-Transport-Security "max-age=15552000" always;
+        add_header Content-Security-Policy "upgrade-insecure-requests" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        error_page 405 = @fabrication_redirect_method_not_allowed;
         if ($dd_gateway_auth_ok = 0) {
           return 401;
+        }
+        if ($request_method !~ ^(GET|HEAD)$) {
+          return 405;
         }
         return 302 /fabrication/;
       }
 
+      location = /fabrication/internal {
+        add_header X-Request-ID $request_id always;
+        add_header Strict-Transport-Security "max-age=15552000" always;
+        add_header Content-Security-Policy "upgrade-insecure-requests" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        default_type application/json;
+        return 404 '{"error":"not_found","errMessage":"fabrication internal routes are not public"}';
+      }
+
+      location ^~ /fabrication/internal/ {
+        add_header X-Request-ID $request_id always;
+        add_header Strict-Transport-Security "max-age=15552000" always;
+        add_header Content-Security-Policy "upgrade-insecure-requests" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        default_type application/json;
+        return 404 '{"error":"not_found","errMessage":"fabrication internal routes are not public"}';
+      }
+
       location /fabrication/ {
+        add_header X-Request-ID $request_id always;
+        add_header Strict-Transport-Security "max-age=15552000" always;
+        add_header Content-Security-Policy "upgrade-insecure-requests" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        error_page 405 = @fabrication_method_not_allowed;
         if ($dd_gateway_auth_ok = 0) {
           return 401;
         }
-        client_max_body_size 1m;
+        if ($request_method !~ ^(GET|HEAD|POST)$) {
+          return 405;
+        }
+        error_page 413 = @fabrication_payload_too_large;
+        error_page 429 = @fabrication_rate_limited;
+        client_max_body_size 512k;
+        client_body_timeout 120s;
         proxy_http_version 1.1;
         proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_connect_timeout 30;
         proxy_read_timeout 900;
         proxy_send_timeout 900;
+        proxy_next_upstream off;
+        limit_req zone=dd_fabrication_write burst=6 nodelay;
+        limit_req_status 429;
         proxy_set_header Host $host;
+        proxy_set_header X-Request-ID $request_id;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header X-Forwarded-Prefix /fabrication;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Original-URI $request_uri;
+        proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Auth $dd_gateway_auth_header;
         proxy_pass http://dd-fabrication-server.default.svc.cluster.local:8113/;
+      }
+
+      location @fabrication_payload_too_large {
+        add_header X-Request-ID $request_id always;
+        add_header Strict-Transport-Security "max-age=15552000" always;
+        add_header Content-Security-Policy "upgrade-insecure-requests" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        default_type application/json;
+        return 413 '{"error":"payload_too_large","errMessage":"fabrication requests must be 512k or smaller"}';
+      }
+
+      location @fabrication_rate_limited {
+        add_header X-Request-ID $request_id always;
+        add_header Strict-Transport-Security "max-age=15552000" always;
+        add_header Content-Security-Policy "upgrade-insecure-requests" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Retry-After 60 always;
+        default_type application/json;
+        return 429 '{"error":"rate_limited","errMessage":"fabrication POST rate limit exceeded"}';
+      }
+
+      location @fabrication_redirect_method_not_allowed {
+        add_header X-Request-ID $request_id always;
+        add_header Strict-Transport-Security "max-age=15552000" always;
+        add_header Content-Security-Policy "upgrade-insecure-requests" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Allow "GET, HEAD" always;
+        default_type application/json;
+        return 405 '{"error":"method_not_allowed","errMessage":"fabrication redirect allows GET or HEAD only"}';
+      }
+
+      location @fabrication_method_not_allowed {
+        add_header X-Request-ID $request_id always;
+        add_header Strict-Transport-Security "max-age=15552000" always;
+        add_header Content-Security-Policy "upgrade-insecure-requests" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Allow "GET, HEAD, POST" always;
+        default_type application/json;
+        return 405 '{"error":"method_not_allowed","errMessage":"fabrication gateway allows GET, HEAD, or POST only"}';
       }
 
       location = /des {
@@ -1507,6 +1623,7 @@ data:
       }
 
       location @auth_required {
+        add_header X-Request-ID $request_id always;
         if ($dd_gateway_browser_auth_html = 1) {
           return 302 /auth?return=$request_uri;
         }

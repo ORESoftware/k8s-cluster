@@ -17,7 +17,8 @@ GitOps-managed observability stack for the EC2 Kubernetes cluster.
   overview samples.
 - `dd-grafana`: serves dashboards at `/telemetry/` through the public gateway.
   Includes the `Observability Control Plane`, `Deployment Drilldown`,
-  `Kubernetes Workload Fleet`, and `GCS WSS Load Collapse` dashboards.
+  `Kubernetes Workload Fleet`, `Fabrication Planner`, and `GCS WSS Load
+  Collapse` dashboards.
 - `dd-loki` + `dd-promtail`: collect Kubernetes container stdout/stderr logs
   from `/var/log/containers/*.log`.
 - `dd-tempo` and `dd-jaeger`: trace backends for collector-exported spans.
@@ -47,11 +48,19 @@ The runtimes are instrumented explicitly:
   connection/channel/queue/message counters.
 - Auth, agent-worker broker, billing, formal-methods-service, and lock
   load-test trigger expose lightweight Prometheus health/work counters.
+- Runtime-config exposes subscriber, entry, and push counters that make
+  configuration delivery visible for dependent planners such as
+  `dd-fabrication-server`; Prometheus alerts when the target is down, stage
+  subscribers disappear, or stage push errors increase.
 - Rust MDP optimizer emits Prometheus metrics and accepts compact app/infra
   telemetry snapshots on `/mdp/telemetry/learn` or `dd.remote.telemetry.mdp`
-  for policy learning over operational risk.
+  for policy learning over operational risk. Prometheus alerts when the
+  optimizer target is down because fabrication planning depends on it for
+  policy optimization fan-out.
 - NATS emits server, connection, subscription, and JetStream metrics through
-  `natsio/prometheus-nats-exporter`.
+  `natsio/prometheus-nats-exporter`; Prometheus alerts when the NATS scrape
+  target is down because fabrication queue intake, results, runtime events,
+  and learning fan-out depend on it.
 
 Node does not use OpenTelemetry auto-instrumentation or monkey-patching.
 
@@ -102,7 +111,10 @@ Currently opted-in:
   `health_check` endpoint at `:13133`. Kubernetes liveness/readiness probes
   use the health extension; Prometheus separately scrapes the collector's
   self metrics as `otel-collector-self` while keeping the pipeline exporter at
-  `otel-collector` on `:8889`.
+  `otel-collector` on `:8889`. The pipeline exporter scrape uses
+  `honor_labels: true` so collector-exported service and pod scrape labels
+  remain queryable as their original `job`, `instance`, `pod`, and `app`
+  dimensions instead of being renamed behind the collector target label.
 - `dd-loki` keeps single-node filesystem storage, but bounds ingestion and
   query cost with `limits_config`: old samples are rejected after seven days,
   ingestion bursts are capped, query splitting/parallelism is bounded, and
@@ -118,11 +130,48 @@ Currently opted-in:
   those as explicit jobs so Grafana target health and Loki ingestion
   health stay independently visible.
 - `dd-otel-collector` uses `kubernetes_sd_configs (role: pod)` for the
-  `gcs-router` and `dd-promtail` scrape jobs so each pod is scraped
+  `gcs-router`, `dd-fabrication-server-pods`, and `dd-promtail` scrape jobs so each pod is scraped
   directly. The collector exports `gcs_router_*` counters with a `pod`
   label, which is needed because the per-pod ring counters disagree
   (each pod tracks routing decisions from its own perspective) and the
   Service VIP would hide half the signal behind round-robin scraping.
+  Fabrication server pod scraping preserves replica-local job/artifact
+  ledger, learning-memory, failure-boundary, and NATS/MDP fan-out counters
+  that would otherwise be hidden by the Service VIP and `ClientIP` affinity.
+  Prometheus alerts when the `dd-fabrication-server-pods` target set is
+  absent or an individual pod target stays down, so a broken direct scrape
+  cannot quietly mask one replica's retained fabrication evidence.
+  The `Fabrication Planner` Grafana dashboard (uid `dd-fabrication-planner`)
+  groups those signals with request intake, machine-failure boundary rates,
+  NATS result fanout, MDP optimization fanout, in-memory evidence ledgers,
+  runtime-config push delivery, dependency scrape health, HPA capacity, CPU and
+  memory limit headroom, gateway access/guardrail logs for `/fabrication/`, and
+  warning/error logs for the Rust planner.
+  The gateway log panel reads the redacted `dd.gateway.access.v1` access-log
+  lines, which include request IDs, statuses, upstream status/timing, and
+  path-only URIs without Auth headers, cookies, or query strings.
+  Fabrication also has a service-scoped workload-availability alert using
+  `dd:k8s_workload:available_ratio` plus a rollout-lag alert on updated
+  Deployment replicas, so cold release builds, scheduling pressure, readiness
+  failures, or a partially rolled out hardened planner show up under
+  `dd-fabrication-server` and not only the generic Kubernetes workload alert.
+  The same k8s-resource
+  exporter metrics alert on serving-container restarts and waiting states,
+  because restarts or stuck runtime startup can interrupt retained job/artifact
+  evidence, learning memory, NATS subscriptions, and active planning work.
+  The exporter also emits
+  init-container waiting/restart metrics so fabrication alerts can distinguish
+  source-layout validation or release-build startup failures from running
+  service failures. CPU and memory near-limit alerts use the same exporter
+  resource gauges, because sustained saturation can delay instruction analysis,
+  result fanout, and learning feedback even when the scrape target stays up.
+  It also emits watched HPA current/desired/min/max replica
+  gauges plus an at-max signal, and Prometheus alerts when the
+  `dd-fabrication-server` autoscaler holds at its configured ceiling during
+  planning or instruction-analysis pressure. Runtime-config push failures for the `dd-fabrication-server`
+  subscriber are also alerted separately from the fleet-wide runtime-config
+  push-error alert, because stale fabrication config can affect planning, NATS
+  fan-out, and MDP learning behavior.
   Promtail's own `/metrics` is scraped the same way so empty-Loki
   incidents can be diagnosed from Prometheus.
 - The `Kubernetes Workload Fleet` Grafana dashboard (uid
@@ -130,7 +179,10 @@ Currently opted-in:
   checked-in workload in the exporter allowlist. It is driven by
   `dd_k8s_workload_*_replicas`, pod restart/resource metrics, Kubernetes
   event metrics, and Loki deployment labels, with a repeatable `workload`
-  variable for per-workload panels. Keep `WATCH_NAMESPACES` and
+  variable for per-workload panels. It also overlays watched HPA
+  current/desired/max replica traces and at-max signals so autoscaler pressure
+  is visible beside unavailable replicas, restarts, and waiting containers.
+  Keep `WATCH_NAMESPACES` and
   `WATCH_APPS` aligned with checked-in Deployment, StatefulSet, and
   DaemonSet manifests when adding or removing services.
 - The `Deployment Drilldown` Grafana dashboard (uid
@@ -139,7 +191,10 @@ Currently opted-in:
   dashboard with `var-deployment=<deployment>`, so paths such as
   `/grafana/depl/dd-dart-server`, `/grafana/depl/dd-billing-server`, and
   `/grafana/depl/des-rs` land on the same Prometheus/Loki-backed view with
-  that service preselected. Run
+  that service preselected. Its replica panel overlays matching HPA
+  current/desired/max replica traces, which makes
+  `/grafana/depl/dd-fabrication-server` useful for spotting fabrication
+  planner saturation before the service is fully unavailable. Run
   `node remote/tools/check-observability-coverage.mjs` after adding or
   removing manifests to verify every checked-in workload is watched, the
   Grafana route stays provisioned, and deployment dependency manifests do not

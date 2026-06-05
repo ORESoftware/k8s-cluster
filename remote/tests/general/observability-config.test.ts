@@ -517,3 +517,128 @@ test("grafana dashboard includes the Gleam MCP runtime metrics", async () => {
   assert.match(dashboard, /dd_gleam_mcp_http_requests_total/);
   assert.match(dashboard, /dd_gleam_mcp_rpc_requests_total/);
 });
+
+test("grafana exposes a dedicated fabrication planner dashboard", async () => {
+  const dashboards = await readRepoFile(
+    "remote/argocd/observability/grafana.dashboards.configmap.yaml",
+  );
+  const prometheus = await readRepoFile("remote/argocd/observability/prometheus.configmap.yaml");
+  const gateway = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
+  );
+  const runtimeReadme = await readRepoFile("remote/argocd/dd-next-runtime/readme.md");
+  const webHome = await readRepoFile("remote/deployments/web-home-rs/src/main.rs");
+
+  const dashboard = extractDashboardJson(dashboards, "fabrication-planner.json");
+  const dashboardText = JSON.stringify(dashboard);
+
+  assert.equal(dashboard.title, "Fabrication Planner");
+  assert.equal(dashboard.uid, "dd-fabrication-planner");
+  assert.match(dashboardText, /dd_fabrication_server_plan_requests_total/);
+  assert.match(dashboardText, /dd_fabrication_server_analysis_requests_total/);
+  assert.match(dashboardText, /dd_fabrication_server_failure_boundaries_total/);
+  assert.match(dashboardText, /dd_fabrication_server_nats_results_published_total/);
+  assert.match(dashboardText, /dd_fabrication_server_mdp_published_total/);
+  assert.match(dashboardText, /dd_runtime_config_push_total/);
+  assert.match(dashboardText, /dd_k8s_hpa_current_at_max/);
+  assert.match(dashboardText, /dd_k8s_deployment_updated_replicas/);
+  assert.match(dashboardText, /dd_k8s_deployment_unavailable_replicas/);
+  assert.match(dashboardText, /Runtime CPU and Memory Limit Headroom/);
+  assert.match(dashboardText, /dd_k8s_pod_container_cpu_usage_cores/);
+  assert.match(dashboardText, /dd_k8s_pod_container_memory_usage_bytes/);
+  assert.match(dashboardText, /Fabrication Gateway Access and Guardrail Logs/);
+  assert.match(dashboardText, /dd-remote-gateway/);
+  assert.match(dashboardText, /401\|404\|405\|413\|429/);
+  assert.match(gateway, /log_format dd_gateway_json escape=json/);
+  assert.match(gateway, /"schema":"dd\.gateway\.access\.v1"/);
+  assert.match(gateway, /"uri":"\$uri"/);
+  assert.match(gateway, /access_log \/dev\/stdout dd_gateway_json/);
+  const fabricationSecurityHeaderLocations = [
+    "location = /fabrication {",
+    "location = /fabrication/internal {",
+    "location ^~ /fabrication/internal/ {",
+    "location /fabrication/ {",
+    "location @fabrication_payload_too_large {",
+    "location @fabrication_rate_limited {",
+    "location @fabrication_redirect_method_not_allowed {",
+    "location @fabrication_method_not_allowed {",
+  ];
+  const fabricationSecurityHeaders = [
+    'add_header Strict-Transport-Security "max-age=15552000" always;',
+    'add_header Content-Security-Policy "upgrade-insecure-requests" always;',
+    'add_header X-Frame-Options "SAMEORIGIN" always;',
+    'add_header X-Content-Type-Options "nosniff" always;',
+    'add_header Referrer-Policy "strict-origin-when-cross-origin" always;',
+  ];
+  for (const locationMarker of fabricationSecurityHeaderLocations) {
+    const start = gateway.indexOf(locationMarker);
+    assert.notEqual(start, -1, `expected ${locationMarker} in gateway config`);
+    const end = gateway.indexOf("\n      }", start);
+    assert.notEqual(end, -1, `expected closing brace for ${locationMarker}`);
+    const block = gateway.slice(start, end);
+    for (const header of fabricationSecurityHeaders) {
+      assert.ok(block.includes(header), `expected ${locationMarker} to preserve ${header}`);
+    }
+  }
+  assert.match(
+    gateway,
+    /location = \/fabrication[\s\S]*error_page 405 = @fabrication_redirect_method_not_allowed/,
+  );
+  assert.match(
+    gateway,
+    /location @fabrication_redirect_method_not_allowed[\s\S]*add_header Allow "GET, HEAD" always/,
+  );
+  assert.match(
+    gateway,
+    /location @fabrication_method_not_allowed[\s\S]*add_header Allow "GET, HEAD, POST" always/,
+  );
+  assert.match(
+    gateway,
+    /location @fabrication_rate_limited[\s\S]*add_header Retry-After 60 always/,
+  );
+  assert.match(runtimeReadme, /GET, HEAD` for the canonical `\/fabrication` redirect/);
+  assert.match(runtimeReadme, /GET, HEAD, POST` for `\/fabrication\/`/);
+  assert.match(runtimeReadme, /explicitly preserve the gateway security header set/);
+  assert.match(runtimeReadme, /X-Content-Type-Options/);
+  assert.match(runtimeReadme, /Retry-After: 60/);
+  assert.match(dashboardText, /Kubernetes Startup, Warning, and Termination Evidence/);
+  assert.match(dashboardText, /dd_k8s_pod_init_container_waiting/);
+  assert.match(dashboardText, /dd_k8s_pod_init_container_restarts_total/);
+  assert.match(dashboardText, /dd_k8s_event_count/);
+  assert.match(dashboardText, /dd_k8s_pod_container_last_terminated/);
+  assert.match(dashboardText, /dd_k8s_pod_init_container_last_terminated/);
+  assert.match(dashboardText, /dd_k8s_pod_container_waiting/);
+  assert.match(prometheus, /alert:\s*DDFabricationServerServingContainerWaiting/);
+  assert.match(prometheus, /alert:\s*DDFabricationServerRolloutUpdatedReplicasLagging/);
+  assert.match(prometheus, /alert:\s*DDFabricationServerCpuNearLimit/);
+  assert.match(prometheus, /alert:\s*DDFabricationServerMemoryNearLimit/);
+  assert.match(
+    prometheus,
+    /dd_k8s_pod_container_waiting\{namespace="default",app="dd-fabrication-server",container="fabrication-server"\}/,
+  );
+  assert.match(
+    prometheus,
+    /dd_k8s_deployment_updated_replicas\{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"\}/,
+  );
+  assert.match(
+    prometheus,
+    /dd_k8s_pod_container_cpu_usage_cores\{namespace="default",app="dd-fabrication-server",container="fabrication-server"\}/,
+  );
+  assert.match(
+    prometheus,
+    /dd_k8s_pod_container_memory_usage_bytes\{namespace="default",app="dd-fabrication-server",container="fabrication-server"\}/,
+  );
+  assert.match(dashboardText, /Fabrication Gateway/);
+  assert.match(dashboardText, /\/fabrication\//);
+  assert.match(dashboardText, /Fabrication API Docs/);
+  assert.match(dashboardText, /\/fabrication\/docs\/api/);
+  assert.match(dashboardText, /Fabrication Jobs/);
+  assert.match(dashboardText, /\/fabrication\/jobs/);
+  assert.match(dashboardText, /Dashboard Shortcut/);
+  assert.match(dashboardText, /\/grafana\/fabrication/);
+  assert.match(dashboardText, /\/grafana\/depl\/dd-fabrication-server/);
+  assert.match(webHome, /async fn grafana_fabrication_redirect/);
+  assert.match(webHome, /\/telemetry\/d\/dd-fabrication-planner\/fabrication-planner\?orgId=1/);
+  assert.match(webHome, /\.route\("\/grafana\/fabrication", get\(grafana_fabrication_redirect\)\)/);
+  assert.match(webHome, /\.route\("\/grafana\/fabrication\/", get\(grafana_fabrication_redirect\)\)/);
+});

@@ -5,10 +5,14 @@ metadata:
   namespace: default
   labels:
     app: dd-fabrication-server
+    app.kubernetes.io/name: dd-fabrication-server
+    app.kubernetes.io/part-of: dd-next-runtime
+    app.kubernetes.io/component: fabrication-planner
 spec:
   replicas: 2
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
+  revisionHistoryLimit: 3
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -21,17 +25,179 @@ spec:
     metadata:
       annotations:
         dd.dev/telemetry-revision: '2026-06-05-fabrication-server'
+        kubectl.kubernetes.io/default-container: fabrication-server
+        kubectl.kubernetes.io/default-logs-container: fabrication-server
       labels:
         app: dd-fabrication-server
+        app.kubernetes.io/name: dd-fabrication-server
+        app.kubernetes.io/part-of: dd-next-runtime
+        app.kubernetes.io/component: fabrication-planner
     spec:
+      serviceAccountName: dd-fabrication-server
       automountServiceAccountToken: false
-      terminationGracePeriodSeconds: 20
-      containers:
-        - name: fabrication-server
+      enableServiceLinks: false
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      shareProcessNamespace: false
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+          - name: ndots
+            value: '2'
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: dd-fabrication-server
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: dd-fabrication-server
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 50
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: dd-fabrication-server
+      initContainers:
+        - name: source-layout-check
           image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
+          terminationMessagePolicy: FallbackToLogsOnError
           securityContext:
             allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              echo "dd-fabrication-server source layout check starting pod=${POD_NAME} uid=${POD_UID} namespace=${POD_NAMESPACE} node=${NODE_NAME}"
+              for required in \
+                /opt/dd-remote/deployments/fabrication-server-rs/Cargo.toml \
+                /opt/dd-remote/deployments/fabrication-server-rs/Cargo.lock \
+                /opt/dd-remote/deployments/fabrication-server-rs/src/main.rs \
+                /opt/dd-remote/deployments/fabrication-server-rs/generated/api-docs.html \
+                /opt/dd-remote/deployments/fabrication-server-rs/generated/api-docs.json \
+                /opt/dd-remote/libs/nats/subject-defs/generated/rust/Cargo.toml \
+                /opt/dd-remote/libs/nats/subject-defs/generated/rust/src/lib.rs \
+                /opt/dd-remote/libs/runtime-config-client-rs/Cargo.toml \
+                /opt/dd-remote/libs/runtime-config-client-rs/src/lib.rs \
+                /opt/dd-remote/libs/interfaces/shared/generated/rust/Cargo.toml \
+                /opt/dd-remote/libs/interfaces/shared/generated/rust/src/lib.rs
+              do
+                if [ ! -f "$required" ]; then
+                  echo "dd-fabrication-server source layout check failed: missing $required" >&2
+                  exit 78
+                fi
+              done
+              for route in \
+                '"path": "/fabrication/plan"' \
+                '"path": "/fabrication/instructions/analyze"' \
+                '"path": "/jobs"' \
+                '"path": "/jobs/:job_id"' \
+                '"path": "/jobs/:job_id/artifacts/:artifact_id"' \
+                '"path": "/fabrication/learning/policy"' \
+                '"path": "/fabrication/learning/observe"' \
+                '"path": "/fabrication/learning/outcomes"'
+              do
+                if ! grep -Fq "$route" /opt/dd-remote/deployments/fabrication-server-rs/generated/api-docs.json; then
+                  echo "dd-fabrication-server source layout check failed: generated api docs missing $route" >&2
+                  exit 78
+                fi
+              done
+              for subject in \
+                'pub const FABRICATION_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.requests";' \
+                'pub const FABRICATION_RESULTS_SUBJECT: &str = "dd.remote.fabrication.results";' \
+                'pub const MDP_OPTIMIZE_SUBJECT: &str = "dd.remote.mdp.optimize";' \
+                'pub const RUNTIME_EVENTS_SUBJECT: &str = "dd.remote.events";'
+              do
+                if ! grep -Fq "$subject" /opt/dd-remote/libs/nats/subject-defs/generated/rust/src/lib.rs; then
+                  echo "dd-fabrication-server source layout check failed: generated nats subject defs missing $subject" >&2
+                  exit 78
+                fi
+              done
+              echo "dd-fabrication-server source layout check passed pod=${POD_NAME} uid=${POD_UID} namespace=${POD_NAMESPACE} node=${NODE_NAME}"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+              ephemeral-storage: 16Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+              ephemeral-storage: 64Mi
+          volumeMounts:
+            - name: fabrication-source
+              mountPath: /opt/dd-remote/deployments/fabrication-server-rs
+              readOnly: true
+            - name: nats-subject-defs-source
+              mountPath: /opt/dd-remote/libs/nats/subject-defs/generated/rust
+              readOnly: true
+            - name: runtime-config-client-source
+              mountPath: /opt/dd-remote/libs/runtime-config-client-rs
+              readOnly: true
+            - name: shared-interfaces-source
+              mountPath: /opt/dd-remote/libs/interfaces/shared/generated/rust
+              readOnly: true
+        - name: release-build
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          terminationMessagePolicy: FallbackToLogsOnError
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
             seccompProfile:
               type: RuntimeDefault
           command:
@@ -41,9 +207,172 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              cd /opt/dd-next-1/remote/deployments/fabrication-server-rs
-              exec /usr/local/cargo/bin/cargo run --release
+              export HOME=/tmp
+              export CARGO_HOME=/var/cache/dd-fabrication-server/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-fabrication-server/target
+              export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+              export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+              export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-never}"
+              export CARGO_REGISTRIES_CRATES_IO_PROTOCOL="${CARGO_REGISTRIES_CRATES_IO_PROTOCOL:-sparse}"
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              cd /opt/dd-remote/deployments/fabrication-server-rs
+              echo "dd-fabrication-server release build starting pod=${POD_NAME} uid=${POD_UID} namespace=${POD_NAMESPACE} node=${NODE_NAME}"
+              /usr/local/cargo/bin/cargo build --release --locked
+              if [ ! -x "$CARGO_TARGET_DIR/release/dd-fabrication-server" ]; then
+                echo "dd-fabrication-server release build failed: compiled binary missing" >&2
+                exit 78
+              fi
+              echo "dd-fabrication-server release build completed pod=${POD_NAME} uid=${POD_UID} namespace=${POD_NAMESPACE} node=${NODE_NAME}"
           env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: CARGO_INCREMENTAL
+              value: '0'
+            - name: CARGO_TERM_COLOR
+              value: never
+            - name: CARGO_NET_RETRY
+              value: '5'
+            - name: CARGO_HTTP_TIMEOUT
+              value: '120'
+            - name: CARGO_REGISTRIES_CRATES_IO_PROTOCOL
+              value: sparse
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+              ephemeral-storage: 4Gi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+              ephemeral-storage: 8Gi
+          volumeMounts:
+            - name: fabrication-source
+              mountPath: /opt/dd-remote/deployments/fabrication-server-rs
+              readOnly: true
+            - name: nats-subject-defs-source
+              mountPath: /opt/dd-remote/libs/nats/subject-defs/generated/rust
+              readOnly: true
+            - name: runtime-config-client-source
+              mountPath: /opt/dd-remote/libs/runtime-config-client-rs
+              readOnly: true
+            - name: shared-interfaces-source
+              mountPath: /opt/dd-remote/libs/interfaces/shared/generated/rust
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-fabrication-server
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: fabrication-server
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export HOME=/tmp
+              export CARGO_HOME=/var/cache/dd-fabrication-server/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-fabrication-server/target
+              export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+              export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+              export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-never}"
+              cd /opt/dd-remote/deployments/fabrication-server-rs
+              if [ ! -x "$CARGO_TARGET_DIR/release/dd-fabrication-server" ]; then
+                echo "dd-fabrication-server startup failed: compiled binary missing" >&2
+                exit 78
+              fi
+              fabrication_pid=""
+              shutdown_fabrication() {
+                trap - TERM INT
+                if [ -n "$fabrication_pid" ]; then
+                  echo "dd-fabrication-server shutdown requested; forwarding SIGINT to server pid $fabrication_pid pod=${POD_NAME} uid=${POD_UID} namespace=${POD_NAMESPACE} node=${NODE_NAME}"
+                  kill -INT "$fabrication_pid" 2>/dev/null || true
+                  wait "$fabrication_pid"
+                  exit $?
+                fi
+                exit 143
+              }
+              trap shutdown_fabrication TERM INT
+              echo "dd-fabrication-server starting compiled server pod=${POD_NAME} uid=${POD_UID} namespace=${POD_NAMESPACE} node=${NODE_NAME}"
+              "$CARGO_TARGET_DIR/release/dd-fabrication-server" &
+              fabrication_pid=$!
+              wait "$fabrication_pid"
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - sleep 5
+          terminationMessagePolicy: FallbackToLogsOnError
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /var/cache/dd-fabrication-server/cargo
+            - name: CARGO_TARGET_DIR
+              value: /var/cache/dd-fabrication-server/target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: CARGO_INCREMENTAL
+              value: '0'
+            - name: CARGO_TERM_COLOR
+              value: never
+            - name: CARGO_NET_RETRY
+              value: '5'
+            - name: CARGO_HTTP_TIMEOUT
+              value: '120'
+            - name: RUST_BACKTRACE
+              value: '1'
+            - name: RUST_LOG
+              value: info
             - name: HOST
               value: 0.0.0.0
             - name: PORT
@@ -72,6 +401,8 @@ spec:
               value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
             - name: RUNTIME_CONFIG_APPLY_URL
               value: http://dd-fabrication-server.default.svc.cluster.local:8113/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_ALLOW_UNAUTHENTICATED
+              value: 'false'
             - name: RUNTIME_CONFIG_SERVER_SECRET
               valueFrom:
                 secretKeyRef:
@@ -81,38 +412,79 @@ spec:
           ports:
             - name: http
               containerPort: 8113
+              protocol: TCP
           resources:
             requests:
-              cpu: 100m
-              memory: 256Mi
+              cpu: 250m
+              memory: 512Mi
+              ephemeral-storage: 4Gi
             limits:
-              cpu: '1'
-              memory: 1Gi
+              cpu: '2'
+              memory: 2Gi
+              ephemeral-storage: 8Gi
           startupProbe:
             httpGet:
               path: /healthz
               port: http
+              scheme: HTTP
             periodSeconds: 5
+            timeoutSeconds: 3
             failureThreshold: 60
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
+              scheme: HTTP
             periodSeconds: 5
             timeoutSeconds: 3
+            successThreshold: 2
             failureThreshold: 2
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
+              scheme: HTTP
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
+            - name: fabrication-source
+              mountPath: /opt/dd-remote/deployments/fabrication-server-rs
+              readOnly: true
+            - name: nats-subject-defs-source
+              mountPath: /opt/dd-remote/libs/nats/subject-defs/generated/rust
+              readOnly: true
+            - name: runtime-config-client-source
+              mountPath: /opt/dd-remote/libs/runtime-config-client-rs
+              readOnly: true
+            - name: shared-interfaces-source
+              mountPath: /opt/dd-remote/libs/interfaces/shared/generated/rust
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-fabrication-server
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
       volumes:
-        - name: repo
+        - name: fabrication-source
           hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/deployments/fabrication-server-rs
             type: Directory
+        - name: nats-subject-defs-source
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/libs/nats/subject-defs/generated/rust
+            type: Directory
+        - name: runtime-config-client-source
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/libs/runtime-config-client-rs
+            type: Directory
+        - name: shared-interfaces-source
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/libs/interfaces/shared/generated/rust
+            type: Directory
+        - name: build-cache
+          emptyDir:
+            sizeLimit: 7Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
