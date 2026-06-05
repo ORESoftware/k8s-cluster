@@ -22,6 +22,7 @@
     "test:cli:des-simulator-config": "pnpm exec tsx --test general/des-simulator-config.test.ts",
     "test:cli:dev-server-container-pool-config": "pnpm exec tsx --test general/dev-server-container-pool-config.test.ts",
     "test:cli:fsharp-ws-server-config": "pnpm exec tsx --test general/fsharp-ws-server-config.test.ts",
+    "test:cli:fabrication-server-config": "pnpm exec tsx --test general/fabrication-server-config.test.ts",
     "test:cli:gateway-service-directory": "pnpm exec tsx --test general/gateway-service-directory.test.ts",
     "test:cli:gleam-lambda-runner-config": "pnpm exec tsx --test general/gleam-lambda-runner-config.test.ts",
     "test:cli:gleam-lambda-runner-child-checks": "pnpm exec tsx --test general/gleam-lambda-runner-child-checks.test.ts",
