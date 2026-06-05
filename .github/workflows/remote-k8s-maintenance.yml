@@ -2576,6 +2576,21 @@ jobs:
             done
           }
 
+          disable_mip_capacity_owner() {
+            echo "=== disable MIP solver Argo/KEDA while GCS loadtest owns capacity ==="
+            # First turn self-heal off with a merge patch; the JSON remove below
+            # can legitimately fail if another operation already removed automated.
+            kubectl -n argocd patch "application/$mip_capacity_app" --type merge \
+              -p '{"spec":{"syncPolicy":{"automated":{"prune":false,"selfHeal":false}}}}' || true
+            kubectl -n argocd patch "application/$mip_capacity_app" --type json \
+              -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
+            kubectl -n argocd get "application/$mip_capacity_app" \
+              -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
+            kubectl -n "$mip_capacity_namespace" delete "scaledobject/$mip_capacity_scaledobject" \
+              --ignore-not-found=true \
+              --wait=false || true
+          }
+
           assert_capacity_free() {
             local bad=0
             local d desired pods
@@ -2606,8 +2621,7 @@ jobs:
               kubectl -n argocd patch "application/$capacity_app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
               kubectl -n argocd get "application/$capacity_app" -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
             done
-            kubectl -n argocd patch "application/$mip_capacity_app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
-            kubectl -n argocd get "application/$mip_capacity_app" -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
+            disable_mip_capacity_owner
             echo "scaling down comparison workloads: $capacity_targets"
             kubectl -n default get deploy $capacity_targets -o wide || true
             kubectl -n "$mip_capacity_namespace" annotate "scaledobject/$mip_capacity_scaledobject" \
