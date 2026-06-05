@@ -99,6 +99,7 @@ on:
         required: false
         type: string
         default: "3"
+      # gcs-loadtest marker: 2026-06-05 lowered-loader-requests-1
       loadtest_gcs_replicas:
         description: Number of backend GCS pods to keep available during the load test.
         required: false
