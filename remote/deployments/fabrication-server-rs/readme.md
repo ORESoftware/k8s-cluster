@@ -20,6 +20,7 @@ It exposes:
 - `POST /plan`
 - `POST /fabrication/plan`
 - `POST /instructions/analyze`
+- `POST /fabrication/instructions/analyze`
 - `POST /learning/observe`
 - `POST /fabrication/learning/observe`
 - `POST /learning/outcomes`
@@ -132,7 +133,8 @@ tolerance.
 
 ## `POST /instructions/analyze`
 
-`POST /instructions/analyze` accepts existing G-code-like programs plus
+`POST /fabrication/instructions/analyze` and its gateway-stripped alias
+`POST /instructions/analyze` accept existing G-code-like programs plus
 non-controller text instructions such as printer job sheets, setup sheets, and
 operator checklists. It returns controller-agnostic safety findings, improvement
 opportunities, and `improvedPrograms` review drafts that insert conservative
