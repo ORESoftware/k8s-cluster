@@ -2603,12 +2603,19 @@ fn build_mdp_request(
             let mut observation_model = Vec::new();
             for action in &actions {
                 for next_state in &states {
+                    let observation_weights = observation_labels
+                        .iter()
+                        .map(|observation| observation_weight(next_state, observation))
+                        .collect::<Vec<_>>();
+                    let observation_weight_total =
+                        observation_weights.iter().sum::<f64>().max(0.0001);
                     for observation in &observation_labels {
                         observation_model.push(MdpObservation {
                             action: action.clone(),
                             next_state: next_state.clone(),
                             observation: observation.clone(),
-                            probability: observation_probability(next_state, observation),
+                            probability: observation_weight(next_state, observation)
+                                / observation_weight_total,
                         });
                     }
                 }
@@ -2681,7 +2688,7 @@ fn action_risk(action: &str, operations: &[FabricationOperation]) -> f64 {
         .clamp(0.0, 1.0)
 }
 
-fn observation_probability(next_state: &str, observation: &str) -> f64 {
+fn observation_weight(next_state: &str, observation: &str) -> f64 {
     if next_state == "blockedByBoundary"
         && matches!(
             observation,
@@ -3613,6 +3620,23 @@ mod tests {
             .actions
             .iter()
             .any(|item| item.contains("FdmPrint")));
+        let mdp_request = response
+            .learning
+            .mdp_request
+            .as_ref()
+            .expect("hybrid learning should include an optimizer request");
+        assert_eq!(
+            mdp_request.kind.as_deref(),
+            Some("pomdp.fabrication-policy")
+        );
+        assert_eq!(mdp_request.transitions.len(), mdp_request.rewards.len());
+        assert!(mdp_request
+            .observations
+            .as_ref()
+            .is_some_and(|observations| observations.contains(&"toolWearHigh".to_string())));
+        assert!(mdp_request.belief.as_ref().is_some_and(|belief| {
+            (belief.iter().map(|item| item.probability).sum::<f64>() - 1.0).abs() < 0.0001
+        }));
     }
 
     #[test]
