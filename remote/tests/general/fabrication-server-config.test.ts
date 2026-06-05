@@ -33,6 +33,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
 
   assert.match(cargo, /name\s*=\s*"dd-fabrication-server"/);
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
+  assert.match(cargo, /des_engine\s*=\s*\{\s*path\s*=\s*"[^"]*discrete-event-system\.rs"/);
   assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
   assert.match(
     source,
@@ -55,6 +56,22 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /machine_kind_preferences: Vec<LearningPreference>/);
   assert.match(source, /operation_sequence_preferences: Vec<LearningPreference>/);
   assert.match(source, /struct LearningPlan/);
+  assert.match(source, /struct LearningEngineMetadata/);
+  assert.match(source, /struct LearningMdpEnginePolicy/);
+  assert.match(
+    source,
+    /use des_engine::\{[\s\S]*solve_mdp[\s\S]*MdpSpec[\s\S]*MDP_SCHEMA[\s\S]*POMDP_SCHEMA[\s\S]*sdk as des_sdk[\s\S]*\};/,
+  );
+  assert.match(source, /engine: LearningEngineMetadata/);
+  assert.match(source, /engine_policy: LearningMdpEnginePolicy/);
+  assert.match(source, /engine: learning_engine_metadata\(\)/);
+  assert.match(source, /let engine_policy = learning_mdp_engine_policy\(&mdp_states, &actions\)/);
+  assert.match(source, /fn learning_mdp_engine_policy/);
+  assert.match(source, /fn des_learning_mdp_spec/);
+  assert.match(source, /fn des_learning_mdp_solution/);
+  assert.match(source, /"learningEngine": &response\.learning\.engine/);
+  assert.match(source, /"desMdpSpec": des_mdp_spec/);
+  assert.match(source, /"desMdpSolution": des_mdp_solution/);
   assert.match(source, /struct PomdpBeliefState/);
   assert.match(source, /struct PomdpHiddenStateBelief/);
   assert.match(source, /struct PomdpObservationLikelihood/);
@@ -113,6 +130,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn neural_training_corpus/);
   assert.match(source, /fn pomdp_belief_state/);
   assert.match(source, /fn strategy_candidates/);
+  assert.match(source, /fn learning_engine_metadata/);
+  assert.match(source, /fn des_learning_mdp_spec/);
+  assert.match(source, /fn des_learning_mdp_solution/);
+  assert.match(source, /solve_mdp\(spec, MdpMethod::ValueIteration\)/);
   assert.match(source, /fn plan_fabrication\(request: FabricationPlanRequest\)/);
   assert.match(source, /fn plan_fabrication_with_policy/);
   assert.match(source, /fn apply_learning_policy_to_request/);
@@ -310,6 +331,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn fabrication_mdp_request/);
   assert.match(source, /fn instruction_analysis_mdp_request/);
   assert.match(source, /fabrication\.mdp\.instruction-analysis-policy/);
+  assert.match(source, /"learningEngine": &response\.learning\.engine/);
+  assert.match(source, /"desMdpSpec": des_mdp_spec/);
+  assert.match(source, /"desMdpSolution": des_mdp_solution/);
   assert.match(source, /async fn run_nats_loop/);
   assert.match(source, /queue_subscribe\(state\.request_subject\.clone\(\), state\.queue_group\.clone\(\)\)/);
   assert.match(source, /enum FabricationNatsRequest/);
@@ -1411,6 +1435,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`GET \/fabrication\/schema`/);
   assert.match(readme, /`GET \/examples`/);
   assert.match(readme, /`GET \/fabrication\/examples`/);
+  assert.match(readme, /local `des_engine` crate/);
+  assert.match(readme, /remote\/submodules\/discrete-event-system\.rs/);
+  assert.match(readme, /DES-compatible `desMdpSpec`/);
+  assert.match(readme, /value-iteration `desMdpSolution`/);
   assert.match(readme, /built-in `defaultMachines`/);
   assert.match(readme, /accepted instruction\s+kinds/);
   assert.match(readme, /large-format pellet\/FGF/);
@@ -1624,8 +1652,15 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`process-graph`/);
   assert.match(
     readme,
-    /`mdp-request` artifact includes\s+`strategyCandidates`, `interventionSignals`, `pomdpBeliefState`, `releaseProbePlan`,\s+`neuralTrainingCorpus`/,
+    /`mdp-request` artifact includes\s+`learningEngine`, `desMdpSpec`, `desMdpSolution`, `strategyCandidates`,\s+`interventionSignals`, `pomdpBeliefState`, `releaseProbePlan`, `neuralTrainingCorpus`/,
   );
+  assert.match(
+    readme,
+    /local `des_engine` crate from\s+`remote\/submodules\/discrete-event-system\.rs`/,
+  );
+  assert.match(readme, /canonical DES MDP\/POMDP schema names/);
+  assert.match(readme, /`desMdpSpec` plus a value-iteration `desMdpSolution`/);
+  assert.match(readme, /DES-backed policy preview/);
   assert.match(
     readme,
     /`designPackage`, `designExports`, `designInputReview`, `productionPlan`,\s+`machineSchedule`, `machineSelection`, `manufacturingHandoff`, `qualityPlan`,\s+`toolingPlan`, `interventionMap`, `executionPlan`, `postprocessPlan`,\s+`automationRequirements`, `resolutionPlan`, and `machineRelease`/,
@@ -1651,6 +1686,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /quality evidence targets/);
   assert.match(readme, /tooling\/setup\s+requirements/);
   assert.match(readme, /intervention\s+paths/);
+  assert.match(readme, /DES-backed policy preview/);
   assert.match(readme, /machine-choice\s+alternatives/);
   assert.match(readme, /CAD\/CAM\s+handoff\s+assumptions/);
   assert.match(readme, /ordered release-blocking remediation steps/);
