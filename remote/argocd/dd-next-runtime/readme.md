@@ -133,9 +133,10 @@ rolling updates with `maxUnavailable: 0` / `maxSurge: 1`, readiness probes, and 
 rollouts previously caused intermittent gateway `502`s: `dd-remote-web-home`, `dd-remote-auth`,
 `dd-remote-rest-api`, `dd-agent-worker-broker`, `dd-des-rs`, `dd-contract-service`,
 `dd-mdp-optimizer`, `dd-fabrication-server`, `dd-trading-server`, `dd-web-scraper`, `dd-browser-test-server`,
-`dd-selenium-server`, and `dd-rust-vapi-phone`. `dd-des-rs` uses `/out/delivery-planner.html` as
-its readiness path so the Service does not route delivery-planner traffic to a pod before the
-startup render has produced the artifact.
+`dd-selenium-server`, and `dd-rust-vapi-phone`. `dd-des-rs` also has a small HPA with
+`minReplicas: 2` and a long scale-down stabilization window. That service cold-builds the Rust
+server and DES engine inside the pod, so scale-to-zero drift creates a multi-minute no-endpoint
+window and shows up at the gateway as `/des-rs/` `502`s.
 
 `dd-fabrication-server` also carries explicit runtime hardening because fabrication planning can
 fan out to NATS, runtime-config, MDP optimization, and external design/instruction references. Its

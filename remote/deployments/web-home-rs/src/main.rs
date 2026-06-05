@@ -9226,6 +9226,7 @@ function containerPoolFunctionBody(profileName) {
         return [
           "-module(handler).",
           "-export([handle/2]).",
+          "-spec handle(binary(), binary()) -> binary().",
           "",
           "handle(_RequestJson, _ContextJson) ->",
           "  <<\"{\\\"status\\\":200,\\\"body\\\":{\\\"ok\\\":true}}\">>.",
@@ -9233,6 +9234,7 @@ function containerPoolFunctionBody(profileName) {
       case "elixir":
         return [
           "defmodule Handler do",
+          "  @spec handle(binary(), binary()) :: binary()",
           "  def handle(_request_json, _context_json) do",
           "    ~s({\"status\":200,\"body\":{\"ok\":true}})",
           "  end",
