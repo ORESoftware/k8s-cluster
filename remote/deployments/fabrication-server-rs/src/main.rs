@@ -1445,6 +1445,13 @@ fn validate_machines(input: Option<Vec<MachineProfile>>) -> Result<Vec<MachinePr
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
+        let axes = match machine.axes {
+            Some(0) => return Err("machine.axes must be at least 1 when provided".to_string()),
+            Some(value) if value > 9 => {
+                return Err("machine.axes must be at most 9 when provided".to_string());
+            }
+            value => value,
+        };
 
         validated.push(MachineProfile {
             id,
@@ -1452,7 +1459,7 @@ fn validate_machines(input: Option<Vec<MachineProfile>>) -> Result<Vec<MachinePr
             controller,
             materials,
             work_envelope_mm,
-            axes: machine.axes,
+            axes,
             operations,
         });
     }
@@ -2773,6 +2780,102 @@ fn inspect_text_instruction_line(
             requires_human_intervention: true,
             suggested_resolution:
                 "model post-processing as its own process step with readiness and inspection gates"
+                    .to_string(),
+        });
+    }
+    let resin_context = language.contains("sla")
+        || language.contains("msla")
+        || language.contains("resin")
+        || text_has_any(
+            raw_line,
+            &["resin", "ipa", "isopropyl", "alcohol", "vat", "uv cure"],
+        );
+    if resin_context
+        && text_has_any(
+            raw_line,
+            &[
+                "resin",
+                "ipa",
+                "isopropyl",
+                "alcohol",
+                "wash",
+                "cure",
+                "uv",
+                "waste",
+                "ventilation",
+                "ppe",
+                "glove",
+            ],
+        )
+    {
+        signals.has_process_preparation = true;
+        findings.push(ValidationFinding {
+            severity: "warning".to_string(),
+            code: "text-resin-handling-boundary".to_string(),
+            program_id: Some(program_id.to_string()),
+            line: Some(line_number),
+            message: "resin instruction needs chemical handling, ventilation, wash, cure, or waste controls"
+                .to_string(),
+        });
+        boundaries.push(FailureBoundary {
+            kind: "resin-handling-boundary".to_string(),
+            severity: "warning".to_string(),
+            program_id: Some(program_id.to_string()),
+            line: Some(line_number),
+            reason:
+                "SLA/MSLA resin work can leave uncured resin, IPA waste, UV-cure timing, and ventilation/PPE requirements outside the printer cycle"
+                    .to_string(),
+            requires_human_intervention: true,
+            suggested_resolution:
+                "split resin handling into explicit wash, cure, support-removal, waste-containment, PPE, and ventilation checkpoints"
+                    .to_string(),
+        });
+    }
+    let powder_context = language.contains("sls")
+        || language.contains("mjf")
+        || language.contains("powder")
+        || text_has_any(
+            raw_line,
+            &["powder", "depowder", "nitrogen", "cooldown", "cool down"],
+        );
+    if powder_context
+        && text_has_any(
+            raw_line,
+            &[
+                "powder",
+                "depowder",
+                "nitrogen",
+                "cooldown",
+                "cool down",
+                "thermal",
+                "vacuum",
+                "recovery",
+                "refresh ratio",
+                "sinter",
+            ],
+        )
+    {
+        signals.has_process_preparation = true;
+        findings.push(ValidationFinding {
+            severity: "warning".to_string(),
+            code: "text-powder-handling-boundary".to_string(),
+            program_id: Some(program_id.to_string()),
+            line: Some(line_number),
+            message:
+                "powder-bed instruction needs cooldown, depowdering, powder recovery, or atmosphere controls"
+                    .to_string(),
+        });
+        boundaries.push(FailureBoundary {
+            kind: "powder-handling-boundary".to_string(),
+            severity: "warning".to_string(),
+            program_id: Some(program_id.to_string()),
+            line: Some(line_number),
+            reason:
+                "SLS/MJF powder-bed work can require cooldown dwell, inert/thermal profile checks, grounded depowdering, and powder reuse controls outside one uninterrupted print cycle"
+                    .to_string(),
+            requires_human_intervention: true,
+            suggested_resolution:
+                "split cooldown, depowdering, powder recovery, refresh-ratio, PPE, and atmosphere checks into explicit operator or automation checkpoints"
                     .to_string(),
         });
     }

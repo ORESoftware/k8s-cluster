@@ -110,6 +110,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /tapping-cycle-boundary/);
   assert.match(source, /instruction-material-machine-incompatible/);
   assert.match(source, /material-machine-boundary/);
+  assert.match(source, /plan_existing_instructions_inherit_material_machine_validation/);
+  assert.match(
+    source,
+    /analyze_instruction_material_compatibility\(&existing_programs, &machines, &material\)/,
+  );
   assert.match(source, /lathe-css-without-spindle-limit/);
   assert.match(source, /lathe-threading-boundary/);
   assert.match(source, /lathe-part-off-boundary/);
@@ -195,6 +200,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /additive material\/color\/tool-change/);
   assert.match(readme, /additive support\/orientation/);
   assert.match(readme, /additive thin-wall geometry/);
+  assert.match(readme, /Submitted `existingInstructions` are analyzed beside generated drafts/);
+  assert.match(readme, /resolved machine profile material lists/);
   assert.match(readme, /printer bed-adhesion, first-layer, fan-timing/);
   assert.match(readme, /overhang, bridge, cantilever, thin-wall, snap-fit/);
   assert.match(readme, /resin\s+drain\/cupping geometry/);
