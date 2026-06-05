@@ -42,17 +42,19 @@ learning hints. It returns:
 
 - A normalized design summary with inferred additive, milling, turning, or
   special-process parts.
-- A process plan across 3D printers, vertical/horizontal mills, routers, and
-  lathes when those machine profiles are available.
+- A process plan across 3D printers, vertical/horizontal mills, routers,
+  laser/sheet cutters, and lathes when those machine profiles are available.
 - Draft machine programs such as Marlin-style FDM printer G-code,
   SLA/MSLA resin print-wash-cure job sheets, SLS/MJF-style powder-bed
   print-cooldown-depowder job sheets, ISO/Haas-style vertical milling G-code,
   ISO-style horizontal side-slot/keyway milling G-code, GRBL-style router
-  profile programs with tab gates, Fanuc-style turning G-code, or
+  profile programs with tab gates, laser/sheet-cutting job sheets with kerf
+  tests and fire/fume gates, Fanuc-style turning G-code, or
   operator-only instructions for unsupported machine kinds.
 - Validation and simulation findings plus failure boundaries for heat-up,
   homing, spindle, work-offset, tool-change, manual-stop, deep-cut, arc,
-  setup-limit, machine-envelope, inspection, and automation constraints.
+  setup-limit, machine-envelope, sheet-cutting, inspection, and automation
+  constraints.
 - Assembly advice that calls out when parts should be combined into one job or
   split so tight-tolerance features can be machined and inspected separately.
 - A learning contract with MDP states, POMDP observations, policy actions,
@@ -134,11 +136,11 @@ Requests use camelCase JSON:
 
 If `machines` is omitted, the service uses a conservative default fleet with an
 FDM printer, SLA resin printer, SLS powder-bed printer, vertical mill,
-horizontal mill, CNC router, and lathe. If `parts` is omitted, the planner
+horizontal mill, CNC router, laser cutter, and lathe. If `parts` is omitted, the planner
 infers a first decomposition from the objective, material, and tolerance,
 including resin-print, powder-bed-print, horizontal-milled side slots/keyways,
-and routed sheet/profile parts for wood, foam, acrylic, panel, sign, engraving,
-and tabbed-profile requests.
+laser/kerf-controlled sheet-cut profiles, and routed sheet/profile parts for
+wood, foam, acrylic, panel, sign, engraving, and tabbed-profile requests.
 
 ## `POST /instructions/analyze`
 
@@ -174,9 +176,10 @@ words, missing units or positioning modes, printer extrusion before heat-up or
 homing, subtractive feed moves before spindle start, manual stops, fixture
 changes, deep negative Z moves, arc moves without I/J/R geometry, missing
 program ends, and text-instruction boundaries where the job needs setup,
-post-processing, assembly, splitting, or operator intervention. Improved drafts
-are still marked `machineReady=false`; they are normalization aids for review,
-motion-envelope simulation, and controller-specific postprocessing.
+post-processing, sheet-cutting kerf/fire/fume checks, assembly, splitting, or
+operator intervention. Improved drafts are still marked `machineReady=false`;
+they are normalization aids for review, motion-envelope simulation, and
+controller-specific postprocessing.
 
 Machine-code planning and analysis also run a bounded coordinate-envelope
 simulation over `G0`/`G1`/arc motion. When a submitted or generated toolpath
