@@ -1,0 +1,8 @@
+aws_region    = "us-east-1"
+bucket_name   = "dd-remote-dev-airbyte"
+environment   = "remote-dev"
+force_destroy = false
+
+tags = {
+  Product = "dd-ai-ml-platform"
+}
