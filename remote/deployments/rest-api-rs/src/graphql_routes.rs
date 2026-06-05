@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::time::Duration;
 
 use async_graphql::*;
@@ -218,6 +219,8 @@ struct GraphqlRedisValue {
     ok: bool,
     key: String,
     value: Option<String>,
+    value_bytes: Option<i32>,
+    truncated: bool,
     message: Option<String>,
 }
 
@@ -346,7 +349,19 @@ async fn graphql_handler(
     if graphql_auth_required() && !request_context.authorized_control {
         return super::unauthorized_response();
     }
-    AxumJson(schema.execute(request.data(request_context)).await).into_response()
+    let request = request.data(request_context);
+    match tokio::time::timeout(
+        Duration::from_millis(graphql_execution_timeout_ms()),
+        schema.execute(request),
+    )
+    .await
+    {
+        Ok(response) => AxumJson(response).into_response(),
+        Err(_) => AxumJson(async_graphql::Response::from_errors(vec![
+            async_graphql::ServerError::new("GraphQL execution timed out", None),
+        ]))
+        .into_response(),
+    }
 }
 
 struct QueryRoot;
@@ -597,36 +612,63 @@ impl QueryRoot {
                 ok: false,
                 key,
                 value: None,
+                value_bytes: None,
+                truncated: false,
                 message: Some("redis URL is not configured".to_string()),
             });
         };
         let client = redis::Client::open(url).map_err(|error| Error::new(error.to_string()))?;
         let lookup_key = key.clone();
+        let max_value_bytes = redis_value_limit_bytes();
         let value = with_timeout(redis_timeout_ms(), async move {
             let mut connection = client
                 .get_multiplexed_async_connection()
                 .await
                 .map_err(|error| error.to_string())?;
-            let value: Option<String> = connection
-                .get(&lookup_key)
+            let exists: bool = connection
+                .exists(&lookup_key)
                 .await
                 .map_err(|error| error.to_string())?;
-            Ok::<_, String>(value)
+            if !exists {
+                return Ok::<_, String>((None, None, false));
+            }
+            let value_bytes: usize = redis::cmd("STRLEN")
+                .arg(&lookup_key)
+                .query_async(&mut connection)
+                .await
+                .map_err(|error| error.to_string())?;
+            let preview_bytes: Vec<u8> = redis::cmd("GETRANGE")
+                .arg(&lookup_key)
+                .arg(0)
+                .arg(max_value_bytes.saturating_sub(1))
+                .query_async(&mut connection)
+                .await
+                .map_err(|error| error.to_string())?;
+            let preview = String::from_utf8_lossy(&preview_bytes).to_string();
+            Ok::<_, String>((
+                Some(preview),
+                Some(saturated_i32(value_bytes)),
+                value_bytes > preview_bytes.len(),
+            ))
         })
         .await?;
+        let (value, value_bytes, truncated) = value;
         Ok(GraphqlRedisValue {
             ok: true,
             key,
             value,
+            value_bytes,
+            truncated,
             message: None,
         })
     }
 
-    async fn subservices(&self) -> Vec<GraphqlSubservice> {
-        configured_subservices()
+    async fn subservices(&self, ctx: &Context<'_>) -> Result<Vec<GraphqlSubservice>> {
+        require_control_auth(ctx)?;
+        Ok(configured_subservices()
             .into_iter()
             .map(|(name, base_url)| GraphqlSubservice { name, base_url })
-            .collect()
+            .collect())
     }
 }
 
@@ -902,7 +944,7 @@ async fn postgres_status() -> GraphqlDataSourceStatus {
             configured,
             ok: false,
             version: None,
-            message: Some(error),
+            message: Some(graphql_status_error("postgres", error)),
         },
     }
 }
@@ -931,7 +973,7 @@ async fn cockroach_status() -> GraphqlDataSourceStatus {
             configured,
             ok: false,
             version: None,
-            message: Some(error),
+            message: Some(graphql_status_error("cockroachdb", error)),
         },
     }
 }
@@ -989,7 +1031,7 @@ async fn redis_status() -> GraphqlDataSourceStatus {
             configured,
             ok: false,
             version: None,
-            message: Some(format!("redis status check failed: {error}")),
+            message: Some(graphql_status_error("redis", error)),
         },
     }
 }
@@ -1013,6 +1055,10 @@ fn redis_timeout_ms() -> u64 {
 
 fn subservice_timeout_ms() -> u64 {
     super::env_u64("REST_API_GRAPHQL_SUBSERVICE_TIMEOUT_MS", 3_000).clamp(100, 30_000)
+}
+
+fn graphql_execution_timeout_ms() -> u64 {
+    super::env_u64("REST_API_GRAPHQL_EXECUTION_TIMEOUT_MS", 10_000).clamp(100, 120_000)
 }
 
 fn graphql_request_body_limit_bytes() -> usize {
@@ -1064,12 +1110,24 @@ fn graphql_backend_error(source: &str, error: String) -> Error {
     }
 }
 
+fn graphql_status_error(source: &str, error: String) -> String {
+    if super::env_bool("REST_API_GRAPHQL_EXPOSE_BACKEND_ERRORS", false) {
+        format!("{source} status check failed: {error}")
+    } else {
+        super::public_data_source_error(source)
+    }
+}
+
 fn subservice_request_body_limit_bytes() -> usize {
     super::env_usize("REST_API_GRAPHQL_SUBSERVICE_REQUEST_BYTES", 262_144).clamp(1_024, 2_097_152)
 }
 
 fn subservice_response_body_limit_bytes() -> usize {
     super::env_usize("REST_API_GRAPHQL_SUBSERVICE_RESPONSE_BYTES", 262_144).clamp(1_024, 2_097_152)
+}
+
+fn redis_value_limit_bytes() -> usize {
+    super::env_usize("REST_API_GRAPHQL_REDIS_VALUE_BYTES", 8_192).clamp(1, 262_144)
 }
 
 fn cockroach_database_url() -> Option<String> {
@@ -1162,8 +1220,15 @@ fn normalize_subservice_base_url(input: &str) -> Result<String> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err(Error::new("service URL must use http or https"));
     }
-    if url.host_str().is_none() {
+    let Some(host) = url.host_str() else {
         return Err(Error::new("service URL must include a host"));
+    };
+    if !super::env_bool("REST_API_GRAPHQL_ALLOW_EXTERNAL_SERVICES", false)
+        && !subservice_host_allowed(host)
+    {
+        return Err(Error::new(
+            "service URL host must be cluster-local/private unless REST_API_GRAPHQL_ALLOW_EXTERNAL_SERVICES=true",
+        ));
     }
     if !url.username().is_empty() || url.password().is_some() {
         return Err(Error::new("service URL must not include user info"));
@@ -1176,6 +1241,23 @@ fn normalize_subservice_base_url(input: &str) -> Result<String> {
     let normalized_path = url.path().trim_end_matches('/').to_string();
     url.set_path(&normalized_path);
     Ok(url.as_str().trim_end_matches('/').to_string())
+}
+
+fn subservice_host_allowed(host: &str) -> bool {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    if host == "localhost" || !host.contains('.') {
+        return true;
+    }
+    if host.ends_with(".svc") || host.ends_with(".svc.cluster.local") {
+        return true;
+    }
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(addr)) => addr.is_loopback() || addr.is_private() || addr.is_link_local(),
+        Ok(IpAddr::V6(addr)) => {
+            addr.is_loopback() || addr.is_unique_local() || addr.is_unicast_link_local()
+        }
+        Err(_) => false,
+    }
 }
 
 fn service_env_key(alias: &str) -> String {
@@ -1263,7 +1345,16 @@ fn validate_subservice_graphql_query(query: &str) -> Result<()> {
     {
         return Err(Error::new("query contains unsupported control characters"));
     }
+    if !super::env_bool("REST_API_GRAPHQL_SUBSERVICE_INTROSPECTION_ENABLED", false)
+        && graphql_query_mentions_introspection(trimmed)
+    {
+        return Err(Error::new("subservice GraphQL introspection is disabled"));
+    }
     Ok(())
+}
+
+fn graphql_query_mentions_introspection(query: &str) -> bool {
+    query.contains("__schema") || query.contains("__type")
 }
 
 fn validate_graphql_operation_name(input: &str) -> Result<String> {
@@ -1402,16 +1493,31 @@ async fn cluster_call_response(
 }
 
 fn authorized_graphql_control(headers: &HeaderMap) -> bool {
-    if super::authorized_internal_request(headers) {
-        return true;
-    }
     let Some(expected) = super::worker_auth_secret() else {
         return false;
     };
+    header_secret_matches(headers, "x-agent-auth", &expected)
+        || header_secret_matches(headers, "x-server-auth", &expected)
+}
+
+fn header_secret_matches(headers: &HeaderMap, name: &'static str, expected: &str) -> bool {
     headers
-        .get("x-server-auth")
+        .get(name)
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value == expected)
+        .is_some_and(|value| constant_time_eq(value, expected))
+}
+
+fn constant_time_eq(left: &str, right: &str) -> bool {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    let mut diff = left.len() ^ right.len();
+    let max_len = left.len().max(right.len());
+    for index in 0..max_len {
+        let left_byte = left.get(index).copied().unwrap_or_default();
+        let right_byte = right.get(index).copied().unwrap_or_default();
+        diff |= usize::from(left_byte ^ right_byte);
+    }
+    diff == 0
 }
 
 fn require_control_auth(ctx: &Context<'_>) -> Result<()> {
@@ -1448,8 +1554,8 @@ fn validate_redis_key(key: &str) -> Result<()> {
     }
 }
 
-fn saturated_i32(value: usize) -> i32 {
-    i32::try_from(value).unwrap_or(i32::MAX)
+fn saturated_i32(value: impl TryInto<i32>) -> i32 {
+    value.try_into().unwrap_or(i32::MAX)
 }
 
 #[cfg(test)]
@@ -1490,6 +1596,7 @@ mod tests {
         assert!(normalize_subservice_base_url("file:///tmp/socket").is_err());
         assert!(normalize_subservice_base_url("https://user:pass@example.com").is_err());
         assert!(normalize_subservice_base_url("https://example.com?token=1").is_err());
+        assert!(normalize_subservice_base_url("https://example.com").is_err());
     }
 
     #[test]
@@ -1497,6 +1604,9 @@ mod tests {
         assert!(validate_subservice_graphql_query("query { health { ok } }").is_ok());
         assert!(validate_subservice_graphql_query("").is_err());
         assert!(validate_subservice_graphql_query("query\u{0000}").is_err());
+        assert!(
+            validate_subservice_graphql_query("query { __schema { queryType { name } } }").is_err()
+        );
         assert_eq!(
             validate_graphql_operation_name(" HealthCheck ").unwrap(),
             "HealthCheck"
@@ -1536,5 +1646,23 @@ mod tests {
             }])
         )
         .is_ok());
+    }
+
+    #[test]
+    fn allows_only_cluster_local_or_private_subservice_hosts_by_default() {
+        assert!(subservice_host_allowed("runtime-config"));
+        assert!(subservice_host_allowed("service.default.svc"));
+        assert!(subservice_host_allowed("service.default.svc.cluster.local"));
+        assert!(subservice_host_allowed("10.0.0.12"));
+        assert!(subservice_host_allowed("127.0.0.1"));
+        assert!(!subservice_host_allowed("example.com"));
+        assert!(!subservice_host_allowed("8.8.8.8"));
+    }
+
+    #[test]
+    fn compares_auth_secrets_without_position_short_circuit() {
+        assert!(constant_time_eq("same-secret", "same-secret"));
+        assert!(!constant_time_eq("same-secret", "same-secreu"));
+        assert!(!constant_time_eq("same-secret", "same-secret-extra"));
     }
 }
