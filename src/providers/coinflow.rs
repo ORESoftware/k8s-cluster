@@ -69,6 +69,7 @@ impl CoinflowCredential {
 pub struct CoinflowApi {
     cred: CoinflowCredential,
     http: reqwest::Client,
+    base_url: String,
 }
 
 /// One row from `GET /api/merchant/webhooks`. We keep the fields we need
@@ -107,10 +108,25 @@ struct WebhookListResponse {
 
 impl CoinflowApi {
     pub fn new(cred: CoinflowCredential) -> Self {
+        let base_url = cred.base_url().to_string();
         Self {
             cred,
             http: reqwest::Client::new(),
+            base_url,
         }
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url_for_tests(cred: CoinflowCredential, base_url: String) -> Self {
+        Self {
+            cred,
+            http: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     /// `GET /api/merchant/webhooks` with date-range + pagination.
@@ -134,7 +150,7 @@ impl CoinflowApi {
             provider: "coinflow".into(),
             message: format!("encode query: {e}"),
         })?;
-        let url = format!("{}/api/merchant/webhooks?{qs}", self.cred.base_url());
+        let url = format!("{}/api/merchant/webhooks?{qs}", self.base_url());
 
         let resp = self
             .http

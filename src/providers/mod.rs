@@ -35,6 +35,11 @@ pub mod stripe;
 pub mod swift;
 pub mod wise;
 
+#[cfg(test)]
+mod api_mocks_tests;
+#[cfg(test)]
+pub(crate) mod mock_http;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]

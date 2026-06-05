@@ -43,6 +43,10 @@ rsa = { version = "0.9", default-features = false, features = ["pem", "sha2"] }
 jsonwebtoken = "9"
 # Parse + classify tenant-supplied outbound URLs (SSRF guard).
 url = "2"
+# External live-mutex TCP broker client. Used for customer snapshot locks so
+# read roll-ups and customer-affecting ledger writes serialize on the same
+# broker key across pods.
+live-mutex-client = { path = "../../submodules/live-mutex/clients/rust" }
 # Compile-time HTML templates for the optional /admin HTMX surface.
 # Enabling the `axum` feature gives us `IntoResponse` for `Markup`.
 maud = { version = "0.27", features = ["axum"] }

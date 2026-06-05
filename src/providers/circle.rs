@@ -98,14 +98,30 @@ pub struct CircleAmount {
 pub struct CircleApi {
     cred: CircleCredential,
     http: reqwest::Client,
+    base_url: String,
 }
 
 impl CircleApi {
     pub fn new(cred: CircleCredential) -> Self {
+        let base_url = cred.api_base().to_string();
         Self {
             cred,
             http: reqwest::Client::new(),
+            base_url,
         }
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url_for_tests(cred: CircleCredential, base_url: String) -> Self {
+        Self {
+            cred,
+            http: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     /// `GET /v1/businessAccount/transfers` — cursor-paginated transfers
@@ -120,7 +136,7 @@ impl CircleApi {
         if let Some(cursor) = page_after {
             path.push_str(&format!("&pageAfter={cursor}"));
         }
-        let url = format!("{}{path}", self.cred.api_base());
+        let url = format!("{}{}", self.base_url(), path);
         let resp = self
             .http
             .get(&url)
@@ -140,10 +156,7 @@ impl CircleApi {
         if !status.is_success() {
             return Err(AppError::Provider {
                 provider: "circle".into(),
-                message: format!(
-                    "transfers {status}: {}",
-                    String::from_utf8_lossy(&bytes)
-                ),
+                message: format!("transfers {status}: {}", String::from_utf8_lossy(&bytes)),
             });
         }
         let parsed: TransfersPage =

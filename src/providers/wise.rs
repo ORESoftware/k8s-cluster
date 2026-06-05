@@ -67,14 +67,30 @@ struct WiseActivityList {
 pub struct WiseApi {
     cred: WiseCredential,
     http: reqwest::Client,
+    base_url: String,
 }
 
 impl WiseApi {
     pub fn new(cred: WiseCredential) -> Self {
+        let base_url = cred.base_url().to_string();
         Self {
             cred,
             http: reqwest::Client::new(),
+            base_url,
         }
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url_for_tests(cred: WiseCredential, base_url: String) -> Self {
+        Self {
+            cred,
+            http: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     pub async fn list_activities(
@@ -100,7 +116,7 @@ impl WiseApi {
         })?;
         let url = format!(
             "{}/v1/profiles/{}/activities?{qs}",
-            self.cred.base_url(),
+            self.base_url(),
             self.cred.profile_id
         );
 

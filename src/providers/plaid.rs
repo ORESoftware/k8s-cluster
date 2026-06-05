@@ -84,7 +84,7 @@ impl<'a> PlaidLink<'a> {
         Self { cfg }
     }
 
-    fn base(&self) -> &'static str {
+    fn base(&self) -> &str {
         self.cfg.plaid_api_base()
     }
 
@@ -392,13 +392,11 @@ impl PlaidWebhookVerifier {
         iat_skew_seconds: i64,
     ) -> AppResult<()> {
         use base64::Engine as _;
-        use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+        use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 
-        let header = decode_header(jwt_header_value).map_err(|e| {
-            AppError::Provider {
-                provider: "plaid".into(),
-                message: format!("plaid jwt header decode: {e}"),
-            }
+        let header = decode_header(jwt_header_value).map_err(|e| AppError::Provider {
+            provider: "plaid".into(),
+            message: format!("plaid jwt header decode: {e}"),
         })?;
         if !matches!(header.alg, Algorithm::ES256) {
             return Err(AppError::Provider {
@@ -415,10 +413,7 @@ impl PlaidWebhookVerifier {
         if jwk.kty != "EC" || jwk.crv.as_deref() != Some("P-256") {
             return Err(AppError::Provider {
                 provider: "plaid".into(),
-                message: format!(
-                    "plaid jwk wrong type kty={} crv={:?}",
-                    jwk.kty, jwk.crv
-                ),
+                message: format!("plaid jwk wrong type kty={} crv={:?}", jwk.kty, jwk.crv),
             });
         }
         let x = jwk.x.as_deref().ok_or_else(|| AppError::Provider {
@@ -437,19 +432,23 @@ impl PlaidWebhookVerifier {
         let mut validation = Validation::new(Algorithm::ES256);
         validation.required_spec_claims.clear();
         validation.validate_exp = false;
-        let token_data = decode::<serde_json::Value>(jwt_header_value, &key, &validation)
-            .map_err(|e| AppError::Provider {
-                provider: "plaid".into(),
-                message: format!("plaid jwt verify: {e}"),
+        let token_data =
+            decode::<serde_json::Value>(jwt_header_value, &key, &validation).map_err(|e| {
+                AppError::Provider {
+                    provider: "plaid".into(),
+                    message: format!("plaid jwt verify: {e}"),
+                }
             })?;
 
         let claims = &token_data.claims;
-        let claim_iat = claims.get("iat").and_then(|v| v.as_i64()).ok_or_else(|| {
-            AppError::Provider {
-                provider: "plaid".into(),
-                message: "plaid jwt missing iat".into(),
-            }
-        })?;
+        let claim_iat =
+            claims
+                .get("iat")
+                .and_then(|v| v.as_i64())
+                .ok_or_else(|| AppError::Provider {
+                    provider: "plaid".into(),
+                    message: "plaid jwt missing iat".into(),
+                })?;
         let now = Utc::now().timestamp();
         if (now - claim_iat).abs() > iat_skew_seconds {
             return Err(AppError::Unauthorized);
@@ -466,8 +465,8 @@ impl PlaidWebhookVerifier {
         let actual = hex::encode(Sha256::digest(raw_body));
         if !constant_time_eq_str(claim_sha, &actual) {
             // Try base64 url-safe — Plaid uses hex but be lenient.
-            let actual_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .encode(Sha256::digest(raw_body));
+            let actual_b64 =
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(raw_body));
             if !constant_time_eq_str(claim_sha, &actual_b64) {
                 return Err(AppError::Unauthorized);
             }
@@ -534,7 +533,10 @@ async fn fetch_jwk(cfg: &Config, kid: &str) -> AppResult<PlaidJwk> {
         .as_ref()
         .ok_or_else(|| AppError::BadRequest("PLAID_SECRET not configured".into()))?;
     let resp = reqwest::Client::new()
-        .post(format!("{}/webhook_verification_key/get", cfg.plaid_api_base()))
+        .post(format!(
+            "{}/webhook_verification_key/get",
+            cfg.plaid_api_base()
+        ))
         .json(&WebhookKeyGetReq {
             client_id,
             secret,
@@ -596,7 +598,7 @@ fn plaid_err(op: &str, status: reqwest::StatusCode, bytes: &[u8]) -> AppError {
 mod tests {
     use super::*;
     use base64::Engine as _;
-    use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+    use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 
     // Static ES256 keypair generated offline. Test-only — never used
     // to protect anything real. We pre-bake it in PKCS8 PEM form because
@@ -698,8 +700,7 @@ Xzfy3kQ0pAIzDUtAuvoIhMUqvm2T2hU+RfJkGA157hxPYy14rH0nmOeN
         // Plaid docs say hex; we also accept base64url-no-pad for
         // resilience. Verify the b64 fallback path works.
         let body = b"hello";
-        let sha_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(Sha256::digest(body));
+        let sha_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(body));
         let jwt = make_jwt(&serde_json::json!({
             "iat": Utc::now().timestamp(),
             "request_body_sha256": sha_b64,
@@ -716,7 +717,10 @@ Xzfy3kQ0pAIzDUtAuvoIhMUqvm2T2hU+RfJkGA157hxPYy14rH0nmOeN
         }));
         let v = PlaidWebhookVerifier::new();
         v.insert_jwk_for_tests(TEST_KID, TEST_X, TEST_Y);
-        let err = v.verify(&fixture_cfg(), &jwt, b"{}", 300).await.unwrap_err();
+        let err = v
+            .verify(&fixture_cfg(), &jwt, b"{}", 300)
+            .await
+            .unwrap_err();
         assert!(matches!(err, AppError::Provider { .. }));
     }
 
@@ -727,7 +731,10 @@ Xzfy3kQ0pAIzDUtAuvoIhMUqvm2T2hU+RfJkGA157hxPYy14rH0nmOeN
         }));
         let v = PlaidWebhookVerifier::new();
         v.insert_jwk_for_tests(TEST_KID, TEST_X, TEST_Y);
-        let err = v.verify(&fixture_cfg(), &jwt, b"{}", 300).await.unwrap_err();
+        let err = v
+            .verify(&fixture_cfg(), &jwt, b"{}", 300)
+            .await
+            .unwrap_err();
         assert!(matches!(err, AppError::Provider { .. }));
     }
 

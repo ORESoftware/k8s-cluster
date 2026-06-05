@@ -3,6 +3,7 @@ use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::customer_locks::{CustomerLockBroker, customer_lock_targets_from_account_code};
 use crate::error::{AppError, AppResult};
 use crate::money::Currency;
 use crate::shard::{Region, ShardKey};
@@ -12,11 +13,15 @@ use super::types::*;
 #[derive(Clone)]
 pub struct LedgerService {
     pool: PgPool,
+    customer_locks: CustomerLockBroker,
 }
 
 impl LedgerService {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(pool: PgPool, customer_locks: CustomerLockBroker) -> Self {
+        Self {
+            pool,
+            customer_locks,
+        }
     }
 
     /// Ensure a "system" account exists for the tenant, e.g. `clearing/stripe`,
@@ -83,6 +88,28 @@ impl LedgerService {
     /// * Idempotency: a repeat with the same `(tenant_id, idempotency_key)`
     ///   returns the existing transaction id without writing again.
     pub async fn post_transaction(
+        &self,
+        draft: &DraftTransaction,
+        region: Region,
+    ) -> AppResult<Uuid> {
+        let customer_lock_targets = customer_lock_targets_from_draft(draft);
+        let customer_lock_guard = self
+            .customer_locks
+            .acquire_customers(
+                draft.tenant_id,
+                customer_lock_targets,
+                "ledger.post_transaction",
+            )
+            .await?;
+
+        let result = self.post_transaction_locked(draft, region).await;
+        if let Err(e) = customer_lock_guard.release().await {
+            tracing::warn!(error = %e, "failed to release customer ledger-write lock");
+        }
+        result
+    }
+
+    async fn post_transaction_locked(
         &self,
         draft: &DraftTransaction,
         region: Region,
@@ -399,6 +426,17 @@ fn idempotency_lock_hash(key: &str) -> i32 {
     h as i32
 }
 
+fn customer_lock_targets_from_draft(draft: &DraftTransaction) -> Vec<String> {
+    let mut targets = draft
+        .postings
+        .iter()
+        .filter_map(|posting| customer_lock_targets_from_account_code(&posting.account_code))
+        .collect::<Vec<_>>();
+    targets.sort();
+    targets.dedup();
+    targets
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,5 +467,62 @@ mod tests {
     fn idempotency_lock_hash_empty_key() {
         // FNV offset basis (cast through i32) for empty input.
         assert_eq!(idempotency_lock_hash(""), 0x811c_9dc5_u32 as i32);
+    }
+
+    #[test]
+    fn customer_lock_targets_from_draft_finds_customer_accounts() {
+        let tenant_id = Uuid::new_v4();
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let draft = DraftTransaction {
+            tenant_id,
+            kind: "test".into(),
+            idempotency_key: "k".into(),
+            description: None,
+            metadata: serde_json::json!({}),
+            postings: vec![
+                DraftPosting {
+                    account_code: format!("ar/{b}"),
+                    direction: Direction::Debit,
+                    amount_minor: 10,
+                    currency: "USD".into(),
+                    source: "test".into(),
+                    source_event_id: "1".into(),
+                    metadata: serde_json::json!({}),
+                },
+                DraftPosting {
+                    account_code: "clearing/stripe/acct_1".into(),
+                    direction: Direction::Credit,
+                    amount_minor: 10,
+                    currency: "USD".into(),
+                    source: "test".into(),
+                    source_event_id: "2".into(),
+                    metadata: serde_json::json!({}),
+                },
+                DraftPosting {
+                    account_code: format!("unallocated_cash/{a}"),
+                    direction: Direction::Credit,
+                    amount_minor: 10,
+                    currency: "USD".into(),
+                    source: "test".into(),
+                    source_event_id: "3".into(),
+                    metadata: serde_json::json!({}),
+                },
+                DraftPosting {
+                    account_code: format!("credit_memo/{a}"),
+                    direction: Direction::Debit,
+                    amount_minor: 10,
+                    currency: "USD".into(),
+                    source: "test".into(),
+                    source_event_id: "4".into(),
+                    metadata: serde_json::json!({}),
+                },
+            ],
+        };
+
+        let mut expected = vec![a.to_string(), b.to_string()];
+        expected.sort();
+
+        assert_eq!(customer_lock_targets_from_draft(&draft), expected);
     }
 }

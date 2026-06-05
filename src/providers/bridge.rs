@@ -43,7 +43,9 @@ pub struct BridgeCredential {
     #[serde(default = "default_env")]
     pub environment: String,
 }
-fn default_env() -> String { "production".into() }
+fn default_env() -> String {
+    "production".into()
+}
 
 impl BridgeCredential {
     pub fn base_url(&self) -> &'static str {
@@ -85,14 +87,30 @@ struct TransfersResponse {
 pub struct BridgeApi {
     cred: BridgeCredential,
     http: reqwest::Client,
+    base_url: String,
 }
 
 impl BridgeApi {
     pub fn new(cred: BridgeCredential) -> Self {
+        let base_url = cred.base_url().to_string();
         Self {
             cred,
             http: reqwest::Client::new(),
+            base_url,
         }
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url_for_tests(cred: BridgeCredential, base_url: String) -> Self {
+        Self {
+            cred,
+            http: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     /// `GET /transfers?limit=N&starting_after=<id>` — Bridge returns
@@ -103,9 +121,7 @@ impl BridgeApi {
         limit: u32,
         starting_after: Option<&str>,
     ) -> AppResult<(Vec<BridgeTransfer>, Option<String>)> {
-        let mut params: Vec<(&str, String)> = vec![
-            ("limit", limit.to_string()),
-        ];
+        let mut params: Vec<(&str, String)> = vec![("limit", limit.to_string())];
         if let Some(c) = starting_after {
             params.push(("starting_after", c.to_string()));
         }
@@ -113,7 +129,7 @@ impl BridgeApi {
             provider: "bridge".into(),
             message: format!("encode query: {e}"),
         })?;
-        let url = format!("{}/transfers?{qs}", self.cred.base_url());
+        let url = format!("{}/transfers?{qs}", self.base_url());
 
         let resp = self
             .http
@@ -133,10 +149,7 @@ impl BridgeApi {
         if !status.is_success() {
             return Err(AppError::Provider {
                 provider: "bridge".into(),
-                message: format!(
-                    "transfers {status}: {}",
-                    String::from_utf8_lossy(&bytes)
-                ),
+                message: format!("transfers {status}: {}", String::from_utf8_lossy(&bytes)),
             });
         }
         let parsed: TransfersResponse =
@@ -210,11 +223,11 @@ pub fn verify_signature_rsa(
     public_key_pem: &str,
 ) -> AppResult<()> {
     use base64::Engine as _;
+    use rsa::RsaPublicKey;
     use rsa::pkcs1v15::{Signature, VerifyingKey};
     use rsa::pkcs8::DecodePublicKey;
     use rsa::sha2::Sha256;
     use rsa::signature::Verifier;
-    use rsa::RsaPublicKey;
 
     let pubkey = RsaPublicKey::from_public_key_pem(public_key_pem.trim())
         .map_err(|e| AppError::Crypto(format!("bridge pubkey pem: {e}")))?;
@@ -377,7 +390,10 @@ pub fn normalize_transfer(
     Ok(NormalizedBridgeTransfer {
         draft: DraftTransaction {
             tenant_id,
-            kind: format!("bridge.transfer.{}", tr.state.as_deref().unwrap_or("unknown")),
+            kind: format!(
+                "bridge.transfer.{}",
+                tr.state.as_deref().unwrap_or("unknown")
+            ),
             idempotency_key: format!("bridge:tr:{}", tr.id),
             description,
             metadata: meta,
@@ -433,12 +449,12 @@ mod tests {
     // The rsa crate is pinned to rand_core 0.6 and re-exports `OsRng`
     // from that version. The workspace's top-level `rand` is 0.10, so
     // we must use the rsa-flavored RNG to satisfy its trait bounds.
+    use rsa::RsaPrivateKey;
     use rsa::pkcs1v15::SigningKey;
     use rsa::pkcs8::EncodePublicKey;
     use rsa::rand_core::OsRng;
     use rsa::sha2::Sha256;
     use rsa::signature::{RandomizedSigner, SignatureEncoding};
-    use rsa::RsaPrivateKey;
 
     /// Generate a small RSA keypair for tests (1024 bits is fine here
     /// — we're not protecting anything, just exercising the verify path).

@@ -56,7 +56,9 @@ pub fn verify_webhook_signature(
 fn constant_time_eq_str(a: &str, b: &str) -> bool {
     let ab = a.as_bytes();
     let bb = b.as_bytes();
-    if ab.len() != bb.len() { return false; }
+    if ab.len() != bb.len() {
+        return false;
+    }
     let mut diff: u8 = 0;
     for (x, y) in ab.iter().zip(bb.iter()) {
         diff |= x ^ y;
@@ -69,8 +71,7 @@ mod gocardless_tests {
     use super::*;
 
     fn sign(body: &[u8], secret: &str) -> String {
-        let mut mac =
-            <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
         Mac::update(&mut mac, body);
         hex::encode(Mac::finalize(mac).into_bytes())
     }
@@ -97,8 +98,7 @@ mod gocardless_tests {
         let body = br#"{"events":[{"id":"A"}]}"#;
         let sig = sign(body, "k");
         assert!(matches!(
-            verify_webhook_signature(b"{\"events\":[{\"id\":\"B\"}]}", &sig, "k")
-                .unwrap_err(),
+            verify_webhook_signature(b"{\"events\":[{\"id\":\"B\"}]}", &sig, "k").unwrap_err(),
             AppError::Unauthorized
         ));
     }
@@ -120,7 +120,9 @@ pub struct GoCardlessCredential {
     #[serde(default = "default_env")]
     pub environment: String,
 }
-fn default_env() -> String { "live".into() }
+fn default_env() -> String {
+    "live".into()
+}
 
 impl GoCardlessCredential {
     pub fn base_url(&self) -> &'static str {
@@ -180,11 +182,30 @@ struct Cursors {
 pub struct GoCardlessApi {
     cred: GoCardlessCredential,
     http: reqwest::Client,
+    base_url: String,
 }
 
 impl GoCardlessApi {
     pub fn new(cred: GoCardlessCredential) -> Self {
-        Self { cred, http: reqwest::Client::new() }
+        let base_url = cred.base_url().to_string();
+        Self {
+            cred,
+            http: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url_for_tests(cred: GoCardlessCredential, base_url: String) -> Self {
+        Self {
+            cred,
+            http: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     /// `GET /payments?after=<id>&limit=N` — returns (payments, next_after).
@@ -205,7 +226,7 @@ impl GoCardlessApi {
             provider: "gocardless".into(),
             message: format!("encode query: {e}"),
         })?;
-        let url = format!("{}/payments?{qs}", self.cred.base_url());
+        let url = format!("{}/payments?{qs}", self.base_url());
 
         let resp = self
             .http
@@ -227,10 +248,7 @@ impl GoCardlessApi {
         if !status.is_success() {
             return Err(AppError::Provider {
                 provider: "gocardless".into(),
-                message: format!(
-                    "payments {status}: {}",
-                    String::from_utf8_lossy(&bytes)
-                ),
+                message: format!("payments {status}: {}", String::from_utf8_lossy(&bytes)),
             });
         }
         let parsed: PaymentsResponse =
@@ -281,18 +299,13 @@ pub fn normalize_payment(
     pmt: &GoCardlessPayment,
     tenant_id: uuid::Uuid,
 ) -> AppResult<NormalizedGoCardlessPayment> {
-    let terminal_ok = matches!(
-        pmt.status.as_deref(),
-        Some("paid_out") | Some("confirmed")
-    );
+    let terminal_ok = matches!(pmt.status.as_deref(), Some("paid_out") | Some("confirmed"));
 
     let posted_at: DateTime<Utc> = pmt
         .charge_date
         .as_deref()
         .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .map(|d| {
-            Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0).unwrap_or_default())
-        })
+        .map(|d| Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0).unwrap_or_default()))
         .or_else(|| {
             pmt.created_at
                 .as_deref()
@@ -393,7 +406,10 @@ pub fn normalize_payment(
     Ok(NormalizedGoCardlessPayment {
         draft: DraftTransaction {
             tenant_id,
-            kind: format!("gocardless.payment.{}", pmt.status.as_deref().unwrap_or("unknown")),
+            kind: format!(
+                "gocardless.payment.{}",
+                pmt.status.as_deref().unwrap_or("unknown")
+            ),
             idempotency_key: format!("gocardless:pmt:{}", pmt.id),
             description,
             metadata: meta,

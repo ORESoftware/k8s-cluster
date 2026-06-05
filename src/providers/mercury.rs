@@ -102,6 +102,7 @@ struct TransactionsResponse {
 pub struct MercuryApi {
     cred: MercuryCredential,
     http: reqwest::Client,
+    base_url: String,
 }
 
 impl MercuryApi {
@@ -109,11 +110,25 @@ impl MercuryApi {
         Self {
             cred,
             http: reqwest::Client::new(),
+            base_url: MERCURY_BASE.to_string(),
         }
     }
 
+    #[cfg(test)]
+    pub fn with_base_url_for_tests(cred: MercuryCredential, base_url: String) -> Self {
+        Self {
+            cred,
+            http: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     pub async fn list_accounts(&self) -> AppResult<Vec<MercuryAccount>> {
-        let url = format!("{MERCURY_BASE}/accounts");
+        let url = format!("{}/accounts", self.base_url());
         let resp = self
             .http
             .get(&url)
@@ -132,10 +147,7 @@ impl MercuryApi {
         if !status.is_success() {
             return Err(AppError::Provider {
                 provider: "mercury".into(),
-                message: format!(
-                    "accounts {status}: {}",
-                    String::from_utf8_lossy(&bytes)
-                ),
+                message: format!("accounts {status}: {}", String::from_utf8_lossy(&bytes)),
             });
         }
         let parsed: AccountsResponse =
@@ -168,7 +180,7 @@ impl MercuryApi {
             provider: "mercury".into(),
             message: format!("encode query: {e}"),
         })?;
-        let url = format!("{MERCURY_BASE}/account/{account_id}/transactions?{qs}");
+        let url = format!("{}/account/{account_id}/transactions?{qs}", self.base_url());
 
         let resp = self
             .http
@@ -188,10 +200,7 @@ impl MercuryApi {
         if !status.is_success() {
             return Err(AppError::Provider {
                 provider: "mercury".into(),
-                message: format!(
-                    "transactions {status}: {}",
-                    String::from_utf8_lossy(&bytes)
-                ),
+                message: format!("transactions {status}: {}", String::from_utf8_lossy(&bytes)),
             });
         }
         let parsed: TransactionsResponse =
@@ -231,7 +240,9 @@ pub fn verify_webhook_signature(
 fn constant_time_eq_str(a: &str, b: &str) -> bool {
     let ab = a.as_bytes();
     let bb = b.as_bytes();
-    if ab.len() != bb.len() { return false; }
+    if ab.len() != bb.len() {
+        return false;
+    }
     let mut diff: u8 = 0;
     for (x, y) in ab.iter().zip(bb.iter()) {
         diff |= x ^ y;
@@ -245,8 +256,7 @@ mod tests {
 
     fn sign(body: &[u8], ts: &str, secret: &str) -> String {
         let prefix = format!("{ts}.");
-        let mut mac =
-            <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
         Mac::update(&mut mac, prefix.as_bytes());
         Mac::update(&mut mac, body);
         hex::encode(Mac::finalize(mac).into_bytes())
@@ -336,7 +346,11 @@ pub fn normalize_transaction(
         .map(|d| d.with_timezone(&Utc))
         .unwrap_or_else(Utc::now);
 
-    let currency_str = tx.currency.clone().unwrap_or_else(|| "USD".into()).to_uppercase();
+    let currency_str = tx
+        .currency
+        .clone()
+        .unwrap_or_else(|| "USD".into())
+        .to_uppercase();
     let currency = Currency::new(&currency_str).map_err(|e| AppError::Provider {
         provider: "mercury".into(),
         message: format!("unknown currency {currency_str}: {e}"),
@@ -412,10 +426,7 @@ pub fn normalize_transaction(
     Ok(NormalizedMercuryTx {
         draft: DraftTransaction {
             tenant_id,
-            kind: format!(
-                "mercury.{}",
-                tx.kind.as_deref().unwrap_or("transaction")
-            ),
+            kind: format!("mercury.{}", tx.kind.as_deref().unwrap_or("transaction")),
             idempotency_key: format!("mercury:tx:{}", tx.id),
             description,
             metadata: meta,
