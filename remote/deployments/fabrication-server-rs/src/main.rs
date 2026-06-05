@@ -1454,6 +1454,7 @@ struct LearningPlan {
     mdp_states: Vec<String>,
     pomdp_observations: Vec<String>,
     pomdp_belief_state: PomdpBeliefState,
+    release_probe_plan: ReleaseProbePlan,
     actions: Vec<String>,
     strategy_candidates: Vec<StrategyCandidate>,
     intervention_signals: Vec<InterventionLearningSignal>,
@@ -1501,6 +1502,30 @@ struct PomdpProbe {
     action: String,
     expected_information_gain: f64,
     required_before_state: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReleaseProbePlan {
+    schema_version: String,
+    release_state: String,
+    probe_count: usize,
+    required_before_release: Vec<String>,
+    probes: Vec<ReleaseProbe>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReleaseProbe {
+    probe_id: String,
+    target_state: String,
+    priority: String,
+    action: String,
+    expected_information_gain: f64,
+    required_before_state: String,
+    evidence: Vec<String>,
+    release_blocker: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1707,6 +1732,10 @@ struct TextInstructionSignals {
     has_subtractive_text_context: bool,
     has_subtractive_text_setup_evidence: bool,
     has_subtractive_text_process_evidence: bool,
+    has_mill_turn_text_context: bool,
+    has_mill_turn_live_tooling_evidence: bool,
+    has_mill_turn_transfer_context: bool,
+    has_mill_turn_spindle_transfer_evidence: bool,
     has_lathe_text_threading_context: bool,
     has_lathe_text_threading_sync_evidence: bool,
     has_lathe_text_partoff_context: bool,
@@ -2775,6 +2804,30 @@ fn wants_horizontal_milling(value: &str) -> bool {
         || token.contains("slitting")
 }
 
+fn wants_mill_turning(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("mill-turn")
+        || token.contains("turn-mill")
+        || token.contains("millturn")
+        || token.contains("turnmill")
+        || token.contains("swiss")
+        || token.contains("swiss-type")
+        || token.contains("sliding-headstock")
+        || token.contains("live-tool")
+        || token.contains("live-tooling")
+        || token.contains("driven-tool")
+        || token.contains("driven-tooling")
+        || token.contains("c-axis-lathe")
+        || token.contains("y-axis-lathe")
+        || token.contains("b-axis-turning")
+        || token.contains("subspindle-transfer")
+        || token.contains("sub-spindle-transfer")
+}
+
+fn is_mill_turn_kind(kind: &str) -> bool {
+    wants_mill_turning(kind)
+}
+
 fn machine_class(kind: &str) -> MachineClass {
     let token = normalize_token(kind);
     if token.contains("printer")
@@ -2797,7 +2850,7 @@ fn machine_class(kind: &str) -> MachineClass {
         || token.contains("additive")
     {
         MachineClass::Additive
-    } else if token.contains("lathe") || token.contains("turn") {
+    } else if is_mill_turn_kind(&token) || token.contains("lathe") || token.contains("turn") {
         MachineClass::Lathe
     } else if token.contains("mill") || token.contains("machining-center") {
         MachineClass::Mill
@@ -3039,6 +3092,32 @@ fn default_machines() -> Vec<MachineProfile> {
                 "tool-center-point".to_string(),
                 "undercut".to_string(),
                 "impeller-finish".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "mill-turn-center-1".to_string(),
+            kind: "mill-turn-center".to_string(),
+            controller: Some("mill-turn-gcode".to_string()),
+            materials: Some(vec![
+                "aluminum".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "brass".to_string(),
+                "titanium".to_string(),
+                "plastic".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![300.0, 750.0, 120.0]),
+            axes: Some(5),
+            operations: Some(vec![
+                "turn".to_string(),
+                "face".to_string(),
+                "bore".to_string(),
+                "thread".to_string(),
+                "live-tool-mill".to_string(),
+                "c-axis-index".to_string(),
+                "y-axis-drill".to_string(),
+                "subspindle-transfer".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -4513,7 +4592,9 @@ fn infer_requested_parts(
     let wants_powder_bed_part = wants_metal_pbf_part
         || wants_powder_bed_printing(&objective_token)
         || wants_powder_bed_printing(&material.name);
-    let needs_turned_part = objective_token.contains("shaft")
+    let needs_mill_turn_part = wants_mill_turning(&objective_token);
+    let needs_turned_part = needs_mill_turn_part
+        || objective_token.contains("shaft")
         || objective_token.contains("bushing")
         || objective_token.contains("bearing")
         || objective_token.contains("cylind")
@@ -4521,7 +4602,8 @@ fn infer_requested_parts(
     let needs_sinker_edm_part = wants_sinker_edm_machining(&objective_token);
     let needs_five_axis_milled_part = wants_five_axis_milling(&objective_token);
     let needs_horizontal_milled_part = wants_horizontal_milling(&objective_token);
-    let needs_milled_part = !needs_sinker_edm_part
+    let needs_milled_part = !needs_mill_turn_part
+        && !needs_sinker_edm_part
         && (objective_token.contains("bracket")
             || objective_token.contains("plate")
             || objective_token.contains("pocket")
@@ -4561,7 +4643,10 @@ fn infer_requested_parts(
         || objective_token.contains("organic")
         || objective_token.contains("ergonomic")
         || (is_polymer(material) && !needs_routed_part && !needs_sheet_cut_part)
-        || (!needs_milled_part && !needs_routed_part && !needs_sheet_cut_part);
+        || (!needs_turned_part
+            && !needs_milled_part
+            && !needs_routed_part
+            && !needs_sheet_cut_part);
 
     if needs_printed_part {
         let preferred_method = if wants_material_jetting_part {
@@ -4662,7 +4747,14 @@ fn infer_requested_parts(
             description: "turned shaft, bushing, bearing, thread, or cylindrical insert"
                 .to_string(),
             material: Some(material.clone()),
-            preferred_method: Some("turning".to_string()),
+            preferred_method: Some(
+                if needs_mill_turn_part {
+                    "mill-turning"
+                } else {
+                    "turning"
+                }
+                .to_string(),
+            ),
             tolerance_mm: Some(tolerance_mm),
         });
     }
@@ -4794,6 +4886,12 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_material_jetting_printing(value));
+    let wants_ded_cell = preferred
+        .as_deref()
+        .is_some_and(wants_directed_energy_deposition)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_directed_energy_deposition(value));
     let wants_composite_fiber_printer = preferred
         .as_deref()
         .is_some_and(wants_composite_fiber_printing)
@@ -4814,6 +4912,10 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_metal_powder_bed_printing(value));
+    let wants_mill_turn_center = preferred.as_deref().is_some_and(wants_mill_turning)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_mill_turning(value));
     let wants_laser_cutter = preferred.as_deref().is_some_and(wants_laser_cutting)
         || preferred_methods
             .iter()
@@ -4839,6 +4941,13 @@ fn choose_machine<'a>(
             .iter()
             .any(|value| wants_sheet_cutting(value));
 
+    if wants_mill_turn_center {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_mill_turn_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
     if wants_five_axis_mill {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_five_axis_mill_kind(&machine.kind)
@@ -4863,6 +4972,13 @@ fn choose_machine<'a>(
     if wants_material_jetting_printer {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_material_jetting_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_ded_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_directed_energy_deposition_kind(&machine.kind)
         }) {
             return machine;
         }
@@ -5055,7 +5171,7 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
         Some(MachineClass::Other)
     } else if tokens
         .iter()
-        .any(|token| token.contains("turn") || token.contains("lathe"))
+        .any(|token| wants_mill_turning(token) || token.contains("turn") || token.contains("lathe"))
     {
         Some(MachineClass::Lathe)
     } else if tokens.iter().any(|token| {
@@ -5073,6 +5189,7 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
     } else if tokens.iter().any(|token| {
         wants_resin_printing(token)
             || wants_material_jetting_printing(token)
+            || wants_directed_energy_deposition(token)
             || wants_composite_fiber_printing(token)
             || wants_binder_jet_printing(token)
             || wants_powder_bed_printing(token)
@@ -5092,6 +5209,9 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
     let wants_material_jetting = tokens
         .iter()
         .any(|token| wants_material_jetting_printing(token));
+    let wants_ded = tokens
+        .iter()
+        .any(|token| wants_directed_energy_deposition(token));
     let wants_composite_fiber = tokens
         .iter()
         .any(|token| wants_composite_fiber_printing(token));
@@ -5105,10 +5225,12 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
     let wants_plasma = tokens.iter().any(|token| wants_plasma_cutting(token));
     let wants_wire_edm = tokens.iter().any(|token| wants_wire_edm_cutting(token));
     let wants_sinker_edm = tokens.iter().any(|token| wants_sinker_edm_machining(token));
+    let wants_mill_turn = tokens.iter().any(|token| wants_mill_turning(token));
     let has_special = wants_five_axis
         || wants_horizontal
         || wants_resin
         || wants_material_jetting
+        || wants_ded
         || wants_composite_fiber
         || wants_binder_jet
         || wants_powder
@@ -5117,7 +5239,8 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         || wants_waterjet
         || wants_plasma
         || wants_wire_edm
-        || wants_sinker_edm;
+        || wants_sinker_edm
+        || wants_mill_turn;
     if !has_special {
         return true;
     }
@@ -5125,6 +5248,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_horizontal || is_horizontal_mill_kind(&machine.kind))
         && (!wants_resin || is_resin_printer_kind(&machine.kind))
         && (!wants_material_jetting || is_material_jetting_printer_kind(&machine.kind))
+        && (!wants_ded || is_directed_energy_deposition_kind(&machine.kind))
         && (!wants_composite_fiber || is_composite_fiber_printer_kind(&machine.kind))
         && (!wants_binder_jet || is_binder_jet_printer_kind(&machine.kind))
         && (!wants_powder || is_powder_bed_printer_kind(&machine.kind))
@@ -5134,6 +5258,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_plasma || is_plasma_cutter_kind(&machine.kind))
         && (!wants_wire_edm || is_wire_edm_kind(&machine.kind))
         && (!wants_sinker_edm || is_sinker_edm_kind(&machine.kind))
+        && (!wants_mill_turn || is_mill_turn_kind(&machine.kind))
 }
 
 fn operation_token_matches(preference: &str, operation: &str) -> bool {
@@ -5144,6 +5269,10 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || (preference.contains("material-jet") && operation.contains("material-jet"))
         || (preference.contains("polyjet") && operation.contains("polyjet"))
         || (preference.contains("mjp") && operation.contains("material-jet"))
+        || (preference.contains("directed-energy") && operation.contains("directed-energy"))
+        || (preference.contains("laser-cladding") && operation.contains("laser-cladding"))
+        || (preference.contains("waam") && operation.contains("waam"))
+        || (token_has_ded_segment(preference) && operation.contains("directed-energy"))
         || (preference.contains("composite-fiber") && operation.contains("composite-fiber"))
         || (preference.contains("continuous-fiber") && operation.contains("composite-fiber"))
         || (preference.contains("carbon-fiber") && operation.contains("composite-fiber"))
@@ -5181,6 +5310,12 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || (preference.contains("ram-edm") && operation.contains("edm"))
         || (preference.contains("die-sink") && operation.contains("die-sink"))
         || (preference == "edm" && operation.contains("edm"))
+        || (wants_mill_turning(preference)
+            && (operation.contains("live-tool")
+                || operation.contains("c-axis")
+                || operation.contains("y-axis")
+                || operation.contains("subspindle")
+                || operation.contains("turn")))
 }
 
 fn operation_matches(machine: &MachineProfile, tokens: &[String]) -> bool {
@@ -5409,6 +5544,9 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => {
             "pack tray, jet photopolymer/material channels, UV cure, remove supports, and inspect color/material interfaces"
         }
+        MachineClass::Additive if is_directed_energy_deposition_kind(&part.machine_kind) => {
+            "prepare substrate, deposit DED/WAAM beads, monitor melt pool and interpass temperature, inspect, and leave finish-machining allowance"
+        }
         MachineClass::Additive if is_composite_fiber_printer_kind(&part.machine_kind) => {
             "slice matrix, lay continuous fiber, cut/anchor reinforcement, inspect coupons, and finish composite print"
         }
@@ -5429,6 +5567,9 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
             "index fixture, side-mill slots, and finish horizontal features"
         }
         MachineClass::Mill => "face, rough, contour, and finish critical features",
+        MachineClass::Lathe if is_mill_turn_kind(&part.machine_kind) => {
+            "turn, C/Y-axis live-tool mill, synchronize main/sub-spindle transfer, and inspect in one mill-turn setup"
+        }
         MachineClass::Lathe => "face, rough turn, finish turn, and bore/thread if needed",
         MachineClass::Router => "profile, pocket, and tab-cut",
         MachineClass::SheetCut => "kerf-test, pierce, cut/engrave sheet profile, and inspect",
@@ -6058,6 +6199,38 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                     .to_string(),
             ],
         ),
+        MachineClass::Additive if is_directed_energy_deposition_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "directed-energy-deposition-job".to_string()),
+            vec![
+                "; draft directed-energy deposition/WAAM job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [setup-boundary]: verify substrate, fixture, datum, wire/powder feedstock lot, nozzle standoff, shielding gas, laser/arc source, and fire controls"
+                    .to_string(),
+                "PREP_SUBSTRATE clean=true preheat=operator-reviewed datum=operator-reviewed finish_allowance_mm=operator-reviewed"
+                    .to_string(),
+                "PLAN_BEADS bead_width_mm=operator-reviewed overlap_pct=operator-reviewed path_strategy=operator-reviewed collision_clearance=simulated"
+                    .to_string(),
+                "START_DEPOSITION source=laser_or_arc feedstock=wire_or_powder power=operator-reviewed travel_speed=operator-reviewed"
+                    .to_string(),
+                "MONITOR_MELT_POOL coaxial_camera=required pyrometer=required shielding_gas_flow=verified oxygen_ppm=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [interpass-boundary]: record interpass temperature, distortion, bead height, and stop/restart tie-in before next layer"
+                    .to_string(),
+                "INSPECT_DEPOSIT nde=operator-reviewed coupon=installed finish_machining_allowance=verified"
+                    .to_string(),
+                "COMPLETE record feedstock lot, bead path, power/travel/feed rates, shielding gas, preheat/interpass log, NDE/coupon result, and machining allowance"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final DED/WAAM parameters must come from the machine head, feedstock, substrate, shielding-gas, thermal model, path simulation, and repair/additive procedure qualification."
+                    .to_string(),
+                "Human signoff is required for laser/arc safety, fire controls, substrate fixturing, bead path, melt-pool monitoring, interpass temperature, distortion, NDE/coupons, and downstream machining allowance."
+                    .to_string(),
+            ],
+        ),
         MachineClass::Additive if is_metal_pbf_printer_kind(&machine.kind) => (
             machine
                 .controller
@@ -6442,6 +6615,39 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 )
             }
         }
+        MachineClass::Lathe if is_mill_turn_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "mill-turn-gcode".to_string()),
+            vec![
+                "(draft mill-turn program generated by dd-fabrication-server)".to_string(),
+                "G21 G90 G18 ; millimeters, absolute, turning plane".to_string(),
+                "G54 ; main spindle datum, chuck pressure, stick-out, bar support, and transfer clearance verified".to_string(),
+                "T0101 ; OD turning tool".to_string(),
+                "G50 S3000 ; spindle speed limit".to_string(),
+                "G97 S900 M3 ; fixed RPM rough turn before live tooling".to_string(),
+                "G0 X42 Z2".to_string(),
+                "G1 Z-35 F0.18 ; rough turn".to_string(),
+                "M5 ; stop main spindle before C-axis clamp".to_string(),
+                "CHECKPOINT [mill-turn-live-tooling-boundary]: verify C-axis zero, C-axis clamp, Y-axis travel, live-tool holder, polar interpolation, coolant through tool, and collision clearance".to_string(),
+                "M154 ; engage C-axis / spindle orientation (verify controller-specific code)".to_string(),
+                "T1212 ; live tooling end mill".to_string(),
+                "G17 ; milling plane for live-tool cross feature".to_string(),
+                "G112 ; polar interpolation / C-axis milling mode (verify controller)".to_string(),
+                "G1 X28.0 C90.0 F120 ; live-tool mill indexed flat or cross feature".to_string(),
+                "G113 ; cancel polar interpolation".to_string(),
+                "CHECKPOINT [mill-turn-spindle-transfer-boundary]: verify subspindle pickup, clamp pressure, phase sync, pull force, grip check, and transfer clearance".to_string(),
+                "M5".to_string(),
+                "M30".to_string(),
+            ],
+            vec![
+                "Draft only: verify the mill-turn postprocessor, live-tool orientation, C/Y/B-axis limits, spindle phase sync, and transfer macros against the exact controller."
+                    .to_string(),
+                "Human signoff is required for chuck/collet pressure, live-tool holder projection, coolant, collision clearance, subspindle pickup, and main-to-sub transfer before release."
+                    .to_string(),
+            ],
+        ),
         MachineClass::Lathe => (
             machine
                 .controller
@@ -8729,6 +8935,112 @@ fn has_text_material_jetting_uv_inspection_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_ded_context(language: &str, line: &str) -> bool {
+    let language_token = normalize_token(language);
+    let line_token = normalize_token(line);
+    token_has_ded_segment(&language_token)
+        || token_has_ded_segment(&line_token)
+        || language_or_line_has_any(
+            language,
+            line,
+            &[
+                "directed-energy-deposition",
+                "directed energy deposition",
+                "directed energy",
+                "laser metal deposition",
+                "laser-metal-deposition",
+                "laser cladding",
+                "laser-cladding",
+                "cladding",
+                "waam",
+                "wire arc additive",
+                "wire-arc additive",
+                "wire arc deposition",
+                "wire-feed deposition",
+                "powder-fed deposition",
+                "blown powder",
+                "melt pool",
+            ],
+        )
+}
+
+fn has_text_ded_feedstock_path_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "feedstock lot",
+            "wire lot",
+            "powder lot",
+            "powder batch",
+            "wire feed",
+            "powder feed",
+            "bead path",
+            "bead width",
+            "bead height",
+            "overlap",
+            "standoff",
+            "tool center",
+            "deposition path",
+            "path strategy",
+            "finish allowance",
+            "machining allowance",
+            "substrate",
+            "fixture",
+            "datum",
+        ],
+    )
+}
+
+fn has_text_ded_energy_shielding_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "laser power",
+            "arc current",
+            "arc voltage",
+            "travel speed",
+            "feed rate",
+            "energy density",
+            "heat input",
+            "shielding gas",
+            "argon",
+            "oxygen ppm",
+            "gas flow",
+            "melt pool",
+            "pyrometer",
+            "coaxial camera",
+            "preheat",
+            "fire control",
+        ],
+    )
+}
+
+fn has_text_ded_thermal_inspection_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "interpass",
+            "interpass temperature",
+            "cooldown",
+            "thermal log",
+            "distortion",
+            "residual stress",
+            "stop restart",
+            "tie-in",
+            "coupon",
+            "nde",
+            "non-destructive",
+            "dye penetrant",
+            "ultrasonic",
+            "ct scan",
+            "hardness",
+            "porosity",
+            "crack inspection",
+            "dimensional inspection",
+        ],
+    )
+}
+
 fn has_text_composite_fiber_context(language: &str, line: &str) -> bool {
     language_or_line_has_any(
         language,
@@ -9149,6 +9461,117 @@ fn has_text_subtractive_process_evidence(line: &str) -> bool {
             "fume",
             "work clamp",
             "abrasive",
+        ],
+    )
+}
+
+fn has_text_mill_turn_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "mill-turn",
+            "turn-mill",
+            "millturn",
+            "turnmill",
+            "swiss",
+            "swiss-type",
+            "sliding headstock",
+            "sliding-headstock",
+            "live tooling",
+            "live-tooling",
+            "live tool",
+            "live-tool",
+            "driven tooling",
+            "driven-tooling",
+            "driven tool",
+            "driven-tool",
+            "c-axis",
+            "y-axis lathe",
+            "b-axis turning",
+        ],
+    )
+}
+
+fn has_text_mill_turn_live_tooling_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "live tool",
+            "live-tool",
+            "live tooling",
+            "live-tooling",
+            "driven tool",
+            "driven-tool",
+            "driven tooling",
+            "driven-tooling",
+            "c-axis zero",
+            "c-axis clamp",
+            "spindle orient",
+            "spindle orientation",
+            "polar interpolation",
+            "g112",
+            "g12.1",
+            "g13.1",
+            "m154",
+            "y-axis travel",
+            "live-tool holder",
+            "live tool holder",
+            "milling spindle",
+            "cross drill",
+            "cross-drill",
+            "coolant through tool",
+            "collision clearance",
+            "tool centerline",
+            "rotary sync",
+            "c-axis verified",
+        ],
+    )
+}
+
+fn has_text_mill_turn_transfer_context(language: &str, line: &str) -> bool {
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "subspindle transfer",
+            "sub-spindle transfer",
+            "subspindle",
+            "sub-spindle",
+            "pickoff",
+            "pick-off",
+            "main-to-sub",
+            "main spindle transfer",
+            "second spindle",
+            "back working",
+            "backwork",
+            "back-working",
+            "cut off transfer",
+            "cutoff transfer",
+        ],
+    )
+}
+
+fn has_text_mill_turn_spindle_transfer_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "clamp pressure",
+            "chuck pressure",
+            "collet pressure",
+            "phase sync",
+            "phase synchronization",
+            "spindle sync",
+            "spindle synchronization",
+            "pull force",
+            "bar stop",
+            "transfer clearance",
+            "part catcher",
+            "handoff",
+            "hand-off",
+            "grip check",
+            "pickup verified",
+            "pick-up verified",
         ],
     )
 }
@@ -10108,6 +10531,22 @@ fn inspect_text_instruction_line(
         signals.has_material_jetting_uv_inspection_evidence = true;
         signals.has_process_preparation = true;
     }
+    let ded_context = has_text_ded_context(language, raw_line);
+    if ded_context {
+        signals.has_ded_text_context = true;
+    }
+    if ded_context && has_text_ded_feedstock_path_evidence(raw_line) {
+        signals.has_ded_feedstock_path_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if ded_context && has_text_ded_energy_shielding_evidence(raw_line) {
+        signals.has_ded_energy_shielding_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if ded_context && has_text_ded_thermal_inspection_evidence(raw_line) {
+        signals.has_ded_thermal_inspection_evidence = true;
+        signals.has_process_preparation = true;
+    }
     let composite_fiber_context = has_text_composite_fiber_context(language, raw_line);
     if composite_fiber_context {
         signals.has_composite_fiber_text_context = true;
@@ -10202,6 +10641,27 @@ fn inspect_text_instruction_line(
     }
     if has_text_subtractive_process_evidence(raw_line) {
         signals.has_subtractive_text_process_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let mill_turn_text_context = has_text_mill_turn_context(language, raw_line);
+    if mill_turn_text_context {
+        signals.has_mill_turn_text_context = true;
+        signals.has_subtractive_text_context = true;
+    }
+    if has_text_mill_turn_live_tooling_evidence(raw_line) {
+        signals.has_mill_turn_live_tooling_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    let mill_turn_transfer_context = has_text_mill_turn_transfer_context(language, raw_line);
+    if mill_turn_transfer_context {
+        signals.has_mill_turn_text_context = true;
+        signals.has_mill_turn_transfer_context = true;
+        signals.has_subtractive_text_context = true;
+    }
+    if has_text_mill_turn_spindle_transfer_evidence(raw_line) {
+        signals.has_mill_turn_spindle_transfer_evidence = true;
+        signals.has_setup_reference = true;
         signals.has_process_preparation = true;
     }
     if has_lathe_threading_command(raw_line) {
@@ -10629,6 +11089,10 @@ fn analyze_instruction_programs(
         let mut has_material_jetting_material_evidence = false;
         let mut has_material_jetting_support_evidence = false;
         let mut has_material_jetting_uv_inspection_evidence = false;
+        let mut has_ded_text_context = false;
+        let mut has_ded_feedstock_path_evidence = false;
+        let mut has_ded_energy_shielding_evidence = false;
+        let mut has_ded_thermal_inspection_evidence = false;
         let mut has_composite_fiber_text_context = false;
         let mut has_composite_fiber_layup_evidence = false;
         let mut has_composite_fiber_process_evidence = false;
@@ -10656,6 +11120,10 @@ fn analyze_instruction_programs(
         let mut has_subtractive_text_context = false;
         let mut has_subtractive_text_setup_evidence = false;
         let mut has_subtractive_text_process_evidence = false;
+        let mut has_mill_turn_text_context = false;
+        let mut has_mill_turn_live_tooling_evidence = false;
+        let mut has_mill_turn_transfer_context = false;
+        let mut has_mill_turn_spindle_transfer_evidence = false;
         let mut has_lathe_text_threading_context = false;
         let mut has_lathe_text_threading_sync_evidence = false;
         let mut has_lathe_text_partoff_context = false;
@@ -10720,6 +11188,10 @@ fn analyze_instruction_programs(
                     signals.has_material_jetting_support_evidence;
                 has_material_jetting_uv_inspection_evidence |=
                     signals.has_material_jetting_uv_inspection_evidence;
+                has_ded_text_context |= signals.has_ded_text_context;
+                has_ded_feedstock_path_evidence |= signals.has_ded_feedstock_path_evidence;
+                has_ded_energy_shielding_evidence |= signals.has_ded_energy_shielding_evidence;
+                has_ded_thermal_inspection_evidence |= signals.has_ded_thermal_inspection_evidence;
                 has_composite_fiber_text_context |= signals.has_composite_fiber_text_context;
                 has_composite_fiber_layup_evidence |= signals.has_composite_fiber_layup_evidence;
                 has_composite_fiber_process_evidence |=
@@ -10755,6 +11227,11 @@ fn analyze_instruction_programs(
                 has_subtractive_text_setup_evidence |= signals.has_subtractive_text_setup_evidence;
                 has_subtractive_text_process_evidence |=
                     signals.has_subtractive_text_process_evidence;
+                has_mill_turn_text_context |= signals.has_mill_turn_text_context;
+                has_mill_turn_live_tooling_evidence |= signals.has_mill_turn_live_tooling_evidence;
+                has_mill_turn_transfer_context |= signals.has_mill_turn_transfer_context;
+                has_mill_turn_spindle_transfer_evidence |=
+                    signals.has_mill_turn_spindle_transfer_evidence;
                 has_lathe_text_threading_context |= signals.has_lathe_text_threading_context;
                 has_lathe_text_threading_sync_evidence |=
                     signals.has_lathe_text_threading_sync_evidence;
@@ -14108,6 +14585,76 @@ fn analyze_instruction_programs(
                             .to_string(),
                 });
             }
+            if (class == MachineClass::Additive || has_ded_text_context)
+                && has_ded_text_context
+                && !has_ded_feedstock_path_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "ded-feedstock-path-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "DED/WAAM text job lacks feedstock, substrate, bead path, standoff, datum, or machining-allowance evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "ded-feedstock-path-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "directed-energy deposition can overbuild, underbuild, crash the head, or leave no finish-machining stock when feedstock lot, substrate datum, bead path, standoff, overlap, and machining allowance evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach feedstock lot, substrate fixture/datum, bead path, bead width/height or overlap, nozzle standoff, collision simulation, and finish-machining allowance before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-ded-feedstock-path-evidence".to_string(),
+                    reason:
+                        "DED/WAAM text instructions should retain feedstock, bead path, substrate datum, and finish-machining allowance evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_ded_text_context)
+                && has_ded_text_context
+                && (!has_ded_energy_shielding_evidence || !has_ded_thermal_inspection_evidence)
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "ded-energy-thermal-inspection-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "DED/WAAM text job lacks laser/arc energy, shielding gas, melt-pool, interpass, distortion, NDE, or coupon evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "ded-energy-thermal-inspection-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "DED/WAAM jobs can crack, overheat, oxidize, distort, or hide lack-of-fusion defects when energy input, shielding gas, melt-pool monitoring, interpass temperature, and inspection evidence are missing"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "split DED release into energy input, shielding gas/oxygen, melt-pool monitoring, preheat/interpass temperature, stop-restart tie-ins, distortion review, NDE/coupon, and downstream inspection checkpoints"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-ded-energy-thermal-inspection-evidence".to_string(),
+                    reason:
+                        "DED/WAAM text instructions should retain energy, shielding, melt-pool, interpass, distortion, NDE, and coupon evidence before release"
+                            .to_string(),
+                });
+            }
             if (class == MachineClass::Additive || has_composite_fiber_text_context)
                 && has_composite_fiber_text_context
                 && !has_composite_fiber_layup_evidence
@@ -14493,6 +15040,80 @@ fn analyze_instruction_programs(
                     action: "add-binder-jet-postprocess-shrinkage-evidence".to_string(),
                     reason:
                         "binder-jet text instructions should retain postprocess, shrink-compensation, density, and inspection evidence before release"
+                            .to_string(),
+                });
+            }
+            let text_mill_turn_program = class == MachineClass::Lathe
+                && (is_mill_turn_kind(&machine_kind)
+                    || has_mill_turn_text_context
+                    || has_mill_turn_transfer_context);
+            if text_mill_turn_program
+                && has_mill_turn_text_context
+                && !has_mill_turn_live_tooling_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "mill-turn-live-tooling-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "mill-turn/swiss text job lacks live-tooling, C-axis, Y-axis, or polar-interpolation setup evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "mill-turn-live-tooling-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "mill-turn text instructions can mill in the wrong spindle phase, overtravel a Y/C/B axis, collide live tooling, or scrap off-axis features when C-axis zero/clamp, live-tool holder, polar interpolation, coolant, and collision-clearance evidence is omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach C-axis zero/clamp, Y-axis travel, live-tool holder, spindle-orientation, polar-interpolation, coolant-through-tool, and collision-clearance evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-mill-turn-live-tooling-evidence".to_string(),
+                    reason:
+                        "mill-turn text instructions should retain C/Y-axis, live-tooling, polar-interpolation, coolant, and clearance evidence before live-tool release"
+                            .to_string(),
+                });
+            }
+            if text_mill_turn_program
+                && has_mill_turn_transfer_context
+                && !has_mill_turn_spindle_transfer_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "mill-turn-spindle-transfer-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "mill-turn/swiss text job includes main/sub-spindle transfer without pickup, clamp, sync, or transfer-clearance evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "mill-turn-spindle-transfer-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "mill-turn transfer text instructions can drop the part, lose datum, mar finished surfaces, crash the cutoff tool, or desynchronize main/sub spindles when subspindle pickup, clamp pressure, phase sync, pull force, grip check, and transfer clearance are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach subspindle pickup, chuck/collet clamp pressure, phase sync, pull force, grip check, bar stop or part-catcher state, and transfer-clearance evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-mill-turn-spindle-transfer-evidence".to_string(),
+                    reason:
+                        "mill-turn text instructions should retain subspindle pickup, clamp, sync, grip, pull-force, and transfer-clearance evidence before transfer release"
                             .to_string(),
                 });
             }
@@ -16162,6 +16783,7 @@ fn parametric_design_content(response: &FabricationPlanResponse) -> Value {
         "executionPlan": response.execution_plan,
         "postprocessPlan": response.postprocess_plan,
         "pomdpBeliefState": response.learning.pomdp_belief_state,
+        "releaseProbePlan": response.learning.release_probe_plan,
         "releaseState": {
             "draft": true,
             "machineReady": false,
@@ -16339,6 +16961,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             "pomdp-belief-state".to_string(),
             "pomdp-belief-state",
             json!(response.learning.pomdp_belief_state),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "release-probe-plan".to_string(),
+            "release-probe-plan",
+            json!(response.learning.release_probe_plan),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -17854,6 +18482,8 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         || token.contains("multiaxis")
     {
         "five-axis-mill-postprocessor"
+    } else if wants_mill_turning(&token) {
+        "mill-turn-gcode-postprocessor"
     } else if token.contains("haas") {
         "haas-mill-gcode-postprocessor"
     } else if token.contains("fanuc") || token.contains("lathe") {
@@ -17868,6 +18498,13 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         || token.contains("multi-jet")
     {
         "material-jetting-job-packager"
+    } else if token.contains("directed-energy")
+        || token_has_ded_segment(&token)
+        || token.contains("waam")
+        || token.contains("wire-arc-additive")
+        || token.contains("laser-cladding")
+    {
+        "directed-energy-deposition-job-packager"
     } else if token.contains("composite-fiber")
         || token.contains("continuous-fiber")
         || token.contains("carbon-fiber")
@@ -17911,6 +18548,8 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         || token.contains("multiaxis")
     {
         "five-axis-controller-gcode".to_string()
+    } else if wants_mill_turning(&token) {
+        "mill-turn-controller-gcode".to_string()
     } else if token.contains("marlin") || token.contains("gcode") {
         "controller-gcode".to_string()
     } else if token.contains("sla") || token.contains("resin") {
@@ -17921,6 +18560,13 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         || token.contains("multi-jet")
     {
         "material-jetting-job-package".to_string()
+    } else if token.contains("directed-energy")
+        || token_has_ded_segment(&token)
+        || token.contains("waam")
+        || token.contains("wire-arc-additive")
+        || token.contains("laser-cladding")
+    {
+        "directed-energy-deposition-job-package".to_string()
     } else if token.contains("composite-fiber")
         || token.contains("continuous-fiber")
         || token.contains("carbon-fiber")
@@ -21621,6 +22267,96 @@ fn pomdp_belief_state(
     }
 }
 
+fn release_probe_is_blocker(target_state: &str, summary: &BoundarySummary) -> bool {
+    match target_state {
+        "machine-failure-risk" => summary.machine_failure_risks > 0 || !summary.ok,
+        "human-intervention-needed" => summary.human_intervention_required > 0,
+        "split-combine-needed" => summary.split_recommended > 0 || summary.combine_recommended > 0,
+        "automation-capability-gap" => summary.automation_required > 0,
+        _ => false,
+    }
+}
+
+fn release_probe_priority(probe: &PomdpProbe, release_blocker: bool) -> &'static str {
+    if release_blocker || probe.expected_information_gain >= 0.20 {
+        "required"
+    } else if probe.expected_information_gain >= 0.12 {
+        "recommended"
+    } else {
+        "watch"
+    }
+}
+
+fn release_probe_plan(
+    belief_state: &PomdpBeliefState,
+    summary: &BoundarySummary,
+    validation: &ValidationReport,
+) -> ReleaseProbePlan {
+    let probes = belief_state
+        .recommended_probes
+        .iter()
+        .map(|probe| {
+            let release_blocker = release_probe_is_blocker(&probe.target_state, summary);
+            let evidence = belief_state
+                .hidden_states
+                .iter()
+                .find(|state| state.state == probe.target_state)
+                .map(|state| state.evidence.clone())
+                .unwrap_or_else(|| vec!["hidden-state-evidence-not-found".to_string()]);
+            ReleaseProbe {
+                probe_id: probe.probe_id.clone(),
+                target_state: probe.target_state.clone(),
+                priority: release_probe_priority(probe, release_blocker).to_string(),
+                action: probe.action.clone(),
+                expected_information_gain: probe.expected_information_gain,
+                required_before_state: probe.required_before_state.clone(),
+                evidence,
+                release_blocker,
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut required_before_release = probes
+        .iter()
+        .filter(|probe| probe.priority == "required")
+        .map(|probe| format!("{}:{}", probe.target_state, probe.action))
+        .collect::<Vec<_>>();
+    if required_before_release.is_empty() && !validation.ok {
+        required_before_release.extend(summary.recommended_actions.iter().take(5).map(|action| {
+            format!(
+                "review-{}:{}",
+                normalize_token(&action.boundary_kind),
+                normalize_token(&action.action)
+            )
+        }));
+    }
+    if required_before_release.is_empty() {
+        required_before_release
+            .push("confirm-no-new-machine-failure-boundaries-before-release".to_string());
+    }
+    required_before_release.sort();
+    required_before_release.dedup();
+
+    let release_state = if probes.iter().any(|probe| probe.release_blocker) || !validation.ok {
+        "blocked-pending-release-probes"
+    } else if probes.iter().any(|probe| probe.priority == "recommended") {
+        "review-probes-before-release"
+    } else {
+        "ready-for-final-release-confirmation"
+    };
+
+    ReleaseProbePlan {
+        schema_version: "dd.fabrication.release-probe-plan.v1".to_string(),
+        release_state: release_state.to_string(),
+        probe_count: probes.len(),
+        required_before_release,
+        probes,
+        notes: vec![
+            "POMDP release probes are deterministic evidence-collection requests for downstream workers or operators before machine-ready release".to_string(),
+            "Probe priorities combine hidden-state belief, information gain, and retained failure-boundary summary counts".to_string(),
+        ],
+    }
+}
+
 fn strategy_candidates(
     parts: &[PartPlan],
     process_plan: &[ProcessStep],
@@ -21991,6 +22727,7 @@ fn learning_plan(
     );
     let pomdp_belief_state =
         pomdp_belief_state(&observations, &summary, &intervention_signals, validation);
+    let release_probe_plan = release_probe_plan(&pomdp_belief_state, &summary, validation);
 
     Ok(LearningPlan {
         model_family,
@@ -22008,6 +22745,7 @@ fn learning_plan(
         ],
         pomdp_observations: observations,
         pomdp_belief_state,
+        release_probe_plan,
         actions,
         strategy_candidates,
         intervention_signals,
@@ -23036,6 +23774,7 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "rewards": rewards,
         "observations": response.learning.pomdp_observations,
         "pomdpBeliefState": response.learning.pomdp_belief_state,
+        "releaseProbePlan": response.learning.release_probe_plan,
         "productionPlan": response.production_plan,
         "machineSchedule": response.machine_schedule,
         "machineSelection": response.machine_selection,
@@ -23511,6 +24250,7 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "marlin-gcode",
         "haas-gcode",
         "fanuc-gcode",
+        "mill-turn-gcode",
         "grbl-gcode",
         "iso-gcode",
         "printer-job",
@@ -23518,6 +24258,7 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "sla-job",
         "resin-job",
         "material-jetting-job",
+        "directed-energy-deposition-job",
         "composite-fiber-job",
         "binder-jet-job",
         "sls-job",
@@ -23530,6 +24271,7 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "plasma-job",
         "wire-edm-job",
         "sinker-edm-job",
+        "mill-turn-job",
         "router-profile",
         "operator-checklist",
         "setup-sheet",
@@ -23567,6 +24309,7 @@ async fn capabilities() -> impl IntoResponse {
             "fdm-printer",
             "sla-msla-resin-printer",
             "material-jetting-printer",
+            "directed-energy-deposition-cell",
             "continuous-fiber-composite-printer",
             "binder-jet-printer",
             "sls-mjf-powder-bed-printer",
@@ -23581,6 +24324,7 @@ async fn capabilities() -> impl IntoResponse {
             "plasma-sheet-cutter",
             "wire-edm-sheet-cutter",
             "sinker-edm-cell",
+            "mill-turn-center",
             "lathe",
             "manual-or-special-process"
         ],
@@ -23608,12 +24352,14 @@ async fn capabilities() -> impl IntoResponse {
             "postprocess-plan",
             "intervention-map",
             "pomdp-belief-state",
+            "release-probe-plan",
             "neural-training-corpus",
             "mdp-request"
         ],
         "learningChannels": [
             "mdp-states-actions-rewards",
             "pomdp-belief-state-and-probes",
+            "release-probe-plan",
             "neural-policy-sketch",
             "neural-training-corpus",
             "fabrication-outcome-rewards",
@@ -23690,6 +24436,7 @@ async fn request_schema() -> impl IntoResponse {
                 "fdm-printer",
                 "sla-printer",
                 "material-jetting-printer",
+                "directed-energy-deposition-cell",
                 "composite-fiber-printer",
                 "binder-jet-printer",
                 "sls-printer",
@@ -23703,6 +24450,7 @@ async fn request_schema() -> impl IntoResponse {
                 "plasma-cutter",
                 "wire-edm",
                 "sinker-edm",
+                "mill-turn-center",
                 "lathe",
                 "manual-cell"
             ]
@@ -25457,7 +26205,7 @@ mod tests {
             .design
             .parts
             .iter()
-            .any(|part| part.machine_kind.contains("lathe")));
+            .any(|part| machine_class(&part.machine_kind) == MachineClass::Lathe));
         assert_eq!(
             response.machine_selection.len(),
             response.design.parts.len()
@@ -25562,7 +26310,7 @@ mod tests {
             .quality_plan
             .inspection_points
             .iter()
-            .any(|point| point.machine_kind.contains("lathe")
+            .any(|point| machine_class(&point.machine_kind) == MachineClass::Lathe
                 && point.method.contains("thread gauge")));
         assert!(response
             .quality_plan
@@ -25715,7 +26463,7 @@ mod tests {
                 && lane.utilization_ratio > 0.0
         }));
         assert!(response.machine_schedule.machine_lanes.iter().any(|lane| {
-            lane.machine_kind.contains("lathe")
+            machine_class(&lane.machine_kind) == MachineClass::Lathe
                 && lane.scheduled_operations > 0
                 && lane.utilization_ratio > 0.0
         }));
@@ -25841,6 +26589,87 @@ mod tests {
                     .and_then(Value::as_str)
                     == Some("horizontal-subtractive-feature")
             })));
+    }
+
+    #[test]
+    fn mill_turn_plan_generates_live_tool_and_transfer_program() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-mill-turn".to_string()),
+            objective: "mill-turn stainless shaft with C-axis cross holes, live tooling, subspindle transfer, and back-working".to_string(),
+            material: Some(material("stainless-steel", "metal")),
+            stock: Some(StockSpec {
+                form: "bar".to_string(),
+                dimensions_mm: Some(vec![32.0, 180.0, 32.0]),
+            }),
+            tolerance_mm: Some(0.035),
+            quantity: Some(1),
+            machines: None,
+            constraints: Some(FabricationConstraints {
+                max_setups: Some(2),
+                allow_human_intervention: Some(true),
+                allow_multi_part_assembly: Some(true),
+                require_dry_run: Some(true),
+                preferred_methods: Some(vec!["mill-turning".to_string()]),
+                preferred_assembly_strategy: None,
+            }),
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("mill-turn plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "turned-axisymmetric-insert"
+                && part.machine_kind == "mill-turn-center"
+                && part.manufacturing_method == "turning"
+        }));
+        assert!(response
+            .machine_selection
+            .iter()
+            .any(|trace| trace.selected_machine_kind == "mill-turn-center"));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("live-tool mill")
+                && step.operation.contains("main/sub-spindle")));
+
+        let mill_turn_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "mill-turn-center")
+            .expect("mill-turn program should be generated");
+        assert_eq!(mill_turn_program.language, "mill-turn-gcode");
+        assert!(mill_turn_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft mill-turn program")));
+        assert!(mill_turn_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("G112")));
+        assert!(mill_turn_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("mill-turn-live-tooling-boundary")));
+        assert!(mill_turn_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("mill-turn-spindle-transfer-boundary")));
+        assert!(mill_turn_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("subspindle")));
+
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "mill-turn-center"
+                    && target.postprocessor == "mill-turn-gcode-postprocessor"
+                    && target.output_format == "mill-turn-controller-gcode"
+            }));
     }
 
     #[test]
@@ -26471,6 +27300,70 @@ mod tests {
             .any(|target| {
                 target.machine_kind == "material-jetting-printer"
                     && target.output_format == "material-jetting-job-package"
+            }));
+    }
+
+    #[test]
+    fn default_additive_fleet_generates_directed_energy_deposition_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-ded-cell".to_string()),
+            objective:
+                "laser directed energy deposition Inconel turbine blade repair with WAAM bead path, melt pool monitoring, interpass temperature, NDE coupon, and finish machining allowance"
+                    .to_string(),
+            material: Some(material("inconel", "metal")),
+            stock: None,
+            tolerance_mm: Some(0.10),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("DED cell plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "directed-energy-deposition-cell"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("deposit DED/WAAM beads")));
+        let ded_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "directed-energy-deposition-cell")
+            .expect("DED program should be generated");
+        assert_eq!(ded_program.language, "directed-energy-deposition-job");
+        assert!(ded_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft directed-energy deposition/WAAM job")));
+        assert!(ded_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("START_DEPOSITION")));
+        assert!(ded_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("MONITOR_MELT_POOL")));
+        assert!(ded_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("interpass-boundary")));
+        assert!(ded_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("interpass temperature")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "directed-energy-deposition-cell"
+                    && target.output_format == "directed-energy-deposition-job-package"
             }));
     }
 
@@ -32986,6 +33879,97 @@ mod tests {
     }
 
     #[test]
+    fn text_ded_jobs_require_feedstock_energy_thermal_and_inspection_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("ded-missing-feedstock-path-evidence".to_string()),
+                machine_id: Some("ded-1".to_string()),
+                machine_kind: Some("directed-energy-deposition-cell".to_string()),
+                language: Some("directed-energy-deposition-job".to_string()),
+                instructions: vec![
+                    "Laser DED repair with laser power 1200W, travel speed 8mm/s, shielding gas argon, oxygen ppm, melt pool pyrometer, coaxial camera, preheat, and fire control verified".to_string(),
+                    "DED interpass temperature, cooldown log, distortion review, stop restart tie-in, NDE ultrasonic, coupon, hardness, porosity, crack inspection, and dimensional inspection recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("ded-missing-energy-thermal-evidence".to_string()),
+                machine_id: Some("ded-1".to_string()),
+                machine_kind: Some("directed-energy-deposition-cell".to_string()),
+                language: Some("directed-energy-deposition-job".to_string()),
+                instructions: vec![
+                    "WAAM directed energy deposition with feedstock lot W-44, wire lot ER316, wire feed, bead path, bead width, bead height, overlap, standoff, deposition path, substrate fixture, datum, finish allowance, machining allowance, and collision simulation reviewed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("ded-with-evidence".to_string()),
+                machine_id: Some("ded-1".to_string()),
+                machine_kind: Some("directed-energy-deposition-cell".to_string()),
+                language: Some("directed-energy-deposition-job".to_string()),
+                instructions: vec![
+                    "Laser directed energy deposition with feedstock lot IN718-9, powder lot P-88, bead path, bead width, bead height, overlap, standoff, deposition path, substrate fixture, datum, finish allowance, machining allowance, and collision simulation reviewed".to_string(),
+                    "Laser power, travel speed, powder feed, shielding gas argon, oxygen ppm, gas flow, melt pool pyrometer, coaxial camera, preheat, and fire control verified".to_string(),
+                    "Interpass temperature, cooldown thermal log, distortion, residual stress, stop restart tie-in, NDE ultrasonic, coupon, hardness, porosity, crack inspection, and dimensional inspection recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "ded-feedstock-path-evidence-missing"
+                && finding.program_id.as_deref() == Some("ded-missing-feedstock-path-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "ded-energy-thermal-inspection-evidence-missing"
+                && finding.program_id.as_deref() == Some("ded-missing-energy-thermal-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("ded-")
+                && finding.program_id.as_deref() == Some("ded-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "ded-feedstock-path-boundary"
+                && boundary.program_id.as_deref() == Some("ded-missing-feedstock-path-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("feedstock lot")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "ded-energy-thermal-inspection-boundary"
+                && boundary.program_id.as_deref() == Some("ded-missing-energy-thermal-evidence")
+                && boundary.requires_human_intervention
+                && boundary
+                    .suggested_resolution
+                    .contains("interpass temperature")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-ded-feedstock-path-evidence"
+                && improvement.program_id.as_deref() == Some("ded-missing-feedstock-path-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-ded-energy-thermal-inspection-evidence"
+                && improvement.program_id.as_deref() == Some("ded-missing-energy-thermal-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [ded-feedstock-path-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1].instructions.iter().any(|line| {
+            line.starts_with("CHECKPOINT [ded-energy-thermal-inspection-boundary]")
+        }));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [ded-")));
+    }
+
+    #[test]
     fn text_composite_fiber_jobs_require_layup_process_and_inspection_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -33525,6 +34509,101 @@ mod tests {
     }
 
     #[test]
+    fn text_mill_turn_jobs_require_live_tooling_and_spindle_transfer_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("mill-turn-text-missing-live-tooling".to_string()),
+                machine_id: Some("mill-turn-center-1".to_string()),
+                machine_kind: Some("mill-turn-center".to_string()),
+                language: Some("mill-turn-job".to_string()),
+                instructions: vec![
+                    "Clamp stainless bar in collet with stick-out, datum zero, setup sheet, tool list, spindle 1800 rpm, feed 0.12 mm/rev, and coolant on".to_string(),
+                    "Mill-turn shaft with off-axis flats and cross holes plus subspindle transfer for back working".to_string(),
+                    "Subspindle pickup verified with clamp pressure 45 bar, phase sync, pull force, grip check, and transfer clearance".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("mill-turn-text-missing-transfer-evidence".to_string()),
+                machine_id: Some("mill-turn-center-1".to_string()),
+                machine_kind: Some("mill-turn-center".to_string()),
+                language: Some("mill-turn-job".to_string()),
+                instructions: vec![
+                    "Clamp stainless bar in collet with stick-out, datum zero, setup sheet, tool list, spindle 1800 rpm, feed 0.12 mm/rev, and coolant on".to_string(),
+                    "Mill-turn shaft with C-axis zero, C-axis clamp, live-tool holder, polar interpolation G112, Y-axis travel, coolant through tool, and collision clearance".to_string(),
+                    "Run main-to-sub transfer for back working after the live-tool milling pass".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("mill-turn-text-with-evidence".to_string()),
+                machine_id: Some("mill-turn-center-1".to_string()),
+                machine_kind: Some("mill-turn-center".to_string()),
+                language: Some("mill-turn-job".to_string()),
+                instructions: vec![
+                    "Clamp stainless bar in collet with stick-out, datum zero, setup sheet, tool list, spindle 1800 rpm, feed 0.12 mm/rev, and coolant on".to_string(),
+                    "Mill-turn shaft with C-axis zero, C-axis clamp, live-tool holder, polar interpolation G112, Y-axis travel, coolant through tool, and collision clearance".to_string(),
+                    "Subspindle pickup verified with clamp pressure 45 bar, phase sync, pull force, grip check, bar stop, and transfer clearance".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "mill-turn-live-tooling-evidence-missing"
+                && finding.program_id.as_deref() == Some("mill-turn-text-missing-live-tooling")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "mill-turn-spindle-transfer-evidence-missing"
+                && finding.program_id.as_deref() == Some("mill-turn-text-missing-transfer-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("mill-turn-")
+                && finding.program_id.as_deref() == Some("mill-turn-text-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "mill-turn-live-tooling-boundary"
+                && boundary.program_id.as_deref() == Some("mill-turn-text-missing-live-tooling")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("C-axis zero")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "mill-turn-spindle-transfer-boundary"
+                && boundary.program_id.as_deref()
+                    == Some("mill-turn-text-missing-transfer-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("phase sync")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-mill-turn-live-tooling-evidence"
+                && improvement.program_id.as_deref() == Some("mill-turn-text-missing-live-tooling")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-mill-turn-spindle-transfer-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("mill-turn-text-missing-transfer-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [mill-turn-live-tooling-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [mill-turn-spindle-transfer-boundary]")));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [mill-turn-")));
+    }
+
+    #[test]
     fn accepted_instruction_languages_cover_generated_default_program_languages() {
         let accepted = accepted_instruction_languages();
         let unique = accepted.iter().copied().collect::<BTreeSet<_>>();
@@ -33539,8 +34618,10 @@ mod tests {
             "iso-gcode",
             "grbl-gcode",
             "fanuc-gcode",
+            "mill-turn-gcode",
             "sla-job",
             "material-jetting-job",
+            "directed-energy-deposition-job",
             "composite-fiber-job",
             "sls-job",
             "metal-pbf-job",
@@ -33550,6 +34631,7 @@ mod tests {
             "plasma-job",
             "wire-edm-job",
             "sinker-edm-job",
+            "mill-turn-job",
             "slicer-job",
             "resin-job",
             "powder-job",
@@ -34144,6 +35226,24 @@ mod tests {
             .any(|probe| probe.target_state == "human-intervention-needed"
                 && probe.action.contains("operator-checkpoint")));
         assert_eq!(
+            response.learning.release_probe_plan.schema_version,
+            "dd.fabrication.release-probe-plan.v1"
+        );
+        assert!(response
+            .learning
+            .release_probe_plan
+            .probes
+            .iter()
+            .any(|probe| probe.target_state == "human-intervention-needed"
+                && probe.release_blocker
+                && probe.priority == "required"));
+        assert!(response
+            .learning
+            .release_probe_plan
+            .required_before_release
+            .iter()
+            .any(|requirement| requirement.contains("operator-checkpoint")));
+        assert_eq!(
             response.learning.neural_policy.schema_version,
             "dd.fabrication.neural-policy-sketch.v1"
         );
@@ -34232,6 +35332,13 @@ mod tests {
                 .iter()
                 .any(|state| state.get("state").and_then(Value::as_str)
                     == Some("human-intervention-needed"))));
+        assert!(mdp_request
+            .get("releaseProbePlan")
+            .and_then(|plan| plan.get("probes"))
+            .and_then(Value::as_array)
+            .is_some_and(|probes| probes
+                .iter()
+                .any(|probe| probe.get("priority").and_then(Value::as_str) == Some("required"))));
         assert!(mdp_request
             .get("neuralTrainingCorpus")
             .and_then(|corpus| corpus.get("examples"))
@@ -35275,6 +36382,7 @@ mod tests {
         assert!(job.artifacts.contains_key("quality-plan"));
         assert!(job.artifacts.contains_key("tooling-plan"));
         assert!(job.artifacts.contains_key("pomdp-belief-state"));
+        assert!(job.artifacts.contains_key("release-probe-plan"));
         assert!(job.artifacts.contains_key("neural-training-corpus"));
         assert!(response
             .machine_selection
@@ -35350,6 +36458,28 @@ mod tests {
             .and_then(|state| state.get("schemaVersion"))
             .and_then(Value::as_str)
             .is_some_and(|version| version == "dd.fabrication.pomdp-belief-state.v1"));
+        assert!(parametric_design
+            .content
+            .get("releaseProbePlan")
+            .and_then(|plan| plan.get("schemaVersion"))
+            .and_then(Value::as_str)
+            .is_some_and(|version| version == "dd.fabrication.release-probe-plan.v1"));
+        let release_probe_plan = job
+            .artifacts
+            .get("release-probe-plan")
+            .expect("release probe plan artifact should be retained");
+        assert_eq!(
+            release_probe_plan
+                .content
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.release-probe-plan.v1")
+        );
+        assert!(release_probe_plan
+            .content
+            .get("probes")
+            .and_then(Value::as_array)
+            .is_some_and(|probes| !probes.is_empty()));
         let neural_corpus = job
             .artifacts
             .get("neural-training-corpus")
