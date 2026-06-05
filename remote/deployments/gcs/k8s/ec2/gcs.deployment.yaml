@@ -174,9 +174,9 @@ spec:
             - name: GCS_WS_CONV_FANOUT_BATCH_ENABLED
               value: 'true'
             - name: GCS_WS_CONV_FANOUT_BATCH_MS
-              value: '5'
+              value: '20'
             - name: GCS_WS_CONV_FANOUT_BATCH_MAX
-              value: '128'
+              value: '512'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
