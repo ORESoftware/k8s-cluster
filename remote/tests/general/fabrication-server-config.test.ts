@@ -171,6 +171,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     source,
     /struct FabricationPlanResponse[\s\S]*boundary_summary: BoundarySummary[\s\S]*improvements: Vec<InstructionImprovement>[\s\S]*improved_programs: Vec<ImprovedInstructionProgram>/,
   );
+  assert.match(source, /manufacturing_handoff: ManufacturingHandoff/);
+  assert.match(source, /struct ManufacturingHandoff/);
+  assert.match(source, /struct ManufacturingHandoffPart/);
+  assert.match(source, /struct ManufacturingHandoffGate/);
+  assert.match(source, /fn manufacturing_handoff/);
+  assert.match(source, /dd\.fabrication\.manufacturing-handoff\.v1/);
   assert.match(source, /struct BoundarySummary/);
   assert.match(source, /struct AutomationRequirement/);
   assert.match(source, /struct BoundaryResolutionPlan/);
@@ -194,6 +200,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"analysis-boundary-summary"/);
   assert.match(source, /"resolution-plan"/);
   assert.match(source, /"process-graph"/);
+  assert.match(source, /"manufacturing-handoff"/);
   assert.match(source, /"analysis-resolution-plan"/);
   assert.match(source, /fn boundary_learning_actions/);
   assert.match(source, /fn boundary_learning_observations/);
@@ -232,6 +239,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /machined-datum-finish-candidate/);
   assert.match(source, /split-for-inspection-candidate/);
   assert.match(source, /"strategyCandidates": response\.learning\.strategy_candidates/);
+  assert.match(source, /"manufacturingHandoff": response\.manufacturing_handoff/);
   assert.match(source, /"processGraph": response\.process_graph/);
   assert.match(source, /"interventionSignals": response\.learning\.intervention_signals/);
   assert.match(source, /"automationRequirements": response\.boundary_summary\.automation_requirements/);
@@ -344,7 +352,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     readme,
     /`mdp-request` artifact includes `strategyCandidates`, `interventionSignals`/,
   );
-  assert.match(readme, /`automationRequirements`, `resolutionPlan`, and `machineRelease`/);
+  assert.match(
+    readme,
+    /`manufacturingHandoff`, `automationRequirements`, `resolutionPlan`, and\s+`machineRelease`/,
+  );
+  assert.match(readme, /CAD\/CAM handoff assumptions/);
   assert.match(readme, /ordered release-blocking remediation steps/);
   assert.match(readme, /attempts machine-ready release/);
   assert.match(readme, /horizontal side-slot\/keyway milling/);
