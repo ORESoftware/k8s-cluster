@@ -43,8 +43,9 @@ The Rust deployment imports the local `des_engine` crate from
 `remote/submodules/discrete-event-system.rs` as the preferred in-process
 math/simulation/learning engine. Learning responses and optimizer artifacts
 identify the DES SDK surface, carry canonical DES MDP/POMDP schema names, and
-include a DES-compatible `desMdpSpec` plus a value-iteration `desMdpSolution`
-preview for downstream policy workers.
+include DES-compatible `desMdpSpec`/`desPomdpSpec` payloads plus
+value-iteration `desMdpSolution` and QMDP-underlying `desPomdpSolution`
+previews for downstream policy workers.
 
 The queue accepts direct plan payloads, direct instruction-analysis payloads
 containing `programs`, rich fabrication outcome payloads containing `outcome`,
@@ -671,8 +672,9 @@ policy-memory examples, bounded labels, and strategy inference candidates aligne
 to `neuralFeatures`. `interventionSignals` expose automation requirements and ordered
 `resolutionPlan` steps as learnable actions, observations, next states, and
 reward adjustments. The optimizer-shaped `mdp-request` artifact includes
-`learningEngine`, `desMdpSpec`, `desMdpSolution`, `strategyCandidates`,
-`interventionSignals`, `pomdpBeliefState`, `releaseProbePlan`, `neuralTrainingCorpus`,
+`learningEngine`, `desMdpSpec`, `desMdpSolution`, `desPomdpSpec`,
+`desPomdpSolution`, `strategyCandidates`, `interventionSignals`, `pomdpBeliefState`,
+`releaseProbePlan`, `neuralTrainingCorpus`,
 `designPackage`, `designExports`, `designInputReview`, `productionPlan`,
 `machineSchedule`, `machineSelection`, `manufacturingHandoff`, `qualityPlan`,
 `toolingPlan`, `interventionMap`, `executionPlan`, `postprocessPlan`,
