@@ -145,8 +145,8 @@ Currently opted-in:
   absent or an individual pod target stays down, so a broken direct scrape
   cannot quietly mask one replica's retained fabrication evidence.
   The `Fabrication Planner` Grafana dashboard (uid `dd-fabrication-planner`)
-  groups those signals with request intake, machine-failure boundary rates,
-  NATS result fanout, MDP optimization fanout, generated-program,
+  groups those signals with request intake, validation-finding and
+  machine-failure boundary rates, NATS result fanout, MDP optimization fanout, generated-program,
   job/artifact, learning-event, and artifact detail-request throughput, in-memory
   job/artifact/learning evidence ledgers,
   runtime-config push delivery, dependency scrape health, HPA capacity, CPU and

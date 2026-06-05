@@ -1,7 +1,7 @@
 # `remote/deployments/fabrication-server-rs`
 
-Rust fabrication planning service for additive, subtractive, turning,
-mill-turn/swiss-turning, and hybrid machine workflows.
+Rust fabrication planning service for additive including large-format pellet/FGF,
+subtractive, turning, mill-turn/swiss-turning, and hybrid machine workflows.
 
 It exposes:
 
@@ -103,7 +103,9 @@ is supplied.
   windows, setup/run/teardown minutes, process dependency holds, postprocessor
   holds, and operator or automation assignments before machine start.
 - Draft machine programs such as Marlin-style FDM printer G-code and slicer job
-  sheets, SLA/MSLA resin print-wash-cure job sheets, PolyJet/material-jetting
+  sheets, large-format pellet/FGF job sheets with pellet lot, drying/moisture,
+  hopper/purge, bead/thermal/cooling, gantry-clearance, warpage, and trim-allowance
+  gates, SLA/MSLA resin print-wash-cure job sheets, PolyJet/material-jetting
   photopolymer job sheets with cartridge, channel-map, printhead, support-removal,
   UV, and color/material inspection gates, continuous-fiber composite
   matrix/fiber-layup job sheets with fiber orientation, cutter, spool, coupon, and
@@ -135,6 +137,7 @@ is supplied.
   high-speed kinematic evidence, additive thin-wall geometry, printer
   async-nozzle-wait state, async-bed-target re-wait state, nozzle-cooldown/
   reheat state, bed-cooldown/re-wait state, stepper-idle/re-home state,
+  additive inch-units/slicer conversion state,
   extrusion-mode/reset state, post-mode-switch extrusion reset state,
   negative-Z extrusion/Z-offset probe state, bed-leveling/mesh restore state,
   filament lot/dry-storage
@@ -146,6 +149,7 @@ is supplied.
   bed-adhesion, first-layer, fan-timing, resin exposure/profile/layer/support evidence,
   resin layer/exposure manifest image-hash/checksum and peel/lift/recoat evidence, resin
   vat-capacity/refill evidence, resin-handling/postprocess evidence,
+  pellet/FGF pellet-lot/drying/moisture/hopper/purge and bead/screw/melt/cooling/gantry-clearance/warpage/trim-allowance evidence,
   material-jetting cartridge/channel-map/printhead/tray and support-removal/UV/color/material inspection evidence,
   DED/WAAM feedstock/substrate/bead-path/standoff and laser/arc/shielding/interpass/NDE/coupon evidence,
   composite-fiber layup/orientation/load-case and spool/cutter/coupon/continuity evidence,
@@ -228,10 +232,10 @@ operator sign-off.
 `GET /capabilities` and the gateway-prefixed `GET /fabrication/capabilities`
 return the service capability contract before a caller submits work. The payload
 includes supported request families, built-in `defaultMachines`, machine classes
-for FDM, resin, material jetting, directed-energy deposition/WAAM, continuous-fiber composite, binder jet, polymer powder-bed, metal PBF, vertical milling, five-axis milling, horizontal milling,
+for FDM, large-format pellet/FGF, resin, material jetting, directed-energy deposition/WAAM, continuous-fiber composite, binder jet, polymer powder-bed, metal PBF, vertical milling, five-axis milling, horizontal milling,
 mill-turn/swiss-turning, routing, laser,
 waterjet, plasma, lathe, and manual/special-process work, accepted instruction
-kinds including slicer, SLA/resin, material-jetting, DED/WAAM, composite-fiber, binder-jet, SLS/powder, metal-PBF, mill-turn, laser/waterjet/plasma,
+kinds including slicer, pellet-FGF, SLA/resin, material-jetting, DED/WAAM, composite-fiber, binder-jet, SLS/powder, metal-PBF, mill-turn, laser/waterjet/plasma,
 wire-EDM, and sinker-EDM job sheets, design input format
 families, generated artifact families, learning
 channels, bounded `profileEvidence` buckets for submitted machine profiles, and
@@ -410,7 +414,8 @@ words, missing units or positioning modes, late or mid-program `G20`/`G21` unit-
 after async `M104` nozzle targets without `M109` or verified hotend wait,
 after async `M140` bed target changes without `M190` or verified bed wait,
 after nozzle cooldown without reheat, after bed cooldown without re-wait, after
-stepper idle without re-homing, or before homing, missing `M82`/`M83` extrusion
+stepper idle without re-homing, after `G20` inch-mode selection without slicer/printer
+unit-conversion evidence, or before homing, missing `M82`/`M83` extrusion
 mode and `G92 E0` reset state before priming, firmware `G10`/`G11` retract/unretract before `M207`/`M208`/`M209` or equivalent retraction settings evidence, missing spool-weight/remaining-filament/runout-sensor evidence before long extrusion, missing filament lot/dry-storage/
 dryer/desiccant evidence before first extrusion, missing extrusion
 calibration/flow/pressure-advance evidence before first extrusion, missing
@@ -444,7 +449,7 @@ moves before explicit `G17`/`G18`/`G19` plane evidence, with center offsets that
 incompatibility with resolved machine profiles, and text-instruction boundaries
 where the job needs setup, subtractive text setup/process evidence for
 workholding/datum/tool-length and spindle/feed/coolant/kerf/pierce/cut-chart
-controls, slicer profile/support/orientation/first-layer evidence, missing slicer mesh unit/scale/watertight/manifold/normals/wall-thickness evidence for STL/3MF/OBJ/model inputs, slicer high-speed input-shaper/acceleration/volumetric-flow evidence, post-processing, missing material-jetting cartridge/material-channel/printhead/tray evidence, missing material-jetting support-removal/UV/color/material inspection evidence, missing DED/WAAM feedstock/substrate/bead-path/standoff/machining-allowance evidence, missing DED/WAAM energy/shielding/melt-pool/interpass/NDE/coupon evidence, missing composite-fiber layup/orientation/load-case evidence, missing composite-fiber spool/cutter/matrix/coupon/continuity inspection evidence, missing resin exposure/profile/layer/support/build-plate evidence, missing resin layer/exposure manifest image hash/checksum or peel/lift/recoat evidence, missing resin vat-volume/level/refill evidence for large resin jobs, resin IPA/wash/cure/drain/PPE/
+controls, slicer profile/support/orientation/first-layer evidence, missing slicer mesh unit/scale/watertight/manifold/normals/wall-thickness evidence for STL/3MF/OBJ/model inputs, slicer high-speed input-shaper/acceleration/volumetric-flow evidence, post-processing, missing pellet/FGF pellet-lot/drying/moisture/hopper/purge/nozzle evidence, missing pellet/FGF bead width/layer height/screw/melt/cooling/gantry-clearance/warpage/trim evidence, missing material-jetting cartridge/material-channel/printhead/tray evidence, missing material-jetting support-removal/UV/color/material inspection evidence, missing DED/WAAM feedstock/substrate/bead-path/standoff/machining-allowance evidence, missing DED/WAAM energy/shielding/melt-pool/interpass/NDE/coupon evidence, missing composite-fiber layup/orientation/load-case evidence, missing composite-fiber spool/cutter/matrix/coupon/continuity inspection evidence, missing resin exposure/profile/layer/support/build-plate evidence, missing resin layer/exposure manifest image hash/checksum or peel/lift/recoat evidence, missing resin vat-volume/level/refill evidence for large resin jobs, resin IPA/wash/cure/drain/PPE/
 waste controls or missing resin postprocess evidence, powder
 build profile/powder lot/nesting controls or missing powder-bed build/profile evidence,
 cooldown/depowder/recovery controls or missing powder-bed handling evidence, missing

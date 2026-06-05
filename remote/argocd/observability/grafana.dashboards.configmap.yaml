@@ -776,7 +776,8 @@ data:
           "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
           "targets": [
             { "expr": "sum(rate(dd_fabrication_server_failure_boundaries_total[10m]))", "legendFormat": "machine-failure boundaries", "refId": "A" },
-            { "expr": "sum(rate(dd_fabrication_server_errors_total[5m]))", "legendFormat": "server errors", "refId": "B" }
+            { "expr": "sum(rate(dd_fabrication_server_validation_findings_total[10m]))", "legendFormat": "validation findings", "refId": "B" },
+            { "expr": "sum(rate(dd_fabrication_server_errors_total[5m]))", "legendFormat": "server errors", "refId": "C" }
           ],
           "title": "Failure Boundaries and Errors",
           "type": "timeseries"

@@ -187,7 +187,8 @@ failure-boundary counters, and NATS/MDP fan-out counters that Service-level scra
 Prometheus alerts if those direct pod scrape targets disappear or go down while the service-level
 scrape still looks healthy. Operators can open `/grafana/fabrication` from the web-home service
 directory to land on the dedicated `dd-fabrication-planner` dashboard for request intake,
-machine-failure boundaries, NATS/MDP fan-out, runtime-config delivery, HPA pressure, and logs.
+validation findings, machine-failure boundaries, NATS/MDP fan-out, runtime-config delivery, HPA
+pressure, and logs.
 The observability stack also scrapes `dd-runtime-config` metrics so missed subscriber registration,
 configuration-entry, or push-delivery changes are visible alongside the fabrication planner, NATS,
 and MDP optimizer dependency metrics, and alerts when runtime-config is down, has no stage
