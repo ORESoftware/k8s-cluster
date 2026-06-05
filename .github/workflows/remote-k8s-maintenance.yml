@@ -83,7 +83,7 @@ on:
         description: Number of load-generator replicas per loader deployment.
         required: false
         type: string
-        default: "6"
+        default: "2"
       loadtest_clients_per_replica:
         description: WebSocket clients per load-generator replica.
         required: false
@@ -99,6 +99,11 @@ on:
         required: false
         type: string
         default: "3"
+      loadtest_gcs_replicas:
+        description: Number of backend GCS pods to keep available during the load test.
+        required: false
+        type: string
+        default: "1"
 
 concurrency:
   group: ${{ ((inputs.operation == 'loadtest-gcs-wss' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]'))) && 'remote-k8s-maintenance-gcs-loadtest') || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[gcs-diagnose]') || contains(github.event.head_commit.message, '[gcs-snapshot]') || contains(github.event.head_commit.message, '[gcs-ssm]')) && 'remote-k8s-maintenance-gcs-diagnose') || 'remote-k8s-maintenance-capacity' }}
@@ -135,10 +140,11 @@ jobs:
           THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS: ${{ vars.THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS || '4' }}
           LOADTEST_LABEL: ${{ inputs.loadtest_label || 'medium' }}
           LOADTEST_DURATION_SECONDS: ${{ inputs.loadtest_duration_seconds || '180' }}
-          LOADTEST_LOADER_REPLICAS: ${{ inputs.loadtest_loader_replicas || '6' }}
+          LOADTEST_LOADER_REPLICAS: ${{ inputs.loadtest_loader_replicas || '2' }}
           LOADTEST_CLIENTS_PER_REPLICA: ${{ inputs.loadtest_clients_per_replica || '5000' }}
           LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT: ${{ inputs.loadtest_messages_per_second_per_client || '2.5' }}
           LOADTEST_PARALLEL_JOBS: ${{ inputs.loadtest_parallel_jobs || '3' }}
+          LOADTEST_GCS_REPLICAS: ${{ inputs.loadtest_gcs_replicas || '1' }}
         run: |
           set -euo pipefail
 
@@ -2462,10 +2468,11 @@ jobs:
           rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
           duration = loadtest_param("loadtest_duration_seconds", os.environ.get("LOADTEST_DURATION_SECONDS", "180") or "180")
           load_label = loadtest_param("loadtest_label", os.environ.get("LOADTEST_LABEL", "medium") or "medium")
-          loader_replicas = loadtest_param("loadtest_loader_replicas", os.environ.get("LOADTEST_LOADER_REPLICAS", "6") or "6")
+          loader_replicas = loadtest_param("loadtest_loader_replicas", os.environ.get("LOADTEST_LOADER_REPLICAS", "2") or "2")
           clients_per_replica = loadtest_param("loadtest_clients_per_replica", os.environ.get("LOADTEST_CLIENTS_PER_REPLICA", "5000") or "5000")
           messages_per_second = loadtest_param("loadtest_messages_per_second_per_client", os.environ.get("LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT", "2.5") or "2.5")
           parallel_jobs = loadtest_param("loadtest_parallel_jobs", os.environ.get("LOADTEST_PARALLEL_JOBS", "3") or "3")
+          gcs_replicas = loadtest_param("loadtest_gcs_replicas", os.environ.get("LOADTEST_GCS_REPLICAS", "1") or "1")
           script = r'''set -euo pipefail
           proof_log="/tmp/gcs-loadtest-proof-$(date -u +%Y%m%dT%H%M%SZ).log"
           if [ "${LOADTEST_COMPACT_OUTPUT:-true}" = "true" ]; then
@@ -2477,10 +2484,17 @@ jobs:
           case "$duration" in
             ''|*[!0-9]*) duration=180 ;;
           esac
-          loader_replicas="${LOADTEST_LOADER_REPLICAS:-6}"
+          loader_replicas="${LOADTEST_LOADER_REPLICAS:-2}"
           case "$loader_replicas" in
-            ''|*[!0-9]*) loader_replicas=6 ;;
+            ''|*[!0-9]*) loader_replicas=2 ;;
           esac
+          gcs_replicas="${LOADTEST_GCS_REPLICAS:-1}"
+          case "$gcs_replicas" in
+            ''|*[!0-9]*) gcs_replicas=1 ;;
+          esac
+          if [ "$gcs_replicas" -lt 1 ]; then
+            gcs_replicas=1
+          fi
           clients_per_replica="${LOADTEST_CLIENTS_PER_REPLICA:-5000}"
           case "$clients_per_replica" in
             ''|*[!0-9]*) clients_per_replica=5000 ;;
@@ -2503,7 +2517,7 @@ jobs:
             concurrent_loader_count=3
           fi
           aggregate_connections=$((total_connections * concurrent_loader_count))
-          echo "PROOF loadtest_target total_connections=$total_connections aggregate_connections=$aggregate_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second duration_seconds=$duration load_label=$load_label parallel_jobs=$parallel_jobs"
+          echo "PROOF loadtest_target total_connections=$total_connections aggregate_connections=$aggregate_connections gcs_replicas=$gcs_replicas loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second duration_seconds=$duration load_label=$load_label parallel_jobs=$parallel_jobs"
 
           apps="dd-observability gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loadtest_apps="dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
@@ -2974,7 +2988,12 @@ jobs:
             diagnose_gcs_rollout "gcs-router"
             exit 1
           fi
-          wait_available gcs 4
+          kubectl -n default scale deployment/gcs --replicas="$gcs_replicas"
+          if ! kubectl -n default rollout status deployment/gcs --timeout=900s; then
+            diagnose_gcs_rollout "gcs"
+            exit 1
+          fi
+          wait_available gcs "$gcs_replicas"
           wait_available gcs-router 3
           kubectl -n default get deploy gcs gcs-router -o wide
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
@@ -3233,9 +3252,9 @@ jobs:
               echo "ERROR: $loader_name did not observe any GCS response/fanout messages" >&2
               return 1
             fi
-            wait_available gcs 4
+            wait_available gcs "$gcs_replicas"
             wait_available gcs-router 3
-            echo "PROOF service_health gcs_available=$(deployment_available gcs)/4 router_available=$(deployment_available gcs-router)/3"
+            echo "PROOF service_health gcs_available=$(deployment_available gcs)/$gcs_replicas router_available=$(deployment_available gcs-router)/3"
             echo "PROOF loader_pass loader=$loader_name total_connections=$total_connections open=$open failed=$failed receive_errors=$receive_errors sent=$sent received=$received"
           }
 
@@ -3442,15 +3461,15 @@ jobs:
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
           echo "=== final router metrics ==="
           router_metrics
-          echo "PROOF service_health gcs_available=$(deployment_available gcs)/4 router_available=$(deployment_available gcs-router)/3"
+          echo "PROOF service_health gcs_available=$(deployment_available gcs)/$gcs_replicas router_available=$(deployment_available gcs-router)/3"
           report_dependency_health
-          echo "PROOF loadtest_all_passed total_connections=$total_connections aggregate_connections=$aggregate_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second load_label=$load_label parallel_jobs=$parallel_jobs loaders=rust,nodejs,gleam"
+          echo "PROOF loadtest_all_passed total_connections=$total_connections aggregate_connections=$aggregate_connections gcs_replicas=$gcs_replicas loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second load_label=$load_label parallel_jobs=$parallel_jobs loaders=rust,nodejs,gleam"
           '''
 
           print(json.dumps({
               "commands": [
                   "set -euo pipefail",
-                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} LOADTEST_DURATION_SECONDS={shlex.quote(duration)} LOADTEST_LABEL={shlex.quote(load_label)} LOADTEST_LOADER_REPLICAS={shlex.quote(loader_replicas)} LOADTEST_CLIENTS_PER_REPLICA={shlex.quote(clients_per_replica)} LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT={shlex.quote(messages_per_second)} LOADTEST_PARALLEL_JOBS={shlex.quote(parallel_jobs)} bash -lc {shlex.quote(script)}",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} LOADTEST_DURATION_SECONDS={shlex.quote(duration)} LOADTEST_LABEL={shlex.quote(load_label)} LOADTEST_LOADER_REPLICAS={shlex.quote(loader_replicas)} LOADTEST_CLIENTS_PER_REPLICA={shlex.quote(clients_per_replica)} LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT={shlex.quote(messages_per_second)} LOADTEST_PARALLEL_JOBS={shlex.quote(parallel_jobs)} LOADTEST_GCS_REPLICAS={shlex.quote(gcs_replicas)} bash -lc {shlex.quote(script)}",
               ],
           }))
           PY

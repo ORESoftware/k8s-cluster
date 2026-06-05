@@ -40,6 +40,10 @@ and are not marked machine-ready.
 optional part decomposition, optional existing instruction streams, and optional
 learning hints. It returns:
 
+Submitted `existingInstructions` are analyzed beside generated drafts. When the
+request declares a material, those submitted programs are also checked against
+resolved machine profile material lists before the plan is marked OK.
+
 - A normalized design summary with inferred additive, milling, turning, or
   special-process parts.
 - A process plan across 3D printers, vertical/horizontal mills, routers,
@@ -54,8 +58,11 @@ learning hints. It returns:
   operator-only instructions for unsupported machine kinds.
 - Validation and simulation findings plus failure boundaries for heat-up,
   homing, spindle, work-offset, additive material/color/tool-change,
-  manual-stop, tool-length/probe compensation, deep-cut, arc, setup-limit,
-  machine-envelope, sheet-cutting, inspection, and automation constraints.
+  manual-stop, tool-length/probe compensation, canned drilling/tapping cycles,
+  declared material/machine compatibility, additive support/orientation,
+  additive thin-wall geometry, printer bed-adhesion, first-layer, fan-timing,
+  deep-cut, arc, setup-limit, machine-envelope, sheet-cutting, inspection, and
+  automation constraints.
 - Assembly advice that calls out when parts should be combined into one job or
   split so tight-tolerance features can be machined and inspected separately.
 - A learning contract with MDP states, POMDP observations, policy actions,
@@ -143,7 +150,10 @@ lathe. If `parts` is omitted, the planner infers a first decomposition from the
 objective, material, and tolerance, including resin-print, powder-bed-print,
 horizontal-milled side slots/keyways, laser, waterjet, plasma, and
 kerf-controlled sheet-cut profiles, and routed sheet/profile parts for wood,
-foam, acrylic, panel, sign, engraving, and tabbed-profile requests.
+foam, acrylic, panel, sign, engraving, and tabbed-profile requests. Additive
+plans flag overhang, bridge, cantilever, thin-wall, snap-fit, and resin
+drain/cupping geometry as review boundaries before draft machine instructions
+are treated as releasable.
 
 ## `POST /instructions/analyze`
 
@@ -176,14 +186,17 @@ human-intervention gates.
 
 The analyzer is intentionally conservative. It checks common `G`, `M`, and `T`
 words, missing units or positioning modes, printer extrusion before heat-up or
-homing, additive material/color/tool-change stops such as `M600` or multi-tool
-selection, mill/router plunges after tool selection without explicit
-`G43`/probe/tool-length state, subtractive feed moves before spindle start,
+homing, missing bed-temperature waits, first-layer adhesion setup, early
+part-cooling fan timing, additive material/color/tool-change stops such as
+`M600` or multi-tool selection, mill/router plunges after tool selection
+without explicit `G43`/probe/tool-length state, unsafe canned
+drilling/peck/tapping cycles, subtractive feed moves before spindle start,
 lathe constant-surface-speed without a spindle cap, threading cycles, part-off
 or cutoff operations, manual stops, fixture changes, deep negative Z moves, arc
-moves without I/J/R geometry, missing program ends, and text-instruction
-boundaries where the job needs setup, post-processing, sheet-cutting
-kerf/fire/fume checks, assembly, splitting, or operator intervention. Improved drafts are still marked
+moves without I/J/R geometry, missing program ends, declared material
+incompatibility with resolved machine profiles, and text-instruction boundaries
+where the job needs setup, post-processing, sheet-cutting kerf/fire/fume checks,
+assembly, splitting, or operator intervention. Improved drafts are still marked
 `machineReady=false`; they are normalization aids for review, motion-envelope
 simulation, and controller-specific postprocessing.
 
@@ -192,7 +205,10 @@ simulation over `G0`/`G1`/arc motion. When a submitted or generated toolpath
 exceeds the selected machine `workEnvelopeMm`, the service emits
 `simulated-axis-envelope-exceeded` findings, `simulated-machine-envelope`
 failure boundaries, and a retained `simulation-report` or
-`analysis-simulation-report` artifact.
+`analysis-simulation-report` artifact. Mill/router rapid lateral moves at or
+below the stock surface emit `simulated-rapid-below-clearance` findings and a
+`simulated-rapid-clearance` boundary so clamp, tab, fixture, and stock-collision
+risks are reviewed before release.
 
 ## Outcome Learning
 

@@ -2293,6 +2293,15 @@ fn has_tool_length_compensation(line: &str) -> bool {
     has_any_code(&stripped, &["G43", "G43.1"]) || number_after(&stripped, 'H').is_some()
 }
 
+fn has_mill_canned_cycle(line: &str) -> bool {
+    has_any_code(
+        line,
+        &[
+            "G81", "G82", "G83", "G84", "G85", "G86", "G87", "G88", "G89",
+        ],
+    )
+}
+
 fn number_after(line: &str, axis: char) -> Option<f64> {
     let stripped = strip_comment(line);
     for token in stripped.split_whitespace() {
@@ -2352,6 +2361,54 @@ fn machine_for_program<'a>(
         }
     }
     None
+}
+
+fn analyze_instruction_material_compatibility(
+    programs: &[InstructionProgram],
+    machines: &[MachineProfile],
+    material: &MaterialSpec,
+) -> (Vec<ValidationFinding>, Vec<FailureBoundary>) {
+    let mut findings = Vec::new();
+    let mut boundaries = Vec::new();
+    for (program_index, program) in programs.iter().enumerate() {
+        let Some(machine) = machine_for_program(program, machines) else {
+            continue;
+        };
+        if material_supported(machine, material) {
+            continue;
+        }
+        let program_id = program_id_at(program, program_index);
+        let supported_materials = machine
+            .materials
+            .as_ref()
+            .map(|materials| materials.join(", "))
+            .unwrap_or_else(|| "unspecified".to_string());
+        findings.push(ValidationFinding {
+            severity: "error".to_string(),
+            code: "instruction-material-machine-incompatible".to_string(),
+            program_id: Some(program_id.clone()),
+            line: None,
+            message: format!(
+                "submitted instruction material {} is not listed for machine {} ({})",
+                material.name, machine.id, machine.kind
+            ),
+        });
+        boundaries.push(FailureBoundary {
+            kind: "material-machine-boundary".to_string(),
+            severity: "error".to_string(),
+            program_id: Some(program_id),
+            line: None,
+            reason: format!(
+                "machine {} supports [{}], but the analysis request declares material {}",
+                machine.id, supported_materials, material.name
+            ),
+            requires_human_intervention: true,
+            suggested_resolution:
+                "choose a compatible machine/material pair, revise the machine profile materials, or split the job for operator material verification"
+                    .to_string(),
+        });
+    }
+    (findings, boundaries)
 }
 
 fn axis_limit(class: MachineClass, envelope: &[f64], axis: char) -> Option<f64> {
@@ -2414,6 +2471,7 @@ fn simulate_instruction_programs(
         let mut safe_clearance_observed = false;
         let mut spindle_or_heatup_observed = false;
         let mut reported_axes = BTreeSet::<char>::new();
+        let mut reported_rapid_clearance_boundary = false;
 
         if !is_machine_code_language(&language) {
             traces.push(SimulationProgramTrace {
@@ -2467,6 +2525,48 @@ fn simulate_instruction_programs(
             }
 
             motion_line_count += 1;
+            if matches!(class, MachineClass::Mill | MachineClass::Router)
+                && !reported_rapid_clearance_boundary
+                && has_any_code(&stripped, &["G0", "G00"])
+                && (number_after(&stripped, 'X').is_some()
+                    || number_after(&stripped, 'Y').is_some())
+            {
+                let simulated_z = number_after(&stripped, 'Z')
+                    .map(|z| {
+                        let scaled = z * unit_scale;
+                        if absolute {
+                            scaled
+                        } else {
+                            current.get(&'Z').copied().unwrap_or_default() + scaled
+                        }
+                    })
+                    .or_else(|| current.get(&'Z').copied());
+                if simulated_z.is_some_and(|z| z <= 0.0) {
+                    reported_rapid_clearance_boundary = true;
+                    findings.push(ValidationFinding {
+                        severity: "warning".to_string(),
+                        code: "simulated-rapid-below-clearance".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message:
+                            "simulated rapid lateral move occurs at or below the stock surface"
+                                .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "simulated-rapid-clearance".to_string(),
+                        severity: "warning".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "rapid XY motion without a positive Z clearance can collide with stock, clamps, tabs, fixtures, or retained material"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "insert a separate safe Z retract before lateral rapid motion, verify clamp/tab clearance, or split the setup for operator signoff"
+                                .to_string(),
+                    });
+                }
+            }
             for axis in ['X', 'Y', 'Z', 'E'] {
                 let Some(raw_value) = number_after(&stripped, axis) else {
                     continue;
@@ -2851,16 +2951,25 @@ fn analyze_instruction_programs(
         let normalized_language = normalize_token(&language);
         let machine_code_language = is_machine_code_language(&language);
         let class = machine_class(&machine_kind);
+        let mut absolute = true;
         let mut has_units_mode = false;
         let mut has_positioning_mode = false;
         let mut has_homing_or_fixture_reference = false;
         let mut has_spindle_or_heatup = false;
+        let mut has_nozzle_heatup = false;
+        let mut has_bed_heatup = false;
+        let mut has_bed_wait = false;
         let mut has_program_end = false;
         let mut has_feed_move = false;
         let mut has_extrusion = false;
+        let mut first_extrusion_line = None;
+        let mut first_extrusion_z = None;
+        let mut first_extrusion_feed = None;
+        let mut current_z = None;
         let mut has_tool_selection = false;
         let mut has_tool_length_reference = false;
         let mut reported_tool_length_boundary = false;
+        let mut reported_fan_timing_boundary = false;
         let mut has_lathe_spindle_limit = false;
         let mut reported_lathe_css_boundary = false;
         let mut reported_lathe_threading_boundary = false;
@@ -2902,6 +3011,12 @@ fn analyze_instruction_programs(
             if has_any_code(&stripped, &["G90", "G91"]) {
                 has_positioning_mode = true;
             }
+            if has_any_code(&stripped, &["G90"]) {
+                absolute = true;
+            }
+            if has_any_code(&stripped, &["G91"]) {
+                absolute = false;
+            }
             if has_any_code(
                 &stripped,
                 &["G28", "G53", "G54", "G55", "G56", "G57", "G58", "G59"],
@@ -2914,6 +3029,21 @@ fn analyze_instruction_programs(
             ) {
                 has_spindle_or_heatup = true;
             }
+            if has_any_code(&stripped, &["M104", "M109"])
+                && number_after(&stripped, 'S').map_or(true, |temperature| temperature > 0.0)
+            {
+                has_nozzle_heatup = true;
+            }
+            if has_any_code(&stripped, &["M140", "M190"])
+                && number_after(&stripped, 'S').map_or(true, |temperature| temperature > 0.0)
+            {
+                has_bed_heatup = true;
+            }
+            if has_any_code(&stripped, &["M190"])
+                && number_after(&stripped, 'S').map_or(true, |temperature| temperature > 0.0)
+            {
+                has_bed_wait = true;
+            }
             if has_any_code(&stripped, &["M2", "M02", "M30"]) || contains_code(&stripped, "M84") {
                 has_program_end = true;
             }
@@ -2922,6 +3052,52 @@ fn analyze_instruction_programs(
             }
             if number_after(&stripped, 'E').is_some() {
                 has_extrusion = true;
+            }
+            if let Some(z) = number_after(&stripped, 'Z') {
+                current_z = Some(if absolute {
+                    z
+                } else {
+                    current_z.unwrap_or(0.0) + z
+                });
+            }
+            if class == MachineClass::Additive
+                && has_any_code(&stripped, &["M106"])
+                && number_after(&stripped, 'S').map_or(true, |speed| speed > 0.0)
+                && first_extrusion_line.is_none()
+                && !reported_fan_timing_boundary
+            {
+                reported_fan_timing_boundary = true;
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "part-cooling-before-first-layer".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    message:
+                        "part-cooling fan turns on before the first positive extrusion is established"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "printer-fan-timing-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: Some(line_number),
+                    reason:
+                        "early part cooling can ruin adhesion or warping control before the first layer is anchored"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "delay M106 until after the validated first layer, or document a material-specific fan ramp for bridges and overhangs"
+                            .to_string(),
+                });
+            }
+            if class == MachineClass::Additive
+                && line_has_feed_move
+                && number_after(&stripped, 'E').is_some_and(|extrusion| extrusion > 0.0)
+                && first_extrusion_line.is_none()
+            {
+                first_extrusion_line = Some(line_number);
+                first_extrusion_z = current_z;
+                first_extrusion_feed = number_after(&stripped, 'F');
             }
             if matches!(class, MachineClass::Mill | MachineClass::Router) {
                 if has_numeric_tool_select(&stripped) || has_any_code(&stripped, &["M6", "M06"]) {
@@ -3143,13 +3319,13 @@ fn analyze_instruction_programs(
                 });
             }
 
-            if class == MachineClass::Additive && has_extrusion && !has_spindle_or_heatup {
+            if class == MachineClass::Additive && has_extrusion && !has_nozzle_heatup {
                 findings.push(ValidationFinding {
                     severity: "error".to_string(),
                     code: "extrusion-before-heatup".to_string(),
                     program_id: Some(program_id.clone()),
                     line: Some(line_number),
-                    message: "extrusion appears before nozzle or bed heat-up commands".to_string(),
+                    message: "extrusion appears before nozzle heat-up commands".to_string(),
                 });
                 boundaries.push(FailureBoundary {
                     kind: "printer-state-gate".to_string(),
@@ -3203,6 +3379,69 @@ fn analyze_instruction_programs(
                     line: Some(line_number),
                     message: "arc move is missing I/J center offsets or R radius".to_string(),
                 });
+            }
+
+            if matches!(class, MachineClass::Mill | MachineClass::Router)
+                && has_mill_canned_cycle(&stripped)
+            {
+                if number_after(&stripped, 'R').is_none() || number_after(&stripped, 'Z').is_none()
+                {
+                    findings.push(ValidationFinding {
+                        severity: "error".to_string(),
+                        code: "canned-cycle-missing-plane-or-depth".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message:
+                            "mill/router canned cycle is missing explicit retract plane or depth"
+                                .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "canned-cycle-boundary".to_string(),
+                        severity: "error".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "drilling, boring, or tapping cycles depend on explicit R-plane, Z-depth, fixture clearance, and cycle-cancel state"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "make R and Z values explicit on the cycle, verify clearance above clamps/fixtures, and cancel the cycle with G80 before unrelated motion"
+                                .to_string(),
+                    });
+                }
+                if has_any_code(&stripped, &["G83"]) && number_after(&stripped, 'Q').is_none() {
+                    findings.push(ValidationFinding {
+                        severity: "warning".to_string(),
+                        code: "peck-cycle-missing-peck-depth".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message: "G83 peck cycle is missing an explicit Q peck depth".to_string(),
+                    });
+                }
+                if has_any_code(&stripped, &["G84"]) {
+                    findings.push(ValidationFinding {
+                        severity: "warning".to_string(),
+                        code: "tapping-cycle-boundary".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message:
+                            "tapping cycle requires spindle/feed synchronization and tap-holding review"
+                                .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "tapping-cycle-boundary".to_string(),
+                        severity: "warning".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "rigid or floating tapping cycles can break taps or scrap stock without verified pitch, spindle mode, reversal, coolant, and clearance"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "split tapping into an operator-approved setup with tap holder, pitch, coolant, reversal, and thread-gauge checks"
+                                .to_string(),
+                    });
+                }
             }
 
             if matches!(class, MachineClass::Mill | MachineClass::Router)
@@ -3320,6 +3559,64 @@ fn analyze_instruction_programs(
                 line: None,
                 message: "additive program extrudes without temperature commands".to_string(),
             });
+        }
+        if machine_code_language && class == MachineClass::Additive && has_extrusion {
+            if !has_bed_heatup || !has_bed_wait {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "missing-bed-temperature-wait".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message: if has_bed_heatup {
+                        "additive program heats the bed without waiting for bed temperature"
+                            .to_string()
+                    } else {
+                        "additive program extrudes without bed heat-up or bed-temperature wait"
+                            .to_string()
+                    },
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "printer-bed-adhesion-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "first-layer adhesion can fail unless the bed surface, bed temperature, and wait state are verified before extrusion"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "add material-specific M140/M190 bed preheat and wait commands, confirm the build surface, or add a validated raft/brim/adhesive setup"
+                            .to_string(),
+                });
+            }
+            if let Some(line) = first_extrusion_line {
+                let z_is_risky = first_extrusion_z.map_or(true, |z| z > 0.45);
+                let feed_is_risky = first_extrusion_feed.is_some_and(|feed| feed > 3600.0);
+                if z_is_risky || feed_is_risky {
+                    findings.push(ValidationFinding {
+                        severity: "warning".to_string(),
+                        code: "first-layer-setup-risk".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line),
+                        message:
+                            "first positive extrusion lacks a conservative first-layer height or feed setup"
+                                .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "printer-first-layer-boundary".to_string(),
+                        severity: "warning".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line),
+                        reason:
+                            "the print can fail immediately if the first layer starts too high, too fast, or without a verified priming/adhesion path"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "insert a validated purge/prime line, slow first-layer feed, and measured first-layer Z offset before releasing the print"
+                                .to_string(),
+                    });
+                }
+            }
         }
 
         analyzed.push(AnalyzedProgram {
@@ -3458,6 +3755,12 @@ fn improve_instruction_programs(
                 if finding_applies(validation, &program_id, "missing-printer-heatup") {
                     instructions.push(
                         "M0 ; REVIEW: add verified nozzle/bed heat-up commands before extrusion"
+                            .to_string(),
+                    );
+                }
+                if finding_applies(validation, &program_id, "missing-bed-temperature-wait") {
+                    instructions.push(
+                        "M0 ; REVIEW: add verified bed preheat/wait, build-surface prep, and adhesion strategy before first extrusion"
                             .to_string(),
                     );
                 }
@@ -3869,6 +4172,117 @@ fn report_severity(findings: &[ValidationFinding], boundaries: &[FailureBoundary
     }
 }
 
+fn add_additive_design_boundaries(
+    objective: &str,
+    part: &PartPlan,
+    findings: &mut Vec<ValidationFinding>,
+    boundaries: &mut Vec<FailureBoundary>,
+) {
+    if machine_class(&part.machine_kind) != MachineClass::Additive {
+        return;
+    }
+    let objective_token = normalize_token(objective);
+    let role_token = normalize_token(&part.role);
+    let combined = format!("{objective_token}-{role_token}");
+
+    if [
+        "overhang",
+        "unsupported",
+        "bridge",
+        "bridging",
+        "cantilever",
+    ]
+    .iter()
+    .any(|needle| combined.contains(needle))
+    {
+        findings.push(ValidationFinding {
+            severity: "warning".to_string(),
+            code: "additive-support-orientation-boundary".to_string(),
+            program_id: None,
+            line: None,
+            message: format!(
+                "additive part {} has overhang, bridge, unsupported, or cantilever geometry that needs orientation/support review",
+                part.id
+            ),
+        });
+        boundaries.push(FailureBoundary {
+            kind: "additive-support-boundary".to_string(),
+            severity: "warning".to_string(),
+            program_id: None,
+            line: None,
+            reason: format!(
+                "part {} may fail or require human support removal unless overhangs/bridges are reoriented, supported, split, or combined differently",
+                part.id
+            ),
+            requires_human_intervention: true,
+            suggested_resolution:
+                "run support/orientation analysis, split unsupported features into separate printable pieces, or redesign bridges before approving the print"
+                    .to_string(),
+        });
+    }
+
+    if ["thin-wall", "thinwall", "snap-tab", "snap-fit"]
+        .iter()
+        .any(|needle| combined.contains(needle))
+    {
+        findings.push(ValidationFinding {
+            severity: "warning".to_string(),
+            code: "additive-thin-wall-boundary".to_string(),
+            program_id: None,
+            line: None,
+            message: format!(
+                "additive part {} references thin walls or snap features that need nozzle/resin/process validation",
+                part.id
+            ),
+        });
+        boundaries.push(FailureBoundary {
+            kind: "additive-thin-wall-boundary".to_string(),
+            severity: "warning".to_string(),
+            program_id: None,
+            line: None,
+            reason: format!(
+                "part {} may print underfilled, brittle, or dimensionally unstable thin geometry without process-specific minimum wall checks",
+                part.id
+            ),
+            requires_human_intervention: true,
+            suggested_resolution:
+                "validate minimum wall thickness against nozzle, resin exposure, powder process, and post-processing loads before release"
+                    .to_string(),
+        });
+    }
+
+    if is_resin_printer_kind(&part.machine_kind)
+        && ["hollow", "drain", "suction", "cup", "cupping"]
+            .iter()
+            .any(|needle| combined.contains(needle))
+    {
+        findings.push(ValidationFinding {
+            severity: "warning".to_string(),
+            code: "resin-drain-cupping-boundary".to_string(),
+            program_id: None,
+            line: None,
+            message: format!(
+                "resin part {} references hollow, drain, suction, or cupping-prone geometry",
+                part.id
+            ),
+        });
+        boundaries.push(FailureBoundary {
+            kind: "resin-drain-cupping-boundary".to_string(),
+            severity: "warning".to_string(),
+            program_id: None,
+            line: None,
+            reason: format!(
+                "part {} can trap uncured resin or create peel-force suction unless drain holes and orientation are reviewed",
+                part.id
+            ),
+            requires_human_intervention: true,
+            suggested_resolution:
+                "add drain/vent holes, orient hollow regions for washout, verify wall thickness, and split the part if trapped resin remains"
+                    .to_string(),
+        });
+    }
+}
+
 fn canonical_policy_method(value: &str) -> Option<String> {
     let token = normalize_token(value);
     if wants_horizontal_milling(&token) {
@@ -4161,6 +4575,7 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
     let mut process_plan = Vec::with_capacity(requested_parts.len());
     let mut generated_programs = Vec::with_capacity(requested_parts.len());
     let mut warnings = Vec::new();
+    let mut plan_findings = Vec::new();
     let mut plan_boundaries = Vec::new();
     let mut machine_by_part = BTreeMap::new();
 
@@ -4231,6 +4646,12 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
                 Vec::new()
             },
         };
+        add_additive_design_boundaries(
+            &objective,
+            &part_plan,
+            &mut plan_findings,
+            &mut plan_boundaries,
+        );
         let generated = generate_program(&part_plan, machine);
         process_plan.push(ProcessStep {
             step: index as u32 + 1,
@@ -4328,8 +4749,13 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         .collect::<Vec<_>>();
     let (_, mut validation, improvements) = analyze_instruction_programs(&generated_as_input);
     let simulation = simulate_instruction_programs(&generated_as_input, &machines);
+    let (material_findings, material_boundaries) =
+        analyze_instruction_material_compatibility(&existing_programs, &machines, &material);
+    validation.findings.extend(plan_findings);
+    validation.findings.extend(material_findings);
     validation.findings.extend(simulation.findings.clone());
     validation.failure_boundaries.extend(plan_boundaries);
+    validation.failure_boundaries.extend(material_boundaries);
     validation
         .failure_boundaries
         .extend(simulation.failure_boundaries.clone());
@@ -5758,19 +6184,29 @@ async fn analyze_http(
                 .into_response();
         }
     };
-    if let Some(material) = request.material {
-        if let Err(error) = material_or_default(Some(material)) {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "ok": false, "error": error })),
-            )
-                .into_response();
-        }
-    }
+    let analysis_material = match request.material {
+        Some(material) => match material_or_default(Some(material)) {
+            Ok(material) => Some(material),
+            Err(error) => {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "ok": false, "error": error })),
+                )
+                    .into_response();
+            }
+        },
+        None => None,
+    };
 
     let (analyzed, mut validation, improvements) = analyze_instruction_programs(&programs);
     let simulation = simulate_instruction_programs(&programs, &machines);
+    if let Some(material) = analysis_material.as_ref() {
+        let (material_findings, material_boundaries) =
+            analyze_instruction_material_compatibility(&programs, &machines, material);
+        validation.findings.extend(material_findings);
+        validation.failure_boundaries.extend(material_boundaries);
+    }
     validation.findings.extend(simulation.findings.clone());
     validation
         .failure_boundaries
@@ -6493,6 +6929,60 @@ mod tests {
     }
 
     #[test]
+    fn additive_plan_flags_support_overhang_and_thin_wall_boundaries() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-additive-manufacturability".to_string()),
+            objective:
+                "PLA prototype cover with unsupported overhang, long bridge, and thin-wall snap-fit tabs"
+                    .to_string(),
+            material: Some(material("pla", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.2),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("additive manufacturability plan should be generated");
+
+        assert!(response
+            .design
+            .parts
+            .iter()
+            .any(|part| part.machine_kind == "fdm-printer"));
+        assert_eq!(response.validation.severity, "warning");
+        assert!(response
+            .validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "additive-support-orientation-boundary"));
+        assert!(response
+            .validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "additive-thin-wall-boundary"));
+        assert!(response
+            .validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| boundary.kind == "additive-support-boundary"
+                && boundary.requires_human_intervention
+                && boundary
+                    .suggested_resolution
+                    .contains("split unsupported features")));
+        assert!(response
+            .validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| boundary.kind == "additive-thin-wall-boundary"
+                && boundary
+                    .suggested_resolution
+                    .contains("minimum wall thickness")));
+    }
+
+    #[test]
     fn router_analysis_flags_profile_before_spindle_and_tab_stop_boundary() {
         let programs = vec![program(
             "unsafe-router",
@@ -6581,6 +7071,181 @@ mod tests {
     }
 
     #[test]
+    fn mill_analysis_flags_canned_cycle_setup_boundaries() {
+        let programs = vec![program(
+            "unsafe-canned-cycles",
+            "vertical-mill",
+            &[
+                "G21 G90 G54",
+                "T3 M6",
+                "G43 H3",
+                "S2200 M3",
+                "G81 X10 Y10 Z-6 F120",
+                "G83 X20 Y10 Z-8 R2 F100",
+                "G84 X30 Y10 Z-10 R2 F90",
+                "G80",
+                "M30",
+            ],
+        )];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "error");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "canned-cycle-missing-plane-or-depth" && finding.line == Some(5)
+        }));
+        assert!(validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| boundary.kind == "canned-cycle-boundary"));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "peck-cycle-missing-peck-depth" && finding.line == Some(6)
+        }));
+        assert!(validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "tapping-cycle-boundary"));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "tapping-cycle-boundary"
+                && boundary.suggested_resolution.contains("thread-gauge")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(!improved[0].machine_ready);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary canned-cycle-boundary")));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary tapping-cycle-boundary")));
+    }
+
+    #[test]
+    fn instruction_analysis_flags_material_machine_mismatch() {
+        let programs = vec![InstructionProgram {
+            id: Some("steel-on-printer".to_string()),
+            machine_id: Some("polymer-printer".to_string()),
+            machine_kind: Some("fdm-printer".to_string()),
+            language: Some("marlin".to_string()),
+            instructions: vec![
+                "G21 G90".to_string(),
+                "G28".to_string(),
+                "M104 S215".to_string(),
+                "M109 S215".to_string(),
+                "G1 X10 Y10 E1.0 F900".to_string(),
+                "M84".to_string(),
+            ],
+        }];
+        let machines = vec![MachineProfile {
+            id: "polymer-printer".to_string(),
+            kind: "fdm-printer".to_string(),
+            controller: Some("marlin".to_string()),
+            materials: Some(vec!["pla".to_string(), "petg".to_string()]),
+            work_envelope_mm: Some(vec![220.0, 220.0, 220.0]),
+            axes: Some(3),
+            operations: Some(vec!["additive-print".to_string()]),
+        }];
+        let (findings, boundaries) = analyze_instruction_material_compatibility(
+            &programs,
+            &machines,
+            &material("steel", "metal"),
+        );
+
+        assert!(findings.iter().any(|finding| {
+            finding.code == "instruction-material-machine-incompatible"
+                && finding.program_id.as_deref() == Some("steel-on-printer")
+        }));
+        assert!(boundaries.iter().any(|boundary| {
+            boundary.kind == "material-machine-boundary"
+                && boundary.requires_human_intervention
+                && boundary.reason.contains("polymer-printer")
+        }));
+    }
+
+    #[test]
+    fn plan_existing_instructions_inherit_material_machine_validation() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-plan-existing-material".to_string()),
+            objective: "steel alignment bracket with a milled datum pocket".to_string(),
+            material: Some(material("steel", "metal")),
+            stock: Some(StockSpec {
+                form: "bar".to_string(),
+                dimensions_mm: Some(vec![80.0, 40.0, 12.0]),
+            }),
+            tolerance_mm: Some(0.12),
+            quantity: Some(1),
+            machines: Some(vec![
+                MachineProfile {
+                    id: "steel-mill".to_string(),
+                    kind: "vertical-mill".to_string(),
+                    controller: Some("gcode".to_string()),
+                    materials: Some(vec!["steel".to_string(), "aluminum".to_string()]),
+                    work_envelope_mm: Some(vec![300.0, 200.0, 150.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["face".to_string(), "pocket".to_string()]),
+                },
+                MachineProfile {
+                    id: "polymer-printer".to_string(),
+                    kind: "fdm-printer".to_string(),
+                    controller: Some("marlin".to_string()),
+                    materials: Some(vec!["pla".to_string(), "petg".to_string()]),
+                    work_envelope_mm: Some(vec![220.0, 220.0, 220.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["additive-print".to_string()]),
+                },
+            ]),
+            constraints: None,
+            parts: Some(vec![RequestedPart {
+                id: "bracket".to_string(),
+                description: "milled datum bracket".to_string(),
+                material: None,
+                preferred_method: Some("milling".to_string()),
+                tolerance_mm: Some(0.12),
+            }]),
+            existing_instructions: Some(vec![InstructionProgram {
+                id: Some("legacy-steel-print".to_string()),
+                machine_id: Some("polymer-printer".to_string()),
+                machine_kind: Some("fdm-printer".to_string()),
+                language: Some("marlin".to_string()),
+                instructions: vec![
+                    "G21 G90".to_string(),
+                    "G28".to_string(),
+                    "M104 S215".to_string(),
+                    "M109 S215".to_string(),
+                    "G1 X10 Y10 E1.0 F900".to_string(),
+                    "M84".to_string(),
+                ],
+            }]),
+            learning: None,
+        })
+        .expect("plan should be generated with validation findings");
+
+        assert!(!response.ok);
+        assert_eq!(response.validation.severity, "error");
+        assert!(response.validation.findings.iter().any(|finding| {
+            finding.code == "instruction-material-machine-incompatible"
+                && finding.program_id.as_deref() == Some("legacy-steel-print")
+        }));
+        assert!(response
+            .validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| {
+                boundary.kind == "material-machine-boundary"
+                    && boundary.program_id.as_deref() == Some("legacy-steel-print")
+                    && boundary.requires_human_intervention
+            }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.machine_id == "steel-mill"));
+    }
+
+    #[test]
     fn simulation_flags_submitted_toolpath_outside_machine_envelope() {
         let programs = vec![InstructionProgram {
             id: Some("oversize-router".to_string()),
@@ -6630,6 +7295,47 @@ mod tests {
     }
 
     #[test]
+    fn simulation_flags_rapid_lateral_motion_below_clearance() {
+        let programs = vec![InstructionProgram {
+            id: Some("low-rapid-router".to_string()),
+            machine_id: Some("router-1".to_string()),
+            machine_kind: Some("cnc-router".to_string()),
+            language: Some("grbl-gcode".to_string()),
+            instructions: vec![
+                "G21 G90 G54".to_string(),
+                "S18000 M3".to_string(),
+                "G0 X0 Y0 Z8".to_string(),
+                "G1 Z-2 F300".to_string(),
+                "G0 X80 Y30".to_string(),
+                "M30".to_string(),
+            ],
+        }];
+        let machines = vec![MachineProfile {
+            id: "router-1".to_string(),
+            kind: "cnc-router".to_string(),
+            controller: Some("grbl-gcode".to_string()),
+            materials: Some(vec!["wood".to_string()]),
+            work_envelope_mm: Some(vec![300.0, 180.0, 80.0]),
+            axes: Some(3),
+            operations: Some(vec!["profile".to_string()]),
+        }];
+
+        let simulation = simulate_instruction_programs(&programs, &machines);
+
+        assert!(simulation.ok);
+        assert_eq!(simulation.severity, "warning");
+        assert!(simulation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "simulated-rapid-below-clearance"));
+        assert!(simulation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "simulated-rapid-clearance"
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("safe Z retract")
+        }));
+    }
+
+    #[test]
     fn additive_analysis_flags_extrusion_before_heatup_and_homing() {
         let programs = vec![program(
             "bad-print",
@@ -6666,6 +7372,74 @@ mod tests {
             .instructions
             .iter()
             .any(|line| { line.contains("REVIEW: add verified nozzle/bed heat-up commands") }));
+    }
+
+    #[test]
+    fn additive_analysis_flags_first_layer_adhesion_and_fan_boundaries() {
+        let programs = vec![program(
+            "risky-first-layer",
+            "fdm-printer",
+            &[
+                "G21 G90",
+                "G28",
+                "M104 S210",
+                "M109 S210",
+                "M140 S60",
+                "M106 S255",
+                "G1 Z0.80 F3000",
+                "G1 X10 Y10 E1.0 F4200",
+                "M84",
+            ],
+        )];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(improvements.is_empty());
+        assert!(validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "missing-bed-temperature-wait"));
+        assert!(validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "part-cooling-before-first-layer"));
+        assert!(validation
+            .findings
+            .iter()
+            .any(|finding| finding.code == "first-layer-setup-risk"));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "printer-bed-adhesion-boundary"
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("M140/M190")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "printer-fan-timing-boundary"
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("delay M106")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "printer-first-layer-boundary"
+                && boundary.requires_human_intervention
+                && boundary
+                    .suggested_resolution
+                    .contains("validated purge/prime line")
+        }));
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(!improved[0].machine_ready);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| { line.contains("REVIEW: add verified bed preheat/wait") }));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-fan-timing-boundary")));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-first-layer-boundary")));
     }
 
     #[test]
@@ -6776,8 +7550,7 @@ mod tests {
             .iter()
             .any(|finding| finding.code == "lathe-part-off-boundary"));
         assert!(validation.failure_boundaries.iter().any(|boundary| {
-            boundary.kind == "lathe-spindle-speed-boundary"
-                && boundary.requires_human_intervention
+            boundary.kind == "lathe-spindle-speed-boundary" && boundary.requires_human_intervention
         }));
         assert!(validation
             .failure_boundaries

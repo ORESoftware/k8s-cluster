@@ -6,14 +6,10 @@ metadata:
   labels:
     app: gcs
 spec:
-  # 3 replicas to exercise consistent-hash routing across a wider
-  # ring in gcs-router and to give the chat-vibe load tests something
-  # real to fan-out across. CPU request was lowered to 100m in commit
-  # a84e6c1 specifically so the router can spread hot conversations
-  # across multiple pods on the single-node EC2 cluster. Four replicas
-  # keeps 30k WSS soak-test fanout below the per-pod latency knee while
-  # staying light on scheduler requests.
-  replicas: 4
+  # Single-pod 30k WSS medium-load target. gcs-router may still run
+  # multiple stateless frontends, but all websocket connections must land
+  # on this one backend pod for the per-pod capacity proof.
+  replicas: 1
   strategy:
     # On the single-node EC2 cluster we are CPU-bound; a surge pod
     # cannot be scheduled (Insufficient cpu) and rollouts get stuck.
@@ -33,7 +29,7 @@ spec:
       annotations:
         dd.dev/telemetry-revision: "2026-06-03-router-capacity-1"
         dd.dev/chat-vibe-revision: "d1ab694-pressure-shed"
-        dd.dev/gcs-capacity-profile: "2026-06-03-30k-4pods"
+        dd.dev/gcs-capacity-profile: "2026-06-05-30k-1pod"
       labels:
         app: gcs
         dd.dev/redis-cache-client: 'true'
@@ -119,15 +115,17 @@ spec:
             - name: GCS_DIAG_LOGS
               value: 'true'
             - name: GOMEMLIMIT
-              value: 1800MiB
+              value: 6GiB
+            - name: GOMAXPROCS
+              value: '8'
             - name: GOGC
-              value: '50'
+              value: '100'
             - name: GCS_WS_SHED_ENABLED
               value: 'true'
             # The router pins hot conversations to one pod, so keep the active
             # connection shed threshold per pod rather than dividing by replicas.
             - name: GCS_WS_SHED_ACTIVE_CONN_THRESHOLD
-              value: '30000'
+              value: '36000'
             - name: GCS_WS_SHED_OLD_CONN_AGE
               value: '3h'
             - name: GCS_WS_SHED_INTERVAL
@@ -137,10 +135,10 @@ spec:
             - name: GCS_WS_SHED_WARN_GRACE
               value: '500ms'
             - name: GCS_WS_SHED_HEAP_BYTES
-              value: '1342177280'
+              value: '5368709120'
             # RSS pressure is the cgroup OOM guard; heap telemetry can miss spikes.
             - name: GCS_WS_SHED_RSS_BYTES
-              value: '2684354560'
+              value: '7516192768'
             - name: GCS_WS_SHED_GOROUTINES
               value: '120000'
             - name: GCS_WS_SHED_MESSAGE_LATENCY
@@ -156,11 +154,13 @@ spec:
             - name: GCS_WS_SIDE_EFFECT_SHED_GOROUTINES
               value: '80000'
             - name: GCS_WS_SIDE_EFFECT_SHED_HEAP_BYTES
-              value: '1258291200'
+              value: '5368709120'
             # The router pins a conversation to one GCS pod, so local fanout covers
             # hot-path conversation delivery without one RMQ subscriber per socket.
             - name: GCS_WS_ENABLE_RMQ_SUBSCRIPTIONS
               value: 'false'
+            - name: GCS_WS_SKIP_BROKER_SIDE_EFFECTS_AFTER_LOCAL_FANOUT
+              value: 'true'
             - name: GCS_WS_ENABLE_CHAT_MAP_SIDE_EFFECT
               value: 'false'
             - name: vibe_api_server_protocol
@@ -228,8 +228,8 @@ spec:
               cpu: 100m
               memory: 512Mi
             limits:
-              cpu: '6'
-              memory: 3Gi
+              cpu: '8'
+              memory: 8Gi
           startupProbe:
             httpGet:
               path: /chat/v1/health/3000
