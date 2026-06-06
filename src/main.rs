@@ -1994,6 +1994,7 @@ fn solve_lp_relaxation(
         &InternalSimplexOptions {
             max_iter: Some(lp_max_iters),
             tol: Some(1e-9),
+            basis_start: None,
         },
     );
     Ok(LpRelaxation {
@@ -2236,6 +2237,7 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
                 &InternalSimplexOptions {
                     max_iter: job.options.lp_max_iters,
                     tol: Some(1e-9),
+                    basis_start: None,
                 },
             );
             return Ok(SubproblemSolveOutcome::Lp {
