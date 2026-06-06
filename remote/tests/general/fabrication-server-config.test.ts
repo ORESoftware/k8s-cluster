@@ -1868,7 +1868,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /\.route\("\/artifacts\/catalog", get\(artifact_catalog_http\)\)/);
   assert.match(
     source,
-    /\.route\(\s*"\/fabrication\/artifacts\/catalog",\s*get\(artifact_catalog_http\),\s*\)/,
+    /\.route\("\/fabrication\/artifacts\/catalog", get\(artifact_catalog_http\)\)/,
   );
   assert.match(source, /\.route\("\/learning\/capabilities", get\(learning_capabilities\)\)/);
   assert.match(
