@@ -417,7 +417,7 @@ kubectl -n "${namespace}" get pods \
 
 echo "=== port-forward master service ==="
 port_forward_log="/tmp/dd-mip-solver-port-forward.log"
-rm -f "${port_forward_log}"
+: >"${port_forward_log}"
 kubectl -n "${namespace}" port-forward --address 127.0.0.1 "svc/${service_name}" "${local_port}:8117" >"${port_forward_log}" 2>&1 &
 port_forward_pid="$!"
 
@@ -474,40 +474,43 @@ else:
     raise SystemExit(1)
 PY
 
-echo "=== generate 100 variable / 200 constraint MIP payload ==="
-python3 - <<'PY' >/tmp/dd-mip-solver-100x200.json
+echo "=== generate 100 variable / 150 constraint dispatch MIP payload ==="
+python3 - <<'PY' >/tmp/dd-mip-solver-100x150.json
 import json
 
 n = 100
 c = [0.0] * n
-c[0] = c[1] = c[2] = 1.0
+for pair in range(50):
+    c[2 * pair] = 1000.0 - pair
+    c[2 * pair + 1] = 25.0 + pair
+
 a = []
 b = []
 con_names = []
 
-knapsack = [0.0] * n
-knapsack[0] = knapsack[1] = knapsack[2] = 2.0
-a.append(knapsack)
-b.append(5.0)
-con_names.append("three_item_capacity")
+fleet_budget = [2.0] * n
+a.append(fleet_budget)
+b.append(99.0)
+con_names.append("fleet_budget_allows_49_full_dispatches")
+
+for pair in range(50):
+    row = [0.0] * n
+    row[2 * pair] = 1.0
+    row[2 * pair + 1] = 1.0
+    a.append(row)
+    b.append(1.0)
+    con_names.append(f"route_pair_{pair}_choose_at_most_one")
 
 for var in range(99):
     row = [0.0] * n
     row[var] = 1.0
     a.append(row)
     b.append(1.0)
-    con_names.append(f"x{var}_upper")
+    con_names.append(f"dispatch_{var}_capacity")
 
-for var in range(n):
-    row = [0.0] * n
-    row[var] = -1.0
-    a.append(row)
-    b.append(0.0)
-    con_names.append(f"x{var}_lower")
-
-assert len(a) == 200
+assert len(a) == 150
 payload = {
-    "requestId": "remote-100x200-three-slave-smoke",
+    "requestId": "remote-100x150-three-slave-dispatch-smoke",
     "problem": {
         "sense": "max",
         "c": c,
@@ -515,14 +518,15 @@ payload = {
         "b": b,
         "integerVars": [True] * n,
         "ub": [1.0] * n,
-        "varNames": [f"x{i}" for i in range(n)],
+        "varNames": [f"dispatch_{i}" for i in range(n)],
         "conNames": con_names,
     },
     "options": {
         "splitDepth": 2,
         "maxSubproblems": 8,
-        "maxNodes": 10000,
-        "maxTicks": 10000,
+        "maxNodes": 20000,
+        "maxTicks": 20000,
+        "lpMaxIters": 10000,
         "timeoutMs": 600000,
     },
 }
@@ -538,7 +542,7 @@ import urllib.error
 import urllib.request
 
 port = "${local_port}"
-with open("/tmp/dd-mip-solver-100x200.json", "rb") as handle:
+with open("/tmp/dd-mip-solver-100x150.json", "rb") as handle:
     payload = handle.read()
 
 request = urllib.request.Request(
@@ -612,12 +616,19 @@ if body.get("jobsExpected") != body.get("jobsCompleted"):
     errors.append("not every expected subproblem completed")
 if (body.get("jobsPublished") or 0) < 3:
     errors.append("fewer than 3 jobs were published")
-if not math.isclose(float(body.get("z") or 0.0), 2.0, rel_tol=0.0, abs_tol=1e-6):
-    errors.append(f"objective {body.get('z')!r} != 2.0")
-if len(body.get("x") or []) != 100:
+expected_objective = 47824.0
+if not math.isclose(float(body.get("z") or 0.0), expected_objective, rel_tol=0.0, abs_tol=1e-6):
+    errors.append(f"objective {body.get('z')!r} != {expected_objective}")
+x = [float(value) for value in (body.get("x") or [])]
+if len(x) != 100:
     errors.append("solution vector does not have 100 variables")
-if sum(1 for value in (body.get("x") or [])[:3] if float(value) > 0.5) != 2:
-    errors.append("expected exactly two selected variables among x0,x1,x2")
+else:
+    selected = [index for index, value in enumerate(x) if value > 0.5]
+    expected_selected = list(range(0, 98, 2))
+    if selected != expected_selected:
+        errors.append(f"selected dispatch indexes {selected!r} != {expected_selected!r}")
+    if sum(x) > 49.0 + 1e-6:
+        errors.append(f"selected dispatch count {sum(x)!r} exceeds fleet budget")
 
 if errors:
     print("remote MIP smoke failed:", file=sys.stderr)
@@ -626,7 +637,7 @@ if errors:
     print(json.dumps(body, sort_keys=True)[:5000], file=sys.stderr)
     raise SystemExit(1)
 
-print("PROOF remote_mip_solver_100x200_three_slave_smoke=passed")
+print("PROOF remote_mip_solver_100x150_three_slave_dispatch_smoke=passed")
 PY
 
 echo "=== master observed workers and solve registry ==="
