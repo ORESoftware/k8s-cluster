@@ -32884,12 +32884,16 @@ async fn root() -> impl IntoResponse {
             "GET /fabrication/decomposition/catalog",
             "GET /release/catalog",
             "GET /fabrication/release/catalog",
+            "GET /strategy/catalog",
+            "GET /fabrication/strategy/catalog",
             "GET /schedule/catalog",
             "GET /fabrication/schedule/catalog",
             "GET /simulation/catalog",
             "GET /fabrication/simulation/catalog",
             "GET /quality/catalog",
             "GET /fabrication/quality/catalog",
+            "GET /calibration/catalog",
+            "GET /fabrication/calibration/catalog",
             "GET /interventions/catalog",
             "GET /fabrication/interventions/catalog",
             "GET /setup/catalog",
@@ -32931,6 +32935,7 @@ async fn root() -> impl IntoResponse {
             "bounded job and artifact inspection",
             "fabrication outcome reward ingestion and policy snapshots",
             "machine-failure and human-intervention boundary detection",
+            "hybrid make strategy candidate, learned preference, and MDP/POMDP policy handoff discovery",
             "MDP/POMDP/DES/neural policy feature contract"
         ]
     }))
@@ -33798,6 +33803,301 @@ async fn release_catalog_http() -> impl IntoResponse {
     Json(release_catalog_response())
 }
 
+fn strategy_catalog_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "contract": "hybrid-route-candidate-scoring",
+            "family": "hybrid-make-strategy",
+            "sourceSurfaces": [
+                "strategyCandidates",
+                "hybridMakePlan.partRoutes",
+                "hybridMakePlan.joinOperations",
+                "hybridMakePlan.splitCombineDecisions",
+                "processGraph.nodes",
+                "validation.failureBoundaries"
+            ],
+            "artifactSurfaces": [
+                "mdp-request.strategyCandidates",
+                "mdp-request.hybridMakePlan",
+                "parametric-design.hybridMakePlan"
+            ],
+            "schemas": ["dd.fabrication.strategy-candidate.v1", "dd.fabrication.hybrid-make-plan.v1"],
+            "candidateIds": [
+                "selected-hybrid-plan",
+                "selected-single-process-plan",
+                "additive-consolidation-candidate",
+                "machined-datum-finish-candidate",
+                "split-for-inspection-candidate"
+            ],
+            "planningSignals": [
+                "selected process methods",
+                "candidate machine kinds",
+                "estimated machine minutes",
+                "human intervention step count",
+                "failure boundary count",
+                "strategy score and rationale"
+            ],
+            "releaseBlocks": [
+                "machineRelease.blockers",
+                "decompositionPlan.releaseGates",
+                "interfaceControlPlan.releaseGates",
+                "simulation.riskProfile.programRisks"
+            ],
+            "learningSignals": [
+                "hybrid-strategy-candidate:*",
+                "strategy score",
+                "boundary count",
+                "human intervention steps"
+            ]
+        }),
+        json!({
+            "contract": "learned-policy-preference-reuse",
+            "family": "learned-preference-routing",
+            "sourceSurfaces": [
+                "learningPolicySnapshot.methodPreferences",
+                "learningPolicySnapshot.machineKindPreferences",
+                "learningPolicySnapshot.assemblyPreferences",
+                "learningPolicySnapshot.operationSequencePreferences",
+                "learningPolicySnapshot.remediationRisks"
+            ],
+            "artifactSurfaces": [
+                "FabricationPlanRequest.constraints.preferredMethods",
+                "FabricationPlanRequest.constraints.preferredAssemblyStrategy",
+                "FabricationPlanRequest.learning.policyHint"
+            ],
+            "schemas": ["dd.fabrication.learning-policy-snapshot.v1", "dd.fabrication.plan-request.v1"],
+            "planningSignals": [
+                "minimum sample count",
+                "average reward",
+                "preferred operation sequence",
+                "learned assembly strategy",
+                "remediation-risk boundary memory"
+            ],
+            "releaseBlocks": [
+                "learned preferences may bias planning but cannot clear validation, simulation, setup, quality, or release gates"
+            ],
+            "learningSignals": [
+                "method preference key",
+                "machine-kind preference key",
+                "assembly preference key",
+                "operation sequence preference key",
+                "remediation risk key"
+            ]
+        }),
+        json!({
+            "contract": "mdp-pomdp-strategy-policy-preview",
+            "family": "decision-policy-handoff",
+            "sourceSurfaces": [
+                "learning.actions",
+                "learning.rewardTerms",
+                "learning.enginePolicy",
+                "pomdpBeliefState.hiddenStates",
+                "releaseProbePlan.probes",
+                "desMdpSpec",
+                "desMdpSolution",
+                "desPomdpSpec",
+                "desPomdpSolution"
+            ],
+            "artifactSurfaces": [
+                "mdp-request.desMdpSpec",
+                "mdp-request.desMdpSolution",
+                "mdp-request.desPomdpSpec",
+                "mdp-request.desPomdpSolution",
+                "mdp-request.releaseProbePlan",
+                "mdp-request.pomdpBeliefState"
+            ],
+            "schemas": [
+                "des.fabrication.mdp.v1",
+                "des.fabrication.pomdp.v1",
+                "dd.fabrication.release-probe-plan.v1"
+            ],
+            "planningSignals": [
+                "state/action policy preview",
+                "reward terms",
+                "hidden human-intervention and machine-failure probabilities",
+                "required release probe priority",
+                "QMDP/POMDP advisory solution notes"
+            ],
+            "releaseBlocks": [
+                "POMDP beliefs only prioritize probes; unresolved probe evidence blocks machine-ready release"
+            ],
+            "learningSignals": [
+                "pomdp hidden-state probability",
+                "release probe information gain",
+                "mdp policy action",
+                "value-iteration convergence note"
+            ]
+        }),
+        json!({
+            "contract": "intervention-and-automation-strategy-signal",
+            "family": "intervention-strategy",
+            "sourceSurfaces": [
+                "interventionSignals",
+                "operatorInterventionPlan.requiredOperatorActions",
+                "interventionMap.automationOpportunities",
+                "executionPlan.stopPoints",
+                "boundarySummary.automationRequirements"
+            ],
+            "artifactSurfaces": [
+                "mdp-request.interventionSignals",
+                "mdp-request.operatorInterventionPlan",
+                "mdp-request.executionPlan"
+            ],
+            "schemas": ["dd.fabrication.intervention-learning-signal.v1", "dd.fabrication.operator-intervention-plan.v1"],
+            "planningSignals": [
+                "boundary kind",
+                "program and line context",
+                "automation type",
+                "operator action",
+                "release blocker state"
+            ],
+            "releaseBlocks": [
+                "operatorInterventionPlan.requiredOperatorActions",
+                "executionPlan.stopPoints",
+                "automationRequirements.releaseBlockers"
+            ],
+            "learningSignals": [
+                "intervention signal id",
+                "boundary action",
+                "automation coverage",
+                "operator review outcome"
+            ]
+        }),
+        json!({
+            "contract": "neural-training-strategy-corpus",
+            "family": "neural-strategy-learning",
+            "sourceSurfaces": [
+                "neuralPolicy.engineInference",
+                "neuralTrainingCorpus.examples",
+                "neuralTrainingCorpus.inferenceCandidates",
+                "learning.neuralFeatures",
+                "learning.trainingExamples"
+            ],
+            "artifactSurfaces": [
+                "mdp-request.neuralTrainingCorpus",
+                "learning.outcomes.compactRecords",
+                "learning.outcomes.richRecords"
+            ],
+            "schemas": ["dd.fabrication.neural-training-corpus.v1", "dd.fabrication.learning-outcome-memory.v1"],
+            "planningSignals": [
+                "feature vector",
+                "label",
+                "candidate action",
+                "inference score",
+                "reward-shaped outcome memory"
+            ],
+            "releaseBlocks": [
+                "neural inference remains advisory; deterministic validation, dry-run, setup, quality, and release gates still decide release"
+            ],
+            "learningSignals": [
+                "training example count",
+                "bounded outcome reward",
+                "inference candidate score",
+                "preferred strategy label"
+            ]
+        }),
+    ]
+}
+
+fn strategy_catalog_response() -> Value {
+    let contracts = strategy_catalog_contracts();
+    let families = unique_sorted(contracts.iter().filter_map(|contract| {
+        contract
+            .get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let schemas = unique_sorted(contracts.iter().flat_map(|contract| {
+        contract
+            .get("schemas")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.strategy-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /strategy/catalog", "GET /fabrication/strategy/catalog"],
+        "strategyContractCount": contracts.len(),
+        "families": families,
+        "schemas": schemas,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "learningRoutes": [
+            "GET /learning/policy",
+            "GET /fabrication/learning/policy",
+            "GET /learning/outcomes",
+            "GET /fabrication/learning/outcomes",
+            "POST /learning/observe",
+            "POST /fabrication/learning/observe"
+        ],
+        "relatedCatalogRoutes": [
+            "GET /design/generation/catalog",
+            "GET /fabrication/design/generation/catalog",
+            "GET /decomposition/catalog",
+            "GET /fabrication/decomposition/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog",
+            "GET /schedule/catalog",
+            "GET /fabrication/schedule/catalog",
+            "GET /simulation/catalog",
+            "GET /fabrication/simulation/catalog",
+            "GET /interventions/catalog",
+            "GET /fabrication/interventions/catalog",
+            "GET /learning/capabilities",
+            "GET /fabrication/learning/capabilities"
+        ],
+        "responseSurfaces": [
+            "strategyCandidates",
+            "strategyCandidates.strategyId",
+            "strategyCandidates.methods",
+            "strategyCandidates.machineKinds",
+            "strategyCandidates.estimatedMinutes",
+            "strategyCandidates.humanInterventionSteps",
+            "strategyCandidates.boundaryCount",
+            "strategyCandidates.score",
+            "strategyCandidates.rationale",
+            "hybridMakePlan.partRoutes",
+            "hybridMakePlan.joinOperations",
+            "hybridMakePlan.splitCombineDecisions",
+            "learning.actions",
+            "learning.rewardTerms",
+            "learning.enginePolicy",
+            "pomdpBeliefState.hiddenStates",
+            "releaseProbePlan.probes",
+            "neuralPolicy.engineInference",
+            "neuralTrainingCorpus.inferenceCandidates",
+            "interventionSignals"
+        ],
+        "artifactSurfaces": [
+            "mdp-request.strategyCandidates",
+            "mdp-request.hybridMakePlan",
+            "mdp-request.desMdpSpec",
+            "mdp-request.desMdpSolution",
+            "mdp-request.desPomdpSpec",
+            "mdp-request.desPomdpSolution",
+            "mdp-request.pomdpBeliefState",
+            "mdp-request.releaseProbePlan",
+            "mdp-request.neuralTrainingCorpus",
+            "parametric-design.hybridMakePlan"
+        ],
+        "strategyPolicy": [
+            "strategy catalog entries describe advisory decision, learning, and evidence-handoff contracts, not certified manufacturing strategy approval",
+            "learned preferences can bias open-ended planning only when caller preferences are absent; they cannot clear validation, setup, simulation, quality, intervention, postprocess, schedule, or release blockers",
+            "strategy candidate, POMDP probe, intervention, and neural corpus observations are retained so MDP/POMDP/neural workers can learn when to print, mill, turn, split, combine, inspect, or request human intervention"
+        ],
+        "strategyContracts": contracts
+    })
+}
+
+async fn strategy_catalog_http() -> impl IntoResponse {
+    Json(strategy_catalog_response())
+}
+
 fn schedule_catalog_contracts() -> Vec<Value> {
     vec![
         json!({
@@ -34415,6 +34715,115 @@ fn quality_catalog_response() -> Value {
 
 async fn quality_catalog_http() -> impl IntoResponse {
     Json(quality_catalog_response())
+}
+
+fn calibration_catalog_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "contract": "additive-homing-bed-and-hotend-calibration",
+            "family": "additive-coordinate-and-thermal-calibration",
+            "appliesTo": ["fdm-printer", "pellet-fgf-printer", "material-jetting-printer", "continuous-fiber-composite-printer"],
+            "evidenceSurfaces": ["machineProfile.profileEvidence.calibration", "releaseProbePlan.probes", "validation.failureBoundaries", "improvedPrograms.patchManifest.operations"],
+            "requiredEvidence": ["G28 or verified homing", "bed mesh or measured Z-offset proof", "M109/M190 or explicit nozzle/bed temperature verification", "extrusion reset or prime/purge after tool/material changes"],
+            "blocks": ["positive extrusion", "machine-ready release", "unattended repeat run"],
+            "learningSignals": ["calibration:additive-coordinate", "temperature-verification:*", "instruction-patch:add-coordinate-reference"]
+        }),
+        json!({
+            "contract": "subtractive-work-offset-and-tool-length-proof",
+            "family": "subtractive-datum-and-tool-calibration",
+            "appliesTo": ["vertical-mill", "five-axis-mill", "rotary-indexer-mill", "horizontal-mill", "cnc-router"],
+            "evidenceSurfaces": ["fixturePlan.setups.datumScheme", "toolingPlan.requirements.setupChecks", "releaseProbePlan.probes", "machineRelease.blockers"],
+            "requiredEvidence": ["G54-G59 or G10 work-offset review", "touch-off, edge-finder, or probed datum record", "G43/G43.1 H offset or tool-length probe evidence", "G49 cancellation before later tool changes when compensation remains active"],
+            "blocks": ["cutting feed", "negative-Z rapid plunge", "tool-change release"],
+            "learningSignals": ["calibration:work-offset", "tool-length-proof:*", "machine-failure-boundary:tool-length"]
+        }),
+        json!({
+            "contract": "lathe-offset-spindle-and-support-calibration",
+            "family": "turning-offset-and-support-calibration",
+            "appliesTo": ["lathe", "mill-turn-center"],
+            "evidenceSurfaces": ["fixturePlan.setups.requiredEvidence", "toolingPlan.requirements.setupChecks", "releaseProbePlan.probes", "operatorInterventionPlan.requiredOperatorActions"],
+            "requiredEvidence": ["tool geometry/wear offset or tool-nose radius evidence", "spindle speed and direction verification", "chuck/collet pressure, stick-out, runout, tailstock or steady-rest proof", "thread pitch/feed-per-rev synchronization evidence for threading"],
+            "blocks": ["turning release", "threading release", "part-off release", "spindle-transfer release"],
+            "learningSignals": ["calibration:lathe-offset", "threading-sync:*", "fixture-setup:*:lathe"]
+        }),
+        json!({
+            "contract": "sheet-cut-process-origin-and-media-calibration",
+            "family": "sheet-cut-origin-and-process-media-calibration",
+            "appliesTo": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter", "sinker-edm-cell"],
+            "evidenceSurfaces": ["fixturePlan.setups.datumScheme", "toolingPlan.requirements.processSupport", "simulation.riskProfile.programRisks", "releaseProbePlan.probes"],
+            "requiredEvidence": ["sheet origin and work-coordinate proof", "kerf, pierce, nozzle/standoff, beam/jet/wire, or spark-gap calibration", "assist gas, abrasive, water table, dielectric, flushing, or fume extraction restart evidence", "slug/support, tab, start-hole, or retention proof"],
+            "blocks": ["sheet cutting feed", "pierce release", "wire/beam/jet restart release"],
+            "learningSignals": ["calibration:sheet-origin", "process-media-restart:*", "machine-failure-boundary:sheet-cut"]
+        }),
+        json!({
+            "contract": "robotic-assembly-fixture-and-vision-calibration",
+            "family": "assembly-fixture-and-sensor-calibration",
+            "appliesTo": ["robotic-assembly-cell", "manual-or-special-process"],
+            "evidenceSurfaces": ["interfaceControlPlan.controls", "fixturePlan.datumTransfers", "monitoringPlan.monitorPoints", "releasePackagePlan.releaseGates"],
+            "requiredEvidence": ["fixture datum transfer proof", "vision/fiducial calibration or manual gauge record", "end-effector, press, torque, adhesive, or heat-set tool verification", "final fit/metrology and interlock evidence"],
+            "blocks": ["assembly release", "combine/recompose release", "unattended automation release"],
+            "learningSignals": ["calibration:assembly-fixture", "assembly-quality-interfaces:*", "operator-automation:*"]
+        }),
+    ]
+}
+
+fn calibration_catalog_response() -> Value {
+    let calibration_contracts = calibration_catalog_contracts();
+    let families = unique_sorted(calibration_contracts.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.calibration-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /calibration/catalog", "GET /fabrication/calibration/catalog"],
+        "calibrationContractCount": calibration_contracts.len(),
+        "families": families,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "responseSurfaces": [
+            "machineProfile.profileEvidence.calibration",
+            "fixturePlan.setups.datumScheme",
+            "toolingPlan.requirements.setupChecks",
+            "releaseProbePlan.probes",
+            "validation.failureBoundaries",
+            "machineRelease.blockers",
+            "improvedPrograms.patchManifest.operations",
+            "monitoringPlan.monitorPoints"
+        ],
+        "artifactSurfaces": [
+            "machine-profile-evidence",
+            "release-probe-plan",
+            "analysis-release-probe-plan",
+            "fixture-plan",
+            "tooling-plan",
+            "instruction-patch-manifest",
+            "mdp-request.artifacts.releaseProbePlan"
+        ],
+        "learningSurfaces": [
+            "releaseProbePlan.probes",
+            "pomdpBeliefState.recommendedProbes",
+            "neuralTrainingCorpus.examples",
+            "calibration:*",
+            "tool-length-proof:*",
+            "process-media-restart:*",
+            "instruction-patch:*"
+        ],
+        "releasePolicy": [
+            "calibration catalog entries describe evidence contracts, not certified machine calibration procedures",
+            "machine-ready release remains blocked while homing, work offset, tool length, thermal, process-media, sensor, or fixture calibration evidence is absent",
+            "calibration observations are retained for MDP/POMDP/neural workers so future planning can learn when to request probes, split jobs, add operator checkpoints, or regenerate instructions"
+        ],
+        "calibrationContracts": calibration_contracts
+    })
+}
+
+async fn calibration_catalog_http() -> impl IntoResponse {
+    Json(calibration_catalog_response())
 }
 
 fn intervention_catalog_action_contracts() -> Vec<Value> {
@@ -36528,6 +36937,8 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/simulation/catalog",
                 "GET /quality/catalog",
                 "GET /fabrication/quality/catalog",
+                "GET /calibration/catalog",
+                "GET /fabrication/calibration/catalog",
                 "GET /interventions/catalog",
                 "GET /fabrication/interventions/catalog",
                 "GET /setup/catalog",
@@ -36924,6 +37335,7 @@ async fn request_schema() -> impl IntoResponse {
             "scheduleCatalog": ["GET /schedule/catalog", "GET /fabrication/schedule/catalog"],
             "simulationCatalog": ["GET /simulation/catalog", "GET /fabrication/simulation/catalog"],
             "qualityCatalog": ["GET /quality/catalog", "GET /fabrication/quality/catalog"],
+            "calibrationCatalog": ["GET /calibration/catalog", "GET /fabrication/calibration/catalog"],
             "interventionCatalog": ["GET /interventions/catalog", "GET /fabrication/interventions/catalog"],
             "setupCatalog": ["GET /setup/catalog", "GET /fabrication/setup/catalog"],
             "postprocessCatalog": ["GET /postprocess/catalog", "GET /fabrication/postprocess/catalog"],
@@ -37782,6 +38194,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/release/catalog", get(release_catalog_http))
         .route("/fabrication/release/catalog", get(release_catalog_http))
+        .route("/strategy/catalog", get(strategy_catalog_http))
+        .route("/fabrication/strategy/catalog", get(strategy_catalog_http))
         .route("/schedule/catalog", get(schedule_catalog_http))
         .route("/fabrication/schedule/catalog", get(schedule_catalog_http))
         .route("/simulation/catalog", get(simulation_catalog_http))
@@ -37791,6 +38205,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/quality/catalog", get(quality_catalog_http))
         .route("/fabrication/quality/catalog", get(quality_catalog_http))
+        .route("/calibration/catalog", get(calibration_catalog_http))
+        .route(
+            "/fabrication/calibration/catalog",
+            get(calibration_catalog_http),
+        )
         .route("/interventions/catalog", get(intervention_catalog_http))
         .route(
             "/fabrication/interventions/catalog",
@@ -39704,6 +40123,80 @@ mod tests {
     }
 
     #[test]
+    fn strategy_catalog_endpoint_exposes_hybrid_learning_and_policy_contract() {
+        let payload = strategy_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.strategy-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/strategy/catalog"))));
+        assert!(payload
+            .get("strategyContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("strategyCandidates.score"))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("mdp-request.desPomdpSolution"))));
+        assert!(payload
+            .get("strategyPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified manufacturing strategy")))));
+
+        let contracts = payload
+            .get("strategyContracts")
+            .and_then(Value::as_array)
+            .expect("strategy contracts should be present");
+        for contract_name in [
+            "hybrid-route-candidate-scoring",
+            "learned-policy-preference-reuse",
+            "mdp-pomdp-strategy-policy-preview",
+        ] {
+            assert!(
+                contracts.iter().any(|item| {
+                    item.get("contract").and_then(Value::as_str) == Some(contract_name)
+                }),
+                "missing strategy contract {contract_name}"
+            );
+        }
+
+        let hybrid_contract = contracts
+            .iter()
+            .find(|item| {
+                item.get("contract").and_then(Value::as_str)
+                    == Some("hybrid-route-candidate-scoring")
+            })
+            .expect("hybrid route contract should be present");
+        assert!(hybrid_contract
+            .get("candidateIds")
+            .and_then(Value::as_array)
+            .is_some_and(|ids| ids
+                .iter()
+                .any(|id| id.as_str() == Some("machined-datum-finish-candidate"))));
+        assert!(hybrid_contract
+            .get("learningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals
+                .iter()
+                .any(|signal| signal.as_str() == Some("hybrid-strategy-candidate:*"))));
+    }
+
+    #[test]
     fn schedule_catalog_endpoint_exposes_batch_lane_and_des_contract() {
         let payload = schedule_catalog_response();
         assert_eq!(
@@ -39984,6 +40477,75 @@ mod tests {
             .expect("measurement contracts should be present");
         assert!(measurement_contracts.iter().any(|item| {
             item.get("target").and_then(Value::as_str) == Some("interface-fit-and-assembly-lock")
+        }));
+    }
+
+    #[test]
+    fn calibration_catalog_endpoint_exposes_probe_offset_and_release_contract() {
+        let payload = calibration_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.calibration-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/calibration/catalog") })));
+        assert!(payload
+            .get("calibrationContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("releaseProbePlan.probes"))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("instruction-patch-manifest"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("calibration:*"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let families = payload
+            .get("families")
+            .and_then(Value::as_array)
+            .expect("calibration families should be present");
+        for family in [
+            "additive-coordinate-and-thermal-calibration",
+            "subtractive-datum-and-tool-calibration",
+            "turning-offset-and-support-calibration",
+            "sheet-cut-origin-and-process-media-calibration",
+            "assembly-fixture-and-sensor-calibration",
+        ] {
+            assert!(
+                families.iter().any(|item| item.as_str() == Some(family)),
+                "missing calibration family {family}"
+            );
+        }
+
+        let calibration_contracts = payload
+            .get("calibrationContracts")
+            .and_then(Value::as_array)
+            .expect("calibration contracts should be present");
+        assert!(calibration_contracts.iter().any(|item| {
+            item.get("contract").and_then(Value::as_str)
+                == Some("subtractive-work-offset-and-tool-length-proof")
         }));
     }
 

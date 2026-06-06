@@ -33,6 +33,8 @@ It exposes:
 - `GET /fabrication/decomposition/catalog`
 - `GET /release/catalog`
 - `GET /fabrication/release/catalog`
+- `GET /schedule/catalog`
+- `GET /fabrication/schedule/catalog`
 - `GET /simulation/catalog`
 - `GET /fabrication/simulation/catalog`
 - `GET /quality/catalog`
@@ -315,6 +317,9 @@ is supplied.
 - Open-ended planning requests reuse strong learned method and assembly
   preferences from the bounded policy snapshot unless the caller supplies
   explicit process or join-strategy preferences.
+- `GET /fabrication/strategy/catalog` exposes the advisory hybrid route,
+  learned preference, MDP/POMDP policy, intervention, and neural-corpus
+  strategy contracts that feed those choices without clearing release gates.
 - A bounded in-process job and artifact ledger for generated design summaries,
   parametric design payloads, design packages, design export bundles, process plans,
   production plans, machine programs, validation reports, boundary summaries,
@@ -569,6 +574,50 @@ interface gates, and operator or automation signoff clear. Release package
 observations are emitted for MDP/POMDP/neural workers so future planning can
 learn which evidence cleared or blocked printed, milled, turned, sheet-cut, EDM,
 and recomposed routes.
+
+## `GET /fabrication/strategy/catalog`
+
+`GET /strategy/catalog` and the gateway-prefixed
+`GET /fabrication/strategy/catalog` return the live
+`dd.fabrication.strategy-catalog.v1` decision-strategy catalog before callers
+treat scored route choices or learned preferences as authoritative process
+selection. The payload exposes advisory contracts for `strategyCandidates`,
+`strategyCandidates.score`, `strategyCandidates.rationale`,
+`hybridMakePlan.partRoutes`, `hybridMakePlan.joinOperations`,
+`hybridMakePlan.splitCombineDecisions`, `learning.enginePolicy`,
+`pomdpBeliefState.hiddenStates`, `releaseProbePlan.probes`,
+`neuralPolicy.engineInference`, `neuralTrainingCorpus.inferenceCandidates`, and
+`interventionSignals`. Retained artifacts include `mdp-request` strategy
+candidates, hybrid make plans, DES MDP/POMDP specs and solutions, POMDP belief
+state, release probe plan, neural training corpus, and the `parametric-design`
+hybrid make plan embedding. Strategy catalog entries are advisory decision,
+learning, and evidence-handoff contracts, not certified manufacturing strategy
+approval; learned preferences can bias open-ended planning only when caller
+preferences are absent, and machine-ready release remains blocked until
+validation, setup, simulation, quality, intervention, postprocess, schedule, and
+release blockers clear.
+
+## `GET /fabrication/schedule/catalog`
+
+`GET /schedule/catalog` and the gateway-prefixed
+`GET /fabrication/schedule/catalog` return the live
+`dd.fabrication.schedule-catalog.v1` production batching, machine-lane
+scheduling, dependency-hold, and DES queue-model catalog before callers treat a
+plan as shop-floor dispatch. The payload exposes contracts for
+`productionPlan.batches`, `productionPlan.totalEstimatedMachineMinutes`,
+`machineSchedule.machineLanes`,
+`machineSchedule.machineLanes.utilizationRatio`,
+`machineSchedule.operations`, `machineSchedule.dependencyHolds`, and
+`desScheduleModel.laneModels`. Retained artifacts include `production-plan`,
+`machine-schedule`, `des-schedule-model`, their `parametric-design` embeddings,
+and matching `mdp-request` artifact payloads. Schedule catalog entries are
+deterministic production and DES handoff contracts, not certified MES dispatch
+or controller output; machine-ready release remains blocked while batches,
+scheduled operations, dependency holds, release blockers, postprocess targets,
+setup evidence, or operator/automation assignments are unresolved. Schedule and
+DES observations are retained for MDP/POMDP/neural workers so future planning
+can learn which machines, batch sizes, split/combine routes, and setup sequences
+reduce blocked starts or human intervention.
 
 ## `GET /fabrication/simulation/catalog`
 
