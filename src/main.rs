@@ -45187,6 +45187,822 @@ fn decomposition_planning_response(
     Value::Object(object)
 }
 
+fn validate_decomposition_result_targets(
+    targets: Option<Vec<DecompositionResultTarget>>,
+) -> Result<Vec<Value>, String> {
+    let targets = targets.unwrap_or_default();
+    if targets.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "targets must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    targets
+        .into_iter()
+        .enumerate()
+        .map(|(index, target)| {
+            let target_id =
+                validate_label(&target.target_id, &format!("targets[{index}].targetId"))?;
+            if !seen.insert(target_id.clone()) {
+                return Err(format!(
+                    "targets must have unique targetId values; duplicate {target_id}"
+                ));
+            }
+            Ok(json!({
+                "targetId": target_id,
+                "partId": validate_optional_label(target.part_id, &format!("targets[{index}].partId"))?,
+                "targetKind": validate_label(&target.target_kind, &format!("targets[{index}].targetKind"))?,
+                "status": validate_label(&target.status, &format!("targets[{index}].status"))?,
+                "manufacturingMethod": validate_optional_label(target.manufacturing_method, &format!("targets[{index}].manufacturingMethod"))?,
+                "machineKind": validate_optional_label(target.machine_kind, &format!("targets[{index}].machineKind"))?,
+                "splitRequired": target.split_required.unwrap_or(false),
+                "combineRequired": target.combine_required.unwrap_or(false),
+                "releaseBlocker": target.release_blocker.unwrap_or(false),
+                "requiresHumanIntervention": target.requires_human_intervention.unwrap_or(false),
+                "evidence": validate_signal_list(target.evidence, &format!("targets[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_decomposition_result_route_reviews(
+    routes: Option<Vec<DecompositionResultRouteReview>>,
+) -> Result<Vec<Value>, String> {
+    let routes = routes.unwrap_or_default();
+    if routes.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "routeReviews must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    routes
+        .into_iter()
+        .enumerate()
+        .map(|(index, route)| {
+            let route_id =
+                validate_label(&route.route_id, &format!("routeReviews[{index}].routeId"))?;
+            if !seen.insert(route_id.clone()) {
+                return Err(format!(
+                    "routeReviews must have unique routeId values; duplicate {route_id}"
+                ));
+            }
+            Ok(json!({
+                "routeId": route_id,
+                "targetId": validate_optional_label(route.target_id, &format!("routeReviews[{index}].targetId"))?,
+                "routeKind": validate_label(&route.route_kind, &format!("routeReviews[{index}].routeKind"))?,
+                "machineId": validate_optional_label(route.machine_id, &format!("routeReviews[{index}].machineId"))?,
+                "machineKind": validate_optional_label(route.machine_kind, &format!("routeReviews[{index}].machineKind"))?,
+                "status": validate_label(&route.status, &format!("routeReviews[{index}].status"))?,
+                "feasible": route.feasible.unwrap_or(false),
+                "estimatedSetupCount": route.estimated_setup_count.unwrap_or(0),
+                "releaseBlocker": route.release_blocker.unwrap_or(false),
+                "requiresHumanIntervention": route.requires_human_intervention.unwrap_or(false),
+                "evidence": validate_signal_list(route.evidence, &format!("routeReviews[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_decomposition_result_interfaces(
+    interfaces: Option<Vec<DecompositionResultInterface>>,
+) -> Result<Vec<Value>, String> {
+    let interfaces = interfaces.unwrap_or_default();
+    if interfaces.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "interfaces must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    interfaces
+        .into_iter()
+        .enumerate()
+        .map(|(index, interface)| {
+            let interface_id = validate_label(
+                &interface.interface_id,
+                &format!("interfaces[{index}].interfaceId"),
+            )?;
+            if !seen.insert(interface_id.clone()) {
+                return Err(format!(
+                    "interfaces must have unique interfaceId values; duplicate {interface_id}"
+                ));
+            }
+            let tolerance_mm = interface
+                .tolerance_mm
+                .map(|value| finite_non_negative(value, &format!("interfaces[{index}].toleranceMm")))
+                .transpose()?;
+            let gap_mm = interface
+                .gap_mm
+                .map(|value| finite_value(value, &format!("interfaces[{index}].gapMm")))
+                .transpose()?;
+            Ok(json!({
+                "interfaceId": interface_id,
+                "sourceTargetId": validate_optional_label(interface.source_target_id, &format!("interfaces[{index}].sourceTargetId"))?,
+                "targetTargetId": validate_optional_label(interface.target_target_id, &format!("interfaces[{index}].targetTargetId"))?,
+                "interfaceKind": validate_label(&interface.interface_kind, &format!("interfaces[{index}].interfaceKind"))?,
+                "status": validate_label(&interface.status, &format!("interfaces[{index}].status"))?,
+                "toleranceMm": tolerance_mm,
+                "gapMm": gap_mm,
+                "recompositionRequired": interface.recomposition_required.unwrap_or(false),
+                "releaseBlocker": interface.release_blocker.unwrap_or(false),
+                "requiresHumanIntervention": interface.requires_human_intervention.unwrap_or(false),
+                "evidence": validate_signal_list(interface.evidence, &format!("interfaces[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_decomposition_result_decisions(
+    decisions: Option<Vec<DecompositionResultDecision>>,
+) -> Result<Vec<Value>, String> {
+    let decisions = decisions.unwrap_or_default();
+    if decisions.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "splitCombineDecisions must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    decisions
+        .into_iter()
+        .enumerate()
+        .map(|(index, decision)| {
+            let decision_id = validate_label(
+                &decision.decision_id,
+                &format!("splitCombineDecisions[{index}].decisionId"),
+            )?;
+            if !seen.insert(decision_id.clone()) {
+                return Err(format!(
+                    "splitCombineDecisions must have unique decisionId values; duplicate {decision_id}"
+                ));
+            }
+            Ok(json!({
+                "decisionId": decision_id,
+                "decisionKind": validate_label(&decision.decision_kind, &format!("splitCombineDecisions[{index}].decisionKind"))?,
+                "status": validate_label(&decision.status, &format!("splitCombineDecisions[{index}].status"))?,
+                "sourcePartIds": validate_signal_list(decision.source_part_ids, &format!("splitCombineDecisions[{index}].sourcePartIds"), MAX_LABEL_LEN)?,
+                "targetPartIds": validate_signal_list(decision.target_part_ids, &format!("splitCombineDecisions[{index}].targetPartIds"), MAX_LABEL_LEN)?,
+                "requiresRedesign": decision.requires_redesign.unwrap_or(false),
+                "releaseBlocker": decision.release_blocker.unwrap_or(false),
+                "requiresHumanIntervention": decision.requires_human_intervention.unwrap_or(false),
+                "recommendedAction": validate_optional_text(decision.recommended_action, &format!("splitCombineDecisions[{index}].recommendedAction"), MAX_TEXT_LEN)?,
+                "evidence": validate_signal_list(decision.evidence, &format!("splitCombineDecisions[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_decomposition_result_artifacts(
+    artifacts: Option<Vec<DecompositionResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id =
+                validate_label(&artifact.artifact_id, &format!("artifacts[{index}].artifactId"))?;
+            if !seen.insert(artifact_id.clone()) {
+                return Err(format!(
+                    "artifacts must have unique artifactId values; duplicate {artifact_id}"
+                ));
+            }
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": validate_label(&artifact.artifact_kind, &format!("artifacts[{index}].artifactKind"))?,
+                "sourceRefId": validate_optional_label(artifact.source_ref_id, &format!("artifacts[{index}].sourceRefId"))?,
+                "uri": validate_optional_text(artifact.uri, &format!("artifacts[{index}].uri"), MAX_TEXT_LEN)?,
+                "sha256": validate_optional_text(artifact.sha256, &format!("artifacts[{index}].sha256"), MAX_LABEL_LEN)?,
+                "format": validate_optional_label(artifact.format, &format!("artifacts[{index}].format"))?,
+                "evidence": validate_signal_list(artifact.evidence, &format!("artifacts[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn decomposition_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    !matches!(
+        status.as_str(),
+        "complete"
+            | "completed"
+            | "success"
+            | "succeeded"
+            | "ok"
+            | "pass"
+            | "passed"
+            | "ready"
+            | "approved"
+            | "released"
+            | "clear"
+            | "cleared"
+            | "resolved"
+            | "verified"
+            | "accepted"
+            | "feasible"
+            | "routable"
+            | "split-ready"
+            | "combine-ready"
+            | "recomposition-ready"
+            | "interface-ready"
+    )
+}
+
+fn decomposition_result_target_blocks_release(target: &Value) -> bool {
+    if target
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || target
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    {
+        return true;
+    }
+    let status = target
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    decomposition_result_status_blocks_release(status)
+}
+
+fn decomposition_result_route_blocks_release(route: &Value) -> bool {
+    if route
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || route
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !route
+            .get("feasible")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    {
+        return true;
+    }
+    let status = route
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    decomposition_result_status_blocks_release(status)
+}
+
+fn decomposition_result_interface_blocks_release(interface: &Value) -> bool {
+    if interface
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || interface
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    {
+        return true;
+    }
+    let gap = interface.get("gapMm").and_then(Value::as_f64);
+    let tolerance = interface.get("toleranceMm").and_then(Value::as_f64);
+    if matches!((gap, tolerance), (Some(gap), Some(tolerance)) if gap.abs() > tolerance) {
+        return true;
+    }
+    let status = interface
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    decomposition_result_status_blocks_release(status)
+}
+
+fn decomposition_result_decision_blocks_release(decision: &Value) -> bool {
+    if decision
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || decision
+            .get("requiresRedesign")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || decision
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    {
+        return true;
+    }
+    let status = decision
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    decomposition_result_status_blocks_release(status)
+}
+
+fn decomposition_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact.get("uri").and_then(Value::as_str).is_none()
+        || artifact.get("sha256").and_then(Value::as_str).is_none()
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn decomposition_result_review_response(
+    request: DecompositionResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "decomposition-result");
+    let generated_at_ms = now_ms();
+    let decomposition_result_job_id =
+        safe_job_id("decomposition-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let decomposer = validate_optional_label(request.decomposer, "decomposer")?;
+    let decomposer_version =
+        validate_optional_text(request.decomposer_version, "decomposerVersion", MAX_LABEL_LEN)?;
+    let source_part_id = validate_optional_label(request.source_part_id, "sourcePartId")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let targets = validate_decomposition_result_targets(request.targets)?;
+    let route_reviews = validate_decomposition_result_route_reviews(request.route_reviews)?;
+    let interfaces = validate_decomposition_result_interfaces(request.interfaces)?;
+    let split_combine_decisions =
+        validate_decomposition_result_decisions(request.split_combine_decisions)?;
+    let artifacts = validate_decomposition_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let target_blocker_count = targets
+        .iter()
+        .filter(|target| decomposition_result_target_blocks_release(target))
+        .count();
+    let route_blocker_count = route_reviews
+        .iter()
+        .filter(|route| decomposition_result_route_blocks_release(route))
+        .count();
+    let infeasible_route_count = route_reviews
+        .iter()
+        .filter(|route| {
+            !route
+                .get("feasible")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let interface_blocker_count = interfaces
+        .iter()
+        .filter(|interface| decomposition_result_interface_blocks_release(interface))
+        .count();
+    let interface_tolerance_blocker_count = interfaces
+        .iter()
+        .filter(|interface| {
+            let gap = interface.get("gapMm").and_then(Value::as_f64);
+            let tolerance = interface.get("toleranceMm").and_then(Value::as_f64);
+            matches!((gap, tolerance), (Some(gap), Some(tolerance)) if gap.abs() > tolerance)
+        })
+        .count();
+    let split_combine_blocker_count = split_combine_decisions
+        .iter()
+        .filter(|decision| decomposition_result_decision_blocks_release(decision))
+        .count();
+    let redesign_required_count = split_combine_decisions
+        .iter()
+        .filter(|decision| {
+            decision
+                .get("requiresRedesign")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_intervention_target_count = targets
+        .iter()
+        .filter(|target| {
+            target
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_intervention_route_count = route_reviews
+        .iter()
+        .filter(|route| {
+            route
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_intervention_interface_count = interfaces
+        .iter()
+        .filter(|interface| {
+            interface
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_intervention_decision_count = split_combine_decisions
+        .iter()
+        .filter(|decision| {
+            decision
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| decomposition_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let human_intervention_required = human_intervention_target_count > 0
+        || human_intervention_route_count > 0
+        || human_intervention_interface_count > 0
+        || human_intervention_decision_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || target_blocker_count > 0
+        || route_blocker_count > 0
+        || interface_blocker_count > 0
+        || split_combine_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if !request.success {
+        "decomposition-result-worker-failed-release-blocked"
+    } else if target_blocker_count > 0 {
+        "decomposition-result-targets-release-blocked"
+    } else if route_blocker_count > 0 {
+        "decomposition-result-routes-release-blocked"
+    } else if interface_blocker_count > 0 {
+        "decomposition-result-interfaces-release-blocked"
+    } else if split_combine_blocker_count > 0 {
+        "decomposition-result-split-combine-release-blocked"
+    } else if artifact_evidence_missing {
+        "decomposition-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "decomposition-result-machine-ready-review-required"
+    } else if !release_ready {
+        "decomposition-result-release-ready-review-required"
+    } else {
+        "decomposition-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("decomposition-worker:{worker_id}"),
+        format!("decomposition-result:{review_status}"),
+    ];
+    if let Some(decomposer) = decomposer.as_ref() {
+        learning_observations.push(format!(
+            "decomposition-decomposer:{}",
+            normalize_token(decomposer)
+        ));
+    }
+    if let Some(source_part_id) = source_part_id.as_ref() {
+        learning_observations.push(format!(
+            "decomposition-source-part:{}",
+            normalize_token(source_part_id)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("decomposition:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("decomposition:human-intervention-required".to_string());
+    }
+    if artifact_evidence_missing {
+        learning_observations.push("decomposition:artifact-evidence-missing".to_string());
+    }
+    if route_blocker_count > 0 {
+        learning_observations.push("decomposition:route-blocked".to_string());
+    }
+    if infeasible_route_count > 0 {
+        learning_observations.push("decomposition:route-infeasible".to_string());
+    }
+    if interface_blocker_count > 0 {
+        learning_observations.push("decomposition:interface-blocked".to_string());
+    }
+    if interface_tolerance_blocker_count > 0 {
+        learning_observations.push("decomposition:interface-tolerance-blocked".to_string());
+    }
+    if split_combine_blocker_count > 0 {
+        learning_observations.push("decomposition:split-combine-blocked".to_string());
+    }
+    if redesign_required_count > 0 {
+        learning_observations.push("decomposition:redesign-required".to_string());
+    }
+    learning_observations.extend(targets.iter().filter_map(|target| {
+        target
+            .get("targetKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("decomposition-target:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(targets.iter().filter_map(|target| {
+        target
+            .get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("decomposition-target-status:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(route_reviews.iter().filter_map(|route| {
+        route
+            .get("routeKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("decomposition-route:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(route_reviews.iter().filter_map(|route| {
+        route
+            .get("machineKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("decomposition-route-machine-kind:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(route_reviews.iter().filter_map(|route| {
+        route
+            .get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("decomposition-route-status:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(interfaces.iter().filter_map(|interface| {
+        interface
+            .get("interfaceKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("decomposition-interface:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(interfaces.iter().filter_map(|interface| {
+        interface
+            .get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("decomposition-interface-status:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(split_combine_decisions.iter().filter_map(|decision| {
+        decision
+            .get("decisionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("decomposition-decision:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(split_combine_decisions.iter().filter_map(|decision| {
+        decision
+            .get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("decomposition-decision-status:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(artifacts.iter().filter_map(|artifact| {
+        artifact
+            .get("artifactKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("decomposition-artifact:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.decomposition-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "decompositionResultJobId": decomposition_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": [
+            "POST /decomposition/result",
+            "POST /fabrication/decomposition/result"
+        ],
+        "decompositionRoutes": [
+            "GET /decomposition/catalog",
+            "GET /fabrication/decomposition/catalog",
+            "POST /decomposition/plan",
+            "POST /fabrication/decomposition/plan"
+        ],
+        "assemblyRoutes": [
+            "GET /assembly/catalog",
+            "GET /fabrication/assembly/catalog",
+            "POST /assembly/result",
+            "POST /fabrication/assembly/result"
+        ],
+        "releaseRoutes": [
+            "POST /release/preview",
+            "POST /fabrication/release/preview",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "targetCount": targets.len(),
+        "targetBlockerCount": target_blocker_count,
+        "routeReviewCount": route_reviews.len(),
+        "routeBlockerCount": route_blocker_count,
+        "infeasibleRouteCount": infeasible_route_count,
+        "interfaceCount": interfaces.len(),
+        "interfaceBlockerCount": interface_blocker_count,
+        "interfaceToleranceBlockerCount": interface_tolerance_blocker_count,
+        "splitCombineDecisionCount": split_combine_decisions.len(),
+        "splitCombineBlockerCount": split_combine_blocker_count,
+        "redesignRequiredCount": redesign_required_count,
+        "humanInterventionTargetCount": human_intervention_target_count,
+        "humanInterventionRouteCount": human_intervention_route_count,
+        "humanInterventionInterfaceCount": human_intervention_interface_count,
+        "humanInterventionDecisionCount": human_intervention_decision_count,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "humanInterventionRequired": human_intervention_required,
+        "warningCount": warnings.len(),
+        "decompositionResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "decomposer": decomposer,
+            "decomposerVersion": decomposer_version,
+            "sourcePartId": source_part_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "targets": targets,
+            "routeReviews": route_reviews,
+            "interfaces": interfaces,
+            "splitCombineDecisions": split_combine_decisions,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "split and combine targets resolve to regenerated child geometry, route contracts, and release gates",
+                "route reviews prove each split child or recomposed part is feasible on selected machines",
+                "interfaces pass datum, fit, tolerance, and recomposition evidence before assembly or package release",
+                "split/combine decisions, redesign requirements, artifacts, and human dispositions are retained before machine-ready release"
+            ],
+            "targetSurfaces": [
+                "decompositionPlan",
+                "interfaceControlPlan",
+                "hybridMakePlan",
+                "assembly",
+                "machineRelease",
+                "releasePackagePlan",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "decomposition-result",
+            "decomposition-targets",
+            "decomposition-route-reviews",
+            "decomposition-interfaces",
+            "decomposition-split-combine-decisions",
+            "decomposition-artifacts",
+            "decomposition-learning-observations",
+            "decomposition-plan",
+            "interface-control-plan",
+            "hybrid-make-plan",
+            "mdp-request.artifacts.decompositionResult"
+        ],
+        "decompositionPolicy": [
+            "decomposition results are retained split/combine, route, interface, and recomposition evidence, not certified CAD/CAM or assembly release",
+            "machine-ready release remains blocked until targets, routes, interfaces, decisions, artifacts, and human dispositions clear",
+            "decomposition result observations feed MDP/POMDP/neural learning so future plans can choose single-piece, split-route, recomposed, or redesigned fabrication paths"
+        ]
+    }))
+}
+
+fn decomposition_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("targets-release-blocked")
+        || status.contains("routes-release-blocked")
+        || status.contains("interfaces-release-blocked")
+        || status.contains("split-combine-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_decomposition_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "decomposition-result");
+    let job_id = response_str_field(
+        response,
+        "decompositionResultJobId",
+        &safe_job_id("decomposition-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "decomposition-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("decompositionResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let targets = result.get("targets").cloned().unwrap_or_else(|| json!([]));
+    let route_reviews = result
+        .get("routeReviews")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let interfaces = result
+        .get("interfaces")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let split_combine_decisions = result
+        .get("splitCombineDecisions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let decomposition_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "decomposition-result".to_string(),
+            "decomposition-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "decomposition-targets".to_string(),
+            "decomposition-targets",
+            targets,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "decomposition-route-reviews".to_string(),
+            "decomposition-route-reviews",
+            route_reviews,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "decomposition-interfaces".to_string(),
+            "decomposition-interfaces",
+            interfaces,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "decomposition-split-combine-decisions".to_string(),
+            "decomposition-split-combine-decisions",
+            split_combine_decisions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "decomposition-artifacts".to_string(),
+            "decomposition-artifacts",
+            decomposition_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "decomposition-learning-observations".to_string(),
+            "decomposition-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "decomposition-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: decomposition_result_job_severity(response),
+            summary: format!("decomposition result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_decomposition_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_decomposition_result_job(response));
+}
+
 async fn decomposition_catalog_http() -> impl IntoResponse {
     Json(decomposition_catalog_response())
 }
