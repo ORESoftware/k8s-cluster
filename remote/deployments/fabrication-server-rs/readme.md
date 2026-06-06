@@ -202,6 +202,9 @@ is supplied.
   disposition, and nonconformance-routing gates, thermal postprocess furnace job
   sheets with material batch, fixture/setter, ramp/soak, atmosphere,
   cooldown/quench, PPE, distortion, hardness/cure, and release-inspection gates,
+  surface finishing/coating/deburr-polish job sheets with material compatibility,
+  SDS/media, masking/plugs, ventilation/PPE/waste, dry/cure, thickness,
+  adhesion/color/roughness, dimensional-impact, and finish-inspection gates,
   robotic assembly-cell job sheets with kit traceability, datum dry-fit,
   robot path/gripper/fixture/vision evidence, press/heat-set/torque/adhesive
   join recipes, cure or clamp timing, and final metrology gates, mill-turn/swiss
@@ -255,7 +258,7 @@ is supplied.
   precision tolerance/surface-finish metrology evidence,
   unattended/batch monitoring and recovery evidence,
   thermal postprocess temperature/fixture/cooldown evidence,
-  surface/chemical finishing media/masking/PPE/waste evidence,
+  surface/chemical finishing media/masking/PPE/waste/thickness/adhesion/inspection evidence,
   indexed setup clamp/index/clearance/re-probe evidence,
   sheet-cutting material/thickness/cut-chart/recipe evidence, pierce/kerf/focus/gas/fume/support, retained-tab/microjoint/part-release evidence, waterjet pressure/abrasive-flow, plasma work-clamp evidence, wire EDM start-hole/thread/tension/dielectric/flushing/slug-retention/skim-pass evidence plus profile/skim-cut setup-order evidence, and sinker EDM electrode/dielectric/depth/wear/orbit-finish/recast release-gate evidence,
   deep-cut, arc-plane/geometry,
@@ -362,14 +365,14 @@ operator sign-off.
 `GET /capabilities` and the gateway-prefixed `GET /fabrication/capabilities`
 return the service capability contract before a caller submits work. The payload
 includes supported request families, built-in `defaultMachines`, machine classes
-for FDM, multi-material FDM/toolchanger, large-format pellet/FGF, paste/clay extrusion, bound-metal filament FFF, resin, material jetting, directed-energy deposition/WAAM, continuous-fiber composite, binder jet, polymer powder-bed, metal PBF, vertical milling, five-axis milling, rotary-indexed milling, horizontal milling, precision grinding/lapping/honing, CMM/vision inspection, thermal postprocess furnace/oven work,
+for FDM, multi-material FDM/toolchanger, large-format pellet/FGF, paste/clay extrusion, bound-metal filament FFF, resin, material jetting, directed-energy deposition/WAAM, continuous-fiber composite, binder jet, polymer powder-bed, metal PBF, vertical milling, five-axis milling, rotary-indexed milling, horizontal milling, precision grinding/lapping/honing, CMM/vision inspection, thermal postprocess furnace/oven work, surface/chemical finishing and coating cells,
 mill-turn/swiss-turning, routing, laser,
 waterjet, plasma, robotic assembly/joining, lathe, and manual/special-process
 work, accepted instruction kinds including slicer, multi-material FDM/toolchanger, pellet-FGF, paste/clay extrusion, bound-metal FFF,
 metal-filament, SLA/resin,
 material-jetting, DED/WAAM, composite-fiber, binder-jet, SLS/powder, metal-PBF,
 mill-turn, lathe/turning, indexed-mill, assembly-cell, part-separation, laser/waterjet/plasma,
-wire-EDM, sinker-EDM, grinding, CMM inspection, vision inspection, metrology, furnace, heat-treatment, and thermal-postprocess job sheets, design input format
+wire-EDM, sinker-EDM, grinding, CMM inspection, vision inspection, metrology, furnace, heat-treatment, thermal-postprocess, surface-finishing, coating, and deburr-polish job sheets, design input format
 families, generated artifact families, learning
 channels, bounded `profileEvidence` buckets for submitted machine profiles, and
 safety boundary classes. These capabilities describe draft planning and
@@ -384,7 +387,7 @@ The payload exposes the supported default fleet for additive printers,
 large-format pellet/FGF, paste/clay extrusion, bound-metal filament FFF, resin, material jetting, fiber composite, binder jet,
 SLS/MJF/powder-bed, metal PBF, DED, vertical/horizontal/five-axis/indexed mills,
 CNC routers, mill-turn centers, lathes, laser/waterjet/plasma/wire EDM/sinker
-EDM cells, precision grinders, CMM/vision inspection cells, thermal postprocess furnaces, and robotic assembly cells. It includes machine kinds, process-class
+EDM cells, precision grinders, CMM/vision inspection cells, thermal postprocess furnaces, surface finishing/coating cells, and robotic assembly cells. It includes machine kinds, process-class
 counts, controllers, supported materials, operation tags, work envelopes, axes,
 accepted instruction languages, planning and instruction-analysis route aliases,
 and per-machine release gates. Catalog machines are default planning profiles,
@@ -492,12 +495,13 @@ job-sheet catalog for plan responses. The payload exposes generated program
 families for FDM printing, resin and powder-bed additive, pellet FGF, paste/clay
 extrusion, bound-metal filament FFF, material jetting, DED/WAAM, continuous-fiber, binder jet, vertical/horizontal/indexed
 milling, routing, laser/waterjet/plasma/wire EDM sheet cutting, sinker EDM,
-precision grinding/lapping/honing, CMM/vision dimensional inspection, thermal postprocess furnace/oven release, lathe, mill-turn, robotic assembly, part separation, and fallback manual
+precision grinding/lapping/honing, CMM/vision dimensional inspection, thermal postprocess furnace/oven release, surface finishing/coating/deburr release, lathe, mill-turn, robotic assembly, part separation, and fallback manual
 instructions. It lists generated languages such as `marlin-gcode`,
 `haas-gcode`, `indexed-mill-gcode`, `waterjet-job`, `wire-edm-job`,
 `grinding-job`, `cmm-inspection-job`, `vision-inspection-job`, `metrology-job`,
 `thermal-postprocess-job`, `furnace-job`, `heat-treatment-job`,
-`mill-turn-gcode`, and `assembly-cell-job`, plus response surfaces including
+`surface-finishing-job`, `coating-job`, `deburr-polish-job`, `mill-turn-gcode`,
+and `assembly-cell-job`, plus response surfaces including
 `generatedPrograms.instructions`, `generatedPrograms.machineReady`,
 `simulation.programs`, `executionPlan.programRuns`,
 `postprocessPlan.targets`, and `controllerPlan.controllerTargets`. Generated
@@ -777,8 +781,10 @@ assembly/join cure plus final-fit checks. It also exposes artifact contracts for
 inspection report packaging with calibration records, datum alignment and
 uncertainty records, first-article measured values, and nonconformance
 disposition records, thermal profile and furnace logs, fixture/setter and
-atmosphere records, cooldown/quench and PPE records, and
-distortion/hardness/release inspection records,
+atmosphere records, cooldown/quench and PPE records,
+distortion/hardness/release inspection records, surface media/chemistry and SDS
+records, masking/plugging/protected-feature records, ventilation/PPE/waste
+records, and finish thickness/adhesion/inspection records,
 `postprocess-plan`, `analysis-postprocess-plan`, controller output packages, and
 postprocess travelers, plus planning and instruction-analysis route aliases,
 response surfaces such as `postprocessPlan.status`,
@@ -953,12 +959,12 @@ If `machines` is omitted, the service uses a conservative default fleet with an
 FDM printer, SLA resin printer, multi-material FDM/toolchanger printer, paste/clay extrusion printer, bound-metal filament FFF printer, material-jetting printer, continuous-fiber composite printer, SLS powder-bed printer, DED/WAAM directed-energy deposition cell, metal PBF printer, binder jet printer, vertical
 mill,
 five-axis mill, rotary-indexer mill, horizontal mill, CNC router, laser cutter, waterjet cutter, plasma cutter, wire
-EDM cutter, sinker EDM cell, precision grinder, CMM/vision inspection cell, thermal postprocess furnace, robotic assembly cell, and lathe. If `parts` is omitted, the planner infers
+EDM cutter, sinker EDM cell, precision grinder, CMM/vision inspection cell, thermal postprocess furnace, surface finishing cell, robotic assembly cell, and lathe. If `parts` is omitted, the planner infers
 a first decomposition from the objective, material, and tolerance, including
 resin-print, multi-material-fdm-print, paste-extrusion-print, bound-metal-fff-print, material-jetting-print, directed-energy-deposition, composite-fiber-print, binder-jet-print, polymer powder-bed-print, metal PBF-print, five-axis-milled impellers/undercuts,
 4th-axis indexed multi-face milling, horizontal-milled side slots/keyways, laser,
 waterjet, plasma, wire EDM, sinker EDM cavity burns, precision-grinding datum finishes, CMM/vision first-article inspection releases, thermal anneal/stress-relief/heat-treatment/post-cure releases, assembly-joining/fit-up
-steps, and kerf-controlled
+steps, surface finishing/coating/deburr releases, and kerf-controlled
 sheet-cut profiles, and routed sheet/profile parts for wood,
 foam, acrylic, panel, sign, engraving, and tabbed-profile requests. Additive
 plans flag overhang, bridge, cantilever, thin-wall, snap-fit, and resin
