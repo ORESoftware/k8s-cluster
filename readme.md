@@ -427,8 +427,8 @@ modal defaults or explicit setup, post-processing, split, assembly, and
 human-intervention gates. Each improved program includes a `patchManifest` with
 draft insert/review operations such as `insert-before-line`,
 `insert-before-program`, `insert-after-program`, and `review-line`, plus content
-snippets and `instruction-patch:*` learning observations for MDP/POMDP/neural
-workers. Submitted machine profiles are bounded and validated,
+snippets, `apply-instruction-patch-*` policy actions, and `instruction-patch:*`
+learning observations for MDP/POMDP/neural workers. Submitted machine profiles are bounded and validated,
 including positive work-envelope values, unique IDs, nonzero axis counts, and
 bounded non-secret `profileEvidence` lists for calibration, tools, fixtures,
 materials, process support, maintenance, release evidence, and retained blockers.
