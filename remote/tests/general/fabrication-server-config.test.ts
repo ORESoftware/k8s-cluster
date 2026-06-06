@@ -48,8 +48,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct InstructionPatchManifest/);
   assert.match(source, /struct InstructionPatchOperation/);
   assert.match(source, /fn instruction_patch_manifest/);
+  assert.match(source, /fn instruction_patch_learning_actions/);
+  assert.match(source, /fn instruction_patch_learning_observations/);
   assert.match(source, /dd\.fabrication\.instruction-patch-manifest\.v1/);
   assert.match(source, /instruction-patch:/);
+  assert.match(source, /apply-instruction-patch-/);
   assert.match(source, /"patchManifest": program\.patch_manifest/);
   assert.match(source, /struct FabricationOutcomeRequest/);
   assert.match(source, /struct FabricationLearningResponse/);
@@ -1948,6 +1951,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`patchManifest`/);
   assert.match(readme, /line-level repair\s+operations/);
   assert.match(readme, /`insert-before-line`/);
+  assert.match(readme, /`apply-instruction-patch-\*` policy actions/);
   assert.match(readme, /`instruction-patch:\*` learning observations/);
   assert.match(readme, /machine-ready release/);
   assert.match(readme, /nonzero axis counts/);

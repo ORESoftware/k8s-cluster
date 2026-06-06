@@ -300,6 +300,7 @@ struct FabricationPlanResponse {
     boundary_summary: BoundarySummary,
     resolution_plan: BoundaryResolutionPlan,
     intervention_map: BoundaryInterventionMap,
+    operator_intervention_plan: OperatorInterventionPlan,
     machine_release: MachineReleaseReport,
     execution_plan: ExecutionReadinessPlan,
     postprocess_plan: PostprocessPlan,
@@ -323,6 +324,7 @@ struct InstructionAnalysisResponse {
     boundary_summary: BoundarySummary,
     resolution_plan: BoundaryResolutionPlan,
     intervention_map: BoundaryInterventionMap,
+    operator_intervention_plan: OperatorInterventionPlan,
     machine_release: MachineReleaseReport,
     execution_plan: ExecutionReadinessPlan,
     postprocess_plan: PostprocessPlan,
@@ -1275,6 +1277,78 @@ struct ProgramBoundaryTrace {
     machine_failure_risk: bool,
     requires_human_intervention: bool,
     suggested_resolution: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OperatorInterventionPlan {
+    schema_version: &'static str,
+    status: String,
+    machine_release_blocked: bool,
+    can_run_unattended: bool,
+    required_operator_actions: Vec<OperatorInterventionAction>,
+    evidence_gates: Vec<OperatorEvidenceGate>,
+    automation_candidates: Vec<OperatorAutomationCandidate>,
+    split_combine_reviews: Vec<OperatorSplitCombineReview>,
+    learning_observations: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OperatorInterventionAction {
+    action_id: String,
+    source: String,
+    boundary_kind: String,
+    program_id: Option<String>,
+    line: Option<usize>,
+    part_id: Option<String>,
+    process_node_id: Option<String>,
+    required_action: String,
+    reason: String,
+    required_evidence: Vec<String>,
+    blocks_machine_start: bool,
+    next_state: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OperatorEvidenceGate {
+    gate_id: String,
+    gate_type: String,
+    status: String,
+    evidence: String,
+    program_id: Option<String>,
+    required_before: String,
+    blocks_machine_start: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OperatorAutomationCandidate {
+    path_id: String,
+    boundary_kind: String,
+    program_id: Option<String>,
+    line: Option<usize>,
+    automation_type: String,
+    fallback: String,
+    next_state: String,
+    required_evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OperatorSplitCombineReview {
+    review_id: String,
+    action: String,
+    boundary_kind: String,
+    part_id: Option<String>,
+    program_id: Option<String>,
+    line: Option<usize>,
+    candidate_parts: Vec<String>,
+    interface_plan: BoundarySplitCombineInterfacePlan,
+    requires_human_intervention: bool,
+    required_evidence: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -19078,6 +19152,7 @@ fn parametric_design_content(response: &FabricationPlanResponse) -> Value {
         "designExports": response.design_exports,
         "designInputReview": response.design_input_review,
         "executionPlan": response.execution_plan,
+        "operatorInterventionPlan": response.operator_intervention_plan,
         "postprocessPlan": response.postprocess_plan,
         "pomdpBeliefState": response.learning.pomdp_belief_state,
         "releaseProbePlan": response.learning.release_probe_plan,
@@ -19237,6 +19312,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             "intervention-map".to_string(),
             "intervention-map",
             json!(response.intervention_map),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "operator-intervention-plan".to_string(),
+            "operator-intervention-plan",
+            json!(response.operator_intervention_plan),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -19421,6 +19502,12 @@ fn analysis_artifacts(response: &InstructionAnalysisResponse) -> Vec<Fabrication
             "analysis-intervention-map".to_string(),
             "analysis-intervention-map",
             json!(response.intervention_map),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "analysis-operator-intervention-plan".to_string(),
+            "analysis-operator-intervention-plan",
+            json!(response.operator_intervention_plan),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -20946,6 +21033,268 @@ fn execution_readiness_plan(
         notes: vec![
             "Execution readiness is a conservative preflight plan; it does not certify controller safety".to_string(),
             "Every stop point must be resolved, automated, or explicitly signed off before machine start".to_string(),
+        ],
+    }
+}
+
+fn operator_required_evidence(
+    required_action: &str,
+    reason: &str,
+    next_state: &str,
+) -> Vec<String> {
+    let combined = format!("{required_action} {reason} {next_state}");
+    let mut evidence = vec![
+        "operator or automation acknowledgement before restart/release".to_string(),
+        "recorded reviewer, timestamp, machine, program, and part context".to_string(),
+    ];
+    if summary_text_has_any(
+        &combined,
+        &["machine-failure", "resolve", "failed-until-resolved"],
+    ) {
+        evidence.push(
+            "root cause, corrective action, dry-run/simulation, and restart approval".to_string(),
+        );
+    }
+    if summary_text_has_any(&combined, &["split", "combine", "assemble", "interface"]) {
+        evidence.push("approved split/combine decision, interface datum, fit check, and assembly inspection record".to_string());
+    }
+    if summary_text_has_any(
+        &combined,
+        &["automation", "robot", "operator-loaded", "tool-change"],
+    ) {
+        evidence.push(
+            "automation, tool-change, magazine, robot, or operator-load verification evidence"
+                .to_string(),
+        );
+    }
+    if summary_text_has_any(
+        &combined,
+        &[
+            "material",
+            "stock",
+            "feedstock",
+            "resin",
+            "powder",
+            "filament",
+            "gas",
+            "abrasive",
+            "coolant",
+            "support",
+        ],
+    ) {
+        evidence.push("material, stock, feedstock, support-media, or process-consumable verification evidence".to_string());
+    }
+    if summary_text_has_any(
+        &combined,
+        &[
+            "workholding",
+            "fixture",
+            "datum",
+            "probe",
+            "offset",
+            "clearance",
+        ],
+    ) {
+        evidence.push(
+            "fixture, workholding, datum/probe, offset, and safe-clearance evidence".to_string(),
+        );
+    }
+    evidence.sort();
+    evidence.dedup();
+    evidence
+}
+
+fn operator_boundary_kind_for_stop(
+    stop: &ExecutionStopPoint,
+    intervention_map: &BoundaryInterventionMap,
+    machine_release: &MachineReleaseReport,
+) -> String {
+    intervention_map
+        .human_intervention_points
+        .iter()
+        .find(|point| {
+            point.program_id == stop.program_id
+                && point.line == stop.line
+                && point.required_action == stop.required_action
+        })
+        .map(|point| point.boundary_kind.clone())
+        .or_else(|| {
+            machine_release
+                .blockers
+                .iter()
+                .find(|blocker| {
+                    blocker.program_id == stop.program_id
+                        && blocker.line == stop.line
+                        && blocker.required_action == stop.required_action
+                })
+                .map(|blocker| blocker.blocker_type.clone())
+        })
+        .unwrap_or_else(|| stop.source.clone())
+}
+
+fn operator_intervention_plan(
+    intervention_map: &BoundaryInterventionMap,
+    execution_plan: &ExecutionReadinessPlan,
+    machine_release: &MachineReleaseReport,
+) -> OperatorInterventionPlan {
+    let required_operator_actions = execution_plan
+        .stop_points
+        .iter()
+        .map(|stop| {
+            let boundary_kind =
+                operator_boundary_kind_for_stop(stop, intervention_map, machine_release);
+            OperatorInterventionAction {
+                action_id: format!("operator-action-{}", normalize_token(&stop.stop_id)),
+                source: stop.source.clone(),
+                boundary_kind,
+                program_id: stop.program_id.clone(),
+                line: stop.line,
+                part_id: stop.part_id.clone(),
+                process_node_id: stop.process_node_id.clone(),
+                required_action: stop.required_action.clone(),
+                reason: stop.reason.clone(),
+                required_evidence: operator_required_evidence(
+                    &stop.required_action,
+                    &stop.reason,
+                    &stop.next_state,
+                ),
+                blocks_machine_start: stop.severity == "error"
+                    || stop.next_state == "failed-until-resolved"
+                    || machine_release.machine_release_blocked,
+                next_state: stop.next_state.clone(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let evidence_gates = execution_plan
+        .checkpoints
+        .iter()
+        .map(|checkpoint| OperatorEvidenceGate {
+            gate_id: format!(
+                "operator-gate-{}",
+                normalize_token(&checkpoint.checkpoint_id)
+            ),
+            gate_type: checkpoint.stage.clone(),
+            status: checkpoint.status.clone(),
+            evidence: checkpoint.evidence.clone(),
+            program_id: checkpoint.program_id.clone(),
+            required_before: checkpoint.required_before.clone(),
+            blocks_machine_start: checkpoint.status == "blocked"
+                || checkpoint.required_before == "machine-release",
+        })
+        .collect::<Vec<_>>();
+
+    let automation_candidates = intervention_map
+        .automation_paths
+        .iter()
+        .map(|path| OperatorAutomationCandidate {
+            path_id: path.path_id.clone(),
+            boundary_kind: path.boundary_kind.clone(),
+            program_id: path.program_id.clone(),
+            line: path.line,
+            automation_type: path.automation_type.clone(),
+            fallback: path.fallback.clone(),
+            next_state: path.next_state.clone(),
+            required_evidence: operator_required_evidence(
+                "add-verified-automation",
+                &path.reason,
+                &path.next_state,
+            ),
+        })
+        .collect::<Vec<_>>();
+
+    let split_combine_reviews = intervention_map
+        .split_combine_decisions
+        .iter()
+        .map(|decision| OperatorSplitCombineReview {
+            review_id: format!("operator-review-{}", normalize_token(&decision.decision_id)),
+            action: decision.action.clone(),
+            boundary_kind: decision.boundary_kind.clone(),
+            part_id: decision.part_id.clone(),
+            program_id: decision.program_id.clone(),
+            line: decision.line,
+            candidate_parts: decision.candidate_parts.clone(),
+            interface_plan: decision.interface_plan.clone(),
+            requires_human_intervention: decision.requires_human_intervention,
+            required_evidence: operator_required_evidence(
+                &decision.action,
+                &decision.rationale,
+                &decision.interface_plan.inspection_gate,
+            ),
+        })
+        .collect::<Vec<_>>();
+
+    let has_blocking_action = required_operator_actions
+        .iter()
+        .any(|action| action.blocks_machine_start);
+    let has_blocking_gate = evidence_gates
+        .iter()
+        .any(|gate| gate.status == "blocked" || gate.status == "review");
+    let can_run_unattended = execution_plan.can_run_unattended
+        && required_operator_actions.is_empty()
+        && !has_blocking_gate
+        && automation_candidates.is_empty()
+        && split_combine_reviews
+            .iter()
+            .all(|review| !review.requires_human_intervention);
+    let status =
+        if machine_release.machine_release_blocked || has_blocking_action || has_blocking_gate {
+            "operator-intervention-blocked"
+        } else if !required_operator_actions.is_empty()
+            || !automation_candidates.is_empty()
+            || split_combine_reviews
+                .iter()
+                .any(|review| review.requires_human_intervention)
+        {
+            "operator-intervention-review-required"
+        } else {
+            "operator-intervention-not-required"
+        };
+
+    let mut learning_observations = BTreeSet::new();
+    learning_observations.insert(format!("operator-intervention-status:{status}"));
+    for action in &required_operator_actions {
+        learning_observations.insert(format!(
+            "operator-action:{}:{}",
+            normalize_token(&action.source),
+            normalize_token(&action.boundary_kind)
+        ));
+    }
+    for gate in &evidence_gates {
+        learning_observations.insert(format!(
+            "operator-evidence-gate:{}:{}",
+            normalize_token(&gate.gate_type),
+            normalize_token(&gate.status)
+        ));
+    }
+    for candidate in &automation_candidates {
+        learning_observations.insert(format!(
+            "operator-automation:{}:{}",
+            normalize_token(&candidate.automation_type),
+            normalize_token(&candidate.boundary_kind)
+        ));
+    }
+    for review in &split_combine_reviews {
+        learning_observations.insert(format!(
+            "operator-split-combine:{}:{}",
+            normalize_token(&review.action),
+            normalize_token(&review.boundary_kind)
+        ));
+    }
+
+    OperatorInterventionPlan {
+        schema_version: "dd.fabrication.operator-intervention-plan.v1",
+        status: status.to_string(),
+        machine_release_blocked: machine_release.machine_release_blocked || has_blocking_action,
+        can_run_unattended,
+        required_operator_actions,
+        evidence_gates,
+        automation_candidates,
+        split_combine_reviews,
+        learning_observations: learning_observations.into_iter().collect(),
+        notes: vec![
+            "Operator intervention planning converts machine-release blockers and boundary stop points into explicit evidence gates".to_string(),
+            "No listed operator action is a controller-certified restart instruction; final machine restart remains a human/shop-floor responsibility".to_string(),
         ],
     }
 }
@@ -22493,6 +22842,8 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         &[],
         Some(&process_graph),
     );
+    let operator_intervention_plan =
+        operator_intervention_plan(&intervention_map, &execution_plan, &machine_release);
     let postprocess_plan = postprocess_plan(
         &machines,
         &validation,
@@ -22597,6 +22948,7 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         boundary_summary: summary,
         resolution_plan,
         intervention_map,
+        operator_intervention_plan,
         machine_release,
         execution_plan,
         postprocess_plan,
@@ -22750,6 +23102,8 @@ fn analyze_instruction_request(
         &analyzed,
         None,
     );
+    let operator_intervention_plan =
+        operator_intervention_plan(&intervention_map, &execution_plan, &machine_release);
     let postprocess_plan = postprocess_plan(
         &machines,
         &validation,
@@ -22771,6 +23125,7 @@ fn analyze_instruction_request(
         boundary_summary: summary,
         resolution_plan,
         intervention_map,
+        operator_intervention_plan,
         machine_release,
         execution_plan,
         postprocess_plan,
@@ -25926,6 +26281,39 @@ fn boundary_learning_observations(summary: &BoundarySummary) -> Vec<String> {
     unique_sorted(observations.into_iter())
 }
 
+fn instruction_patch_learning_actions(improvements: &[InstructionImprovement]) -> Vec<String> {
+    unique_sorted(
+        improvements
+            .iter()
+            .take(MAX_LEARNING_SIGNALS.min(64))
+            .map(|improvement| {
+                format!(
+                    "apply-instruction-patch-{}",
+                    normalize_token(&improvement.action)
+                )
+            }),
+    )
+}
+
+fn instruction_patch_learning_observations(improvements: &[InstructionImprovement]) -> Vec<String> {
+    let mut observations = Vec::new();
+    for improvement in improvements.iter().take(MAX_LEARNING_SIGNALS.min(64)) {
+        observations.push(format!(
+            "instruction-patch-action:{}",
+            normalize_token(&improvement.action)
+        ));
+        observations.push(format!(
+            "instruction-patch-program:{}",
+            normalize_token(improvement.program_id.as_deref().unwrap_or("whole-job"))
+        ));
+        observations.push(format!(
+            "instruction-patch-line:{}",
+            boundary_line_token(improvement.line)
+        ));
+    }
+    unique_sorted(observations.into_iter())
+}
+
 fn intervention_learning_signals(
     summary: &BoundarySummary,
     resolution_plan: &BoundaryResolutionPlan,
@@ -26078,6 +26466,8 @@ fn pomdp_supported_state_for_observation(observation: &str) -> &'static str {
 fn pomdp_observation_source(observation: &str) -> &'static str {
     if observation.starts_with("boundary-kind:") {
         "validation-boundary"
+    } else if observation.starts_with("instruction-patch-") {
+        "instruction-patch"
     } else if observation.starts_with("automation-required:") {
         "automation-requirement"
     } else if observation.starts_with("resolution-step:") {
@@ -26749,6 +27139,7 @@ fn learning_plan(
         ));
     }
     actions.extend(boundary_learning_actions(&summary));
+    actions.extend(instruction_patch_learning_actions(improvements));
     actions.extend(
         intervention_signals
             .iter()
@@ -26770,6 +27161,7 @@ fn learning_plan(
             ]
         });
     observations.extend(boundary_learning_observations(&summary));
+    observations.extend(instruction_patch_learning_observations(improvements));
     observations.extend(
         intervention_signals
             .iter()
@@ -26796,6 +27188,11 @@ fn learning_plan(
                     normalize_token(sequence)
                 )
             })
+    }));
+    actions.extend(observations.iter().filter_map(|observation| {
+        observation
+            .strip_prefix("instruction-patch-action:")
+            .map(|action| format!("apply-instruction-patch-{action}"))
     }));
     actions.sort();
     actions.dedup();
@@ -28216,7 +28613,7 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         }
     }
 
-    json!({
+    let mut request = json!({
         "requestId": format!("{}-fabrication-policy", response.request_id),
         "kind": "fabrication.mdp.process-policy",
         "learningEngine": &response.learning.engine,
@@ -28257,7 +28654,14 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "gamma": 0.82,
         "tolerance": 0.000001,
         "maxIterations": 1000
-    })
+    });
+    if let Some(object) = request.as_object_mut() {
+        object.insert(
+            "operatorInterventionPlan".to_string(),
+            json!(&response.operator_intervention_plan),
+        );
+    }
+    request
 }
 
 fn instruction_analysis_mdp_request(response: &InstructionAnalysisResponse) -> Value {
@@ -28324,6 +28728,7 @@ fn instruction_analysis_mdp_request(response: &InstructionAnalysisResponse) -> V
         "boundarySummary": &response.boundary_summary,
         "resolutionPlan": &response.resolution_plan,
         "interventionMap": &response.intervention_map,
+        "operatorInterventionPlan": &response.operator_intervention_plan,
         "machineRelease": &response.machine_release,
         "executionPlan": &response.execution_plan,
         "postprocessPlan": &response.postprocess_plan,
@@ -31040,6 +31445,27 @@ mod tests {
             .iter()
             .any(|stop| stop.source == "intervention-map"
                 && stop.next_state == "inspection-required"));
+        assert_eq!(
+            response.operator_intervention_plan.schema_version,
+            "dd.fabrication.operator-intervention-plan.v1"
+        );
+        assert_eq!(
+            response.operator_intervention_plan.status,
+            "operator-intervention-blocked"
+        );
+        assert!(!response.operator_intervention_plan.can_run_unattended);
+        assert!(response
+            .operator_intervention_plan
+            .required_operator_actions
+            .iter()
+            .any(|action| action.blocks_machine_start
+                && !action.required_evidence.is_empty()
+                && !action.boundary_kind.is_empty()));
+        assert!(response
+            .operator_intervention_plan
+            .learning_observations
+            .iter()
+            .any(|observation| observation.starts_with("operator-action:")));
         assert_eq!(
             response.postprocess_plan.schema_version,
             "dd.fabrication.postprocess-plan.v1"
@@ -41306,6 +41732,11 @@ mod tests {
             .and_then(Value::as_array)
             .is_some_and(|runs| !runs.is_empty()));
         assert!(mdp_request
+            .get("operatorInterventionPlan")
+            .and_then(|plan| plan.get("learningObservations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| !observations.is_empty()));
+        assert!(mdp_request
             .get("postprocessPlan")
             .and_then(|plan| plan.get("controllerTargets"))
             .and_then(Value::as_array)
@@ -42361,6 +42792,7 @@ mod tests {
         assert!(job.artifacts.contains_key("boundary-summary"));
         assert!(job.artifacts.contains_key("resolution-plan"));
         assert!(job.artifacts.contains_key("intervention-map"));
+        assert!(job.artifacts.contains_key("operator-intervention-plan"));
         assert!(job.artifacts.contains_key("machine-release"));
         assert!(job.artifacts.contains_key("execution-plan"));
         assert!(job.artifacts.contains_key("postprocess-plan"));
@@ -42514,6 +42946,12 @@ mod tests {
             .and_then(|plan| plan.get("schemaVersion"))
             .and_then(Value::as_str)
             .is_some_and(|version| version == "dd.fabrication.execution-plan.v1"));
+        assert!(parametric_design
+            .content
+            .get("operatorInterventionPlan")
+            .and_then(|plan| plan.get("requiredOperatorActions"))
+            .and_then(Value::as_array)
+            .is_some_and(|actions| !actions.is_empty()));
         assert!(parametric_design
             .content
             .get("postprocessPlan")
@@ -42780,6 +43218,22 @@ mod tests {
             .get("programRuns")
             .and_then(Value::as_array)
             .is_some_and(|runs| !runs.is_empty()));
+        let operator_intervention_plan = job
+            .artifacts
+            .get("operator-intervention-plan")
+            .expect("operator intervention plan artifact should be retained");
+        assert_eq!(
+            operator_intervention_plan
+                .content
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.operator-intervention-plan.v1")
+        );
+        assert!(operator_intervention_plan
+            .content
+            .get("requiredOperatorActions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| !actions.is_empty()));
         let postprocess_plan = job
             .artifacts
             .get("postprocess-plan")
@@ -43010,6 +43464,8 @@ mod tests {
             &analyzed,
             None,
         );
+        let operator_intervention_plan =
+            operator_intervention_plan(&intervention_map, &execution_plan, &machine_release);
         let postprocess_plan = postprocess_plan(
             &machines,
             &validation,
@@ -43030,6 +43486,7 @@ mod tests {
             boundary_summary: summary,
             resolution_plan,
             intervention_map,
+            operator_intervention_plan,
             machine_release,
             execution_plan,
             postprocess_plan,
@@ -43047,6 +43504,9 @@ mod tests {
         assert!(job.artifacts.contains_key("analysis-boundary-summary"));
         assert!(job.artifacts.contains_key("analysis-resolution-plan"));
         assert!(job.artifacts.contains_key("analysis-intervention-map"));
+        assert!(job
+            .artifacts
+            .contains_key("analysis-operator-intervention-plan"));
         assert!(job.artifacts.contains_key("analysis-machine-release"));
         assert!(job.artifacts.contains_key("analysis-execution-plan"));
         assert!(job.artifacts.contains_key("analysis-postprocess-plan"));
@@ -43100,6 +43560,18 @@ mod tests {
             .pomdp_observations
             .iter()
             .any(|observation| observation.starts_with("boundary-kind:")));
+        assert!(response
+            .learning
+            .pomdp_observations
+            .iter()
+            .any(|observation| {
+                observation == "instruction-patch-action:add-coordinate-reference"
+            }));
+        assert!(response
+            .learning
+            .actions
+            .iter()
+            .any(|action| action == "apply-instruction-patch-add-coordinate-reference"));
         assert!(response
             .learning
             .actions
@@ -43183,6 +43655,12 @@ mod tests {
             .is_some_and(|blocks| blocks
                 .iter()
                 .any(|block| block.get("kind").and_then(Value::as_str) == Some("queue"))));
+        assert!(analysis_mdp_request
+            .content
+            .get("operatorInterventionPlan")
+            .and_then(|plan| plan.get("requiredOperatorActions"))
+            .and_then(Value::as_array)
+            .is_some_and(|actions| !actions.is_empty()));
         assert_eq!(
             analysis_mdp_request
                 .content
@@ -43220,6 +43698,19 @@ mod tests {
             .get("programs")
             .and_then(Value::as_array)
             .is_some_and(|programs| !programs.is_empty()));
+        assert!(analysis_mdp_request
+            .content
+            .get("actions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions.iter().any(|action| action.as_str()
+                == Some("apply-instruction-patch-add-coordinate-reference"))));
+        assert!(analysis_mdp_request
+            .content
+            .get("observations")
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str() == Some("instruction-patch-action:add-coordinate-reference")
+            })));
         assert!(analysis_mdp_request
             .content
             .get("improvedPrograms")
