@@ -121,6 +121,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct QualityMeasurementTarget/);
   assert.match(source, /struct ToolingPlan/);
   assert.match(source, /struct ToolingRequirement/);
+  assert.match(source, /struct FixturePlan/);
+  assert.match(source, /struct FixtureSetupPlan/);
+  assert.match(source, /struct FixtureDatumTransfer/);
   assert.match(source, /struct ProductionPlan/);
   assert.match(source, /struct ProductionBatch/);
   assert.match(source, /struct MachineSchedule/);
@@ -251,6 +254,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn tooling_plan/);
   assert.match(source, /tooling_plan: ToolingPlan/);
   assert.match(source, /fn tooling_required_tools/);
+  assert.match(source, /fn fixture_plan/);
+  assert.match(source, /fn fixture_plan_learning_actions/);
+  assert.match(source, /fixture_plan: FixturePlan/);
   assert.match(source, /fn production_plan/);
   assert.match(source, /production_plan: ProductionPlan/);
   assert.match(source, /fn machine_schedule/);
@@ -285,6 +291,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /dd\.fabrication\.quality-plan\.v1/);
   assert.match(source, /"tooling-plan"/);
   assert.match(source, /dd\.fabrication\.tooling-plan\.v1/);
+  assert.match(source, /"fixture-plan"/);
+  assert.match(source, /dd\.fabrication\.fixture-plan\.v1/);
+  assert.match(source, /fixture-setup:/);
+  assert.match(source, /fixture-datum-transfer:/);
   assert.match(source, /"production-plan"/);
   assert.match(source, /dd\.fabrication\.production-plan\.v1/);
   assert.match(source, /"machine-schedule"/);
@@ -382,6 +392,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /design_input_review_hardens_ambiguous_extensions_and_redacts_uris/);
   assert.match(source, /"qualityPlan": response\.quality_plan/);
   assert.match(source, /"toolingPlan": response\.tooling_plan/);
+  assert.match(source, /"fixturePlan": response\.fixture_plan/);
   assert.match(source, /"interventionMap": response\.intervention_map/);
   assert.match(source, /"executionPlan": response\.execution_plan/);
   assert.match(source, /"postprocessPlan": response\.postprocess_plan/);
@@ -1397,6 +1408,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"desScheduleModel": response\.des_schedule_model/);
   assert.match(source, /"qualityPlan": response\.quality_plan/);
   assert.match(source, /"toolingPlan": response\.tooling_plan/);
+  assert.match(source, /"fixturePlan"\.to_string\(\),\s*json!\(&response\.fixture_plan\)/);
   assert.match(source, /"machineSelection": response\.machine_selection/);
   assert.match(source, /"manufacturingHandoff": response\.manufacturing_handoff/);
   assert.match(source, /"materialPlan": response\.material_plan/);
@@ -1734,6 +1746,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /workholding/);
   assert.match(readme, /consumables/);
   assert.match(readme, /automation dependencies/);
+  assert.match(readme, /`fixturePlan`/);
+  assert.match(readme, /per-part setup strategies/);
+  assert.match(readme, /datum schemes/);
+  assert.match(readme, /clearance checks/);
+  assert.match(readme, /datum-transfer records/);
+  assert.match(readme, /`fixture-\*` learning observations/);
   assert.match(readme, /candidate scores, material\/process/);
   assert.match(readme, /operation gaps, and fallback warnings/);
   assert.match(readme, /`manufacturingHandoff` package/);
@@ -1771,6 +1789,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`analysis-des-instruction-model`/);
   assert.match(readme, /`quality-plan`/);
   assert.match(readme, /`tooling-plan`/);
+  assert.match(readme, /`fixture-plan`/);
   assert.match(readme, /`machine-release`/);
   assert.match(readme, /`analysis-machine-release`/);
   assert.match(readme, /`manufacturing-handoff`/);
@@ -1799,7 +1818,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /decomposition\/recombination gates/);
   assert.match(
     readme,
-    /`designPackage`, `designExports`, `designInputReview`, `productionPlan`,\s+`machineSchedule`, `desScheduleModel`, `machineSelection`, `manufacturingHandoff`,\s+`materialPlan`, `qualityPlan`, `toolingPlan`, `processGraph`, `hybridMakePlan`, `interventionMap`, `executionPlan`, `postprocessPlan`, `simulation`,\s+`automationRequirements`, `resolutionPlan`, and `machineRelease`/,
+    /`designPackage`, `designExports`, `designInputReview`, `productionPlan`,\s+`machineSchedule`, `desScheduleModel`, `machineSelection`, `manufacturingHandoff`,\s+`materialPlan`, `qualityPlan`, `toolingPlan`, `fixturePlan`, `processGraph`, `hybridMakePlan`, `interventionMap`, `executionPlan`, `postprocessPlan`, `simulation`,\s+`automationRequirements`, `resolutionPlan`, and `machineRelease`/,
   );
   assert.match(readme, /execution stop points/);
   assert.match(readme, /unattended-run eligibility/);
@@ -1825,7 +1844,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`machine-schedule`/);
   assert.match(readme, /operation windows/);
   assert.match(readme, /quality evidence targets/);
-  assert.match(readme, /tooling\/setup\s+requirements/);
+  assert.match(readme, /tooling\/setup,\s+fixture\/setup\s+requirements/);
   assert.match(readme, /intervention\s+paths/);
   assert.match(readme, /DES-backed policy preview/);
   assert.match(readme, /machine-choice\s+alternatives/);

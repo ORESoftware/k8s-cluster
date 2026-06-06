@@ -292,6 +292,7 @@ struct FabricationPlanResponse {
     material_plan: MaterialPlan,
     quality_plan: QualityPlan,
     tooling_plan: ToolingPlan,
+    fixture_plan: FixturePlan,
     process_plan: Vec<ProcessStep>,
     process_graph: ProcessGraph,
     hybrid_make_plan: HybridMakePlan,
@@ -952,6 +953,53 @@ struct ToolingRequirement {
     setup_checks: Vec<String>,
     automation_dependencies: Vec<String>,
     release_blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FixturePlan {
+    schema_version: &'static str,
+    status: String,
+    setup_count: usize,
+    human_review_required: bool,
+    setups: Vec<FixtureSetupPlan>,
+    datum_transfers: Vec<FixtureDatumTransfer>,
+    release_gates: Vec<String>,
+    learning_observations: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FixtureSetupPlan {
+    setup_id: String,
+    part_id: String,
+    program_id: Option<String>,
+    process_node_id: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: String,
+    setup_strategy: String,
+    datum_scheme: Vec<String>,
+    workholding: Vec<String>,
+    required_evidence: Vec<String>,
+    clearance_checks: Vec<String>,
+    automation_candidate: String,
+    requires_human_intervention: bool,
+    release_blockers: Vec<String>,
+    learning_observation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FixtureDatumTransfer {
+    transfer_id: String,
+    from_part_id: String,
+    to_part_id: String,
+    transfer_type: String,
+    interface_ids: Vec<String>,
+    required_evidence: Vec<String>,
+    release_blocker: Option<String>,
+    learning_observation: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -19171,6 +19219,7 @@ fn parametric_design_content(response: &FabricationPlanResponse) -> Value {
         "materialPlan": response.material_plan,
         "qualityPlan": response.quality_plan,
         "toolingPlan": response.tooling_plan,
+        "fixturePlan": response.fixture_plan,
         "parts": parts,
         "processLinks": process_links,
         "manufacturingHandoff": response.manufacturing_handoff,
@@ -19282,6 +19331,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             "tooling-plan".to_string(),
             "tooling-plan",
             json!(response.tooling_plan),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "fixture-plan".to_string(),
+            "fixture-plan",
+            json!(response.fixture_plan),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -22894,6 +22949,15 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         &validation,
         &machine_release,
     );
+    let fixture_plan = fixture_plan(
+        &part_plans,
+        &process_plan,
+        &generated_programs,
+        &tooling_plan,
+        &validation,
+        &machine_release,
+        &assembly,
+    );
     let object_id = "generated-fabrication-object".to_string();
     let design_package = design_package(
         &object_id,
@@ -22940,6 +23004,7 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         material_plan,
         quality_plan,
         tooling_plan,
+        fixture_plan,
         process_plan,
         process_graph,
         hybrid_make_plan,
@@ -25211,6 +25276,496 @@ fn tooling_plan(
     }
 }
 
+fn fixture_boundary_related(text: &str) -> bool {
+    summary_text_has_any(
+        text,
+        &[
+            "fixture",
+            "workholding",
+            "clamp",
+            "vise",
+            "chuck",
+            "collet",
+            "soft jaw",
+            "tailstock",
+            "steady-rest",
+            "datum",
+            "offset",
+            "probe",
+            "tombstone",
+            "pallet",
+            "rotary",
+            "index",
+            "clearance",
+            "setup",
+            "hold-down",
+            "vacuum",
+            "tab",
+            "spoilboard",
+        ],
+    )
+}
+
+fn fixture_boundary_applies(
+    boundary: &FailureBoundary,
+    part: &PartPlan,
+    program: Option<&GeneratedProgram>,
+) -> bool {
+    let combined = format!(
+        "{} {} {} {}",
+        boundary.kind,
+        boundary.reason,
+        boundary.suggested_resolution,
+        boundary.program_id.as_deref().unwrap_or_default()
+    );
+    fixture_boundary_related(&combined)
+        && (boundary.program_id.is_none()
+            || program.is_some_and(|program| {
+                boundary.program_id.as_deref() == Some(program.program_id.as_str())
+            })
+            || combined.contains(&part.id)
+            || combined.contains(&part.role)
+            || combined.contains(&part.machine_kind))
+}
+
+fn fixture_required_evidence(
+    part: &PartPlan,
+    step: Option<&ProcessStep>,
+    tooling: Option<&ToolingRequirement>,
+) -> Vec<String> {
+    let mut evidence = datum_scheme_for_part(part)
+        .into_iter()
+        .map(|datum| format!("datum evidence: {datum}"))
+        .collect::<Vec<_>>();
+    evidence.push(format!(
+        "fixture/workholding evidence: {}",
+        fixture_strategy_for_part(part)
+    ));
+    match machine_class(&part.machine_kind) {
+        MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => evidence.extend([
+            "build plate leveling, resin vat, drain/orientation, support, wash, and cure fixture record"
+                .to_string(),
+            "first-layer or first-slice preview plus peel/support-force review".to_string(),
+        ]),
+        MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => evidence.extend([
+            "nesting pack, powder refresh ratio, cooldown containment, and depowder fixture record"
+                .to_string(),
+            "thermal spacing and recovery/bin trace before release".to_string(),
+        ]),
+        MachineClass::Additive => evidence.extend([
+            "bed mesh/level, build-surface state, support/brim/raft choice, and adhesion witness"
+                .to_string(),
+            "slicer preview confirms orientation, support contact, and collision-free travel".to_string(),
+        ]),
+        MachineClass::Mill if is_rotary_index_mill_kind(&part.machine_kind) => evidence.extend([
+            "rotary/indexer centerline, A-axis zero, brake/clamp state, cable sweep, and re-probe record"
+                .to_string(),
+            "fixture travel and index-angle stack-up reviewed before each indexed face".to_string(),
+        ]),
+        MachineClass::Mill if is_horizontal_mill_kind(&part.machine_kind) => evidence.extend([
+            "tombstone, pallet, side-milling fixture, arbor support, and chip-clearance evidence"
+                .to_string(),
+            "fixture-index stop, side-face datum, and cutter/arbor clearance dry-run".to_string(),
+        ]),
+        MachineClass::Mill => evidence.extend([
+            "vise/soft-jaw/clamp state, parallels, stock-stop, G54/probe offset, and toolpath clearance"
+                .to_string(),
+            "dry-run confirms clamps and finished features stay outside rapid and cutting motion".to_string(),
+        ]),
+        MachineClass::Lathe if is_mill_turn_kind(&part.machine_kind) => evidence.extend([
+            "main/sub-spindle chuck pressure, stick-out, C/Y-axis live-tool clearance, and transfer sync evidence"
+                .to_string(),
+            "polar/live-tool datum and pickup pull-force review before transfer or part-off".to_string(),
+        ]),
+        MachineClass::Lathe => evidence.extend([
+            "chuck/collet/soft-jaw grip, stick-out, tailstock or steady-rest support, runout, and jaw clearance"
+                .to_string(),
+            "G50 spindle cap and workholding RPM limit review before turning release".to_string(),
+        ]),
+        MachineClass::Router => evidence.extend([
+            "vacuum/clamp/screw/tape/tab hold-down state, spoilboard witness, and stock-stop evidence"
+                .to_string(),
+            "toolpath preview proves clamps, tabs, screws, and retained material clear every cutter pass".to_string(),
+        ]),
+        MachineClass::SheetCut => evidence.extend([
+            "slat/honeycomb/water-table support, pierce/kerf coupon, fire/fume controls, and retained-tab evidence"
+                .to_string(),
+            "sheet origin, material thickness, slug retention, and drop/catch path reviewed before release"
+                .to_string(),
+        ]),
+        MachineClass::Other => evidence.extend([
+            "operator-defined fixture model, reach/collision dry-run, interlock, and end-effector proof"
+                .to_string(),
+            "reviewed setup traveler links fixture, datum, inspection, and recovery state".to_string(),
+        ]),
+    }
+    if let Some(step) = step {
+        evidence.push(format!("process setup reviewed: {}", step.setup));
+    }
+    if let Some(tooling) = tooling {
+        evidence.extend(
+            tooling
+                .setup_checks
+                .iter()
+                .take(4)
+                .map(|check| format!("tooling setup check: {check}")),
+        );
+    }
+    evidence.sort();
+    evidence.dedup();
+    evidence
+}
+
+fn fixture_clearance_checks(part: &PartPlan) -> Vec<String> {
+    let mut checks = match machine_class(&part.machine_kind) {
+        MachineClass::Additive => vec![
+            "nozzle/laser/recoater or build-head travel clears supports, clips, vat, and build volume"
+                .to_string(),
+            "first-layer/first-slice preview has verified origin, adhesion, and support contact".to_string(),
+        ],
+        MachineClass::Mill if is_rotary_index_mill_kind(&part.machine_kind) => vec![
+            "A/B/C axis sweep clears fixture, clamps, tombstone, cables, and finished faces".to_string(),
+            "retract height and clamp/brake state verified before every index".to_string(),
+        ],
+        MachineClass::Mill if is_horizontal_mill_kind(&part.machine_kind) => vec![
+            "side cutter, arbor, overarm, tombstone, and fixture index path clear stock and clamps".to_string(),
+            "chip evacuation and side-face access reviewed before finish pass".to_string(),
+        ],
+        MachineClass::Mill => vec![
+            "rapid Z and XY moves clear clamps, vise jaws, tabs, stock, and tool length offsets".to_string(),
+            "probe/dry-run path verifies G54/G43 state before cutting feeds".to_string(),
+        ],
+        MachineClass::Lathe => vec![
+            "tool, turret, jaw, tailstock, steady-rest, and part-off path clear rotating stock".to_string(),
+            "spindle speed cap, stick-out, and workholding RPM limit reviewed before start".to_string(),
+        ],
+        MachineClass::Router => vec![
+            "negative-Z rapid and cutter path clear clamps, screws, tabs, vacuum pods, and spoilboard".to_string(),
+            "tabs retain part until final pass and dust/chip evacuation path is clear".to_string(),
+        ],
+        MachineClass::SheetCut => vec![
+            "pierce, kerf, slag/drop, fire/fume, slug-retention, and sheet support path reviewed".to_string(),
+            "head/nozzle/wire clearance stays away from clamps, slats, and retained tabs".to_string(),
+        ],
+        MachineClass::Other => vec![
+            "fixture, robot/end-effector, operator, and recovery envelope dry-run is recorded".to_string(),
+            "interlocks and safe restart state are verified before unattended motion".to_string(),
+        ],
+    };
+    checks.sort();
+    checks.dedup();
+    checks
+}
+
+fn fixture_automation_candidate(part: &PartPlan, release_blockers: &[String]) -> String {
+    if !release_blockers.is_empty() {
+        return "blocked: fixture/setup evidence must be resolved before unattended automation"
+            .to_string();
+    }
+    match machine_class(&part.machine_kind) {
+        MachineClass::Additive => {
+            "candidate: automated bed probing, slicer preview validation, first-layer monitoring, and pause-on-anomaly"
+                .to_string()
+        }
+        MachineClass::Mill if is_rotary_index_mill_kind(&part.machine_kind) => {
+            "candidate: pallet probe, rotary brake/clamp sensor, index-angle verification, and protected dry-run"
+                .to_string()
+        }
+        MachineClass::Mill | MachineClass::Router => {
+            "candidate: fixture-presence sensor, probing macro, clamp/vacuum interlock, and simulation gate"
+                .to_string()
+        }
+        MachineClass::Lathe => {
+            "candidate: chuck-pressure sensor, bar/support monitor, runout probe, and part-catcher confirmation"
+                .to_string()
+        }
+        MachineClass::SheetCut => {
+            "candidate: sheet-origin probe, material-thickness sensor, fume/fire monitor, and slug/drop detector"
+                .to_string()
+        }
+        MachineClass::Other => {
+            "candidate: cell-specific fixture sensor, robot reach simulation, vision check, and interlock proof"
+                .to_string()
+        }
+    }
+}
+
+fn fixture_release_blockers(
+    part: &PartPlan,
+    program: Option<&GeneratedProgram>,
+    tooling: Option<&ToolingRequirement>,
+    validation: &ValidationReport,
+    machine_release: &MachineReleaseReport,
+) -> Vec<String> {
+    let mut blockers = validation
+        .failure_boundaries
+        .iter()
+        .filter(|boundary| fixture_boundary_applies(boundary, part, program))
+        .map(|boundary| {
+            format!(
+                "{}: {} -> {}",
+                boundary.kind, boundary.reason, boundary.suggested_resolution
+            )
+        })
+        .collect::<Vec<_>>();
+    blockers.extend(machine_release.blockers.iter().filter_map(|blocker| {
+        let combined = format!(
+            "{} {} {}",
+            blocker.blocker_type, blocker.reason, blocker.required_action
+        );
+        if fixture_boundary_related(&combined)
+            && (blocker.program_id.is_none()
+                || program.is_some_and(|program| {
+                    blocker.program_id.as_deref() == Some(program.program_id.as_str())
+                }))
+        {
+            Some(format!(
+                "{}:{} -> {}",
+                blocker.blocker_type, blocker.reason, blocker.required_action
+            ))
+        } else {
+            None
+        }
+    }));
+    if let Some(tooling) = tooling {
+        blockers.extend(
+            tooling
+                .release_blockers
+                .iter()
+                .filter(|blocker| fixture_boundary_related(blocker))
+                .map(|blocker| format!("tooling:{blocker}")),
+        );
+    }
+    if blockers.is_empty()
+        && matches!(
+            machine_class(&part.machine_kind),
+            MachineClass::Mill
+                | MachineClass::Lathe
+                | MachineClass::Router
+                | MachineClass::SheetCut
+                | MachineClass::Other
+        )
+    {
+        blockers.push(
+            "fixture/setup proof is required before non-additive or operator-cell machine-ready release"
+                .to_string(),
+        );
+    }
+    blockers.sort();
+    blockers.dedup();
+    blockers
+}
+
+fn fixture_datum_transfers(assembly: &AssemblyPlan) -> Vec<FixtureDatumTransfer> {
+    assembly
+        .assembly_graph
+        .interfaces
+        .iter()
+        .map(|interface| {
+            let release_blocker = interface.requires_human_intervention.then(|| {
+                format!(
+                    "assembly interface {} needs datum transfer and fit evidence before combining parts",
+                    interface.interface_id
+                )
+            });
+            FixtureDatumTransfer {
+                transfer_id: format!("fixture-datum-{}", normalize_token(&interface.interface_id)),
+                from_part_id: interface.from_part_id.clone(),
+                to_part_id: interface.to_part_id.clone(),
+                transfer_type: interface.joint_type.clone(),
+                interface_ids: vec![interface.interface_id.clone()],
+                required_evidence: vec![
+                    format!("interface strategy reviewed: {}", interface.strategy),
+                    format!("fit gate reviewed: {}", interface.fit),
+                    format!("inspection gate captured: {}", interface.inspection_gate),
+                    "datum witness or metrology record links both part coordinate frames before final assembly"
+                        .to_string(),
+                ],
+                release_blocker,
+                learning_observation: format!(
+                    "fixture-datum-transfer:{}:{}:{}",
+                    normalize_token(&interface.from_part_id),
+                    normalize_token(&interface.to_part_id),
+                    normalize_token(&interface.joint_type)
+                ),
+            }
+        })
+        .collect()
+}
+
+fn fixture_plan(
+    parts: &[PartPlan],
+    process_plan: &[ProcessStep],
+    generated_programs: &[GeneratedProgram],
+    tooling_plan: &ToolingPlan,
+    validation: &ValidationReport,
+    machine_release: &MachineReleaseReport,
+    assembly: &AssemblyPlan,
+) -> FixturePlan {
+    let step_by_part = process_plan
+        .iter()
+        .map(|step| (step.part_id.clone(), step))
+        .collect::<BTreeMap<_, _>>();
+    let program_by_part = generated_programs
+        .iter()
+        .map(|program| (program.part_id.clone(), program))
+        .collect::<BTreeMap<_, _>>();
+    let tooling_by_part = tooling_plan
+        .requirements
+        .iter()
+        .map(|requirement| (requirement.part_id.clone(), requirement))
+        .collect::<BTreeMap<_, _>>();
+
+    let setups = parts
+        .iter()
+        .map(|part| {
+            let step = step_by_part.get(&part.id).copied();
+            let program = program_by_part.get(&part.id).copied();
+            let tooling = tooling_by_part.get(&part.id).copied();
+            let release_blockers =
+                fixture_release_blockers(part, program, tooling, validation, machine_release);
+            let requires_human_intervention = step
+                .is_some_and(|step| step.requires_human_intervention)
+                || !release_blockers.is_empty();
+            FixtureSetupPlan {
+                setup_id: format!("fixture-setup-{}", normalize_token(&part.id)),
+                part_id: part.id.clone(),
+                program_id: program.map(|program| program.program_id.clone()),
+                process_node_id: step.map(process_node_id),
+                machine_id: step.map(|step| step.machine_id.clone()),
+                machine_kind: part.machine_kind.clone(),
+                setup_strategy: fixture_strategy_for_part(part),
+                datum_scheme: datum_scheme_for_part(part),
+                workholding: tooling
+                    .map(|tooling| tooling.workholding.clone())
+                    .unwrap_or_else(|| tooling_workholding(part)),
+                required_evidence: fixture_required_evidence(part, step, tooling),
+                clearance_checks: fixture_clearance_checks(part),
+                automation_candidate: fixture_automation_candidate(part, &release_blockers),
+                requires_human_intervention,
+                release_blockers,
+                learning_observation: format!(
+                    "fixture-setup:{}:{}:{}",
+                    normalize_token(&part.id),
+                    normalize_token(&part.machine_kind),
+                    if requires_human_intervention {
+                        "review-required"
+                    } else {
+                        "automation-candidate"
+                    }
+                ),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let datum_transfers = fixture_datum_transfers(assembly);
+    let mut release_gates = setups
+        .iter()
+        .map(|setup| {
+            format!(
+                "fixture-review:{}:{}:{} blocker(s)",
+                setup.part_id,
+                setup.machine_kind,
+                setup.release_blockers.len()
+            )
+        })
+        .collect::<Vec<_>>();
+    release_gates.extend(datum_transfers.iter().map(|transfer| {
+        format!(
+            "datum-transfer:{}:{}->{}",
+            transfer.transfer_type, transfer.from_part_id, transfer.to_part_id
+        )
+    }));
+    release_gates.push("fixture/setup evidence captured before machine-ready release".to_string());
+    release_gates.push(
+        "clearance, datum, and restart assumptions reviewed before unattended run".to_string(),
+    );
+    release_gates.sort();
+    release_gates.dedup();
+
+    let mut learning_observations = setups
+        .iter()
+        .flat_map(|setup| {
+            [
+                setup.learning_observation.clone(),
+                format!(
+                    "fixture-blockers:{}:{}",
+                    normalize_token(&setup.part_id),
+                    setup.release_blockers.len()
+                ),
+                format!(
+                    "fixture-clearance-checks:{}:{}",
+                    normalize_token(&setup.part_id),
+                    setup.clearance_checks.len()
+                ),
+            ]
+        })
+        .collect::<Vec<_>>();
+    learning_observations.extend(
+        datum_transfers
+            .iter()
+            .map(|transfer| transfer.learning_observation.clone()),
+    );
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    let blocked = setups
+        .iter()
+        .any(|setup| !setup.release_blockers.is_empty())
+        || machine_release.machine_release_blocked;
+    let human_review_required = blocked
+        || setups.iter().any(|setup| setup.requires_human_intervention)
+        || datum_transfers
+            .iter()
+            .any(|transfer| transfer.release_blocker.is_some());
+    let status = if blocked {
+        "fixture-blocked"
+    } else if human_review_required {
+        "fixture-review-required"
+    } else {
+        "fixture-plan-ready"
+    };
+
+    FixturePlan {
+        schema_version: "dd.fabrication.fixture-plan.v1",
+        status: status.to_string(),
+        setup_count: setups.len(),
+        human_review_required,
+        setups,
+        datum_transfers,
+        release_gates,
+        learning_observations,
+        notes: vec![
+            "Fixture plan is a setup and datum-transfer contract for operators, CAM, simulation, and learning workers; it is not a certified fixture design".to_string(),
+            "Machine-ready release still requires final CAD/CAM, controller post, fixture model, dry-run, and shop-floor signoff evidence".to_string(),
+        ],
+    }
+}
+
+fn fixture_plan_learning_actions(plan: &FixturePlan) -> Vec<String> {
+    let mut actions = plan
+        .setups
+        .iter()
+        .map(|setup| {
+            if setup.release_blockers.is_empty() {
+                format!("verify-fixture-setup-{}", normalize_token(&setup.part_id))
+            } else {
+                format!("clear-fixture-blockers-{}", normalize_token(&setup.part_id))
+            }
+        })
+        .collect::<Vec<_>>();
+    actions.extend(plan.datum_transfers.iter().map(|transfer| {
+        format!(
+            "verify-datum-transfer-{}-{}",
+            normalize_token(&transfer.from_part_id),
+            normalize_token(&transfer.to_part_id)
+        )
+    }));
+    actions.sort();
+    actions.dedup();
+    actions
+}
+
 fn manufacturing_handoff(
     parts: &[PartPlan],
     process_plan: &[ProcessStep],
@@ -26468,6 +27023,8 @@ fn pomdp_observation_source(observation: &str) -> &'static str {
         "validation-boundary"
     } else if observation.starts_with("instruction-patch-") {
         "instruction-patch"
+    } else if observation.starts_with("fixture-") {
+        "fixture-plan"
     } else if observation.starts_with("automation-required:") {
         "automation-requirement"
     } else if observation.starts_with("resolution-step:") {
@@ -28574,13 +29131,20 @@ fn des_learning_pomdp_solution(spec: &PomdpSpec) -> Value {
 
 fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
     let states = response.learning.mdp_states.clone();
-    let actions = response.learning.actions.clone();
+    let mut actions = response.learning.actions.clone();
+    actions.extend(fixture_plan_learning_actions(&response.fixture_plan));
+    actions.sort();
+    actions.dedup();
+    let mut observations = response.learning.pomdp_observations.clone();
+    observations.extend(response.fixture_plan.learning_observations.clone());
+    observations.sort();
+    observations.dedup();
     let des_mdp_spec = des_learning_mdp_spec(&states, &actions);
     let des_mdp_solution = des_learning_mdp_solution(&des_mdp_spec);
     let des_pomdp_spec = des_learning_pomdp_spec(
         &response.learning.pomdp_belief_state,
         &actions,
-        &response.learning.pomdp_observations,
+        &observations,
     );
     let des_pomdp_solution = des_learning_pomdp_solution(&des_pomdp_spec);
     let mut transitions = Vec::new();
@@ -28628,7 +29192,7 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "actions": actions,
         "transitions": transitions,
         "rewards": rewards,
-        "observations": response.learning.pomdp_observations,
+        "observations": observations,
         "pomdpBeliefState": response.learning.pomdp_belief_state,
         "releaseProbePlan": response.learning.release_probe_plan,
         "productionPlan": response.production_plan,
@@ -28638,7 +29202,6 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "manufacturingHandoff": response.manufacturing_handoff,
         "materialPlan": response.material_plan,
         "qualityPlan": response.quality_plan,
-        "toolingPlan": response.tooling_plan,
         "processGraph": response.process_graph,
         "hybridMakePlan": response.hybrid_make_plan,
         "interventionMap": response.intervention_map,
@@ -28660,6 +29223,8 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
             "operatorInterventionPlan".to_string(),
             json!(&response.operator_intervention_plan),
         );
+        object.insert("toolingPlan".to_string(), json!(&response.tooling_plan));
+        object.insert("fixturePlan".to_string(), json!(&response.fixture_plan));
     }
     request
 }
@@ -41431,6 +41996,33 @@ mod tests {
                     && !requirement.production_batch_ids.is_empty()
             }));
         assert_eq!(
+            response.fixture_plan.schema_version,
+            "dd.fabrication.fixture-plan.v1"
+        );
+        assert_eq!(
+            response.fixture_plan.setup_count,
+            response.design.parts.len()
+        );
+        assert!(response.fixture_plan.human_review_required);
+        assert!(response.fixture_plan.setups.iter().all(|setup| {
+            !setup.datum_scheme.is_empty()
+                && !setup.workholding.is_empty()
+                && !setup.required_evidence.is_empty()
+                && !setup.clearance_checks.is_empty()
+        }));
+        assert!(response
+            .fixture_plan
+            .setups
+            .iter()
+            .any(|setup| setup.learning_observation.starts_with("fixture-setup:")));
+        assert!(response
+            .fixture_plan
+            .datum_transfers
+            .iter()
+            .any(|transfer| transfer
+                .learning_observation
+                .starts_with("fixture-datum-transfer:")));
+        assert_eq!(
             response.learning.model_family,
             "mdp-pomdp-neural-cam-policy"
         );
@@ -41716,6 +42308,26 @@ mod tests {
             .and_then(|plan| plan.get("requirements"))
             .and_then(Value::as_array)
             .is_some_and(|requirements| !requirements.is_empty()));
+        assert!(mdp_request
+            .get("fixturePlan")
+            .and_then(|plan| plan.get("setups"))
+            .and_then(Value::as_array)
+            .is_some_and(|setups| !setups.is_empty()));
+        assert!(mdp_request
+            .get("observations")
+            .and_then(Value::as_array)
+            .is_some_and(
+                |observations| observations.iter().any(|observation| observation
+                    .as_str()
+                    .is_some_and(|observation| observation.starts_with("fixture-setup:")))
+            ));
+        assert!(mdp_request
+            .get("actions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions.iter().any(|action| action
+                .as_str()
+                .is_some_and(|action| action.starts_with("clear-fixture-blockers-")
+                    || action.starts_with("verify-fixture-setup-")))));
         assert!(mdp_request
             .get("processGraph")
             .and_then(|graph| graph.get("nodes"))
@@ -42805,6 +43417,7 @@ mod tests {
         assert!(job.artifacts.contains_key("machine-schedule"));
         assert!(job.artifacts.contains_key("quality-plan"));
         assert!(job.artifacts.contains_key("tooling-plan"));
+        assert!(job.artifacts.contains_key("fixture-plan"));
         assert!(job.artifacts.contains_key("pomdp-belief-state"));
         assert!(job.artifacts.contains_key("release-probe-plan"));
         assert!(job.artifacts.contains_key("neural-training-corpus"));
@@ -43044,6 +43657,12 @@ mod tests {
             .is_some_and(|requirements| !requirements.is_empty()));
         assert!(parametric_design
             .content
+            .get("fixturePlan")
+            .and_then(|plan| plan.get("setups"))
+            .and_then(Value::as_array)
+            .is_some_and(|setups| !setups.is_empty()));
+        assert!(parametric_design
+            .content
             .get("machineRelease")
             .and_then(|release| release.get("status"))
             .and_then(Value::as_str)
@@ -43186,6 +43805,25 @@ mod tests {
                     .and_then(Value::as_array)
                     .is_some_and(|tools| !tools.is_empty()))
             ));
+        let fixture_plan = job
+            .artifacts
+            .get("fixture-plan")
+            .expect("fixture plan artifact should be retained");
+        assert_eq!(
+            fixture_plan
+                .content
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.fixture-plan.v1")
+        );
+        assert!(fixture_plan
+            .content
+            .get("setups")
+            .and_then(Value::as_array)
+            .is_some_and(|setups| setups.iter().any(|setup| setup
+                .get("requiredEvidence")
+                .and_then(Value::as_array)
+                .is_some_and(|evidence| !evidence.is_empty()))));
         let intervention_map = job
             .artifacts
             .get("intervention-map")
