@@ -98,19 +98,25 @@ Gateway path map:
   `/fabrication/capabilities`, `/fabrication/schema`, `/fabrication/examples`,
   `/fabrication/machines/catalog`, `/fabrication/controllers/catalog`,
   `/fabrication/materials/catalog`, `/fabrication/design/formats`,
-  `/fabrication/design/generation/catalog`, `/fabrication/instructions/languages`,
-  `/fabrication/instructions/generation/catalog`, `/fabrication/improvements/catalog`,
+  `/fabrication/design/import/catalog`, `POST /fabrication/design/import/review`,
+  `/fabrication/design/generation/catalog`,
+  `/fabrication/handoff/catalog`,
+  `/fabrication/instructions/languages`, `/fabrication/instructions/generation/catalog`,
+  `/fabrication/improvements/catalog`,
   `/fabrication/boundaries/catalog`, `/fabrication/decomposition/catalog`,
-  `/fabrication/release/catalog`, `/fabrication/strategy/catalog`,
+  `/fabrication/assembly/catalog`, `/fabrication/release/catalog`, `/fabrication/strategy/catalog`,
   `/fabrication/schedule/catalog`, `/fabrication/simulation/catalog`,
   `/fabrication/quality/catalog`, `/fabrication/calibration/catalog`,
   `/fabrication/interventions/catalog`, `/fabrication/setup/catalog`,
-  `/fabrication/postprocess/catalog`, `/fabrication/artifacts/catalog`,
+  `/fabrication/monitoring/catalog`, `/fabrication/postprocess/catalog`,
+  `/fabrication/artifacts/catalog`,
   `/fabrication/learning/capabilities`,
   `/fabrication/jobs`, `/fabrication/jobs/<jobId>`,
   `/fabrication/jobs/<jobId>/artifacts/<artifactId>`, `/fabrication/learning/policy`,
   `GET /fabrication/learning/outcomes`, `POST /fabrication/learning/observe`,
-  `POST /fabrication/learning/outcomes`, `POST /fabrication/plan`, `POST /fabrication/instructions/analyze` ->
+  `POST /fabrication/learning/outcomes`, `POST /fabrication/plan`,
+  `POST /fabrication/instructions/analyze`, `POST /fabrication/instructions/improve`,
+  `POST /fabrication/instructions/boundaries/review` ->
   `dd-fabrication-server:8113` (gateway auth required)
 - `/grafana/fabrication` -> `dd-remote-web-home:8080` redirect to the
   `dd-fabrication-planner` Grafana dashboard
@@ -209,7 +215,9 @@ Prometheus alerts if those direct pod scrape targets disappear or go down while 
 scrape still looks healthy. Operators can open `/grafana/fabrication` from the web-home service
 directory to land on the dedicated `dd-fabrication-planner` dashboard for request intake,
 validation findings, machine-failure boundaries, required operator actions, fixture/setup
-blockers, split/combine reviews, NATS/MDP fan-out, runtime-config delivery, HPA pressure, and logs.
+blockers, split/combine reviews, CAD/design format discovery, design-import review,
+design-generation catalog discovery, instruction-improvement review, instruction-boundary review,
+NATS/MDP fan-out, runtime-config delivery, HPA pressure, and logs.
 The observability stack also scrapes `dd-runtime-config` metrics so missed subscriber registration,
 configuration-entry, or push-delivery changes are visible alongside the fabrication planner, NATS,
 and MDP optimizer dependency metrics, and alerts when runtime-config is down, has no stage

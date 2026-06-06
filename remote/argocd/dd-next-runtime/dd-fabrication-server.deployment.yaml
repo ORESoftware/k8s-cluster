@@ -133,13 +133,19 @@ spec:
               for route in \
                 '"path": "/fabrication/plan"' \
                 '"path": "/fabrication/instructions/analyze"' \
+                '"path": "/fabrication/instructions/improve"' \
+                '"path": "/fabrication/instructions/boundaries/review"' \
                 '"path": "/fabrication/machines/catalog"' \
                 '"path": "/fabrication/controllers/catalog"' \
                 '"path": "/fabrication/materials/catalog"' \
+                '"path": "/fabrication/design/import/catalog"' \
+                '"path": "/fabrication/design/import/review"' \
                 '"path": "/fabrication/design/generation/catalog"' \
+                '"path": "/fabrication/handoff/catalog"' \
                 '"path": "/fabrication/instructions/generation/catalog"' \
                 '"path": "/fabrication/improvements/catalog"' \
                 '"path": "/fabrication/decomposition/catalog"' \
+                '"path": "/fabrication/assembly/catalog"' \
                 '"path": "/fabrication/release/catalog"' \
                 '"path": "/fabrication/strategy/catalog"' \
                 '"path": "/fabrication/schedule/catalog"' \
@@ -148,6 +154,7 @@ spec:
                 '"path": "/fabrication/calibration/catalog"' \
                 '"path": "/fabrication/interventions/catalog"' \
                 '"path": "/fabrication/setup/catalog"' \
+                '"path": "/fabrication/monitoring/catalog"' \
                 '"path": "/fabrication/postprocess/catalog"' \
                 '"path": "/fabrication/artifacts/catalog"' \
                 '"path": "/fabrication/design/formats"' \
@@ -155,8 +162,11 @@ spec:
                 '"path": "/fabrication/boundaries/catalog"' \
                 '"path": "/fabrication/learning/capabilities"' \
                 '"path": "/jobs"' \
+                '"path": "/fabrication/jobs"' \
                 '"path": "/jobs/:job_id"' \
+                '"path": "/fabrication/jobs/:job_id"' \
                 '"path": "/jobs/:job_id/artifacts/:artifact_id"' \
+                '"path": "/fabrication/jobs/:job_id/artifacts/:artifact_id"' \
                 '"path": "/fabrication/learning/policy"' \
                 '"path": "/fabrication/learning/observe"' \
                 '"path": "/fabrication/learning/outcomes"'
