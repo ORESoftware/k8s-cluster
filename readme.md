@@ -14,20 +14,32 @@ It exposes:
 - `GET /fabrication/capabilities`
 - `GET /machines/catalog`
 - `GET /fabrication/machines/catalog`
+- `POST /machines/select`
+- `POST /fabrication/machines/select`
 - `GET /controllers/catalog`
 - `GET /fabrication/controllers/catalog`
 - `GET /materials/catalog`
 - `GET /fabrication/materials/catalog`
+- `POST /materials/plan`
+- `POST /fabrication/materials/plan`
 - `GET /design/formats`
 - `GET /fabrication/design/formats`
+- `GET /formats/catalog`
+- `GET /fabrication/formats/catalog`
 - `GET /design/import/catalog`
 - `GET /fabrication/design/import/catalog`
 - `POST /design/import/review`
 - `POST /fabrication/design/import/review`
+- `POST /design/convert/plan`
+- `POST /fabrication/design/convert/plan`
+- `POST /design/convert/result`
+- `POST /fabrication/design/convert/result`
 - `GET /design/generation/catalog`
 - `GET /fabrication/design/generation/catalog`
 - `POST /design/generate`
 - `POST /fabrication/design/generate`
+- `POST /design/synthesis/result`
+- `POST /fabrication/design/synthesis/result`
 - `GET /handoff/catalog`
 - `GET /fabrication/handoff/catalog`
 - `GET /instructions/languages`
@@ -36,8 +48,14 @@ It exposes:
 - `GET /fabrication/instructions/generation/catalog`
 - `POST /instructions/generate`
 - `POST /fabrication/instructions/generate`
+- `POST /instructions/generation/result`
+- `POST /fabrication/instructions/generation/result`
+- `POST /instructions/review/result`
+- `POST /fabrication/instructions/review/result`
 - `POST /machine-code/generate`
 - `POST /fabrication/machine-code/generate`
+- `POST /toolpaths/plan`
+- `POST /fabrication/toolpaths/plan`
 - `GET /improvements/catalog`
 - `GET /fabrication/improvements/catalog`
 - `GET /boundaries/catalog`
@@ -50,12 +68,18 @@ It exposes:
 - `GET /fabrication/assembly/catalog`
 - `POST /assembly/plan`
 - `POST /fabrication/assembly/plan`
+- `POST /assembly/result`
+- `POST /fabrication/assembly/result`
 - `GET /release/catalog`
 - `GET /fabrication/release/catalog`
 - `POST /release/preview`
 - `POST /fabrication/release/preview`
+- `POST /release/result`
+- `POST /fabrication/release/result`
 - `POST /execution/plan`
 - `POST /fabrication/execution/plan`
+- `POST /execution/result`
+- `POST /fabrication/execution/result`
 - `GET /strategy/catalog`
 - `GET /fabrication/strategy/catalog`
 - `POST /strategy/recommend`
@@ -66,12 +90,16 @@ It exposes:
 - `GET /fabrication/simulation/catalog`
 - `POST /simulation/run`
 - `POST /fabrication/simulation/run`
+- `POST /simulation/result`
+- `POST /fabrication/simulation/result`
 - `GET /quality/catalog`
 - `GET /fabrication/quality/catalog`
 - `POST /quality/plan`
 - `POST /fabrication/quality/plan`
 - `GET /calibration/catalog`
 - `GET /fabrication/calibration/catalog`
+- `POST /calibration/plan`
+- `POST /fabrication/calibration/plan`
 - `GET /interventions/catalog`
 - `GET /fabrication/interventions/catalog`
 - `GET /setup/catalog`
@@ -101,6 +129,8 @@ It exposes:
 - `GET /fabrication/jobs`
 - `GET /jobs/:job_id`
 - `GET /fabrication/jobs/:job_id`
+- `GET /jobs/:job_id/release-bundle`
+- `GET /fabrication/jobs/:job_id/release-bundle`
 - `GET /jobs/:job_id/artifacts/:artifact_id`
 - `GET /fabrication/jobs/:job_id/artifacts/:artifact_id`
 - `GET /learning/policy`
@@ -486,6 +516,33 @@ not certified shop-floor assets; callers should attach bounded
 release remains blocked until profile evidence, controller/postprocessor checks,
 simulation or dry-run review, and operator or automation signoff pass.
 
+## `POST /fabrication/machines/select`
+
+`POST /machines/select` and the gateway-prefixed
+`POST /fabrication/machines/select` accept the same request body as
+`POST /fabrication/plan`, apply bounded learning-policy memory, run the planner,
+store and publish the full plan result, and return a compact
+`dd.fabrication.machine-selection.v1` machine-routing package. The response
+focuses on `machineSelection`, `machineSelection.selectedMachineId`,
+`machineSelection.selectedMachineKind`, `machineSelection.selectedReason`,
+`machineSelection.candidates`, `machineSelection.candidates.status`,
+`machineSelection.candidates.reasons`, `machineSelection.warnings`,
+`machineSchedule.machineLanes`, `machineSchedule.operations`,
+`machineSchedule.dependencyHolds`, `materialPlan.routeRequirements`,
+`controllerPlan.compatibilityTargets`, `postprocessPlan.controllerTargets`,
+`machineRelease.blockers`, and `simulation.programs`.
+
+Machine selection plans are advisory routing evidence for printers, mills,
+lathes, routers, sheet cutters, inspection cells, and special-process machines,
+not certified live shop availability. Machine-ready release remains blocked
+while selected-machine profile evidence, material compatibility,
+controller/postprocessor output, schedule holds, simulation, setup, quality, or
+signoff gates are unresolved. Stored artifacts include `machine-selection`,
+`machine-schedule`, `des-schedule-model`, `material-plan`, `controller-plan`,
+`postprocess-plan`, `machine-release`, `simulation-report`, and `mdp-request` so
+MDP/POMDP/neural workers can learn machine preferences, split/combine routes,
+and fallback decisions from future outcomes.
+
 ## `GET /fabrication/controllers/catalog`
 
 `GET /controllers/catalog` and the gateway-prefixed
@@ -527,6 +584,34 @@ Material-machine mismatches emit `material-machine-boundary` signals for
 MDP/POMDP/neural workers so future plans can learn when to reroute, split, or
 request new material evidence.
 
+## `POST /fabrication/materials/plan`
+
+`POST /materials/plan` and the gateway-prefixed
+`POST /fabrication/materials/plan` accept the same request body as
+`POST /fabrication/plan`, apply bounded learning-policy memory, run the planner,
+store and publish the full plan result, and return a compact
+`dd.fabrication.material-planning.v1` material-readiness package. The response
+focuses on `materialPlan.status`, `materialPlan.material`,
+`materialPlan.declaredStock`, `materialPlan.routeRequirements`,
+`materialPlan.routeRequirements.feedstockKind`,
+`materialPlan.routeRequirements.stockForm`,
+`materialPlan.routeRequirements.conditioning`,
+`materialPlan.routeRequirements.requiredEvidence`,
+`materialPlan.routeRequirements.releaseBlockers`, `materialPlan.releaseGates`,
+`materialPlan.learningObservations`, `machineSelection.candidates`,
+`toolingPlan.requirements.consumables`, `validation.failureBoundaries`,
+`machineRelease.blockers`, and `releasePackagePlan.requiredArtifacts`.
+
+Material plans are draft feedstock, stock, lot, quantity, scrap, conditioning,
+and support-media evidence packages, not certified inventory or material
+acceptance records. Machine-ready release remains blocked while material
+lot/certificate, stock form and dimensions, conditioning, process support media,
+machine profile evidence, simulation, or operator signoff is unresolved. Stored
+artifacts include `material-plan`, `machine-selection`, `tooling-plan`,
+`quality-plan`, `release-package-plan`, `machine-release`, `simulation-report`,
+and `mdp-request` so MDP/POMDP/neural workers can learn when to reroute to
+another machine, split a part, require conditioning, or request human evidence.
+
 ## `GET /fabrication/design/formats`
 
 `GET /design/formats` and the gateway-prefixed
@@ -541,8 +626,9 @@ topology/scale/profile review, simulation, and signoff evidence are attached.
 
 ## `GET /fabrication/design/import/catalog`
 
-`GET /design/import/catalog` and the gateway-prefixed
-`GET /fabrication/design/import/catalog` return the live
+`GET /formats/catalog`, `GET /design/import/catalog`, and their gateway-prefixed
+`GET /fabrication/formats/catalog` / `GET /fabrication/design/import/catalog`
+aliases return the live
 `dd.fabrication.design-import-catalog.v1` translator and import worker-lane
 catalog derived from the same supported CAD/model/slicer source definitions used
 by `designInputReview`. The payload maps Creo/Pro/ENGINEER, SOLIDWORKS, Fusion,
@@ -578,6 +664,41 @@ the planner. It is an import review and dispatch contract, not a geometry
 certification route: `machineReady` remains false until translator/export
 results, topology/scale/profile review, neutral export checksums, simulation, and
 operator or automation signoff are attached back to the plan or release package.
+
+## `POST /fabrication/design/convert/plan`
+
+`POST /design/convert/plan` and the gateway-prefixed
+`POST /fabrication/design/convert/plan` run the same bounded CAD/model/slicer
+input review as `/fabrication/design/import/review`, then promote
+`designInputReview.conversionPlan` to a top-level
+`dd.fabrication.design-conversion-plan.v1` worker dispatch package. The response
+includes `conversionPlan`, `conversionStepCount`, `conversionStatus`,
+`dispatchReady`, and `workerDispatch` with the design-conversion NATS request,
+result, and queue-group subjects. It is meant for Creo/Pro/ENGINEER,
+SOLIDWORKS, Fusion, NX, CATIA, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush,
+JT/PMI, STEP/IGES, 3MF/STL/OBJ, and slicer project intake workers that need a
+compact conversion envelope before CAD/CAM, slicer, or release-package work.
+Machine-ready release remains blocked until worker conversion results, neutral
+export checksums, topology/scale/profile review, simulation, and operator or
+automation signoff are retained in `designInputReview`, `designExports`,
+`machineRelease`, `releasePackagePlan`, and MDP/POMDP/neural learning surfaces.
+
+## `POST /fabrication/design/convert/result`
+
+`POST /design/convert/result` and the gateway-prefixed
+`POST /fabrication/design/convert/result` normalize worker results from
+`dd.remote.fabrication.design.conversion.results` back into fabrication release
+evidence. The request can name the source job, design input, source format,
+source system, worker lane, conversion status, neutral exports, evidence,
+blockers, notes, and optional metadata. The response returns
+`dd.fabrication.design-conversion-result-review.v1` with `conversionResult`,
+`releaseUpdate`, `releaseBlocked`, `missingReleaseEvidence`,
+`neutralExportCount`, and MDP/POMDP/neural learning observations. Successful
+converter output is still review evidence rather than certified geometry:
+machine-ready release remains false until neutral export checksums, units,
+topology/scale/profile review, simulation, and operator or automation signoff
+are retained in `designInputReview`, `designExports`, `machineRelease`, and
+`releasePackagePlan`.
 
 ## `GET /fabrication/design/generation/catalog`
 
@@ -619,6 +740,23 @@ native/neutral CAD, mesh, CAM, and slicer export payloads remain deterministic
 drafts, not certified machine-ready output, until translator/export evidence,
 topology/scale/profile review, simulation, setup, quality, release-package, and
 operator or automation signoff gates clear.
+
+## `POST /fabrication/design/synthesis/result`
+
+`POST /design/synthesis/result` and the gateway-prefixed
+`POST /fabrication/design/synthesis/result` normalize worker results from
+`dd.remote.fabrication.design.synthesis.results` into
+`dd.fabrication.design-synthesis-result-review.v1`. External design workers can
+return generated candidates, accepted candidate IDs, parametric or neutral source
+artifact URIs, export formats, manufacturing method hints, manufacturability
+evidence, blockers, notes, and metadata. The response reports
+`designSynthesisResult`, `releaseUpdate`, `releaseBlocked`, `candidateCount`,
+`missingReleaseEvidence`, and MDP/POMDP/neural learning observations. These
+results are draft design evidence rather than certified CAD/CAM/slicer geometry:
+machine-ready release remains false until an accepted candidate, source
+artifacts, export checksums, manufacturability review, simulation, and operator
+or automation signoff are retained in `designPackage`, `designExports`,
+`manufacturingHandoff`, `machineRelease`, and `releasePackagePlan`.
 
 ## `GET /fabrication/handoff/catalog`
 
@@ -716,6 +854,65 @@ and `releasePackagePlan.packages`. Generated instruction packages keep
 evidence, controller/postprocessor review, setup, quality, release package, and
 operator or automation signoff gates clear.
 
+## `POST /fabrication/instructions/generation/result`
+
+`POST /instructions/generation/result` and the gateway-prefixed
+`POST /fabrication/instructions/generation/result` normalize external worker
+results from `dd.remote.fabrication.instructions.generation.results` back into a
+compact `dd.fabrication.instruction-generation-result-review.v1` review package.
+The endpoint accepts generated machine code, slicer jobs, setup sheets,
+simulation reports, inspection plans, postprocess travelers, or operator
+instructions with retained artifact URI, checksum, evidence labels, blockers,
+warnings, worker id, generator, and review metadata.
+
+The response exposes `instructionGenerationResult`, `generationResultJobId`,
+`generatedAtMs`, `releaseUpdate`, `releaseBlocked`, `missingReleaseEvidence`,
+and the request/queue/result subjects for the instruction-generation worker
+lane. Successful reviews are retained in the bounded job ledger under
+`generationResultJobId`; `/jobs/:job_id` and
+`/jobs/:job_id/artifacts/:artifact_id` can inspect
+`instruction-generation-result`, `instruction-generation-artifacts`,
+`instruction-generation-blockers`, `instruction-generation-warnings`,
+`instruction-generation-release-update`, and
+`instruction-generation-learning-observations`. Machine-ready release remains
+blocked until generated artifacts are retained with checksums, worker evidence
+is attached to controller/slicer/setup/simulation/inspection targets, blockers
+are folded into `machineRelease`, `executionPlan`, and `releasePackagePlan`, and
+operator or automation signoff clears any human-intervention or split/combine
+boundary. Result observations feed MDP/POMDP/neural workers so future plans can
+prefer reliable CAM, slicer, postprocessor, simulation, and setup-sheet workers.
+
+## `POST /fabrication/instructions/review/result`
+
+`POST /instructions/review/result` and the gateway-prefixed
+`POST /fabrication/instructions/review/result` normalize external validation,
+boundary-analysis, and instruction-improvement worker results from
+`dd.remote.fabrication.instructions.review.results` back into a compact
+`dd.fabrication.instruction-review-result-review.v1` package. The endpoint
+accepts validation findings, failure boundaries, improvement drafts, worker and
+reviewer identity, warnings, and metadata for imported CNC, printer, slicer,
+setup-sheet, postprocess, assembly, or operator instruction streams.
+
+The response exposes `instructionReviewResult`, `reviewResultJobId`,
+`generatedAtMs`, `releaseUpdate`, `releaseBlocked`, `findingCount`,
+`failureBoundaryCount`, `humanInterventionBoundaryCount`,
+`improvementDraftCount`, `humanApprovalDraftCount`, and the
+request/queue/result subjects for the instruction-review worker lane. Successful
+reviews are retained in the bounded job ledger under `reviewResultJobId`;
+`/jobs/:job_id` and `/jobs/:job_id/artifacts/:artifact_id` can inspect
+`instruction-review-result`, `instruction-review-findings`,
+`instruction-review-failure-boundaries`,
+`instruction-review-improvement-drafts`, `instruction-review-warnings`,
+`instruction-review-release-update`, and
+`instruction-review-learning-observations`. Machine-ready release remains
+blocked while blocking findings, machine-failure or human-intervention
+boundaries, or human-approval improvement drafts remain open. Review
+observations include `instruction-review-boundary-kind:*`,
+`instruction-review-recommended-action:*`, and
+`instruction-review-improvement:*` signals so MDP/POMDP/neural workers can learn
+which validators, boundary analyzers, and repair drafts prevented machine
+failure or avoided unapproved human intervention.
+
 ## `POST /fabrication/machine-code/generate`
 
 `POST /machine-code/generate` and the gateway-prefixed
@@ -735,6 +932,31 @@ draft controller/postprocessor release package: generated programs keep
 `draft=true` and `machineReady=false` until validation, simulation or dry-run,
 controller/postprocessor compatibility, setup, quality, release package, and
 operator or automation signoff gates clear.
+
+## `POST /fabrication/toolpaths/plan`
+
+`POST /toolpaths/plan` and the gateway-prefixed
+`POST /fabrication/toolpaths/plan` accept the same request body as
+`POST /fabrication/plan`, apply bounded learning-policy memory, retain the
+normal plan artifacts, publish normal plan outputs when NATS is configured, and
+return a compact `dd.fabrication.toolpath-planning.v1` CAM/slicer/motion
+planning envelope. The response links every generated program into a
+`toolpathPlan` segment with its `processGraph` node, simulation trace,
+controller target, postprocess target, execution run, release package, line
+count, operation, and safety notes.
+
+The package highlights `toolpathPlan.simulationTrace`,
+`toolpathPlan.controllerTarget`, `toolpathPlan.postprocessTarget`,
+`toolpathPlan.releasePackage`, `simulation.riskProfile`,
+`machineRelease.blockers`, `releasePackagePlan.packages`,
+`learning.releaseProbePlan`, and `learning.neuralTrainingCorpus`. Toolpath
+plans are draft CAM/slicer/controller handoffs for printers, mills, routers,
+sheet cutters, mill-turn centers, lathes, and special-process cells; they remain
+blocked until CAM/slicer regeneration, simulation or dry-run evidence,
+controller/postprocessor compatibility, setup, quality, release package, and
+operator or automation signoff clear. Toolpath risk and generated-program
+observations feed MDP/POMDP/neural workers so future plans can split parts,
+combine assemblies, reroute machines, or regenerate motion.
 
 ## `GET /fabrication/improvements/catalog`
 
@@ -871,6 +1093,35 @@ stores artifacts such as `assembly-plan`, `hybrid-make-plan`,
 `mdp-request` so MDP/POMDP/neural workers can learn which recomposition and join
 strategies complete without hidden human intervention.
 
+## `POST /fabrication/assembly/result`
+
+`POST /assembly/result` and the gateway-prefixed
+`POST /fabrication/assembly/result` normalize external assembly planning worker
+results from `dd.remote.fabrication.assembly.planning.results` into a compact
+`dd.fabrication.assembly-planning-result-review.v1` package. The route accepts
+part routes, join operations, split/combine decisions, interface checks, retained
+artifacts, worker identity, warnings, and metadata after an assembly or
+recomposition planner attempts to turn child fabrication routes into one
+machine-release candidate.
+
+The response exposes `assemblyPlanningResult`, `assemblyResultJobId`,
+`generatedAtMs`, `releaseBlocked`, `routeBlockerCount`, `joinBlockerCount`,
+`splitCombineBlockerCount`, `interfaceBlockerCount`,
+`missingArtifactEvidenceCount`, and the assembly-planning request/queue/result
+subjects. Successful reviews are retained in the bounded job ledger under
+`assemblyResultJobId`; `/jobs/:job_id` and
+`/jobs/:job_id/artifacts/:artifact_id` can inspect
+`assembly-planning-result`, `assembly-part-routes`, `assembly-join-operations`,
+`assembly-split-combine-decisions`, `assembly-interface-checks`,
+`assembly-artifacts`, and `assembly-learning-observations`. Machine-ready
+release remains blocked until routes are accepted, joins and recomposition
+decisions clear or become explicit human-intervention gates, interface checks
+pass datum/fit/tolerance review, and artifacts carry URI/checksum/evidence
+labels. Result observations include `assembly-part-route:*`,
+`assembly-join:*`, `assembly-split-combine:*`, `assembly-interface-check:*`,
+and `assembly-artifact:*` signals so MDP/POMDP/neural workers can learn which
+split/combine and join boundaries cleared or blocked recomposed hardware.
+
 ## `GET /fabrication/release/catalog`
 
 `GET /release/catalog` and the gateway-prefixed
@@ -912,6 +1163,35 @@ controller code, or certify machine-ready artifacts; they keep
 `machineReady=false` while machine-release, controller, postprocess, simulation,
 setup, intervention, split/combine, schedule, or package gates remain blocked.
 
+## `POST /fabrication/release/result`
+
+`POST /release/result` and the gateway-prefixed
+`POST /fabrication/release/result` normalize external final release-readiness
+worker results from `dd.remote.fabrication.release.readiness.results` into a
+compact `dd.fabrication.release-readiness-result-review.v1` package. The route
+accepts release decisions, retained manifest artifacts, blockers, human
+intervention gates, worker identity, warnings, and metadata after generated,
+imported, simulated, reviewed, split, combined, or recomposed work reaches the
+machine-release gate.
+
+The response exposes `releaseReadinessResult`, `releaseResultJobId`,
+`generatedAtMs`, `releaseBlocked`, `blockedDecisionCount`, `blockerCount`,
+`pendingHumanInterventionCount`, `missingManifestEvidenceCount`, and the
+release-readiness request/queue/result subjects. Successful reviews are retained
+in the bounded job ledger under `releaseResultJobId`; `/jobs/:job_id` and
+`/jobs/:job_id/artifacts/:artifact_id` can inspect
+`release-readiness-result`, `release-readiness-decisions`,
+`release-readiness-manifest-artifacts`, `release-readiness-blockers`,
+`release-readiness-human-interventions`, and
+`release-readiness-learning-observations`. Machine-ready release remains blocked
+until every decision is machine-ready or explicitly cleared, manifest artifacts
+carry URI/checksum/evidence labels, blockers are cleared or converted to release
+conditions, and required operator, automation, split/combine, and signoff gates
+are complete. Result observations include `release-readiness-decision:*`,
+`release-readiness-blocker:*`, `release-readiness-intervention:*`, and
+`release-readiness-artifact:*` signals so MDP/POMDP/neural workers can learn
+which final gates cleared or blocked hardware execution.
+
 ## `POST /fabrication/execution/plan`
 
 `POST /execution/plan` and the gateway-prefixed
@@ -938,6 +1218,36 @@ or release blockers remain open. Stored artifacts include `execution-plan`,
 `machine-release`, `simulation-report`, and `mdp-request` so
 MDP/POMDP/neural workers can learn when to add automation, split jobs,
 regenerate instructions, or keep human checkpoints.
+
+## `POST /fabrication/execution/result`
+
+`POST /execution/result` and the gateway-prefixed
+`POST /fabrication/execution/result` normalize execution telemetry from
+`dd.remote.fabrication.execution.telemetry.results` into a compact
+`dd.fabrication.execution-result-review.v1` package. The endpoint accepts
+observed printer, mill, lathe, router, sheet-cutting, assembly, inspection, or
+postprocess run state with run segments, machine stops, operator interventions,
+split/combine decisions, retained telemetry artifacts, metrics, warnings, and
+worker metadata.
+
+The response exposes `executionResult`, `executionResultJobId`, `generatedAtMs`,
+`executionBlocked`, `blockingMachineStopCount`,
+`restartBlockingOperatorInterventionCount`, `splitCombineBlockerCount`,
+`missingArtifactEvidenceCount`, and the execution-telemetry
+request/queue/result subjects. Successful reviews are retained in the bounded
+job ledger under `executionResultJobId`; `/jobs/:job_id` and
+`/jobs/:job_id/artifacts/:artifact_id` can inspect `execution-result`,
+`execution-run-segments`, `execution-machine-stops`,
+`execution-operator-interventions`, `execution-split-combine-decisions`,
+`execution-artifacts`, and `execution-learning-observations`. Repeat execution
+or machine-ready release remains blocked until machine stops, unresolved
+operator interventions, split/combine or redesign decisions, and telemetry
+artifacts clear with retained evidence. Execution observations include
+`execution-stop:*`, `execution-stop-kind:*`,
+`execution-recommended-action:*`, `execution-operator-action:*`,
+`execution-split-combine:*`, and `execution-artifact:*` signals so
+MDP/POMDP/neural workers can learn which real runs succeeded, failed, required
+human intervention, or forced separating/combining parts.
 
 ## `GET /fabrication/strategy/catalog`
 
@@ -1049,6 +1359,39 @@ dry-run artifacts are absent. It stores artifacts such as `simulation-report`,
 when to reroute, split parts, add clearance, regenerate programs, or require
 operator review.
 
+## `POST /fabrication/simulation/result`
+
+`POST /simulation/result` and the gateway-prefixed
+`POST /fabrication/simulation/result` normalize external simulation, dry-run,
+collision, clearance, thermal, fixture, and material-flow worker results from
+`dd.remote.fabrication.instructions.simulation.results` back into a compact
+`dd.fabrication.instruction-simulation-result-review.v1` package. The endpoint
+accepts envelope checks, simulation findings, failure boundaries, retained
+artifact evidence, worker and simulator identity, warnings, and metadata for
+generated or imported printer, mill, router, lathe, setup-sheet, and operator
+instruction streams.
+
+The response exposes `instructionSimulationResult`, `releaseUpdate`,
+`simulationResultJobId`, `generatedAtMs`, `releaseBlocked`,
+`blockedEnvelopeCheckCount`, `blockingFindingCount`, `failureBoundaryCount`,
+`humanInterventionBoundaryCount`, `missingArtifactEvidenceCount`, and the
+request/queue/result subjects for the instruction-simulation worker lane.
+Successful result reviews are also retained in the bounded job ledger under
+`simulationResultJobId`, where `/jobs/:job_id` and
+`/jobs/:job_id/artifacts/:artifact_id` can inspect `instruction-simulation-result`,
+`instruction-simulation-envelope-checks`, `instruction-simulation-findings`,
+`instruction-simulation-failure-boundaries`, `instruction-simulation-artifacts`,
+and `instruction-simulation-learning-observations`. Machine-ready release
+remains blocked until simulation checks pass, failure boundaries are resolved or
+accepted, dry-run artifacts are retained with URI/checksum/evidence labels, and
+required operator, split/combine, regeneration, or reroute decisions are
+attached. Result observations include `instruction-simulation-check:*`,
+`instruction-simulation-boundary-kind:*`,
+`instruction-simulation-recommended-action:*`, and
+`instruction-simulation-artifact:*` signals so MDP/POMDP/neural workers can
+learn which simulators, dry runs, and boundary decisions prevented machine
+failure before hardware execution.
+
 ## `GET /fabrication/quality/catalog`
 
 `GET /quality/catalog` and the gateway-prefixed
@@ -1116,6 +1459,31 @@ offset, tool length, thermal, process-media, sensor, or fixture calibration
 evidence is absent. Calibration observations are retained for MDP/POMDP/neural
 workers so future planning can learn when to request probes, split jobs, add
 operator checkpoints, or regenerate instructions.
+
+## `POST /fabrication/calibration/plan`
+
+`POST /calibration/plan` and the gateway-prefixed
+`POST /fabrication/calibration/plan` accept the same request body as
+`POST /fabrication/plan`, apply bounded learning-policy memory, run the planner,
+store and publish the full plan result, and return a compact
+`dd.fabrication.calibration-planning.v1` calibration-readiness package. The
+response focuses on `learning.releaseProbePlan`, `releaseProbePlan.probes`,
+`releaseProbePlan.probes.requiredBeforeState`,
+`releaseProbePlan.requiredBeforeRelease`, `machineRelease.checklist`,
+`machineRelease.blockers`, `toolingPlan.requirements.setupChecks`,
+`fixturePlan.setups.datumScheme`, `fixturePlan.setups.requiredEvidence`,
+`monitoringPlan.monitorPoints`, `simulation.programs`, and
+`validation.failureBoundaries`.
+
+Calibration plans are draft homing, work-offset, tool-length, probe, thermal,
+process-media, fixture, and monitoring evidence packages, not certified
+calibration procedures or machine-safety approvals. Machine-ready release remains
+blocked while release probes, datum transfer, tool length, fixture, thermal,
+sensor, support-media, or process calibration evidence is unresolved. Stored
+artifacts include `release-probe-plan`, `machine-release`, `tooling-plan`,
+`fixture-plan`, `monitoring-plan`, `simulation-report`, and `mdp-request` so
+MDP/POMDP/neural workers can learn when to require probes, improve machine
+profiles, split jobs, add operator checkpoints, or regenerate instructions.
 
 ## `GET /fabrication/interventions/catalog`
 
@@ -1327,16 +1695,19 @@ release/execution evidence, setup/quality/monitoring evidence, split/combine and
 assembly evidence, DES-backed MDP/POMDP/neural learning evidence, and outcome
 learning evidence. It names retrieval routes such as `GET /jobs`,
 `GET /fabrication/jobs`, `GET /jobs/:job_id`, `GET /fabrication/jobs/:job_id`,
+`GET /jobs/:job_id/release-bundle`,
+`GET /fabrication/jobs/:job_id/release-bundle`,
 `GET /jobs/:job_id/artifacts/:artifact_id`, and
 `GET /fabrication/jobs/:job_id/artifacts/:artifact_id`, plus surfaces including
-`generatedPrograms`, `improvedPrograms`, `designExports`, `releasePackagePlan`,
-`learning`, and artifact fields such as `artifactId`, `kind`, `mediaType`,
-`draft`, `machineReady`, and `content`. Catalog entries
-describe bounded in-process evidence surfaces, not durable database storage or
-certified machine release; generated design exports, machine programs, improved
-programs, release packages, DES/POMDP/neural artifacts, and learning outcomes
-remain draft evidence until validation, simulation, controller, setup, quality,
-and signoff gates clear.
+`job.releaseBundle`, `releaseBundle.releaseSurfaces`,
+`releaseBundle.artifacts`, `generatedPrograms`, `improvedPrograms`,
+`designExports`, `releasePackagePlan`, `learning`, and artifact fields such as
+`artifactId`, `kind`, `mediaType`, `draft`, `machineReady`, and `content`.
+Catalog entries describe bounded in-process evidence surfaces, not durable
+database storage or certified machine release; generated design exports, machine programs, improved programs,
+release packages, DES/POMDP/neural artifacts, and
+learning outcomes remain draft evidence until validation, simulation,
+controller, setup, quality, and signoff gates clear.
 
 ## `GET /fabrication/learning/capabilities`
 
@@ -1782,6 +2153,13 @@ dry-run evidence, and signoff are attached.
 `POST /fabrication/learning/observe` accepts completed or failed fabrication
 outcomes for a generated plan, program, part, machine, or external shop-floor
 instruction stream. `POST /learning/observe` is the gateway-stripped alias.
+When `sourceJobId` points at a retained fabrication-plan job, sparse outcomes
+are enriched from the stored plan before reward shaping: missing `programId`,
+`partId`, `machineId`, `machineKind`, `material`, and `operationSequence`
+fields can be filled from the generated program, design part, process plan, and
+hybrid make plan. The resulting observations include `source-plan-*` signals so
+MDP/POMDP/neural workers can trace learned method combinations back to the plan
+evidence that produced them.
 
 The route validates bounded observations, optional dimensional/surface/time
 measurements, machine failure flags, scrap flags, human-intervention cost, and
@@ -1903,6 +2281,14 @@ runtime inspection boundary while the database contract is still being designed.
   ledger.
 - `GET /jobs/:job_id` returns the recorded plan or analysis response plus
   artifact summaries. `GET /fabrication/jobs/:job_id` is the prefixed alias.
+- `GET /jobs/:job_id/release-bundle` returns the
+  `dd.fabrication.job-release-bundle.v1` packet for a retained job, including
+  full design-package/export, generated machine-code, improved-program,
+  release-package, machine-release, simulation, setup, quality, controller,
+  postprocess, POMDP belief, release-probe, neural-corpus, and `mdp-request`
+  artifacts. `GET /fabrication/jobs/:job_id/release-bundle` is the prefixed
+  alias. Bundles are draft operator/worker evidence packets and remain blocked
+  until release gates clear.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
   with `GET /fabrication/jobs/:job_id/artifacts/:artifact_id` as the prefixed
   alias,
