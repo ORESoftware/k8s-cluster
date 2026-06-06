@@ -11457,85 +11457,6 @@ fn has_text_bound_metal_fff_debind_sinter_evidence(line: &str) -> bool {
     )
 }
 
-fn has_text_bound_metal_fff_context(language: &str, line: &str) -> bool {
-    wants_bound_metal_filament_printing(language)
-        || wants_bound_metal_filament_printing(line)
-        || language_or_line_has_any(
-            language,
-            line,
-            &[
-                "bound metal fff",
-                "bound-metal fff",
-                "bound-metal filament",
-                "metal filament",
-                "metal-polymer filament",
-                "metal fdm",
-                "metal fff",
-                "ultrafuse",
-                "filamet",
-                "virtual foundry",
-                "green part debind",
-                "brown part sinter",
-            ],
-        )
-}
-
-fn has_text_bound_metal_fff_profile_evidence(line: &str) -> bool {
-    text_has_any(
-        line,
-        &[
-            "filament lot",
-            "material lot",
-            "dry storage",
-            "dry-storage",
-            "desiccant",
-            "hardened nozzle",
-            "nozzle diameter",
-            "drive gear",
-            "slicer profile",
-            "extrusion multiplier",
-            "flow multiplier",
-            "shrinkage scale",
-            "shrinkage compensation",
-            "scale factor",
-            "green part fixture",
-            "green-part fixture",
-            "raft",
-            "support strategy",
-        ],
-    )
-}
-
-fn has_text_bound_metal_fff_debind_sinter_evidence(line: &str) -> bool {
-    text_has_any(
-        line,
-        &[
-            "debind",
-            "debinding",
-            "brown part",
-            "brown-part",
-            "sinter",
-            "sintering",
-            "furnace",
-            "furnace profile",
-            "furnace chart",
-            "furnace cycle",
-            "ramp",
-            "soak",
-            "cooldown",
-            "setter",
-            "support media",
-            "atmosphere",
-            "forming gas",
-            "argon",
-            "shrinkage coupon",
-            "density",
-            "relative density",
-            "dimensional inspection",
-        ],
-    )
-}
-
 fn has_text_ded_context(language: &str, line: &str) -> bool {
     let language_token = normalize_token(language);
     let line_token = normalize_token(line);
@@ -44259,6 +44180,72 @@ mod tests {
     }
 
     #[test]
+    fn default_additive_fleet_generates_bound_metal_fff_printer_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-bound-metal-fff-printer".to_string()),
+            objective:
+                "bound metal FFF 316L bracket printed from metal filament with shrinkage compensation, green part handling, debind, sinter, density coupon, and final inspection"
+                    .to_string(),
+            material: Some(material("ultrafuse 316L", "bound-metal-filament")),
+            stock: None,
+            tolerance_mm: Some(0.18),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("bound-metal FFF printer plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "bound-metal-fff-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("debind")));
+        let bound_metal_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "bound-metal-fff-printer")
+            .expect("bound-metal FFF program should be generated");
+        assert_eq!(bound_metal_program.language, "bound-metal-fff-job");
+        assert!(bound_metal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft bound-metal filament FFF job")));
+        assert!(bound_metal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("LOAD_BOUND_METAL_FILAMENT")));
+        assert!(bound_metal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("SINTER_PART")));
+        assert!(bound_metal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("bound-metal-fff-debind-sinter-boundary")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "bound-metal-fff-printer"
+                    && target.postprocessor == "bound-metal-fff-job-packager"
+                    && target.output_format == "bound-metal-fff-job-package"
+            }));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .iter()
+            .any(|artifact| artifact == "debind-sinter-furnace-cycle-record"));
+    }
+
+    #[test]
     fn default_fleet_generates_robotic_assembly_cell_job() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-robotic-assembly-cell".to_string()),
@@ -51775,6 +51762,96 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.starts_with("CHECKPOINT [paste-extrusion-")));
+    }
+
+    #[test]
+    fn text_bound_metal_fff_jobs_require_profile_and_debind_sinter_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("bound-metal-missing-profile".to_string()),
+                machine_id: Some("bound-metal-fff-1".to_string()),
+                machine_kind: Some("bound-metal-fff-printer".to_string()),
+                language: Some("bound-metal-fff-job".to_string()),
+                instructions: vec![
+                    "Bound metal FFF job with solvent debind, brown part handling, sintering furnace profile, setter support, shrinkage coupon, density coupon, argon atmosphere, and post-sinter dimensional inspection recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("bound-metal-missing-debind-sinter".to_string()),
+                machine_id: Some("bound-metal-fff-1".to_string()),
+                machine_kind: Some("bound-metal-fff-printer".to_string()),
+                language: Some("bound-metal-fff-job".to_string()),
+                instructions: vec![
+                    "Bound metal filament job with metal filament lot, filament profile, binder content, hardened nozzle, dry storage, shrinkage scale, raft, support interface, green part fixture, wall compensation, and extrusion multiplier recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("bound-metal-with-evidence".to_string()),
+                machine_id: Some("bound-metal-fff-1".to_string()),
+                machine_kind: Some("bound-metal-fff-printer".to_string()),
+                language: Some("bound-metal-fff-job".to_string()),
+                instructions: vec![
+                    "Bound metal filament job with metal filament lot, filament profile, binder content, hardened nozzle, dry storage, shrinkage scale, raft, support interface, green part fixture, wall compensation, and extrusion multiplier recorded".to_string(),
+                    "Solvent debind, catalytic debind backup, brown part handling, sintering furnace profile, setter support, shrinkage coupon, density coupon, argon atmosphere, forming gas review, and post-sinter dimensional inspection recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "bound-metal-fff-profile-evidence-missing"
+                && finding.program_id.as_deref() == Some("bound-metal-missing-profile")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "bound-metal-fff-debind-sinter-evidence-missing"
+                && finding.program_id.as_deref() == Some("bound-metal-missing-debind-sinter")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("bound-metal-fff-")
+                && finding.program_id.as_deref() == Some("bound-metal-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "bound-metal-fff-profile-boundary"
+                && boundary.program_id.as_deref() == Some("bound-metal-missing-profile")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("shrinkage scale")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "bound-metal-fff-debind-sinter-boundary"
+                && boundary.program_id.as_deref()
+                    == Some("bound-metal-missing-debind-sinter")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("sinter furnace")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-bound-metal-fff-profile-evidence"
+                && improvement.program_id.as_deref() == Some("bound-metal-missing-profile")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-bound-metal-fff-debind-sinter-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("bound-metal-missing-debind-sinter")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [bound-metal-fff-profile-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [bound-metal-fff-debind-sinter-boundary]")));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [bound-metal-fff-")));
     }
 
     #[test]
