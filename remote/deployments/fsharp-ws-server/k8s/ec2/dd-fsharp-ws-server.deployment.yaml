@@ -166,11 +166,12 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           resources:
-            # Keep the benchmark burst ceiling high, but reserve less CPU
-            # on the single-node cluster so scheduler accounting does not
-            # strand this service when the node is otherwise idle.
+            # Keep the benchmark burst ceiling high, but reserve only
+            # steady-state CPU on the single-node cluster so scheduler
+            # accounting does not strand this service when the node is
+            # otherwise idle.
             requests:
-              cpu: 500m
+              cpu: 100m
               memory: 2Gi
             limits:
               cpu: '6'
