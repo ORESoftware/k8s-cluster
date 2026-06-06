@@ -129,6 +129,21 @@
         "direction": "both"
       },
       {
+        "name": "FabricationExecutionTelemetryRequests",
+        "description": "Fabrication execution telemetry requests for live printer, mill, lathe, router, sheet-cutting, assembly, inspection, and postprocess run result reviewers.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.execution.telemetry.requests",
+        "queueGroup": "dd-fabrication-execution-reviewers",
+        "direction": "both"
+      },
+      {
+        "name": "FabricationExecutionTelemetryResults",
+        "description": "Fabrication execution telemetry results carrying observed run state, machine stops, operator interventions, split/combine decisions, artifacts, and learning labels.",
+        "kind": "static",
+        "subject": "dd.remote.fabrication.execution.telemetry.results",
+        "direction": "both"
+      },
+      {
         "name": "FabricationLearningOutcomeRequests",
         "description": "Fabrication outcome learning requests for MDP, POMDP, neural-policy, reward, replay, and failure-boundary updaters.",
         "kind": "static",

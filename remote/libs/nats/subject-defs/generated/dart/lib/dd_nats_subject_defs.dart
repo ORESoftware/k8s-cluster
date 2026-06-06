@@ -62,6 +62,15 @@ const String fabricationDesignSynthesisRequestsQueueGroup = "dd-fabrication-desi
 /// Service: dd-fabrication-server
 const String fabricationDesignSynthesisResultsSubject = "dd.remote.fabrication.design.synthesis.results";
 
+/// Fabrication execution telemetry requests for live printer, mill, lathe, router, sheet-cutting, assembly, inspection, and postprocess run result reviewers.
+/// Service: dd-fabrication-server
+const String fabricationExecutionTelemetryRequestsSubject = "dd.remote.fabrication.execution.telemetry.requests";
+const String fabricationExecutionTelemetryRequestsQueueGroup = "dd-fabrication-execution-reviewers";
+
+/// Fabrication execution telemetry results carrying observed run state, machine stops, operator interventions, split/combine decisions, artifacts, and learning labels.
+/// Service: dd-fabrication-server
+const String fabricationExecutionTelemetryResultsSubject = "dd.remote.fabrication.execution.telemetry.results";
+
 /// Instruction generation requests for slicer, CAM, postprocess, setup-sheet, and machine-code workers.
 /// Service: dd-fabrication-server
 const String fabricationInstructionGenerationRequestsSubject = "dd.remote.fabrication.instructions.generation.requests";

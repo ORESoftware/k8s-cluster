@@ -281,6 +281,20 @@ on `FABRICATION_ASSEMBLY_PLANNING_RESULTS_SUBJECT`
 deciding when one object should become several printed, milled, turned, sheet-cut, or postprocessed
 pieces, or when separate pieces should be combined before machine-ready release.
 
+### Fabrication Execution Telemetry
+
+Execution telemetry reviewers consume observed printer, mill, lathe, router, sheet-cutting,
+assembly, inspection, and postprocess run results from
+`FABRICATION_EXECUTION_TELEMETRY_REQUESTS_SUBJECT`
+(`dd.remote.fabrication.execution.telemetry.requests`) with queue group
+`FABRICATION_EXECUTION_TELEMETRY_REQUESTS_QUEUE_GROUP`
+(`dd-fabrication-execution-reviewers`). Workers publish run state, machine stops, operator
+interventions, split/combine or redesign decisions, retained artifacts, and learning labels on
+`FABRICATION_EXECUTION_TELEMETRY_RESULTS_SUBJECT`
+(`dd.remote.fabrication.execution.telemetry.results`). This gives release readiness and learning
+workers a typed evidence lane after hardware execution so stopped or partially completed jobs can be
+reviewed before repeat release and converted into MDP/POMDP/neural outcome signals.
+
 ### Fabrication Learning Outcomes
 
 Learning updaters consume completed job outcomes, machine observations, reward hints, failure

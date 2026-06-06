@@ -171,13 +171,37 @@ Currently opted-in:
   `upstream_response_time`, upstream 500/502/503/504 failure counters from
   `upstream_status`, request-size p95/max panels from `request_length` so payload growth is visible
   before the `512k` gateway cap returns 413s, response-size p95/max panels from
-  `body_bytes_sent` for generated design, machine-code, and artifact responses, a CAD intake,
-  design export, and instruction review panel for `/fabrication/design/formats`,
+  `body_bytes_sent` for generated design, machine-code, and artifact responses, a catalog
+  discovery, CAD intake, design export, and instruction review panel for
+  `/fabrication/design/formats`, `/fabrication/machines/catalog`,
+  `/fabrication/machines/select`, `/fabrication/controllers/catalog`,
+  `/fabrication/materials/catalog`, `/fabrication/materials/plan`,
   `/fabrication/design/import/catalog`, `/fabrication/design/import/review`,
-  `/fabrication/design/generation/catalog`,
-  `/fabrication/handoff/catalog`, `/fabrication/assembly/catalog`, and
-  `/fabrication/instructions/generation/catalog`, plus `/fabrication/instructions/improve`
-  and `/fabrication/instructions/boundaries/review`
+  `/fabrication/design/convert/plan`, `/fabrication/design/generation/catalog`,
+  `/fabrication/design/generate`, `/fabrication/plan`,
+  `/fabrication/handoff/catalog`, `/fabrication/assembly/catalog`,
+  `/fabrication/calibration/plan`, `/fabrication/instructions/generation/catalog`,
+  `/fabrication/instructions/languages`,
+  `/fabrication/instructions/generate`, `/fabrication/machine-code/generate`,
+  `/fabrication/toolpaths/plan`, `/fabrication/improvements/catalog`,
+  `/fabrication/boundaries/catalog`, `/fabrication/decomposition/catalog`,
+  `/fabrication/decomposition/plan`, `/fabrication/assembly/plan`,
+  `/fabrication/release/catalog`, `/fabrication/schedule/catalog`,
+  `/fabrication/execution/plan`, `/fabrication/simulation/catalog`,
+  `/fabrication/simulation/run`, `/fabrication/quality/catalog`,
+  `/fabrication/quality/plan`, `/fabrication/interventions/catalog`,
+  `/fabrication/setup/catalog`, `/fabrication/setup/plan`,
+  `/fabrication/monitoring/catalog`, `/fabrication/monitoring/plan`,
+  `/fabrication/postprocess/catalog`, `/fabrication/postprocess/plan`,
+  `/fabrication/release/preview`, and `/fabrication/strategy/recommend`,
+  plus `/fabrication/artifacts/catalog`, `/fabrication/jobs`,
+  `/fabrication/jobs/<jobId>`, `/fabrication/jobs/<jobId>/release-bundle`,
+  `/fabrication/jobs/<jobId>/artifacts/<artifactId>`,
+  `/fabrication/learning/capabilities`, `/fabrication/learning/policy`,
+  `/fabrication/learning/observe`, `/fabrication/learning/outcomes`,
+  `/fabrication/instructions/analyze`, `/fabrication/instructions/validate`,
+  `/fabrication/instructions/improve`, and
+  `/fabrication/instructions/boundaries/review`
   traffic, gateway access/guardrail logs, and
   warning/error logs for the Rust planner. Its direct pod scrape coverage
   panel compares ready `dd-fabrication-server-pods` scrapes with desired

@@ -133,29 +133,48 @@ spec:
               for route in \
                 '"path": "/fabrication/plan"' \
                 '"path": "/fabrication/instructions/analyze"' \
+                '"path": "/fabrication/instructions/validate"' \
                 '"path": "/fabrication/instructions/improve"' \
                 '"path": "/fabrication/instructions/boundaries/review"' \
                 '"path": "/fabrication/machines/catalog"' \
+                '"path": "/fabrication/machines/select"' \
                 '"path": "/fabrication/controllers/catalog"' \
                 '"path": "/fabrication/materials/catalog"' \
+                '"path": "/fabrication/materials/plan"' \
                 '"path": "/fabrication/design/import/catalog"' \
                 '"path": "/fabrication/design/import/review"' \
+                '"path": "/fabrication/design/convert/plan"' \
                 '"path": "/fabrication/design/generation/catalog"' \
+                '"path": "/fabrication/design/generate"' \
                 '"path": "/fabrication/handoff/catalog"' \
                 '"path": "/fabrication/instructions/generation/catalog"' \
+                '"path": "/fabrication/instructions/generate"' \
+                '"path": "/fabrication/machine-code/generate"' \
+                '"path": "/fabrication/toolpaths/plan"' \
                 '"path": "/fabrication/improvements/catalog"' \
                 '"path": "/fabrication/decomposition/catalog"' \
+                '"path": "/fabrication/decomposition/plan"' \
                 '"path": "/fabrication/assembly/catalog"' \
+                '"path": "/fabrication/assembly/plan"' \
                 '"path": "/fabrication/release/catalog"' \
+                '"path": "/fabrication/release/preview"' \
                 '"path": "/fabrication/strategy/catalog"' \
+                '"path": "/fabrication/strategy/recommend"' \
                 '"path": "/fabrication/schedule/catalog"' \
+                '"path": "/fabrication/execution/plan"' \
                 '"path": "/fabrication/simulation/catalog"' \
+                '"path": "/fabrication/simulation/run"' \
                 '"path": "/fabrication/quality/catalog"' \
+                '"path": "/fabrication/quality/plan"' \
                 '"path": "/fabrication/calibration/catalog"' \
+                '"path": "/fabrication/calibration/plan"' \
                 '"path": "/fabrication/interventions/catalog"' \
                 '"path": "/fabrication/setup/catalog"' \
+                '"path": "/fabrication/setup/plan"' \
                 '"path": "/fabrication/monitoring/catalog"' \
+                '"path": "/fabrication/monitoring/plan"' \
                 '"path": "/fabrication/postprocess/catalog"' \
+                '"path": "/fabrication/postprocess/plan"' \
                 '"path": "/fabrication/artifacts/catalog"' \
                 '"path": "/fabrication/design/formats"' \
                 '"path": "/fabrication/instructions/languages"' \
@@ -165,6 +184,8 @@ spec:
                 '"path": "/fabrication/jobs"' \
                 '"path": "/jobs/:job_id"' \
                 '"path": "/fabrication/jobs/:job_id"' \
+                '"path": "/jobs/:job_id/release-bundle"' \
+                '"path": "/fabrication/jobs/:job_id/release-bundle"' \
                 '"path": "/jobs/:job_id/artifacts/:artifact_id"' \
                 '"path": "/fabrication/jobs/:job_id/artifacts/:artifact_id"' \
                 '"path": "/fabrication/learning/policy"' \

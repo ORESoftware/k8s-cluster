@@ -22,6 +22,9 @@
     fabrication_design_synthesis_requests_subject/0,
     fabrication_design_synthesis_requests_queue_group/0,
     fabrication_design_synthesis_results_subject/0,
+    fabrication_execution_telemetry_requests_subject/0,
+    fabrication_execution_telemetry_requests_queue_group/0,
+    fabrication_execution_telemetry_results_subject/0,
     fabrication_instruction_generation_requests_subject/0,
     fabrication_instruction_generation_requests_queue_group/0,
     fabrication_instruction_generation_results_subject/0,
@@ -228,6 +231,15 @@ fabrication_design_synthesis_requests_queue_group() -> <<"dd-fabrication-design-
 %% Design synthesis results carrying generated design candidates, parametric source artifacts, manufacturability evidence, blockers, and review metadata.
 %% Service: dd-fabrication-server
 fabrication_design_synthesis_results_subject() -> <<"dd.remote.fabrication.design.synthesis.results"/utf8>>.
+
+%% Fabrication execution telemetry requests for live printer, mill, lathe, router, sheet-cutting, assembly, inspection, and postprocess run result reviewers.
+%% Service: dd-fabrication-server
+fabrication_execution_telemetry_requests_subject() -> <<"dd.remote.fabrication.execution.telemetry.requests"/utf8>>.
+fabrication_execution_telemetry_requests_queue_group() -> <<"dd-fabrication-execution-reviewers"/utf8>>.
+
+%% Fabrication execution telemetry results carrying observed run state, machine stops, operator interventions, split/combine decisions, artifacts, and learning labels.
+%% Service: dd-fabrication-server
+fabrication_execution_telemetry_results_subject() -> <<"dd.remote.fabrication.execution.telemetry.results"/utf8>>.
 
 %% Instruction generation requests for slicer, CAM, postprocess, setup-sheet, and machine-code workers.
 %% Service: dd-fabrication-server
