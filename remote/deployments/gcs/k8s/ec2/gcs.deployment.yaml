@@ -179,6 +179,8 @@ spec:
               value: '250'
             - name: GCS_WS_CONV_FANOUT_BATCH_MAX
               value: '4096'
+            - name: GCS_WS_CONV_FANOUT_PENDING_MAX
+              value: '8192'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
