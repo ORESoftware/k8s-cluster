@@ -176,11 +176,13 @@ spec:
             - name: GCS_WS_CONV_FANOUT_BATCH_ENABLED
               value: 'true'
             - name: GCS_WS_CONV_FANOUT_BATCH_MS
-              value: '250'
+              value: '50'
             - name: GCS_WS_CONV_FANOUT_BATCH_MAX
-              value: '4096'
+              value: '512'
             - name: GCS_WS_CONV_FANOUT_PENDING_MAX
-              value: '8192'
+              value: '2048'
+            - name: GCS_WS_CONV_FANOUT_GLOBAL_PENDING_MAX
+              value: '131072'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
@@ -212,9 +214,9 @@ spec:
             - name: GCS_WS_MONGO_BATCH_SIZE
               value: '1024'
             - name: GCS_WS_MONGO_BATCH_QUEUE_SIZE
-              value: '262144'
+              value: '131072'
             - name: GCS_WS_MONGO_BATCH_PRESSURE_PERCENT
-              value: '25'
+              value: '10'
             - name: GCS_WS_MONGO_BATCH_WORKERS
               value: '64'
             - name: GCS_WS_MONGO_BATCH_FLUSH_MS
