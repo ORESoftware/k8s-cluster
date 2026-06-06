@@ -100,6 +100,7 @@ Gateway path map:
   `/fabrication/materials/catalog`, `/fabrication/decomposition/catalog`,
   `/fabrication/release/catalog`, `/fabrication/simulation/catalog`,
   `/fabrication/quality/catalog`, `/fabrication/interventions/catalog`,
+  `/fabrication/postprocess/catalog`,
   `/fabrication/design/formats`, `/fabrication/instructions/languages`,
   `/fabrication/boundaries/catalog`, `/fabrication/learning/capabilities`,
   `/fabrication/jobs`, `/fabrication/jobs/<jobId>`,

@@ -89,6 +89,11 @@ on:
         required: false
         type: string
         default: "5000"
+      loadtest_aggregate_connections:
+        description: Optional aggregate connection target across concurrent loader branches.
+        required: false
+        type: string
+        default: ""
       loadtest_messages_per_second_per_client:
         description: Client-originated messages per connection per second.
         required: false
@@ -150,6 +155,7 @@ jobs:
           LOADTEST_DURATION_SECONDS: ${{ inputs.loadtest_duration_seconds || '180' }}
           LOADTEST_LOADER_REPLICAS: ${{ inputs.loadtest_loader_replicas || '2' }}
           LOADTEST_CLIENTS_PER_REPLICA: ${{ inputs.loadtest_clients_per_replica || '5000' }}
+          LOADTEST_AGGREGATE_CONNECTIONS: ${{ inputs.loadtest_aggregate_connections || '' }}
           LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT: ${{ inputs.loadtest_messages_per_second_per_client || '2.5' }}
           LOADTEST_PARALLEL_JOBS: ${{ inputs.loadtest_parallel_jobs || '3' }}
           LOADTEST_GCS_REPLICAS: ${{ inputs.loadtest_gcs_replicas || '1' }}
@@ -2479,6 +2485,7 @@ jobs:
           load_label = loadtest_param("loadtest_label", os.environ.get("LOADTEST_LABEL", "medium") or "medium")
           loader_replicas = loadtest_param("loadtest_loader_replicas", os.environ.get("LOADTEST_LOADER_REPLICAS", "2") or "2")
           clients_per_replica = loadtest_param("loadtest_clients_per_replica", os.environ.get("LOADTEST_CLIENTS_PER_REPLICA", "5000") or "5000")
+          aggregate_connections = loadtest_param("loadtest_aggregate_connections", os.environ.get("LOADTEST_AGGREGATE_CONNECTIONS", "") or "")
           messages_per_second = loadtest_param("loadtest_messages_per_second_per_client", os.environ.get("LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT", "2.5") or "2.5")
           parallel_jobs = loadtest_param("loadtest_parallel_jobs", os.environ.get("LOADTEST_PARALLEL_JOBS", "3") or "3")
           gcs_replicas = loadtest_param("loadtest_gcs_replicas", os.environ.get("LOADTEST_GCS_REPLICAS", "1") or "1")
@@ -2526,13 +2533,23 @@ jobs:
           if [ "$parallel_jobs" -lt 1 ]; then
             parallel_jobs=1
           fi
-          total_connections=$((loader_replicas * clients_per_replica))
           concurrent_loader_count=1
           if [ "$parallel_jobs" -ge 3 ]; then
             concurrent_loader_count=3
           fi
+          aggregate_target="${LOADTEST_AGGREGATE_CONNECTIONS:-}"
+          case "$aggregate_target" in
+            ''|*[!0-9]*) aggregate_target="" ;;
+          esac
+          if [ -n "$aggregate_target" ]; then
+            denom=$((loader_replicas * concurrent_loader_count))
+            if [ "$denom" -gt 0 ]; then
+              clients_per_replica=$(((aggregate_target + denom - 1) / denom))
+            fi
+          fi
+          total_connections=$((loader_replicas * clients_per_replica))
           aggregate_connections=$((total_connections * concurrent_loader_count))
-          echo "PROOF loadtest_target total_connections=$total_connections aggregate_connections=$aggregate_connections gcs_replicas=$gcs_replicas loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second duration_seconds=$duration load_label=$load_label parallel_jobs=$parallel_jobs"
+          echo "PROOF loadtest_target total_connections=$total_connections aggregate_connections=$aggregate_connections aggregate_target=${aggregate_target:-none} gcs_replicas=$gcs_replicas loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second duration_seconds=$duration load_label=$load_label parallel_jobs=$parallel_jobs"
 
           apps="dd-observability gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loadtest_apps="dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
@@ -3415,8 +3432,13 @@ jobs:
             local min_open=$((total_connections * 90 / 100))
             local max_failed=$((total_connections / 10))
             local max_receive_errors=$((total_connections / 10))
+            if [ -n "${aggregate_target:-}" ]; then
+              min_open="$total_connections"
+              max_failed=0
+              max_receive_errors=0
+            fi
             local min_sent=$((total_connections * 20))
-            echo "proof-summary loader=$loader_name pods=$pods attempted=$attempted connected=$connected failed=$failed open=$open sent=$sent received=$received in_flight=$in_flight correlation_misses=$correlation_misses receive_errors=$receive_errors min_open=$min_open max_failed=$max_failed"
+            echo "proof-summary loader=$loader_name pods=$pods attempted=$attempted connected=$connected failed=$failed open=$open sent=$sent received=$received in_flight=$in_flight correlation_misses=$correlation_misses receive_errors=$receive_errors min_open=$min_open max_failed=$max_failed max_receive_errors=$max_receive_errors"
             if [ "$pods" -lt "$loader_replicas" ]; then
               echo "ERROR: $loader_name only reported $pods/$loader_replicas metric-emitting load pods" >&2
               return 1
@@ -3668,13 +3690,13 @@ jobs:
           router_metrics
           echo "PROOF service_health gcs_available=$(deployment_available gcs)/$gcs_replicas router_available=$(deployment_available gcs-router)/3"
           report_dependency_health
-          echo "PROOF loadtest_all_passed total_connections=$total_connections aggregate_connections=$aggregate_connections gcs_replicas=$gcs_replicas loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second load_label=$load_label parallel_jobs=$parallel_jobs loaders=rust,nodejs,gleam"
+          echo "PROOF loadtest_all_passed total_connections=$total_connections aggregate_connections=$aggregate_connections aggregate_target=${aggregate_target:-none} gcs_replicas=$gcs_replicas loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second load_label=$load_label parallel_jobs=$parallel_jobs loaders=rust,nodejs,gleam"
           '''
 
           print(json.dumps({
               "commands": [
                   "set -euo pipefail",
-                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} LOADTEST_DURATION_SECONDS={shlex.quote(duration)} LOADTEST_LABEL={shlex.quote(load_label)} LOADTEST_LOADER_REPLICAS={shlex.quote(loader_replicas)} LOADTEST_CLIENTS_PER_REPLICA={shlex.quote(clients_per_replica)} LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT={shlex.quote(messages_per_second)} LOADTEST_PARALLEL_JOBS={shlex.quote(parallel_jobs)} LOADTEST_GCS_REPLICAS={shlex.quote(gcs_replicas)} LOADTEST_COLLECT_PPROF={shlex.quote(collect_pprof)} bash -lc {shlex.quote(script)}",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} LOADTEST_DURATION_SECONDS={shlex.quote(duration)} LOADTEST_LABEL={shlex.quote(load_label)} LOADTEST_LOADER_REPLICAS={shlex.quote(loader_replicas)} LOADTEST_CLIENTS_PER_REPLICA={shlex.quote(clients_per_replica)} LOADTEST_AGGREGATE_CONNECTIONS={shlex.quote(aggregate_connections)} LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT={shlex.quote(messages_per_second)} LOADTEST_PARALLEL_JOBS={shlex.quote(parallel_jobs)} LOADTEST_GCS_REPLICAS={shlex.quote(gcs_replicas)} LOADTEST_COLLECT_PPROF={shlex.quote(collect_pprof)} bash -lc {shlex.quote(script)}",
               ],
           }))
           PY

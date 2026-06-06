@@ -23,6 +23,8 @@ It exposes:
 - `GET /fabrication/design/generation/catalog`
 - `GET /instructions/languages`
 - `GET /fabrication/instructions/languages`
+- `GET /instructions/generation/catalog`
+- `GET /fabrication/instructions/generation/catalog`
 - `GET /improvements/catalog`
 - `GET /fabrication/improvements/catalog`
 - `GET /boundaries/catalog`
@@ -37,6 +39,10 @@ It exposes:
 - `GET /fabrication/quality/catalog`
 - `GET /interventions/catalog`
 - `GET /fabrication/interventions/catalog`
+- `GET /setup/catalog`
+- `GET /fabrication/setup/catalog`
+- `GET /postprocess/catalog`
+- `GET /fabrication/postprocess/catalog`
 - `GET /learning/capabilities`
 - `GET /fabrication/learning/capabilities`
 - `GET /schema`
@@ -447,6 +453,31 @@ patch retention when repairable, and controller/postprocess/operator signoff
 evidence for any machine-failure, human-intervention, split/combine, setup, or
 handoff boundary.
 
+## `GET /fabrication/instructions/generation/catalog`
+
+`GET /instructions/generation/catalog` and the gateway-prefixed
+`GET /fabrication/instructions/generation/catalog` return the live
+`dd.fabrication.instruction-generation-catalog.v1` generated machine-program and
+job-sheet catalog for plan responses. The payload exposes generated program
+families for FDM printing, resin and powder-bed additive, pellet FGF, material
+jetting, DED/WAAM, continuous-fiber, binder jet, vertical/horizontal/indexed
+milling, routing, laser/waterjet/plasma/wire EDM sheet cutting, sinker EDM,
+lathe, mill-turn, robotic assembly, part separation, and fallback manual
+instructions. It lists generated languages such as `marlin-gcode`,
+`haas-gcode`, `indexed-mill-gcode`, `waterjet-job`, `wire-edm-job`,
+`mill-turn-gcode`, and `assembly-cell-job`, plus response surfaces including
+`generatedPrograms.instructions`, `generatedPrograms.machineReady`,
+`simulation.programs`, `executionPlan.programRuns`,
+`postprocessPlan.targets`, and `controllerPlan.controllerTargets`. Generated
+program artifacts are retained as `generated-machine-program` / `program-*`
+records and linked into `mdp-request` artifacts for downstream simulation,
+release, controller, and policy workers. Generated programs stay `draft=true`
+and `machineReady=false` until validation, simulation or dry-run evidence,
+controller/postprocessor review, fixture/material/profile proof, and operator
+or automation signoff clear. Program generation observations feed
+MDP/POMDP/neural workers so future plans can choose alternate machines,
+split/combine parts, regenerate programs, or add human checkpoints.
+
 ## `GET /fabrication/improvements/catalog`
 
 `GET /improvements/catalog` and the gateway-prefixed
@@ -608,6 +639,56 @@ points, split/combine reviews, or unverified automation candidates remain open.
 Human-intervention and automation observations are emitted for MDP/POMDP/neural
 workers so future planning can learn when to add automation, split jobs, or keep
 human checkpoints.
+
+## `GET /fabrication/setup/catalog`
+
+`GET /setup/catalog` and the gateway-prefixed
+`GET /fabrication/setup/catalog` return the live
+`dd.fabrication.setup-catalog.v1` tooling, fixture, datum, workholding, runtime
+monitoring, and recovery evidence catalog before callers treat generated or
+imported work as machine-ready. The payload exposes setup contracts for additive
+build setup, mill/router tooling and fixtures, lathe and mill-turn grip/support,
+sheet-cut support media, assembly/recomposition datum transfer, and unattended
+run monitoring. It names response surfaces such as
+`toolingPlan.requirements`, `toolingPlan.requirements.requiredTools`,
+`toolingPlan.requirements.workholding`, `fixturePlan.setups`,
+`fixturePlan.setups.datumScheme`, `fixturePlan.setups.clearanceChecks`,
+`fixturePlan.datumTransfers`, `monitoringPlan.monitorPoints`,
+`monitoringPlan.alertRules`, and `monitoringPlan.recoveryActions`, plus retained
+artifact surfaces `tooling-plan`, `fixture-plan`, `monitoring-plan`, and the
+matching `mdp-request` artifact payloads. Catalog entries are setup evidence
+contracts, not certified fixture designs or safety procedures; machine-ready
+release remains blocked while required tools, workholding, setup checks, datum
+transfer, fixture evidence, monitoring channels, alert rules, recovery actions,
+or operator/automation signoff gates are unresolved. Setup, fixture, and
+monitoring observations are retained for MDP/POMDP/neural workers so future
+planning can learn when to change workholding, split setups, add automation, or
+require human intervention.
+
+## `GET /fabrication/postprocess/catalog`
+
+`GET /postprocess/catalog` and the gateway-prefixed
+`GET /fabrication/postprocess/catalog` return the live
+`dd.fabrication.postprocess-catalog.v1` finishing, traveler, controller-output,
+and release-evidence catalog before callers treat generated or imported work as
+machine-ready. The payload exposes target contracts for FDM support removal,
+resin wash/cure, powder-bed cooldown and depowdering, metal additive stress
+relief and plate removal, binder-jet cure/sinter or infiltration, subtractive
+deburr/clean/protect work, sheet-cut edge cleanup and slug release, and
+assembly/join cure plus final-fit checks. It also exposes artifact contracts for
+`postprocess-plan`, `analysis-postprocess-plan`, controller output packages, and
+postprocess travelers, plus planning and instruction-analysis route aliases,
+response surfaces such as `postprocessPlan.status`,
+`postprocessPlan.controllerTargets`, `postprocessPlan.requiredArtifacts`,
+`postprocessPlan.blockers`, `qualityPlan.releaseGates`,
+`materialPlan.conditioning`, `releasePackagePlan.packages`, and
+`machineRelease.blockers`. Catalog entries are evidence contracts, not certified
+process completion; machine-ready release remains blocked while postprocess
+targets, required artifacts, dry-run gates, quality checks, material
+conditioning, or operator/automation signoff are unresolved. Postprocess
+observations are retained for MDP/POMDP/neural workers so future planning can
+learn when to add finishing operations, split parts, combine assemblies, or
+require human intervention.
 
 ## `GET /fabrication/learning/capabilities`
 
