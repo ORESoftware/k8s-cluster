@@ -607,8 +607,9 @@ jobs:
           echo "opState.phase:  $(kubectl -n argocd get $app -o jsonpath='{.status.operationState.phase}')"
           echo "opState.msg:    $(kubectl -n argocd get $app -o jsonpath='{.status.operationState.message}')"
           echo "conditions:     $(kubectl -n argocd get $app -o jsonpath='{range .status.conditions[*]}{.type}={.message};{end}')"
-          echo "=== forcing Argo sync to HEAD ==="
-          kubectl -n argocd patch $app --type merge -p '{"operation":{"initiatedBy":{"username":"maintenance-reconcile"},"info":[{"name":"reason","value":"reconcile-runtime"}],"sync":{"revision":"HEAD","prune":true}}}' || true
+          echo "=== forcing Argo sync to target revision ==="
+          sync_revision="${TARGET_REVISION:-dev}"
+          kubectl -n argocd patch $app --type merge -p "{\"operation\":{\"initiatedBy\":{\"username\":\"maintenance-reconcile\"},\"info\":[{\"name\":\"reason\",\"value\":\"reconcile-runtime\"}],\"sync\":{\"revision\":\"$sync_revision\",\"prune\":true}}}" || true
           for i in $(seq 1 30); do
             ph="$(kubectl -n argocd get $app -o jsonpath='{.status.operationState.phase}')"
             echo "  wait $i phase=$ph"
@@ -695,7 +696,7 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-fsharp-ws-server.application.yaml'",
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-gleam-mcp-server.application.yaml'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n argocd annotate application/dd-secrets application/dd-next-runtime application/dd-fsharp-ws-server application/dd-gleam-mcp-server argocd.argoproj.io/refresh=hard --overwrite || true'",
-              f"sudo -u ec2-user -H bash -lc {shlex.quote(argocd_sync)}",
+              f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(argocd_sync)}",
               f"sudo -u ec2-user -H bash -lc {shlex.quote(mutex_proof)}",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-remote-gateway --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-webrtc-signaling --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
@@ -2558,7 +2559,10 @@ jobs:
           capacity_targets="dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server"
           # Keep dd-des-rs warm: it cold-starts by compiling Rust in-pod, so
           # scaling it to zero creates a long public /des-rs/ 502 window.
-          capacity_extra_targets="dd-fabrication-server dd-trading-server dd-web-scraper dd-selenium-server dd-rust-vapi-phone dd-remote-web-home dd-remote-rest-api dd-remote-queue-consumer dd-container-pool dd-webrtc-signaling dd-webrtc-media dd-rust-network-mutex dd-idle-reaper"
+          # Never free load-test capacity by taking down baseline public or
+          # control-plane services. Those deployments are gateway dependencies
+          # and their PDBs are availability guardrails, not load-test targets.
+          capacity_extra_targets=""
           capacity_extra_statefulsets="dd-rust-network-mutex-raft"
           capacity_scaledobjects="dd-remote-queue-consumer-nats-jetstream"
           mip_capacity_app="dd-in-house-mip-solver-node"
@@ -2574,7 +2578,7 @@ jobs:
 
           sync_app() {
             local app="$1"
-            local sync_revision="${ARGO_SYNC_REVISION:-HEAD}"
+            local sync_revision="${ARGO_SYNC_REVISION:-${TARGET_REVISION:-dev}}"
             local before_finished patch_status patch_output
             echo "=== Argo CD sync request: $app ==="
             kubectl -n argocd annotate "application/$app" argocd.argoproj.io/refresh=hard --overwrite || true
@@ -2625,6 +2629,7 @@ jobs:
 
           restore_capacity_apps() {
             echo "=== cleanup: restore capacity owner Argo apps ==="
+            local sync_revision="${ARGO_SYNC_REVISION:-${TARGET_REVISION:-dev}}"
             apply_target_manifest remote/argocd/apps/dd-next-runtime.application.yaml || true
             apply_target_manifest remote/argocd/apps/dd-akka-ws-server.application.yaml || true
             apply_target_manifest remote/argocd/apps/dd-dart-server.application.yaml || true
@@ -2641,7 +2646,7 @@ jobs:
             done
             kubectl -n argocd annotate "application/$mip_capacity_app" argocd.argoproj.io/refresh=hard --overwrite || true
             kubectl -n argocd patch "application/$mip_capacity_app" --type merge \
-              -p '{"operation":{"initiatedBy":{"username":"gcs-loadtest"},"info":[{"name":"reason","value":"restore-after-gcs-loadtest"}],"sync":{"revision":"HEAD","prune":true}}}' || true
+              -p "{\"operation\":{\"initiatedBy\":{\"username\":\"gcs-loadtest\"},\"info\":[{\"name\":\"reason\",\"value\":\"restore-after-gcs-loadtest\"}],\"sync\":{\"revision\":\"$sync_revision\",\"prune\":true}}}" || true
           }
 
           disable_loadtest_autosync() {
