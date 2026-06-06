@@ -39,6 +39,9 @@ Request `options` override environment defaults. When an option is omitted, the 
 - `MIP_SOLVER_EMIT_TRACE`
 - `MIP_SOLVER_WORKER_HEARTBEAT_SECONDS`
 - `MIP_SOLVER_WORKER_STALE_SECONDS`
+- `MIP_SOLVER_VERIFY_EXTERNAL`
+- `MIP_SOLVER_EXTERNAL_VERIFICATION_METHOD`
+- `MIP_SOLVER_EXTERNAL_VERIFICATION_TOLERANCE`
 
 `MIP_SOLVER_MAX_SUBPROBLEMS` caps the master's pre-split branch-and-bound frontier. When the cap is reached, remaining fractional nodes are delegated as subtree jobs instead of being split further by the master.
 
@@ -47,6 +50,8 @@ Delegated subtree jobs can split again on a slave when their LP relaxation is fr
 `MIP_SOLVER_MAX_JOB_RETRIES` caps master-side re-delegation for errored subproblem attempts. Failed attempts are re-published as retry jobs while the solve still counts completion by original subproblem.
 
 Slaves publish job-aware progress heartbeats every `MIP_SOLVER_WORKER_HEARTBEAT_SECONDS` seconds (default 25) while processing a `jobUuid`. During distributed solves, the master treats a running job as stale when no heartbeat has arrived for `MIP_SOLVER_WORKER_STALE_SECONDS` seconds (default 100), re-publishes that work with a new `jobUuid`, and excludes the stale worker node from the retry. The queued retry creates JetStream lag for KEDA to scale replacement slave capacity.
+
+External optimum verification is opt-in. Build with the `external-solver-verification` Cargo feature, then set `MIP_SOLVER_VERIFY_EXTERNAL=true` or pass `"verifyExternal": true` in solve options. The response includes `externalVerification` with `verified`, `mismatch`, `unverified`, `unavailable`, or `skipped` status. Local checks use the sibling DES checkout at `~/codes/ores/discrete-event-system.rs` via `local/Cargo.toml`; cluster builds keep using the DES submodule under `remote/submodules/discrete-event-system.rs`. The default method is `highs`, with `highs-ds` and `highs-ipm` accepted through `MIP_SOLVER_EXTERNAL_VERIFICATION_METHOD` or `"externalVerificationMethod"`.
 
 ## Persistence model
 

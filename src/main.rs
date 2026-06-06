@@ -34,6 +34,8 @@ use dd_pg_defs::{
 use dd_redis_interfaces::{
     container_pool_affinity_lock_key, CONTAINER_POOL_AFFINITY_LOCK_KEY_DEFAULT_PREFIX,
 };
+#[cfg(feature = "external-solver-verification")]
+use des_engine::des::general as external_des_general;
 use des_engine::des::general::{
     ip_mip_des::{
         solve_ipmip_with_des, BranchRule, ConcreteLpRelaxationAlgorithm, IPMIPProblem,
@@ -359,6 +361,9 @@ struct SolveOptions {
     max_job_retries: Option<usize>,
     timeout_ms: Option<u64>,
     emit_trace: Option<bool>,
+    verify_external: Option<bool>,
+    external_verification_method: Option<String>,
+    external_verification_tolerance: Option<f64>,
 }
 
 impl Default for SolveOptions {
@@ -373,6 +378,9 @@ impl Default for SolveOptions {
             max_job_retries: Some(2),
             timeout_ms: Some(120_000),
             emit_trace: Some(false),
+            verify_external: Some(false),
+            external_verification_method: None,
+            external_verification_tolerance: Some(1e-6),
         }
     }
 }
@@ -396,6 +404,13 @@ impl SolveOptions {
             max_job_retries: input.max_job_retries.or(defaults.max_job_retries),
             timeout_ms: input.timeout_ms.or(defaults.timeout_ms),
             emit_trace: input.emit_trace.or(defaults.emit_trace),
+            verify_external: input.verify_external.or(defaults.verify_external),
+            external_verification_method: input
+                .external_verification_method
+                .or(defaults.external_verification_method),
+            external_verification_tolerance: input
+                .external_verification_tolerance
+                .or(defaults.external_verification_tolerance),
         }
     }
 
@@ -437,6 +452,18 @@ impl SolveOptions {
             emit_trace: Some(env_bool(
                 "MIP_SOLVER_EMIT_TRACE",
                 defaults.emit_trace.unwrap_or(false),
+            )),
+            verify_external: Some(env_bool(
+                "MIP_SOLVER_VERIFY_EXTERNAL",
+                defaults.verify_external.unwrap_or(false),
+            )),
+            external_verification_method: optional_env_value(
+                "MIP_SOLVER_EXTERNAL_VERIFICATION_METHOD",
+            )
+            .or(defaults.external_verification_method),
+            external_verification_tolerance: Some(env_f64(
+                "MIP_SOLVER_EXTERNAL_VERIFICATION_TOLERANCE",
+                defaults.external_verification_tolerance.unwrap_or(1e-6),
             )),
         }
     }
@@ -584,8 +611,26 @@ struct SolveResponse {
     node_id: String,
     role: NodeRole,
     gpu: GpuStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    external_verification: Option<ExternalVerificationReport>,
     warnings: Vec<String>,
     generated_at_ms: u128,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExternalVerificationReport {
+    requested: bool,
+    enabled: bool,
+    status: String,
+    method: Option<String>,
+    solver: Option<String>,
+    solution_status: Option<String>,
+    objective: Option<f64>,
+    objective_delta: Option<f64>,
+    tolerance: f64,
+    elapsed_ms: f64,
+    message: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -2702,6 +2747,7 @@ fn cancelled_solve_response(
         node_id: state.node_id.clone(),
         role: state.role,
         gpu: aggregate_gpu_status(&[]),
+        external_verification: None,
         warnings,
         generated_at_ms: now_ms(),
     }
@@ -3065,6 +3111,7 @@ fn aggregate_results(
     problem_id: Option<String>,
     revision: u64,
     problem: &MipProblemSpec,
+    options: &SolveOptions,
     jobs_expected: usize,
     jobs_published: usize,
     jobs_redelegated: usize,
@@ -3127,6 +3174,17 @@ fn aggregate_results(
     } else {
         "infeasible"
     };
+    let verification = external_verification_report(
+        problem,
+        options,
+        status,
+        z,
+        best.map(|r| r.x.as_slice()).unwrap_or(&[]),
+    );
+    let external_verification = verification.as_ref().map(|(report, _)| report.clone());
+    if let Some((_, Some(warning))) = verification {
+        warnings.push(warning);
+    }
 
     SolveResponse {
         ok: best.is_some() || status == "infeasible",
@@ -3150,8 +3208,345 @@ fn aggregate_results(
         node_id: state.node_id.clone(),
         role: state.role,
         gpu: aggregate_gpu_status(&results),
+        external_verification,
         warnings,
         generated_at_ms: now_ms(),
+    }
+}
+
+fn external_verification_requested(options: &SolveOptions) -> bool {
+    options.verify_external.unwrap_or(false)
+}
+
+fn external_verification_tolerance(options: &SolveOptions) -> f64 {
+    options
+        .external_verification_tolerance
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .unwrap_or(1e-6)
+}
+
+fn external_verification_method(options: &SolveOptions) -> String {
+    options
+        .external_verification_method
+        .clone()
+        .unwrap_or_else(|| "highs".to_string())
+}
+
+#[cfg(not(feature = "external-solver-verification"))]
+fn external_verification_report(
+    _problem: &MipProblemSpec,
+    options: &SolveOptions,
+    _status: &str,
+    _z: Option<f64>,
+    _x: &[f64],
+) -> Option<(ExternalVerificationReport, Option<String>)> {
+    if !external_verification_requested(options) {
+        return None;
+    }
+    let tolerance = external_verification_tolerance(options);
+    let report = ExternalVerificationReport {
+        requested: true,
+        enabled: false,
+        status: "unavailable".to_string(),
+        method: Some(external_verification_method(options)),
+        solver: None,
+        solution_status: None,
+        objective: None,
+        objective_delta: None,
+        tolerance,
+        elapsed_ms: 0.0,
+        message: Some("compiled without the external-solver-verification feature".to_string()),
+    };
+    Some((
+        report,
+        Some("external solver verification requested but feature is not enabled".to_string()),
+    ))
+}
+
+#[cfg(feature = "external-solver-verification")]
+fn external_verification_report(
+    problem: &MipProblemSpec,
+    options: &SolveOptions,
+    status: &str,
+    z: Option<f64>,
+    x: &[f64],
+) -> Option<(ExternalVerificationReport, Option<String>)> {
+    if !external_verification_requested(options) {
+        return None;
+    }
+    let started = Instant::now();
+    let tolerance = external_verification_tolerance(options);
+    let method = external_verification_method(options);
+    if status != "optimal" || z.is_none() || x.is_empty() {
+        let report = ExternalVerificationReport {
+            requested: true,
+            enabled: true,
+            status: "skipped".to_string(),
+            method: Some(method),
+            solver: None,
+            solution_status: Some(status.to_string()),
+            objective: None,
+            objective_delta: None,
+            tolerance,
+            elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+            message: Some("external verification requires an optimal incumbent".to_string()),
+        };
+        return Some((report, None));
+    }
+
+    let solved = catch_unwind(AssertUnwindSafe(|| {
+        run_external_verification(problem, options, z.unwrap(), &method, tolerance)
+    }));
+    match solved {
+        Ok(Ok(report)) => {
+            let warning = match report.status.as_str() {
+                "verified" => None,
+                "mismatch" => Some(format!(
+                    "external solver verification mismatch: solver objective {:?}, in-house objective {:?}, delta {:?}, tolerance {}",
+                    report.objective, z, report.objective_delta, report.tolerance
+                )),
+                _ => Some(format!(
+                    "external solver verification did not verify result: {}{}",
+                    report.status,
+                    report
+                        .message
+                        .as_ref()
+                        .map(|message| format!(" ({message})"))
+                        .unwrap_or_default()
+                )),
+            };
+            Some((report, warning))
+        }
+        Ok(Err(message)) => {
+            let report = ExternalVerificationReport {
+                requested: true,
+                enabled: true,
+                status: "error".to_string(),
+                method: Some(method),
+                solver: None,
+                solution_status: None,
+                objective: None,
+                objective_delta: None,
+                tolerance,
+                elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+                message: Some(message.clone()),
+            };
+            Some((
+                report,
+                Some(format!("external solver verification failed: {message}")),
+            ))
+        }
+        Err(_) => {
+            let report = ExternalVerificationReport {
+                requested: true,
+                enabled: true,
+                status: "error".to_string(),
+                method: Some(method),
+                solver: None,
+                solution_status: None,
+                objective: None,
+                objective_delta: None,
+                tolerance,
+                elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+                message: Some("external verifier panicked".to_string()),
+            };
+            Some((
+                report,
+                Some("external solver verification panicked".to_string()),
+            ))
+        }
+    }
+}
+
+#[cfg(feature = "external-solver-verification")]
+fn run_external_verification(
+    problem: &MipProblemSpec,
+    options: &SolveOptions,
+    expected_z: f64,
+    method: &str,
+    tolerance: f64,
+) -> Result<ExternalVerificationReport, String> {
+    let started = Instant::now();
+    let problem = normalized_problem(problem.clone())?;
+    if problem.integer_vars.iter().any(|integer| *integer) {
+        verify_mip_with_external_des(&problem, options, expected_z, method, tolerance, started)
+    } else {
+        verify_lp_with_external_des(&problem, expected_z, method, tolerance, started)
+    }
+}
+
+#[cfg(feature = "external-solver-verification")]
+fn verify_lp_with_external_des(
+    problem: &MipProblemSpec,
+    expected_z: f64,
+    method: &str,
+    tolerance: f64,
+    started: Instant,
+) -> Result<ExternalVerificationReport, String> {
+    let lp = external_lp_problem(problem)?;
+    let lp_method = method.trim().strip_prefix("external-").unwrap_or(method);
+    let solution = external_des_general::lp::solve_lp_external(
+        &lp,
+        &external_des_general::lp::ExternalSolverOptions {
+            method: Some(lp_method.to_string()),
+            ..Default::default()
+        },
+    );
+    let objective = solution.objective.is_finite().then_some(solution.objective);
+    let objective_delta = objective.map(|value| (value - expected_z).abs());
+    let status = if solution.status == external_des_general::lp::LPStatus::Optimal {
+        if objective_delta.is_some_and(|delta| delta <= tolerance) {
+            "verified"
+        } else {
+            "mismatch"
+        }
+    } else {
+        "unverified"
+    };
+    Ok(ExternalVerificationReport {
+        requested: true,
+        enabled: true,
+        status: status.to_string(),
+        method: Some(lp_method.to_string()),
+        solver: Some(solution.solver),
+        solution_status: Some(solution.status.as_str().to_string()),
+        objective,
+        objective_delta,
+        tolerance,
+        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+        message: solution.message,
+    })
+}
+
+#[cfg(feature = "external-solver-verification")]
+fn verify_mip_with_external_des(
+    problem: &MipProblemSpec,
+    options: &SolveOptions,
+    expected_z: f64,
+    method: &str,
+    tolerance: f64,
+    started: Instant,
+) -> Result<ExternalVerificationReport, String> {
+    let external_problem = external_ipmip_problem(problem)?;
+    let solution = external_des_general::ip_mip_des::solve_ipmip_with_des(
+        external_problem,
+        external_des_ipmip_options(options, method),
+    );
+    let objective = solution.z.is_finite().then_some(solution.z);
+    let objective_delta = objective.map(|value| (value - expected_z).abs());
+    let status = if solution.status == external_des_general::ip_mip_des::IPMIPStatus::Optimal {
+        if objective_delta.is_some_and(|delta| delta <= tolerance) {
+            "verified"
+        } else {
+            "mismatch"
+        }
+    } else {
+        "unverified"
+    };
+    Ok(ExternalVerificationReport {
+        requested: true,
+        enabled: true,
+        status: status.to_string(),
+        method: Some(method.to_string()),
+        solver: Some("des-ipmip-external-lp".to_string()),
+        solution_status: Some(solution.status.as_str().to_string()),
+        objective,
+        objective_delta,
+        tolerance,
+        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+        message: Some(format!(
+            "lpAlgorithm={}, usesExternalSolvers={}",
+            solution.lp_algorithm.as_str(),
+            solution.uses_external_solvers
+        )),
+    })
+}
+
+#[cfg(feature = "external-solver-verification")]
+fn external_sense(sense: &str) -> external_des_general::lp::Sense {
+    if sense.eq_ignore_ascii_case("min") {
+        external_des_general::lp::Sense::Min
+    } else {
+        external_des_general::lp::Sense::Max
+    }
+}
+
+#[cfg(feature = "external-solver-verification")]
+fn external_lp_problem(
+    problem: &MipProblemSpec,
+) -> Result<external_des_general::lp::LPProblem, String> {
+    Ok(external_des_general::lp::LPProblem {
+        sense: external_sense(&problem.sense),
+        c: problem.c.clone(),
+        a_ub: Some(problem.a.clone()),
+        b_ub: Some(problem.b.clone()),
+        a_eq: None,
+        b_eq: None,
+        lb: Some(vec![Some(0.0); problem.c.len()]),
+        ub: problem
+            .ub
+            .clone()
+            .map(|ub| ub.into_iter().map(|v| v.is_finite().then_some(v)).collect()),
+        var_names: problem.var_names.clone(),
+        con_names: problem.con_names.clone(),
+    })
+}
+
+#[cfg(feature = "external-solver-verification")]
+fn external_ipmip_problem(
+    problem: &MipProblemSpec,
+) -> Result<external_des_general::ip_mip_des::IPMIPProblem, String> {
+    Ok(external_des_general::ip_mip_des::IPMIPProblem {
+        sense: external_sense(&problem.sense),
+        c: problem.c.clone(),
+        a: problem.a.clone(),
+        b: problem.b.clone(),
+        integer_vars: problem.integer_vars.clone(),
+        ub: problem.ub.clone(),
+        var_names: problem.var_names.clone(),
+        con_names: problem.con_names.clone(),
+        lazy_constraints: None,
+        variable_nodes: None,
+        constraint_nodes: None,
+    })
+}
+
+#[cfg(feature = "external-solver-verification")]
+fn external_des_ipmip_options(
+    options: &SolveOptions,
+    method: &str,
+) -> external_des_general::ip_mip_des::IPMIPSolveOptions {
+    external_des_general::ip_mip_des::IPMIPSolveOptions {
+        max_nodes: options.max_nodes,
+        max_ticks: options.max_ticks,
+        lp_max_iters: options.lp_max_iters,
+        int_tol: options.int_tol,
+        branch_rule: Some(external_des_general::ip_mip_des::BranchRule::MostFractional),
+        lp_algorithm: Some(
+            external_des_general::ip_mip_des::LpRelaxationAlgorithm::Concrete(
+                external_des_ipmip_algorithm(method),
+            ),
+        ),
+        allow_external_solvers: Some(true),
+        max_cut_rounds: Some(8),
+        max_cuts_per_node: Some(16),
+        heuristic_passes: Some(2),
+        verbose: Some(false),
+        ..Default::default()
+    }
+}
+
+#[cfg(feature = "external-solver-verification")]
+fn external_des_ipmip_algorithm(
+    method: &str,
+) -> external_des_general::ip_mip_des::ConcreteLpRelaxationAlgorithm {
+    let normalized = method.trim().to_ascii_lowercase().replace('_', "-");
+    if normalized.contains("ipm") {
+        external_des_general::ip_mip_des::ConcreteLpRelaxationAlgorithm::ExternalHighsIpm
+    } else if normalized.contains("ds") || normalized.contains("dual") {
+        external_des_general::ip_mip_des::ConcreteLpRelaxationAlgorithm::ExternalHighsDs
+    } else {
+        external_des_general::ip_mip_des::ConcreteLpRelaxationAlgorithm::ExternalHighs
     }
 }
 
@@ -4872,6 +5267,7 @@ async fn solve_pure_lp_local(
         Some(problem_id.clone()),
         revision,
         &problem,
+        &options,
         1,
         1,
         0,
@@ -5078,6 +5474,7 @@ async fn solve_problem_distributed(
             Some(problem_id.clone()),
             revision,
             &problem,
+            &options,
             0,
             0,
             0,
@@ -5250,6 +5647,7 @@ async fn solve_problem_distributed(
             Some(problem_id.clone()),
             revision,
             &problem,
+            &options,
             jobs_expected,
             jobs_published,
             jobs_redelegated,
@@ -5600,6 +5998,7 @@ async fn solve_problem_distributed(
         Some(problem_id.clone()),
         revision,
         &problem,
+        &options,
         jobs_expected,
         jobs_published,
         jobs_redelegated,
@@ -7797,6 +8196,9 @@ mod tests {
             max_job_retries: Some(4),
             timeout_ms: Some(444),
             emit_trace: Some(false),
+            verify_external: Some(false),
+            external_verification_method: Some("highs".to_string()),
+            external_verification_tolerance: Some(1e-5),
         };
         let input = SolveOptions {
             max_nodes: Some(999),
@@ -7808,6 +8210,9 @@ mod tests {
             max_job_retries: Some(9),
             timeout_ms: None,
             emit_trace: Some(true),
+            verify_external: Some(true),
+            external_verification_method: Some("highs-ds".to_string()),
+            external_verification_tolerance: None,
         };
 
         let merged = SolveOptions::merged_with_defaults(Some(input), defaults);
@@ -7821,6 +8226,73 @@ mod tests {
         assert_eq!(merged.max_job_retries, Some(9));
         assert_eq!(merged.timeout_ms, Some(444));
         assert_eq!(merged.emit_trace, Some(true));
+        assert_eq!(merged.verify_external, Some(true));
+        assert_eq!(
+            merged.external_verification_method.as_deref(),
+            Some("highs-ds")
+        );
+        assert_eq!(merged.external_verification_tolerance, Some(1e-5));
+    }
+
+    #[cfg(not(feature = "external-solver-verification"))]
+    #[test]
+    fn external_verification_request_reports_unavailable_without_feature() {
+        let problem = binary_knapsack_problem();
+        let state = test_state(NodeRole::Master);
+        let optimal = SubproblemResult {
+            solve_id: "solve-verify-test".to_string(),
+            request_id: "request-verify-test".to_string(),
+            job_id: "job-verify".to_string(),
+            job_uuid: new_uuid_string(),
+            problem_id: Some("77777777-7777-4777-8777-777777777777".to_string()),
+            revision: 0,
+            worker_node: "worker-verify".to_string(),
+            ok: true,
+            status: "optimal".to_string(),
+            z: Some(90.0),
+            x: vec![0.0, 1.0, 0.0, 1.0],
+            best_bound: Some(90.0),
+            gap: Some(0.0),
+            lp: None,
+            child_jobs: Vec::new(),
+            nodes_explored: 1,
+            lp_solves: 1,
+            elapsed_ms: 1.0,
+            accelerator: AcceleratorReport::default(),
+            error: None,
+            finished_at_ms: now_ms(),
+        };
+        let options = SolveOptions {
+            verify_external: Some(true),
+            external_verification_method: Some("highs".to_string()),
+            ..SolveOptions::default()
+        };
+
+        let response = aggregate_results(
+            "solve-verify-test".to_string(),
+            "request-verify-test".to_string(),
+            None,
+            0,
+            &problem,
+            &options,
+            1,
+            1,
+            0,
+            0,
+            vec![optimal],
+            false,
+            true,
+            &state,
+            Vec::new(),
+        );
+
+        let verification = response.external_verification.expect("verification report");
+        assert_eq!(verification.status, "unavailable");
+        assert!(!verification.enabled);
+        assert!(response
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("feature is not enabled")));
     }
 
     #[test]
@@ -8552,6 +9024,55 @@ mod tests {
         assert!(response.jobs_published > 0);
     }
 
+    #[cfg(feature = "external-solver-verification")]
+    #[tokio::test]
+    async fn master_local_fallback_verifies_binary_mip_with_external_highs() {
+        if std::process::Command::new("highs")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("SKIP external HiGHS verification test: highs command not installed");
+            return;
+        }
+        let state = test_state(NodeRole::Master);
+        let options = SolveOptions {
+            split_depth: Some(2),
+            max_nodes: Some(10_000),
+            verify_external: Some(true),
+            external_verification_method: Some("highs".to_string()),
+            external_verification_tolerance: Some(1e-6),
+            ..SolveOptions::default()
+        };
+
+        let response = solve_problem_distributed(
+            state,
+            "request-external-verify-test".to_string(),
+            "88888888-8888-4888-8888-888888888888".to_string(),
+            5,
+            binary_knapsack_problem(),
+            options,
+        )
+        .await
+        .unwrap();
+
+        assert!(response.ok, "warnings: {:?}", response.warnings);
+        assert_eq!(response.status, "optimal");
+        assert_eq!(response.z, Some(90.0));
+        let verification = response
+            .external_verification
+            .expect("external verification report");
+        assert_eq!(verification.status, "verified", "{verification:?}");
+        assert_eq!(verification.solution_status.as_deref(), Some("optimal"));
+        assert!(verification
+            .objective_delta
+            .is_some_and(|delta| delta <= verification.tolerance));
+        assert!(verification
+            .message
+            .as_deref()
+            .is_some_and(|message| message.contains("usesExternalSolvers=true")));
+    }
+
     #[tokio::test]
     async fn pure_lp_request_uses_single_local_lp_job() {
         let state = test_state(NodeRole::Master);
@@ -8661,6 +9182,7 @@ mod tests {
             None,
             11,
             &problem,
+            &options,
             jobs_expected,
             jobs_published,
             0,
@@ -8759,6 +9281,7 @@ mod tests {
             None,
             12,
             &problem,
+            &options,
             jobs_expected,
             jobs_published,
             0,
@@ -9617,6 +10140,7 @@ mod tests {
             None,
             0,
             &problem,
+            &SolveOptions::default(),
             2,
             2,
             0,
@@ -9694,6 +10218,7 @@ mod tests {
             None,
             0,
             &problem,
+            &SolveOptions::default(),
             1,
             2,
             1,

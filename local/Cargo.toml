@@ -4,9 +4,15 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+[features]
+default = ["des-engine"]
+des-engine = ["dep:des_engine"]
+external-solver-verification = ["des-engine"]
+
 [[bin]]
 name = "dd-in-house-mip-solver-node"
 path = "../src/main.rs"
+required-features = ["des-engine"]
 
 [dependencies]
 async-nats = "=0.38.0"
@@ -14,7 +20,7 @@ axum = { version = "0.7", features = ["macros"] }
 dd-nats-subject-defs = { path = "../../k8s-cluster/remote/libs/nats/subject-defs/generated/rust" }
 dd-pg-defs = { path = "../../k8s-cluster/remote/libs/pg-defs/generated/rust" }
 dd-redis-interfaces = { path = "../../k8s-cluster/remote/libs/interfaces/redis/generated/rust" }
-des_engine = { path = "../../k8s-cluster/remote/submodules/discrete-event-system.rs" }
+des_engine = { path = "../../discrete-event-system.rs", optional = true }
 futures-util = "0.3"
 libloading = "0.8"
 redis = { version = "=0.27.6", default-features = false, features = ["aio", "tokio-comp"] }

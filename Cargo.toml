@@ -5,6 +5,16 @@ edition = "2021"
 description = "In-house LP solver plus distributed MIP/IP branch-and-bound node with NATS JetStream master/slave execution."
 license = "MIT OR Apache-2.0"
 
+[features]
+default = ["des-engine"]
+des-engine = ["dep:des_engine"]
+external-solver-verification = ["des-engine"]
+
+[[bin]]
+name = "dd-in-house-mip-solver-node"
+path = "src/main.rs"
+required-features = ["des-engine"]
+
 [dependencies]
 async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
@@ -12,7 +22,7 @@ axum = { version = "0.7", features = ["macros"] }
 dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
 dd-pg-defs = { path = "../../libs/pg-defs/generated/rust" }
 dd-redis-interfaces = { path = "../../libs/interfaces/redis/generated/rust" }
-des_engine = { path = "../../submodules/discrete-event-system.rs" }
+des_engine = { path = "../../submodules/discrete-event-system.rs", optional = true }
 futures-util = "0.3"
 libloading = "0.8"
 redis = { version = "=0.27.6", default-features = false, features = ["aio", "tokio-comp"] }
