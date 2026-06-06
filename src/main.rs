@@ -9228,6 +9228,26 @@ mod tests {
             lp_max_iters: Some(10_000),
             ..SolveOptions::default()
         };
+        #[cfg(feature = "external-solver-verification")]
+        let (options, expect_external_verification) = {
+            let mut options = options;
+            let expect_external_verification = if std::process::Command::new("highs")
+                .arg("--version")
+                .output()
+                .is_ok()
+            {
+                options.verify_external = Some(true);
+                options.external_verification_method = Some("highs".to_string());
+                options.external_verification_tolerance = Some(1e-6);
+                true
+            } else {
+                eprintln!("SKIP 100x150 external HiGHS verification: highs command not installed");
+                false
+            };
+            (options, expect_external_verification)
+        };
+        #[cfg(not(feature = "external-solver-verification"))]
+        let expect_external_verification = false;
         assert_eq!(problem.c.len(), 100);
         assert_eq!(problem.a.len(), 150);
 
@@ -9316,6 +9336,28 @@ mod tests {
         }
         assert!(response.x[98] < 1e-6);
         assert!(response.x[99] < 1e-6);
+        if expect_external_verification {
+            let verification = response
+                .external_verification
+                .as_ref()
+                .expect("external verification report");
+            assert_eq!(verification.status, "verified", "{verification:?}");
+            assert_eq!(verification.solution_status.as_deref(), Some("optimal"));
+            assert!(
+                verification
+                    .objective_delta
+                    .is_some_and(|delta| delta <= verification.tolerance),
+                "{verification:?}"
+            );
+            assert!(
+                verification.objective.is_some_and(
+                    |objective| (objective - expected_z).abs() <= verification.tolerance
+                ),
+                "{verification:?}"
+            );
+        } else {
+            assert!(response.external_verification.is_none());
+        }
     }
 
     #[tokio::test]
