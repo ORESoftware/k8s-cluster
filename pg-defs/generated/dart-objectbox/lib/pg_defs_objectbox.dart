@@ -2031,6 +2031,14 @@ class DesSoccerLearningPolicyVersionsObjectBox {
 
   int fitnessMicros;
 
+  String branchKey;
+
+  String retentionKind;
+
+  bool fullEntriesRetained;
+
+  String? fullEntriesPrunedAt;
+
   String createdAt;
 
   String updatedAt;
@@ -2056,6 +2064,10 @@ class DesSoccerLearningPolicyVersionsObjectBox {
     required this.targetEntryCount,
     required this.visitCount,
     required this.fitnessMicros,
+    required this.branchKey,
+    required this.retentionKind,
+    required this.fullEntriesRetained,
+    this.fullEntriesPrunedAt,
     required this.createdAt,
     required this.updatedAt,
     this.createdBy,
@@ -2078,6 +2090,10 @@ class DesSoccerLearningPolicyVersionsObjectBox {
     "targetEntryCount": targetEntryCount,
     "visitCount": visitCount,
     "fitnessMicros": fitnessMicros,
+    "branchKey": branchKey,
+    "retentionKind": retentionKind,
+    "fullEntriesRetained": fullEntriesRetained,
+    "fullEntriesPrunedAt": fullEntriesPrunedAt,
     "createdAt": createdAt,
     "updatedAt": updatedAt,
     "createdBy": createdBy,
@@ -2101,6 +2117,10 @@ class DesSoccerLearningPolicyVersionsObjectBox {
       targetEntryCount: (json["targetEntryCount"] as num).toInt(),
       visitCount: (json["visitCount"] as num).toInt(),
       fitnessMicros: (json["fitnessMicros"] as num).toInt(),
+      branchKey: json["branchKey"] as String,
+      retentionKind: json["retentionKind"] as String,
+      fullEntriesRetained: json["fullEntriesRetained"] as bool,
+      fullEntriesPrunedAt: json["fullEntriesPrunedAt"] as String?,
       createdAt: json["createdAt"] as String,
       updatedAt: json["updatedAt"] as String,
       createdBy: json["createdBy"] as String?,

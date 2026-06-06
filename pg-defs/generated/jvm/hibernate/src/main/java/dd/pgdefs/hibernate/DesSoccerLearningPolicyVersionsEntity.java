@@ -61,6 +61,18 @@ public class DesSoccerLearningPolicyVersionsEntity {
     @Column(name = "fitness_micros", nullable = false)
     private Long fitnessMicros;
 
+    @Column(name = "branch_key", nullable = false)
+    private UUID branchKey;
+
+    @Column(name = "retention_kind", length = 32, nullable = false)
+    private String retentionKind;
+
+    @Column(name = "full_entries_retained", nullable = false)
+    private Boolean fullEntriesRetained;
+
+    @Column(name = "full_entries_pruned_at", nullable = true, columnDefinition = "timestamptz")
+    private OffsetDateTime fullEntriesPrunedAt;
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamptz")
     private OffsetDateTime createdAt;
 
@@ -191,6 +203,38 @@ public class DesSoccerLearningPolicyVersionsEntity {
 
     public void setFitnessMicros(Long fitnessMicros) {
         this.fitnessMicros = fitnessMicros;
+    }
+
+    public UUID getBranchKey() {
+        return branchKey;
+    }
+
+    public void setBranchKey(UUID branchKey) {
+        this.branchKey = branchKey;
+    }
+
+    public String getRetentionKind() {
+        return retentionKind;
+    }
+
+    public void setRetentionKind(String retentionKind) {
+        this.retentionKind = retentionKind;
+    }
+
+    public Boolean getFullEntriesRetained() {
+        return fullEntriesRetained;
+    }
+
+    public void setFullEntriesRetained(Boolean fullEntriesRetained) {
+        this.fullEntriesRetained = fullEntriesRetained;
+    }
+
+    public OffsetDateTime getFullEntriesPrunedAt() {
+        return fullEntriesPrunedAt;
+    }
+
+    public void setFullEntriesPrunedAt(OffsetDateTime fullEntriesPrunedAt) {
+        this.fullEntriesPrunedAt = fullEntriesPrunedAt;
     }
 
     public OffsetDateTime getCreatedAt() {

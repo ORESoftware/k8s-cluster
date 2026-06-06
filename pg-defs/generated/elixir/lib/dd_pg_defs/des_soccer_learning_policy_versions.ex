@@ -27,13 +27,17 @@ defmodule DdPgDefs.DesSoccerLearningPolicyVersions do
     field :target_entry_count, :integer, default: 0
     field :visit_count, :integer, default: 0
     field :fitness_micros, :integer, default: 0
+    field :branch_key, :binary_id
+    field :retention_kind, :string, default: "branch_tip"
+    field :full_entries_retained, :boolean, default: true
+    field :full_entries_pruned_at, :utc_datetime_usec
     field :created_by, :binary_id
     field :updated_by, :binary_id
     timestamps(inserted_at: :created_at, type: :utc_datetime_usec)
   end
 
-  @required_fields ~w(experiment_id version_label)a
-  @optional_fields ~w(parent_policy_version_id generation source_kind status options config lineage metrics entry_count target_entry_count visit_count fitness_micros created_by updated_by)a
+  @required_fields ~w(experiment_id version_label branch_key)a
+  @optional_fields ~w(parent_policy_version_id generation source_kind status options config lineage metrics entry_count target_entry_count visit_count fitness_micros retention_kind full_entries_retained full_entries_pruned_at created_by updated_by)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."
   def changeset(struct, attrs) do
@@ -48,5 +52,6 @@ defmodule DdPgDefs.DesSoccerLearningPolicyVersions do
     |> validate_number(:entry_count, greater_than_or_equal_to: 0)
     |> validate_number(:target_entry_count, greater_than_or_equal_to: 0)
     |> validate_number(:visit_count, greater_than_or_equal_to: 0)
+    |> validate_inclusion(:retention_kind, ["branch_tip", "retain_all", "metadata_only"])
   end
 end

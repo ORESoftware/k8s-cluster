@@ -3094,7 +3094,7 @@ pub fn validate_des_soccer_learning_experiments_insert(value: &DesSoccerLearning
 }
 
 pub const DES_SOCCER_LEARNING_POLICY_VERSIONS_TABLE: &str = "des_soccer_learning_policy_versions";
-pub const DES_SOCCER_LEARNING_POLICY_VERSIONS_COLUMNS: &[&str] = &["id", "experiment_id", "parent_policy_version_id", "generation", "version_label", "source_kind", "status", "options", "config", "lineage", "metrics", "entry_count", "target_entry_count", "visit_count", "fitness_micros", "created_at", "updated_at", "created_by", "updated_by"];
+pub const DES_SOCCER_LEARNING_POLICY_VERSIONS_COLUMNS: &[&str] = &["id", "experiment_id", "parent_policy_version_id", "generation", "version_label", "source_kind", "status", "options", "config", "lineage", "metrics", "entry_count", "target_entry_count", "visit_count", "fitness_micros", "branch_key", "retention_kind", "full_entries_retained", "full_entries_pruned_at", "created_at", "updated_at", "created_by", "updated_by"];
 pub const DES_SOCCER_LEARNING_POLICY_VERSIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       experiment_id::text as experiment_id,
@@ -3111,6 +3111,10 @@ pub const DES_SOCCER_LEARNING_POLICY_VERSIONS_SELECT_SQL: &str = r###"select
       target_entry_count,
       visit_count,
       fitness_micros,
+      branch_key::text as branch_key,
+      retention_kind,
+      full_entries_retained,
+      to_char(full_entries_pruned_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as full_entries_pruned_at,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
       created_by::text as created_by,
@@ -3195,6 +3199,39 @@ impl TryFrom<&str> for DesSoccerLearningPolicyVersionsStatus {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningPolicyVersionsRetentionKind {
+    BranchTip,
+    RetainAll,
+    MetadataOnly,
+}
+
+impl DesSoccerLearningPolicyVersionsRetentionKind {
+    pub const VALUES: &'static [&'static str] = &["branch_tip", "retain_all", "metadata_only"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::BranchTip => "branch_tip",
+            Self::RetainAll => "retain_all",
+            Self::MetadataOnly => "metadata_only",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningPolicyVersionsRetentionKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "branch_tip" => Ok(Self::BranchTip),
+            "retain_all" => Ok(Self::RetainAll),
+            "metadata_only" => Ok(Self::MetadataOnly),
+            _ => Err(format!("unsupported retention_kind: {value}")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 #[serde(rename_all = "camelCase")]
@@ -3214,6 +3251,10 @@ pub struct DesSoccerLearningPolicyVersionsRow {
     pub target_entry_count: i32,
     pub visit_count: i64,
     pub fitness_micros: i64,
+    pub branch_key: String,
+    pub retention_kind: String,
+    pub full_entries_retained: bool,
+    pub full_entries_pruned_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub created_by: Option<String>,
@@ -3238,6 +3279,10 @@ pub struct DesSoccerLearningPolicyVersionsInsert {
     pub target_entry_count: Option<i32>,
     pub visit_count: Option<i64>,
     pub fitness_micros: Option<i64>,
+    pub branch_key: Option<String>,
+    pub retention_kind: Option<String>,
+    pub full_entries_retained: Option<bool>,
+    pub full_entries_pruned_at: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
     pub created_by: Option<String>,
@@ -3256,6 +3301,7 @@ pub fn validate_des_soccer_learning_policy_versions_row(value: &DesSoccerLearnin
     if *(&value.entry_count) < 0 { return Err("des_soccer_learning_policy_versions.entry_count is below the minimum".to_string()); }
     if *(&value.target_entry_count) < 0 { return Err("des_soccer_learning_policy_versions.target_entry_count is below the minimum".to_string()); }
     if *(&value.visit_count) < 0 { return Err("des_soccer_learning_policy_versions.visit_count is below the minimum".to_string()); }
+    if !["branch_tip", "retain_all", "metadata_only"].contains(&(&value.retention_kind).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_versions.retention_kind: {}", &value.retention_kind)); }
     Ok(())
 }
 
@@ -3292,6 +3338,9 @@ pub fn validate_des_soccer_learning_policy_versions_insert(value: &DesSoccerLear
     }
     if let Some(value) = &value.visit_count {
         if *(value) < 0 { return Err("des_soccer_learning_policy_versions.visit_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.retention_kind {
+        if !["branch_tip", "retain_all", "metadata_only"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_versions.retention_kind: {}", value)); }
     }
     Ok(())
 }

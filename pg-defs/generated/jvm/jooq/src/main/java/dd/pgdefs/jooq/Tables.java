@@ -412,6 +412,10 @@ public final class Tables {
     public static final Field<Integer> DES_SOCCER_LEARNING_POLICY_VERSIONS_TARGET_ENTRY_COUNT = DSL.field(DSL.name("des_soccer_learning_policy_versions", "target_entry_count"), SQLDataType.INTEGER);
     public static final Field<Long> DES_SOCCER_LEARNING_POLICY_VERSIONS_VISIT_COUNT = DSL.field(DSL.name("des_soccer_learning_policy_versions", "visit_count"), SQLDataType.BIGINT);
     public static final Field<Long> DES_SOCCER_LEARNING_POLICY_VERSIONS_FITNESS_MICROS = DSL.field(DSL.name("des_soccer_learning_policy_versions", "fitness_micros"), SQLDataType.BIGINT);
+    public static final Field<UUID> DES_SOCCER_LEARNING_POLICY_VERSIONS_BRANCH_KEY = DSL.field(DSL.name("des_soccer_learning_policy_versions", "branch_key"), SQLDataType.UUID);
+    public static final Field<String> DES_SOCCER_LEARNING_POLICY_VERSIONS_RETENTION_KIND = DSL.field(DSL.name("des_soccer_learning_policy_versions", "retention_kind"), SQLDataType.VARCHAR(32));
+    public static final Field<Boolean> DES_SOCCER_LEARNING_POLICY_VERSIONS_FULL_ENTRIES_RETAINED = DSL.field(DSL.name("des_soccer_learning_policy_versions", "full_entries_retained"), SQLDataType.BOOLEAN);
+    public static final Field<OffsetDateTime> DES_SOCCER_LEARNING_POLICY_VERSIONS_FULL_ENTRIES_PRUNED_AT = DSL.field(DSL.name("des_soccer_learning_policy_versions", "full_entries_pruned_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> DES_SOCCER_LEARNING_POLICY_VERSIONS_CREATED_AT = DSL.field(DSL.name("des_soccer_learning_policy_versions", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> DES_SOCCER_LEARNING_POLICY_VERSIONS_UPDATED_AT = DSL.field(DSL.name("des_soccer_learning_policy_versions", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<UUID> DES_SOCCER_LEARNING_POLICY_VERSIONS_CREATED_BY = DSL.field(DSL.name("des_soccer_learning_policy_versions", "created_by"), SQLDataType.UUID);

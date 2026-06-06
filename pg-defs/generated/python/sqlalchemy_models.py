@@ -2080,6 +2080,7 @@ class DesSoccerLearningExperimentsInsert(BaseModel):
 
 DesSoccerLearningPolicyVersionsSourceKind = Literal["seed", "merge", "mutation", "crossover", "import", "replay"]
 DesSoccerLearningPolicyVersionsStatus = Literal["candidate", "active", "archived", "rejected"]
+DesSoccerLearningPolicyVersionsRetentionKind = Literal["branch_tip", "retain_all", "metadata_only"]
 
 class DesSoccerLearningPolicyVersions(Base):
     __tablename__ = "des_soccer_learning_policy_versions"
@@ -2095,9 +2096,11 @@ class DesSoccerLearningPolicyVersions(Base):
         CheckConstraint("entry_count >= 0", name="des_soccer_learning_policy_versions_entry_count_chk"),
         CheckConstraint("target_entry_count >= 0", name="des_soccer_learning_policy_versions_target_entry_count_chk"),
         CheckConstraint("visit_count >= 0", name="des_soccer_learning_policy_versions_visit_count_chk"),
+        CheckConstraint("retention_kind in ('branch_tip', 'retain_all', 'metadata_only')", name="des_soccer_learning_policy_versions_retention_kind_chk"),
         Index("des_soccer_learning_policy_versions_label_uq", "experiment_id", "version_label", unique=True),
         Index("des_soccer_learning_policy_versions_active_idx", "experiment_id", text("generation desc"), text("updated_at desc"), postgresql_where=text("status = 'active'")),
         Index("des_soccer_learning_policy_versions_fitness_idx", "experiment_id", text("fitness_micros desc"), text("updated_at desc"), postgresql_where=text("status in ('active', 'candidate')")),
+        Index("des_soccer_learning_policy_versions_branch_tip_idx", "experiment_id", "branch_key", text("generation desc"), text("updated_at desc"), postgresql_where=text("full_entries_retained = true")),
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -2115,6 +2118,10 @@ class DesSoccerLearningPolicyVersions(Base):
     target_entry_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
     visit_count: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
     fitness_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    branch_key: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    retention_kind: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'branch_tip'"))
+    full_entries_retained: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    full_entries_pruned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
     created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
@@ -2138,6 +2145,10 @@ class DesSoccerLearningPolicyVersionsRow(BaseModel):
     targetEntryCount: int = Field(..., ge=0)
     visitCount: int
     fitnessMicros: int
+    branchKey: UUID
+    retentionKind: DesSoccerLearningPolicyVersionsRetentionKind
+    fullEntriesRetained: bool
+    fullEntriesPrunedAt: datetime | None = None
     createdAt: datetime
     updatedAt: datetime
     createdBy: UUID | None = None
@@ -2161,6 +2172,10 @@ class DesSoccerLearningPolicyVersionsInsert(BaseModel):
     targetEntryCount: int | None = Field(0, ge=0)
     visitCount: int | None = 0
     fitnessMicros: int | None = 0
+    branchKey: UUID
+    retentionKind: DesSoccerLearningPolicyVersionsRetentionKind | None = "branch_tip"
+    fullEntriesRetained: bool | None = True
+    fullEntriesPrunedAt: datetime | None = None
     createdAt: datetime | None = None
     updatedAt: datetime | None = None
     createdBy: UUID | None = None
