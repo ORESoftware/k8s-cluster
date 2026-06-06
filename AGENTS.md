@@ -111,6 +111,9 @@ preferred operator path is:
 - Local operator AWS access uses the shared credentials/config files in `~/.aws/credentials`
   and `~/.aws/config`, not AWS SSO. Prefer `AWS_PROFILE` or the default profile from those
   files, and verify access with `aws sts get-caller-identity` without printing secret values.
+  For Terraform and AWS CLI work, use those local shared-credentials files directly; do not copy
+  keys into this repo, synthesize temporary credential files, or fall back to another auth mechanism
+  unless a human explicitly grants it.
 - External Secrets reads AWS Secrets Manager and syncs Kubernetes secrets.
 - Agents receive only the strict env allowlist defined in `remote/deployments/dev-server/src/agents`.
 - Humans use the WireGuard VPN plus `dd-bastion` for private cluster access and read-only
@@ -130,6 +133,8 @@ For local operator work that needs permanent AWS credentials, use the named prof
 `~/.aws` files instead of copying key material into this checkout. The expected profile is
 `dd-codex`: verify it with `aws sts get-caller-identity --profile dd-codex`, or set
 `AWS_PROFILE=dd-codex` for commands that use the default AWS SDK/CLI credential chain. The profile
-data lives in `~/.aws/config` and `~/.aws/credentials`; treat those files as human-owned local
-state, not repo source. Never paste access keys, secret keys, session tokens, or derived kubeconfig
-secrets into Git, agent prompts, generated docs, or command output summaries.
+data lives in `~/.aws/config` and especially `~/.aws/credentials`; treat those files as
+human-owned local state, not repo source. If STS validation fails for `dd-codex`, report the stale
+or invalid local profile and stop AWS-mutating work until the profile is fixed. Never paste access
+keys, secret keys, session tokens, or derived kubeconfig secrets into Git, agent prompts, generated
+docs, or command output summaries.

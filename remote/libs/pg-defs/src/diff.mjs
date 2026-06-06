@@ -692,6 +692,8 @@ function normalizeCheck(value) {
       "",
     )
     .replace(/::[\w.[\]"]+/g, "")
+    .replace(/'(-?\d+)'/g, "$1")
+    .replace(/'(true|false)'/gi, (_, value) => value.toLowerCase())
     .replace(/"/g, "")
     .replace(/\s+/g, " ")
     .trim();
