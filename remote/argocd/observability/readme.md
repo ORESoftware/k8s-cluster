@@ -172,8 +172,8 @@ Currently opted-in:
   `upstream_status`, request-size p95/max panels from `request_length` so payload growth is visible
   before the `512k` gateway cap returns 413s, response-size p95/max panels from
   `body_bytes_sent` for generated design, machine-code, and artifact responses, a catalog
-  discovery, CAD intake, design export, instruction review, and worker result
-  review panel for
+  discovery, CAD intake, design export, instruction review, validation-result,
+  and worker result review panel for
   `/fabrication/design/formats`, `/fabrication/machines/catalog`,
   `/fabrication/machines/select`, `/fabrication/controllers/catalog`,
   `/fabrication/materials/catalog`, `/fabrication/materials/plan`,
@@ -182,6 +182,7 @@ Currently opted-in:
   `/fabrication/design/convert/plan`, `/fabrication/design/convert/result`,
   `/fabrication/design/generation/catalog`, `/fabrication/design/generate`,
   `/fabrication/design/synthesis/result`, `/fabrication/plan`,
+  `/fabrication/workflow/catalog`, `/fabrication/workflow/plan`,
   `/fabrication/handoff/catalog`, `/fabrication/assembly/catalog`,
   `/fabrication/calibration/plan`, `/fabrication/calibration/result`,
   `/fabrication/instructions/generation/catalog`,
@@ -190,11 +191,13 @@ Currently opted-in:
   `/fabrication/instructions/generate`,
   `/fabrication/instructions/generation/result`,
   `/fabrication/instructions/review/result`,
+  `/fabrication/instructions/validation/result`,
   `/fabrication/machine-code/catalog`, `/fabrication/machine-code/generate`,
   `/fabrication/machine-code/result`,
   `/fabrication/toolpaths/plan`, `/fabrication/toolpaths/result`,
   `/fabrication/improvements/catalog`, `/fabrication/boundaries/catalog`,
-  `/fabrication/remediation/catalog`,
+  `/fabrication/remediation/catalog`, `/fabrication/remediation/plan`,
+  `/fabrication/remediation/result`,
   `/fabrication/decomposition/catalog`, `/fabrication/decomposition/plan`,
   `/fabrication/decomposition/result`, `/fabrication/assembly/plan`,
   `/fabrication/assembly/result`,
@@ -217,8 +220,9 @@ Currently opted-in:
   `/fabrication/learning/capabilities`, `/fabrication/learning/policy`,
   `/fabrication/learning/observe`, `/fabrication/learning/outcomes`,
   `/fabrication/instructions/analyze`, `/fabrication/instructions/validate`,
-  `/fabrication/instructions/improve`, and
-  `/fabrication/instructions/boundaries/review`
+  `/fabrication/instructions/improve`,
+  `/fabrication/instructions/boundaries/review`, and
+  `/fabrication/remediation/plan`, `/fabrication/remediation/result`
   traffic, gateway access/guardrail logs, and
   warning/error logs for the Rust planner. Its direct pod scrape coverage
   panel compares ready `dd-fabrication-server-pods` scrapes with desired

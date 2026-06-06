@@ -132,6 +132,8 @@ spec:
               done
               for route in \
                 '"path": "/fabrication/plan"' \
+                '"path": "/fabrication/workflow/catalog"' \
+                '"path": "/fabrication/workflow/plan"' \
                 '"path": "/fabrication/instructions/analyze"' \
                 '"path": "/fabrication/instructions/validate"' \
                 '"path": "/fabrication/instructions/improve"' \
@@ -201,6 +203,8 @@ spec:
                 '"path": "/fabrication/instructions/languages"' \
                 '"path": "/fabrication/boundaries/catalog"' \
                 '"path": "/fabrication/remediation/catalog"' \
+                '"path": "/fabrication/remediation/plan"' \
+                '"path": "/fabrication/remediation/result"' \
                 '"path": "/fabrication/learning/capabilities"' \
                 '"path": "/jobs"' \
                 '"path": "/fabrication/jobs"' \

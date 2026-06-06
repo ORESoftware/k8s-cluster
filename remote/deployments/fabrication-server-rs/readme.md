@@ -74,6 +74,10 @@ It exposes:
 - `GET /fabrication/boundaries/catalog`
 - `GET /remediation/catalog`
 - `GET /fabrication/remediation/catalog`
+- `POST /remediation/plan`
+- `POST /fabrication/remediation/plan`
+- `POST /remediation/result`
+- `POST /fabrication/remediation/result`
 - `GET /decomposition/catalog`
 - `GET /fabrication/decomposition/catalog`
 - `POST /decomposition/plan`
@@ -163,8 +167,12 @@ It exposes:
 - `GET /fabrication/jobs/:job_id/artifacts/:artifact_id`
 - `GET /learning/policy`
 - `GET /fabrication/learning/policy`
+- `GET /workflow/catalog`
+- `GET /fabrication/workflow/catalog`
 - `POST /plan`
 - `POST /fabrication/plan`
+- `POST /workflow/plan`
+- `POST /fabrication/workflow/plan`
 - `POST /instructions/analyze`
 - `POST /fabrication/instructions/analyze`
 - `POST /instructions/validate`
@@ -1172,6 +1180,44 @@ split/combine review, and operator or automation signoff clear. Remediation
 signals help learning workers decide when future jobs should choose safer
 machines, split or combine parts differently, regenerate instructions, or insert
 human checkpoints before hardware execution.
+
+## `POST /fabrication/remediation/plan`
+
+`POST /remediation/plan` and the gateway-prefixed
+`POST /fabrication/remediation/plan` accept the same instruction-analysis payload
+as `POST /fabrication/instructions/analyze` and return
+`dd.fabrication.boundary-remediation-planning.v1`. The endpoint retains the full
+analysis artifacts, then focuses the response on `remediationPlan.actions`,
+`validation.failureBoundaries`, `resolutionPlan.steps`,
+`operatorInterventionPlan`, `machineRelease.blockers`,
+`improvedPrograms.patchManifest`, and route handoffs to validation, instruction
+improvement, simulation or dry-run, decomposition/assembly, execution/monitoring,
+and release preview.
+
+Remediation plans are review and worker-handoff contracts, not
+controller-certified corrections. They keep `machineReady=false` until the caller
+retains updated instruction evidence, validation and simulation results,
+controller/postprocessor review, split/combine interface evidence, and operator
+or automation signoff. Each remediation action also emits MDP/POMDP/neural
+learning signals such as boundary kind, resolution action, split/combine review,
+and operator-intervention keys so future plans can choose safer machines, split
+or combine earlier, or insert human checkpoints before hardware execution.
+
+## `POST /fabrication/remediation/result`
+
+`POST /remediation/result` and the gateway-prefixed
+`POST /fabrication/remediation/result` accept external remediation-worker review
+results after a boundary remediation plan has been attempted. The
+`dd.fabrication.boundary-remediation-result-review.v1` response retains
+`boundaryRemediationResult.actions`, retained remediation artifacts, validation
+evidence, simulation or dry-run evidence, release blockers, and learning
+observations for downstream MDP/POMDP/neural outcome memory.
+
+The result route is still a review gate, not a machine certification. Even when a
+worker reports success, `machineReady=false` and `releaseBlocked=true` remain in
+force until every action has evidence, artifacts have URI/checksum/evidence,
+validation and simulation proof are attached, and release package, controller,
+setup, monitoring, and operator or automation signoff gates clear.
 
 ## `GET /fabrication/decomposition/catalog`
 
@@ -2197,6 +2243,48 @@ plans flag overhang, bridge, cantilever, thin-wall, snap-fit, and resin
 drain/cupping geometry as review boundaries before draft machine instructions
 are treated as releasable.
 
+## `GET /fabrication/workflow/catalog`
+
+`GET /workflow/catalog` and the gateway-prefixed
+`GET /fabrication/workflow/catalog` return the live
+`dd.fabrication.workflow-catalog.v1` orchestration catalog before a caller asks
+for a workflow plan. The payload lists stage IDs for design intake/conversion,
+machine/material routing, split/combine assembly, instruction and machine-code
+generation, validation/remediation/simulation, setup/quality/monitoring/
+postprocess readiness, and execution/release/learning feedback. Each stage
+declares route handoffs, result handoffs, response surfaces, evidence surfaces,
+and release gates.
+
+Workflow catalog entries are route and evidence contracts, not certified machine
+release. Machine-ready release remains blocked until the matching workflow plan,
+retained artifacts, validation or simulation proof, controller/setup/quality
+evidence, and operator or automation signoff clear. The catalog names
+`workflow-plan` and `mdp-request` artifact surfaces so MDP/POMDP/DES/neural
+workers can learn where future jobs should reroute, split/combine, regenerate,
+remediate, or insert human checkpoints.
+
+## `POST /fabrication/workflow/plan`
+
+`POST /workflow/plan` and the gateway-prefixed
+`POST /fabrication/workflow/plan` accept the same request body as
+`POST /fabrication/plan`, apply bounded learning-policy memory, store and publish
+the normal plan outputs, and return a compact
+`dd.fabrication.workflow-planning.v1` route-and-evidence manifest. The response
+wraps `workflowPlan.stages` for design intake/conversion, machine/material
+routing, split/combine assembly, instruction and machine-code generation,
+validation/remediation/simulation, setup/quality/monitoring/postprocess, and
+execution/release/learning handoffs. Each stage carries `routeHandoffs`,
+`resultHandoffs`, response surfaces, evidence surfaces, blocked status, and the
+current learning-policy snapshot.
+
+Workflow plans are orchestration evidence, not machine-ready release. They keep
+`machineReady=false` while stage blockers, generated-program drafts,
+machine-release blockers, missing validation/simulation evidence, release-package
+gates, or operator and automation signoffs remain open, and they expose
+`workflow-plan` plus `mdp-request` artifact surfaces so MDP/POMDP/DES/neural
+workers can learn where to reroute, split/combine, regenerate, remediate, or add
+human checkpoints.
+
 ## `POST /instructions/analyze`
 
 `POST /fabrication/instructions/analyze` and its gateway-stripped alias
@@ -2263,9 +2351,10 @@ boundaries, improvement suggestions, retained artifacts, warnings, and metadata.
 
 The response normalizes those results into
 `dd.fabrication.instruction-validation-result-review.v1`, reports
-`releaseBlocked`, `machineReady`, `releaseReady`, finding/boundary/improvement
-blocker counts, human-intervention and split/combine flags, artifact evidence
-gaps, follow-up validation/simulation/release routes, and learning observations.
+`validationResultJobId`, `instructionValidationResult`, `releaseBlocked`,
+`machineReady`, `releaseReady`, finding/boundary/improvement blocker counts,
+human-intervention and split/combine flags, artifact evidence gaps, follow-up
+validation/simulation/release routes, and learning observations.
 Review jobs retain `instruction-validation-result`,
 `instruction-validation-findings`, `instruction-validation-boundaries`,
 `instruction-validation-improvements`, `instruction-validation-artifacts`, and
@@ -2540,7 +2629,11 @@ Learning outcomes are also recorded as job artifacts: `outcome-learning-event`,
 `reward-signal`, `mdp-experience`, `outcome-remediation-plan`,
 `pomdp-observations`, and `neural-example`.
 `GET /fabrication/learning/policy` and `GET /learning/policy` return the
-current bounded in-process policy memory. `GET /learning/outcomes` and
+`dd.fabrication.learning-policy-snapshot.v1` self-describing policy snapshot:
+route aliases, local `des_engine`/`remote/submodules/discrete-event-system.rs`
+provenance, MDP/POMDP/DES Studio schema names, neural primitive identity,
+summary counts, detailed learned preference surfaces, and advisory
+`promotionPolicy` notes. `GET /learning/outcomes` and
 `GET /fabrication/learning/outcomes` return the
 `dd.fabrication.learning-outcome-memory.v1` bounded outcome memory, including
 retained compact/rich learning records, `maxOutcomes`, the derived policy

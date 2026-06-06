@@ -2495,6 +2495,29 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     source,
     /boundary_remediation_catalog_endpoint_exposes_release_actions_and_learning_contract/,
   );
+  assert.match(source, /async fn boundary_remediation_plan_http/);
+  assert.match(source, /fn instruction_remediation_plan_response/);
+  assert.match(source, /fn instruction_remediation_plan_actions/);
+  assert.match(source, /dd\.fabrication\.boundary-remediation-planning\.v1/);
+  assert.match(source, /"POST \/fabrication\/remediation\/plan"/);
+  assert.match(source, /"boundaryRemediationPlan"/);
+  assert.match(source, /"remediationPlan"/);
+  assert.match(source, /"machineReadyAfterPlan": false/);
+  assert.match(
+    source,
+    /boundary_remediation_plan_endpoint_derives_actions_and_handoffs_from_boundaries/,
+  );
+  assert.match(source, /async fn boundary_remediation_result_http/);
+  assert.match(source, /fn boundary_remediation_result_review_response/);
+  assert.match(source, /fn stored_boundary_remediation_result_job/);
+  assert.match(source, /dd\.fabrication\.boundary-remediation-result-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/remediation\/result"/);
+  assert.match(source, /"boundaryRemediationResult"/);
+  assert.match(source, /"remediationResultJobId"/);
+  assert.match(
+    source,
+    /boundary_remediation_result_endpoint_reviews_actions_artifacts_and_learning/,
+  );
   assert.match(source, /async fn decomposition_catalog_http/);
   assert.match(source, /fn decomposition_catalog_response/);
   assert.match(source, /fn decomposition_catalog_target_contracts/);
@@ -2586,6 +2609,32 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /dd\.fabrication\.release-preview\.v1/);
   assert.match(source, /"POST \/fabrication\/release\/preview"/);
   assert.match(source, /release_preview_endpoint_exposes_machine_release_and_package_blockers/);
+  assert.match(source, /async fn workflow_plan_http/);
+  assert.match(source, /async fn workflow_catalog_http/);
+  assert.match(source, /fn workflow_catalog_response/);
+  assert.match(source, /fn workflow_catalog_stages/);
+  assert.match(source, /dd\.fabrication\.workflow-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/workflow\/catalog"/);
+  assert.match(source, /"workflowCatalog"/);
+  assert.match(
+    source,
+    /workflow_catalog_endpoint_exposes_stage_handoffs_and_learning_contract/,
+  );
+  assert.match(source, /fn workflow_planning_response/);
+  assert.match(source, /fn workflow_planning_stage/);
+  assert.match(source, /dd\.fabrication\.workflow-planning\.v1/);
+  assert.match(source, /"POST \/fabrication\/workflow\/plan"/);
+  assert.match(source, /"workflowPlan"/);
+  assert.match(source, /"workflow-plan"/);
+  assert.match(source, /fabrication\.workflow\.planned/);
+  assert.match(
+    source,
+    /workflow_planning_endpoint_returns_route_evidence_and_learning_handoffs/,
+  );
+  assert.match(
+    source,
+    /"workflowPlan": \["POST \/workflow\/plan", "POST \/fabrication\/workflow\/plan"\]/,
+  );
   assert.match(source, /release_catalog_endpoint_exposes_machine_ready_package_contract/);
   assert.match(source, /struct ReleaseReadinessResultReviewRequest/);
   assert.match(source, /async fn release_readiness_result_http/);
@@ -3051,6 +3100,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /async fn list_jobs/);
   assert.match(source, /async fn get_artifact/);
   assert.match(source, /async fn learning_observe_http/);
+  assert.match(source, /fn learning_policy_response/);
+  assert.match(source, /dd\.fabrication\.learning-policy-snapshot\.v1/);
+  assert.match(source, /learning_policy_endpoint_exposes_self_describing_policy_snapshot/);
+  assert.match(source, /"promotionPolicy"/);
   assert.match(source, /async fn learning_policy_http/);
   assert.match(source, /async fn learning_outcomes_http/);
   assert.match(source, /fn learning_outcomes_memory_response/);
@@ -3248,6 +3301,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     source,
     /\.route\(\s*"\/fabrication\/remediation\/catalog",\s*get\(boundary_remediation_catalog_http\),\s*\)/,
   );
+  assert.match(
+    source,
+    /\.route\(\s*"\/remediation\/plan",\s*post\(boundary_remediation_plan_http\)\s*\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/remediation\/plan",\s*post\(boundary_remediation_plan_http\),\s*\)/,
+  );
   assert.match(source, /\.route\("\/decomposition\/catalog", get\(decomposition_catalog_http\)\)/);
   assert.match(
     source,
@@ -3389,6 +3450,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   assert.match(source, /\.route\("\/plan", post\(plan_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/plan", post\(plan_http\)\)/);
+  assert.match(source, /\.route\("\/workflow\/catalog", get\(workflow_catalog_http\)\)/);
+  assert.match(source, /\.route\("\/fabrication\/workflow\/catalog", get\(workflow_catalog_http\)\)/);
+  assert.match(source, /\.route\("\/workflow\/plan", post\(workflow_plan_http\)\)/);
+  assert.match(source, /\.route\("\/fabrication\/workflow\/plan", post\(workflow_plan_http\)\)/);
   assert.match(source, /\.route\("\/release\/preview", post\(release_preview_http\)\)/);
   assert.match(
     source,
@@ -3642,6 +3707,16 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /remediation-lane catalog/);
   assert.match(readme, /`resolutionPlan\.steps`/);
   assert.match(readme, /`machineReady=false` remains mandatory/);
+  assert.match(readme, /`POST \/remediation\/plan`/);
+  assert.match(readme, /`POST \/fabrication\/remediation\/plan`/);
+  assert.match(readme, /dd\.fabrication\.boundary-remediation-planning\.v1/);
+  assert.match(readme, /`remediationPlan\.actions`/);
+  assert.match(readme, /worker-handoff contracts/);
+  assert.match(readme, /`POST \/remediation\/result`/);
+  assert.match(readme, /`POST \/fabrication\/remediation\/result`/);
+  assert.match(readme, /dd\.fabrication\.boundary-remediation-result-review\.v1/);
+  assert.match(readme, /`boundaryRemediationResult\.actions`/);
+  assert.match(readme, /retained remediation artifacts/);
   assert.match(readme, /`GET \/decomposition\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/decomposition\/catalog`/);
   assert.match(readme, /dd\.fabrication\.decomposition-catalog\.v1/);
@@ -4241,6 +4316,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /canonical DES MDP\/POMDP schema names/);
   assert.match(readme, /`desMdpSpec`\/`desPomdpSpec` payloads/);
   assert.match(readme, /QMDP-underlying `desPomdpSolution`/);
+  assert.match(readme, /dd\.fabrication\.learning-policy-snapshot\.v1/);
+  assert.match(readme, /`promotionPolicy` notes/);
   assert.match(readme, /DES-backed policy preview/);
   assert.match(readme, /DES queue-capacity model/);
   assert.match(readme, /`desScheduleModel` DES Studio queue blocks/);
@@ -5104,6 +5181,16 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /POST \/release\/preview/);
   assert.match(readme, /POST \/fabrication\/release\/preview/);
   assert.match(readme, /dd\.fabrication\.release-preview\.v1/);
+  assert.match(readme, /GET \/workflow\/catalog/);
+  assert.match(readme, /GET \/fabrication\/workflow\/catalog/);
+  assert.match(readme, /dd\.fabrication\.workflow-catalog\.v1/);
+  assert.match(readme, /Workflow catalog entries are route and evidence contracts/);
+  assert.match(readme, /POST \/workflow\/plan/);
+  assert.match(readme, /POST \/fabrication\/workflow\/plan/);
+  assert.match(readme, /dd\.fabrication\.workflow-planning\.v1/);
+  assert.match(readme, /workflowPlan\.stages/);
+  assert.match(readme, /`routeHandoffs`/);
+  assert.match(readme, /`workflow-plan` plus `mdp-request`/);
   assert.match(readme, /POST \/release\/result/);
   assert.match(readme, /POST \/fabrication\/release\/result/);
   assert.match(readme, /release-readiness request\/queue\/result subjects/);
@@ -5220,6 +5307,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
 
   assert.match(docs, /"path": "\/plan"/);
   assert.match(docs, /"path": "\/fabrication\/plan"/);
+  assert.match(docs, /"path": "\/workflow\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/workflow\/catalog"/);
+  assert.match(docs, /"path": "\/workflow\/plan"/);
+  assert.match(docs, /"path": "\/fabrication\/workflow\/plan"/);
   assert.match(docs, /"path": "\/capabilities"/);
   assert.match(docs, /"path": "\/fabrication\/capabilities"/);
   assert.match(docs, /"path": "\/machines\/catalog"/);
@@ -5286,6 +5377,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/instructions\/improve"/);
   assert.match(docs, /"path": "\/instructions\/boundaries\/review"/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/boundaries\/review"/);
+  assert.match(docs, /"path": "\/remediation\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/remediation\/catalog"/);
+  assert.match(docs, /"path": "\/remediation\/plan"/);
+  assert.match(docs, /"path": "\/fabrication\/remediation\/plan"/);
+  assert.match(docs, /"path": "\/remediation\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/remediation\/result"/);
   assert.match(docs, /"path": "\/decomposition\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/decomposition\/catalog"/);
   assert.match(docs, /"path": "\/decomposition\/plan"/);
@@ -5434,6 +5531,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /startupProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
   assert.match(deployment, /readinessProbe:[\s\S]*path: \/readyz[\s\S]*port: http/);
   assert.match(deployment, /livenessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(deployment, /"path": "\/fabrication\/workflow\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/workflow\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/machines\/select"/);
   assert.match(deployment, /"path": "\/fabrication\/materials\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/materials\/result"/);
@@ -5460,6 +5559,9 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/toolpaths\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/toolpaths\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/improvements\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/remediation\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/remediation\/plan"/);
+  assert.match(deployment, /"path": "\/fabrication\/remediation\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/decomposition\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/decomposition\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/assembly\/catalog"/);
@@ -5572,6 +5674,10 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/design\/generate/);
   assert.match(grafanaDashboards, /\/fabrication\/design\/synthesis\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/plan/);
+  assert.match(grafanaDashboards, /\/fabrication\/workflow\/catalog/);
+  assert.match(grafanaDashboards, /workflow catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/workflow\/plan/);
+  assert.match(grafanaDashboards, /workflow planning/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/generate/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/generation\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/review\/result/);
@@ -5623,6 +5729,12 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/validate/);
   assert.match(grafanaDashboards, /\/fabrication\/improvements\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/boundaries\/catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/remediation\/catalog/);
+  assert.match(grafanaDashboards, /remediation catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/remediation\/plan/);
+  assert.match(grafanaDashboards, /remediation planning/);
+  assert.match(grafanaDashboards, /\/fabrication\/remediation\/result/);
+  assert.match(grafanaDashboards, /remediation result review/);
   assert.match(grafanaDashboards, /\/fabrication\/decomposition\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/release\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/schedule\/catalog/);
@@ -5679,6 +5791,9 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /POST \/fabrication\/quality\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/quality\/result/);
   assert.match(runtimeReadme, /\/fabrication\/improvements\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/remediation\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/remediation\/plan/);
+  assert.match(runtimeReadme, /POST \/fabrication\/remediation\/result/);
   assert.match(runtimeReadme, /\/fabrication\/assembly\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/release\/preview/);
   assert.match(runtimeReadme, /POST \/fabrication\/release\/result/);
@@ -5705,6 +5820,9 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/jobs/);
   assert.match(runtimeReadme, /\/fabrication\/jobs\/<jobId>\/release-bundle/);
   assert.match(runtimeReadme, /`POST \/fabrication\/plan`/);
+  assert.match(runtimeReadme, /\/fabrication\/workflow\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/workflow\/plan/);
+  assert.match(runtimeReadme, /fabrication\s+learning contracts/);
   assert.match(runtimeReadme, /`POST \/fabrication\/instructions\/analyze`/);
   assert.match(runtimeReadme, /POST \/fabrication\/instructions\/validate/);
   assert.match(runtimeReadme, /Gateway-generated `\/fabrication` redirects/);
@@ -5725,6 +5843,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /instruction-improvement review/);
   assert.match(runtimeReadme, /instruction-boundary review/);
   assert.match(observabilityReadme, /Fabrication Planner/);
+  assert.match(observabilityReadme, /\/fabrication\/remediation\/result/);
   assert.match(observabilityReadme, /uid `dd-fabrication-planner`/);
   assert.match(
     observabilityReadme,
@@ -5733,7 +5852,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /artifact detail-request throughput/);
   assert.match(
     observabilityReadme,
-    /catalog\s+discovery,\s+CAD intake,\s+design export,\s+instruction review,\s+and worker result\s+review panel/,
+    /catalog\s+discovery,\s+CAD intake,\s+design export,\s+instruction review,\s+validation-result,\s+and worker result\s+review panel/,
   );
   assert.match(observabilityReadme, /worker result\s+review panel/);
   assert.match(observabilityReadme, /\/fabrication\/machines\/catalog/);
@@ -5751,6 +5870,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/design\/generate/);
   assert.match(observabilityReadme, /\/fabrication\/design\/synthesis\/result/);
   assert.match(observabilityReadme, /\/fabrication\/plan/);
+  assert.match(observabilityReadme, /\/fabrication\/workflow\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/workflow\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/instructions\/generate/);
   assert.match(observabilityReadme, /\/fabrication\/instructions\/generation\/result/);
   assert.match(observabilityReadme, /\/fabrication\/instructions\/review\/result/);
@@ -5801,6 +5922,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/instructions\/validate/);
   assert.match(observabilityReadme, /\/fabrication\/improvements\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/boundaries\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/remediation\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/remediation\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/decomposition\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/release\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/schedule\/catalog/);

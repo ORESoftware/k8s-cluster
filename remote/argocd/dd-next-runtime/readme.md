@@ -111,12 +111,14 @@ Gateway path map:
   `POST /fabrication/instructions/generate`,
   `POST /fabrication/instructions/generation/result`,
   `POST /fabrication/instructions/review/result`,
+  `POST /fabrication/instructions/validation/result`,
   `/fabrication/machine-code/catalog`,
   `POST /fabrication/machine-code/generate`,
   `POST /fabrication/machine-code/result`, `POST /fabrication/toolpaths/plan`,
   `POST /fabrication/toolpaths/result`,
   `/fabrication/improvements/catalog`,
   `/fabrication/boundaries/catalog`, `/fabrication/remediation/catalog`,
+  `POST /fabrication/remediation/plan`, `POST /fabrication/remediation/result`,
   `/fabrication/decomposition/catalog`,
   `POST /fabrication/decomposition/plan`, `POST /fabrication/decomposition/result`,
   `/fabrication/assembly/catalog`, `POST /fabrication/assembly/plan`,
@@ -145,9 +147,11 @@ Gateway path map:
   `/fabrication/jobs/<jobId>/artifacts/<artifactId>`, `/fabrication/learning/policy`,
   `GET /fabrication/learning/outcomes`, `POST /fabrication/learning/observe`,
   `POST /fabrication/learning/outcomes`, `POST /fabrication/plan`,
+  `/fabrication/workflow/catalog`, `POST /fabrication/workflow/plan`,
   `POST /fabrication/instructions/analyze`, `POST /fabrication/instructions/validate`,
   `POST /fabrication/instructions/improve`,
-  `POST /fabrication/instructions/boundaries/review` ->
+  `POST /fabrication/instructions/boundaries/review`,
+  `POST /fabrication/remediation/plan`, `POST /fabrication/remediation/result` ->
   `dd-fabrication-server:8113` (gateway auth required)
 - `/grafana/fabrication` -> `dd-remote-web-home:8080` redirect to the
   `dd-fabrication-planner` Grafana dashboard
@@ -247,7 +251,7 @@ scrape still looks healthy. Operators can open `/grafana/fabrication` from the w
 directory to land on the dedicated `dd-fabrication-planner` dashboard for request intake,
 validation findings, machine-failure boundaries, required operator actions, fixture/setup
 blockers, split/combine reviews, CAD/design format discovery, design-import review,
-design-generation catalog discovery, worker result-review route traffic,
+design-generation catalog discovery, validation-result and worker result-review route traffic,
 instruction-improvement review, instruction-boundary review,
 NATS/MDP fan-out, runtime-config delivery, HPA pressure, and logs.
 The observability stack also scrapes `dd-runtime-config` metrics so missed subscriber registration,
@@ -595,8 +599,9 @@ queue-subscribes to `dd.remote.mdp.optimize` for explicit optimization jobs and
 `dd.remote.mdp.results` plus compact runtime events on `dd.remote.events`.
 
 `dd-fabrication-server` is one producer of those explicit optimization jobs:
-`POST /fabrication/plan` builds a fabrication learning contract and the deployment can publish an
-optimizer-shaped MDP request to `dd.remote.mdp.optimize` when
+`POST /fabrication/plan` and `POST /fabrication/workflow/plan` build fabrication
+learning contracts, and the deployment can publish an optimizer-shaped MDP request to
+`dd.remote.mdp.optimize` when
 `FABRICATION_MDP_AUTOPUBLISH=true`.
 
 ## Solana contract service
