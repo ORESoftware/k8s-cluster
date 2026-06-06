@@ -1533,7 +1533,7 @@ pub fn validate_des_soccer_learning_experiments_status(value: String) -> Result(
 }
 
 pub const des_soccer_learning_policy_versions_table = "des_soccer_learning_policy_versions"
-pub const des_soccer_learning_policy_versions_select_sql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      parent_policy_version_id::text as parent_policy_version_id,\n      generation,\n      version_label,\n      source_kind,\n      status,\n      options::text as options_json,\n      config::text as config_json,\n      lineage::text as lineage_json,\n      metrics::text as metrics_json,\n      entry_count,\n      target_entry_count,\n      visit_count,\n      fitness_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from des_soccer_learning_policy_versions"
+pub const des_soccer_learning_policy_versions_select_sql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      parent_policy_version_id::text as parent_policy_version_id,\n      generation,\n      version_label,\n      source_kind,\n      status,\n      options::text as options_json,\n      config::text as config_json,\n      lineage::text as lineage_json,\n      metrics::text as metrics_json,\n      entry_count,\n      target_entry_count,\n      visit_count,\n      fitness_micros,\n      branch_key::text as branch_key,\n      retention_kind,\n      full_entries_retained,\n      to_char(full_entries_pruned_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as full_entries_pruned_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from des_soccer_learning_policy_versions"
 
 pub type DesSoccerLearningPolicyVersionsSourceKind {
   DesSoccerLearningPolicyVersionsSourceKindSeed
@@ -1593,6 +1593,29 @@ pub fn parse_des_soccer_learning_policy_versions_status(value: String) -> Result
   }
 }
 
+pub type DesSoccerLearningPolicyVersionsRetentionKind {
+  DesSoccerLearningPolicyVersionsRetentionKindBranchTip
+  DesSoccerLearningPolicyVersionsRetentionKindRetainAll
+  DesSoccerLearningPolicyVersionsRetentionKindMetadataOnly
+}
+
+pub fn des_soccer_learning_policy_versions_retention_kind_to_string(value: DesSoccerLearningPolicyVersionsRetentionKind) -> String {
+  case value {
+    DesSoccerLearningPolicyVersionsRetentionKindBranchTip -> "branch_tip"
+    DesSoccerLearningPolicyVersionsRetentionKindRetainAll -> "retain_all"
+    DesSoccerLearningPolicyVersionsRetentionKindMetadataOnly -> "metadata_only"
+  }
+}
+
+pub fn parse_des_soccer_learning_policy_versions_retention_kind(value: String) -> Result(DesSoccerLearningPolicyVersionsRetentionKind, String) {
+  case value {
+    "branch_tip" -> Ok(DesSoccerLearningPolicyVersionsRetentionKindBranchTip)
+    "retain_all" -> Ok(DesSoccerLearningPolicyVersionsRetentionKindRetainAll)
+    "metadata_only" -> Ok(DesSoccerLearningPolicyVersionsRetentionKindMetadataOnly)
+    _ -> Error("unsupported des_soccer_learning_policy_versions.retention_kind: " <> value)
+  }
+}
+
 pub type DesSoccerLearningPolicyVersionsRow {
   DesSoccerLearningPolicyVersionsRow(
     id: String,
@@ -1610,6 +1633,10 @@ pub type DesSoccerLearningPolicyVersionsRow {
     target_entry_count: Int,
     visit_count: Int,
     fitness_micros: Int,
+    branch_key: String,
+    retention_kind: String,
+    full_entries_retained: Bool,
+    full_entries_pruned_at: Option(String),
     created_at: String,
     updated_at: String,
     created_by: Option(String),
@@ -1636,6 +1663,13 @@ pub fn validate_des_soccer_learning_policy_versions_status(value: String) -> Res
   case list.contains(["candidate", "active", "archived", "rejected"], value) {
     True -> Ok(value)
     False -> Error("unsupported des_soccer_learning_policy_versions.status: " <> value)
+  }
+}
+
+pub fn validate_des_soccer_learning_policy_versions_retention_kind(value: String) -> Result(String, String) {
+  case list.contains(["branch_tip", "retain_all", "metadata_only"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_policy_versions.retention_kind: " <> value)
   }
 }
 

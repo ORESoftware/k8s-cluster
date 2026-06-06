@@ -181,7 +181,10 @@ impl JobHandler for ConnectionSyncJob {
                     fireblocks_sync::sync_fireblocks(&sctx, &conn, cursor).await
                 }
                 ProviderKind::Circle => circle_sync::sync_circle(&sctx, &conn, cursor).await,
-                ProviderKind::Remitly | ProviderKind::Robinhood => limited_fit(&conn).await,
+                ProviderKind::Remitly
+                | ProviderKind::Robinhood
+                | ProviderKind::MoneyGram
+                | ProviderKind::WesternUnion => limited_fit(&conn).await,
             }
         }
         .await;

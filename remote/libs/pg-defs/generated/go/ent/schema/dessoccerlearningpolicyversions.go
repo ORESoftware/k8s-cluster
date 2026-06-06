@@ -42,6 +42,10 @@ func (DesSoccerLearningPolicyVersions) Fields() []ent.Field {
 		field.Int32("target_entry_count").Min(0).Default(0).StorageKey("target_entry_count"),
 		field.Int64("visit_count").Min(0).Default(0).StorageKey("visit_count"),
 		field.Int64("fitness_micros").Default(0).StorageKey("fitness_micros"),
+		field.UUID("branch_key", uuid.UUID{}).StorageKey("branch_key"),
+		field.Enum("retention_kind").Values("branch_tip", "retain_all", "metadata_only").StorageKey("retention_kind"),
+		field.Bool("full_entries_retained").Default(true).StorageKey("full_entries_retained"),
+		field.Time("full_entries_pruned_at").Optional().Nillable().StorageKey("full_entries_pruned_at"),
 		field.Time("created_at").StorageKey("created_at"),
 		field.Time("updated_at").StorageKey("updated_at"),
 		field.UUID("created_by", uuid.UUID{}).Optional().Nillable().StorageKey("created_by"),
@@ -54,5 +58,6 @@ func (DesSoccerLearningPolicyVersions) Indexes() []ent.Index {
 		index.Fields("experiment_id", "version_label").Unique(),
 		// des_soccer_learning_policy_versions_active_idx lives in schema.sql because ent cannot model partial indexes.
 		// des_soccer_learning_policy_versions_fitness_idx lives in schema.sql because ent cannot model partial indexes.
+		// des_soccer_learning_policy_versions_branch_tip_idx lives in schema.sql because ent cannot model partial indexes.
 	}
 }

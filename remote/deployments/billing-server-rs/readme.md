@@ -189,10 +189,17 @@ validates the known API-key providers before sealing credentials:
 - `coinflow`: `{ "api_key", "merchant_id", "environment", "webhook_validation_key" }`
 - `coinbase_commerce` / `coinbase_prime`: `{ "api_key", "webhook_secret", "variant" }`
 - `wise`: `{ "api_token", "profile_id", "environment" }`
+- `remitly`: optional limited-fit partner export fields
+  `{ "api_key", "partner_id", "api_base_url", "watched_recipients", "environment", "notes" }`
+- `moneygram`: `{ "client_id", "client_secret", "agent_partner_id", "user_language", "environment", "webhook_secret" }`
+- `western_union`: `{ "client_id", "environment", "client_certificate_pem", "client_private_key_pem", "notes" }`
 
-`environment` is `production` or `sandbox`. For Coinflow and Wise the server
-derives `external_account_id` from the credential payload when the caller does
-not provide it.
+`environment` is `production` or `sandbox`. For Coinflow, Wise, Remitly,
+MoneyGram, and Western Union the server derives `external_account_id` from the
+credential payload when the caller does not provide it. Remitly, MoneyGram, and
+Western Union are accepted as `limited_fit`: typed provider DTOs and mock tests
+exist, but automatic ledger sync is intentionally disabled until a tenant's
+partner contract maps cleanly to postings.
 
 ## Webhook posture
 

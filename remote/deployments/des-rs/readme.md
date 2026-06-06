@@ -35,7 +35,9 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
 - `GET  /simulations` — the engine's full simulation catalogue.
 - `POST /simulate` — run sims by `name` (a *filter*; every sim whose name
   contains it runs), e.g. `{"name":"electric_circuit"}`. Pass `{"exact":true}`
-  to run only the exactly-named entry. Returns per-sim `{name, ok, millis}`.
+  to run only the exactly-named entry. Returns per-sim `{name, ok, millis}` plus
+  rendered artifact links (`primary`, `html`, `json`, `jsonl`) discovered from
+  the files changed by the run.
 - `GET  /simulations/<name>/run` — convenience GET form of `/simulate`; add
   `?exact=1` to run exactly the named sim (this is what the UI buttons use).
 - `GET  /models` — the first-class **model registry** (e.g. `mdp`, `pomdp`,
@@ -73,7 +75,8 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
 - `GET  /out` → `/out/` — curated `index.html` if present, else a generated
   listing of every rendered artifact.
 - `GET  /out/<path>` — serve an individual artifact (path-traversal confined to
-  the `out/` directory via canonicalized checks).
+  the `out/` directory via canonicalized checks). HTML artifacts get a compact
+  output toolbar with links back to `/out/` and sibling JSON/JSONL artifacts.
 - `GET  /api/docs.json` — the canonical **machine-readable service descriptor**
   (`des/service-descriptor/v1`). It is built by the engine library's
   `des::service` module (JSON-first) from this server's endpoints plus every

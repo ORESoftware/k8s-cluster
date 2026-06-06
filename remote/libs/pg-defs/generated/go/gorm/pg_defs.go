@@ -1193,6 +1193,10 @@ const DesSoccerLearningPolicyVersionsSelectSQL = `select
       target_entry_count,
       visit_count,
       fitness_micros,
+      branch_key::text as branch_key,
+      retention_kind,
+      full_entries_retained,
+      to_char(full_entries_pruned_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as full_entries_pruned_at,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
       created_by::text as created_by,
@@ -1201,6 +1205,7 @@ const DesSoccerLearningPolicyVersionsSelectSQL = `select
 
 var DesSoccerLearningPolicyVersionsSourceKindValues = []string{"seed", "merge", "mutation", "crossover", "import", "replay"}
 var DesSoccerLearningPolicyVersionsStatusValues = []string{"candidate", "active", "archived", "rejected"}
+var DesSoccerLearningPolicyVersionsRetentionKindValues = []string{"branch_tip", "retain_all", "metadata_only"}
 
 type DesSoccerLearningPolicyVersionsGorm struct {
 	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
@@ -1218,6 +1223,10 @@ type DesSoccerLearningPolicyVersionsGorm struct {
 	TargetEntryCount int32 `gorm:"column:target_entry_count;type:integer;default:0;not null" json:"targetEntryCount"`
 	VisitCount int64 `gorm:"column:visit_count;type:bigint;default:0;not null" json:"visitCount"`
 	FitnessMicros int64 `gorm:"column:fitness_micros;type:bigint;default:0;not null" json:"fitnessMicros"`
+	BranchKey uuid.UUID `gorm:"column:branch_key;type:uuid;not null" json:"branchKey"`
+	RetentionKind string `gorm:"column:retention_kind;type:varchar(32);default:'branch_tip';not null" json:"retentionKind"`
+	FullEntriesRetained bool `gorm:"column:full_entries_retained;type:boolean;default:true;not null" json:"fullEntriesRetained"`
+	FullEntriesPrunedAt *time.Time `gorm:"column:full_entries_pruned_at;type:timestamptz" json:"fullEntriesPrunedAt,omitempty"`
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
 	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
 	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
@@ -1238,6 +1247,7 @@ func (value DesSoccerLearningPolicyVersionsGorm) Validate() error {
 	if value.EntryCount < 0 { return errors.New("des_soccer_learning_policy_versions.entry_count is below the minimum") }
 	if value.TargetEntryCount < 0 { return errors.New("des_soccer_learning_policy_versions.target_entry_count is below the minimum") }
 	if value.VisitCount < 0 { return errors.New("des_soccer_learning_policy_versions.visit_count is below the minimum") }
+	if !containsString(DesSoccerLearningPolicyVersionsRetentionKindValues, value.RetentionKind) { return errors.New("unsupported des_soccer_learning_policy_versions.retention_kind") }
 	return nil
 }
 

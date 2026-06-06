@@ -24,6 +24,7 @@ pub mod connection;
 pub mod fireblocks;
 pub mod gocardless;
 pub mod mercury;
+pub mod moneygram;
 pub mod oauth_common;
 pub mod paypal;
 pub mod plaid;
@@ -33,6 +34,7 @@ pub mod robinhood;
 pub mod solana;
 pub mod stripe;
 pub mod swift;
+pub mod western_union;
 pub mod wise;
 
 #[cfg(test)]
@@ -71,6 +73,13 @@ pub enum ProviderKind {
     // Crypto houses (added 2026-05-22)
     Fireblocks,
     Circle,
+    // Remittance / money-transfer partners (added 2026-06-06)
+    #[sqlx(rename = "moneygram")]
+    #[serde(rename = "moneygram")]
+    MoneyGram,
+    #[sqlx(rename = "western_union")]
+    #[serde(rename = "western_union")]
+    WesternUnion,
 }
 
 impl ProviderKind {
@@ -95,6 +104,8 @@ impl ProviderKind {
             Self::GoCardless => "gocardless",
             Self::Fireblocks => "fireblocks",
             Self::Circle => "circle",
+            Self::MoneyGram => "moneygram",
+            Self::WesternUnion => "western_union",
         }
     }
 
@@ -119,7 +130,9 @@ impl ProviderKind {
             | Self::Mercury
             | Self::Bridge
             | Self::Fireblocks
-            | Self::Circle => ProviderAuthKind::ApiKey,
+            | Self::Circle
+            | Self::MoneyGram
+            | Self::WesternUnion => ProviderAuthKind::ApiKey,
 
             Self::SwiftWire | Self::AchDirect => ProviderAuthKind::BankCoordinates,
             Self::SolanaWallet => ProviderAuthKind::WalletPubkey,
@@ -138,7 +151,7 @@ impl ProviderKind {
             Self::Paypal | Self::Braintree | Self::PlaidBank | Self::CoinbasePrime => Full,
             Self::Fireblocks | Self::Circle => Full,
             Self::SwiftWire | Self::AchDirect => Stub,
-            Self::Remitly | Self::Robinhood => LimitedFit,
+            Self::Remitly | Self::Robinhood | Self::MoneyGram | Self::WesternUnion => LimitedFit,
         }
     }
 }
@@ -153,10 +166,10 @@ pub enum ProviderMaturity {
     /// Connection + sealing works, sync returns not_implemented until we
     /// finish the body. Webhooks still record to webhook_events.
     Stub,
-    /// We accept the connection but the provider's public API doesn't
-    /// support what we'd need to do useful work (e.g. Remitly has no B2B
-    /// API; Robinhood is a brokerage, not a payments rail). We surface
-    /// this clearly so tenants don't expect parity.
+    /// We accept the connection but the provider's public/partner API either
+    /// does not expose ledger-style sync or requires a tenant-specific program
+    /// contract before it maps cleanly to our postings. We surface this clearly
+    /// so tenants don't expect parity.
     LimitedFit,
 }
 

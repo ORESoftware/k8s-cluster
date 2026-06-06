@@ -43,6 +43,7 @@
 //! `run_all_simulations` is likewise strictly serial).
 
 use std::{
+    collections::{BTreeMap, BTreeSet},
     env, fs,
     net::{IpAddr, SocketAddr},
     panic::{catch_unwind, AssertUnwindSafe},
@@ -150,7 +151,9 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
 .sim .label{font-size:.92rem;text-transform:capitalize}
 .sim .name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;color:#9ecbff;word-break:break-all}
 .sim .desc{font-size:.8rem;color:#8b949e;line-height:1.45;flex:1}
-.sim .row{display:flex;align-items:center;gap:8px;justify-content:flex-end;margin-top:2px}
+.sim .row{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:2px}
+.sim .links{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sim .links:empty{display:none}
 .sim .open{font:inherit;font-size:.82rem;cursor:pointer;border-radius:7px;padding:6px 14px;border:1px solid #1f6feb;background:#1f6feb;color:#fff;text-decoration:none}
 .sim .open:hover{background:#388bfd;border-color:#388bfd}
 .sim .json{font:inherit;font-size:.8rem;border-radius:7px;padding:6px 10px;border:1px solid #2b3344;background:#161b22;color:#9aa4b2;text-decoration:none}
@@ -162,7 +165,7 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
 .run{font:inherit;font-size:.82rem;cursor:pointer;border-radius:7px;padding:6px 14px;border:1px solid #238636;background:#238636;color:#fff}
 .run:hover{background:#2ea043}
 .run[disabled]{opacity:.55;cursor:default}
-.st{font-size:.8rem;color:#9aa4b2;min-height:1.1em}
+.st{font-size:.8rem;color:#9aa4b2;min-height:1.1em;flex:1;min-width:86px}
 .st.ok{color:#3fb950}.st.err{color:#f85149}
 .filterbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;padding:10px 0;background:linear-gradient(180deg,var(--bg) 70%,rgba(11,16,33,0))}
 #filter{font:inherit;font-size:.9rem;background:#0f1422;border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:9px 12px;width:280px;max-width:60vw}
@@ -183,7 +186,7 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
   </div>
   <p class="sub">A Rust modeling &amp; simulation engine, imported here as a <strong>library</strong> (git submodule) and run <strong>in-process</strong>. Run a <strong>first-class model</strong> for an interactive player, stream commands to a <strong>solver</strong>, or run any catalogue <strong>simulation</strong> and open the rendered HTML/JSON.</p>
   <div class="actions">
-    <a class="btn primary" href="out/">View rendered results &rarr;</a>
+    <a class="btn primary" href="out/">All rendered results &rarr;</a>
     <a class="btn" href="docs/api">API docs</a>
     <a class="btn" href="info">Service info</a>
     <a class="btn" href="models">Models JSON</a>
@@ -259,7 +262,6 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
 <div id="toast" class="toast"></div>
 <script>
 const FEATURED=[["main_factory_floor_track3t","Track3t warehouse"],["main_build_site","Build site index"],["main_elevator_highrise","Elevator high-rise"],["main_factmachine_markets","FactMachine markets"],["main_two_disease","Two-disease epidemic"],["main_electric_circuit","Electric circuit"],["main_traffic","Traffic network"],["main_court_mdp","Court MDP"],["main_convolution","Convolution"]];
-const OUTPUTS={main_factory_floor_track3t:"out/factory-floor-track3t.html",main_build_site:"out/index.html"};
 const CONTROL=[
   ["main_shadow_eval","Shadow Gramians","Probe each plant as a black box: recover controllability/observability Gramians from perturbed shadow copies, cross-check against the analytic model, then re-ask via a nested MDP/POMDP of the motor's speed regimes."],
   ["main_observability_controllability_anim","Obs / ctrl (animated)","Kalman rank tests for controllability & observability of a state-space model, animated step by step."],
@@ -268,6 +270,24 @@ const CONTROL=[
   ["main_wind_mppt_anim","Wind MPPT","Maximum-power-point-tracking controller on a wind turbine, animated."]
 ];
 function toast(html){const t=document.getElementById('toast');t.innerHTML=html;t.classList.add('show');clearTimeout(window.__tt);window.__tt=setTimeout(function(){t.classList.remove('show');},6000);}
+function esc(s){return String(s||'').replace(/[<>&"]/g,function(ch){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[ch];});}
+function shortName(href){return String(href||'').split('/').filter(Boolean).pop()||href;}
+function artifactAnchor(href,label,cls){return '<a class="'+cls+'" href="'+esc(href)+'" target="_blank" rel="noopener">'+esc(label)+' &#8599;</a>';}
+function artifactButtons(artifacts){
+  artifacts=artifacts||{};
+  const html=(artifacts.html||[]).slice(0,3);
+  const json=(artifacts.json||[]).slice(0,3);
+  const jsonl=(artifacts.jsonl||[]).slice(0,3);
+  const out=[];
+  html.forEach(function(h,i){out.push(artifactAnchor(h,i===0?'View results':shortName(h),'open'));});
+  json.forEach(function(h){out.push(artifactAnchor(h,'JSON','json'));});
+  jsonl.forEach(function(h){out.push(artifactAnchor(h,'JSONL','json'));});
+  return out.join('');
+}
+function setArtifactLinks(el,artifacts){
+  if(!el)return;
+  el.innerHTML=artifactButtons(artifacts);
+}
 function simCard(name,label,desc,feat){
   const card=document.createElement('div');card.className=feat?'sim feat':'sim';card.dataset.name=name;
   const lab=document.createElement('div');lab.className='label';lab.textContent=label||name;
@@ -276,19 +296,28 @@ function simCard(name,label,desc,feat){
   if(desc){const d=document.createElement('div');d.className='desc';d.textContent=desc;card.appendChild(d);}
   const row=document.createElement('div');row.className='row';
   const st=document.createElement('span');st.className='st';
+  const links=document.createElement('span');links.className='links';
   const btn=document.createElement('button');btn.className='run';btn.textContent='Run';
-  btn.onclick=function(){run(name,btn,st);};
-  row.appendChild(st);row.appendChild(btn);
+  btn.onclick=function(){run(name,btn,st,links);};
+  row.appendChild(st);row.appendChild(links);row.appendChild(btn);
   card.appendChild(row);
   return card;
 }
-async function run(name,btn,st){
+async function run(name,btn,st,links){
   btn.disabled=true;const old=btn.textContent;btn.textContent='Running…';st.className='st';st.textContent='running…';
+  setArtifactLinks(links,null);
   try{
     const r=await fetch('simulations/'+encodeURIComponent(name)+'/run?exact=1');
     const d=await r.json();
     const o=(d.ran&&d.ran[0])||{};
-    if(d.ok){const out=OUTPUTS[name]||'out/';st.className='st ok';st.textContent='\u2713 '+(o.millis!=null?o.millis+' ms':'done');toast('Ran <code>'+name+'</code> — <a href="'+out+'">view results &rarr;</a>');}
+    if(d.ok){
+      const artifacts=o.artifacts||d.artifacts||{};
+      const primary=artifacts.primary||'out/';
+      setArtifactLinks(links,artifacts);
+      st.className='st ok';st.textContent='\u2713 '+(o.millis!=null?o.millis+' ms':'done');
+      const buttons=artifactButtons(artifacts)||('<a href="'+esc(primary)+'">view results &rarr;</a>');
+      toast('Ran <code>'+esc(name)+'</code> — '+buttons);
+    }
     else{st.className='st err';st.textContent='\u2717 '+(d.error||'failed');}
   }catch(e){st.className='st err';st.textContent='\u2717 '+e;}
   finally{btn.disabled=false;btn.textContent=old;}
@@ -807,10 +836,177 @@ fn checked_sim_names(needle: &str, exact: bool) -> Result<Vec<&'static str>, Sim
     Ok(matches)
 }
 
-fn outcome_json(outcomes: &[SimOutcome]) -> Vec<Value> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ArtifactFingerprint {
+    len: u64,
+    modified_ms: u128,
+}
+
+fn artifact_fingerprint(path: &StdPath) -> Option<ArtifactFingerprint> {
+    let meta = fs::metadata(path).ok()?;
+    let modified_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    Some(ArtifactFingerprint {
+        len: meta.len(),
+        modified_ms,
+    })
+}
+
+fn artifact_snapshot(base: &StdPath) -> BTreeMap<String, ArtifactFingerprint> {
+    let mut files = Vec::new();
+    collect_artifacts(base, base, &mut files);
+    files
+        .into_iter()
+        .filter_map(|rel| artifact_fingerprint(&base.join(&rel)).map(|fp| (rel, fp)))
+        .collect()
+}
+
+fn changed_artifacts(
+    before: &BTreeMap<String, ArtifactFingerprint>,
+    after: &BTreeMap<String, ArtifactFingerprint>,
+) -> Vec<String> {
+    after
+        .iter()
+        .filter(|(rel, fp)| before.get(*rel) != Some(*fp))
+        .map(|(rel, _)| rel.clone())
+        .collect()
+}
+
+fn simulation_output_candidates(name: &str) -> &'static [&'static str] {
+    match name {
+        "main_build_site" => &["index.html"],
+        "main_delivery_planner" => &["delivery-planner.html"],
+        "main_empirical_control_report" => &[
+            "empirical-control/report.html",
+            "empirical-control/player.html",
+            "empirical-control/player.frames.jsonl",
+        ],
+        "main_elevator_highrise" => &["elevator-highrise.html", "elevator-highrise-results.json"],
+        "main_factmachine_markets" => &[
+            "factmachine-markets.html",
+            "factmachine-markets-results.json",
+        ],
+        "main_factory_floor_track3t" => &[
+            "factory-floor-track3t.html",
+            "factory-floor-track3t.json",
+            "factory-floor-track3t.frames.jsonl",
+        ],
+        "main_shadow_eval" => &["shadow-eval/report.html", "shadow-eval/report.json"],
+        "main_soccer" => &[
+            "soccer-sim.html",
+            "soccer-sim.json",
+            "soccer-sim.frames.jsonl",
+        ],
+        "main_soccer_planner" => &["soccer-planner.html"],
+        "main_soccer_rotation_anim" => &[
+            "soccer-IP-MIP-feasible.html",
+            "soccer-IP-MIP-feasible.frames.jsonl",
+            "soccer-IP-MIP-feasible-solver.html",
+            "soccer-IP-MIP-feasible-solver.frames.jsonl",
+        ],
+        "main_temp_control_anim" => &[
+            "temp-control/animation.html",
+            "temp-control/animation.frames.jsonl",
+            "temp-control/animation-heat-cool.html",
+            "temp-control/animation-heat-cool.frames.jsonl",
+        ],
+        "main_traffic" => &[
+            "traffic-flow-five-intersection.html",
+            "traffic-flow-five-intersection.frames.jsonl",
+            "smart-traffic-flow.html",
+            "smart-traffic-flow.frames.jsonl",
+        ],
+        "main_two_disease" => &[
+            "two-disease.html",
+            "two-disease.frames.jsonl",
+            "two-disease-framework.json",
+        ],
+        "main_wind_mppt_anim" => &[
+            "wind-mppt/animation-optimal-torque.html",
+            "wind-mppt/animation-optimal-torque.frames.jsonl",
+            "wind-mppt/animation-pi.html",
+            "wind-mppt/animation-pi.frames.jsonl",
+        ],
+        _ => &[],
+    }
+}
+
+fn fallback_artifacts(
+    after: &BTreeMap<String, ArtifactFingerprint>,
+    sim_names: &[&str],
+) -> Vec<String> {
+    let mut rels = BTreeSet::new();
+    for name in sim_names {
+        for rel in simulation_output_candidates(name) {
+            let lazy_soccer_trace = *name == "main_soccer"
+                && matches!(*rel, SOCCER_SIM_TRACE_JSON | SOCCER_SIM_FRAMES_JSONL);
+            if after.contains_key(*rel) || lazy_soccer_trace {
+                rels.insert((*rel).to_string());
+            }
+        }
+    }
+    rels.into_iter().collect()
+}
+
+fn artifact_ext(rel: &str) -> Option<&str> {
+    StdPath::new(rel).extension().and_then(|ext| ext.to_str())
+}
+
+fn out_href(rel: &str) -> String {
+    format!("out/{rel}")
+}
+
+fn choose_primary_artifact(rels: &[String]) -> Option<String> {
+    rels.iter()
+        .find(|rel| artifact_ext(rel.as_str()) == Some("html") && rel.as_str() != "index.html")
+        .or_else(|| rels.iter().find(|rel| rel.as_str() == "index.html"))
+        .or_else(|| {
+            rels.iter()
+                .find(|rel| artifact_ext(rel.as_str()) == Some("json"))
+        })
+        .or_else(|| {
+            rels.iter()
+                .find(|rel| artifact_ext(rel.as_str()) == Some("jsonl"))
+        })
+        .or_else(|| rels.first())
+        .map(|rel| out_href(rel))
+}
+
+fn artifact_hrefs_for_ext(rels: &[String], ext: &str) -> Vec<String> {
+    rels.iter()
+        .filter(|rel| artifact_ext(rel.as_str()) == Some(ext))
+        .map(|rel| out_href(rel))
+        .collect()
+}
+
+fn artifact_summary(rels: Vec<String>) -> Value {
+    let mut rels = rels;
+    rels.sort();
+    rels.dedup();
+    json!({
+        "primary": choose_primary_artifact(&rels),
+        "html": artifact_hrefs_for_ext(&rels, "html"),
+        "json": artifact_hrefs_for_ext(&rels, "json"),
+        "jsonl": artifact_hrefs_for_ext(&rels, "jsonl"),
+        "paths": rels,
+    })
+}
+
+fn outcome_json(outcomes: &[SimOutcome], artifacts: &Value) -> Vec<Value> {
     outcomes
         .iter()
-        .map(|o| json!({ "name": o.name, "ok": o.ok, "millis": o.millis }))
+        .map(|o| {
+            json!({
+                "name": o.name,
+                "ok": o.ok,
+                "millis": o.millis,
+                "artifacts": artifacts,
+            })
+        })
         .collect()
 }
 
@@ -1999,13 +2195,20 @@ async fn run_response(state: &AppState, needle: String, exact: bool) -> Response
                 .into_response();
         }
     }
+    let before = artifact_snapshot(state.out_dir.as_path());
     let outcomes = run_filter(state, needle.clone(), exact).await;
+    let after = artifact_snapshot(state.out_dir.as_path());
+    let successful_names: Vec<&str> = outcomes.iter().filter(|o| o.ok).map(|o| o.name).collect();
+    let mut rels = changed_artifacts(&before, &after);
+    rels.extend(fallback_artifacts(&after, &successful_names));
+    let artifacts = artifact_summary(rels);
     let all_ok = outcomes.iter().all(|o| o.ok);
     Json(json!({
         "ok": all_ok,
         "filter": needle,
         "exact": exact,
-        "ran": outcome_json(&outcomes),
+        "ran": outcome_json(&outcomes, &artifacts),
+        "artifacts": artifacts,
         "outputIndex": "out/",
         "atMs": now_ms(),
     }))
@@ -2371,7 +2574,167 @@ fn resolve_within(base: &StdPath, requested: &StdPath) -> Option<PathBuf> {
     canon_req.starts_with(&canon_base).then_some(canon_req)
 }
 
-fn serve_file(path: &StdPath) -> Response {
+fn path_to_output_rel(base: &StdPath, target: &StdPath) -> String {
+    target
+        .strip_prefix(base)
+        .unwrap_or(target)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn output_index_href(from_rel: &str) -> String {
+    let depth = from_rel.split('/').filter(|part| !part.is_empty()).count();
+    let parent_depth = depth.saturating_sub(1);
+    if parent_depth == 0 {
+        "./".to_string()
+    } else {
+        "../".repeat(parent_depth)
+    }
+}
+
+fn relative_output_href(from_rel: &str, to_rel: &str) -> String {
+    let mut from_parts: Vec<&str> = from_rel
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect();
+    if !from_parts.is_empty() {
+        from_parts.pop();
+    }
+    let to_parts: Vec<&str> = to_rel.split('/').filter(|part| !part.is_empty()).collect();
+    let mut common = 0;
+    while common < from_parts.len()
+        && common < to_parts.len()
+        && from_parts[common] == to_parts[common]
+    {
+        common += 1;
+    }
+    let mut parts: Vec<String> = Vec::new();
+    for _ in common..from_parts.len() {
+        parts.push("..".to_string());
+    }
+    for part in &to_parts[common..] {
+        parts.push((*part).to_string());
+    }
+    if parts.is_empty() {
+        "./".to_string()
+    } else {
+        parts.join("/")
+    }
+}
+
+fn related_data_artifacts(base: &StdPath, current_rel: &str) -> Vec<String> {
+    let current = StdPath::new(current_rel);
+    if artifact_ext(current_rel) != Some("html") || current_rel == "index.html" {
+        return Vec::new();
+    }
+    if current_rel == "soccer-sim.html" {
+        return vec![
+            SOCCER_SIM_TRACE_JSON.to_string(),
+            SOCCER_SIM_FRAMES_JSONL.to_string(),
+        ];
+    }
+    let Some(stem) = current.file_stem().and_then(|s| s.to_str()) else {
+        return Vec::new();
+    };
+    let parent = current
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(|p| p.to_path_buf());
+    let dir = parent
+        .as_ref()
+        .map(|p| base.join(p))
+        .unwrap_or_else(|| base.to_path_buf());
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+
+    let mut exact = Vec::new();
+    let mut fallback = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let ext = path.extension().and_then(|e| e.to_str());
+        if !matches!(ext, Some("json" | "jsonl")) {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let rel = parent
+            .as_ref()
+            .map(|p| p.join(file_name))
+            .unwrap_or_else(|| PathBuf::from(file_name))
+            .to_string_lossy()
+            .replace('\\', "/");
+        if file_name.starts_with(stem) {
+            exact.push(rel);
+        } else if parent.is_some() {
+            fallback.push(rel);
+        }
+    }
+    exact.sort();
+    fallback.sort();
+    if exact.is_empty() {
+        fallback
+    } else {
+        exact
+    }
+}
+
+fn output_toolbar_html(base: &StdPath, current_rel: &str) -> String {
+    if artifact_ext(current_rel) != Some("html") || current_rel == "index.html" {
+        return String::new();
+    }
+    let mut links = vec![format!(
+        "<a href=\"{}\">Output index</a>",
+        html_escape(&output_index_href(current_rel))
+    )];
+    for rel in related_data_artifacts(base, current_rel) {
+        let label = match artifact_ext(&rel) {
+            Some("jsonl") => "JSONL",
+            Some("json") => "JSON",
+            _ => "Artifact",
+        };
+        links.push(format!(
+            "<a href=\"{}\" target=\"_blank\" rel=\"noopener\">{}</a>",
+            html_escape(&relative_output_href(current_rel, &rel)),
+            label
+        ));
+    }
+    format!(
+        "<style>\
+         .dd-des-artifacts{{position:fixed;right:16px;bottom:16px;z-index:2147483647;\
+         display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px;\
+         border:1px solid rgba(139,148,158,.35);border-radius:8px;\
+         background:rgba(13,17,23,.94);box-shadow:0 8px 28px rgba(0,0,0,.35);\
+         font:13px system-ui,-apple-system,Segoe UI,sans-serif}}\
+         .dd-des-artifacts a{{color:#e6edf3;text-decoration:none;border:1px solid #30363d;\
+         border-radius:7px;padding:6px 9px;background:#161b22}}\
+         .dd-des-artifacts a:hover{{border-color:#58a6ff;color:#fff}}\
+         </style><nav class=\"dd-des-artifacts\" aria-label=\"Result artifacts\">{}</nav>",
+        links.join("")
+    )
+}
+
+fn rfind_ascii_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .rposition(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
+}
+
+fn inject_before_body(mut html: String, fragment: &str) -> String {
+    if let Some(idx) = rfind_ascii_case_insensitive(&html, "</body>") {
+        html.insert_str(idx, fragment);
+    } else {
+        html.push_str(fragment);
+    }
+    html
+}
+
+fn serve_output_file(base: &StdPath, rel_path: &str, path: &StdPath) -> Response {
     match std::fs::read(path) {
         Ok(bytes) => (
             [
@@ -2379,7 +2742,16 @@ fn serve_file(path: &StdPath) -> Response {
                 ("x-content-type-options", "nosniff"),
                 ("cache-control", "public, max-age=30"),
             ],
-            bytes,
+            if content_type(path).starts_with("text/html") {
+                match String::from_utf8(bytes) {
+                    Ok(html) => {
+                        inject_before_body(html, &output_toolbar_html(base, rel_path)).into_bytes()
+                    }
+                    Err(err) => err.into_bytes(),
+                }
+            } else {
+                bytes
+            },
         )
             .into_response(),
         Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
@@ -2581,7 +2953,10 @@ async fn out_file(State(state): State<AppState>, Path(rel_path): Path<String>) -
     ) {
         if let Err(err) = ensure_soccer_trace_artifacts(&state).await {
             eprintln!("[dd-des-rs] soccer trace render failed: {err}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "soccer trace render failed")
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "soccer trace render failed",
+            )
                 .into_response();
         }
     }
@@ -2595,7 +2970,8 @@ async fn out_file(State(state): State<AppState>, Path(rel_path): Path<String>) -
     if target.is_dir() {
         if let Some(index) = resolve_within(base, &target.join("index.html")) {
             if index.is_file() {
-                return serve_file(&index);
+                let rel = path_to_output_rel(base, &index);
+                return serve_output_file(base, &rel, &index);
             }
         }
         return (StatusCode::NOT_FOUND, "not found").into_response();
@@ -2605,7 +2981,8 @@ async fn out_file(State(state): State<AppState>, Path(rel_path): Path<String>) -
         return (StatusCode::NOT_FOUND, "not found").into_response();
     }
 
-    serve_file(&target)
+    let rel = path_to_output_rel(base, &target);
+    serve_output_file(base, &rel, &target)
 }
 
 // =============================================================================
@@ -3312,6 +3689,90 @@ mod tests {
         assert_eq!(
             content_type(StdPath::new("a.bin")),
             "application/octet-stream"
+        );
+    }
+
+    #[test]
+    fn artifact_summary_prefers_html_and_exposes_data_links() {
+        let summary = artifact_summary(vec![
+            "shadow-eval/report.json".to_string(),
+            "shadow-eval/report.html".to_string(),
+            "shadow-eval/report.frames.jsonl".to_string(),
+        ]);
+
+        assert_eq!(
+            summary["primary"].as_str(),
+            Some("out/shadow-eval/report.html")
+        );
+        assert_eq!(
+            summary["html"].as_array().unwrap()[0].as_str(),
+            Some("out/shadow-eval/report.html")
+        );
+        assert_eq!(
+            summary["json"].as_array().unwrap()[0].as_str(),
+            Some("out/shadow-eval/report.json")
+        );
+        assert_eq!(
+            summary["jsonl"].as_array().unwrap()[0].as_str(),
+            Some("out/shadow-eval/report.frames.jsonl")
+        );
+    }
+
+    #[test]
+    fn output_toolbar_links_are_relative_to_the_current_page() {
+        assert_eq!(
+            relative_output_href("shadow-eval/report.html", "shadow-eval/report.json"),
+            "report.json"
+        );
+        assert_eq!(
+            relative_output_href("shadow-eval/report.html", "two-disease.frames.jsonl"),
+            "../two-disease.frames.jsonl"
+        );
+        assert_eq!(output_index_href("shadow-eval/report.html"), "../");
+        assert_eq!(output_index_href("two-disease.html"), "./");
+    }
+
+    #[test]
+    fn related_data_artifacts_find_sibling_json_and_jsonl() {
+        let root = std::env::temp_dir().join(format!(
+            "des-rs-artifact-links-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let base = root.join("out");
+        let dir = base.join("shadow-eval");
+        std::fs::create_dir_all(&dir).expect("create output dir");
+        std::fs::write(dir.join("report.html"), b"<html><body>report</body></html>")
+            .expect("write html");
+        std::fs::write(dir.join("report.json"), b"{}").expect("write json");
+        std::fs::write(dir.join("report.frames.jsonl"), b"{}\n").expect("write jsonl");
+        std::fs::write(dir.join("other.json"), b"{}").expect("write unrelated json");
+
+        let rels = related_data_artifacts(&base, "shadow-eval/report.html");
+        assert_eq!(
+            rels,
+            vec![
+                "shadow-eval/report.frames.jsonl".to_string(),
+                "shadow-eval/report.json".to_string()
+            ]
+        );
+
+        let toolbar = output_toolbar_html(&base, "shadow-eval/report.html");
+        assert!(toolbar.contains("href=\"../\""));
+        assert!(toolbar.contains("href=\"report.json\""));
+        assert!(toolbar.contains("href=\"report.frames.jsonl\""));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn soccer_toolbar_links_lazy_trace_artifacts() {
+        assert_eq!(
+            related_data_artifacts(StdPath::new("/unused"), "soccer-sim.html"),
+            vec![
+                SOCCER_SIM_TRACE_JSON.to_string(),
+                SOCCER_SIM_FRAMES_JSONL.to_string()
+            ]
         );
     }
 
