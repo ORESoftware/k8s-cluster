@@ -2800,6 +2800,7 @@ jobs:
             fi
             echo "=== start capacity guard interval=${interval}s ==="
             (
+              trap - EXIT
               set +e
               while true; do
                 for capacity_target in $capacity_scaledobjects; do
@@ -3590,7 +3591,7 @@ jobs:
             fi
             pprof_pid=""
             if [ "$parallel_jobs" -lt 3 ] && [ "$collect_pprof" = "true" ]; then
-              ( sleep "${LOADTEST_PPROF_DELAY_SECONDS:-45}"; collect_gcs_pprof "$loader_name" ) &
+              ( trap - EXIT; sleep "${LOADTEST_PPROF_DELAY_SECONDS:-45}"; collect_gcs_pprof "$loader_name" ) &
               pprof_pid="$!"
             fi
             echo "=== router metrics before $loader_name load window ==="
@@ -3644,23 +3645,26 @@ jobs:
           if [ "$parallel_jobs" -ge 3 ]; then
             echo "=== start parallel loader jobs: rust,nodejs,gleam ==="
             (
+              trap - EXIT
               export LOADTEST_REFRESH_CAPACITY_PER_LOADER=false
               run_loader dd-ws-loadtest-rs-gcs "Rust ws-loadtest-rs"
             ) &
             rust_pid="$!"
             (
+              trap - EXIT
               export LOADTEST_REFRESH_CAPACITY_PER_LOADER=false
               run_loader dd-nodejs-ws-loadtest-gcs "Node.js ws-loadtest"
             ) &
             node_pid="$!"
             (
+              trap - EXIT
               export LOADTEST_REFRESH_CAPACITY_PER_LOADER=false
               run_loader dd-gleamlang-ws-loadtest-gcs "Gleam ws-loadtest"
             ) &
             gleam_pid="$!"
             pprof_pid=""
             if [ "$collect_pprof" = "true" ]; then
-              ( sleep "${LOADTEST_PPROF_DELAY_SECONDS:-45}"; collect_gcs_pprof "parallel-rust-node-gleam" ) &
+              ( trap - EXIT; sleep "${LOADTEST_PPROF_DELAY_SECONDS:-45}"; collect_gcs_pprof "parallel-rust-node-gleam" ) &
               pprof_pid="$!"
             fi
             loader_failure=0
