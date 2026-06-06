@@ -49,6 +49,8 @@ It exposes:
 - `GET /fabrication/setup/catalog`
 - `GET /postprocess/catalog`
 - `GET /fabrication/postprocess/catalog`
+- `GET /artifacts/catalog`
+- `GET /fabrication/artifacts/catalog`
 - `GET /learning/capabilities`
 - `GET /fabrication/learning/capabilities`
 - `GET /schema`
@@ -670,6 +672,28 @@ evidence is absent. Quality observations are retained for MDP/POMDP/neural
 workers so future planning can learn when to add inspection, split parts, adjust
 processes, or require human signoff.
 
+## `GET /fabrication/calibration/catalog`
+
+`GET /calibration/catalog` and the gateway-prefixed
+`GET /fabrication/calibration/catalog` return the live
+`dd.fabrication.calibration-catalog.v1` homing, work-offset, tool-length,
+probe, thermal, process-media, sensor, and fixture calibration evidence catalog
+before callers treat generated or imported work as machine-ready. The payload
+exposes additive homing/bed/hotend, subtractive work-offset/tool-length, lathe
+offset/spindle/support, sheet-cut process-origin/media, and robotic
+assembly-fixture/vision calibration contracts, planning and
+instruction-analysis route aliases, and response surfaces such as
+`machineProfile.profileEvidence.calibration`, `fixturePlan.setups.datumScheme`,
+`toolingPlan.requirements.setupChecks`, `releaseProbePlan.probes`,
+`validation.failureBoundaries`, `machineRelease.blockers`,
+`improvedPrograms.patchManifest.operations`, and `monitoringPlan.monitorPoints`.
+Catalog entries are calibration evidence contracts, not certified machine
+calibration procedures; machine-ready release remains blocked while homing, work
+offset, tool length, thermal, process-media, sensor, or fixture calibration
+evidence is absent. Calibration observations are retained for MDP/POMDP/neural
+workers so future planning can learn when to request probes, split jobs, add
+operator checkpoints, or regenerate instructions.
+
 ## `GET /fabrication/interventions/catalog`
 
 `GET /interventions/catalog` and the gateway-prefixed
@@ -742,6 +766,27 @@ conditioning, or operator/automation signoff are unresolved. Postprocess
 observations are retained for MDP/POMDP/neural workers so future planning can
 learn when to add finishing operations, split parts, combine assemblies, or
 require human intervention.
+
+## `GET /fabrication/artifacts/catalog`
+
+`GET /artifacts/catalog` and the gateway-prefixed
+`GET /fabrication/artifacts/catalog` return the live
+`dd.fabrication.artifact-catalog.v1` catalog for retained plan, instruction
+analysis, release, and learning evidence before callers fetch individual job
+artifacts. The payload groups artifact contracts for design/CAD handoff,
+generated design exports, generated or imported machine instruction work,
+release/execution evidence, setup/quality/monitoring evidence, split/combine and
+assembly evidence, DES-backed MDP/POMDP/neural learning evidence, and outcome
+learning evidence. It names retrieval routes such as `GET /jobs`,
+`GET /jobs/:job_id`, and `GET /jobs/:job_id/artifacts/:artifact_id`, plus
+surfaces including `generatedPrograms`, `improvedPrograms`, `designExports`,
+`releasePackagePlan`, `learning`, and artifact fields such as `artifactId`,
+`kind`, `mediaType`, `draft`, `machineReady`, and `content`. Catalog entries
+describe bounded in-process evidence surfaces, not durable database storage or
+certified machine release; generated design exports, machine programs, improved
+programs, release packages, DES/POMDP/neural artifacts, and learning outcomes
+remain draft evidence until validation, simulation, controller, setup, quality,
+and signoff gates clear.
 
 ## `GET /fabrication/learning/capabilities`
 
