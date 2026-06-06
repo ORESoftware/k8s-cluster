@@ -1526,6 +1526,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /machine_profile_evidence_blockers_hold_plan_release/);
   assert.match(source, /machine_selection_prefers_profile_clear_machine/);
   assert.match(source, /machine_profile_evidence_blockers_hold_instruction_analysis_release/);
+  assert.match(source, /"GET \/readyz"/);
   assert.match(source, /async fn capabilities/);
   assert.match(source, /"schemaVersion": "dd\.fabrication\.capabilities\.v1"/);
   assert.match(source, /async fn design_formats/);
@@ -1659,6 +1660,13 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"qualityPlan\.inspectionPoints"/);
   assert.match(source, /"interface-fit-and-assembly-lock"/);
   assert.match(source, /quality_catalog_endpoint_exposes_inspection_metrology_and_release_contract/);
+  assert.match(source, /async fn calibration_catalog_http/);
+  assert.match(source, /fn calibration_catalog_response/);
+  assert.match(source, /fn calibration_catalog_contracts/);
+  assert.match(source, /dd\.fabrication\.calibration-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/calibration\/catalog"/);
+  assert.match(source, /"machineProfile\.profileEvidence\.calibration"/);
+  assert.match(source, /calibration_catalog_endpoint_exposes_probe_offset_and_release_contract/);
   assert.match(source, /async fn intervention_catalog_http/);
   assert.match(source, /fn intervention_catalog_response/);
   assert.match(source, /fn intervention_catalog_action_contracts/);
@@ -2910,6 +2918,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /strategyCandidates\.score/);
   assert.match(readme, /mdp-request` strategy\s+candidates/);
   assert.match(readme, /not certified manufacturing strategy\s+approval/);
+  assert.match(readme, /GET \/calibration\/catalog/);
+  assert.match(readme, /GET \/fabrication\/calibration\/catalog/);
   assert.match(readme, /GET \/postprocess\/catalog/);
   assert.match(readme, /GET \/fabrication\/postprocess\/catalog/);
   assert.match(readme, /dd\.fabrication\.postprocess-catalog\.v1/);
@@ -2966,6 +2976,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/simulation\/catalog"/);
   assert.match(docs, /"path": "\/quality\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/quality\/catalog"/);
+  assert.match(docs, /"path": "\/calibration\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/calibration\/catalog"/);
   assert.match(docs, /"path": "\/interventions\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/interventions\/catalog"/);
   assert.match(docs, /"path": "\/setup\/catalog"/);

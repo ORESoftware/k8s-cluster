@@ -33,12 +33,16 @@ It exposes:
 - `GET /fabrication/decomposition/catalog`
 - `GET /release/catalog`
 - `GET /fabrication/release/catalog`
+- `GET /strategy/catalog`
+- `GET /fabrication/strategy/catalog`
 - `GET /schedule/catalog`
 - `GET /fabrication/schedule/catalog`
 - `GET /simulation/catalog`
 - `GET /fabrication/simulation/catalog`
 - `GET /quality/catalog`
 - `GET /fabrication/quality/catalog`
+- `GET /calibration/catalog`
+- `GET /fabrication/calibration/catalog`
 - `GET /interventions/catalog`
 - `GET /fabrication/interventions/catalog`
 - `GET /setup/catalog`
