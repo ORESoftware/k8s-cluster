@@ -151,6 +151,10 @@ spec:
               value: '120000'
             - name: GCS_WS_SHED_MESSAGE_LATENCY
               value: '10s'
+            - name: GCS_WS_SHED_FANOUT_LATENCY
+              value: '2s'
+            - name: GCS_WS_SHED_FANOUT_PENDING_PERCENT
+              value: '80'
             - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
               value: '30s'
             - name: GCS_WS_WRITE_TIMEOUT
