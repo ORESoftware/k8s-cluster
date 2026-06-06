@@ -152,7 +152,7 @@ spec:
             - name: MIP_SOLVER_MAX_DELIVER
               value: '5'
             - name: MIP_SOLVER_WORKER_HEARTBEAT_SECONDS
-              value: '5'
+              value: '25'
             - name: MIP_SOLVER_WORKER_MAX_IN_FLIGHT
               value: '5'
             - name: MIP_SOLVER_WORKER_SATURATION_RETRY_SECONDS

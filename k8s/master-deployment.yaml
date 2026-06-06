@@ -149,6 +149,8 @@ spec:
               value: '256'
             - name: MIP_SOLVER_SPLIT_DEPTH
               value: '4'
+            - name: MIP_SOLVER_WORKER_STALE_SECONDS
+              value: '100'
           ports:
             - name: http
               containerPort: 8117

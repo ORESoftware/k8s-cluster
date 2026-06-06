@@ -219,6 +219,18 @@ struct LiveSession {
 
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct WorkerJobStatus {
+    job_id: String,
+    job_uuid: Option<String>,
+    solve_id: String,
+    problem_id: Option<String>,
+    status: String,
+    started_at_ms: u128,
+    last_seen_ms: u128,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct WorkerNodeStatus {
     node_id: String,
     last_command: String,
@@ -232,6 +244,7 @@ struct WorkerNodeStatus {
     last_seen_ms: u128,
     request_count: u64,
     completed_count: u64,
+    active_jobs: HashMap<String, WorkerJobStatus>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -246,6 +259,7 @@ struct JobRegistryEntry {
     status: String,
     worker_node: Option<String>,
     submitted_at_ms: u128,
+    last_heartbeat_ms: Option<u128>,
     finished_at_ms: Option<u128>,
     error: Option<String>,
 }
@@ -462,6 +476,8 @@ struct SubproblemJob {
     master_node: String,
     problem: MipProblemSpec,
     extra_constraints: Vec<BranchConstraint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    avoid_worker_nodes: Vec<String>,
     options: SolveOptions,
     submitted_at_ms: u128,
 }
@@ -648,6 +664,14 @@ struct LpRelaxation {
     x: Vec<f64>,
 }
 
+#[derive(Clone, Debug)]
+struct StaleWorkerJob {
+    job_id: String,
+    job_uuid: Option<String>,
+    worker_node: String,
+    last_heartbeat_ms: u128,
+}
+
 enum SubproblemSolveOutcome {
     IpMip(IPMIPSolution),
     Lp {
@@ -754,6 +778,10 @@ fn problem_id(input: Option<String>, request_id: &str) -> Result<String, String>
 
 fn cancel_poll_interval() -> Duration {
     Duration::from_secs(env_u64("MIP_SOLVER_CANCEL_POLL_SECONDS", 10).max(1))
+}
+
+fn worker_stale_after() -> Duration {
+    Duration::from_secs(env_u64("MIP_SOLVER_WORKER_STALE_SECONDS", 100).max(1))
 }
 
 fn gpu_mode() -> String {
@@ -2101,6 +2129,7 @@ fn split_subproblem_children(
             master_node: job.master_node.clone(),
             problem: job.problem.clone(),
             extra_constraints: left_constraints,
+            avoid_worker_nodes: job.avoid_worker_nodes.clone(),
             options: job.options.clone(),
             submitted_at_ms: now,
         },
@@ -2115,6 +2144,7 @@ fn split_subproblem_children(
             master_node: job.master_node.clone(),
             problem: job.problem.clone(),
             extra_constraints: right_constraints,
+            avoid_worker_nodes: job.avoid_worker_nodes.clone(),
             options: job.options.clone(),
             submitted_at_ms: now,
         },
@@ -2208,6 +2238,7 @@ fn build_frontier_jobs(
             master_node: master_node.to_string(),
             problem: problem.clone(),
             extra_constraints: node.extra_constraints,
+            avoid_worker_nodes: Vec::new(),
             options: options.clone(),
             submitted_at_ms: now_ms(),
         });
@@ -2767,6 +2798,64 @@ fn track_job_result(state: &AppState, result: &SubproblemResult, terminal: bool)
     if terminal {
         solve.jobs_completed = solve.jobs_completed.saturating_add(1);
     }
+}
+
+fn track_job_stale_requeued(
+    state: &AppState,
+    solve_id: &str,
+    job_id: &str,
+    worker_node: &str,
+    retry_job_id: &str,
+    last_heartbeat_ms: u128,
+) {
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get_mut(solve_id) else {
+        return;
+    };
+    let Some(job) = solve.jobs.get_mut(job_id) else {
+        return;
+    };
+    job.status = "stale-requeued".to_string();
+    job.worker_node = Some(worker_node.to_string());
+    job.error = Some(format!(
+        "worker {worker_node} missed heartbeat since {last_heartbeat_ms}; requeued as {retry_job_id}"
+    ));
+    job.finished_at_ms = None;
+    solve.updated_at_ms = now_ms();
+}
+
+fn stale_worker_jobs(
+    state: &AppState,
+    solve_id: &str,
+    active_job_ids: &HashSet<String>,
+    completed_job_ids: &HashSet<String>,
+    stale_after: Duration,
+    now: u128,
+) -> Vec<StaleWorkerJob> {
+    let stale_after_ms = stale_after.as_millis();
+    let solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get(solve_id) else {
+        return Vec::new();
+    };
+    solve
+        .jobs
+        .values()
+        .filter(|job| {
+            active_job_ids.contains(&job.job_id)
+                && !completed_job_ids.contains(&job.job_id)
+                && job.status == "running"
+        })
+        .filter_map(|job| {
+            let worker_node = job.worker_node.clone()?;
+            let last_heartbeat_ms = job.last_heartbeat_ms?;
+            (now.saturating_sub(last_heartbeat_ms) > stale_after_ms).then(|| StaleWorkerJob {
+                job_id: job.job_id.clone(),
+                job_uuid: job.job_uuid.clone(),
+                worker_node,
+                last_heartbeat_ms,
+            })
+        })
+        .collect()
 }
 
 fn track_job_redelegated(state: &AppState, solve_id: &str) {
@@ -4265,6 +4354,69 @@ fn value_str(value: &Value, key: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+fn value_u128(value: &Value, key: &str) -> Option<u128> {
+    value.get(key).and_then(Value::as_u64).map(u128::from)
+}
+
+fn payload_job_key(payload: &Value) -> Option<String> {
+    value_str(payload, "jobUuid").or_else(|| value_str(payload, "jobId"))
+}
+
+fn worker_job_status_from_payload(
+    payload: &Value,
+    status: &str,
+    seen_at: u128,
+) -> Option<WorkerJobStatus> {
+    let job_id = value_str(payload, "jobId")?;
+    let solve_id = value_str(payload, "solveId")?;
+    Some(WorkerJobStatus {
+        job_id,
+        job_uuid: value_str(payload, "jobUuid"),
+        solve_id,
+        problem_id: value_str(payload, "problemId"),
+        status: status.to_string(),
+        started_at_ms: value_u128(payload, "startedAtMs").unwrap_or(seen_at),
+        last_seen_ms: seen_at,
+    })
+}
+
+fn track_job_worker_progress(state: &AppState, worker_node: &str, payload: &Value, seen_at: u128) {
+    let Some(solve_id) = value_str(payload, "solveId") else {
+        return;
+    };
+    let Some(job_id) = value_str(payload, "jobId") else {
+        return;
+    };
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get_mut(&solve_id) else {
+        return;
+    };
+    let job = solve
+        .jobs
+        .entry(job_id.clone())
+        .or_insert_with(|| JobRegistryEntry {
+            job_id: job_id.clone(),
+            job_uuid: value_str(payload, "jobUuid"),
+            problem_id: value_str(payload, "problemId"),
+            root_job_id: job_retry_root(&job_id).to_string(),
+            retry_index: job_retry_index(&job_id),
+            submitted_at_ms: value_u128(payload, "startedAtMs").unwrap_or(seen_at),
+            ..JobRegistryEntry::default()
+        });
+    if let Some(job_uuid) = value_str(payload, "jobUuid") {
+        job.job_uuid = Some(job_uuid);
+    }
+    if let Some(problem_id) = value_str(payload, "problemId") {
+        job.problem_id = Some(problem_id);
+    }
+    job.status = "running".to_string();
+    job.worker_node = Some(worker_node.to_string());
+    job.last_heartbeat_ms = Some(seen_at);
+    job.finished_at_ms = None;
+    job.error = None;
+    solve.updated_at_ms = seen_at;
+}
+
 fn record_cancel_control_frame(state: &AppState, frame: &Value) -> Result<bool, String> {
     if frame.get("service").and_then(Value::as_str) != Some(SERVICE_NAME) {
         return Ok(false);
@@ -4386,14 +4538,53 @@ fn record_worker_control_frame(state: &AppState, frame: &Value) -> Result<(), St
         }
         "request-work" => {
             worker.request_count = worker.request_count.saturating_add(1);
+            if let Some(active_job) = worker_job_status_from_payload(payload, "running", seen_at) {
+                let key = active_job
+                    .job_uuid
+                    .clone()
+                    .unwrap_or_else(|| active_job.job_id.clone());
+                worker.last_job_id = Some(active_job.job_id.clone());
+                worker.last_solve_id = Some(active_job.solve_id.clone());
+                worker.last_status = Some(active_job.status.clone());
+                worker.active_jobs.insert(key, active_job);
+            }
+        }
+        "worker-progress" => {
+            if let Some(active_job) = worker_job_status_from_payload(payload, "running", seen_at) {
+                let key = active_job
+                    .job_uuid
+                    .clone()
+                    .unwrap_or_else(|| active_job.job_id.clone());
+                worker.last_job_id = Some(active_job.job_id.clone());
+                worker.last_solve_id = Some(active_job.solve_id.clone());
+                worker.last_status = Some(active_job.status.clone());
+                worker.active_jobs.insert(key, active_job);
+            }
         }
         "worker-completed" => {
             worker.completed_count = worker.completed_count.saturating_add(1);
             worker.last_job_id = value_str(payload, "jobId");
             worker.last_solve_id = value_str(payload, "solveId");
             worker.last_status = value_str(payload, "status");
+            if let Some(key) = payload_job_key(payload) {
+                worker.active_jobs.remove(&key);
+            }
+        }
+        "worker-skipped-cancelled"
+        | "worker-stopped-cancelled"
+        | "worker-discarded-cancelled-result" => {
+            worker.last_job_id = value_str(payload, "jobId");
+            worker.last_solve_id = value_str(payload, "solveId");
+            worker.last_status = Some("cancelled".to_string());
+            if let Some(key) = payload_job_key(payload) {
+                worker.active_jobs.remove(&key);
+            }
         }
         _ => {}
+    }
+    drop(workers);
+    if matches!(command.as_str(), "request-work" | "worker-progress") {
+        track_job_worker_progress(state, &node_id, payload, seen_at);
     }
     Ok(())
 }
@@ -4564,6 +4755,7 @@ async fn solve_pure_lp_local(
         master_node: state.node_id.clone(),
         problem: problem.clone(),
         extra_constraints: Vec::new(),
+        avoid_worker_nodes: Vec::new(),
         options: options.clone(),
         submitted_at_ms: now_ms(),
     };
@@ -4708,6 +4900,114 @@ async fn solve_pure_lp_local(
     )
     .await;
     Ok(response)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn requeue_stale_worker_jobs(
+    state: &AppState,
+    nats: &async_nats::Client,
+    solve_id: &str,
+    request_id: &str,
+    stale_after: Duration,
+    expected_job_ids: &mut HashSet<String>,
+    completed_job_ids: &HashSet<String>,
+    jobs_by_id: &mut HashMap<String, SubproblemJob>,
+    retry_index_by_job_id: &mut HashMap<String, usize>,
+    superseded_job_ids: &mut HashSet<String>,
+    jobs_published: &mut usize,
+    jobs_redelegated: &mut usize,
+    warnings: &mut Vec<String>,
+) {
+    let stale_jobs = stale_worker_jobs(
+        state,
+        solve_id,
+        expected_job_ids,
+        completed_job_ids,
+        stale_after,
+        now_ms(),
+    );
+    for stale in stale_jobs {
+        if superseded_job_ids.contains(&stale.job_id) {
+            continue;
+        }
+        let Some(original_job) = jobs_by_id.get(&stale.job_id).cloned() else {
+            warnings.push(format!(
+                "cannot requeue stale job {}; original job payload not found",
+                stale.job_id
+            ));
+            continue;
+        };
+        let next_retry_index = retry_index_by_job_id
+            .get(&stale.job_id)
+            .copied()
+            .unwrap_or_else(|| job_retry_index(&stale.job_id))
+            + 1;
+        let mut retry_job = redelegated_job(&original_job, next_retry_index);
+        if !retry_job
+            .avoid_worker_nodes
+            .iter()
+            .any(|node| node == &stale.worker_node)
+        {
+            retry_job.avoid_worker_nodes.push(stale.worker_node.clone());
+        }
+        match publish_subproblem_job(nats, &state.jobs_subject, &retry_job).await {
+            Ok(_) => {
+                track_job_stale_requeued(
+                    state,
+                    solve_id,
+                    &stale.job_id,
+                    &stale.worker_node,
+                    &retry_job.job_id,
+                    stale.last_heartbeat_ms,
+                );
+                record_job_submitted(state, &retry_job).await;
+                track_job_redelegated(state, solve_id);
+                snapshot_solve_state(state, solve_id).await;
+                expected_job_ids.remove(&stale.job_id);
+                expected_job_ids.insert(retry_job.job_id.clone());
+                superseded_job_ids.insert(stale.job_id.clone());
+                retry_index_by_job_id.insert(retry_job.job_id.clone(), next_retry_index);
+                jobs_by_id.insert(retry_job.job_id.clone(), retry_job.clone());
+                *jobs_published += 1;
+                *jobs_redelegated += 1;
+                state
+                    .metrics
+                    .subproblem_jobs_published_total
+                    .fetch_add(1, Ordering::Relaxed);
+                state
+                    .metrics
+                    .subproblem_jobs_redelegated_total
+                    .fetch_add(1, Ordering::Relaxed);
+                let job_uuid = stale.job_uuid.unwrap_or_else(|| "unknown".to_string());
+                warnings.push(format!(
+                    "worker {} missed heartbeat for job {} ({job_uuid}); requeued as {}",
+                    stale.worker_node, stale.job_id, retry_job.job_id
+                ));
+                publish_event(
+                    state,
+                    "worker-stale-requeued",
+                    json!({
+                        "solveId": solve_id,
+                        "requestId": request_id,
+                        "staleWorkerNode": stale.worker_node,
+                        "staleJobId": stale.job_id,
+                        "staleJobUuid": job_uuid,
+                        "retryJobId": retry_job.job_id,
+                        "retryJobUuid": retry_job.job_uuid,
+                        "lastHeartbeatMs": stale.last_heartbeat_ms,
+                        "staleAfterSeconds": stale_after.as_secs(),
+                    }),
+                )
+                .await;
+            }
+            Err(error) => {
+                warnings.push(format!(
+                    "failed to requeue stale job {} from worker {}: {error}",
+                    stale.job_id, stale.worker_node
+                ));
+            }
+        }
+    }
 }
 
 async fn solve_problem_distributed(
@@ -5027,6 +5327,8 @@ async fn solve_problem_distributed(
         jobs.iter().map(|job| (job.job_id.clone(), 0)).collect();
     let mut expected_job_ids: HashSet<String> = jobs.iter().map(|job| job.job_id.clone()).collect();
     let mut completed_job_ids = HashSet::new();
+    let mut superseded_job_ids = HashSet::new();
+    let stale_after = worker_stale_after();
     let mut timed_out = false;
     while results.len() < jobs_expected {
         if let Some(cancel) = solve_cancel_info(&state, &solve_id) {
@@ -5043,6 +5345,22 @@ async fn solve_problem_distributed(
             .await;
             return Ok(response);
         }
+        requeue_stale_worker_jobs(
+            &state,
+            &nats,
+            &solve_id,
+            &request_id,
+            stale_after,
+            &mut expected_job_ids,
+            &completed_job_ids,
+            &mut jobs_by_id,
+            &mut retry_index_by_job_id,
+            &mut superseded_job_ids,
+            &mut jobs_published,
+            &mut jobs_redelegated,
+            &mut warnings,
+        )
+        .await;
         let now = Instant::now();
         if now >= deadline {
             timed_out = true;
@@ -5054,6 +5372,10 @@ async fn solve_problem_distributed(
             Ok(Some(Ok(message))) => {
                 let parsed = serde_json::from_slice::<SubproblemResult>(&message.payload).ok();
                 if let Some(result) = parsed {
+                    if superseded_job_ids.contains(&result.job_id) {
+                        let _ = message.ack().await;
+                        continue;
+                    }
                     match accept_subproblem_result(
                         result,
                         &solve_id,
@@ -6453,6 +6775,26 @@ fn worker_ready_payload(state: &AppState, consumer_name: &str) -> Value {
     })
 }
 
+fn worker_job_payload(
+    state: &AppState,
+    consumer_name: &str,
+    job: &SubproblemJob,
+    started_at_ms: u128,
+    max_in_flight: usize,
+) -> Value {
+    json!({
+        "consumer": consumer_name,
+        "jobId": &job.job_id,
+        "jobUuid": &job.job_uuid,
+        "solveId": &job.solve_id,
+        "problemId": &job.problem_id,
+        "startedAtMs": started_at_ms,
+        "jobsSubject": &state.jobs_subject,
+        "resultsSubject": &state.results_subject,
+        "maxInFlight": max_in_flight,
+    })
+}
+
 async fn publish_worker_ready(state: &AppState, consumer_name: &str) {
     publish_control(
         state,
@@ -6480,7 +6822,7 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
     };
     let consumer_name = env_value("MIP_SOLVER_NATS_CONSUMER", MIP_SOLVER_WORKERS_QUEUE_GROUP);
     let worker_heartbeat_interval =
-        Duration::from_secs(env_u64("MIP_SOLVER_WORKER_HEARTBEAT_SECONDS", 10).max(1));
+        Duration::from_secs(env_u64("MIP_SOLVER_WORKER_HEARTBEAT_SECONDS", 25).max(1));
     let max_in_flight = env_usize("MIP_SOLVER_WORKER_MAX_IN_FLIGHT", 5).clamp(1, 128);
     let saturation_retry =
         Duration::from_secs(env_u64("MIP_SOLVER_WORKER_SATURATION_RETRY_SECONDS", 180).max(1));
@@ -6528,6 +6870,29 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                 continue;
             }
         };
+        if job
+            .avoid_worker_nodes
+            .iter()
+            .any(|node| node == &state.node_id)
+        {
+            publish_control(
+                &state,
+                "worker-avoided-stale-retry",
+                json!({
+                    "consumer": &consumer_name,
+                    "jobId": &job.job_id,
+                    "jobUuid": &job.job_uuid,
+                    "solveId": &job.solve_id,
+                    "problemId": &job.problem_id,
+                    "retryAfterSeconds": saturation_retry.as_secs(),
+                }),
+            )
+            .await;
+            let _ = message
+                .ack_with(async_nats::jetstream::AckKind::Nak(Some(saturation_retry)))
+                .await;
+            continue;
+        }
         if solve_cancel_requested_for(&state, &job.solve_id, job.problem_id.as_deref()) {
             publish_control(
                 &state,
@@ -6535,7 +6900,9 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                 json!({
                     "consumer": &consumer_name,
                     "jobId": &job.job_id,
+                    "jobUuid": &job.job_uuid,
                     "solveId": &job.solve_id,
+                    "problemId": &job.problem_id,
                 }),
             )
             .await;
@@ -6552,7 +6919,9 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                     json!({
                         "consumer": &consumer_name,
                         "jobId": &job.job_id,
+                        "jobUuid": &job.job_uuid,
                         "solveId": &job.solve_id,
+                        "problemId": &job.problem_id,
                         "maxInFlight": max_in_flight,
                         "retryAfterSeconds": saturation_retry.as_secs(),
                     }),
@@ -6574,6 +6943,7 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
         let task_solve_id = job.solve_id.clone();
         let task_request_id = job.request_id.clone();
         let task_job_id = job.job_id.clone();
+        let job_started_at_ms = now_ms();
         track_runtime_task_started(
             &state_for_registry,
             task_id.clone(),
@@ -6596,11 +6966,13 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
             publish_control(
                 &state_for_task,
                 "request-work",
-                json!({
-                    "consumer": &consumer_name_for_task,
-                    "jobsSubject": &state_for_task.jobs_subject,
-                    "maxInFlight": max_in_flight,
-                }),
+                worker_job_payload(
+                    &state_for_task,
+                    &consumer_name_for_task,
+                    &job,
+                    job_started_at_ms,
+                    max_in_flight,
+                ),
             )
             .await;
             if solve_cancel_requested_for(&state_for_task, &job.solve_id, job.problem_id.as_deref())
@@ -6611,7 +6983,9 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                     json!({
                         "consumer": &consumer_name_for_task,
                         "jobId": &job.job_id,
+                        "jobUuid": &job.job_uuid,
                         "solveId": &job.solve_id,
+                        "problemId": &job.problem_id,
                     }),
                 )
                 .await;
@@ -6620,8 +6994,20 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                 return;
             }
             let job_id_for_cancel = job.job_id.clone();
+            let job_uuid_for_cancel = job.job_uuid.clone();
             let solve_id_for_cancel = job.solve_id.clone();
             let problem_id_for_cancel = job_problem_id_for_cancel.clone();
+            let progress_payload = worker_job_payload(
+                &state_for_task,
+                &consumer_name_for_task,
+                &job,
+                job_started_at_ms,
+                max_in_flight,
+            );
+            let mut progress_tick = tokio::time::interval_at(
+                tokio::time::Instant::now() + worker_heartbeat_interval,
+                worker_heartbeat_interval,
+            );
             let mut solve_task =
                 tokio::task::spawn_blocking(move || solve_subproblem(job, worker_node));
             let result = loop {
@@ -6657,7 +7043,9 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                                 json!({
                                     "consumer": &consumer_name_for_task,
                                     "jobId": &job_id_for_cancel,
+                                    "jobUuid": &job_uuid_for_cancel,
                                     "solveId": &solve_id_for_cancel,
+                                    "problemId": &problem_id_for_cancel,
                                 }),
                                 )
                                 .await;
@@ -6669,6 +7057,14 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                                 let _ = message.ack().await;
                                 return;
                             }
+                    }
+                    _ = progress_tick.tick() => {
+                        publish_control(
+                            &state_for_task,
+                            "worker-progress",
+                            progress_payload.clone(),
+                        )
+                        .await;
                     }
                 }
             };
@@ -6683,7 +7079,9 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                     json!({
                         "consumer": &consumer_name_for_task,
                         "jobId": &result.job_id,
+                        "jobUuid": &result.job_uuid,
                         "solveId": &result.solve_id,
+                        "problemId": &result.problem_id,
                         "status": &result.status,
                     }),
                 )
@@ -6732,7 +7130,9 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                 json!({
                     "consumer": &consumer_name_for_task,
                     "jobId": &result.job_id,
+                    "jobUuid": &result.job_uuid,
                     "solveId": &result.solve_id,
+                    "problemId": &result.problem_id,
                     "status": &result.status,
                     "resultsSubject": &state_for_task.results_subject,
                 }),
@@ -7193,6 +7593,7 @@ mod tests {
             master_node: "master-test".to_string(),
             problem,
             extra_constraints: Vec::new(),
+            avoid_worker_nodes: Vec::new(),
             options: SolveOptions {
                 split_depth: Some(0),
                 ..SolveOptions::default()
@@ -7897,6 +8298,108 @@ mod tests {
         assert_eq!(worker.last_job_id.as_deref(), Some("solve-test-0"));
         assert_eq!(worker.last_solve_id.as_deref(), Some("solve-test"));
         assert_eq!(worker.last_status.as_deref(), Some("optimal"));
+    }
+
+    #[test]
+    fn worker_progress_updates_active_job_and_stale_detection() {
+        let state = test_state(NodeRole::Master);
+        let job = test_job(binary_knapsack_problem());
+        let problem_id = job.problem_id.clone().unwrap();
+        track_solve_started(
+            &state,
+            &job.solve_id,
+            &job.request_id,
+            &problem_id,
+            job.revision,
+            1,
+            true,
+        )
+        .unwrap();
+        track_job_submitted(&state, &job);
+
+        record_worker_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"worker-progress-a",
+                "role":"slave",
+                "commandName":"request-work",
+                "payload":{
+                    "consumer":"dd-in-house-mip-solver-node-workers",
+                    "jobId": &job.job_id,
+                    "jobUuid": &job.job_uuid,
+                    "solveId": &job.solve_id,
+                    "problemId": &problem_id,
+                    "startedAtMs": 1000
+                },
+                "timeMs": 1000
+            }),
+        )
+        .unwrap();
+        record_worker_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"worker-progress-a",
+                "role":"slave",
+                "commandName":"worker-progress",
+                "payload":{
+                    "consumer":"dd-in-house-mip-solver-node-workers",
+                    "jobId": &job.job_id,
+                    "jobUuid": &job.job_uuid,
+                    "solveId": &job.solve_id,
+                    "problemId": &problem_id,
+                    "startedAtMs": 1000
+                },
+                "timeMs": 26_000
+            }),
+        )
+        .unwrap();
+
+        let workers = state.workers.lock().expect("workers mutex poisoned");
+        let worker = workers.get("worker-progress-a").expect("worker");
+        assert_eq!(worker.request_count, 1);
+        assert_eq!(worker.last_job_id.as_deref(), Some(job.job_id.as_str()));
+        assert_eq!(worker.last_solve_id.as_deref(), Some(job.solve_id.as_str()));
+        assert_eq!(worker.last_status.as_deref(), Some("running"));
+        assert!(worker.active_jobs.contains_key(&job.job_uuid));
+        drop(workers);
+
+        let solves = state.solves.lock().expect("solves mutex poisoned");
+        let tracked = solves
+            .get(&job.solve_id)
+            .and_then(|solve| solve.jobs.get(&job.job_id))
+            .expect("tracked job");
+        assert_eq!(tracked.status, "running");
+        assert_eq!(tracked.worker_node.as_deref(), Some("worker-progress-a"));
+        assert_eq!(tracked.last_heartbeat_ms, Some(26_000));
+        drop(solves);
+
+        let active = HashSet::from([job.job_id.clone()]);
+        let completed = HashSet::new();
+        assert!(stale_worker_jobs(
+            &state,
+            &job.solve_id,
+            &active,
+            &completed,
+            Duration::from_secs(100),
+            126_000,
+        )
+        .is_empty());
+        let stale = stale_worker_jobs(
+            &state,
+            &job.solve_id,
+            &active,
+            &completed,
+            Duration::from_secs(100),
+            126_002,
+        );
+        assert_eq!(stale.len(), 1);
+        assert_eq!(stale[0].job_id, job.job_id);
+        assert_eq!(stale[0].job_uuid.as_deref(), Some(job.job_uuid.as_str()));
+        assert_eq!(stale[0].worker_node, "worker-progress-a");
     }
 
     #[test]

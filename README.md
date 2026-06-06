@@ -37,12 +37,16 @@ Request `options` override environment defaults. When an option is omitted, the 
 - `MIP_SOLVER_MAX_JOB_RETRIES`
 - `MIP_SOLVER_TIMEOUT_MS`
 - `MIP_SOLVER_EMIT_TRACE`
+- `MIP_SOLVER_WORKER_HEARTBEAT_SECONDS`
+- `MIP_SOLVER_WORKER_STALE_SECONDS`
 
 `MIP_SOLVER_MAX_SUBPROBLEMS` caps the master's pre-split branch-and-bound frontier. When the cap is reached, remaining fractional nodes are delegated as subtree jobs instead of being split further by the master.
 
 Delegated subtree jobs can split again on a slave when their LP relaxation is fractional and their depth is still below `splitDepth`. The slave returns a `split` result with child jobs; the master records the parent as non-terminal, publishes the children to JetStream, and aggregates only completed leaf results.
 
 `MIP_SOLVER_MAX_JOB_RETRIES` caps master-side re-delegation for errored subproblem attempts. Failed attempts are re-published as retry jobs while the solve still counts completion by original subproblem.
+
+Slaves publish job-aware progress heartbeats every `MIP_SOLVER_WORKER_HEARTBEAT_SECONDS` seconds (default 25) while processing a `jobUuid`. During distributed solves, the master treats a running job as stale when no heartbeat has arrived for `MIP_SOLVER_WORKER_STALE_SECONDS` seconds (default 100), re-publishes that work with a new `jobUuid`, and excludes the stale worker node from the retry. The queued retry creates JetStream lag for KEDA to scale replacement slave capacity.
 
 ## Persistence model
 
