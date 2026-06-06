@@ -2488,6 +2488,12 @@ struct TextInstructionSignals {
     has_text_part_separation_evidence: bool,
     has_text_precision_requirement_context: bool,
     has_text_precision_inspection_evidence: bool,
+    has_text_grinding_context: bool,
+    has_text_grinding_wheel_setup_evidence: bool,
+    has_text_grinding_sparkout_inspection_evidence: bool,
+    has_text_inspection_context: bool,
+    has_text_inspection_calibration_evidence: bool,
+    has_text_inspection_disposition_evidence: bool,
     has_text_unattended_run_context: bool,
     has_text_unattended_monitoring_evidence: bool,
     has_text_thermal_postprocess_context: bool,
@@ -3332,6 +3338,218 @@ fn is_router_material(material: &MaterialSpec) -> bool {
         )
 }
 
+fn wants_precision_grinding(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_grind_segment = token == "grind"
+        || token == "grinding"
+        || token.contains("grinder")
+        || token.contains("grinding")
+        || token.contains("-grind")
+        || token.contains("grind-");
+    let has_precision_context = token.contains("surface")
+        || token.contains("cylindrical")
+        || token.contains("centerless")
+        || token.contains("precision")
+        || token.contains("datum")
+        || token.contains("flatness")
+        || token.contains("parallel")
+        || token.contains("bearing")
+        || token.contains("shaft")
+        || token.contains("gauge")
+        || token.contains("hardened")
+        || token.contains("spark-out")
+        || token.contains("wheel-dress")
+        || token.contains("wheel-dressing")
+        || token.contains("lapping")
+        || token.contains("honing");
+    token.contains("precision-grind")
+        || token.contains("surface-grind")
+        || token.contains("surface-grinder")
+        || token.contains("cylindrical-grind")
+        || token.contains("centerless-grind")
+        || token.contains("grinding-job")
+        || token.contains("grinder-job")
+        || token.contains("spark-out")
+        || token.contains("wheel-dress")
+        || token.contains("wheel-dressing")
+        || token.contains("lapping")
+        || token.contains("honing")
+        || (has_grind_segment && has_precision_context)
+}
+
+fn wants_dimensional_inspection(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_inspection_segment = token.contains("inspection")
+        || token.contains("inspect")
+        || token.contains("metrology")
+        || token.contains("measurement")
+        || token.contains("measure")
+        || token.contains("cmm")
+        || token.contains("coordinate-measuring")
+        || token.contains("coordinate-measurement")
+        || token.contains("vision-inspection")
+        || token.contains("optical-inspection");
+    let has_dimensional_context = token.contains("datum")
+        || token.contains("gd-t")
+        || token.contains("gdt")
+        || token.contains("tolerance")
+        || token.contains("first-article")
+        || token.contains("fai")
+        || token.contains("probe")
+        || token.contains("vision")
+        || token.contains("optical")
+        || token.contains("flatness")
+        || token.contains("roundness")
+        || token.contains("runout")
+        || token.contains("surface")
+        || token.contains("fit")
+        || token.contains("pass-fail")
+        || token.contains("nonconformance")
+        || token.contains("deviation");
+    token.contains("cmm-inspection")
+        || token.contains("cmm")
+        || token.contains("inspection-cell")
+        || token.contains("metrology-cell")
+        || token.contains("inspection-job")
+        || token.contains("metrology-job")
+        || token.contains("first-article-inspection")
+        || token.contains("vision-inspection")
+        || token.contains("optical-inspection")
+        || token.contains("coordinate-measuring")
+        || (has_inspection_segment && has_dimensional_context)
+}
+
+fn wants_thermal_postprocess(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_thermal_process = token.contains("thermal-postprocess")
+        || token.contains("thermal-post")
+        || token.contains("postprocess-furnace")
+        || token.contains("furnace")
+        || token.contains("kiln")
+        || token.contains("oven-cure")
+        || token.contains("oven-cured")
+        || token.contains("heat-treat")
+        || token.contains("heat-treatment")
+        || token.contains("heat-treating")
+        || token.contains("stress-relief")
+        || token.contains("stress-relieve")
+        || token.contains("stress-relieving")
+        || token.contains("anneal")
+        || token.contains("annealing")
+        || token.contains("temper")
+        || token.contains("tempering")
+        || token.contains("sinter")
+        || token.contains("sintering")
+        || token.contains("debind")
+        || token.contains("debinding")
+        || token.contains("post-cure")
+        || token.contains("post-cure")
+        || token.contains("postcure");
+    let has_control_context = token.contains("ramp")
+        || token.contains("soak")
+        || token.contains("hold")
+        || token.contains("cooldown")
+        || token.contains("cool-down")
+        || token.contains("quench")
+        || token.contains("atmosphere")
+        || token.contains("argon")
+        || token.contains("nitrogen")
+        || token.contains("vacuum")
+        || token.contains("setter")
+        || token.contains("fixture")
+        || token.contains("thermocouple")
+        || token.contains("hardness")
+        || token.contains("distortion")
+        || token.contains("warpage")
+        || token.contains("shrinkage");
+    token.contains("thermal-postprocess-job")
+        || token.contains("thermal-postprocess-furnace")
+        || token.contains("thermal-postprocess")
+        || token.contains("thermal-furnace")
+        || token.contains("postprocess-furnace")
+        || token.contains("furnace-job")
+        || token.contains("heat-treatment-job")
+        || token.contains("heat-treat-job")
+        || token.contains("stress-relief-job")
+        || token.contains("anneal-job")
+        || token.contains("sinter-job")
+        || token.contains("debind-job")
+        || token.contains("post-cure-job")
+        || (has_thermal_process && has_control_context)
+}
+
+fn wants_surface_finishing(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_surface_finish_cell = token.contains("surface-finishing-cell")
+        || token.contains("surface-finish-cell")
+        || token.contains("finishing-cell")
+        || token.contains("surface-treatment-cell")
+        || token.contains("surface-finishing-job")
+        || token.contains("coating-job")
+        || token.contains("deburr-polish-job")
+        || token.contains("finish-checklist");
+    let has_named_process = token.contains("surface-finishing")
+        || token.contains("chemical-finishing")
+        || token.contains("surface-treatment")
+        || token.contains("solvent-smooth")
+        || token.contains("solvent-smoothing")
+        || token.contains("vapor-smooth")
+        || token.contains("vapor-smoothing")
+        || token.contains("acetone-vapor")
+        || token.contains("acetone-smoothing")
+        || token.contains("chemical-polish")
+        || token.contains("anodize")
+        || token.contains("anodizing")
+        || token.contains("passivate")
+        || token.contains("passivation")
+        || token.contains("electropolish")
+        || token.contains("electro-polish")
+        || token.contains("plating")
+        || token.contains("nickel-plate")
+        || token.contains("chrome-plate")
+        || token.contains("zinc-plate")
+        || token.contains("powder-coat")
+        || token.contains("powder-coating")
+        || token.contains("clear-coat")
+        || token.contains("clearcoat")
+        || token.contains("cerakote")
+        || token.contains("dye-bath")
+        || token.contains("dye-finish")
+        || token.contains("seal-coat")
+        || token.contains("media-blast")
+        || token.contains("bead-blast")
+        || token.contains("sand-blast")
+        || token.contains("sandblast")
+        || token.contains("tumble-finish")
+        || token.contains("vibratory-tumble")
+        || token.contains("barrel-tumble");
+    let has_broad_finish_process = token.contains("paint")
+        || token.contains("primer")
+        || token.contains("coating")
+        || token.contains("deburr")
+        || token.contains("polish")
+        || token.contains("buff");
+    let has_release_context = token.contains("surface")
+        || token.contains("mask")
+        || token.contains("plug")
+        || token.contains("thread")
+        || token.contains("fit")
+        || token.contains("cosmetic")
+        || token.contains("color")
+        || token.contains("corrosion")
+        || token.contains("sds")
+        || token.contains("ppe")
+        || token.contains("ventilation")
+        || token.contains("waste")
+        || token.contains("neutralization")
+        || token.contains("dry")
+        || token.contains("cure")
+        || token.contains("adhesion")
+        || token.contains("thickness")
+        || token.contains("inspection");
+    has_surface_finish_cell || has_named_process || (has_broad_finish_process && has_release_context)
+}
+
 fn wants_resin_printing(value: &str) -> bool {
     let token = normalize_token(value);
     let material_jetting_context = token.contains("material-jet")
@@ -3656,6 +3874,22 @@ fn wants_sinker_edm_machining(value: &str) -> bool {
         || (token.contains("ram") && token.contains("edm"))
 }
 
+fn is_precision_grinder_kind(kind: &str) -> bool {
+    wants_precision_grinding(kind)
+}
+
+fn is_inspection_cell_kind(kind: &str) -> bool {
+    wants_dimensional_inspection(kind)
+}
+
+fn is_thermal_postprocess_kind(kind: &str) -> bool {
+    wants_thermal_postprocess(kind)
+}
+
+fn is_surface_finishing_kind(kind: &str) -> bool {
+    wants_surface_finishing(kind)
+}
+
 fn is_horizontal_mill_kind(kind: &str) -> bool {
     let token = normalize_token(kind);
     token.contains("horizontal-mill")
@@ -3696,7 +3930,12 @@ fn is_composite_fiber_printer_kind(kind: &str) -> bool {
 }
 
 fn is_binder_jet_printer_kind(kind: &str) -> bool {
-    wants_binder_jet_printing(kind)
+    let token = normalize_token(kind);
+    token.contains("binder-jet")
+        || token.contains("binderjet")
+        || token.contains("binder-jetted")
+        || token.contains("binder-jetting")
+        || token.contains("bound-sand")
 }
 
 fn is_powder_bed_printer_kind(kind: &str) -> bool {
@@ -4472,6 +4711,148 @@ fn default_machines() -> Vec<MachineProfile> {
                 "dielectric-flush".to_string(),
                 "wear-compensation".to_string(),
                 "depth-stop".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "precision-grinder-1".to_string(),
+            kind: "precision-grinder".to_string(),
+            controller: Some("grinding-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "aluminum".to_string(),
+                "brass".to_string(),
+                "bronze".to_string(),
+                "ceramic".to_string(),
+                "glass".to_string(),
+                "carbide".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![500.0, 250.0, 200.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "surface-grinding".to_string(),
+                "cylindrical-grinding".to_string(),
+                "centerless-grinding".to_string(),
+                "wheel-dressing".to_string(),
+                "spark-out".to_string(),
+                "coolant-filtration".to_string(),
+                "flatness-inspection".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "cmm-inspection-cell-1".to_string(),
+            kind: "cmm-inspection-cell".to_string(),
+            controller: Some("cmm-inspection-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "plastic".to_string(),
+                "resin".to_string(),
+                "composite".to_string(),
+                "metal".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "aluminum".to_string(),
+                "brass".to_string(),
+                "bronze".to_string(),
+                "wood".to_string(),
+                "ceramic".to_string(),
+                "glass".to_string(),
+                "assembly".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![700.0, 500.0, 400.0]),
+            axes: Some(5),
+            operations: Some(vec![
+                "cmm-inspection".to_string(),
+                "vision-inspection".to_string(),
+                "probe-calibration".to_string(),
+                "datum-alignment".to_string(),
+                "first-article-inspection".to_string(),
+                "gdandt-reporting".to_string(),
+                "nonconformance-disposition".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "thermal-postprocess-furnace-1".to_string(),
+            kind: "thermal-postprocess-furnace".to_string(),
+            controller: Some("thermal-postprocess-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "plastic".to_string(),
+                "nylon".to_string(),
+                "resin".to_string(),
+                "composite".to_string(),
+                "metal".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "aluminum".to_string(),
+                "titanium".to_string(),
+                "bronze".to_string(),
+                "ceramic".to_string(),
+                "clay".to_string(),
+                "green-part".to_string(),
+                "brown-part".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![600.0, 450.0, 450.0]),
+            axes: Some(1),
+            operations: Some(vec![
+                "thermal-postprocess".to_string(),
+                "annealing".to_string(),
+                "stress-relief".to_string(),
+                "heat-treatment".to_string(),
+                "post-cure".to_string(),
+                "debind".to_string(),
+                "sinter".to_string(),
+                "kiln-firing".to_string(),
+                "controlled-cooldown".to_string(),
+                "distortion-inspection".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "surface-finishing-cell-1".to_string(),
+            kind: "surface-finishing-cell".to_string(),
+            controller: Some("surface-finishing-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "plastic".to_string(),
+                "resin".to_string(),
+                "composite".to_string(),
+                "metal".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "aluminum".to_string(),
+                "titanium".to_string(),
+                "brass".to_string(),
+                "bronze".to_string(),
+                "wood".to_string(),
+                "ceramic".to_string(),
+                "glass".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![800.0, 500.0, 400.0]),
+            axes: Some(1),
+            operations: Some(vec![
+                "surface-finishing".to_string(),
+                "vapor-smoothing".to_string(),
+                "solvent-smoothing".to_string(),
+                "media-blasting".to_string(),
+                "bead-blasting".to_string(),
+                "tumbling".to_string(),
+                "deburring".to_string(),
+                "anodizing".to_string(),
+                "passivation".to_string(),
+                "plating".to_string(),
+                "powder-coating".to_string(),
+                "painting".to_string(),
+                "masking".to_string(),
+                "finish-inspection".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -5817,6 +6198,10 @@ fn infer_requested_parts(
         || objective_token.contains("cylind")
         || objective_token.contains("thread");
     let needs_sinker_edm_part = wants_sinker_edm_machining(&objective_token);
+    let needs_precision_grinding_part = wants_precision_grinding(&objective_token);
+    let needs_dimensional_inspection_part = wants_dimensional_inspection(&objective_token);
+    let needs_thermal_postprocess_part = wants_thermal_postprocess(&objective_token);
+    let needs_surface_finishing_part = wants_surface_finishing(&objective_token);
     let needs_five_axis_milled_part = wants_five_axis_milling(&objective_token);
     let needs_rotary_index_milled_part = wants_rotary_index_milling(&objective_token);
     let needs_horizontal_milled_part = wants_horizontal_milling(&objective_token);
@@ -5946,6 +6331,50 @@ fn infer_requested_parts(
                 .to_string(),
             material: Some(material.clone()),
             preferred_method: Some("sinker-edm".to_string()),
+            tolerance_mm: Some(tolerance_mm),
+        });
+    }
+    if needs_precision_grinding_part {
+        parts.push(RequestedPart {
+            id: "ground-datum-finish".to_string(),
+            description:
+                "precision ground datum, flatness, bearing, shaft, or surface-finish operation inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("precision-grinding".to_string()),
+            tolerance_mm: Some(tolerance_mm.min(0.03)),
+        });
+    }
+    if needs_dimensional_inspection_part {
+        parts.push(RequestedPart {
+            id: "inspection-release-report".to_string(),
+            description:
+                "CMM, vision, first-article, GD&T, or dimensional inspection release inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("cmm-inspection".to_string()),
+            tolerance_mm: Some(tolerance_mm),
+        });
+    }
+    if needs_thermal_postprocess_part {
+        parts.push(RequestedPart {
+            id: "thermal-release-cycle".to_string(),
+            description:
+                "anneal, stress-relief, heat-treat, sinter, debind, kiln, or post-cure thermal release inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("thermal-postprocess".to_string()),
+            tolerance_mm: Some(tolerance_mm),
+        });
+    }
+    if needs_surface_finishing_part {
+        parts.push(RequestedPart {
+            id: "surface-finish-release".to_string(),
+            description:
+                "surface finishing, vapor smoothing, blasting, coating, anodizing, passivation, plating, or deburr release inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("surface-finishing".to_string()),
             tolerance_mm: Some(tolerance_mm),
         });
     }
@@ -6218,6 +6647,25 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_sinker_edm_machining(value));
+    let wants_precision_grinder = preferred.as_deref().is_some_and(wants_precision_grinding)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_precision_grinding(value));
+    let wants_inspection_cell = preferred
+        .as_deref()
+        .is_some_and(wants_dimensional_inspection)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_dimensional_inspection(value));
+    let wants_thermal_postprocess_cell =
+        preferred.as_deref().is_some_and(wants_thermal_postprocess)
+            || preferred_methods
+                .iter()
+                .any(|value| wants_thermal_postprocess(value));
+    let wants_surface_finishing_cell = preferred.as_deref().is_some_and(wants_surface_finishing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_surface_finishing(value));
     let wants_assembly_cell = preferred.as_deref().is_some_and(wants_assembly_joining)
         || preferred_methods
             .iter()
@@ -6360,6 +6808,34 @@ fn choose_machine<'a>(
             return machine;
         }
     }
+    if wants_precision_grinder {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_precision_grinder_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_inspection_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_inspection_cell_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_thermal_postprocess_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_thermal_postprocess_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_surface_finishing_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_surface_finishing_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
     if wants_assembly_cell {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_assembly_cell_kind(&machine.kind)
@@ -6497,6 +6973,17 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
         Some(MachineClass::SheetCut)
     } else if tokens.iter().any(|token| wants_sinker_edm_machining(token)) {
         Some(MachineClass::Other)
+    } else if tokens.iter().any(|token| wants_precision_grinding(token)) {
+        Some(MachineClass::Other)
+    } else if tokens
+        .iter()
+        .any(|token| wants_dimensional_inspection(token))
+    {
+        Some(MachineClass::Other)
+    } else if tokens.iter().any(|token| wants_thermal_postprocess(token)) {
+        Some(MachineClass::Other)
+    } else if tokens.iter().any(|token| wants_surface_finishing(token)) {
+        Some(MachineClass::Other)
     } else if tokens.iter().any(|token| wants_assembly_joining(token)) {
         Some(MachineClass::Other)
     } else if tokens
@@ -6568,6 +7055,12 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
     let wants_plasma = tokens.iter().any(|token| wants_plasma_cutting(token));
     let wants_wire_edm = tokens.iter().any(|token| wants_wire_edm_cutting(token));
     let wants_sinker_edm = tokens.iter().any(|token| wants_sinker_edm_machining(token));
+    let wants_precision_grinding = tokens.iter().any(|token| wants_precision_grinding(token));
+    let wants_dimensional_inspection = tokens
+        .iter()
+        .any(|token| wants_dimensional_inspection(token));
+    let wants_thermal_postprocess = tokens.iter().any(|token| wants_thermal_postprocess(token));
+    let wants_surface_finishing = tokens.iter().any(|token| wants_surface_finishing(token));
     let wants_assembly_cell = tokens.iter().any(|token| wants_assembly_joining(token));
     let wants_mill_turn = tokens.iter().any(|token| wants_mill_turning(token));
     let has_special = wants_five_axis
@@ -6588,6 +7081,10 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         || wants_plasma
         || wants_wire_edm
         || wants_sinker_edm
+        || wants_precision_grinding
+        || wants_dimensional_inspection
+        || wants_thermal_postprocess
+        || wants_surface_finishing
         || wants_assembly_cell
         || wants_mill_turn;
     if !has_special {
@@ -6611,6 +7108,10 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_plasma || is_plasma_cutter_kind(&machine.kind))
         && (!wants_wire_edm || is_wire_edm_kind(&machine.kind))
         && (!wants_sinker_edm || is_sinker_edm_kind(&machine.kind))
+        && (!wants_precision_grinding || is_precision_grinder_kind(&machine.kind))
+        && (!wants_dimensional_inspection || is_inspection_cell_kind(&machine.kind))
+        && (!wants_thermal_postprocess || is_thermal_postprocess_kind(&machine.kind))
+        && (!wants_surface_finishing || is_surface_finishing_kind(&machine.kind))
         && (!wants_assembly_cell || is_assembly_cell_kind(&machine.kind))
         && (!wants_mill_turn || is_mill_turn_kind(&machine.kind))
 }
@@ -6701,6 +7202,49 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || (preference.contains("ram-edm") && operation.contains("edm"))
         || (preference.contains("die-sink") && operation.contains("die-sink"))
         || (preference == "edm" && operation.contains("edm"))
+        || (wants_precision_grinding(preference)
+            && (operation.contains("grind")
+                || operation.contains("wheel")
+                || operation.contains("spark-out")
+                || operation.contains("flatness")
+                || operation.contains("roundness")))
+        || (wants_dimensional_inspection(preference)
+            && (operation.contains("inspection")
+                || operation.contains("cmm")
+                || operation.contains("metrology")
+                || operation.contains("probe")
+                || operation.contains("vision")
+                || operation.contains("datum")
+                || operation.contains("first-article")
+                || operation.contains("gdandt")
+                || operation.contains("nonconformance")))
+        || (wants_thermal_postprocess(preference)
+            && (operation.contains("thermal")
+                || operation.contains("anneal")
+                || operation.contains("stress-relief")
+                || operation.contains("heat-treatment")
+                || operation.contains("post-cure")
+                || operation.contains("debind")
+                || operation.contains("sinter")
+                || operation.contains("kiln")
+                || operation.contains("cooldown")
+                || operation.contains("distortion")))
+        || (wants_surface_finishing(preference)
+            && (operation.contains("finish")
+                || operation.contains("surface")
+                || operation.contains("vapor")
+                || operation.contains("solvent")
+                || operation.contains("blast")
+                || operation.contains("tumble")
+                || operation.contains("deburr")
+                || operation.contains("polish")
+                || operation.contains("anodiz")
+                || operation.contains("passivat")
+                || operation.contains("plating")
+                || operation.contains("coat")
+                || operation.contains("paint")
+                || operation.contains("mask")
+                || operation.contains("inspection")))
         || (wants_assembly_joining(preference)
             && (operation.contains("assembly")
                 || operation.contains("join")
@@ -6988,6 +7532,18 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         MachineClass::Lathe => "face, rough turn, finish turn, and bore/thread if needed",
         MachineClass::Router => "profile, pocket, and tab-cut",
         MachineClass::SheetCut => "kerf-test, pierce, cut/engrave sheet profile, and inspect",
+        MachineClass::Other if is_precision_grinder_kind(&part.machine_kind) => {
+            "dress wheel, verify coolant and magnetic workholding, grind datum or cylindrical surface, spark out, and inspect flatness/roundness"
+        }
+        MachineClass::Other if is_inspection_cell_kind(&part.machine_kind) => {
+            "calibrate probe or vision system, align datum scheme, measure first article, evaluate tolerance stack, and record disposition"
+        }
+        MachineClass::Other if is_thermal_postprocess_kind(&part.machine_kind) => {
+            "load supported parts, run reviewed thermal profile, control atmosphere and cooldown, inspect distortion or hardness, and record release"
+        }
+        MachineClass::Other if is_surface_finishing_kind(&part.machine_kind) => {
+            "mask or plug protected features, run reviewed finishing media or chemistry, control ventilation and waste, dry or cure, inspect thickness and finish, and record release"
+        }
         MachineClass::Other if is_assembly_cell_kind(&part.machine_kind) => {
             "kit fabricated parts, verify datums, pick/place, join by press/fastener/adhesive, and inspect assembly"
         }
@@ -8512,6 +9068,95 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: verify stock stick-out, chuck/collet pressure, tailstock or steady-rest support, runout, tool nose radius, threading pitch, part-off support, coolant, and spindle limits."
                     .to_string(),
                 "Human measurement is required at each programmed stop before finish turning, threading, and part-off release.".to_string(),
+            ],
+        ),
+        MachineClass::Other if is_precision_grinder_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "grinding-job".to_string()),
+            vec![
+                "; draft precision grinding job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [grinding-wheel-setup-boundary]: verify wheel spec, ring test, guard, balance, dressing/truing state, coolant concentration, magnetic chuck or centers, and datum reference"
+                    .to_string(),
+                "DRESS_WHEEL abrasive=operator-reviewed grit=operator-reviewed balance=verified trued=true"
+                    .to_string(),
+                "SETUP_WORKHOLDING magnetic_chuck_or_centers=operator-reviewed parallels_or_v_blocks=operator-reviewed datum=operator-reviewed"
+                    .to_string(),
+                "GRIND_PASS stock_allowance_mm=operator-reviewed downfeed_um=operator-reviewed crossfeed=operator-reviewed coolant=on"
+                    .to_string(),
+                "CHECKPOINT [grinding-thermal-inspection-boundary]: verify coolant flow, burn marks, chatter, wheel loading, spark-out passes, and thermal growth before finish passes"
+                    .to_string(),
+                "SPARK_OUT passes=operator-reviewed wheel_dwell=operator-reviewed no_new_sparks=operator-confirmed"
+                    .to_string(),
+                "INSPECT_GRIND flatness_or_roundness_um=operator-reviewed surface_finish_ra=operator-reviewed size=operator-reviewed"
+                    .to_string(),
+                "COMPLETE record wheel ID, dressing log, coolant reading, workholding, spark-out, surface finish, flatness/roundness, and final metrology"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final grinding parameters must come from the wheel manufacturer, workholding plan, material hardness, coolant state, burn/chatter review, and inspection plan."
+                    .to_string(),
+                "Human signoff is required for wheel safety, magnetic chuck or center support, spark-out, thermal growth, surface integrity, and final metrology."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_inspection_cell_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "cmm-inspection-job".to_string()),
+            vec![
+                "; draft CMM/vision inspection job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [inspection-calibration-boundary]: verify probe stylus, calibration artifact, vision scale/focus, fixture, temperature soak, datum scheme, and measurement uncertainty"
+                    .to_string(),
+                "CALIBRATE_PROBE artifact=operator-reviewed stylus=operator-reviewed vision_scale=operator-reviewed temperature_c=recorded uncertainty=recorded"
+                    .to_string(),
+                "ALIGN_DATUMS datum_a=operator-reviewed datum_b=operator-reviewed datum_c=operator-reviewed coordinate_system=part-datum"
+                    .to_string(),
+                "MEASURE_FEATURE feature_set=critical dimensions=operator-reviewed gdandt=operator-reviewed sampling=first-article"
+                    .to_string(),
+                "CHECKPOINT [inspection-disposition-boundary]: verify tolerance band, gauge R&R or calibration status, measured values, pass/fail disposition, nonconformance routing, and corrective action owner"
+                    .to_string(),
+                "REPORT_INSPECTION first_article=true measured_values=recorded deviation_map=recorded pass_fail=operator-reviewed nonconformance=operator-reviewed"
+                    .to_string(),
+                "COMPLETE record calibration, fixture, datum alignment, measured values, deviation map, disposition, and corrective action"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final CMM or vision inspection parameters must come from the drawing datum scheme, calibrated probe/optics, fixture plan, environmental controls, and acceptance criteria."
+                    .to_string(),
+                "Human signoff is required for probe/vision calibration, datum alignment, measurement uncertainty, pass/fail disposition, and nonconformance routing."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_thermal_postprocess_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "thermal-postprocess-job".to_string()),
+            vec![
+                "; draft thermal postprocess job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [thermal-profile-boundary]: verify material batch, furnace or oven calibration, ramp rate, soak temperature, soak time, thermocouple placement, support fixture or setter, and atmosphere"
+                    .to_string(),
+                "LOAD_THERMAL_BATCH part_state=operator-reviewed fixture=operator-reviewed setter=operator-reviewed spacing=operator-reviewed"
+                    .to_string(),
+                "RUN_THERMAL_PROFILE profile=operator-reviewed ramp_c_per_min=operator-reviewed soak_c=operator-reviewed soak_minutes=operator-reviewed atmosphere=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [thermal-cooldown-inspection-boundary]: verify cooldown or quench method, PPE, door/interlock state, distortion, shrinkage, hardness or cure state, and release inspection"
+                    .to_string(),
+                "CONTROL_COOLDOWN method=operator-reviewed quench=operator-reviewed safe_handling_temp_c=operator-reviewed"
+                    .to_string(),
+                "INSPECT_THERMAL_RELEASE distortion=recorded shrinkage=recorded hardness_or_cure=operator-reviewed pass_fail=operator-reviewed"
+                    .to_string(),
+                "COMPLETE record thermal profile, furnace log, atmosphere, fixture/setter, cooldown or quench, PPE, distortion/shrinkage, hardness or cure, and release disposition"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final thermal postprocess parameters must come from the material datasheet, furnace or oven qualification, fixture/setter plan, atmosphere requirements, cooldown or quench plan, and inspection criteria."
+                    .to_string(),
+                "Human signoff is required for furnace safety, ramp/soak profile, atmosphere, supported loading, cooldown or quench, PPE, distortion or shrinkage, hardness/cure state, and release disposition."
+                    .to_string(),
             ],
         ),
         MachineClass::Other if is_assembly_cell_kind(&machine.kind) => (
@@ -12640,6 +13285,170 @@ fn has_text_precision_inspection_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_grinding_context(language: &str, line: &str) -> bool {
+    wants_precision_grinding(language)
+        || wants_precision_grinding(line)
+        || language_or_line_has_any(
+            language,
+            line,
+            &[
+                "surface grinder",
+                "surface grinding",
+                "cylindrical grinder",
+                "cylindrical grinding",
+                "centerless grinding",
+                "precision grinding",
+                "grind datum",
+                "ground datum",
+                "grind bearing",
+                "ground bearing",
+                "spark-out",
+                "spark out",
+                "wheel dressing",
+                "wheel dress",
+            ],
+        )
+}
+
+fn has_text_grinding_wheel_setup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "wheel spec",
+            "wheel id",
+            "wheel grade",
+            "abrasive",
+            "grit",
+            "ring test",
+            "wheel guard",
+            "wheel balance",
+            "balanced wheel",
+            "dress wheel",
+            "wheel dress",
+            "wheel dressing",
+            "truing",
+            "true wheel",
+            "magnetic chuck",
+            "mag chuck",
+            "centers",
+            "v-block",
+            "v block",
+            "coolant concentration",
+            "coolant flow",
+            "coolant filtration",
+            "workholding",
+            "datum reference",
+        ],
+    )
+}
+
+fn has_text_grinding_sparkout_inspection_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "spark-out",
+            "spark out",
+            "no new sparks",
+            "burn check",
+            "burn marks",
+            "grinding burn",
+            "chatter",
+            "wheel loading",
+            "thermal growth",
+            "flatness",
+            "parallelism",
+            "roundness",
+            "runout",
+            "surface finish",
+            "roughness",
+            "profilometer",
+            "micrometer",
+            "dial indicator",
+            "surface plate",
+            "final metrology",
+        ],
+    )
+}
+
+fn has_text_inspection_context(language: &str, line: &str) -> bool {
+    wants_dimensional_inspection(language)
+        || wants_dimensional_inspection(line)
+        || language_or_line_has_any(
+            language,
+            line,
+            &[
+                "cmm inspection",
+                "coordinate measuring",
+                "coordinate measurement",
+                "vision inspection",
+                "optical inspection",
+                "dimensional inspection",
+                "first article inspection",
+                "first-article inspection",
+                "metrology report",
+                "inspection report",
+                "gd&t inspection",
+                "gdt inspection",
+            ],
+        )
+}
+
+fn has_text_inspection_calibration_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "probe calibration",
+            "probe calibrated",
+            "stylus",
+            "calibration artifact",
+            "calibration sphere",
+            "calibration certificate",
+            "gauge block",
+            "gage block",
+            "gauge r&r",
+            "gage r&r",
+            "vision scale",
+            "camera calibration",
+            "optics calibration",
+            "focus verified",
+            "temperature soak",
+            "thermal soak",
+            "measurement uncertainty",
+            "calibrated cmm",
+            "fixture repeatability",
+            "datum alignment verified",
+        ],
+    )
+}
+
+fn has_text_inspection_disposition_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "measured values",
+            "actual values",
+            "inspection report",
+            "first article report",
+            "first-article report",
+            "fai report",
+            "ballooned drawing",
+            "deviation map",
+            "tolerance band",
+            "acceptance criteria",
+            "pass/fail",
+            "pass fail",
+            "nonconformance",
+            "non-conformance",
+            "corrective action",
+            "disposition",
+            "scrap disposition",
+            "rework disposition",
+            "as-built",
+            "as built",
+        ],
+    )
+}
+
 fn has_text_unattended_run_context(line: &str) -> bool {
     text_has_any(
         line,
@@ -13537,6 +14346,39 @@ fn inspect_text_instruction_line(
         signals.has_text_precision_inspection_evidence = true;
         signals.has_process_preparation = true;
     }
+    if has_text_grinding_context(language, raw_line) {
+        signals.has_text_grinding_context = true;
+        signals.has_process_preparation = true;
+    }
+    if has_text_grinding_wheel_setup_evidence(raw_line) {
+        signals.has_text_grinding_wheel_setup_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if (signals.has_text_grinding_context || has_text_grinding_context(language, raw_line))
+        && has_text_grinding_sparkout_inspection_evidence(raw_line)
+    {
+        signals.has_text_grinding_sparkout_inspection_evidence = true;
+        signals.has_process_preparation = true;
+        signals.has_text_precision_inspection_evidence = true;
+    }
+    if has_text_inspection_context(language, raw_line) {
+        signals.has_text_inspection_context = true;
+        signals.has_process_preparation = true;
+    }
+    if has_text_inspection_calibration_evidence(raw_line) {
+        signals.has_text_inspection_calibration_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+        signals.has_text_precision_inspection_evidence = true;
+    }
+    if (signals.has_text_inspection_context || has_text_inspection_context(language, raw_line))
+        && has_text_inspection_disposition_evidence(raw_line)
+    {
+        signals.has_text_inspection_disposition_evidence = true;
+        signals.has_process_preparation = true;
+        signals.has_text_precision_inspection_evidence = true;
+    }
     if has_text_unattended_run_context(raw_line) {
         signals.has_text_unattended_run_context = true;
     }
@@ -13959,6 +14801,12 @@ fn analyze_instruction_programs(
         let mut has_text_part_separation_evidence = false;
         let mut has_text_precision_requirement_context = false;
         let mut has_text_precision_inspection_evidence = false;
+        let mut has_text_grinding_context = false;
+        let mut has_text_grinding_wheel_setup_evidence = false;
+        let mut has_text_grinding_sparkout_inspection_evidence = false;
+        let mut has_text_inspection_context = false;
+        let mut has_text_inspection_calibration_evidence = false;
+        let mut has_text_inspection_disposition_evidence = false;
         let mut has_text_unattended_run_context = false;
         let mut has_text_unattended_monitoring_evidence = false;
         let mut has_text_thermal_postprocess_context = false;
@@ -14095,6 +14943,16 @@ fn analyze_instruction_programs(
                     signals.has_text_precision_requirement_context;
                 has_text_precision_inspection_evidence |=
                     signals.has_text_precision_inspection_evidence;
+                has_text_grinding_context |= signals.has_text_grinding_context;
+                has_text_grinding_wheel_setup_evidence |=
+                    signals.has_text_grinding_wheel_setup_evidence;
+                has_text_grinding_sparkout_inspection_evidence |=
+                    signals.has_text_grinding_sparkout_inspection_evidence;
+                has_text_inspection_context |= signals.has_text_inspection_context;
+                has_text_inspection_calibration_evidence |=
+                    signals.has_text_inspection_calibration_evidence;
+                has_text_inspection_disposition_evidence |=
+                    signals.has_text_inspection_disposition_evidence;
                 has_text_unattended_run_context |= signals.has_text_unattended_run_context;
                 has_text_unattended_monitoring_evidence |=
                     signals.has_text_unattended_monitoring_evidence;
@@ -18830,6 +19688,134 @@ fn analyze_instruction_programs(
                         .to_string(),
                 });
             }
+            if has_text_grinding_context && !has_text_grinding_wheel_setup_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "grinding-wheel-setup-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "grinding text job lacks wheel specification, dressing/truing, workholding, coolant, or datum evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "grinding-wheel-setup-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "precision grinding can burst a wheel, lose datums, burn the part, or launch work from the chuck when wheel spec, ring test, guard, balance, dressing/truing, coolant, workholding, and datum evidence are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach wheel ID/spec, ring test and guard review, balance, dressing or truing log, coolant concentration/flow, magnetic chuck or center support, and datum setup evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-grinding-wheel-setup-evidence".to_string(),
+                    reason:
+                        "grinding text instructions should retain wheel, dressing, coolant, workholding, and datum setup evidence before release"
+                            .to_string(),
+                });
+            }
+            if has_text_grinding_context && !has_text_grinding_sparkout_inspection_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "grinding-sparkout-inspection-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "grinding text job lacks spark-out, burn/chatter, thermal-growth, surface-finish, or final metrology evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "grinding-sparkout-inspection-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "ground datums and bearing surfaces can miss size, flatness, roundness, or surface-integrity requirements when spark-out, burn/chatter checks, thermal growth, wheel loading, roughness, and final metrology are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach spark-out pass count, no-new-sparks or dwell evidence, burn/chatter review, thermal-growth control, surface-finish reading, flatness/roundness/runout, and final metrology before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-grinding-sparkout-inspection-evidence".to_string(),
+                    reason:
+                        "grinding text instructions should retain spark-out, surface-integrity, and final metrology evidence before release"
+                            .to_string(),
+                });
+            }
+            if has_text_inspection_context && !has_text_inspection_calibration_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "inspection-calibration-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "inspection text job lacks probe, artifact, vision, fixture, temperature, or measurement-uncertainty evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "inspection-calibration-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "CMM and vision inspection can falsely accept or reject parts when probe stylus, calibration artifact, optical scale/focus, fixture repeatability, temperature soak, datum alignment, or uncertainty evidence is implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach probe or vision calibration, artifact or gauge-block certificate, fixture repeatability, datum alignment, temperature/thermal-soak, and measurement uncertainty evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-inspection-calibration-evidence".to_string(),
+                    reason:
+                        "inspection text instructions should retain calibration, fixture, datum, environment, and uncertainty evidence before release"
+                            .to_string(),
+                });
+            }
+            if has_text_inspection_context && !has_text_inspection_disposition_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "inspection-disposition-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "inspection text job lacks measured values, pass/fail disposition, nonconformance, or corrective-action evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "inspection-disposition-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "fabricated parts can move into assembly or release with hidden defects when measured values, tolerance bands, deviation maps, pass/fail disposition, nonconformance routing, and corrective actions are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach measured values, ballooned drawing or inspection report, tolerance-band comparison, pass/fail disposition, nonconformance routing, and corrective-action owner before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-inspection-disposition-evidence".to_string(),
+                    reason:
+                        "inspection text instructions should retain measured values, pass/fail disposition, nonconformance routing, and corrective-action evidence before release"
+                            .to_string(),
+                });
+            }
             if has_text_unattended_run_context && !has_text_unattended_monitoring_evidence {
                 findings.push(ValidationFinding {
                     severity: "warning".to_string(),
@@ -19224,6 +20210,26 @@ fn instruction_patch_content_for_improvement(
             }
             _ => vec![format!("REVIEW: apply instruction improvement {action}")],
         }
+    } else if action == "add-grinding-wheel-setup-evidence" {
+        vec![
+            "CHECKPOINT [grinding-wheel-setup-boundary]: record wheel spec, ring test, guard, balance, dressing/truing, coolant concentration, magnetic chuck or centers, and datum reference before grinding"
+                .to_string(),
+        ]
+    } else if action == "add-grinding-sparkout-inspection-evidence" {
+        vec![
+            "CHECKPOINT [grinding-sparkout-inspection-boundary]: record spark-out passes, burn/chatter and thermal-growth review, surface finish, flatness/roundness/runout, and final metrology before release"
+                .to_string(),
+        ]
+    } else if action == "add-inspection-calibration-evidence" {
+        vec![
+            "CHECKPOINT [inspection-calibration-boundary]: record probe/vision calibration, artifact or gauge-block certificate, fixture repeatability, datum alignment, temperature soak, and measurement uncertainty before inspection"
+                .to_string(),
+        ]
+    } else if action == "add-inspection-disposition-evidence" {
+        vec![
+            "CHECKPOINT [inspection-disposition-boundary]: record measured values, tolerance-band comparison, inspection report, pass/fail disposition, nonconformance routing, and corrective-action owner before release"
+                .to_string(),
+        ]
     } else if action == "add-structured-text-checkpoints" {
         vec![
             "CHECKPOINT [setup-boundary]: confirm machine setup, material, PPE, and operator readiness"
@@ -19509,6 +20515,46 @@ fn improve_instruction_programs(
                 {
                     notes.push(
                         "Precision job needs metrology tooling, acceptance criteria, surface-finish or fit checks, and recorded inspection values"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-grinding-wheel-setup-evidence",
+                ) {
+                    notes.push(
+                        "Grinding job needs wheel specification, ring test, guard, balance, dressing/truing, coolant, workholding, and datum evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-grinding-sparkout-inspection-evidence",
+                ) {
+                    notes.push(
+                        "Grinding job needs spark-out, burn or chatter review, thermal-growth checks, surface finish, and flatness/roundness/runout metrology"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-inspection-calibration-evidence",
+                ) {
+                    notes.push(
+                        "Inspection job needs probe or vision calibration, artifact certificate, fixture repeatability, datum alignment, environmental control, and uncertainty evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-inspection-disposition-evidence",
+                ) {
+                    notes.push(
+                        "Inspection job needs measured values, tolerance comparison, pass/fail disposition, nonconformance routing, and corrective-action evidence"
                             .to_string(),
                     );
                 }
@@ -22695,6 +23741,12 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
     let token = normalize_token(&format!("{controller}-{language}-{machine_kind}"));
     if wants_multi_material_fdm_printing(&token) {
         "multi-material-fdm-job-packager"
+    } else if wants_precision_grinding(&token) {
+        "grinding-job-packager"
+    } else if wants_dimensional_inspection(&token) {
+        "inspection-report-packager"
+    } else if wants_thermal_postprocess(&token) {
+        "thermal-postprocess-job-packager"
     } else if token.contains("marlin") {
         "marlin-additive-gcode-postprocessor"
     } else if token.contains("grbl") {
@@ -22777,6 +23829,12 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
     let token = normalize_token(&format!("{language}-{machine_kind}"));
     if wants_multi_material_fdm_printing(&token) {
         "multi-material-fdm-job-package".to_string()
+    } else if wants_precision_grinding(&token) {
+        "grinding-job-package".to_string()
+    } else if wants_dimensional_inspection(&token) {
+        "inspection-report-package".to_string()
+    } else if wants_thermal_postprocess(&token) {
+        "thermal-postprocess-job-package".to_string()
     } else if wants_rotary_index_milling(&token) {
         "indexed-mill-controller-gcode".to_string()
     } else if token.contains("five-axis")
@@ -22883,6 +23941,32 @@ fn postprocess_required_artifacts(targets: &[PostprocessTarget]) -> Vec<String> 
             artifacts.insert("bound-metal-filament-profile-record".to_string());
             artifacts.insert("debind-sinter-furnace-cycle-record".to_string());
             artifacts.insert("sintered-density-and-shrinkage-inspection-record".to_string());
+        }
+        if is_precision_grinder_kind(&target.machine_kind)
+            || wants_precision_grinding(&target.output_format)
+            || wants_precision_grinding(&target.controller)
+        {
+            artifacts.insert("wheel-dress-and-balance-record".to_string());
+            artifacts.insert("grinding-coolant-and-workholding-record".to_string());
+            artifacts.insert("surface-finish-and-final-metrology-record".to_string());
+        }
+        if is_inspection_cell_kind(&target.machine_kind)
+            || wants_dimensional_inspection(&target.output_format)
+            || wants_dimensional_inspection(&target.controller)
+        {
+            artifacts.insert("inspection-calibration-record".to_string());
+            artifacts.insert("datum-alignment-and-uncertainty-record".to_string());
+            artifacts.insert("first-article-measured-values-report".to_string());
+            artifacts.insert("nonconformance-disposition-record".to_string());
+        }
+        if is_thermal_postprocess_kind(&target.machine_kind)
+            || wants_thermal_postprocess(&target.output_format)
+            || wants_thermal_postprocess(&target.controller)
+        {
+            artifacts.insert("thermal-profile-and-furnace-log".to_string());
+            artifacts.insert("fixture-setter-and-atmosphere-record".to_string());
+            artifacts.insert("cooldown-quench-and-ppe-record".to_string());
+            artifacts.insert("distortion-hardness-and-release-inspection-record".to_string());
         }
         if is_multi_material_fdm_printer_kind(&target.machine_kind)
             || wants_multi_material_fdm_printing(&target.output_format)
@@ -23265,6 +24349,8 @@ fn controller_dialect_family(
         "additive-job-package-dialect".to_string()
     } else if token.contains("wire-edm") || token.contains("sinker-edm") || token.contains("edm") {
         "edm-controller-dialect".to_string()
+    } else if wants_thermal_postprocess(&token) {
+        "thermal-postprocess-controller-dialect".to_string()
     } else if token.contains("laser") || token.contains("waterjet") || token.contains("plasma") {
         "sheet-cutting-controller-dialect".to_string()
     } else if wants_assembly_joining(&token) {
@@ -23302,6 +24388,13 @@ fn controller_required_checks(dialect_family: &str, machine_kind: &str) -> Vec<S
             "verify printer job package metadata, build profile, material lot, support media, and postprocess traveler"
                 .to_string(),
             "capture build preview, nesting/build plate map, environmental controls, and recovery instructions"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("thermal-postprocess") {
+        checks.extend([
+            "verify furnace or oven qualification, material batch, thermal profile, atmosphere, and fixture or setter plan"
+                .to_string(),
+            "retain cooldown or quench method, PPE, distortion/shrinkage, hardness or cure inspection, and release disposition"
                 .to_string(),
         ]);
     } else if dialect_family.contains("edm") {
@@ -24390,6 +25483,12 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         let class = machine_class(&machine.kind);
         let method = if is_assembly_cell_kind(&machine.kind) {
             "assembly-joining"
+        } else if is_precision_grinder_kind(&machine.kind) {
+            "precision-grinding"
+        } else if is_inspection_cell_kind(&machine.kind) {
+            "dimensional-inspection"
+        } else if is_thermal_postprocess_kind(&machine.kind) {
+            "thermal-postprocess"
         } else if is_rotary_index_mill_kind(&machine.kind) {
             "indexed-rotary-milling"
         } else {
@@ -24480,6 +25579,9 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
             operation: operation_for_part(&part_plan).to_string(),
             setup: if matches!(class, MachineClass::Additive) {
                 "single additive setup with material-specific slicing".to_string()
+            } else if is_precision_grinder_kind(&machine.kind) {
+                "operator-verified wheel, dressing/truing, coolant, workholding, datum, and spark-out setup"
+                    .to_string()
             } else if is_assembly_cell_kind(&machine.kind) {
                 "operator-verified kit, fixture, end-effector, join recipe, and vision/metrology setup"
                     .to_string()
@@ -36944,6 +38046,15 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "plasma-job",
         "wire-edm-job",
         "sinker-edm-job",
+        "grinding-job",
+        "surface-grinder-job",
+        "cylindrical-grinder-job",
+        "cmm-inspection-job",
+        "vision-inspection-job",
+        "metrology-job",
+        "thermal-postprocess-job",
+        "furnace-job",
+        "heat-treatment-job",
         "mill-turn-job",
         "lathe-job",
         "turning-job",
@@ -36993,6 +38104,12 @@ fn instruction_language_family(language: &str) -> &'static str {
         "sheet-cutting-job-sheet"
     } else if token.contains("edm") {
         "edm-job-sheet"
+    } else if wants_precision_grinding(&token) {
+        "precision-grinding-job-sheet"
+    } else if wants_dimensional_inspection(&token) {
+        "dimensional-inspection-job-sheet"
+    } else if wants_thermal_postprocess(&token) {
+        "thermal-postprocess-job-sheet"
     } else if token.contains("mill")
         || token.contains("turn")
         || token.contains("lathe")
@@ -37068,6 +38185,10 @@ fn instruction_language_machine_classes(language: &str) -> Vec<String> {
         vec!["wire-edm-sheet-cutter"]
     } else if token.contains("sinker-edm") {
         vec!["sinker-edm-cell"]
+    } else if wants_precision_grinding(&token) {
+        vec!["precision-grinder"]
+    } else if wants_dimensional_inspection(&token) {
+        vec!["cmm-inspection-cell"]
     } else if token.contains("sheet") {
         vec![
             "laser-sheet-cutter",
@@ -37079,6 +38200,8 @@ fn instruction_language_machine_classes(language: &str) -> Vec<String> {
         vec!["lathe"]
     } else if token.contains("assembly") {
         vec!["robotic-assembly-cell", "manual-or-special-process"]
+    } else if wants_thermal_postprocess(&token) {
+        vec!["thermal-postprocess-furnace", "manual-or-special-process"]
     } else {
         vec!["manual-or-special-process"]
     };
@@ -37106,6 +38229,15 @@ fn instruction_language_analysis_focus(language: &str) -> Vec<String> {
         ]),
         "edm-job-sheet" => focus.extend([
             "wire/electrode setup, power table, dielectric/flushing, slug retention, burn depth, skim/orbit strategy, and recast/surface evidence".to_string(),
+        ]),
+        "precision-grinding-job-sheet" => focus.extend([
+            "wheel dress/balance, coolant, magnetic chuck or centers, stock allowance, spark-out, burn/chatter evidence, surface finish, and dimensional metrology".to_string(),
+        ]),
+        "dimensional-inspection-job-sheet" => focus.extend([
+            "probe or vision calibration, datum alignment, environmental controls, uncertainty, measured values, pass/fail disposition, and nonconformance routing".to_string(),
+        ]),
+        "thermal-postprocess-job-sheet" => focus.extend([
+            "material batch, furnace or oven calibration, ramp/soak profile, atmosphere, fixture or setter support, cooldown or quench, PPE, distortion, hardness or cure, and release inspection".to_string(),
         ]),
         "subtractive-job-sheet" => focus.extend([
             "setup/datum/workholding, tool table, feed/speed, tool-life, chip/coolant, compensation, threading/part-off, and spindle/tool-change state".to_string(),
@@ -37284,6 +38416,36 @@ fn instruction_generation_catalog_program_contracts() -> Vec<Value> {
             "releaseGates": ["conductive setup", "wire/electrode evidence", "dielectric condition", "power table", "surface and depth inspection"],
             "boundarySignals": ["wire-edm-boundary", "sinker-edm-boundary"],
             "artifactKinds": ["generated-machine-program", "program-*"]
+        }),
+        json!({
+            "family": "precision-grinding-finishing",
+            "generatedLanguages": ["grinding-job", "surface-grinder-job", "cylindrical-grinder-job"],
+            "machineClasses": ["precision-grinder"],
+            "generatorBranch": "generate_program::MachineClass::Other precision grinder",
+            "generatedInstructionKinds": ["wheel dress and balance", "workholding and datum setup", "grind pass", "spark-out", "surface finish and final metrology"],
+            "releaseGates": ["wheel/guard/dress evidence", "coolant and workholding proof", "stock allowance", "burn/chatter review", "flatness/roundness/surface-finish inspection"],
+            "boundarySignals": ["grinding-wheel-setup-boundary", "grinding-thermal-inspection-boundary", "precision-metrology-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "wheel-dress-and-balance-record", "surface-finish-and-final-metrology-record"]
+        }),
+        json!({
+            "family": "dimensional-inspection-release",
+            "generatedLanguages": ["cmm-inspection-job", "vision-inspection-job", "metrology-job"],
+            "machineClasses": ["cmm-inspection-cell"],
+            "generatorBranch": "generate_program::MachineClass::Other inspection cell",
+            "generatedInstructionKinds": ["probe or vision calibration", "datum alignment", "critical feature measurement", "deviation map", "pass/fail and nonconformance disposition"],
+            "releaseGates": ["calibration artifact", "fixture and datum scheme", "environment and uncertainty", "measured values", "acceptance criteria", "nonconformance routing"],
+            "boundarySignals": ["inspection-calibration-boundary", "inspection-disposition-boundary", "precision-metrology-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "inspection-calibration-record", "first-article-measured-values-report", "nonconformance-disposition-record"]
+        }),
+        json!({
+            "family": "thermal-postprocess-release",
+            "generatedLanguages": ["thermal-postprocess-job", "furnace-job", "heat-treatment-job"],
+            "machineClasses": ["thermal-postprocess-furnace"],
+            "generatorBranch": "generate_program::MachineClass::Other thermal postprocess furnace",
+            "generatedInstructionKinds": ["material batch and load review", "ramp/soak thermal profile", "atmosphere and fixture or setter proof", "cooldown or quench", "distortion, hardness, cure, or shrinkage release inspection"],
+            "releaseGates": ["furnace or oven qualification", "material profile", "thermal profile", "atmosphere", "fixture or setter", "cooldown or quench", "release inspection"],
+            "boundarySignals": ["thermal-profile-boundary", "thermal-cooldown-inspection-boundary", "thermal-postprocess-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "thermal-profile-and-furnace-log", "fixture-setter-and-atmosphere-record", "distortion-hardness-and-release-inspection-record"]
         }),
         json!({
             "family": "assembly-and-part-separation",
@@ -37734,6 +38896,24 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
         MachineClass::Other if is_sinker_edm_kind(&machine.kind) => {
             languages.insert("sinker-edm-job".to_string());
         }
+        MachineClass::Other if is_precision_grinder_kind(&machine.kind) => {
+            languages.insert("grinding-job".to_string());
+            languages.insert("surface-grinder-job".to_string());
+            languages.insert("cylindrical-grinder-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_inspection_cell_kind(&machine.kind) => {
+            languages.insert("cmm-inspection-job".to_string());
+            languages.insert("vision-inspection-job".to_string());
+            languages.insert("metrology-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_thermal_postprocess_kind(&machine.kind) => {
+            languages.insert("thermal-postprocess-job".to_string());
+            languages.insert("furnace-job".to_string());
+            languages.insert("heat-treatment-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
         MachineClass::Other if is_assembly_cell_kind(&machine.kind) => {
             languages.insert("assembly-cell-job".to_string());
             languages.insert("assembly-checklist".to_string());
@@ -37778,6 +38958,18 @@ fn machine_catalog_release_gates(machine: &MachineProfile) -> Vec<String> {
         ),
         MachineClass::Other if is_sinker_edm_kind(&machine.kind) => gates.push(
             "verify electrode, dielectric, power table, flushing, burn depth, orbit/skim strategy, and recast or surface evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_precision_grinder_kind(&machine.kind) => gates.push(
+            "verify wheel dress/balance, coolant filtration, workholding, stock allowance, spark-out, burn check, surface finish, and final metrology evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_inspection_cell_kind(&machine.kind) => gates.push(
+            "verify probe or vision calibration, fixture and datum alignment, environmental controls, uncertainty, measured values, pass/fail disposition, and nonconformance routing evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_thermal_postprocess_kind(&machine.kind) => gates.push(
+            "verify furnace or oven qualification, material batch, ramp/soak profile, atmosphere, fixture or setter support, cooldown or quench, PPE, distortion, hardness or cure, and release inspection evidence"
                 .to_string(),
         ),
         MachineClass::Other if is_assembly_cell_kind(&machine.kind) => gates.push(
@@ -38196,6 +39388,9 @@ async fn capabilities() -> impl IntoResponse {
             "plasma-sheet-cutter",
             "wire-edm-sheet-cutter",
             "sinker-edm-cell",
+            "precision-grinder",
+            "cmm-inspection-cell",
+            "thermal-postprocess-furnace",
             "mill-turn-center",
             "lathe",
             "robotic-assembly-cell",
@@ -38608,6 +39803,9 @@ async fn request_schema() -> impl IntoResponse {
                 "plasma-cutter",
                 "wire-edm",
                 "sinker-edm",
+                "precision-grinder",
+                "cmm-inspection-cell",
+                "thermal-postprocess-furnace",
                 "mill-turn-center",
                 "robotic-assembly-cell",
                 "assembly-cell",
@@ -43870,6 +45068,260 @@ mod tests {
     }
 
     #[test]
+    fn default_special_process_fleet_generates_precision_grinding_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-precision-grinding".to_string()),
+            objective:
+                "precision surface grinding hardened tool-steel gauge plate with wheel dress, spark-out, flatness 0.01mm, surface finish Ra, and final metrology"
+                    .to_string(),
+            material: Some(material("tool-steel", "metal")),
+            stock: Some(StockSpec {
+                form: "plate".to_string(),
+                dimensions_mm: Some(vec![120.0, 80.0, 12.0]),
+            }),
+            tolerance_mm: Some(0.012),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("precision grinding plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "ground-datum-finish"
+                && part.machine_kind == "precision-grinder"
+                && part.manufacturing_method == "precision-grinding"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "precision-grinder" && step.operation.contains("spark out")
+        }));
+        let grinding_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "precision-grinder")
+            .expect("precision grinding program should be generated");
+        assert_eq!(grinding_program.language, "grinding-job");
+        assert!(grinding_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft precision grinding job")));
+        assert!(grinding_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("DRESS_WHEEL")));
+        assert!(grinding_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("SPARK_OUT")));
+        assert!(grinding_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("INSPECT_GRIND")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "precision-grinder"
+                    && target.postprocessor == "grinding-job-packager"
+                    && target.output_format == "grinding-job-package"
+            }));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .contains(&"wheel-dress-and-balance-record".to_string()));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .contains(&"surface-finish-and-final-metrology-record".to_string()));
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_cmm_inspection_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-cmm-inspection".to_string()),
+            objective:
+                "CMM first-article inspection of aluminum printed and milled bracket with datum A/B/C, GD&T position, vision inspection, measured values, pass/fail disposition, and nonconformance routing"
+                    .to_string(),
+            material: Some(material("aluminum", "metal")),
+            stock: Some(StockSpec {
+                form: "fixture".to_string(),
+                dimensions_mm: Some(vec![160.0, 90.0, 45.0]),
+            }),
+            tolerance_mm: Some(0.025),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("CMM inspection plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "inspection-release-report"
+                && part.machine_kind == "cmm-inspection-cell"
+                && part.manufacturing_method == "dimensional-inspection"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "cmm-inspection-cell"
+                && step.operation.contains("measure first article")
+        }));
+        let inspection_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "cmm-inspection-cell")
+            .expect("CMM inspection program should be generated");
+        assert_eq!(inspection_program.language, "cmm-inspection-job");
+        assert!(inspection_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft CMM/vision inspection job")));
+        assert!(inspection_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("CALIBRATE_PROBE")));
+        assert!(inspection_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("ALIGN_DATUMS")));
+        assert!(inspection_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("MEASURE_FEATURE")));
+        assert!(inspection_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("REPORT_INSPECTION")));
+        assert!(inspection_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("inspection-calibration-boundary")));
+        assert!(inspection_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("inspection-disposition-boundary")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "cmm-inspection-cell"
+                    && target.postprocessor == "inspection-report-packager"
+                    && target.output_format == "inspection-report-package"
+            }));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .contains(&"inspection-calibration-record".to_string()));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .contains(&"first-article-measured-values-report".to_string()));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .contains(&"nonconformance-disposition-record".to_string()));
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_thermal_postprocess_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-thermal-postprocess".to_string()),
+            objective:
+                "anneal printed nylon brackets and stress-relieve machined aluminum inserts in a furnace with ramp soak nitrogen atmosphere controlled cooldown distortion inspection and hardness release"
+                    .to_string(),
+            material: Some(material("nylon", "polymer")),
+            stock: Some(StockSpec {
+                form: "batch tray".to_string(),
+                dimensions_mm: Some(vec![220.0, 160.0, 90.0]),
+            }),
+            tolerance_mm: Some(0.12),
+            quantity: Some(6),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("thermal postprocess plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "thermal-release-cycle"
+                && part.machine_kind == "thermal-postprocess-furnace"
+                && part.manufacturing_method == "thermal-postprocess"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "thermal-postprocess-furnace"
+                && step.operation.contains("run reviewed thermal profile")
+        }));
+        let thermal_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "thermal-postprocess-furnace")
+            .expect("thermal postprocess program should be generated");
+        assert_eq!(thermal_program.language, "thermal-postprocess-job");
+        assert!(thermal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft thermal postprocess job")));
+        assert!(thermal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("LOAD_THERMAL_BATCH")));
+        assert!(thermal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("RUN_THERMAL_PROFILE")));
+        assert!(thermal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("CONTROL_COOLDOWN")));
+        assert!(thermal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("INSPECT_THERMAL_RELEASE")));
+        assert!(thermal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("thermal-profile-boundary")));
+        assert!(thermal_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("thermal-cooldown-inspection-boundary")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "thermal-postprocess-furnace"
+                    && target.postprocessor == "thermal-postprocess-job-packager"
+                    && target.output_format == "thermal-postprocess-job-package"
+            }));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .contains(&"thermal-profile-and-furnace-log".to_string()));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .contains(&"fixture-setter-and-atmosphere-record".to_string()));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .contains(&"cooldown-quench-and-ppe-record".to_string()));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .contains(&"distortion-hardness-and-release-inspection-record".to_string()));
+    }
+
+    #[test]
     fn default_additive_fleet_generates_resin_printer_job() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-resin-printer".to_string()),
@@ -44662,6 +46114,18 @@ mod tests {
                 target.machine_kind == "binder-jet-printer"
                     && target.output_format == "binder-jet-job-package"
             }));
+    }
+
+    #[test]
+    fn binder_jet_machine_kind_detection_does_not_claim_bound_metal_fff_printer() {
+        assert!(wants_binder_jet_printing(
+            "binder jet stainless green part sinter job"
+        ));
+        assert!(is_binder_jet_printer_kind("binder-jet-printer"));
+        assert!(!is_binder_jet_printer_kind("bound-metal-fff-printer"));
+        assert!(is_bound_metal_filament_printer_kind(
+            "bound-metal-fff-printer"
+        ));
     }
 
     #[test]
@@ -51115,6 +52579,230 @@ mod tests {
     }
 
     #[test]
+    fn text_grinding_jobs_require_wheel_setup_and_sparkout_inspection_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("grinding-missing-wheel-setup".to_string()),
+                machine_id: Some("precision-grinder-1".to_string()),
+                machine_kind: Some("precision-grinder".to_string()),
+                language: Some("grinding-job".to_string()),
+                instructions: vec![
+                    "Precision surface grinding hardened tool-steel datum face to tolerance"
+                        .to_string(),
+                    "Spark-out passes complete; burn check and chatter review complete; profilometer verified surface finish and final metrology recorded"
+                        .to_string(),
+                    "Finish when complete".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("grinding-missing-sparkout-inspection".to_string()),
+                machine_id: Some("precision-grinder-1".to_string()),
+                machine_kind: Some("precision-grinder".to_string()),
+                language: Some("grinding-job".to_string()),
+                instructions: vec![
+                    "Precision surface grinding hardened tool-steel datum face to tolerance"
+                        .to_string(),
+                    "Wheel spec A46 grit, ring test, wheel guard, balance, dressing/truing, coolant concentration, magnetic chuck, and datum reference recorded"
+                        .to_string(),
+                    "CMM inspection plan and acceptance criteria recorded".to_string(),
+                    "Finish when complete".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("grinding-with-evidence".to_string()),
+                machine_id: Some("precision-grinder-1".to_string()),
+                machine_kind: Some("precision-grinder".to_string()),
+                language: Some("grinding-job".to_string()),
+                instructions: vec![
+                    "Precision surface grinding hardened tool-steel datum face to tolerance"
+                        .to_string(),
+                    "Wheel spec A46 grit, ring test, wheel guard, balance, dressing/truing, coolant concentration, magnetic chuck, and datum reference recorded"
+                        .to_string(),
+                    "Spark-out passes complete; burn check, chatter review, thermal growth, profilometer, flatness, runout, and final metrology recorded"
+                        .to_string(),
+                    "Finish when complete".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "grinding-wheel-setup-evidence-missing"
+                && finding.program_id.as_deref() == Some("grinding-missing-wheel-setup")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "grinding-sparkout-inspection-evidence-missing"
+                && finding.program_id.as_deref() == Some("grinding-missing-sparkout-inspection")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding
+                .program_id
+                .as_deref()
+                .is_some_and(|id| id == "grinding-with-evidence")
+                && finding.code.starts_with("grinding-")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "grinding-wheel-setup-boundary"
+                && boundary.program_id.as_deref() == Some("grinding-missing-wheel-setup")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("ring test")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "grinding-sparkout-inspection-boundary"
+                && boundary.program_id.as_deref() == Some("grinding-missing-sparkout-inspection")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("spark-out")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-grinding-wheel-setup-evidence"
+                && improvement.program_id.as_deref() == Some("grinding-missing-wheel-setup")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-grinding-sparkout-inspection-evidence"
+                && improvement.program_id.as_deref() == Some("grinding-missing-sparkout-inspection")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [grinding-wheel-setup-boundary]")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Grinding job needs wheel specification")));
+        assert!(improved[1].changed);
+        assert!(improved[1].instructions.iter().any(|line| {
+            line.starts_with("CHECKPOINT [grinding-sparkout-inspection-boundary]")
+        }));
+        assert!(improved[1]
+            .notes
+            .iter()
+            .any(|note| note.contains("Grinding job needs spark-out")));
+        assert!(!improved[2].instructions.iter().any(|line| {
+            line.starts_with("CHECKPOINT [grinding-wheel-setup-boundary]")
+                || line.starts_with("CHECKPOINT [grinding-sparkout-inspection-boundary]")
+        }));
+    }
+
+    #[test]
+    fn text_inspection_jobs_require_calibration_and_disposition_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("inspection-missing-calibration".to_string()),
+                machine_id: Some("cmm-inspection-cell-1".to_string()),
+                machine_kind: Some("cmm-inspection-cell".to_string()),
+                language: Some("cmm-inspection-job".to_string()),
+                instructions: vec![
+                    "CMM first article inspection of datum A/B/C and GD&T position tolerance"
+                        .to_string(),
+                    "Measured values, deviation map, pass/fail disposition, nonconformance routing, and corrective action owner recorded"
+                        .to_string(),
+                    "Finish when complete".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("inspection-missing-disposition".to_string()),
+                machine_id: Some("cmm-inspection-cell-1".to_string()),
+                machine_kind: Some("cmm-inspection-cell".to_string()),
+                language: Some("cmm-inspection-job".to_string()),
+                instructions: vec![
+                    "CMM first article inspection of datum A/B/C and GD&T position tolerance"
+                        .to_string(),
+                    "Probe calibration, stylus, calibration artifact, gauge block certificate, fixture repeatability, datum alignment verified, temperature soak, and measurement uncertainty recorded"
+                        .to_string(),
+                    "Finish when complete".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("inspection-with-evidence".to_string()),
+                machine_id: Some("cmm-inspection-cell-1".to_string()),
+                machine_kind: Some("cmm-inspection-cell".to_string()),
+                language: Some("cmm-inspection-job".to_string()),
+                instructions: vec![
+                    "CMM first article inspection of datum A/B/C and GD&T position tolerance"
+                        .to_string(),
+                    "Probe calibration, stylus, calibration artifact, gauge block certificate, fixture repeatability, datum alignment verified, temperature soak, and measurement uncertainty recorded"
+                        .to_string(),
+                    "Measured values, ballooned drawing, deviation map, tolerance band, pass/fail disposition, nonconformance routing, and corrective action owner recorded"
+                        .to_string(),
+                    "Finish when complete".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "inspection-calibration-evidence-missing"
+                && finding.program_id.as_deref() == Some("inspection-missing-calibration")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "inspection-disposition-evidence-missing"
+                && finding.program_id.as_deref() == Some("inspection-missing-disposition")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding
+                .program_id
+                .as_deref()
+                .is_some_and(|id| id == "inspection-with-evidence")
+                && finding.code.starts_with("inspection-")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "inspection-calibration-boundary"
+                && boundary.program_id.as_deref() == Some("inspection-missing-calibration")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("gauge-block")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "inspection-disposition-boundary"
+                && boundary.program_id.as_deref() == Some("inspection-missing-disposition")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("pass/fail")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-inspection-calibration-evidence"
+                && improvement.program_id.as_deref() == Some("inspection-missing-calibration")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-inspection-disposition-evidence"
+                && improvement.program_id.as_deref() == Some("inspection-missing-disposition")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [inspection-calibration-boundary]")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Inspection job needs probe or vision calibration")));
+        assert!(improved[1].changed);
+        assert!(improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [inspection-disposition-boundary]")));
+        assert!(improved[1]
+            .notes
+            .iter()
+            .any(|note| note.contains("Inspection job needs measured values")));
+        assert!(!improved[2].instructions.iter().any(|line| {
+            line.starts_with("CHECKPOINT [inspection-calibration-boundary]")
+                || line.starts_with("CHECKPOINT [inspection-disposition-boundary]")
+        }));
+    }
+
+    #[test]
     fn text_unattended_jobs_require_monitoring_and_recovery_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -52773,6 +54461,12 @@ mod tests {
             "plasma-job",
             "wire-edm-job",
             "sinker-edm-job",
+            "cmm-inspection-job",
+            "vision-inspection-job",
+            "metrology-job",
+            "thermal-postprocess-job",
+            "furnace-job",
+            "heat-treatment-job",
             "mill-turn-job",
             "assembly-cell-job",
             "assembly-checklist",
