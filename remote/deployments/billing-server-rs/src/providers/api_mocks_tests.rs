@@ -579,6 +579,38 @@ async fn western_union_holding_balance_uses_client_and_currency_path() {
 }
 
 #[tokio::test]
+async fn western_union_batch_payments_percent_encodes_path_segments() {
+    let mock = ProviderMock::start(vec![
+        ExpectedRequest::get("/customers/client_1/batches/batch%2F2026%2F01/payments")
+            .respond_json(json!({
+                "payments": [{
+                    "id": "wu_payment_1",
+                    "status": "paid",
+                    "partnerReference": "partner_ref_1",
+                    "amount": 2500,
+                    "currencyCode": "USD"
+                }]
+            })),
+    ])
+    .await;
+
+    let api = WesternUnionApi::with_base_url_for_tests(
+        WesternUnionCredential {
+            client_id: "client_1".into(),
+            environment: "sandbox".into(),
+            client_certificate_pem: None,
+            client_private_key_pem: None,
+            notes: None,
+        },
+        mock.base_url(),
+    );
+    let payments = api.list_batch_payments("batch/2026/01").await.unwrap();
+
+    assert_eq!(payments[0].id, "wu_payment_1");
+    mock.assert_finished().await;
+}
+
+#[tokio::test]
 async fn provider_client_surfaces_non_success_body() {
     let mock = ProviderMock::start(vec![
         ExpectedRequest::get("/transfers")

@@ -12,10 +12,15 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::time::Duration;
 
 use crate::error::{AppError, AppResult};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RemitlyCredential {
     /// Partner API token when a tenant has a Remitly partner/export contract.
     pub api_key: Option<String>,
@@ -31,6 +36,19 @@ pub struct RemitlyCredential {
     #[serde(default = "default_env")]
     pub environment: String,
     pub notes: Option<String>,
+}
+
+impl fmt::Debug for RemitlyCredential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RemitlyCredential")
+            .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field("partner_id", &self.partner_id)
+            .field("watched_recipients", &self.watched_recipients)
+            .field("api_base_url", &self.api_base_url)
+            .field("environment", &self.environment)
+            .field("notes", &self.notes)
+            .finish()
+    }
 }
 
 fn default_env() -> String {
@@ -86,21 +104,34 @@ impl RemitlyApi {
     pub fn new(cred: RemitlyCredential) -> AppResult<Self> {
         let api_key = required_option("remitly.api_key", cred.api_key.as_deref())?;
         let base_url = required_option("remitly.api_base_url", cred.api_base_url.as_deref())?;
-        Self::build(api_key, cred.partner_id, base_url)
+        Self::build(api_key, cred.partner_id, base_url, BaseUrlMode::Runtime)
     }
 
     #[cfg(test)]
     pub fn with_base_url_for_tests(cred: RemitlyCredential, base_url: String) -> AppResult<Self> {
         let api_key = required_option("remitly.api_key", cred.api_key.as_deref())?;
-        Self::build(api_key, cred.partner_id, base_url)
+        Self::build(api_key, cred.partner_id, base_url, BaseUrlMode::Test)
     }
 
-    fn build(api_key: String, partner_id: Option<String>, base_url: String) -> AppResult<Self> {
-        let base_url = normalize_base_url("remitly.api_base_url", &base_url)?;
+    fn build(
+        api_key: String,
+        partner_id: Option<String>,
+        base_url: String,
+        mode: BaseUrlMode,
+    ) -> AppResult<Self> {
+        let base_url = normalize_base_url("remitly.api_base_url", &base_url, mode)?;
+        let http = reqwest::Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(HTTP_TIMEOUT)
+            .build()
+            .map_err(|e| AppError::Provider {
+                provider: "remitly".into(),
+                message: format!("HTTP client build: {e}"),
+            })?;
         Ok(Self {
             api_key,
             partner_id,
-            http: reqwest::Client::new(),
+            http,
             base_url,
         })
     }
@@ -170,14 +201,85 @@ fn required_option(field: &str, value: Option<&str>) -> AppResult<String> {
     }
 }
 
-fn normalize_base_url(field: &str, value: &str) -> AppResult<String> {
+pub fn validate_partner_base_url(value: &str) -> AppResult<String> {
+    normalize_base_url("remitly.api_base_url", value, BaseUrlMode::Runtime)
+}
+
+#[derive(Clone, Copy)]
+enum BaseUrlMode {
+    Runtime,
+    Test,
+}
+
+fn normalize_base_url(field: &str, value: &str, mode: BaseUrlMode) -> AppResult<String> {
     let trimmed = value.trim().trim_end_matches('/');
     let parsed = url::Url::parse(trimmed)
         .map_err(|e| AppError::BadRequest(format!("{field} must be a valid URL: {e}")))?;
-    if !matches!(parsed.scheme(), "https" | "http") {
+    let allow_http = matches!(mode, BaseUrlMode::Test);
+    if parsed.scheme() != "https" && !(allow_http && parsed.scheme() == "http") {
         return Err(AppError::BadRequest(format!(
-            "{field} must use http or https"
+            "{field} must use https"
         )));
     }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(AppError::BadRequest(format!(
+            "{field} must not include URL credentials"
+        )));
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(AppError::BadRequest(format!(
+            "{field} must not include query or fragment components"
+        )));
+    }
+    if matches!(mode, BaseUrlMode::Runtime) {
+        validate_runtime_host(field, &parsed)?;
+    }
     Ok(trimmed.to_string())
+}
+
+fn validate_runtime_host(field: &str, parsed: &url::Url) -> AppResult<()> {
+    let Some(host) = parsed.host() else {
+        return Err(AppError::BadRequest(format!("{field} must include a host")));
+    };
+    match host {
+        url::Host::Domain(domain) => {
+            let host = domain.trim_end_matches('.').to_ascii_lowercase();
+            if host == "localhost"
+                || host.ends_with(".localhost")
+                || host.ends_with(".local")
+                || host.ends_with(".internal")
+                || !host.contains('.')
+            {
+                return Err(AppError::BadRequest(format!(
+                    "{field} must use a public provider hostname"
+                )));
+            }
+        }
+        url::Host::Ipv4(addr) => {
+            if addr.is_private()
+                || addr.is_loopback()
+                || addr.is_link_local()
+                || addr.is_unspecified()
+                || addr.is_broadcast()
+                || addr.is_multicast()
+            {
+                return Err(AppError::BadRequest(format!(
+                    "{field} must not target a private or local IP"
+                )));
+            }
+        }
+        url::Host::Ipv6(addr) => {
+            if addr.is_loopback()
+                || addr.is_unspecified()
+                || addr.is_unique_local()
+                || addr.is_unicast_link_local()
+                || addr.is_multicast()
+            {
+                return Err(AppError::BadRequest(format!(
+                    "{field} must not target a private or local IP"
+                )));
+            }
+        }
+    }
+    Ok(())
 }
