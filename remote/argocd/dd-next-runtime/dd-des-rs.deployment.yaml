@@ -199,10 +199,10 @@ spec:
               path: /healthz
               port: http
             # Cold release build of the engine + server from an empty /tmp can
-            # take several minutes on the 2-CPU node, so allow up to ~15 min
-            # before the startup probe gives up (5s * 180).
+            # take several minutes on the 2-CPU node, so allow up to ~50 min
+            # before the startup probe gives up (5s * 600).
             periodSeconds: 5
-            failureThreshold: 180
+            failureThreshold: 600
           # The landing page is available as soon as the server binds; rendered
           # /out artifacts warm in the background and should not remove routing.
           readinessProbe:
