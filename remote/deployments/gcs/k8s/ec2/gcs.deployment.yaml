@@ -153,6 +153,8 @@ spec:
               value: '10s'
             - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
               value: '30s'
+            - name: GCS_WS_WRITE_TIMEOUT
+              value: '2s'
             - name: GCS_WS_SIDE_EFFECT_MAX_IN_FLIGHT
               value: '512'
             - name: GCS_WS_SIDE_EFFECT_LOCAL_PRESSURE_SHED
@@ -176,13 +178,13 @@ spec:
             - name: GCS_WS_CONV_FANOUT_BATCH_ENABLED
               value: 'true'
             - name: GCS_WS_CONV_FANOUT_BATCH_MS
-              value: '50'
+              value: '20'
             - name: GCS_WS_CONV_FANOUT_BATCH_MAX
-              value: '512'
+              value: '64'
             - name: GCS_WS_CONV_FANOUT_PENDING_MAX
-              value: '2048'
+              value: '256'
             - name: GCS_WS_CONV_FANOUT_GLOBAL_PENDING_MAX
-              value: '131072'
+              value: '32768'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
@@ -214,9 +216,9 @@ spec:
             - name: GCS_WS_MONGO_BATCH_SIZE
               value: '1024'
             - name: GCS_WS_MONGO_BATCH_QUEUE_SIZE
-              value: '131072'
+              value: '32768'
             - name: GCS_WS_MONGO_BATCH_PRESSURE_PERCENT
-              value: '10'
+              value: '5'
             - name: GCS_WS_MONGO_BATCH_WORKERS
               value: '64'
             - name: GCS_WS_MONGO_BATCH_FLUSH_MS
