@@ -250,6 +250,90 @@ struct InstructionGenerationResultBlocker {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct MachineCodeResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    generator: Option<String>,
+    generator_version: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    controller: Option<String>,
+    postprocessor: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    programs: Option<Vec<MachineCodeResultProgram>>,
+    controller_checks: Option<Vec<MachineCodeResultControllerCheck>>,
+    failure_boundaries: Option<Vec<MachineCodeResultFailureBoundary>>,
+    artifacts: Option<Vec<MachineCodeResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineCodeResultProgram {
+    program_id: String,
+    source_program_id: Option<String>,
+    target_id: Option<String>,
+    operation_id: Option<String>,
+    language: String,
+    status: String,
+    output_format: Option<String>,
+    controller_dialect: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    estimated_runtime_sec: Option<i64>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+    preview_lines: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineCodeResultControllerCheck {
+    check_id: String,
+    check_kind: String,
+    status: String,
+    controller: Option<String>,
+    postprocessor: Option<String>,
+    machine_id: Option<String>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineCodeResultFailureBoundary {
+    boundary_id: String,
+    boundary_kind: String,
+    code: String,
+    message: String,
+    program_id: Option<String>,
+    segment_ref: Option<String>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    recommended_action: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineCodeResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    program_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct InstructionReviewResultReviewRequest {
     request_id: Option<String>,
     plan_request_id: Option<String>,
@@ -304,6 +388,89 @@ struct InstructionReviewResultImprovementDraft {
     patch_uri: Option<String>,
     preview_lines: Option<Vec<String>>,
     requires_human_approval: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionValidationResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    validator: String,
+    validator_version: Option<String>,
+    instruction_id: String,
+    language: String,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    controller: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    findings: Option<Vec<InstructionValidationResultFinding>>,
+    failure_boundaries: Option<Vec<InstructionValidationResultBoundary>>,
+    improvement_suggestions: Option<Vec<InstructionValidationResultImprovement>>,
+    artifacts: Option<Vec<InstructionValidationResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionValidationResultFinding {
+    finding_id: String,
+    severity: String,
+    code: String,
+    message: String,
+    instruction_id: Option<String>,
+    scope_id: Option<String>,
+    line_ref: Option<String>,
+    release_blocker: Option<bool>,
+    human_intervention_required: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionValidationResultBoundary {
+    boundary_id: String,
+    boundary_kind: String,
+    code: String,
+    message: String,
+    instruction_id: Option<String>,
+    line_ref: Option<String>,
+    release_blocker: Option<bool>,
+    human_intervention_required: Option<bool>,
+    split_required: Option<bool>,
+    combine_required: Option<bool>,
+    recommended_action: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionValidationResultImprovement {
+    improvement_id: String,
+    instruction_id: Option<String>,
+    improvement_kind: String,
+    summary: String,
+    patch_uri: Option<String>,
+    requires_human_approval: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+    preview_lines: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionValidationResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    instruction_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
     evidence: Option<Vec<String>>,
 }
 
@@ -9330,6 +9497,738 @@ fn store_instruction_generation_result_response(state: &AppState, response: &Val
     store_job(state, stored_instruction_generation_result_job(response));
 }
 
+fn validate_machine_code_result_programs(
+    programs: Option<Vec<MachineCodeResultProgram>>,
+) -> Result<Vec<Value>, String> {
+    let programs = programs.unwrap_or_default();
+    if programs.len() > MAX_PROGRAMS * 4 {
+        return Err(format!(
+            "programs must contain at most {} entries",
+            MAX_PROGRAMS * 4
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    programs
+        .into_iter()
+        .enumerate()
+        .map(|(index, program)| {
+            let program_id =
+                validate_label(&program.program_id, &format!("programs[{index}].programId"))?;
+            if !seen.insert(program_id.clone()) {
+                return Err(format!(
+                    "programs must have unique programId values; duplicate {program_id}"
+                ));
+            }
+            let estimated_runtime_sec = program
+                .estimated_runtime_sec
+                .map(|runtime| {
+                    if runtime < 0 {
+                        Err(format!(
+                            "programs[{index}].estimatedRuntimeSec must be non-negative"
+                        ))
+                    } else {
+                        Ok(runtime)
+                    }
+                })
+                .transpose()?;
+            let uri = validate_optional_text(
+                program.uri,
+                &format!("programs[{index}].uri"),
+                MAX_TEXT_LEN,
+            )?;
+            let sha256 =
+                validate_optional_label(program.sha256, &format!("programs[{index}].sha256"))?;
+            let evidence = validate_signal_list(
+                program.evidence,
+                &format!("programs[{index}].evidence"),
+                MAX_TEXT_LEN,
+            )?;
+            let has_retained_artifact = uri.as_ref().is_some_and(|value| !value.is_empty());
+            let has_checksum = sha256.as_ref().is_some_and(|value| !value.is_empty());
+            let has_evidence = !evidence.is_empty();
+            Ok(json!({
+                "programId": program_id,
+                "sourceProgramId": validate_optional_label(program.source_program_id, &format!("programs[{index}].sourceProgramId"))?,
+                "targetId": validate_optional_label(program.target_id, &format!("programs[{index}].targetId"))?,
+                "operationId": validate_optional_label(program.operation_id, &format!("programs[{index}].operationId"))?,
+                "language": validate_label(&program.language, &format!("programs[{index}].language"))?,
+                "status": validate_label(&program.status, &format!("programs[{index}].status"))?,
+                "outputFormat": validate_optional_label(program.output_format, &format!("programs[{index}].outputFormat"))?,
+                "controllerDialect": validate_optional_text(program.controller_dialect, &format!("programs[{index}].controllerDialect"), MAX_LABEL_LEN)?,
+                "uri": uri,
+                "sha256": sha256,
+                "estimatedRuntimeSec": estimated_runtime_sec,
+                "releaseBlocker": program.release_blocker.unwrap_or(false),
+                "evidence": evidence,
+                "previewLines": validate_signal_list(program.preview_lines, &format!("programs[{index}].previewLines"), MAX_TEXT_LEN)?,
+                "releaseEvidence": {
+                    "hasRetainedArtifact": has_retained_artifact,
+                    "hasChecksum": has_checksum,
+                    "hasEvidence": has_evidence
+                }
+            }))
+        })
+        .collect()
+}
+
+fn validate_machine_code_result_controller_checks(
+    checks: Option<Vec<MachineCodeResultControllerCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "controllerChecks must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id =
+                validate_label(&check.check_id, &format!("controllerChecks[{index}].checkId"))?;
+            if !seen.insert(check_id.clone()) {
+                return Err(format!(
+                    "controllerChecks must have unique checkId values; duplicate {check_id}"
+                ));
+            }
+            Ok(json!({
+                "checkId": check_id,
+                "checkKind": validate_label(&check.check_kind, &format!("controllerChecks[{index}].checkKind"))?,
+                "status": validate_label(&check.status, &format!("controllerChecks[{index}].status"))?,
+                "controller": validate_optional_label(check.controller, &format!("controllerChecks[{index}].controller"))?,
+                "postprocessor": validate_optional_label(check.postprocessor, &format!("controllerChecks[{index}].postprocessor"))?,
+                "machineId": validate_optional_label(check.machine_id, &format!("controllerChecks[{index}].machineId"))?,
+                "releaseBlocker": check.release_blocker.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": validate_signal_list(check.evidence, &format!("controllerChecks[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_machine_code_result_failure_boundaries(
+    boundaries: Option<Vec<MachineCodeResultFailureBoundary>>,
+) -> Result<Vec<Value>, String> {
+    let boundaries = boundaries.unwrap_or_default();
+    if boundaries.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "failureBoundaries must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    boundaries
+        .into_iter()
+        .enumerate()
+        .map(|(index, boundary)| {
+            let boundary_id = validate_label(
+                &boundary.boundary_id,
+                &format!("failureBoundaries[{index}].boundaryId"),
+            )?;
+            if !seen.insert(boundary_id.clone()) {
+                return Err(format!(
+                    "failureBoundaries must have unique boundaryId values; duplicate {boundary_id}"
+                ));
+            }
+            Ok(json!({
+                "boundaryId": boundary_id,
+                "boundaryKind": validate_label(&boundary.boundary_kind, &format!("failureBoundaries[{index}].boundaryKind"))?,
+                "code": validate_label(&boundary.code, &format!("failureBoundaries[{index}].code"))?,
+                "message": validate_text(&boundary.message, &format!("failureBoundaries[{index}].message"), MAX_TEXT_LEN)?,
+                "programId": validate_optional_label(boundary.program_id, &format!("failureBoundaries[{index}].programId"))?,
+                "segmentRef": validate_optional_text(boundary.segment_ref, &format!("failureBoundaries[{index}].segmentRef"), MAX_LABEL_LEN)?,
+                "releaseBlocker": boundary.release_blocker.unwrap_or(false),
+                "requiresHumanIntervention": boundary.requires_human_intervention.unwrap_or(false),
+                "recommendedAction": validate_optional_text(boundary.recommended_action, &format!("failureBoundaries[{index}].recommendedAction"), MAX_TEXT_LEN)?,
+                "evidence": validate_signal_list(boundary.evidence, &format!("failureBoundaries[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_machine_code_result_artifacts(
+    artifacts: Option<Vec<MachineCodeResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id =
+                validate_label(&artifact.artifact_id, &format!("artifacts[{index}].artifactId"))?;
+            if !seen.insert(artifact_id.clone()) {
+                return Err(format!(
+                    "artifacts must have unique artifactId values; duplicate {artifact_id}"
+                ));
+            }
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": validate_label(&artifact.artifact_kind, &format!("artifacts[{index}].artifactKind"))?,
+                "programId": validate_optional_label(artifact.program_id, &format!("artifacts[{index}].programId"))?,
+                "uri": validate_optional_text(artifact.uri, &format!("artifacts[{index}].uri"), MAX_TEXT_LEN)?,
+                "sha256": validate_optional_label(artifact.sha256, &format!("artifacts[{index}].sha256"))?,
+                "format": validate_optional_label(artifact.format, &format!("artifacts[{index}].format"))?,
+                "evidence": validate_signal_list(artifact.evidence, &format!("artifacts[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn machine_code_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    !matches!(
+        status.as_str(),
+        "complete"
+            | "completed"
+            | "success"
+            | "succeeded"
+            | "ok"
+            | "pass"
+            | "passed"
+            | "ready"
+            | "approved"
+            | "released"
+            | "clear"
+            | "cleared"
+            | "resolved"
+            | "verified"
+            | "accepted"
+            | "compatible"
+            | "postprocessed"
+    )
+}
+
+fn machine_code_result_program_blocks_release(program: &Value) -> bool {
+    if program
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    let status = program
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    machine_code_result_status_blocks_release(status)
+}
+
+fn machine_code_result_controller_check_blocks_release(check: &Value) -> bool {
+    if check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    {
+        return true;
+    }
+    let status = check
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    machine_code_result_status_blocks_release(status)
+}
+
+fn machine_code_result_boundary_blocks_release(boundary: &Value) -> bool {
+    boundary
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || boundary
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+fn machine_code_result_program_missing_release_evidence(program: &Value) -> bool {
+    let evidence = program.get("releaseEvidence").unwrap_or(&Value::Null);
+    !evidence
+        .get("hasRetainedArtifact")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || !evidence
+            .get("hasChecksum")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !evidence
+            .get("hasEvidence")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+fn machine_code_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact.get("uri").and_then(Value::as_str).is_none()
+        || artifact.get("sha256").and_then(Value::as_str).is_none()
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn machine_code_result_review_response(
+    request: MachineCodeResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "machine-code-result");
+    let generated_at_ms = now_ms();
+    let machine_code_result_job_id =
+        safe_job_id("machine-code-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let generator = validate_optional_label(request.generator, "generator")?;
+    let generator_version =
+        validate_optional_text(request.generator_version, "generatorVersion", MAX_LABEL_LEN)?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let controller = validate_optional_label(request.controller, "controller")?;
+    let postprocessor = validate_optional_label(request.postprocessor, "postprocessor")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let programs = validate_machine_code_result_programs(request.programs)?;
+    let controller_checks =
+        validate_machine_code_result_controller_checks(request.controller_checks)?;
+    let failure_boundaries =
+        validate_machine_code_result_failure_boundaries(request.failure_boundaries)?;
+    let artifacts = validate_machine_code_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let program_blocker_count = programs
+        .iter()
+        .filter(|program| machine_code_result_program_blocks_release(program))
+        .count();
+    let controller_check_blocker_count = controller_checks
+        .iter()
+        .filter(|check| machine_code_result_controller_check_blocks_release(check))
+        .count();
+    let boundary_blocker_count = failure_boundaries
+        .iter()
+        .filter(|boundary| machine_code_result_boundary_blocks_release(boundary))
+        .count();
+    let human_intervention_check_count = controller_checks
+        .iter()
+        .filter(|check| {
+            check
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_intervention_boundary_count = failure_boundaries
+        .iter()
+        .filter(|boundary| {
+            boundary
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let missing_program_evidence_count = programs
+        .iter()
+        .filter(|program| machine_code_result_program_missing_release_evidence(program))
+        .count();
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| machine_code_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty()
+        || missing_artifact_evidence_count > 0
+        || missing_program_evidence_count > 0;
+    let human_intervention_required =
+        human_intervention_check_count > 0 || human_intervention_boundary_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || programs.is_empty()
+        || program_blocker_count > 0
+        || controller_check_blocker_count > 0
+        || boundary_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if programs.is_empty() {
+        "machine-code-result-no-programs-release-blocked"
+    } else if !request.success {
+        "machine-code-result-worker-failed-release-blocked"
+    } else if program_blocker_count > 0 {
+        "machine-code-result-programs-release-blocked"
+    } else if controller_check_blocker_count > 0 {
+        "machine-code-result-controller-checks-release-blocked"
+    } else if boundary_blocker_count > 0 {
+        "machine-code-result-boundaries-release-blocked"
+    } else if artifact_evidence_missing {
+        "machine-code-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "machine-code-result-machine-ready-review-required"
+    } else if !release_ready {
+        "machine-code-result-release-ready-review-required"
+    } else {
+        "machine-code-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("machine-code-worker:{worker_id}"),
+        format!("machine-code-result:{review_status}"),
+    ];
+    if let Some(generator) = generator.as_ref() {
+        learning_observations.push(format!(
+            "machine-code-generator:{}",
+            normalize_token(generator)
+        ));
+    }
+    if let Some(controller) = controller.as_ref() {
+        learning_observations.push(format!(
+            "machine-code-controller:{}",
+            normalize_token(controller)
+        ));
+    }
+    if let Some(postprocessor) = postprocessor.as_ref() {
+        learning_observations.push(format!(
+            "machine-code-postprocessor:{}",
+            normalize_token(postprocessor)
+        ));
+    }
+    if let Some(machine_id) = machine_id.as_ref() {
+        learning_observations.push(format!(
+            "machine-code-machine:{}",
+            normalize_token(machine_id)
+        ));
+    }
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "machine-code-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("machine-code:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("machine-code:human-intervention-required".to_string());
+    }
+    if artifact_evidence_missing {
+        learning_observations.push("machine-code:artifact-evidence-missing".to_string());
+    }
+    if program_blocker_count > 0 {
+        learning_observations.push("machine-code:program-blocked".to_string());
+    }
+    if controller_check_blocker_count > 0 {
+        learning_observations.push("machine-code:controller-check-blocked".to_string());
+    }
+    if boundary_blocker_count > 0 {
+        learning_observations.push("machine-code:boundary-blocked".to_string());
+    }
+    learning_observations.extend(programs.iter().filter_map(|program| {
+        program
+            .get("language")
+            .and_then(Value::as_str)
+            .map(|language| {
+                format!(
+                    "machine-code-program-language:{}",
+                    normalize_token(language)
+                )
+            })
+    }));
+    learning_observations.extend(programs.iter().filter_map(|program| {
+        program
+            .get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("machine-code-program-status:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(controller_checks.iter().filter_map(|check| {
+        check
+            .get("checkKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("machine-code-check:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(controller_checks.iter().filter_map(|check| {
+        check
+            .get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("machine-code-check-status:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(failure_boundaries.iter().filter_map(|boundary| {
+        boundary
+            .get("boundaryKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("machine-code-boundary:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(failure_boundaries.iter().filter_map(|boundary| {
+        boundary
+            .get("code")
+            .and_then(Value::as_str)
+            .map(|code| format!("machine-code-boundary-code:{}", normalize_token(code)))
+    }));
+    learning_observations.extend(failure_boundaries.iter().filter_map(|boundary| {
+        boundary
+            .get("recommendedAction")
+            .and_then(Value::as_str)
+            .map(|action| {
+                format!(
+                    "machine-code-recommended-action:{}",
+                    normalize_token(action)
+                )
+            })
+    }));
+    learning_observations.extend(artifacts.iter().filter_map(|artifact| {
+        artifact
+            .get("artifactKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("machine-code-artifact:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.machine-code-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "machineCodeResultJobId": machine_code_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": [
+            "POST /machine-code/result",
+            "POST /fabrication/machine-code/result"
+        ],
+        "generationRoutes": [
+            "POST /machine-code/generate",
+            "POST /fabrication/machine-code/generate",
+            "POST /instructions/generate",
+            "POST /fabrication/instructions/generate"
+        ],
+        "toolpathRoutes": [
+            "POST /toolpaths/plan",
+            "POST /fabrication/toolpaths/plan",
+            "POST /toolpaths/result",
+            "POST /fabrication/toolpaths/result"
+        ],
+        "controllerRoutes": [
+            "GET /controllers/catalog",
+            "GET /fabrication/controllers/catalog"
+        ],
+        "simulationRoutes": [
+            "POST /simulation/run",
+            "POST /fabrication/simulation/run",
+            "POST /simulation/result",
+            "POST /fabrication/simulation/result"
+        ],
+        "releaseRoutes": [
+            "POST /release/preview",
+            "POST /fabrication/release/preview",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "programCount": programs.len(),
+        "programBlockerCount": program_blocker_count,
+        "controllerCheckCount": controller_checks.len(),
+        "controllerCheckBlockerCount": controller_check_blocker_count,
+        "failureBoundaryCount": failure_boundaries.len(),
+        "boundaryBlockerCount": boundary_blocker_count,
+        "humanInterventionCheckCount": human_intervention_check_count,
+        "humanInterventionBoundaryCount": human_intervention_boundary_count,
+        "artifactCount": artifacts.len(),
+        "missingProgramEvidenceCount": missing_program_evidence_count,
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "humanInterventionRequired": human_intervention_required,
+        "warningCount": warnings.len(),
+        "machineCodeResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "generator": generator,
+            "generatorVersion": generator_version,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "controller": controller,
+            "postprocessor": postprocessor,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "programs": programs,
+            "controllerChecks": controller_checks,
+            "failureBoundaries": failure_boundaries,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "controller-specific machine-code output is retained with URI, checksum, postprocessor, and controller dialect evidence",
+                "controller checks prove modal state, offsets, macros, units, and postprocessor assumptions are compatible with the selected machine",
+                "failure boundaries and human-intervention gates are resolved or routed into execution, simulation, and release-package reviews",
+                "simulation or dry-run evidence and operator or automation signoff are retained before machine-ready release"
+            ],
+            "targetSurfaces": [
+                "generatedPrograms",
+                "controllerPlan",
+                "postprocessPlan",
+                "simulation",
+                "executionPlan",
+                "machineRelease",
+                "releasePackagePlan",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "machine-code-result",
+            "machine-code-programs",
+            "machine-code-controller-checks",
+            "machine-code-failure-boundaries",
+            "machine-code-artifacts",
+            "machine-code-learning-observations",
+            "generated-machine-program",
+            "controller-plan",
+            "postprocess-plan",
+            "mdp-request.artifacts.machineCodeResult"
+        ],
+        "machineCodePolicy": [
+            "machine-code results are retained controller, postprocessor, CAM, slicer, setup, and dry-run evidence, not certified machine safety approval",
+            "machine-ready release remains blocked until controller checks, failure boundaries, retained artifacts, simulation or dry-run evidence, and signoff clear",
+            "machine-code result observations feed MDP/POMDP/neural learning so future plans can prefer reliable postprocessors, controllers, machine routes, or human review gates"
+        ]
+    }))
+}
+
+fn machine_code_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("no-programs")
+        || status.contains("programs-release-blocked")
+        || status.contains("controller-checks-release-blocked")
+        || status.contains("boundaries-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_machine_code_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "machine-code-result");
+    let job_id = response_str_field(
+        response,
+        "machineCodeResultJobId",
+        &safe_job_id("machine-code-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "machine-code-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("machineCodeResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let programs = result.get("programs").cloned().unwrap_or_else(|| json!([]));
+    let controller_checks = result
+        .get("controllerChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let failure_boundaries = result
+        .get("failureBoundaries")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let machine_code_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "machine-code-result".to_string(),
+            "machine-code-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "machine-code-programs".to_string(),
+            "machine-code-programs",
+            programs,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "machine-code-controller-checks".to_string(),
+            "machine-code-controller-checks",
+            controller_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "machine-code-failure-boundaries".to_string(),
+            "machine-code-failure-boundaries",
+            failure_boundaries,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "machine-code-artifacts".to_string(),
+            "machine-code-artifacts",
+            machine_code_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "machine-code-learning-observations".to_string(),
+            "machine-code-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "machine-code-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: machine_code_result_job_severity(response),
+            summary: format!("machine-code result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_machine_code_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_machine_code_result_job(response));
+}
+
 fn validate_instruction_review_result_findings(
     findings: Option<Vec<InstructionReviewResultFinding>>,
 ) -> Result<Vec<Value>, String> {
@@ -9800,6 +10699,704 @@ fn stored_instruction_review_result_job(response: &Value) -> StoredFabricationJo
 
 fn store_instruction_review_result_response(state: &AppState, response: &Value) {
     store_job(state, stored_instruction_review_result_job(response));
+}
+
+fn validate_instruction_validation_result_findings(
+    findings: Option<Vec<InstructionValidationResultFinding>>,
+) -> Result<Vec<Value>, String> {
+    let findings = findings.unwrap_or_default();
+    if findings.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "findings must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    findings
+        .into_iter()
+        .enumerate()
+        .map(|(index, finding)| {
+            let finding_id =
+                validate_label(&finding.finding_id, &format!("findings[{index}].findingId"))?;
+            if !seen.insert(finding_id.clone()) {
+                return Err(format!(
+                    "findings must have unique findingId values; duplicate {finding_id}"
+                ));
+            }
+            Ok(json!({
+                "findingId": finding_id,
+                "severity": validate_label(&finding.severity, &format!("findings[{index}].severity"))?,
+                "code": validate_label(&finding.code, &format!("findings[{index}].code"))?,
+                "message": validate_text(&finding.message, &format!("findings[{index}].message"), MAX_TEXT_LEN)?,
+                "instructionId": validate_optional_label(finding.instruction_id, &format!("findings[{index}].instructionId"))?,
+                "scopeId": validate_optional_label(finding.scope_id, &format!("findings[{index}].scopeId"))?,
+                "lineRef": validate_optional_text(finding.line_ref, &format!("findings[{index}].lineRef"), MAX_LABEL_LEN)?,
+                "releaseBlocker": finding.release_blocker.unwrap_or(false),
+                "humanInterventionRequired": finding.human_intervention_required.unwrap_or(false),
+                "evidence": validate_signal_list(finding.evidence, &format!("findings[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_instruction_validation_result_boundaries(
+    boundaries: Option<Vec<InstructionValidationResultBoundary>>,
+) -> Result<Vec<Value>, String> {
+    let boundaries = boundaries.unwrap_or_default();
+    if boundaries.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "failureBoundaries must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    boundaries
+        .into_iter()
+        .enumerate()
+        .map(|(index, boundary)| {
+            let boundary_id = validate_label(
+                &boundary.boundary_id,
+                &format!("failureBoundaries[{index}].boundaryId"),
+            )?;
+            if !seen.insert(boundary_id.clone()) {
+                return Err(format!(
+                    "failureBoundaries must have unique boundaryId values; duplicate {boundary_id}"
+                ));
+            }
+            Ok(json!({
+                "boundaryId": boundary_id,
+                "boundaryKind": validate_label(&boundary.boundary_kind, &format!("failureBoundaries[{index}].boundaryKind"))?,
+                "code": validate_label(&boundary.code, &format!("failureBoundaries[{index}].code"))?,
+                "message": validate_text(&boundary.message, &format!("failureBoundaries[{index}].message"), MAX_TEXT_LEN)?,
+                "instructionId": validate_optional_label(boundary.instruction_id, &format!("failureBoundaries[{index}].instructionId"))?,
+                "lineRef": validate_optional_text(boundary.line_ref, &format!("failureBoundaries[{index}].lineRef"), MAX_LABEL_LEN)?,
+                "releaseBlocker": boundary.release_blocker.unwrap_or(false),
+                "humanInterventionRequired": boundary.human_intervention_required.unwrap_or(false),
+                "splitRequired": boundary.split_required.unwrap_or(false),
+                "combineRequired": boundary.combine_required.unwrap_or(false),
+                "recommendedAction": validate_optional_text(
+                    boundary.recommended_action,
+                    &format!("failureBoundaries[{index}].recommendedAction"),
+                    MAX_LABEL_LEN,
+                )?,
+                "evidence": validate_signal_list(boundary.evidence, &format!("failureBoundaries[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_instruction_validation_result_improvements(
+    improvements: Option<Vec<InstructionValidationResultImprovement>>,
+) -> Result<Vec<Value>, String> {
+    let improvements = improvements.unwrap_or_default();
+    if improvements.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "improvementSuggestions must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    improvements
+        .into_iter()
+        .enumerate()
+        .map(|(index, improvement)| {
+            let improvement_id = validate_label(
+                &improvement.improvement_id,
+                &format!("improvementSuggestions[{index}].improvementId"),
+            )?;
+            if !seen.insert(improvement_id.clone()) {
+                return Err(format!(
+                    "improvementSuggestions must have unique improvementId values; duplicate {improvement_id}"
+                ));
+            }
+            Ok(json!({
+                "improvementId": improvement_id,
+                "instructionId": validate_optional_label(improvement.instruction_id, &format!("improvementSuggestions[{index}].instructionId"))?,
+                "improvementKind": validate_label(&improvement.improvement_kind, &format!("improvementSuggestions[{index}].improvementKind"))?,
+                "summary": validate_text(&improvement.summary, &format!("improvementSuggestions[{index}].summary"), MAX_TEXT_LEN)?,
+                "patchUri": validate_optional_text(improvement.patch_uri, &format!("improvementSuggestions[{index}].patchUri"), MAX_TEXT_LEN)?,
+                "requiresHumanApproval": improvement.requires_human_approval.unwrap_or(false),
+                "releaseBlocker": improvement.release_blocker.unwrap_or(false),
+                "evidence": validate_signal_list(improvement.evidence, &format!("improvementSuggestions[{index}].evidence"), MAX_TEXT_LEN)?,
+                "previewLines": validate_signal_list(improvement.preview_lines, &format!("improvementSuggestions[{index}].previewLines"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_instruction_validation_result_artifacts(
+    artifacts: Option<Vec<InstructionValidationResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id =
+                validate_label(&artifact.artifact_id, &format!("artifacts[{index}].artifactId"))?;
+            if !seen.insert(artifact_id.clone()) {
+                return Err(format!(
+                    "artifacts must have unique artifactId values; duplicate {artifact_id}"
+                ));
+            }
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": validate_label(&artifact.artifact_kind, &format!("artifacts[{index}].artifactKind"))?,
+                "instructionId": validate_optional_label(artifact.instruction_id, &format!("artifacts[{index}].instructionId"))?,
+                "uri": validate_optional_text(artifact.uri, &format!("artifacts[{index}].uri"), MAX_TEXT_LEN)?,
+                "sha256": validate_optional_label(artifact.sha256, &format!("artifacts[{index}].sha256"))?,
+                "format": validate_optional_label(artifact.format, &format!("artifacts[{index}].format"))?,
+                "evidence": validate_signal_list(artifact.evidence, &format!("artifacts[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn instruction_validation_result_finding_blocks_release(finding: &Value) -> bool {
+    let severity = finding
+        .get("severity")
+        .and_then(Value::as_str)
+        .map(normalize_token)
+        .unwrap_or_default();
+    finding
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || finding
+            .get("humanInterventionRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || matches!(
+            severity.as_str(),
+            "error" | "critical" | "blocker" | "high" | "failed" | "unsafe"
+        )
+}
+
+fn instruction_validation_result_boundary_blocks_release(boundary: &Value) -> bool {
+    boundary
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || boundary
+            .get("humanInterventionRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || boundary
+            .get("splitRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || boundary
+            .get("combineRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+fn instruction_validation_result_improvement_blocks_release(improvement: &Value) -> bool {
+    improvement
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || improvement
+            .get("requiresHumanApproval")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+fn instruction_validation_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact.get("uri").and_then(Value::as_str).is_none()
+        || artifact.get("sha256").and_then(Value::as_str).is_none()
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn instruction_validation_result_review_response(
+    request: InstructionValidationResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "instruction-validation-result");
+    let generated_at_ms = now_ms();
+    let validation_result_job_id = safe_job_id(
+        "instruction-validation-result",
+        &request_id,
+        generated_at_ms,
+    );
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let validator = validate_label(&request.validator, "validator")?;
+    let validator_version =
+        validate_optional_text(request.validator_version, "validatorVersion", MAX_LABEL_LEN)?;
+    let instruction_id = validate_label(&request.instruction_id, "instructionId")?;
+    let language = validate_label(&request.language, "language")?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let controller = validate_optional_label(request.controller, "controller")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let findings = validate_instruction_validation_result_findings(request.findings)?;
+    let failure_boundaries =
+        validate_instruction_validation_result_boundaries(request.failure_boundaries)?;
+    let improvement_suggestions =
+        validate_instruction_validation_result_improvements(request.improvement_suggestions)?;
+    let artifacts = validate_instruction_validation_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let blocking_finding_count = findings
+        .iter()
+        .filter(|finding| instruction_validation_result_finding_blocks_release(finding))
+        .count();
+    let boundary_blocker_count = failure_boundaries
+        .iter()
+        .filter(|boundary| instruction_validation_result_boundary_blocks_release(boundary))
+        .count();
+    let improvement_blocker_count = improvement_suggestions
+        .iter()
+        .filter(|improvement| instruction_validation_result_improvement_blocks_release(improvement))
+        .count();
+    let human_intervention_finding_count = findings
+        .iter()
+        .filter(|finding| {
+            finding
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_intervention_boundary_count = failure_boundaries
+        .iter()
+        .filter(|boundary| {
+            boundary
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_approval_improvement_count = improvement_suggestions
+        .iter()
+        .filter(|improvement| {
+            improvement
+                .get("requiresHumanApproval")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let split_boundary_count = failure_boundaries
+        .iter()
+        .filter(|boundary| {
+            boundary
+                .get("splitRequired")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let combine_boundary_count = failure_boundaries
+        .iter()
+        .filter(|boundary| {
+            boundary
+                .get("combineRequired")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| {
+            instruction_validation_result_artifact_missing_release_evidence(artifact)
+        })
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let human_intervention_required = human_intervention_finding_count > 0
+        || human_intervention_boundary_count > 0
+        || human_approval_improvement_count > 0;
+    let split_or_combine_required = split_boundary_count > 0 || combine_boundary_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || blocking_finding_count > 0
+        || boundary_blocker_count > 0
+        || improvement_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if !request.success {
+        "instruction-validation-worker-failed-release-blocked"
+    } else if blocking_finding_count > 0 {
+        "instruction-validation-findings-release-blocked"
+    } else if boundary_blocker_count > 0 {
+        "instruction-validation-boundaries-release-blocked"
+    } else if improvement_blocker_count > 0 {
+        "instruction-validation-improvements-review-required"
+    } else if artifact_evidence_missing {
+        "instruction-validation-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "instruction-validation-machine-ready-review-required"
+    } else if !release_ready {
+        "instruction-validation-release-ready-review-required"
+    } else {
+        "instruction-validation-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("instruction-validation-worker:{worker_id}"),
+        format!("instruction-validation-result:{review_status}"),
+        format!(
+            "instruction-validation-validator:{}",
+            normalize_token(&validator)
+        ),
+        format!(
+            "instruction-validation-language:{}",
+            normalize_token(&language)
+        ),
+    ];
+    if let Some(machine_id) = machine_id.as_ref() {
+        learning_observations.push(format!(
+            "instruction-validation-machine:{}",
+            normalize_token(machine_id)
+        ));
+    }
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "instruction-validation-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if let Some(controller) = controller.as_ref() {
+        learning_observations.push(format!(
+            "instruction-validation-controller:{}",
+            normalize_token(controller)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("instruction-validation:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations
+            .push("instruction-validation:human-intervention-required".to_string());
+    }
+    if split_or_combine_required {
+        learning_observations.push("instruction-validation:split-combine-required".to_string());
+    }
+    if artifact_evidence_missing {
+        learning_observations.push("instruction-validation:artifact-evidence-missing".to_string());
+    }
+    if blocking_finding_count > 0 {
+        learning_observations.push("instruction-validation:finding-blocked".to_string());
+    }
+    if boundary_blocker_count > 0 {
+        learning_observations.push("instruction-validation:boundary-blocked".to_string());
+    }
+    if improvement_blocker_count > 0 {
+        learning_observations.push("instruction-validation:improvement-blocked".to_string());
+    }
+    learning_observations.extend(findings.iter().filter_map(|finding| {
+        finding
+            .get("code")
+            .and_then(Value::as_str)
+            .map(|code| format!("instruction-validation-finding:{}", normalize_token(code)))
+    }));
+    learning_observations.extend(findings.iter().filter_map(|finding| {
+        finding
+            .get("severity")
+            .and_then(Value::as_str)
+            .map(|severity| {
+                format!(
+                    "instruction-validation-finding-severity:{}",
+                    normalize_token(severity)
+                )
+            })
+    }));
+    learning_observations.extend(failure_boundaries.iter().filter_map(|boundary| {
+        boundary
+            .get("boundaryKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("instruction-validation-boundary:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(failure_boundaries.iter().filter_map(|boundary| {
+        boundary.get("code").and_then(Value::as_str).map(|code| {
+            format!(
+                "instruction-validation-boundary-code:{}",
+                normalize_token(code)
+            )
+        })
+    }));
+    learning_observations.extend(failure_boundaries.iter().filter_map(|boundary| {
+        boundary
+            .get("recommendedAction")
+            .and_then(Value::as_str)
+            .map(|action| {
+                format!(
+                    "instruction-validation-recommended-action:{}",
+                    normalize_token(action)
+                )
+            })
+    }));
+    learning_observations.extend(improvement_suggestions.iter().filter_map(|improvement| {
+        improvement
+            .get("improvementKind")
+            .and_then(Value::as_str)
+            .map(|kind| {
+                format!(
+                    "instruction-validation-improvement:{}",
+                    normalize_token(kind)
+                )
+            })
+    }));
+    learning_observations.extend(artifacts.iter().filter_map(|artifact| {
+        artifact
+            .get("artifactKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("instruction-validation-artifact:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-validation-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "validationResultJobId": validation_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": [
+            "POST /instructions/validation/result",
+            "POST /fabrication/instructions/validation/result"
+        ],
+        "validationRoutes": [
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate"
+        ],
+        "analysisRoutes": [
+            "POST /instructions/analyze",
+            "POST /fabrication/instructions/analyze"
+        ],
+        "improvementRoutes": [
+            "POST /instructions/improve",
+            "POST /fabrication/instructions/improve"
+        ],
+        "simulationRoutes": [
+            "POST /simulation/run",
+            "POST /fabrication/simulation/run",
+            "POST /simulation/result",
+            "POST /fabrication/simulation/result"
+        ],
+        "releaseRoutes": [
+            "POST /release/preview",
+            "POST /fabrication/release/preview",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "findingCount": findings.len(),
+        "blockingFindingCount": blocking_finding_count,
+        "failureBoundaryCount": failure_boundaries.len(),
+        "boundaryBlockerCount": boundary_blocker_count,
+        "humanInterventionFindingCount": human_intervention_finding_count,
+        "humanInterventionBoundaryCount": human_intervention_boundary_count,
+        "humanApprovalImprovementCount": human_approval_improvement_count,
+        "humanInterventionRequired": human_intervention_required,
+        "splitBoundaryCount": split_boundary_count,
+        "combineBoundaryCount": combine_boundary_count,
+        "splitOrCombineRequired": split_or_combine_required,
+        "improvementSuggestionCount": improvement_suggestions.len(),
+        "improvementBlockerCount": improvement_blocker_count,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "instructionValidationResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "validator": validator,
+            "validatorVersion": validator_version,
+            "instructionId": instruction_id,
+            "language": language,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "controller": controller,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "findings": findings,
+            "failureBoundaries": failure_boundaries,
+            "improvementSuggestions": improvement_suggestions,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "blocking validation findings are resolved or converted into reviewed improvement patches",
+                "human-intervention, split, combine, and machine-failure boundaries are explicitly routed into execution, simulation, assembly, or release-package reviews",
+                "validator artifacts are retained with URI, checksum, and evidence before machine-ready release",
+                "simulation or dry-run evidence plus operator or automation signoff is attached for controller-specific execution"
+            ],
+            "targetSurfaces": [
+                "validation.findings",
+                "validation.failureBoundaries",
+                "improvements",
+                "improvedPrograms.patchManifest",
+                "simulation.failureBoundaries",
+                "machineRelease.blockers",
+                "releasePackagePlan.signoffGates",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "instruction-validation-result",
+            "instruction-validation-findings",
+            "instruction-validation-boundaries",
+            "instruction-validation-improvements",
+            "instruction-validation-artifacts",
+            "instruction-validation-learning-observations",
+            "analysis-validation-report",
+            "analysis-boundary-summary",
+            "analysis-mdp-request",
+            "mdp-request.artifacts.instructionValidationResult"
+        ],
+        "validationResultPolicy": [
+            "instruction validation results are retained worker evidence for CNC, printer, slicer, setup-sheet, postprocess, assembly, or operator instructions",
+            "machine-ready release remains blocked until validation findings, failure boundaries, retained artifacts, simulation or dry-run evidence, controller review, and signoff gates clear",
+            "validation result observations feed MDP/POMDP/neural learning so future plans can prefer reliable validators, controller dialects, machine routes, and split/combine review gates"
+        ]
+    }))
+}
+
+fn instruction_validation_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("findings-release-blocked")
+        || status.contains("boundaries-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_instruction_validation_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "instruction-validation-result");
+    let job_id = response_str_field(
+        response,
+        "validationResultJobId",
+        &safe_job_id(
+            "instruction-validation-result",
+            &request_id,
+            generated_at_ms,
+        ),
+    );
+    let review_status =
+        response_str_field(response, "reviewStatus", "instruction-validation-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("instructionValidationResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let findings = result.get("findings").cloned().unwrap_or_else(|| json!([]));
+    let failure_boundaries = result
+        .get("failureBoundaries")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let improvement_suggestions = result
+        .get("improvementSuggestions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let validation_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "instruction-validation-result".to_string(),
+            "instruction-validation-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-validation-findings".to_string(),
+            "instruction-validation-findings",
+            findings,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-validation-boundaries".to_string(),
+            "instruction-validation-boundaries",
+            failure_boundaries,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-validation-improvements".to_string(),
+            "instruction-validation-improvements",
+            improvement_suggestions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-validation-artifacts".to_string(),
+            "instruction-validation-artifacts",
+            validation_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-validation-learning-observations".to_string(),
+            "instruction-validation-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "instruction-validation-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: instruction_validation_result_job_severity(response),
+            summary: format!("instruction validation result: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_instruction_validation_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_instruction_validation_result_job(response));
 }
 
 fn validate_instruction_simulation_envelope_checks(
@@ -34676,6 +36273,13 @@ fn instruction_validation_response(response: &InstructionAnalysisResponse) -> Va
         ]),
     );
     object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /instructions/validation/result",
+            "POST /fabrication/instructions/validation/result"
+        ]),
+    );
+    object.insert(
         "analysisRoutes".to_string(),
         json!([
             "POST /instructions/analyze",
@@ -44237,6 +45841,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/design/convert/result",
         "GET /instructions/languages",
         "GET /fabrication/instructions/languages",
+        "GET /instructions/validation/catalog",
+        "GET /fabrication/instructions/validation/catalog",
         "GET /instructions/generation/catalog",
         "GET /fabrication/instructions/generation/catalog",
         "POST /instructions/generate",
@@ -44245,8 +45851,12 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/instructions/generation/result",
         "POST /instructions/review/result",
         "POST /fabrication/instructions/review/result",
+        "GET /machine-code/catalog",
+        "GET /fabrication/machine-code/catalog",
         "POST /machine-code/generate",
         "POST /fabrication/machine-code/generate",
+        "POST /machine-code/result",
+        "POST /fabrication/machine-code/result",
         "POST /toolpaths/plan",
         "POST /fabrication/toolpaths/plan",
         "POST /toolpaths/result",
@@ -44255,8 +45865,14 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/improvements/catalog",
         "GET /boundaries/catalog",
         "GET /fabrication/boundaries/catalog",
+        "GET /remediation/catalog",
+        "GET /fabrication/remediation/catalog",
         "GET /decomposition/catalog",
         "GET /fabrication/decomposition/catalog",
+        "POST /decomposition/plan",
+        "POST /fabrication/decomposition/plan",
+        "POST /decomposition/result",
+        "POST /fabrication/decomposition/result",
         "GET /release/catalog",
         "GET /fabrication/release/catalog",
         "POST /release/preview",
@@ -44336,6 +45952,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/instructions/analyze",
         "POST /instructions/validate",
         "POST /fabrication/instructions/validate",
+        "POST /instructions/validation/result",
+        "POST /fabrication/instructions/validation/result",
         "POST /instructions/improve",
         "POST /fabrication/instructions/improve",
         "POST /instructions/boundaries/review",
@@ -44357,6 +45975,7 @@ async fn root() -> impl IntoResponse {
             "draft G-code and operator instruction generation",
             "standalone generated machine-program and instruction package creation",
             "existing instruction validation and improvement hints",
+            "retained external instruction validation results for imported and generated programs",
             "standalone instruction improvement review and patch-manifest generation",
             "standalone instruction boundary review for machine-failure, human-intervention, automation, and split/combine gates",
             "simulation and dry-run catalog discovery for machine-envelope, clearance, collision, and remediation evidence",
@@ -44680,6 +46299,170 @@ fn boundary_catalog_response() -> Value {
 
 async fn boundary_catalog_http() -> impl IntoResponse {
     Json(boundary_catalog_response())
+}
+
+fn boundary_remediation_route_handoffs(boundary_kind: &str) -> Vec<&'static str> {
+    match boundary_kind {
+        "machine-release-blocker" => vec![
+            "POST /fabrication/release/preview",
+            "POST /fabrication/machine-code/result",
+            "POST /fabrication/simulation/result",
+        ],
+        "machine-envelope" => vec![
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/toolpaths/plan",
+            "POST /fabrication/instructions/improve",
+        ],
+        "human-intervention" => vec![
+            "GET /fabrication/interventions/catalog",
+            "POST /fabrication/execution/plan",
+            "POST /fabrication/instructions/boundaries/review",
+        ],
+        "split-boundary" => vec![
+            "POST /fabrication/decomposition/plan",
+            "POST /fabrication/toolpaths/plan",
+            "POST /fabrication/release/preview",
+        ],
+        "combine-or-assembly-boundary" => vec![
+            "POST /fabrication/assembly/plan",
+            "POST /fabrication/decomposition/plan",
+            "POST /fabrication/release/preview",
+        ],
+        "automation-capability-gap" => vec![
+            "GET /fabrication/interventions/catalog",
+            "POST /fabrication/monitoring/plan",
+            "POST /fabrication/execution/plan",
+        ],
+        "postprocess-gate" => vec![
+            "POST /fabrication/postprocess/plan",
+            "POST /fabrication/machine-code/generate",
+            "POST /fabrication/machine-code/result",
+        ],
+        "inspection-gate" => vec![
+            "POST /fabrication/quality/plan",
+            "POST /fabrication/monitoring/plan",
+            "POST /fabrication/quality/result",
+        ],
+        "machine-profile-blocker" => vec![
+            "POST /fabrication/machines/select",
+            "POST /fabrication/setup/plan",
+            "POST /fabrication/calibration/plan",
+        ],
+        "material-machine-boundary" => vec![
+            "POST /fabrication/materials/plan",
+            "POST /fabrication/materials/result",
+            "POST /fabrication/machines/select",
+        ],
+        _ => vec!["POST /fabrication/instructions/boundaries/review"],
+    }
+}
+
+fn boundary_remediation_learning_signals(boundary_kind: &str) -> Vec<String> {
+    let mut signals = boundary_catalog_learning_signals(boundary_kind);
+    signals.push(format!("remediation-catalog:{boundary_kind}"));
+    signals.push(format!(
+        "remediation-family:{}",
+        boundary_catalog_family(boundary_kind)
+    ));
+    signals.push(format!("machine-ready-release-held:{boundary_kind}"));
+    signals.sort();
+    signals.dedup();
+    signals
+}
+
+fn boundary_remediation_contracts() -> Vec<Value> {
+    safety_boundary_classes()
+        .into_iter()
+        .map(|boundary_kind| {
+            json!({
+                "boundaryKind": boundary_kind,
+                "family": boundary_catalog_family(boundary_kind),
+                "detectionSources": boundary_catalog_detection_sources(boundary_kind),
+                "requiredEvidence": boundary_catalog_release_evidence(boundary_kind),
+                "remediationActions": boundary_catalog_resolution_actions(boundary_kind),
+                "routeHandoffs": boundary_remediation_route_handoffs(boundary_kind),
+                "responseSurfaces": [
+                    "resolutionPlan.steps",
+                    "interventionMap",
+                    "operatorInterventionPlan",
+                    "improvedPrograms.patchManifest",
+                    "decompositionPlan",
+                    "interfaceControlPlan",
+                    "machineRelease.blockers",
+                    "releasePackagePlan.requiredArtifacts"
+                ],
+                "learningSignals": boundary_remediation_learning_signals(boundary_kind),
+                "machineFailureRisk": boundary_catalog_machine_failure_risk(boundary_kind),
+                "requiresHumanIntervention": boundary_catalog_requires_human_intervention(boundary_kind),
+                "splitCombineRelevant": boundary_catalog_split_combine_relevant(boundary_kind),
+                "machineReadyAfterRemediation": false,
+                "releaseBlocking": true
+            })
+        })
+        .collect()
+}
+
+fn boundary_remediation_catalog_response() -> Value {
+    let contracts = boundary_remediation_contracts();
+    let families = unique_sorted(contracts.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.boundary-remediation-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /remediation/catalog", "GET /fabrication/remediation/catalog"],
+        "boundaryCount": contracts.len(),
+        "families": families,
+        "familyCounts": boundary_catalog_family_counts(&contracts),
+        "sourceCatalogRoutes": [
+            "GET /boundaries/catalog",
+            "GET /fabrication/boundaries/catalog",
+            "GET /improvements/catalog",
+            "GET /fabrication/improvements/catalog",
+            "GET /decomposition/catalog",
+            "GET /fabrication/decomposition/catalog",
+            "GET /interventions/catalog",
+            "GET /fabrication/interventions/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog"
+        ],
+        "analysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "validationRoutes": ["POST /instructions/validate", "POST /fabrication/instructions/validate"],
+        "improvementRoutes": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
+        "boundaryReviewRoutes": [
+            "POST /instructions/boundaries/review",
+            "POST /fabrication/instructions/boundaries/review"
+        ],
+        "responseSurfaces": [
+            "validation.failureBoundaries",
+            "boundarySummary",
+            "resolutionPlan.steps",
+            "interventionMap",
+            "operatorInterventionPlan",
+            "improvedPrograms.patchManifest",
+            "decompositionPlan",
+            "interfaceControlPlan",
+            "machineRelease.blockers",
+            "releasePackagePlan.requiredArtifacts",
+            "learning.interventionSignals",
+            "neuralTrainingCorpus.examples"
+        ],
+        "releasePolicy": [
+            "boundary remediation catalog entries rank review lanes for generated and imported fabrication instructions; they do not certify corrected controller output",
+            "machineReady=false remains mandatory until remediation evidence, validation, simulation or dry-run evidence, controller/postprocessor review, split/combine review, and operator or automation signoff clear",
+            "remediation learning signals feed MDP/POMDP/neural workers so future requests can choose safer machines, split/combine routes, regenerated instructions, or human checkpoints before hardware execution"
+        ],
+        "remediationContracts": contracts
+    })
+}
+
+async fn boundary_remediation_catalog_http() -> impl IntoResponse {
+    Json(boundary_remediation_catalog_response())
 }
 
 fn decomposition_catalog_target_kinds() -> Vec<&'static str> {
@@ -45521,8 +47304,11 @@ fn decomposition_result_review_response(
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
     let decomposer = validate_optional_label(request.decomposer, "decomposer")?;
-    let decomposer_version =
-        validate_optional_text(request.decomposer_version, "decomposerVersion", MAX_LABEL_LEN)?;
+    let decomposer_version = validate_optional_text(
+        request.decomposer_version,
+        "decomposerVersion",
+        MAX_LABEL_LEN,
+    )?;
     let source_part_id = validate_optional_label(request.source_part_id, "sourcePartId")?;
     let release_ready = request.release_ready.unwrap_or(false);
     let targets = validate_decomposition_result_targets(request.targets)?;
@@ -56477,6 +58263,175 @@ async fn instruction_languages() -> impl IntoResponse {
     Json(instruction_language_catalog_response())
 }
 
+fn instruction_validation_catalog_check_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "family": "controller-modal-state",
+            "appliesToFamilies": ["controller-gcode"],
+            "requiredEvidence": ["units mode", "absolute or relative positioning mode", "work offset or datum evidence", "program end state"],
+            "responseSurfaces": ["validation.findings", "validation.failureBoundaries", "machineRelease.blockers"],
+            "boundarySignals": ["machine-release-blocker", "machine-envelope", "postprocess-gate"],
+            "releaseBlocking": true
+        }),
+        json!({
+            "family": "additive-printer-state",
+            "appliesToFamilies": ["additive-job-sheet", "controller-gcode"],
+            "requiredEvidence": ["homing", "bed and nozzle heat/wait state", "extrusion mode and reset", "material lot and profile", "pause/resume proof"],
+            "responseSurfaces": ["validation.findings", "simulation.failureBoundaries", "interventionMap.humanInterventionPoints"],
+            "boundarySignals": ["setup-boundary", "first-layer-boundary", "human-intervention"],
+            "releaseBlocking": true
+        }),
+        json!({
+            "family": "subtractive-process-state",
+            "appliesToFamilies": ["controller-gcode", "subtractive-job-sheet"],
+            "requiredEvidence": ["spindle or process start", "positive feed-rate evidence", "tool length/cutter compensation state", "workholding and datum proof", "coolant or chip evacuation state"],
+            "responseSurfaces": ["validation.failureBoundaries", "simulation.programs", "executionPlan.programRuns", "machineRelease.blockers"],
+            "boundarySignals": ["machine-envelope", "setup-boundary", "human-intervention"],
+            "releaseBlocking": true
+        }),
+        json!({
+            "family": "sheet-cutting-and-edm-process-state",
+            "appliesToFamilies": ["subtractive-job-sheet", "controller-gcode"],
+            "requiredEvidence": ["material thickness and cut recipe", "pierce/thread/start-hole proof", "kerf or offset proof", "support media and fume/gas/abrasive/dielectric evidence", "part or slug retention"],
+            "responseSurfaces": ["validation.failureBoundaries", "boundarySummary", "releasePackagePlan.requiredArtifacts"],
+            "boundarySignals": ["sheet-cutting-boundary", "wire-edm-boundary", "human-intervention"],
+            "releaseBlocking": true
+        }),
+        json!({
+            "family": "text-job-evidence",
+            "appliesToFamilies": ["operator-text-instruction", "additive-job-sheet", "subtractive-job-sheet"],
+            "requiredEvidence": ["setup checklist", "process recipe", "inspection/disposition criteria", "operator or automation signoff", "recovery or stop-point handling"],
+            "responseSurfaces": ["resolutionPlan.steps", "interventionMap", "operatorInterventionPlan.requiredOperatorActions", "improvedPrograms.patchManifest"],
+            "boundarySignals": ["human-intervention", "automation-capability-gap", "inspection-gate"],
+            "releaseBlocking": true
+        }),
+        json!({
+            "family": "split-combine-and-release-review",
+            "appliesToFamilies": ["controller-gcode", "operator-text-instruction", "additive-job-sheet", "subtractive-job-sheet"],
+            "requiredEvidence": ["split or combine recommendation review", "child route evidence", "interface datum and fit evidence", "assembly/recomposition signoff", "learning outcome feedback"],
+            "responseSurfaces": ["boundarySummary", "interventionMap.splitCombineDecisions", "decompositionPlan", "interfaceControlPlan", "learning.outcomes"],
+            "boundarySignals": ["split-boundary", "combine-or-assembly-boundary", "human-intervention"],
+            "releaseBlocking": true
+        }),
+    ]
+}
+
+fn instruction_validation_catalog_response() -> Value {
+    let languages = instruction_language_catalog();
+    let boundaries = boundary_catalog();
+    let check_contracts = instruction_validation_catalog_check_contracts();
+    let language_families = unique_sorted(languages.iter().filter_map(|language| {
+        language
+            .get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let check_families = unique_sorted(check_contracts.iter().filter_map(|contract| {
+        contract
+            .get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let boundary_families = unique_sorted(boundaries.iter().filter_map(|boundary| {
+        boundary
+            .get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-validation-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /instructions/validation/catalog",
+            "GET /fabrication/instructions/validation/catalog"
+        ],
+        "validationRoutes": [
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate"
+        ],
+        "resultRoutes": [
+            "POST /instructions/validation/result",
+            "POST /fabrication/instructions/validation/result"
+        ],
+        "analysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "improvementRoutes": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
+        "boundaryReviewRoutes": [
+            "POST /instructions/boundaries/review",
+            "POST /fabrication/instructions/boundaries/review"
+        ],
+        "relatedCatalogRoutes": [
+            "GET /instructions/languages",
+            "GET /fabrication/instructions/languages",
+            "GET /boundaries/catalog",
+            "GET /fabrication/boundaries/catalog",
+            "GET /improvements/catalog",
+            "GET /fabrication/improvements/catalog",
+            "GET /simulation/catalog",
+            "GET /fabrication/simulation/catalog",
+            "GET /machine-code/catalog",
+            "GET /fabrication/machine-code/catalog"
+        ],
+        "acceptedLanguageCount": languages.len(),
+        "languageFamilies": language_families,
+        "languageFamilyCounts": instruction_language_family_counts(&languages),
+        "boundaryCount": boundaries.len(),
+        "boundaryFamilies": boundary_families,
+        "boundaryFamilyCounts": boundary_catalog_family_counts(&boundaries),
+        "checkContractCount": check_contracts.len(),
+        "checkFamilies": check_families,
+        "responseSurfaces": [
+            "programs",
+            "validation.findings",
+            "validation.failureBoundaries",
+            "boundarySummary",
+            "resolutionPlan.steps",
+            "interventionMap",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "machineRelease.blockers",
+            "executionPlan.programRuns",
+            "postprocessPlan.controllerTargets",
+            "simulation.failureBoundaries",
+            "improvements",
+            "improvedPrograms.patchManifest",
+            "learning.desInstructionModel",
+            "learning.neuralTrainingCorpus"
+        ],
+        "artifactSurfaces": [
+            "analysis-validation-report",
+            "analysis-boundary-summary",
+            "analysis-resolution-plan",
+            "analysis-intervention-map",
+            "analysis-machine-release",
+            "analysis-simulation-report",
+            "analysis-improvements",
+            "analysis-mdp-request"
+        ],
+        "learningSurfaces": [
+            "validation-finding:*",
+            "boundary-kind:*",
+            "instruction-patch:*",
+            "desInstructionModel",
+            "neuralTrainingCorpus.examples",
+            "learning.outcomes"
+        ],
+        "releasePolicy": [
+            "instruction validation catalog entries describe review evidence for generated and imported CNC, printer, slicer, setup-sheet, postprocess, assembly, and operator instruction streams",
+            "validated programs remain machineReady=false while validation findings, simulation findings, machine-failure boundaries, human-intervention gates, split/combine reviews, or release blockers remain open",
+            "validation findings and boundary outcomes feed MDP/POMDP/neural workers so future plans can improve programs, regenerate machine code, choose alternate machines, or split/combine parts"
+        ],
+        "acceptedLanguages": languages,
+        "checkContracts": check_contracts,
+        "boundaryContracts": boundaries
+    })
+}
+
+async fn instruction_validation_catalog_http() -> impl IntoResponse {
+    Json(instruction_validation_catalog_response())
+}
+
 fn instruction_generation_catalog_program_contracts() -> Vec<Value> {
     vec![
         json!({
@@ -56795,6 +58750,155 @@ async fn instruction_generation_catalog_http() -> impl IntoResponse {
     Json(instruction_generation_catalog_response())
 }
 
+fn machine_code_catalog_response() -> Value {
+    let program_contracts = instruction_generation_catalog_program_contracts();
+    let controller_targets = controller_catalog_targets();
+    let generated_languages = unique_sorted(program_contracts.iter().flat_map(|contract| {
+        contract
+            .get("generatedLanguages")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_classes = unique_sorted(program_contracts.iter().flat_map(|contract| {
+        contract
+            .get("machineClasses")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let output_formats = unique_sorted(controller_targets.iter().filter_map(|target| {
+        target
+            .get("outputFormat")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let dialect_families = unique_sorted(controller_targets.iter().filter_map(|target| {
+        target
+            .get("dialectFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let postprocessors = unique_sorted(controller_targets.iter().filter_map(|target| {
+        target
+            .get("postprocessor")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let generated_language_count = generated_languages.len();
+    let machine_class_count = machine_classes.len();
+    let output_format_count = output_formats.len();
+    let dialect_family_count = dialect_families.len();
+    let postprocessor_count = postprocessors.len();
+    let known_postprocessor_count = controller_targets
+        .iter()
+        .filter(|target| {
+            target
+                .get("postprocessorKnown")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.machine-code-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /machine-code/catalog", "GET /fabrication/machine-code/catalog"],
+        "generationRoutes": ["POST /machine-code/generate", "POST /fabrication/machine-code/generate"],
+        "resultRoutes": ["POST /machine-code/result", "POST /fabrication/machine-code/result"],
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "relatedRoutes": [
+            "GET /instructions/generation/catalog",
+            "GET /fabrication/instructions/generation/catalog",
+            "GET /controllers/catalog",
+            "GET /fabrication/controllers/catalog",
+            "POST /toolpaths/plan",
+            "POST /fabrication/toolpaths/plan",
+            "GET /simulation/catalog",
+            "GET /fabrication/simulation/catalog",
+            "GET /setup/catalog",
+            "GET /fabrication/setup/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog"
+        ],
+        "programContractCount": program_contracts.len(),
+        "controllerTargetCount": controller_targets.len(),
+        "knownPostprocessorCount": known_postprocessor_count,
+        "generatedLanguages": generated_languages,
+        "generatedLanguageCount": generated_language_count,
+        "machineClasses": machine_classes,
+        "machineClassCount": machine_class_count,
+        "outputFormats": output_formats,
+        "outputFormatCount": output_format_count,
+        "dialectFamilies": dialect_families,
+        "dialectFamilyCount": dialect_family_count,
+        "postprocessors": postprocessors,
+        "postprocessorCount": postprocessor_count,
+        "dialectCounts": controller_catalog_dialect_counts(&controller_targets),
+        "responseSurfaces": [
+            "generatedPrograms",
+            "generatedPrograms.instructions",
+            "generatedPrograms.language",
+            "generatedPrograms.machineKind",
+            "generatedPrograms.draft",
+            "generatedPrograms.machineReady",
+            "controllerPlan.compatibilityTargets",
+            "controllerPlan.dialectSummaries",
+            "controllerPlan.releaseGates",
+            "postprocessPlan.controllerTargets",
+            "toolpathPlan.segments",
+            "simulation.programs",
+            "executionPlan.programRuns",
+            "machineRelease.generatedProgramsBlocked",
+            "releasePackagePlan.requiredArtifacts",
+            "learning.neuralTrainingCorpus"
+        ],
+        "artifactSurfaces": [
+            "generated-machine-program",
+            "program-*",
+            "controller-plan",
+            "postprocess-plan",
+            "toolpath-plan",
+            "simulation-report",
+            "execution-plan",
+            "release-package-plan",
+            "mdp-request.artifacts.generatedPrograms"
+        ],
+        "releaseEvidence": [
+            "controller dialect and postprocessor selection",
+            "machine profile, material, workholding, setup, and calibration evidence",
+            "simulation, dry-run, or equivalent controller verification",
+            "postprocessed output checksum and source revision",
+            "operator or automation signoff before machine-ready release"
+        ],
+        "learningSurfaces": [
+            "program-generation:*",
+            "controller-release:*",
+            "simulation-risk:*",
+            "release-probe:*",
+            "neuralTrainingCorpus.examples",
+            "learning.outcomes"
+        ],
+        "machineCodePolicy": [
+            "machine-code catalog entries are discovery contracts for draft printer, mill, router, sheet-cutting, mill-turn, lathe, and special-process programs",
+            "generated controller or printer programs remain draft=true and machineReady=false until validation, simulation or dry-run evidence, controller/postprocessor compatibility, setup, quality, release package, and signoff gates clear",
+            "machine-code generation observations feed MDP/POMDP/neural workers so future plans can regenerate programs, choose alternate machines, split parts, combine assemblies, or add human checkpoints"
+        ],
+        "programContracts": program_contracts,
+        "controllerTargets": controller_targets
+    })
+}
+
+async fn machine_code_catalog_http() -> impl IntoResponse {
+    Json(machine_code_catalog_response())
+}
+
 fn instruction_generation_response(
     response: &FabricationPlanResponse,
     policy: &LearningPolicySnapshot,
@@ -57025,6 +59129,17 @@ fn machine_code_generation_response(
             "GET /fabrication/instructions/generation/catalog",
             "GET /controllers/catalog",
             "GET /fabrication/controllers/catalog"
+        ]),
+    );
+    object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /machine-code/result",
+            "POST /fabrication/machine-code/result",
+            "POST /toolpaths/result",
+            "POST /fabrication/toolpaths/result",
+            "POST /simulation/result",
+            "POST /fabrication/simulation/result"
         ]),
     );
     object.insert(
@@ -59183,8 +61298,12 @@ async fn capabilities() -> impl IntoResponse {
                 "POST /fabrication/instructions/generation/result",
                 "POST /instructions/review/result",
                 "POST /fabrication/instructions/review/result",
+                "POST /instructions/validation/result",
+                "POST /fabrication/instructions/validation/result",
                 "POST /machine-code/generate",
                 "POST /fabrication/machine-code/generate",
+                "POST /machine-code/result",
+                "POST /fabrication/machine-code/result",
                 "POST /toolpaths/plan",
                 "POST /fabrication/toolpaths/plan",
                 "POST /toolpaths/result",
@@ -59193,8 +61312,14 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/improvements/catalog",
                 "GET /boundaries/catalog",
                 "GET /fabrication/boundaries/catalog",
+                "GET /remediation/catalog",
+                "GET /fabrication/remediation/catalog",
                 "GET /decomposition/catalog",
                 "GET /fabrication/decomposition/catalog",
+                "POST /decomposition/plan",
+                "POST /fabrication/decomposition/plan",
+                "POST /decomposition/result",
+                "POST /fabrication/decomposition/result",
                 "GET /assembly/catalog",
                 "GET /fabrication/assembly/catalog",
                 "POST /assembly/plan",
@@ -59273,6 +61398,8 @@ async fn capabilities() -> impl IntoResponse {
             "toolpaths": [
                 "POST /machine-code/generate",
                 "POST /fabrication/machine-code/generate",
+                "POST /machine-code/result",
+                "POST /fabrication/machine-code/result",
                 "POST /toolpaths/plan",
                 "POST /fabrication/toolpaths/plan",
                 "POST /toolpaths/result",
@@ -59290,8 +61417,24 @@ async fn capabilities() -> impl IntoResponse {
                 "POST /schedule/result",
                 "POST /fabrication/schedule/result"
             ],
+            "decomposition": [
+                "GET /decomposition/catalog",
+                "GET /fabrication/decomposition/catalog",
+                "POST /decomposition/plan",
+                "POST /fabrication/decomposition/plan",
+                "POST /decomposition/result",
+                "POST /fabrication/decomposition/result"
+            ],
             "instructionAnalysis": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+            "instructionValidationCatalog": [
+                "GET /instructions/validation/catalog",
+                "GET /fabrication/instructions/validation/catalog"
+            ],
             "instructionValidation": ["POST /instructions/validate", "POST /fabrication/instructions/validate"],
+            "instructionValidationResult": [
+                "POST /instructions/validation/result",
+                "POST /fabrication/instructions/validation/result"
+            ],
             "instructionImprovement": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
             "instructionBoundaryReview": [
                 "POST /instructions/boundaries/review",
@@ -60369,12 +62512,17 @@ async fn request_schema() -> impl IntoResponse {
             "instructionGeneration": ["POST /instructions/generate", "POST /fabrication/instructions/generate"],
             "instructionGenerationResult": ["POST /instructions/generation/result", "POST /fabrication/instructions/generation/result"],
             "instructionReviewResult": ["POST /instructions/review/result", "POST /fabrication/instructions/review/result"],
+            "instructionValidationResult": ["POST /instructions/validation/result", "POST /fabrication/instructions/validation/result"],
             "machineCodeGeneration": ["POST /machine-code/generate", "POST /fabrication/machine-code/generate"],
+            "machineCodeResult": ["POST /machine-code/result", "POST /fabrication/machine-code/result"],
             "toolpathPlan": ["POST /toolpaths/plan", "POST /fabrication/toolpaths/plan"],
             "toolpathResult": ["POST /toolpaths/result", "POST /fabrication/toolpaths/result"],
             "instructionImprovementCatalog": ["GET /improvements/catalog", "GET /fabrication/improvements/catalog"],
             "boundaryCatalog": ["GET /boundaries/catalog", "GET /fabrication/boundaries/catalog"],
+            "boundaryRemediationCatalog": ["GET /remediation/catalog", "GET /fabrication/remediation/catalog"],
             "decompositionCatalog": ["GET /decomposition/catalog", "GET /fabrication/decomposition/catalog"],
+            "decompositionPlan": ["POST /decomposition/plan", "POST /fabrication/decomposition/plan"],
+            "decompositionResult": ["POST /decomposition/result", "POST /fabrication/decomposition/result"],
             "assemblyCatalog": ["GET /assembly/catalog", "GET /fabrication/assembly/catalog"],
             "assemblyPlan": ["POST /assembly/plan", "POST /fabrication/assembly/plan"],
             "assemblyPlanningResult": ["POST /assembly/result", "POST /fabrication/assembly/result"],
@@ -60410,6 +62558,7 @@ async fn request_schema() -> impl IntoResponse {
             "releasePreview": ["POST /release/preview", "POST /fabrication/release/preview"],
             "strategyRecommendation": ["POST /strategy/recommend", "POST /fabrication/strategy/recommend"],
             "instructionAnalysis": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+            "instructionValidation": ["POST /instructions/validate", "POST /fabrication/instructions/validate"],
             "instructionImprovement": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
             "instructionBoundaryReview": ["POST /instructions/boundaries/review", "POST /fabrication/instructions/boundaries/review"],
             "learningObserve": ["POST /learning/observe", "POST /fabrication/learning/observe"],
@@ -61106,6 +63255,23 @@ async fn instruction_generation_result_http(
     }
 }
 
+async fn machine_code_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<MachineCodeResultReviewRequest>,
+) -> Response {
+    match machine_code_result_review_response(request) {
+        Ok(response) => {
+            store_machine_code_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 async fn instruction_review_result_http(
     State(state): State<AppState>,
     Json(request): Json<InstructionReviewResultReviewRequest>,
@@ -61123,6 +63289,23 @@ async fn instruction_review_result_http(
     }
 }
 
+async fn instruction_validation_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<InstructionValidationResultReviewRequest>,
+) -> Response {
+    match instruction_validation_result_review_response(request) {
+        Ok(response) => {
+            store_instruction_validation_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 async fn instruction_simulation_result_http(
     State(state): State<AppState>,
     Json(request): Json<InstructionSimulationResultReviewRequest>,
@@ -61130,6 +63313,23 @@ async fn instruction_simulation_result_http(
     match instruction_simulation_result_review_response(request) {
         Ok(response) => {
             store_instruction_simulation_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn decomposition_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<DecompositionResultReviewRequest>,
+) -> Response {
+    match decomposition_result_review_response(request) {
+        Ok(response) => {
+            store_decomposition_result_response(&state, &response);
             Json(response).into_response()
         }
         Err(error) => (
@@ -62230,6 +64430,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             get(instruction_languages),
         )
         .route(
+            "/instructions/validation/catalog",
+            get(instruction_validation_catalog_http),
+        )
+        .route(
+            "/fabrication/instructions/validation/catalog",
+            get(instruction_validation_catalog_http),
+        )
+        .route(
             "/instructions/generation/catalog",
             get(instruction_generation_catalog_http),
         )
@@ -62258,10 +64466,28 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/instructions/review/result",
             post(instruction_review_result_http),
         )
+        .route(
+            "/instructions/validation/result",
+            post(instruction_validation_result_http),
+        )
+        .route(
+            "/fabrication/instructions/validation/result",
+            post(instruction_validation_result_http),
+        )
+        .route("/machine-code/catalog", get(machine_code_catalog_http))
+        .route(
+            "/fabrication/machine-code/catalog",
+            get(machine_code_catalog_http),
+        )
         .route("/machine-code/generate", post(machine_code_generate_http))
         .route(
             "/fabrication/machine-code/generate",
             post(machine_code_generate_http),
+        )
+        .route("/machine-code/result", post(machine_code_result_http))
+        .route(
+            "/fabrication/machine-code/result",
+            post(machine_code_result_http),
         )
         .route("/toolpaths/plan", post(toolpath_plan_http))
         .route("/fabrication/toolpaths/plan", post(toolpath_plan_http))
@@ -62280,6 +64506,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/boundaries/catalog",
             get(boundary_catalog_http),
         )
+        .route(
+            "/remediation/catalog",
+            get(boundary_remediation_catalog_http),
+        )
+        .route(
+            "/fabrication/remediation/catalog",
+            get(boundary_remediation_catalog_http),
+        )
         .route("/decomposition/catalog", get(decomposition_catalog_http))
         .route(
             "/fabrication/decomposition/catalog",
@@ -62289,6 +64523,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/decomposition/plan",
             post(decomposition_plan_http),
+        )
+        .route("/decomposition/result", post(decomposition_result_http))
+        .route(
+            "/fabrication/decomposition/result",
+            post(decomposition_result_http),
         )
         .route("/assembly/catalog", get(assembly_catalog_http))
         .route("/fabrication/assembly/catalog", get(assembly_catalog_http))
@@ -64254,6 +66493,102 @@ mod tests {
     }
 
     #[test]
+    fn instruction_validation_catalog_endpoint_exposes_validation_boundary_and_learning_contract() {
+        let payload = instruction_validation_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-validation-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/instructions/validation/catalog")
+            })));
+        assert!(payload
+            .get("validationRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/instructions/validate")
+            })));
+        assert_eq!(
+            payload.get("acceptedLanguageCount").and_then(Value::as_u64),
+            Some(accepted_instruction_languages().len() as u64)
+        );
+        assert_eq!(
+            payload.get("boundaryCount").and_then(Value::as_u64),
+            Some(safety_boundary_classes().len() as u64)
+        );
+        assert!(payload
+            .get("languageFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families
+                .iter()
+                .any(|family| family.as_str() == Some("controller-gcode"))));
+        assert!(payload
+            .get("checkFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families
+                .iter()
+                .any(|family| family.as_str() == Some("split-combine-and-release-review"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("validation.failureBoundaries"))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("analysis-validation-report"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("neuralTrainingCorpus.examples"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
+
+        let check_contracts = payload
+            .get("checkContracts")
+            .and_then(Value::as_array)
+            .expect("validation check contracts should be present");
+        let additive = check_contracts
+            .iter()
+            .find(|contract| {
+                contract.get("family").and_then(Value::as_str) == Some("additive-printer-state")
+            })
+            .expect("additive printer validation contract should be present");
+        assert!(additive
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("bed and nozzle heat")))));
+
+        let split_combine = check_contracts
+            .iter()
+            .find(|contract| {
+                contract.get("family").and_then(Value::as_str)
+                    == Some("split-combine-and-release-review")
+            })
+            .expect("split/combine validation contract should be present");
+        assert!(split_combine
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("interventionMap.splitCombineDecisions")
+            })));
+    }
+
+    #[test]
     fn instruction_generation_catalog_endpoint_exposes_generated_program_contract() {
         let payload = instruction_generation_catalog_response();
         assert_eq!(
@@ -64773,6 +67108,216 @@ mod tests {
     }
 
     #[test]
+    fn instruction_validation_result_endpoint_reviews_findings_boundaries_and_learning() {
+        let payload = instruction_validation_result_review_response(
+            InstructionValidationResultReviewRequest {
+                request_id: Some("unit-instruction-validation-result".to_string()),
+                plan_request_id: Some("unit-instruction-validate".to_string()),
+                job_id: Some("validation-job-42".to_string()),
+                worker_id: "validation-worker-01".to_string(),
+                validator: "external-gcode-validator".to_string(),
+                validator_version: Some("4.2.0".to_string()),
+                instruction_id: "legacy-haas-program".to_string(),
+                language: "haas-gcode".to_string(),
+                machine_id: Some("haas-vf2-01".to_string()),
+                machine_kind: Some("vertical-mill".to_string()),
+                controller: Some("haas-ngc".to_string()),
+                success: true,
+                machine_ready: false,
+                release_ready: Some(false),
+                findings: Some(vec![InstructionValidationResultFinding {
+                    finding_id: "finding-controller-dependency".to_string(),
+                    severity: "high".to_string(),
+                    code: "controller-dependency-not-verified".to_string(),
+                    message: "The imported program depends on a controller macro package that is not attached".to_string(),
+                    instruction_id: Some("legacy-haas-program".to_string()),
+                    scope_id: Some("macro-state".to_string()),
+                    line_ref: Some("N120".to_string()),
+                    release_blocker: Some(true),
+                    human_intervention_required: Some(true),
+                    evidence: Some(vec!["macro O9001 call lacks retained library evidence".to_string()]),
+                }]),
+                failure_boundaries: Some(vec![InstructionValidationResultBoundary {
+                    boundary_id: "boundary-controller-dependency".to_string(),
+                    boundary_kind: "controller-dependency-boundary".to_string(),
+                    code: "controller-dependency-not-verified".to_string(),
+                    message: "The machine cannot complete the job until the macro library and dry-run evidence are attached".to_string(),
+                    instruction_id: Some("legacy-haas-program".to_string()),
+                    line_ref: Some("N120".to_string()),
+                    release_blocker: Some(true),
+                    human_intervention_required: Some(true),
+                    split_required: Some(false),
+                    combine_required: Some(true),
+                    recommended_action: Some("attach-macro-library-and-rerun-dry-run".to_string()),
+                    evidence: Some(vec!["controller macro library missing".to_string()]),
+                }]),
+                improvement_suggestions: Some(vec![InstructionValidationResultImprovement {
+                    improvement_id: "improvement-add-macro-checkpoint".to_string(),
+                    instruction_id: Some("legacy-haas-program".to_string()),
+                    improvement_kind: "insert-controller-macro-checkpoint".to_string(),
+                    summary: "Insert a pre-run macro dependency checkpoint before releasing the program".to_string(),
+                    patch_uri: Some("s3://fabrication/validation/add-macro-checkpoint.patch".to_string()),
+                    requires_human_approval: Some(true),
+                    release_blocker: Some(true),
+                    evidence: Some(vec!["checkpoint requires operator approval".to_string()]),
+                    preview_lines: Some(vec!["(VERIFY MACRO LIBRARY O9001 BEFORE CYCLE START)".to_string()]),
+                }]),
+                artifacts: Some(vec![InstructionValidationResultArtifact {
+                    artifact_id: "validation-result-package".to_string(),
+                    artifact_kind: "validation-result-package".to_string(),
+                    instruction_id: Some("legacy-haas-program".to_string()),
+                    uri: Some("s3://fabrication/validation/result-package.json".to_string()),
+                    sha256: Some("f".repeat(64)),
+                    format: Some("json".to_string()),
+                    evidence: Some(vec!["validation result package checksum retained".to_string()]),
+                }]),
+                warnings: Some(vec![
+                    "do not release until macro dependency and dry-run evidence clear".to_string()
+                ]),
+                review_metadata: Some(json!({
+                    "source": "unit-test",
+                    "validatorMode": "imported-program"
+                })),
+            },
+        )
+        .expect("instruction validation result should be generated");
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-validation-result-review.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/instructions/validation/result")
+            })));
+        assert_eq!(
+            payload.get("reviewStatus").and_then(Value::as_str),
+            Some("instruction-validation-findings-release-blocked")
+        );
+        assert_eq!(
+            payload.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("releaseReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("blockingFindingCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("boundaryBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("improvementBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload
+                .get("splitOrCombineRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload
+                .get("missingArtifactEvidenceCount")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert!(payload
+            .get("instructionValidationResult")
+            .and_then(|result| result.get("findings"))
+            .and_then(Value::as_array)
+            .is_some_and(|findings| findings.iter().any(|finding| {
+                finding.get("code").and_then(Value::as_str)
+                    == Some("controller-dependency-not-verified")
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("mdp-request.artifacts.instructionValidationResult")
+            })));
+
+        let observations = payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("validation-result learning observations should be retained");
+        for expected in [
+            "instruction-validation-validator:external-gcode-validator",
+            "instruction-validation-language:haas-gcode",
+            "instruction-validation-machine-kind:vertical-mill",
+            "instruction-validation-controller:haas-ngc",
+            "instruction-validation-finding:controller-dependency-not-verified",
+            "instruction-validation-finding-severity:high",
+            "instruction-validation-boundary:controller-dependency-boundary",
+            "instruction-validation-boundary-code:controller-dependency-not-verified",
+            "instruction-validation-recommended-action:attach-macro-library-and-rerun-dry-run",
+            "instruction-validation-improvement:insert-controller-macro-checkpoint",
+            "instruction-validation-artifact:validation-result-package",
+            "instruction-validation:finding-blocked",
+            "instruction-validation:boundary-blocked",
+            "instruction-validation:improvement-blocked",
+            "instruction-validation:human-intervention-required",
+            "instruction-validation:split-combine-required",
+            "instruction-validation:release-blocked",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|observation| observation.as_str() == Some(expected)),
+                "missing instruction validation result observation {expected}"
+            );
+        }
+
+        let validation_result_job_id = payload
+            .get("validationResultJobId")
+            .and_then(Value::as_str)
+            .expect("validation result should expose a retained job id");
+        assert!(validation_result_job_id
+            .starts_with("instruction-validation-result-unit-instruction-validation-result-"));
+        let job = stored_instruction_validation_result_job(&payload);
+        assert_eq!(job.record.job_id, validation_result_job_id);
+        assert_eq!(job.record.kind, "instruction-validation-result");
+        assert_eq!(
+            job.record.status,
+            "instruction-validation-findings-release-blocked"
+        );
+        assert_eq!(job.record.ok, false);
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "instruction-validation-result",
+            "instruction-validation-findings",
+            "instruction-validation-boundaries",
+            "instruction-validation-improvements",
+            "instruction-validation-artifacts",
+            "instruction-validation-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing instruction validation result artifact {artifact_id}"
+            );
+        }
+    }
+
+    #[test]
     fn instruction_simulation_result_endpoint_reviews_dry_run_boundaries_and_learning() {
         let payload = instruction_simulation_result_review_response(
             InstructionSimulationResultReviewRequest {
@@ -64929,6 +67474,83 @@ mod tests {
     }
 
     #[test]
+    fn machine_code_catalog_endpoint_exposes_program_controller_and_learning_contract() {
+        let payload = machine_code_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.machine-code-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/machine-code/catalog"))));
+        assert!(payload
+            .get("generationRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/machine-code/generate"))));
+        assert!(payload
+            .get("programContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 8));
+        assert_eq!(
+            payload.get("controllerTargetCount").and_then(Value::as_u64),
+            Some(default_machines().len() as u64)
+        );
+        assert!(payload
+            .get("generatedLanguages")
+            .and_then(Value::as_array)
+            .is_some_and(|languages| languages
+                .iter()
+                .any(|language| language.as_str() == Some("haas-gcode"))));
+        assert!(payload
+            .get("machineClasses")
+            .and_then(Value::as_array)
+            .is_some_and(|classes| classes
+                .iter()
+                .any(|class| class.as_str() == Some("vertical-mill"))));
+        assert!(payload
+            .get("dialectFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|dialects| dialects
+                .iter()
+                .any(|dialect| dialect.as_str() == Some("subtractive-gcode-controller-dialect"))));
+        assert!(payload
+            .get("postprocessors")
+            .and_then(Value::as_array)
+            .is_some_and(|postprocessors| postprocessors.iter().any(|postprocessor| {
+                postprocessor.as_str() == Some("haas-mill-gcode-postprocessor")
+            })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("controllerPlan.releaseGates"))));
+        assert!(payload
+            .get("releaseEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("simulation, dry-run")))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("neuralTrainingCorpus.examples"))));
+        assert!(payload
+            .get("machineCodePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("draft=true")))));
+    }
+
+    #[test]
     fn machine_code_generation_endpoint_returns_controller_release_package() {
         let policy = LearningPolicySnapshot {
             outcome_count: 0,
@@ -65019,6 +67641,213 @@ mod tests {
             .any(|artifact| artifact.kind == "generated-machine-program"));
         assert!(job.artifacts.contains_key("controller-plan"));
         assert!(job.artifacts.contains_key("release-package-plan"));
+    }
+
+    #[test]
+    fn machine_code_result_endpoint_reviews_controller_checks_and_learning() {
+        let payload = machine_code_result_review_response(MachineCodeResultReviewRequest {
+            request_id: Some("unit-machine-code-result".to_string()),
+            plan_request_id: Some("unit-machine-code-generate".to_string()),
+            job_id: Some("machine-code-job-42".to_string()),
+            worker_id: "postprocessor-worker-01".to_string(),
+            generator: Some("haas-postprocessor".to_string()),
+            generator_version: Some("3.7.1".to_string()),
+            machine_id: Some("haas-vf2-01".to_string()),
+            machine_kind: Some("vertical-mill".to_string()),
+            controller: Some("haas-ngc".to_string()),
+            postprocessor: Some("haas-mill-gcode-postprocessor".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            programs: Some(vec![MachineCodeResultProgram {
+                program_id: "finish-datum-pocket".to_string(),
+                source_program_id: Some("program-finish-pocket-draft".to_string()),
+                target_id: Some("datum-pocket".to_string()),
+                operation_id: Some("op-finish-pocket".to_string()),
+                language: "haas-gcode".to_string(),
+                status: "complete".to_string(),
+                output_format: Some("controller-gcode".to_string()),
+                controller_dialect: Some("haas-ngc".to_string()),
+                uri: Some("s3://fabrication/machine-code/finish-datum-pocket.nc".to_string()),
+                sha256: Some("d".repeat(64)),
+                estimated_runtime_sec: Some(412),
+                release_blocker: Some(false),
+                evidence: Some(vec![
+                    "postprocessed controller output retained with checksum".to_string(),
+                ]),
+                preview_lines: Some(vec!["G21 G90 G54".to_string(), "M6 T12".to_string()]),
+            }]),
+            controller_checks: Some(vec![MachineCodeResultControllerCheck {
+                check_id: "controller-macro-review".to_string(),
+                check_kind: "controller-macro-review".to_string(),
+                status: "blocked".to_string(),
+                controller: Some("haas-ngc".to_string()),
+                postprocessor: Some("haas-mill-gcode-postprocessor".to_string()),
+                machine_id: Some("haas-vf2-01".to_string()),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "subprogram O9001 and macro variables require operator review".to_string(),
+                ]),
+            }]),
+            failure_boundaries: Some(vec![MachineCodeResultFailureBoundary {
+                boundary_id: "macro-dependency-boundary".to_string(),
+                boundary_kind: "controller-dependency-boundary".to_string(),
+                code: "controller-dependency-not-verified".to_string(),
+                message: "Controller macro package has not been verified against the live machine"
+                    .to_string(),
+                program_id: Some("finish-datum-pocket".to_string()),
+                segment_ref: Some("N120".to_string()),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                recommended_action: Some("attach-macro-library-and-rerun-dry-run".to_string()),
+                evidence: Some(vec!["controller macro library missing".to_string()]),
+            }]),
+            artifacts: Some(vec![MachineCodeResultArtifact {
+                artifact_id: "machine-code-result-package".to_string(),
+                artifact_kind: "machine-code-result-package".to_string(),
+                program_id: Some("finish-datum-pocket".to_string()),
+                uri: Some("s3://fabrication/machine-code/result-package.json".to_string()),
+                sha256: Some("e".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec!["result package checksum retained".to_string()]),
+            }]),
+            warnings: Some(vec![
+                "do not run until macro dependency review and dry-run pass".to_string(),
+            ]),
+            review_metadata: Some(json!({"source": "unit-test", "controllerRelease": false})),
+        })
+        .expect("machine-code result review should succeed");
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.machine-code-result-review.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/machine-code/result"))));
+        assert_eq!(
+            payload.get("reviewStatus").and_then(Value::as_str),
+            Some("machine-code-result-controller-checks-release-blocked")
+        );
+        assert_eq!(
+            payload.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("releaseReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(payload.get("programCount").and_then(Value::as_u64), Some(1));
+        assert_eq!(
+            payload
+                .get("controllerCheckBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("boundaryBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload
+                .get("missingProgramEvidenceCount")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert_eq!(
+            payload
+                .get("missingArtifactEvidenceCount")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert!(payload
+            .get("machineCodeResult")
+            .and_then(|result| result.get("controllerChecks"))
+            .and_then(Value::as_array)
+            .is_some_and(|checks| checks.iter().any(|check| {
+                check.get("checkKind").and_then(Value::as_str) == Some("controller-macro-review")
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("mdp-request.artifacts.machineCodeResult")
+            })));
+
+        let observations = payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("machine-code learning observations should be retained");
+        for expected in [
+            "machine-code-generator:haas-postprocessor",
+            "machine-code-controller:haas-ngc",
+            "machine-code-postprocessor:haas-mill-gcode-postprocessor",
+            "machine-code-machine-kind:vertical-mill",
+            "machine-code-program-language:haas-gcode",
+            "machine-code-program-status:complete",
+            "machine-code-check:controller-macro-review",
+            "machine-code-check-status:blocked",
+            "machine-code-boundary:controller-dependency-boundary",
+            "machine-code-boundary-code:controller-dependency-not-verified",
+            "machine-code-recommended-action:attach-macro-library-and-rerun-dry-run",
+            "machine-code-artifact:machine-code-result-package",
+            "machine-code:controller-check-blocked",
+            "machine-code:boundary-blocked",
+            "machine-code:human-intervention-required",
+            "machine-code:release-blocked",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|observation| observation.as_str() == Some(expected)),
+                "missing machine-code learning observation {expected}"
+            );
+        }
+
+        let machine_code_result_job_id = payload
+            .get("machineCodeResultJobId")
+            .and_then(Value::as_str)
+            .expect("machine-code result should expose a retained job id");
+        assert!(
+            machine_code_result_job_id.starts_with("machine-code-result-unit-machine-code-result-")
+        );
+        let job = stored_machine_code_result_job(&payload);
+        assert_eq!(job.record.job_id, machine_code_result_job_id);
+        assert_eq!(job.record.kind, "machine-code-result");
+        assert_eq!(
+            job.record.status,
+            "machine-code-result-controller-checks-release-blocked"
+        );
+        assert_eq!(job.record.ok, false);
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "machine-code-result",
+            "machine-code-programs",
+            "machine-code-controller-checks",
+            "machine-code-failure-boundaries",
+            "machine-code-artifacts",
+            "machine-code-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing machine-code result artifact {artifact_id}"
+            );
+        }
     }
 
     #[test]
@@ -66275,6 +69104,114 @@ mod tests {
     }
 
     #[test]
+    fn boundary_remediation_catalog_endpoint_exposes_release_actions_and_learning_contract() {
+        let payload = boundary_remediation_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.boundary-remediation-catalog.v1")
+        );
+        assert_eq!(
+            payload.get("boundaryCount").and_then(Value::as_u64),
+            Some(safety_boundary_classes().len() as u64)
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/remediation/catalog"))));
+        assert!(payload
+            .get("sourceCatalogRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/boundaries/catalog"))));
+        assert!(payload
+            .get("validationRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/instructions/validate"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("resolutionPlan.steps"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
+
+        let contracts = payload
+            .get("remediationContracts")
+            .and_then(Value::as_array)
+            .expect("remediation contracts should be present");
+        let machine_envelope = contracts
+            .iter()
+            .find(|item| {
+                item.get("boundaryKind").and_then(Value::as_str) == Some("machine-envelope")
+            })
+            .expect("machine-envelope remediation should be present");
+        assert_eq!(
+            machine_envelope
+                .get("machineFailureRisk")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(machine_envelope
+            .get("routeHandoffs")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/simulation/run"))));
+
+        let human_intervention = contracts
+            .iter()
+            .find(|item| {
+                item.get("boundaryKind").and_then(Value::as_str) == Some("human-intervention")
+            })
+            .expect("human-intervention remediation should be present");
+        assert_eq!(
+            human_intervention
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(human_intervention
+            .get("remediationActions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions.iter().any(|action| action
+                .as_str()
+                .is_some_and(|action| action.contains("operator checkpoint")))));
+
+        let split_boundary = contracts
+            .iter()
+            .find(|item| item.get("boundaryKind").and_then(Value::as_str) == Some("split-boundary"))
+            .expect("split-boundary remediation should be present");
+        assert_eq!(
+            split_boundary
+                .get("splitCombineRelevant")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(split_boundary
+            .get("routeHandoffs")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/decomposition/plan"))));
+        assert!(split_boundary
+            .get("learningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|signal| signal
+                .as_str()
+                .is_some_and(|signal| signal.contains("remediation-catalog:split-boundary")))));
+    }
+
+    #[test]
     fn decomposition_catalog_endpoint_exposes_split_combine_and_interface_contract() {
         let payload = decomposition_catalog_response();
         assert_eq!(
@@ -66518,6 +69455,249 @@ mod tests {
             assert!(
                 job.artifacts.contains_key(artifact),
                 "missing decomposition planning artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn decomposition_result_endpoint_reviews_split_combine_interfaces_and_learning() {
+        let payload = decomposition_result_review_response(DecompositionResultReviewRequest {
+            request_id: Some("unit-decomposition-result".to_string()),
+            plan_request_id: Some("unit-decomposition-plan".to_string()),
+            job_id: Some("decomposition-job-42".to_string()),
+            worker_id: "decomposition-worker-01".to_string(),
+            decomposer: Some("split-combine-worker".to_string()),
+            decomposer_version: Some("1.2.3".to_string()),
+            source_part_id: Some("gearbox-housing".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            targets: Some(vec![DecompositionResultTarget {
+                target_id: "split-boundary-decomposition".to_string(),
+                part_id: Some("gearbox-housing".to_string()),
+                target_kind: "split-boundary-decomposition".to_string(),
+                status: "blocked".to_string(),
+                manufacturing_method: Some("milling".to_string()),
+                machine_kind: Some("vertical-mill".to_string()),
+                split_required: Some(true),
+                combine_required: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "child datum needs regenerated CAD and CAM evidence".to_string()
+                ]),
+            }]),
+            route_reviews: Some(vec![DecompositionResultRouteReview {
+                route_id: "split-route".to_string(),
+                target_id: Some("split-boundary-decomposition".to_string()),
+                route_kind: "split-route".to_string(),
+                machine_id: Some("horizontal-mill-02".to_string()),
+                machine_kind: Some("horizontal-mill".to_string()),
+                status: "blocked".to_string(),
+                feasible: Some(false),
+                estimated_setup_count: Some(3),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "fixture reach blocks unattended horizontal-mill routing".to_string(),
+                ]),
+            }]),
+            interfaces: Some(vec![DecompositionResultInterface {
+                interface_id: "controlled-clearance-fit".to_string(),
+                source_target_id: Some("housing-left".to_string()),
+                target_target_id: Some("housing-right".to_string()),
+                interface_kind: "controlled-clearance-fit".to_string(),
+                status: "blocked".to_string(),
+                tolerance_mm: Some(0.05),
+                gap_mm: Some(0.18),
+                recomposition_required: Some(true),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "interface gap exceeds recomposition tolerance".to_string()
+                ]),
+            }]),
+            split_combine_decisions: Some(vec![DecompositionResultDecision {
+                decision_id: "split-and-recompose".to_string(),
+                decision_kind: "split-and-recompose".to_string(),
+                status: "blocked".to_string(),
+                source_part_ids: Some(vec!["gearbox-housing".to_string()]),
+                target_part_ids: Some(vec![
+                    "housing-left".to_string(),
+                    "housing-right".to_string(),
+                ]),
+                requires_redesign: Some(true),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                recommended_action: Some(
+                    "redesign-interface-and-reroute-horizontal-mill".to_string(),
+                ),
+                evidence: Some(vec![
+                    "split line needs redesigned fastener and datum strategy".to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![DecompositionResultArtifact {
+                artifact_id: "decomposition-result-package".to_string(),
+                artifact_kind: "decomposition-result-package".to_string(),
+                source_ref_id: Some("decomposition-job-42".to_string()),
+                uri: Some("s3://fabrication/decomposition/result-package.json".to_string()),
+                sha256: Some("c".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "decomposition result package checksum retained".to_string()
+                ]),
+            }]),
+            warnings: Some(vec![
+                "split/combine route remains blocked before machine release".to_string(),
+            ]),
+            review_metadata: Some(json!({"source": "unit-test", "splitCombine": true})),
+        })
+        .expect("decomposition result review should succeed");
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.decomposition-result-review.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/decomposition/result"))));
+        assert_eq!(
+            payload.get("reviewStatus").and_then(Value::as_str),
+            Some("decomposition-result-targets-release-blocked")
+        );
+        assert_eq!(
+            payload.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("releaseReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(payload.get("targetCount").and_then(Value::as_u64), Some(1));
+        assert_eq!(
+            payload.get("routeReviewCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("interfaceCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("splitCombineDecisionCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("infeasibleRouteCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("interfaceToleranceBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("redesignRequiredCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("missingArtifactEvidenceCount")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert_eq!(
+            payload
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(payload
+            .get("decompositionResult")
+            .and_then(|result| result.get("interfaces"))
+            .and_then(Value::as_array)
+            .is_some_and(|interfaces| interfaces.iter().any(|interface| {
+                interface.get("interfaceKind").and_then(Value::as_str)
+                    == Some("controlled-clearance-fit")
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("mdp-request.artifacts.decompositionResult")
+            })));
+
+        let observations = payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("decomposition learning observations should be retained");
+        for expected in [
+            "decomposition-decomposer:split-combine-worker",
+            "decomposition-source-part:gearbox-housing",
+            "decomposition-target:split-boundary-decomposition",
+            "decomposition-target-status:blocked",
+            "decomposition-route:split-route",
+            "decomposition-route-machine-kind:horizontal-mill",
+            "decomposition-route-status:blocked",
+            "decomposition-interface:controlled-clearance-fit",
+            "decomposition-interface-status:blocked",
+            "decomposition-decision:split-and-recompose",
+            "decomposition-decision-status:blocked",
+            "decomposition-artifact:decomposition-result-package",
+            "decomposition:route-blocked",
+            "decomposition:route-infeasible",
+            "decomposition:interface-blocked",
+            "decomposition:interface-tolerance-blocked",
+            "decomposition:split-combine-blocked",
+            "decomposition:redesign-required",
+            "decomposition:human-intervention-required",
+            "decomposition:release-blocked",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|observation| observation.as_str() == Some(expected)),
+                "missing decomposition learning observation {expected}"
+            );
+        }
+
+        let decomposition_result_job_id = payload
+            .get("decompositionResultJobId")
+            .and_then(Value::as_str)
+            .expect("decomposition result should expose a retained job id");
+        assert!(decomposition_result_job_id
+            .starts_with("decomposition-result-unit-decomposition-result-"));
+        let job = stored_decomposition_result_job(&payload);
+        assert_eq!(job.record.job_id, decomposition_result_job_id);
+        assert_eq!(job.record.kind, "decomposition-result");
+        assert_eq!(
+            job.record.status,
+            "decomposition-result-targets-release-blocked"
+        );
+        assert_eq!(job.record.ok, false);
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "decomposition-result",
+            "decomposition-targets",
+            "decomposition-route-reviews",
+            "decomposition-interfaces",
+            "decomposition-split-combine-decisions",
+            "decomposition-artifacts",
+            "decomposition-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing decomposition result artifact {artifact_id}"
             );
         }
     }

@@ -145,42 +145,62 @@ spec:
                 '"path": "/fabrication/design/import/catalog"' \
                 '"path": "/fabrication/design/import/review"' \
                 '"path": "/fabrication/design/convert/plan"' \
+                '"path": "/fabrication/design/convert/result"' \
                 '"path": "/fabrication/design/generation/catalog"' \
                 '"path": "/fabrication/design/generate"' \
+                '"path": "/fabrication/design/synthesis/result"' \
                 '"path": "/fabrication/handoff/catalog"' \
+                '"path": "/fabrication/instructions/validation/catalog"' \
                 '"path": "/fabrication/instructions/generation/catalog"' \
                 '"path": "/fabrication/instructions/generate"' \
+                '"path": "/fabrication/instructions/generation/result"' \
+                '"path": "/fabrication/instructions/review/result"' \
+                '"path": "/fabrication/instructions/validation/result"' \
+                '"path": "/fabrication/machine-code/catalog"' \
                 '"path": "/fabrication/machine-code/generate"' \
+                '"path": "/fabrication/machine-code/result"' \
                 '"path": "/fabrication/toolpaths/plan"' \
+                '"path": "/fabrication/toolpaths/result"' \
                 '"path": "/fabrication/improvements/catalog"' \
                 '"path": "/fabrication/decomposition/catalog"' \
                 '"path": "/fabrication/decomposition/plan"' \
+                '"path": "/fabrication/decomposition/result"' \
                 '"path": "/fabrication/assembly/catalog"' \
                 '"path": "/fabrication/assembly/plan"' \
+                '"path": "/fabrication/assembly/result"' \
                 '"path": "/fabrication/release/catalog"' \
                 '"path": "/fabrication/release/preview"' \
+                '"path": "/fabrication/release/result"' \
                 '"path": "/fabrication/strategy/catalog"' \
                 '"path": "/fabrication/strategy/recommend"' \
                 '"path": "/fabrication/schedule/catalog"' \
                 '"path": "/fabrication/schedule/result"' \
                 '"path": "/fabrication/execution/plan"' \
+                '"path": "/fabrication/execution/result"' \
                 '"path": "/fabrication/simulation/catalog"' \
                 '"path": "/fabrication/simulation/run"' \
+                '"path": "/fabrication/simulation/result"' \
                 '"path": "/fabrication/quality/catalog"' \
                 '"path": "/fabrication/quality/plan"' \
+                '"path": "/fabrication/quality/result"' \
                 '"path": "/fabrication/calibration/catalog"' \
                 '"path": "/fabrication/calibration/plan"' \
+                '"path": "/fabrication/calibration/result"' \
                 '"path": "/fabrication/interventions/catalog"' \
                 '"path": "/fabrication/setup/catalog"' \
                 '"path": "/fabrication/setup/plan"' \
+                '"path": "/fabrication/setup/result"' \
                 '"path": "/fabrication/monitoring/catalog"' \
                 '"path": "/fabrication/monitoring/plan"' \
+                '"path": "/fabrication/monitoring/result"' \
                 '"path": "/fabrication/postprocess/catalog"' \
                 '"path": "/fabrication/postprocess/plan"' \
+                '"path": "/fabrication/postprocess/result"' \
                 '"path": "/fabrication/artifacts/catalog"' \
                 '"path": "/fabrication/design/formats"' \
                 '"path": "/fabrication/instructions/languages"' \
                 '"path": "/fabrication/boundaries/catalog"' \
+                '"path": "/fabrication/remediation/catalog"' \
                 '"path": "/fabrication/learning/capabilities"' \
                 '"path": "/jobs"' \
                 '"path": "/fabrication/jobs"' \
