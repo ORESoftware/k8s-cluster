@@ -554,6 +554,11 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(dashboardText, /ready direct pod scrapes/);
   assert.match(dashboardText, /scrape coverage gap/);
   assert.match(dashboardText, /dd_k8s_deployment_desired_replicas/);
+  assert.match(dashboardText, /Machine Release Readiness and Learning Fanout/);
+  assert.match(dashboardText, /machine release blockers/);
+  assert.match(dashboardText, /draft generated programs/);
+  assert.match(dashboardText, /nats result fanout/);
+  assert.match(dashboardText, /mdp learning fanout/);
   assert.match(dashboardText, /Runtime CPU and Memory Limit Headroom/);
   assert.match(dashboardText, /dd_k8s_pod_container_cpu_usage_cores/);
   assert.match(dashboardText, /dd_k8s_pod_container_memory_usage_bytes/);
@@ -674,6 +679,8 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(prometheus, /alert:\s*DDFabricationServerPodScrapeCoverageBelowDesired/);
   assert.match(prometheus, /alert:\s*DDFabricationServerCpuNearLimit/);
   assert.match(prometheus, /alert:\s*DDFabricationServerMemoryNearLimit/);
+  assert.match(prometheus, /alert:\s*DDFabricationServerValidationFindingsIncreasing/);
+  assert.match(prometheus, /dd_fabrication_server_validation_findings_total\[10m\]/);
   assert.match(
     prometheus,
     /dd_k8s_pod_container_waiting\{namespace="default",app="dd-fabrication-server",container="fabrication-server"\}/,

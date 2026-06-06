@@ -416,6 +416,15 @@ data:
             annotations:
               summary: Fabrication server errors are increasing
               description: "dd-fabrication-server has recorded request or background-event errors in the last five minutes."
+          - alert: DDFabricationServerValidationFindingsIncreasing
+            expr: sum(rate(dd_fabrication_server_validation_findings_total[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server validation findings are increasing
+              description: "dd-fabrication-server is emitting validation findings for generated or submitted fabrication instructions; review rejected, improved, or draft machine work before release."
           - alert: DDFabricationServerFailureBoundariesIncreasing
             expr: sum(rate(dd_fabrication_server_failure_boundaries_total[10m])) > 0
             for: 5m

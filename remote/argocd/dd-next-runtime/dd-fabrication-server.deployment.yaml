@@ -14,7 +14,10 @@ spec:
   progressDeadlineSeconds: 1800
   revisionHistoryLimit: 3
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-fabrication-server
@@ -114,6 +117,16 @@ spec:
               do
                 if [ ! -f "$required" ]; then
                   echo "dd-fabrication-server source layout check failed: missing $required" >&2
+                  exit 78
+                fi
+              done
+              for dependency in \
+                'des_engine = { path = "../../submodules/discrete-event-system.rs" }' \
+                'dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }' \
+                'dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }'
+              do
+                if ! grep -Fq "$dependency" /opt/dd-remote/deployments/fabrication-server-rs/Cargo.toml; then
+                  echo "dd-fabrication-server source layout check failed: Cargo.toml missing local dependency $dependency" >&2
                   exit 78
                 fi
               done

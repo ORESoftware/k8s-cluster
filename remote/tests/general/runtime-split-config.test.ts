@@ -298,6 +298,15 @@ test("fabrication server runtime keeps planner replicas hardened and observable"
   assert.match(deployment, /requests:[\s\S]*ephemeral-storage:\s*4Gi/);
   assert.match(deployment, /limits:[\s\S]*ephemeral-storage:\s*8Gi/);
   assert.match(deployment, /emptyDir:[\s\S]*sizeLimit:\s*7Gi/);
+  assert.match(deployment, /des_engine = \{ path = "\.\.\/\.\.\/submodules\/discrete-event-system\.rs" \}/);
+  assert.match(
+    deployment,
+    /dd-nats-subject-defs = \{ path = "\.\.\/\.\.\/libs\/nats\/subject-defs\/generated\/rust" \}/,
+  );
+  assert.match(
+    deployment,
+    /dd-runtime-config-client = \{ path = "\.\.\/\.\.\/libs\/runtime-config-client-rs" \}/,
+  );
 
   assert.match(serviceAccount, /name:\s*dd-fabrication-server/);
   assert.match(serviceAccount, /automountServiceAccountToken:\s*false/);

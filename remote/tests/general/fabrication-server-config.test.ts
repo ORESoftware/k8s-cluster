@@ -644,6 +644,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /bound-metal-fff-job-package/);
   assert.match(source, /multi-material-fdm-job-packager/);
   assert.match(source, /multi-material-fdm-job-package/);
+  assert.match(source, /grinding-job-packager/);
+  assert.match(source, /grinding-job-package/);
+  assert.match(source, /inspection-report-packager/);
+  assert.match(source, /inspection-report-package/);
+  assert.match(source, /thermal-postprocess-job-packager/);
+  assert.match(source, /thermal-postprocess-job-package/);
   assert.match(source, /paste-rheology-and-nozzle-record/);
   assert.match(source, /drying-shrinkage-and-green-part-support-record/);
   assert.match(source, /bound-metal-filament-profile-record/);
@@ -651,6 +657,17 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /sintered-density-and-shrinkage-inspection-record/);
   assert.match(source, /material-slot-map-and-filament-lot-record/);
   assert.match(source, /purge-tower-wipe-and-resume-record/);
+  assert.match(source, /wheel-dress-and-balance-record/);
+  assert.match(source, /grinding-coolant-and-workholding-record/);
+  assert.match(source, /surface-finish-and-final-metrology-record/);
+  assert.match(source, /inspection-calibration-record/);
+  assert.match(source, /datum-alignment-and-uncertainty-record/);
+  assert.match(source, /first-article-measured-values-report/);
+  assert.match(source, /nonconformance-disposition-record/);
+  assert.match(source, /thermal-profile-and-furnace-log/);
+  assert.match(source, /fixture-setter-and-atmosphere-record/);
+  assert.match(source, /cooldown-quench-and-ppe-record/);
+  assert.match(source, /distortion-hardness-and-release-inspection-record/);
   assert.match(source, /wants_material_jetting_printer/);
   assert.match(source, /is_material_jetting_printer_kind\(&machine\.kind\)/);
   assert.match(source, /material-jetting-job-packager/);
@@ -889,6 +906,15 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /sinker-edm-text-boundary/);
   assert.match(source, /add-sinker-edm-text-evidence/);
   assert.match(source, /text_sinker_edm_jobs_require_electrode_dielectric_and_burn_evidence/);
+  assert.match(source, /fn has_text_grinding_context/);
+  assert.match(source, /fn has_text_grinding_wheel_setup_evidence/);
+  assert.match(source, /fn has_text_grinding_sparkout_inspection_evidence/);
+  assert.match(source, /fn has_text_inspection_context/);
+  assert.match(source, /fn has_text_inspection_calibration_evidence/);
+  assert.match(source, /fn has_text_inspection_disposition_evidence/);
+  assert.match(source, /has_text_grinding_context/);
+  assert.match(source, /has_text_grinding_wheel_setup_evidence/);
+  assert.match(source, /has_text_grinding_sparkout_inspection_evidence/);
   assert.match(source, /assembly-fit-metrology-evidence-missing/);
   assert.match(source, /assembly-fit-metrology-boundary/);
   assert.match(source, /add-assembly-fit-metrology-evidence/);
@@ -909,6 +935,18 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /precision-inspection-evidence-missing/);
   assert.match(source, /precision-metrology-boundary/);
   assert.match(source, /add-precision-metrology-evidence/);
+  assert.match(source, /grinding-wheel-setup-evidence-missing/);
+  assert.match(source, /grinding-wheel-setup-boundary/);
+  assert.match(source, /add-grinding-wheel-setup-evidence/);
+  assert.match(source, /grinding-sparkout-inspection-evidence-missing/);
+  assert.match(source, /grinding-sparkout-inspection-boundary/);
+  assert.match(source, /add-grinding-sparkout-inspection-evidence/);
+  assert.match(source, /inspection-calibration-evidence-missing/);
+  assert.match(source, /inspection-calibration-boundary/);
+  assert.match(source, /add-inspection-calibration-evidence/);
+  assert.match(source, /inspection-disposition-evidence-missing/);
+  assert.match(source, /inspection-disposition-boundary/);
+  assert.match(source, /add-inspection-disposition-evidence/);
   assert.match(source, /has_text_unattended_run_context/);
   assert.match(source, /has_text_unattended_monitoring_evidence/);
   assert.match(source, /fn has_text_unattended_run_context/);
@@ -963,6 +1001,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(
     source,
     /text_precision_jobs_require_metrology_and_surface_finish_evidence/,
+  );
+  assert.match(
+    source,
+    /text_grinding_jobs_require_wheel_setup_and_sparkout_inspection_evidence/,
+  );
+  assert.match(
+    source,
+    /text_inspection_jobs_require_calibration_and_disposition_evidence/,
   );
   assert.match(
     source,
@@ -1424,11 +1470,17 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /id: "plasma-cutter-1"/);
   assert.match(source, /id: "wire-edm-1"/);
   assert.match(source, /id: "sinker-edm-1"/);
+  assert.match(source, /id: "precision-grinder-1"/);
+  assert.match(source, /id: "cmm-inspection-cell-1"/);
+  assert.match(source, /id: "thermal-postprocess-furnace-1"/);
   assert.match(source, /draft laser sheet-cutting job generated by dd-fabrication-server/);
   assert.match(source, /draft waterjet sheet-cutting job generated by dd-fabrication-server/);
   assert.match(source, /draft plasma sheet-cutting job generated by dd-fabrication-server/);
   assert.match(source, /draft wire EDM profile job generated by dd-fabrication-server/);
   assert.match(source, /draft sinker EDM cavity job generated by dd-fabrication-server/);
+  assert.match(source, /draft precision grinding job generated by dd-fabrication-server/);
+  assert.match(source, /draft CMM\/vision inspection job generated by dd-fabrication-server/);
+  assert.match(source, /draft thermal postprocess job generated by dd-fabrication-server/);
   assert.match(source, /ABRASIVE_FLOW_TEST/);
   assert.match(source, /PLASMA_CUT/);
   assert.match(source, /WIRE_THREAD_CHECK/);
@@ -1436,10 +1488,30 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /ELECTRODE_VERIFY/);
   assert.match(source, /DIELECTRIC_FLUSH_TEST/);
   assert.match(source, /ORBIT_FINISH/);
+  assert.match(source, /DRESS_WHEEL/);
+  assert.match(source, /GRIND_PASS/);
+  assert.match(source, /SPARK_OUT/);
+  assert.match(source, /CALIBRATE_PROBE/);
+  assert.match(source, /ALIGN_DATUMS/);
+  assert.match(source, /MEASURE_FEATURE/);
+  assert.match(source, /REPORT_INSPECTION/);
+  assert.match(source, /LOAD_THERMAL_BATCH/);
+  assert.match(source, /RUN_THERMAL_PROFILE/);
+  assert.match(source, /CONTROL_COOLDOWN/);
+  assert.match(source, /INSPECT_THERMAL_RELEASE/);
   assert.match(source, /wire-edm-profile-postprocessor/);
   assert.match(source, /sinker-edm-cavity-postprocessor/);
+  assert.match(source, /grinding-job-packager/);
+  assert.match(source, /inspection-report-packager/);
+  assert.match(source, /thermal-postprocess-job-packager/);
   assert.match(source, /default_sheet_cut_fleet_generates_wire_edm_job_for_conductive_profile/);
   assert.match(source, /default_special_process_fleet_generates_sinker_edm_cavity_job/);
+  assert.match(source, /default_special_process_fleet_generates_precision_grinding_job/);
+  assert.match(source, /default_special_process_fleet_generates_cmm_inspection_job/);
+  assert.match(source, /default_special_process_fleet_generates_thermal_postprocess_job/);
+  assert.match(source, /"precision-grinder"/);
+  assert.match(source, /"cmm-inspection-cell"/);
+  assert.match(source, /"thermal-postprocess-furnace"/);
   assert.match(source, /"wire-edm",\s+"sinker-edm"/);
   assert.match(source, /text-sheet-cutting-boundary/);
   assert.match(source, /fn has_sheet_cutting_process_evidence/);
@@ -1474,12 +1546,28 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /sinker-edm-cavity-postprocessor/);
   assert.match(source, /sinker-edm-job/);
   assert.match(source, /default_special_process_fleet_generates_sinker_edm_cavity_job/);
+  assert.match(source, /precision-grinder/);
+  assert.match(source, /grinding-job/);
+  assert.match(source, /surface-grinder-job/);
+  assert.match(source, /cylindrical-grinder-job/);
+  assert.match(source, /default_special_process_fleet_generates_precision_grinding_job/);
+  assert.match(source, /cmm-inspection-cell/);
+  assert.match(source, /cmm-inspection-job/);
+  assert.match(source, /vision-inspection-job/);
+  assert.match(source, /metrology-job/);
+  assert.match(source, /thermal-postprocess-job/);
+  assert.match(source, /furnace-job/);
+  assert.match(source, /heat-treatment-job/);
+  assert.match(source, /default_special_process_fleet_generates_cmm_inspection_job/);
+  assert.match(source, /default_special_process_fleet_generates_thermal_postprocess_job/);
   assert.match(source, /wire-edm-text-evidence-missing/);
   assert.match(source, /wire-edm-text-boundary/);
   assert.match(source, /add-wire-edm-text-evidence/);
   assert.match(source, /sinker-edm-text-evidence-missing/);
   assert.match(source, /sinker-edm-text-boundary/);
   assert.match(source, /add-sinker-edm-text-evidence/);
+  assert.match(source, /grinding-wheel-setup-evidence-missing/);
+  assert.match(source, /grinding-sparkout-inspection-evidence-missing/);
   assert.match(source, /kerf-controlled-sheet-profile/);
   assert.match(source, /"choose-sheet-cutting-process"\.to_string\(\)/);
   assert.match(source, /method_combination_preferences/);
@@ -1806,6 +1894,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"robotic-assembly-cell"/);
   assert.match(source, /"wire-edm-sheet-cutter"/);
   assert.match(source, /"sinker-edm-cell"/);
+  assert.match(source, /"precision-grinder"/);
+  assert.match(source, /"cmm-inspection-cell"/);
+  assert.match(source, /"thermal-postprocess-furnace"/);
   assert.match(source, /"acceptedInstructionKinds"/);
   assert.match(source, /"iso-gcode"/);
   assert.match(source, /"slicer-job"/);
@@ -1836,6 +1927,19 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"plasma-job"/);
   assert.match(source, /"wire-edm-job"/);
   assert.match(source, /"sinker-edm-job"/);
+  assert.match(source, /"grinding-job"/);
+  assert.match(source, /"surface-grinder-job"/);
+  assert.match(source, /"cylindrical-grinder-job"/);
+  assert.match(source, /"cmm-inspection-job"/);
+  assert.match(source, /"vision-inspection-job"/);
+  assert.match(source, /"metrology-job"/);
+  assert.match(source, /"thermal-postprocess-job"/);
+  assert.match(source, /"furnace-job"/);
+  assert.match(source, /"heat-treatment-job"/);
+  assert.match(source, /dimensional-inspection-job-sheet/);
+  assert.match(source, /dimensional-inspection-release/);
+  assert.match(source, /thermal-postprocess-job-sheet/);
+  assert.match(source, /thermal-postprocess-release/);
   assert.match(source, /"acceptedLanguages": accepted_instruction_languages\(\)/);
   assert.match(source, /"safetyBoundaryClasses"/);
   assert.match(source, /"machine-profile-evidence"/);
@@ -2425,6 +2529,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /execution stop points/);
   assert.match(readme, /unattended-run eligibility/);
   assert.match(readme, /postprocessor gates/);
+  assert.match(readme, /inspection calibration records/);
+  assert.match(readme, /datum alignment and\s+uncertainty records/);
+  assert.match(readme, /first-article measured-values reports/);
+  assert.match(readme, /nonconformance\s+disposition records/);
+  assert.match(readme, /thermal profile and furnace logs/);
+  assert.match(readme, /fixture\/setter and\s+atmosphere records/);
+  assert.match(readme, /cooldown\/quench and PPE records/);
+  assert.match(readme, /distortion-hardness-release inspection records/);
   assert.match(readme, /assembly-kit travelers/);
   assert.match(readme, /robot-path or fixture simulation\s+reports/);
   assert.match(readme, /final-fit metrology records/);
@@ -2438,7 +2550,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /CAD\/model\/slicer source assumptions/);
   assert.match(
     readme,
-    /accepted instruction\s+kinds including slicer, multi-material FDM\/toolchanger, pellet-FGF, paste\/clay extrusion, bound-metal FFF,\s+metal-filament, SLA\/resin,\s+material-jetting, DED\/WAAM, composite-fiber, binder-jet, SLS\/powder, metal-PBF,\s+mill-turn, lathe\/turning, indexed-mill, assembly-cell, part-separation, laser\/waterjet\/plasma,\s+wire-EDM, and sinker-EDM job sheets/,
+    /accepted instruction\s+kinds including slicer, multi-material FDM\/toolchanger, pellet-FGF, paste\/clay extrusion, bound-metal FFF,\s+metal-filament, SLA\/resin,\s+material-jetting, DED\/WAAM, composite-fiber, binder-jet, SLS\/powder, metal-PBF,\s+mill-turn, lathe\/turning, indexed-mill, assembly-cell, part-separation, laser\/waterjet\/plasma,\s+wire-EDM, sinker-EDM, grinding, CMM inspection, vision inspection, metrology, furnace, heat-treatment, and thermal-postprocess job sheets/,
   );
   assert.match(readme, /batch-planning\s+state/);
   assert.match(readme, /machine-schedule state/);
@@ -2486,6 +2598,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /binder-saturation,\s+printhead, green-strength, and shrink-coupon gates/);
   assert.match(readme, /laser, waterjet, plasma, wire EDM\/sheet cutters/);
   assert.match(readme, /sinker\/ram EDM cells/);
+  assert.match(readme, /CMM\/vision inspection/);
+  assert.match(readme, /CMM\/vision inspection cells/);
+  assert.match(readme, /CMM\/vision first-article inspection releases/);
   assert.match(readme, /robotic assembly\/joining cells/);
   assert.match(readme, /waterjet cutter, plasma cutter/);
   assert.match(readme, /wire\s+EDM cutter/);
@@ -2493,13 +2608,31 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /robotic assembly cell/);
   assert.match(
     readme,
-    /slicer, multi-material FDM\/toolchanger, pellet-FGF, paste\/clay extrusion, bound-metal FFF,\s+metal-filament, SLA\/resin,\s+material-jetting, DED\/WAAM, composite-fiber, binder-jet, SLS\/powder, metal-PBF,\s+mill-turn, lathe\/turning, indexed-mill, assembly-cell, part-separation, laser\/waterjet\/plasma,\s+wire-EDM, and sinker-EDM job sheets/,
+    /slicer, multi-material FDM\/toolchanger, pellet-FGF, paste\/clay extrusion, bound-metal FFF,\s+metal-filament, SLA\/resin,\s+material-jetting, DED\/WAAM, composite-fiber, binder-jet, SLS\/powder, metal-PBF,\s+mill-turn, lathe\/turning, indexed-mill, assembly-cell, part-separation, laser\/waterjet\/plasma,\s+wire-EDM, sinker-EDM, grinding, CMM inspection, vision inspection, metrology, furnace, heat-treatment, and thermal-postprocess job sheets/,
   );
   assert.match(
     readme,
     /kerf\s+tests, wire-thread\/skim-pass\/slug-retention gates,\s+and\s+fire\/fume\/dielectric\/flushing gates/,
   );
   assert.match(readme, /sinker\/ram EDM cavity burn sheets/);
+  assert.match(readme, /CMM\/vision dimensional inspection/);
+  assert.match(readme, /CMM\/vision inspection job sheets/);
+  assert.match(readme, /thermal postprocess furnace\/oven release/);
+  assert.match(readme, /thermal postprocess furnace job\s+sheets/);
+  assert.match(
+    readme,
+    /material batch, fixture\/setter, ramp\/soak, atmosphere,\s+cooldown\/quench, PPE, distortion, hardness\/cure/,
+  );
+  assert.match(
+    readme,
+    /probe or vision\s+calibration, datum alignment, first-article measured values/,
+  );
+  assert.match(readme, /`cmm-inspection-job`/);
+  assert.match(readme, /`vision-inspection-job`/);
+  assert.match(readme, /`metrology-job`/);
+  assert.match(readme, /`thermal-postprocess-job`/);
+  assert.match(readme, /`furnace-job`/);
+  assert.match(readme, /`heat-treatment-job`/);
   assert.match(
     readme,
     /electrode, dielectric\/flushing, orbit-finish, depth-stop, and wear-compensation\s+gates/,
@@ -2508,6 +2641,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /robot path\/gripper\/fixture\/vision evidence/);
   assert.match(readme, /press\/heat-set\/torque\/adhesive\s+join recipes/);
   assert.match(readme, /SLA resin printer, multi-material FDM\/toolchanger printer, paste\/clay extrusion printer, bound-metal filament FFF printer, material-jetting printer, continuous-fiber composite printer, SLS powder-bed printer, DED\/WAAM directed-energy deposition cell/);
+  assert.match(readme, /thermal postprocess furnace/);
+  assert.match(readme, /thermal anneal\/stress-relief\/heat-treatment\/post-cure releases/);
   assert.match(readme, /multi-material-fdm-print/);
   assert.match(readme, /paste-extrusion-print/);
   assert.match(readme, /bound-metal-fff-print/);
@@ -2828,6 +2963,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     /missing part-separation cut-path\/fixture\/kerf\/heat\/deburr\/traceability\/final-inspection evidence/,
   );
   assert.match(readme, /missing precision tolerance\/surface-finish metrology evidence/);
+  assert.match(
+    readme,
+    /missing CMM\/vision inspection probe or vision calibration, datum alignment, uncertainty, measured-values, pass\/fail disposition, nonconformance-routing evidence/,
+  );
   assert.match(readme, /missing unattended\/batch monitoring and recovery evidence/);
   assert.match(
     readme,
