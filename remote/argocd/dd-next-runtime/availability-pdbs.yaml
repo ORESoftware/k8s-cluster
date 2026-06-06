@@ -108,6 +108,19 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
+  name: dd-economics-server
+  namespace: default
+  labels:
+    app: dd-economics-server
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-economics-server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
   name: dd-web-scraper
   namespace: default
   labels:

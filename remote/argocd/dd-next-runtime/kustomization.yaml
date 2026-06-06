@@ -43,6 +43,8 @@ resources:
   - dd-rust-vapi-phone.service.yaml
   - dd-trading-server.deployment.yaml
   - dd-trading-server.service.yaml
+  - dd-economics-server.deployment.yaml
+  - dd-economics-server.service.yaml
   - dd-live-mutex.deployment.yaml
   - dd-live-mutex.service.yaml
   - dd-live-mutex-submodule.deployment.yaml
