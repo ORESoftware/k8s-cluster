@@ -65,6 +65,12 @@ branches for local operator work unless a human explicitly changes that posture 
 If the workspace is already on a non-`dev` branch, surface that state before doing branch-sensitive
 work and prefer integrating feature work back into `dev` instead of continuing on the feature branch.
 
+When a task is complete, run `git add -A`, inspect the staged changes, commit, and push to the
+tracked remote branch. If the remote has new commits, pull them in, resolve any conflicts
+semantically by preserving the intended behavior of both local and remote changes, commit the
+resolution when needed, and re-push. Do not use this workflow to commit secrets or unrelated runtime
+files.
+
 When publishing executable or binary artifacts to the filesystem, prefer a temporary operator-owned
 location such as `$HOME/.codex/tmp` instead of the repository tree. If a binary with the same name
 already exists in the target folder, move the previous file to the user's Trash before placing the

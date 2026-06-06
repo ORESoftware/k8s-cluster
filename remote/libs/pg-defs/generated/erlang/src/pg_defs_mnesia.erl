@@ -29,7 +29,7 @@
 -record(presence_events, {seq, event_at, op, conv_id, user_id, conv_slug, user_slug, conv_shard, user_shard, soft_deleted}).
 -record(presence_consumer_checkpoints, {consumer_id, last_seq, updated_at}).
 -record(des_soccer_learning_experiments, {id, slug, display_name, description, status, config, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
--record(des_soccer_learning_policy_versions, {id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, created_at, updated_at, created_by, updated_by}).
+-record(des_soccer_learning_policy_versions, {id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, branch_key, retention_kind, full_entries_retained, full_entries_pruned_at, created_at, updated_at, created_by, updated_by}).
 -record(des_soccer_learning_policy_entries, {id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at}).
 -record(des_soccer_learning_jobs, {id, experiment_id, base_policy_version_id, spawn_strategy, status, priority, seed, attempt, max_attempts, lease_owner, lease_expires_at, started_at, finished_at, config, runner_config, result_run_id, error, created_at, updated_at}).
 -record(des_soccer_learning_runs, {id, job_id, experiment_id, base_policy_version_id, output_policy_version_id, runner_id, seed, episode_index, status, score_home, score_away, home_goal_diff, away_goal_diff, home_outcome, away_outcome, home_merge_weight_micros, away_merge_weight_micros, fitness_micros, duration_ticks, simulated_seconds_micros, elapsed_millis, transitions, summary, stats, error, created_at, updated_at}).
@@ -352,10 +352,10 @@ des_soccer_learning_experiments_table_def() ->
         {disc_copies, [node()]}
     ].
 
-des_soccer_learning_policy_versions_attributes() -> ['id', 'experiment_id', 'parent_policy_version_id', 'generation', 'version_label', 'source_kind', 'status', 'options', 'config', 'lineage', 'metrics', 'entry_count', 'target_entry_count', 'visit_count', 'fitness_micros', 'created_at', 'updated_at', 'created_by', 'updated_by'].
+des_soccer_learning_policy_versions_attributes() -> ['id', 'experiment_id', 'parent_policy_version_id', 'generation', 'version_label', 'source_kind', 'status', 'options', 'config', 'lineage', 'metrics', 'entry_count', 'target_entry_count', 'visit_count', 'fitness_micros', 'branch_key', 'retention_kind', 'full_entries_retained', 'full_entries_pruned_at', 'created_at', 'updated_at', 'created_by', 'updated_by'].
 
 des_soccer_learning_policy_versions_record_info() ->
-    {des_soccer_learning_policy_versions, 19, des_soccer_learning_policy_versions_attributes()}.
+    {des_soccer_learning_policy_versions, 23, des_soccer_learning_policy_versions_attributes()}.
 
 des_soccer_learning_policy_versions_table_def() ->
     [

@@ -1069,6 +1069,7 @@ export class DesSoccerLearningExperimentsEntity {
 @Index("des_soccer_learning_policy_versions_label_uq", ["experimentId", "versionLabel"], { unique: true })
 // des_soccer_learning_policy_versions_active_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // des_soccer_learning_policy_versions_fitness_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// des_soccer_learning_policy_versions_branch_tip_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 @Entity({ name: "des_soccer_learning_policy_versions" })
 export class DesSoccerLearningPolicyVersionsEntity {
   @PrimaryGeneratedColumn("uuid", { name: "id" })
@@ -1115,6 +1116,18 @@ export class DesSoccerLearningPolicyVersionsEntity {
 
   @Column({ name: "fitness_micros", type: "bigint", default: () => "0" })
   fitnessMicros!: number;
+
+  @Column({ name: "branch_key", type: "uuid" })
+  branchKey!: string;
+
+  @Column({ name: "retention_kind", type: "varchar", length: 32, default: () => "'branch_tip'" })
+  retentionKind!: string;
+
+  @Column({ name: "full_entries_retained", type: "boolean", default: () => "true" })
+  fullEntriesRetained!: boolean;
+
+  @Column({ name: "full_entries_pruned_at", type: "timestamptz", nullable: true })
+  fullEntriesPrunedAt!: Date | null;
 
   @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
   createdAt!: Date;

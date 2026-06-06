@@ -1669,6 +1669,10 @@ export const desSoccerLearningPolicyVersionsStatusValues = ["candidate","active"
 export const desSoccerLearningPolicyVersionsStatusSchema = z.enum(desSoccerLearningPolicyVersionsStatusValues);
 export type DesSoccerLearningPolicyVersionsStatus = z.infer<typeof desSoccerLearningPolicyVersionsStatusSchema>;
 
+export const desSoccerLearningPolicyVersionsRetentionKindValues = ["branch_tip","retain_all","metadata_only"] as const;
+export const desSoccerLearningPolicyVersionsRetentionKindSchema = z.enum(desSoccerLearningPolicyVersionsRetentionKindValues);
+export type DesSoccerLearningPolicyVersionsRetentionKind = z.infer<typeof desSoccerLearningPolicyVersionsRetentionKindSchema>;
+
 export const desSoccerLearningPolicyVersions = pgTable(
   "des_soccer_learning_policy_versions",
   {
@@ -1687,6 +1691,10 @@ export const desSoccerLearningPolicyVersions = pgTable(
     targetEntryCount: integer("target_entry_count").default(sql`0`).notNull(),
     visitCount: bigint("visit_count", { mode: "number" }).default(sql`0`).notNull(),
     fitnessMicros: bigint("fitness_micros", { mode: "number" }).default(sql`0`).notNull(),
+    branchKey: uuid("branch_key").notNull(),
+    retentionKind: varchar("retention_kind", { length: 32 }).default(sql`'branch_tip'`).notNull(),
+    fullEntriesRetained: boolean("full_entries_retained").default(sql`true`).notNull(),
+    fullEntriesPrunedAt: timestamp("full_entries_pruned_at", { withTimezone: true, mode: "string" }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
     createdBy: uuid("created_by"),
@@ -1704,9 +1712,11 @@ export const desSoccerLearningPolicyVersions = pgTable(
     desSoccerLearningPolicyVersionsEntryCountChk: check("des_soccer_learning_policy_versions_entry_count_chk", sql.raw("entry_count >= 0")),
     desSoccerLearningPolicyVersionsTargetEntryCountChk: check("des_soccer_learning_policy_versions_target_entry_count_chk", sql.raw("target_entry_count >= 0")),
     desSoccerLearningPolicyVersionsVisitCountChk: check("des_soccer_learning_policy_versions_visit_count_chk", sql.raw("visit_count >= 0")),
+    desSoccerLearningPolicyVersionsRetentionKindChk: check("des_soccer_learning_policy_versions_retention_kind_chk", sql.raw("retention_kind in ('branch_tip', 'retain_all', 'metadata_only')")),
     desSoccerLearningPolicyVersionsLabelUq: uniqueIndex("des_soccer_learning_policy_versions_label_uq").on(table.experimentId, table.versionLabel),
     desSoccerLearningPolicyVersionsActiveIdx: index("des_soccer_learning_policy_versions_active_idx").on(table.experimentId, table.generation.desc(), table.updatedAt.desc()).where(sql.raw("status = 'active'")),
     desSoccerLearningPolicyVersionsFitnessIdx: index("des_soccer_learning_policy_versions_fitness_idx").on(table.experimentId, table.fitnessMicros.desc(), table.updatedAt.desc()).where(sql.raw("status in ('active', 'candidate')")),
+    desSoccerLearningPolicyVersionsBranchTipIdx: index("des_soccer_learning_policy_versions_branch_tip_idx").on(table.experimentId, table.branchKey, table.generation.desc(), table.updatedAt.desc()).where(sql.raw("full_entries_retained = true")),
   }),
 );
 
@@ -1726,6 +1736,10 @@ export const desSoccerLearningPolicyVersionsRowSchema = z.object({
   targetEntryCount: z.number().int().min(0),
   visitCount: z.number().int().min(0),
   fitnessMicros: z.number().int(),
+  branchKey: z.string().uuid(),
+  retentionKind: desSoccerLearningPolicyVersionsRetentionKindSchema,
+  fullEntriesRetained: z.boolean(),
+  fullEntriesPrunedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   createdBy: z.string().uuid().nullable(),
@@ -1748,6 +1762,10 @@ export const desSoccerLearningPolicyVersionsInsertSchema = z.object({
   targetEntryCount: z.number().int().min(0).optional().default(0),
   visitCount: z.number().int().min(0).optional().default(0),
   fitnessMicros: z.number().int().optional().default(0),
+  branchKey: z.string().uuid(),
+  retentionKind: desSoccerLearningPolicyVersionsRetentionKindSchema.optional().default("branch_tip"),
+  fullEntriesRetained: z.boolean().optional().default(true),
+  fullEntriesPrunedAt: z.string().datetime().nullable().optional(),
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
   createdBy: z.string().uuid().nullable().optional(),

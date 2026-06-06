@@ -96,8 +96,15 @@ Gateway path map:
   `POST /mdp/telemetry/learn` -> `dd-mdp-optimizer:8096` (gateway auth required)
 - `/fabrication/`, `/fabrication/healthz`, `/fabrication/metrics`, `/fabrication/docs/api`,
   `/fabrication/capabilities`, `/fabrication/schema`, `/fabrication/examples`,
+  `/fabrication/machines/catalog`, `/fabrication/controllers/catalog`,
+  `/fabrication/materials/catalog`, `/fabrication/decomposition/catalog`,
+  `/fabrication/release/catalog`, `/fabrication/simulation/catalog`,
+  `/fabrication/quality/catalog`, `/fabrication/interventions/catalog`,
+  `/fabrication/design/formats`, `/fabrication/instructions/languages`,
+  `/fabrication/boundaries/catalog`, `/fabrication/learning/capabilities`,
   `/fabrication/jobs`, `/fabrication/jobs/<jobId>`,
-  `/fabrication/jobs/<jobId>/artifacts/<artifactId>`, `/fabrication/learning/policy`, `POST /fabrication/learning/observe`,
+  `/fabrication/jobs/<jobId>/artifacts/<artifactId>`, `/fabrication/learning/policy`,
+  `GET /fabrication/learning/outcomes`, `POST /fabrication/learning/observe`,
   `POST /fabrication/learning/outcomes`, `POST /fabrication/plan`, `POST /fabrication/instructions/analyze` ->
   `dd-fabrication-server:8113` (gateway auth required)
 - `/grafana/fabrication` -> `dd-remote-web-home:8080` redirect to the
@@ -194,8 +201,8 @@ failure-boundary counters, and NATS/MDP fan-out counters that Service-level scra
 Prometheus alerts if those direct pod scrape targets disappear or go down while the service-level
 scrape still looks healthy. Operators can open `/grafana/fabrication` from the web-home service
 directory to land on the dedicated `dd-fabrication-planner` dashboard for request intake,
-validation findings, machine-failure boundaries, NATS/MDP fan-out, runtime-config delivery, HPA
-pressure, and logs.
+validation findings, machine-failure boundaries, required operator actions, fixture/setup
+blockers, split/combine reviews, NATS/MDP fan-out, runtime-config delivery, HPA pressure, and logs.
 The observability stack also scrapes `dd-runtime-config` metrics so missed subscriber registration,
 configuration-entry, or push-delivery changes are visible alongside the fabrication planner, NATS,
 and MDP optimizer dependency metrics, and alerts when runtime-config is down, has no stage
@@ -205,8 +212,10 @@ scrape targets are down, covering the queue/result/event path and fabrication po
 fan-out path separately from the Rust service's own health.
 Prometheus alerts when the fabrication scrape target is down or
 `dd_fabrication_server_errors_total` starts increasing. It also alerts when machine-failure boundary
-findings are increasing, successful requests are not producing fabrication result or MDP-learning
-fan-out, the bounded in-process job/learning ledgers approach eviction, or the Deployment has
+findings, required operator actions, fixture/setup blockers, or split/combine reviews are
+increasing, successful requests or queued NATS intake are not producing fabrication result or
+MDP-learning fan-out, the bounded in-process job/artifact/learning ledgers approach eviction or
+artifact evidence high-watermarks, or the Deployment has
 unavailable replicas during a cold build, scheduling, or readiness problem. It also alerts on
 serving-container restarts because retained job/artifact evidence, learning memory, NATS
 subscriptions, and active planning work are in-process. Init-container waiting and restart alerts

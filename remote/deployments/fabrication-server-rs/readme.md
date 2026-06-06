@@ -11,6 +11,34 @@ It exposes:
 - `GET /metrics`
 - `GET /capabilities`
 - `GET /fabrication/capabilities`
+- `GET /machines/catalog`
+- `GET /fabrication/machines/catalog`
+- `GET /controllers/catalog`
+- `GET /fabrication/controllers/catalog`
+- `GET /materials/catalog`
+- `GET /fabrication/materials/catalog`
+- `GET /design/formats`
+- `GET /fabrication/design/formats`
+- `GET /design/generation/catalog`
+- `GET /fabrication/design/generation/catalog`
+- `GET /instructions/languages`
+- `GET /fabrication/instructions/languages`
+- `GET /improvements/catalog`
+- `GET /fabrication/improvements/catalog`
+- `GET /boundaries/catalog`
+- `GET /fabrication/boundaries/catalog`
+- `GET /decomposition/catalog`
+- `GET /fabrication/decomposition/catalog`
+- `GET /release/catalog`
+- `GET /fabrication/release/catalog`
+- `GET /simulation/catalog`
+- `GET /fabrication/simulation/catalog`
+- `GET /quality/catalog`
+- `GET /fabrication/quality/catalog`
+- `GET /interventions/catalog`
+- `GET /fabrication/interventions/catalog`
+- `GET /learning/capabilities`
+- `GET /fabrication/learning/capabilities`
 - `GET /schema`
 - `GET /fabrication/schema`
 - `GET /examples`
@@ -29,6 +57,8 @@ It exposes:
 - `POST /fabrication/instructions/analyze`
 - `POST /learning/observe`
 - `POST /fabrication/learning/observe`
+- `GET /learning/outcomes`
+- `GET /fabrication/learning/outcomes`
 - `POST /learning/outcomes`
 - `POST /fabrication/learning/outcomes`
 
@@ -51,6 +81,11 @@ machine-lane capacity from the same machine schedule. Instruction-analysis
 responses expose a matching DES Studio `desInstructionModel` queue graph so
 imported CNC, slicer, printer, and text instruction streams can be prioritized
 by review capacity and failure-boundary pressure.
+`GET /learning/capabilities` and
+`GET /fabrication/learning/capabilities` expose that local DES-backed learning
+surface as `dd.fabrication.learning-capability-catalog.v1`, including
+`des_engine::des::decision::solve_mdp`, `solve_pomdp_underlying`, DES Studio
+queue graph analysis, and `FeedForwardNetwork` neural-policy previews.
 
 The queue accepts direct plan payloads, direct instruction-analysis payloads
 containing `programs`, rich fabrication outcome payloads containing `outcome`,
@@ -210,6 +245,10 @@ is supplied.
   selection, input/output formats, dry-run gates, blockers, required artifacts,
   and operator signoff requirements before any printer, mill, mill-turn center,
   router, sheet cutter, lathe, robotic assembly cell, or manual cell can start.
+- A `controllerPlan` compatibility contract with controller dialect families,
+  postprocessor-known status, required controller checks, required evidence,
+  controller release gates, blockers, and `controller-*` learning observations
+  before controller output can be treated as machine-ready.
 - A `manufacturingHandoff` package with part-level geometry envelopes, stock
   strategy, datum scheme, fixture/setup plan, inspection gates, release blockers,
   and release gates for downstream CAD/CAM, slicer, or shop-floor review.
@@ -226,6 +265,22 @@ is supplied.
   required fixture evidence, clearance checks, datum-transfer records, release
   blockers, automation candidates, and `fixture-*` learning observations for
   MDP/POMDP workers.
+- A `monitoringPlan` with runtime sensor channels, expected signals, alert rules,
+  recovery actions, release blockers, and `monitoring-*` learning observations so
+  jobs can feed live machine evidence into MDP/POMDP/neural outcome loops.
+- An `interfaceControlPlan` for join/split interfaces, mating-surface evidence,
+  acceptance criteria, split/combine decision links, release blockers, and
+  `interface-*` learning observations before combining, separating, or
+  machine-ready release.
+- A `decompositionPlan` with explicit split targets, route contracts,
+  recomposition interfaces, release gates, blockers, and `decomposition-*`
+  learning observations so workers can prove when one body must become multiple
+  parts, or multiple parts can be recombined safely.
+- A `releasePackagePlan` that bundles each generated machine program or
+  assembly/recomposition handoff with design export IDs, controller targets,
+  fixture setups, monitoring points, quality inspections, decomposition targets,
+  interface controls, required artifacts, release gates, blockers, and
+  `release-package*` learning observations for downstream worker review.
 - `improvements` and `improvedPrograms` review drafts for generated and
   submitted instruction streams, with conservative gates inserted before
   machine-ready release and a `patchManifest` that records line-level repair
@@ -259,7 +314,7 @@ is supplied.
   production plans, machine programs, validation reports, boundary summaries,
   resolution plans, intervention maps, execution plans, postprocess plans, POMDP
   belief states, release probe plans, neural training corpora, machine-release reports, manufacturing
-  handoffs, material plans, quality plans, tooling plans, machine-selection traces, improved instructions,
+  handoffs, material plans, quality plans, tooling plans, interface-control plans, machine-selection traces, improved instructions,
   assembly plans, process graphs, assembly graphs, and optimizer-shaped MDP
   requests.
 
@@ -283,6 +338,291 @@ families, generated artifact families, learning
 channels, bounded `profileEvidence` buckets for submitted machine profiles, and
 safety boundary classes. These capabilities describe draft planning and
 validation support, not controller-certified release.
+
+## `GET /fabrication/machines/catalog`
+
+`GET /machines/catalog` and the gateway-prefixed
+`GET /fabrication/machines/catalog` return the live
+`dd.fabrication.machine-catalog.v1` catalog derived from `default_machines()`.
+The payload exposes the supported default fleet for additive printers,
+large-format pellet/FGF, resin, material jetting, fiber composite, binder jet,
+SLS/MJF/powder-bed, metal PBF, DED, vertical/horizontal/five-axis/indexed mills,
+CNC routers, mill-turn centers, lathes, laser/waterjet/plasma/wire EDM/sinker
+EDM cells, and robotic assembly cells. It includes machine kinds, process-class
+counts, controllers, supported materials, operation tags, work envelopes, axes,
+accepted instruction languages, planning and instruction-analysis route aliases,
+and per-machine release gates. Catalog machines are default planning profiles,
+not certified shop-floor assets; callers should attach bounded
+`profileEvidence` to harden or override them before planning, and machine-ready
+release remains blocked until profile evidence, controller/postprocessor checks,
+simulation or dry-run review, and operator or automation signoff pass.
+
+## `GET /fabrication/controllers/catalog`
+
+`GET /controllers/catalog` and the gateway-prefixed
+`GET /fabrication/controllers/catalog` return the live
+`dd.fabrication.controller-postprocessor-catalog.v1` controller and
+postprocessor discovery catalog derived from the current `default_machines()`
+fleet plus the same `postprocessor_for`, output-format, and controller dialect
+logic used by `postprocessPlan` and `controllerPlan`. The payload exposes
+machine/controller targets, process classes, controller dialect families,
+postprocessor names, postprocessor-known counts, output formats, required
+controller checks, release evidence requirements, planning and
+instruction-analysis route aliases, and response surfaces such as
+`postprocessPlan.controllerTargets`, `controllerPlan.compatibilityTargets`,
+`controllerPlan.dialectSummaries`, `controllerPlan.releaseGates`, and
+`releasePackagePlan.packages`. Machine-ready release remains blocked until the
+exact postprocessed output, controller setup sheet, dry-run or simulation
+evidence, postprocessor version, and operator or automation signoff are retained;
+unknown controller/postprocessor combinations stay routed to manual controller
+review.
+
+## `GET /fabrication/materials/catalog`
+
+`GET /materials/catalog` and the gateway-prefixed
+`GET /fabrication/materials/catalog` return the live
+`dd.fabrication.material-catalog.v1` material and feedstock discovery catalog
+derived from the current `default_machines()` fleet and the same
+material-machine compatibility rules used by planning and instruction analysis.
+The payload exposes material families, family counts, compatible machine IDs and
+kinds, process classes, feedstock or stock forms, operation tags, conditioning
+requirements, release gates, planning and instruction-analysis route aliases,
+and response surfaces such as `materialPlan.routeRequirements`,
+`materialPlan.releaseGates`, `validation.failureBoundaries`, `boundarySummary`,
+`toolingPlan.releaseBlockers`, and `releasePackagePlan.packages`. Catalog
+materials are default planning labels, not certified inventory; machine-ready
+release remains blocked until material lot/certificate or operator evidence,
+quantity plus scrap proof, machine profile evidence, process conditioning,
+simulation or dry-run review, and operator or automation signoff are retained.
+Material-machine mismatches emit `material-machine-boundary` signals for
+MDP/POMDP/neural workers so future plans can learn when to reroute, split, or
+request new material evidence.
+
+## `GET /fabrication/design/formats`
+
+`GET /design/formats` and the gateway-prefixed
+`GET /fabrication/design/formats` return the live
+`dd.fabrication.design-format-catalog.v1` CAD/model/slicer intake catalog before
+a caller submits a full planning request. The payload exposes the same
+`designInputReview.supportedFormats` source as `/fabrication/plan`, plus source
+systems, ecosystems, categories, category counts, preferred neutral exports,
+slicer targets, CAD design-conversion NATS request/result subjects, and release
+policy notes that keep machine-ready release blocked until translator output,
+topology/scale/profile review, simulation, and signoff evidence are attached.
+
+## `GET /fabrication/design/generation/catalog`
+
+`GET /design/generation/catalog` and the gateway-prefixed
+`GET /fabrication/design/generation/catalog` return the live
+`dd.fabrication.design-generation-catalog.v1` design package, generated export,
+and manufacturing handoff catalog before a caller asks `/fabrication/plan` to
+draft geometry or downstream instructions. The payload exposes export contracts,
+handoff contracts, export formats, planning route aliases, design-input route
+aliases, response surfaces such as `designPackage`, `designExports`,
+`designInputReview.conversionPlan`, `manufacturingHandoff.parts`,
+`processGraph.nodes`, and `hybridMakePlan.splitCombineDecisions`, plus artifact
+surfaces such as `parametric-design`, `design-package`, `design-export-bundle`,
+and `manufacturing-handoff`. It names the draft schemas consumed by CAD/CAM,
+slicer, setup, MDP-request, and release-package workers, including
+`dd.fabrication.design-package.v1`,
+`dd.fabrication.design-export-bundle.v1`, and
+`dd.fabrication.manufacturing-handoff.v1`. Machine-ready release remains blocked
+while generated exports, conversion evidence, machine-release gates, or handoff
+proof are unresolved, and design/export/handoff/split-combine observations are
+emitted for MDP/POMDP/neural workers.
+
+## `GET /fabrication/instructions/languages`
+
+`GET /instructions/languages` and the gateway-prefixed
+`GET /fabrication/instructions/languages` return the live
+`dd.fabrication.instruction-language-catalog.v1` intake catalog for imported CNC,
+printer, slicer, cutting, EDM, assembly, part-separation, setup, and operator
+instruction streams before a caller submits analysis or planning work. The
+payload exposes language families, family counts, machine classes, analysis
+focus areas, analysis route aliases, draft-only release policy notes, and
+per-language release gates. Machine-ready release remains blocked until the
+submitted instruction stream has parse or review evidence, simulation or
+equivalent controller review when machine code is present, improved program or
+patch retention when repairable, and controller/postprocess/operator signoff
+evidence for any machine-failure, human-intervention, split/combine, setup, or
+handoff boundary.
+
+## `GET /fabrication/improvements/catalog`
+
+`GET /improvements/catalog` and the gateway-prefixed
+`GET /fabrication/improvements/catalog` return the live
+`dd.fabrication.instruction-improvement-catalog.v1` repair-draft catalog for
+generated and imported instruction streams. The payload exposes improvement
+action families, action types, patch operation kinds, planning and
+instruction-analysis route aliases, and response surfaces such as
+`improvements`, `improvedPrograms`, `improvedPrograms.instructions`,
+`improvedPrograms.notes`, `improvedPrograms.machineReady`,
+`improvedPrograms.patchManifest`,
+`improvedPrograms.patchManifest.operations`,
+`improvedPrograms.patchManifest.learningObservations`, `validation.findings`,
+`validation.failureBoundaries`, `machineRelease.blockers`, and
+`releasePackagePlan.requiredArtifacts`. Catalog entries cover machine-code
+modal defaults, finding repair, slicer/additive evidence, advanced additive and
+special-process evidence, subtractive/sheet/EDM/turning evidence, assembly,
+postprocess, monitoring, and structured text checkpoints. Patch manifests use
+`dd.fabrication.instruction-patch-manifest.v1` and emit operation kinds such as
+`insert-before-line`, `insert-before-program`,
+`insert-before-first-risk-motion`, `insert-after-program`,
+`insert-review-checkpoint`, and `review-line`. Improved programs are review
+drafts and keep `machineReady=false` until validation, simulation,
+controller/postprocessor review, and operator or automation signoff clear.
+Instruction-patch observations are emitted for MDP/POMDP/neural workers so
+future planning can learn which evidence, defaults, checkpoints, and
+split/combine gates reduce failures.
+
+## `GET /fabrication/boundaries/catalog`
+
+`GET /boundaries/catalog` and the gateway-prefixed
+`GET /fabrication/boundaries/catalog` return the live
+`dd.fabrication.boundary-catalog.v1` analyzer boundary catalog before a caller
+submits machine code, slicer projects, text job sheets, or generated draft
+programs for analysis. The payload exposes boundary families, family counts,
+representative detection sources, release evidence requirements, resolution
+actions, learning signals, and response surfaces such as
+`validation.failureBoundaries`, `boundarySummary`, `resolutionPlan`,
+`interventionMap`, `operatorInterventionPlan`, `releaseProbePlan`,
+`decompositionPlan`, and `releasePackagePlan`. Machine-ready release remains
+blocked while any cataloged machine-failure, human-intervention, split/combine,
+automation, postprocess, inspection, profile, or material boundary remains
+unresolved, and boundary kinds are emitted as MDP/POMDP/neural learning signals
+for regeneration, split/combine, automation-proof, or human-intervention policy
+updates.
+
+## `GET /fabrication/decomposition/catalog`
+
+`GET /decomposition/catalog` and the gateway-prefixed
+`GET /fabrication/decomposition/catalog` return the live
+`dd.fabrication.decomposition-catalog.v1` split/combine and interface-control
+catalog before a caller submits generated or imported work. The payload exposes
+decomposition target families, family counts, target kinds, representative route
+machine kinds, required child-geometry and per-route evidence, interface-control
+fit modes, release gates, planning and instruction-analysis route aliases, and
+response surfaces such as `hybridMakePlan.splitCombineDecisions`,
+`decompositionPlan.targets`, `decompositionPlan.routeContracts`,
+`decompositionPlan.recompositionInterfaces`, `decompositionPlan.releaseGates`,
+`interfaceControlPlan.controls`, `interfaceControlPlan.decisionLinks`, and
+`releasePackagePlan.packages`. Catalog entries are draft decomposition and
+interface-control contracts, not certified assembly release; machine-ready
+release remains blocked until child geometry, per-route machine code, datum
+transfer, interface metrology, recomposition, and operator or automation
+evidence are retained. The catalog also exposes learning surfaces such as
+`decompositionPlan.learningObservations`,
+`interfaceControlPlan.learningObservations`, `mdp-request` decomposition and
+interface-control artifacts, and retained `learning.outcomes` so MDP/POMDP/neural
+workers can compare single-piece, split-route, and recomposed outcomes.
+
+## `GET /fabrication/release/catalog`
+
+`GET /release/catalog` and the gateway-prefixed
+`GET /fabrication/release/catalog` return the live
+`dd.fabrication.release-catalog.v1` machine-ready release catalog before a
+caller treats generated programs, improved instructions, or assembly travelers as
+shop-floor release packets. The payload exposes release package kinds, package
+states, gate types, blocker sources, required artifacts, planning and
+instruction-analysis route aliases, and response surfaces such as
+`machineRelease.status`, `machineRelease.blockers`, `machineRelease.checklist`,
+`releasePackagePlan.packages`, `releasePackagePlan.releaseGates`,
+`releasePackagePlan.requiredArtifacts`, `releasePackagePlan.learningObservations`,
+`controllerPlan.releaseGates`, `postprocessPlan.blockers`,
+`simulation.riskProfile`, `decompositionPlan.releaseGates`, and
+`interfaceControlPlan.releaseGates`. Catalog entries are machine-ready evidence
+contracts, not certified equipment safety; machine-ready release remains blocked
+until validation findings, failure boundaries, release probes,
+controller/postprocessor checks, simulation or dry-run evidence, split/combine
+interface gates, and operator or automation signoff clear. Release package
+observations are emitted for MDP/POMDP/neural workers so future planning can
+learn which evidence cleared or blocked printed, milled, turned, sheet-cut, EDM,
+and recomposed routes.
+
+## `GET /fabrication/simulation/catalog`
+
+`GET /simulation/catalog` and the gateway-prefixed
+`GET /fabrication/simulation/catalog` return the live
+`dd.fabrication.simulation-catalog.v1` dry-run and simulation-risk catalog before
+callers treat generated or imported programs as machine-ready. The payload
+exposes toolpath-envelope, arc-sweep, rapid-clearance, process-start, and
+rotary/index review risk contracts; dry-run evidence contracts; planning and
+instruction-analysis route aliases; and response surfaces such as
+`simulation.programs`, `simulation.programs.axisExtents`,
+`simulation.programs.safeClearanceObserved`,
+`simulation.programs.spindleOrHeatupObserved`, `simulation.riskProfile`,
+`simulation.riskProfile.programRisks`,
+`simulation.riskProfile.learningObservations`, `simulation.findings`,
+`simulation.failureBoundaries`, `validation.failureBoundaries`,
+`machineRelease.blockers`, `executionPlan.stopPoints`, and
+`releaseProbePlan.probes`. Catalog entries are dry-run and risk evidence
+contracts, not certified machine safety; machine-ready release remains blocked
+while simulation risk is blocked, envelope or clearance boundaries remain open,
+process-start proof is missing, or required dry-run artifacts such as
+`simulation-report`, `analysis-simulation-report`,
+`rotary-clearance-simulation-report`, or
+`robot-path-or-fixture-simulation-report` are absent. Simulation-risk
+observations are emitted for MDP/POMDP/neural workers so future planning can
+learn when to reroute, split parts, add clearance, or require operator review.
+
+## `GET /fabrication/quality/catalog`
+
+`GET /quality/catalog` and the gateway-prefixed
+`GET /fabrication/quality/catalog` return the live
+`dd.fabrication.quality-catalog.v1` inspection and metrology catalog before
+callers treat generated or imported programs as machine-ready. The payload
+exposes dimensional-metrology, additive-postprocess, subtractive-metrology,
+sheet-cut-quality, assembly-quality, and traceability-quality contracts,
+measurement contract targets, planning and instruction-analysis route aliases,
+and response surfaces such as `qualityPlan.status`,
+`qualityPlan.inspectionPoints`, `qualityPlan.measurementTargets`,
+`qualityPlan.releaseGates`, `validation.failureBoundaries`,
+`machineRelease.blockers`, `postprocessPlan.blockers`,
+`releasePackagePlan.releaseGates`, and `interfaceControlPlan.controls`.
+Catalog entries are inspection and measurement evidence contracts, not certified
+acceptance results; machine-ready release remains blocked while required quality
+inspection, postprocess, material traceability, interface fit, or metrology
+evidence is absent. Quality observations are retained for MDP/POMDP/neural
+workers so future planning can learn when to add inspection, split parts, adjust
+processes, or require human signoff.
+
+## `GET /fabrication/interventions/catalog`
+
+`GET /interventions/catalog` and the gateway-prefixed
+`GET /fabrication/interventions/catalog` return the live
+`dd.fabrication.intervention-catalog.v1` operator-intervention and automation
+catalog before callers treat a plan or imported program as unattended-run
+eligible. The payload exposes action contracts, automation types, evidence-gate
+contracts, planning and instruction-analysis route aliases, and response surfaces
+such as `boundarySummary.automationRequirements`,
+`interventionMap.humanInterventionPoints`, `interventionMap.automationPaths`,
+`interventionMap.splitCombineDecisions`, `executionPlan.stopPoints`,
+`operatorInterventionPlan.requiredOperatorActions`,
+`operatorInterventionPlan.evidenceGates`,
+`operatorInterventionPlan.automationCandidates`,
+`operatorInterventionPlan.splitCombineReviews`, `releaseProbePlan.probes`, and
+`pomdpBeliefState.hiddenStates`. Catalog entries are preflight evidence
+contracts, not controller-certified restart instructions; machine-ready release
+remains blocked while required operator actions, unresolved execution stop
+points, split/combine reviews, or unverified automation candidates remain open.
+Human-intervention and automation observations are emitted for MDP/POMDP/neural
+workers so future planning can learn when to add automation, split jobs, or keep
+human checkpoints.
+
+## `GET /fabrication/learning/capabilities`
+
+`GET /learning/capabilities` and the gateway-prefixed
+`GET /fabrication/learning/capabilities` return the live
+`dd.fabrication.learning-capability-catalog.v1` catalog for the service's
+MDP/POMDP/DES/neural learning surface. The payload identifies the local
+`des_engine` crate from `remote/submodules/discrete-event-system.rs`, canonical
+MDP/POMDP/DES Studio schema names, `solve_mdp` value-iteration support,
+`solve_pomdp_underlying` QMDP-underlying previews, DES Studio
+`StudioModelSpec`/`analyze_model_spec` queue graph checks, and
+`FeedForwardNetwork` neural-policy sketches. These outputs remain planning and
+learning evidence only: machine-ready release stays blocked while validation
+findings, unresolved failure boundaries, missing probe evidence, or
+human-intervention gates remain open.
 
 ## `GET /fabrication/schema` And `GET /fabrication/examples`
 
@@ -431,8 +771,7 @@ modal defaults or explicit setup, post-processing, split, assembly, and
 human-intervention gates. Each improved program includes a `patchManifest` with
 draft insert/review operations such as `insert-before-line`,
 `insert-before-program`, `insert-after-program`, and `review-line`, plus content
-snippets, `apply-instruction-patch-*` policy actions, and `instruction-patch:*`
-learning observations for MDP/POMDP/neural workers. Submitted machine profiles are bounded and validated,
+snippets, `apply-instruction-patch-*` policy actions, and `instruction-patch:*` learning observations for MDP/POMDP/neural workers. Submitted machine profiles are bounded and validated,
 including positive work-envelope values, unique IDs, nonzero axis counts, and
 bounded non-secret `profileEvidence` lists for calibration, tools, fixtures,
 materials, process support, maintenance, release evidence, and retained blockers.
@@ -616,6 +955,23 @@ workholding, required evidence, clearance checks, datum-transfer records,
 automation candidates, release blockers, and `fixture-*` learning observations
 so CAM, fixture, operator, simulation, and policy workers can decide whether a
 route can run unattended or needs setup intervention before machine release.
+The response, retained `monitoring-plan`, retained `parametric-design`, and
+`mdp-request` artifacts include `monitoringPlan` runtime channels, expected
+signals, alert rules, recovery actions, release blockers, and `monitoring-*`
+learning observations so live machine evidence can be tied back to generated
+programs, safe-stop gates, and outcome learning.
+The response, retained `interface-control-plan`, retained `parametric-design`,
+and `mdp-request` artifacts include `interfaceControlPlan` join/split interface
+controls, mating-surface evidence, acceptance criteria, split/combine decision
+links, release gates, blockers, and `interface-*` learning observations so
+hybrid planners can verify where parts may be combined, separated, dry-fit, or
+reworked before machine-ready release.
+The response, retained `decomposition-plan`, retained `parametric-design`, and
+`mdp-request` artifacts include `decompositionPlan` split targets, route
+contracts, recomposition interfaces, release gates, release blockers, and
+`decomposition-*` learning observations so CAD/CAM, slicer, robot, operator, and
+policy workers can decide whether a job completes as one piece, separated child
+routes, or a recomposed assembly.
 The response plus retained `machine-selection`, `parametric-design`, and
 `mdp-request` artifacts include `machineSelection` candidate scores and selected
 machine reasons so learning workers can compare alternate printers, mills,
@@ -636,6 +992,13 @@ retained `parametric-design`, and `mdp-request` artifacts include
 input/output formats, dry-run or simulation gates, release blockers, required
 output artifacts, and operator signoff requirements so slicer/CAM/controller
 workers know what must be produced before machine start.
+The response, retained `controller-plan`, retained `parametric-design`, and
+`mdp-request` artifacts include `controllerPlan` compatibility targets, dialect
+summaries, postprocessor-known status, required controller checks, required
+evidence, controller release gates, release blockers, and `controller-*`
+learning observations so printer, mill, router, sheet cutter, lathe, mill-turn,
+EDM, and assembly-cell programs stay blocked until exact-controller review,
+dry-run evidence, and signoff are attached.
 
 ## Outcome Learning
 
@@ -663,9 +1026,15 @@ Learning outcomes are also recorded as job artifacts: `outcome-learning-event`,
 `reward-signal`, `mdp-experience`, `outcome-remediation-plan`,
 `pomdp-observations`, and `neural-example`.
 `GET /fabrication/learning/policy` and `GET /learning/policy` return the
-current bounded in-process policy memory. `POST /learning/outcomes` and
-`POST /fabrication/learning/outcomes` accept a compact success/reward record
-when callers already have their own training features.
+current bounded in-process policy memory. `GET /learning/outcomes` and
+`GET /fabrication/learning/outcomes` return the
+`dd.fabrication.learning-outcome-memory.v1` bounded outcome memory, including
+retained compact/rich learning records, `maxOutcomes`, the derived policy
+snapshot, and release-policy notes that learned preferences remain advisory
+until validation, simulation, controller review, and signoff evidence clear.
+`POST /learning/outcomes` and `POST /fabrication/learning/outcomes` accept a
+compact success/reward record when callers already have their own training
+features.
 
 When a policy snapshot has at least two positive samples for a method such as
 `additive-print`, `milling`, `five-axis-milling`, `horizontal-milling`, `routing`, `sheet-cutting`,
@@ -733,13 +1102,17 @@ reward adjustments. The optimizer-shaped `mdp-request` artifact includes
 `releaseProbePlan`, `neuralTrainingCorpus`,
 `designPackage`, `designExports`, `designInputReview`, `productionPlan`,
 `machineSchedule`, `desScheduleModel`, `machineSelection`, `manufacturingHandoff`,
-`materialPlan`, `qualityPlan`, `toolingPlan`, `fixturePlan`, `processGraph`, `hybridMakePlan`, `interventionMap`, `executionPlan`, `postprocessPlan`, `simulation`,
+`materialPlan`, `qualityPlan`, `toolingPlan`, `fixturePlan`, `monitoringPlan`, `interfaceControlPlan`, `decompositionPlan`, `processGraph`, `hybridMakePlan`, `interventionMap`, `executionPlan`, `postprocessPlan`, `controllerPlan`, `simulation`,
 `automationRequirements`, `resolutionPlan`, and `machineRelease` so external
 MDP/POMDP workers can reuse the same DES-backed policy preview, boundary evidence, design export state,
 CAD/model/slicer source assumptions, batch-planning state, machine-choice
-alternatives, machine-schedule state, DES queue-capacity model, material/stock/feedstock planning state, hybrid make/split decisions, simulation risk profiles, quality evidence targets, tooling/setup, fixture/setup
+alternatives, machine-schedule state, DES queue-capacity model, material/stock/feedstock planning state, hybrid make/split decisions, simulation risk profiles, quality evidence targets, tooling/setup, fixture/setup, runtime monitoring
 requirements, intervention paths, postprocessor gates, and CAD/CAM handoff
 assumptions.
+Core handoff fields include `designPackage`, `designExports`, `designInputReview`, `productionPlan`,
+`machineSchedule`, `desScheduleModel`, `machineSelection`, `manufacturingHandoff`,
+`materialPlan`, `qualityPlan`, `toolingPlan`, `fixturePlan`,
+`monitoringPlan`, `interfaceControlPlan`, and `releasePackagePlan`.
 
 ## Job And Artifact Inspection
 
@@ -755,8 +1128,8 @@ runtime inspection boundary while the database contract is still being designed.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
   such as `design-summary`, `parametric-design`, `process-plan`,
   `design-package`, `design-export-bundle`, `design-input-review`, `production-plan`, `machine-schedule`, `des-schedule-model`, `machine-selection`, `process-graph`, `hybrid-make-plan`,
-  `manufacturing-handoff`, `material-plan`, `quality-plan`, `tooling-plan`, `fixture-plan`, `machine-release`,
-  `execution-plan`, `postprocess-plan`, `boundary-summary`, `intervention-map`, `simulation-report`, `learning-plan`,
+  `manufacturing-handoff`, `material-plan`, `quality-plan`, `tooling-plan`, `fixture-plan`, `monitoring-plan`, `interface-control-plan`, `decomposition-plan`, `release-package-plan`, `machine-release`,
+  `execution-plan`, `postprocess-plan`, `controller-plan`, `boundary-summary`, `intervention-map`, `simulation-report`, `learning-plan`,
   `pomdp-belief-state`, `release-probe-plan`, `neural-training-corpus`,
   `mdp-request`, a `generated-design-export`, a `program-*` generated machine program, or an
   `improved-program-*` instruction rewrite, plus instruction-analysis artifacts such as
@@ -805,7 +1178,23 @@ runtime inspection boundary while the database contract is still being designed.
   `parametric-design`, and `mdp-request` include `fixturePlan` setup strategies,
   datum schemes, workholding, required evidence, clearance checks, datum-transfer
   records, automation candidates, release blockers, and `fixture-*` learning
-  observations; `intervention-map`,
+  observations; `monitoring-plan`, `parametric-design`, and `mdp-request` include
+  `monitoringPlan` runtime channels, expected signals, alert rules, recovery
+  actions, release blockers, and `monitoring-*` learning observations;
+  `interface-control-plan`, `parametric-design`, and `mdp-request` include
+  `interfaceControlPlan` join/split interface controls, mating-surface evidence,
+  acceptance criteria, split/combine decision links, release gates, blockers,
+  and `interface-*` learning observations;
+  `decomposition-plan`, `parametric-design`, and `mdp-request` include
+  `decompositionPlan` split targets, route contracts, recomposition interfaces,
+  release gates, blockers, and `decomposition-*` learning observations;
+  `release-package-plan`, `parametric-design`, and `mdp-request` include
+  `releasePackagePlan` machine-program and assembly/recomposition packages,
+  design export IDs, controller target IDs, fixture setup IDs, monitoring point
+  IDs, quality inspection IDs, decomposition target IDs, interface-control IDs,
+  required artifacts, release gates, blockers, and `release-package*` learning
+  observations;
+  `intervention-map`,
   `analysis-intervention-map`, and `mdp-request` include `interventionMap`
   human-intervention points, split/combine decisions with `interfacePlan`
   decomposition/recombination gates, automation paths, program boundary traces,
@@ -819,6 +1208,10 @@ runtime inspection boundary while the database contract is still being designed.
   choices, input/output formats, dry-run evidence gates, blockers, required
   artifacts including assembly-kit travelers, robot-path or fixture simulation
   reports, final-fit metrology records, and operator signoff requirements;
+  `controller-plan`, `parametric-design`, and `mdp-request` include
+  `controllerPlan` compatibility targets, dialect summaries, postprocessor-known
+  status, required controller checks, required evidence, controller release
+  gates, blockers, and `controller-*` learning observations;
   `simulation-report`, `analysis-simulation-report`, and `mdp-request` include
   `riskProfile` program risk scores, high-risk program counts, recommended
   actions, and `simulation-risk:*` learning observations;
@@ -840,10 +1233,11 @@ runtime inspection boundary while the database contract is still being designed.
   fabrication outcomes; `process-graph`, and
   `mdp-request` include `processGraph` operation nodes, dependencies, and
   release gates. `parametric-design` also embeds `designPackage`, `designExports`,
-  `designInputReview`, `executionPlan`, `postprocessPlan`, `pomdpBeliefState`,
+  `designInputReview`, `executionPlan`, `postprocessPlan`, `controllerPlan`, `releasePackagePlan`, `pomdpBeliefState`,
   `releaseProbePlan`,
   `machineRelease`, `manufacturingHandoff`, `productionPlan`, `machineSchedule`,
-  `materialPlan`, `qualityPlan`, `toolingPlan`, and `fixturePlan` for
+  `materialPlan`, `qualityPlan`, `toolingPlan`, `fixturePlan`,
+  `monitoringPlan`, `interfaceControlPlan`, and `releasePackagePlan` for
   one-payload handoff review.
 
 ## Local Build

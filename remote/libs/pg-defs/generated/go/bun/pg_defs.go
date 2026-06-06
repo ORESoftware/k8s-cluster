@@ -1169,6 +1169,10 @@ const DesSoccerLearningPolicyVersionsSelectSQL = `select
       target_entry_count,
       visit_count,
       fitness_micros,
+      branch_key::text as branch_key,
+      retention_kind,
+      full_entries_retained,
+      to_char(full_entries_pruned_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as full_entries_pruned_at,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
       created_by::text as created_by,
@@ -1177,6 +1181,7 @@ const DesSoccerLearningPolicyVersionsSelectSQL = `select
 
 var DesSoccerLearningPolicyVersionsSourceKindValues = []string{"seed", "merge", "mutation", "crossover", "import", "replay"}
 var DesSoccerLearningPolicyVersionsStatusValues = []string{"candidate", "active", "archived", "rejected"}
+var DesSoccerLearningPolicyVersionsRetentionKindValues = []string{"branch_tip", "retain_all", "metadata_only"}
 
 type DesSoccerLearningPolicyVersionsBun struct {
 	bun.BaseModel `bun:"table:des_soccer_learning_policy_versions"`
@@ -1195,6 +1200,10 @@ type DesSoccerLearningPolicyVersionsBun struct {
 	TargetEntryCount int32 `bun:"target_entry_count,type:integer,default:0" json:"targetEntryCount"`
 	VisitCount int64 `bun:"visit_count,type:bigint,default:0" json:"visitCount"`
 	FitnessMicros int64 `bun:"fitness_micros,type:bigint,default:0" json:"fitnessMicros"`
+	BranchKey uuid.UUID `bun:"branch_key,type:uuid" json:"branchKey"`
+	RetentionKind string `bun:"retention_kind,type:varchar(32),default:'branch_tip'" json:"retentionKind"`
+	FullEntriesRetained bool `bun:"full_entries_retained,type:boolean,default:true" json:"fullEntriesRetained"`
+	FullEntriesPrunedAt *time.Time `bun:"full_entries_pruned_at,type:timestamptz,nullzero" json:"fullEntriesPrunedAt,omitempty"`
 	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
 	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
 	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
@@ -1213,6 +1222,7 @@ func (value DesSoccerLearningPolicyVersionsBun) Validate() error {
 	if value.EntryCount < 0 { return errors.New("des_soccer_learning_policy_versions.entry_count is below the minimum") }
 	if value.TargetEntryCount < 0 { return errors.New("des_soccer_learning_policy_versions.target_entry_count is below the minimum") }
 	if value.VisitCount < 0 { return errors.New("des_soccer_learning_policy_versions.visit_count is below the minimum") }
+	if !containsString(DesSoccerLearningPolicyVersionsRetentionKindValues, value.RetentionKind) { return errors.New("unsupported des_soccer_learning_policy_versions.retention_kind") }
 	return nil
 }
 
