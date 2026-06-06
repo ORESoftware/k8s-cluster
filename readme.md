@@ -46,6 +46,8 @@ It exposes:
 - `GET /fabrication/handoff/catalog`
 - `GET /instructions/languages`
 - `GET /fabrication/instructions/languages`
+- `GET /instructions/validation/catalog`
+- `GET /fabrication/instructions/validation/catalog`
 - `GET /instructions/generation/catalog`
 - `GET /fabrication/instructions/generation/catalog`
 - `POST /instructions/generate`
@@ -54,8 +56,14 @@ It exposes:
 - `POST /fabrication/instructions/generation/result`
 - `POST /instructions/review/result`
 - `POST /fabrication/instructions/review/result`
+- `POST /instructions/validation/result`
+- `POST /fabrication/instructions/validation/result`
+- `GET /machine-code/catalog`
+- `GET /fabrication/machine-code/catalog`
 - `POST /machine-code/generate`
 - `POST /fabrication/machine-code/generate`
+- `POST /machine-code/result`
+- `POST /fabrication/machine-code/result`
 - `POST /toolpaths/plan`
 - `POST /fabrication/toolpaths/plan`
 - `POST /toolpaths/result`
@@ -64,10 +72,14 @@ It exposes:
 - `GET /fabrication/improvements/catalog`
 - `GET /boundaries/catalog`
 - `GET /fabrication/boundaries/catalog`
+- `GET /remediation/catalog`
+- `GET /fabrication/remediation/catalog`
 - `GET /decomposition/catalog`
 - `GET /fabrication/decomposition/catalog`
 - `POST /decomposition/plan`
 - `POST /fabrication/decomposition/plan`
+- `POST /decomposition/result`
+- `POST /fabrication/decomposition/result`
 - `GET /assembly/catalog`
 - `GET /fabrication/assembly/catalog`
 - `POST /assembly/plan`
@@ -157,6 +169,8 @@ It exposes:
 - `POST /fabrication/instructions/analyze`
 - `POST /instructions/validate`
 - `POST /fabrication/instructions/validate`
+- `POST /instructions/validation/result`
+- `POST /fabrication/instructions/validation/result`
 - `POST /instructions/improve`
 - `POST /fabrication/instructions/improve`
 - `POST /instructions/boundaries/review`
@@ -838,6 +852,28 @@ patch retention when repairable, and controller/postprocess/operator signoff
 evidence for any machine-failure, human-intervention, split/combine, setup, or
 handoff boundary.
 
+## `GET /fabrication/instructions/validation/catalog`
+
+`GET /instructions/validation/catalog` and the gateway-prefixed
+`GET /fabrication/instructions/validation/catalog` return the live
+`dd.fabrication.instruction-validation-catalog.v1` contract for generated and
+imported CNC, printer, slicer, setup-sheet, postprocess, assembly, and operator
+instruction streams before a caller submits validation work. The payload exposes
+accepted language families, boundary families, validation check contracts,
+response surfaces, artifact surfaces, and learning surfaces.
+
+Catalog contracts cover controller modal state, additive printer
+heat/extrusion/material state, subtractive spindle/feed/tool/workholding state,
+sheet-cutting and EDM process-media state, text job-sheet evidence, and
+split/combine release review. They are discovery contracts, not controller
+certification: validated programs remain `machineReady=false` while validation
+findings, simulation findings, machine-failure boundaries, human-intervention
+gates, split/combine reviews, or release blockers remain open. Validation
+findings, boundary kinds, instruction patches, DES instruction models, neural
+corpus examples, and retained learning outcomes remain available for
+MDP/POMDP/neural workers to improve future program generation, machine
+selection, and split/combine decisions.
+
 ## `GET /fabrication/instructions/generation/catalog`
 
 `GET /instructions/generation/catalog` and the gateway-prefixed
@@ -952,6 +988,30 @@ observations include `instruction-review-boundary-kind:*`,
 which validators, boundary analyzers, and repair drafts prevented machine
 failure or avoided unapproved human intervention.
 
+## `GET /fabrication/machine-code/catalog`
+
+`GET /machine-code/catalog` and the gateway-prefixed
+`GET /fabrication/machine-code/catalog` return the live
+`dd.fabrication.machine-code-catalog.v1` contract for draft machine-code,
+controller, slicer, and postprocessor generation before a caller submits a
+generation request. The payload derives its program families from the instruction
+generation catalog and its controller targets from the controller/postprocessor
+catalog, exposing `programContracts`, `controllerTargets`, generated languages,
+machine classes, dialect families, output formats, postprocessors, release
+evidence, and learning surfaces.
+
+Catalog entries cover printer firmware G-code, CAM G-code for vertical mills,
+horizontal mills, routers, mill-turn centers, lathes, sheet cutters, EDM and
+special-process travelers, assembly-cell instructions, and manual fallback
+programming requests. They are discovery contracts, not certified controller
+output: generated programs remain `draft=true` and `machineReady=false` until
+validation, simulation or dry-run evidence, controller/postprocessor
+compatibility, setup, quality, release package, and operator or automation
+signoff gates clear. Program-generation, controller-release, simulation-risk,
+release-probe, neural-corpus, and learning-outcome observations remain available
+for MDP/POMDP/neural workers to learn when to regenerate code, reroute machines,
+split parts, combine assemblies, or add human checkpoints.
+
 ## `POST /fabrication/machine-code/generate`
 
 `POST /machine-code/generate` and the gateway-prefixed
@@ -971,6 +1031,31 @@ draft controller/postprocessor release package: generated programs keep
 `draft=true` and `machineReady=false` until validation, simulation or dry-run,
 controller/postprocessor compatibility, setup, quality, release package, and
 operator or automation signoff gates clear.
+
+## `POST /fabrication/machine-code/result`
+
+`POST /machine-code/result` and the gateway-prefixed
+`POST /fabrication/machine-code/result` normalize controller, postprocessor,
+CAM, slicer, setup-sheet, and dry-run worker results into
+`dd.fabrication.machine-code-result-review.v1`. The route accepts retained
+machine-code programs, controller/postprocessor checks, machine-failure or
+human-intervention boundaries, artifacts, warnings, worker identity, controller
+identity, and metadata after a worker tries to prove generated code is ready for
+the selected machine.
+
+The response exposes `machineCodeResult`, `machineCodeResultJobId`,
+`releaseBlocked`, controller-check, boundary, human-intervention, program, and
+missing-evidence counts plus follow-up toolpath, simulation, release, and
+learning routes. Review jobs retain `machine-code-result`,
+`machine-code-programs`, `machine-code-controller-checks`,
+`machine-code-failure-boundaries`, `machine-code-artifacts`, and
+`machine-code-learning-observations` artifacts for `/jobs/:job_id` inspection.
+Machine-ready release stays blocked until controller checks, failure boundaries,
+retained URI/checksum evidence, dry-run or simulation evidence, and operator or
+automation signoff clear. Observations include `machine-code-program-language:*`,
+`machine-code-check:*`, `machine-code-boundary:*`, and
+`machine-code-artifact:*` so MDP/POMDP/neural workers can learn which
+postprocessors, controllers, and review gates block or clear release.
 
 ## `POST /fabrication/toolpaths/plan`
 
@@ -1066,6 +1151,28 @@ unresolved, and boundary kinds are emitted as MDP/POMDP/neural learning signals
 for regeneration, split/combine, automation-proof, or human-intervention policy
 updates.
 
+## `GET /fabrication/remediation/catalog`
+
+`GET /remediation/catalog` and the gateway-prefixed
+`GET /fabrication/remediation/catalog` return the live
+`dd.fabrication.boundary-remediation-catalog.v1` remediation-lane catalog for
+machine-failure, human-intervention, automation, split/combine, postprocess,
+inspection, profile, and material boundaries found in generated or imported
+fabrication instructions. The payload maps each boundary kind to detection
+surfaces, required release evidence, remediation actions, route handoffs,
+response surfaces such as `resolutionPlan.steps`, `interventionMap`,
+`operatorInterventionPlan`, `improvedPrograms.patchManifest`,
+`decompositionPlan`, `interfaceControlPlan`, `machineRelease.blockers`, and
+`releasePackagePlan.requiredArtifacts`, plus MDP/POMDP/neural learning signals.
+
+Remediation catalog entries are ranked review lanes, not certified controller
+repairs. `machineReady=false` remains mandatory until remediation evidence,
+validation, simulation or dry-run evidence, controller/postprocessor review,
+split/combine review, and operator or automation signoff clear. Remediation
+signals help learning workers decide when future jobs should choose safer
+machines, split or combine parts differently, regenerate instructions, or insert
+human checkpoints before hardware execution.
+
 ## `GET /fabrication/decomposition/catalog`
 
 `GET /decomposition/catalog` and the gateway-prefixed
@@ -1110,6 +1217,32 @@ It stores artifacts such as `decomposition-plan`, `interface-control-plan`,
 `hybrid-make-plan`, `assembly-plan`, `release-package-plan`, and `mdp-request`
 so MDP/POMDP/neural workers can learn when single-piece, split-route, or
 recomposed fabrication succeeds.
+
+## `POST /fabrication/decomposition/result`
+
+`POST /decomposition/result` and the gateway-prefixed
+`POST /fabrication/decomposition/result` normalize external split/combine,
+decomposition, and hybrid-route worker results into
+`dd.fabrication.decomposition-result-review.v1`. The route accepts target
+reviews, route reviews, interface checks, split/combine decisions, artifacts,
+worker or decomposer identity, warnings, and metadata after a worker tries to
+prove whether one body must be split, multiple parts can be recomposed, or a
+hybrid route is release-ready.
+
+The response exposes `decompositionResult`, `decompositionResultJobId`,
+`generatedAtMs`, `releaseBlocked`, target, route, interface, split/combine, and
+human-intervention blocker counts, missing artifact evidence, and follow-up
+assembly, release, and learning routes. Successful reviews are retained under
+`decompositionResultJobId`; `/jobs/:job_id` and
+`/jobs/:job_id/artifacts/:artifact_id` can inspect `decomposition-result`,
+`decomposition-targets`, `decomposition-route-reviews`,
+`decomposition-interfaces`, `decomposition-split-combine-decisions`,
+`decomposition-artifacts`, and `decomposition-learning-observations`. Machine-ready
+release stays blocked until split/combine targets, routes, interfaces,
+recomposition decisions, and artifacts have evidence. Result observations
+include `decomposition-target:*`, `decomposition-route:*`,
+`decomposition-interface:*`, `decomposition-decision:*`, and
+`decomposition-artifact:*`.
 
 ## `GET /fabrication/assembly/catalog`
 
@@ -2118,6 +2251,28 @@ job-sheet, setup, and operator instructions keep `machineReady=false` while
 validation findings, simulation findings, machine-failure boundaries,
 human-intervention gates, split/combine reviews, or release blockers remain
 open.
+
+## `POST /instructions/validation/result`
+
+`POST /fabrication/instructions/validation/result` and its gateway-stripped alias
+`POST /instructions/validation/result` accept retained external validation
+results for CNC, printer, slicer, setup-sheet, postprocess, assembly, and
+operator instruction streams. Workers submit validator identity, instruction
+identity, language, optional machine/controller context, findings, failure
+boundaries, improvement suggestions, retained artifacts, warnings, and metadata.
+
+The response normalizes those results into
+`dd.fabrication.instruction-validation-result-review.v1`, reports
+`releaseBlocked`, `machineReady`, `releaseReady`, finding/boundary/improvement
+blocker counts, human-intervention and split/combine flags, artifact evidence
+gaps, follow-up validation/simulation/release routes, and learning observations.
+Review jobs retain `instruction-validation-result`,
+`instruction-validation-findings`, `instruction-validation-boundaries`,
+`instruction-validation-improvements`, `instruction-validation-artifacts`, and
+`instruction-validation-learning-observations` artifacts. Release remains
+blocked until validation blockers, human/split/combine boundaries, retained
+URI/checksum/evidence artifacts, simulation or dry-run evidence, controller
+review, and signoff clear.
 
 ## `POST /instructions/improve`
 

@@ -42,10 +42,10 @@
     <h1>fabrication-server-rs API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>162 routes</span>
+      <span>170 routes</span>
       <span>rust</span>
       <span>7 service</span>
-      <span>152 user-generated</span>
+      <span>160 user-generated</span>
       <span>3 runtime-config</span>
     </div>
   </header>
@@ -171,6 +171,14 @@
   <td data-label="Path"><code>/decomposition/plan</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><code>decomposition_plan_http</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/decomposition/result</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>decomposition_result_http</code></td>
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
@@ -368,6 +376,14 @@
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/fabrication/decomposition/result</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>decomposition_result_http</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/fabrication/design/convert/plan</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><code>design_conversion_plan_http</code></td>
@@ -552,6 +568,14 @@
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/fabrication/instructions/validation/catalog</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>instruction_validation_catalog_http</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/fabrication/interventions/catalog</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><code>intervention_catalog_http</code></td>
@@ -623,10 +647,26 @@
 </tr>
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/fabrication/machine-code/catalog</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>machine_code_catalog_http</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/fabrication/machine-code/generate</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><code>machine_code_generate_http</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/fabrication/machine-code/result</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>machine_code_result_http</code></td>
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
@@ -982,6 +1022,14 @@
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/instructions/validation/catalog</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>instruction_validation_catalog_http</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
   <td data-label="Type"><span class="badge runtime-config">runtime-config</span><div class="muted">code-first</div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/internal/runtime-config</code></td>
@@ -1079,10 +1127,26 @@
 </tr>
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/machine-code/catalog</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>machine_code_catalog_http</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/machine-code/generate</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><code>machine_code_generate_http</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/machine-code/result</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>machine_code_result_http</code></td>
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>

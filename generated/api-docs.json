@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 162,
+  "routeCount": 170,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 152,
+    "user-generated": 160,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -264,6 +264,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "decomposition_plan_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/decomposition/result",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "decomposition_result_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -679,6 +696,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/decomposition/result",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "decomposition_result_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/design/convert/plan",
       "methods": [
         "POST"
@@ -1070,6 +1104,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/instructions/validation/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "instruction_validation_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/interventions/catalog",
       "methods": [
         "GET"
@@ -1225,6 +1276,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/machine-code/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "machine_code_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/machine-code/generate",
       "methods": [
         "POST"
@@ -1235,6 +1303,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "machine_code_generate_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fabrication/machine-code/result",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "machine_code_result_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -1990,6 +2075,23 @@
       "notes": ""
     },
     {
+      "path": "/instructions/validation/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "instruction_validation_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/internal/runtime-config",
       "methods": [
         "GET"
@@ -2196,6 +2298,23 @@
       "notes": ""
     },
     {
+      "path": "/machine-code/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "machine_code_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/machine-code/generate",
       "methods": [
         "POST"
@@ -2206,6 +2325,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "machine_code_generate_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/machine-code/result",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "machine_code_result_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
