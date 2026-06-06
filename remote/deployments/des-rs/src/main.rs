@@ -229,7 +229,8 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
     <div class="name">out/soccer-sim.html &middot; json/jsonl</div>
     <div class="desc">Playable 2D 11v11 match artifact with MDP/POMDP player learning, ball physics, possession chains, shots, officials, and controller slots.</div>
     <div class="row">
-      <a class="open" href="out/soccer-sim.html" target="_blank" rel="noopener">Open game &#8599;</a>
+      <a class="open" href="soccer/live" target="_blank" rel="noopener">Live game &#8599;</a>
+      <a class="open" href="out/soccer-sim.html" target="_blank" rel="noopener">Static game &#8599;</a>
       <a class="open" href="out/soccer-sim.json" target="_blank" rel="noopener">Trace JSON &#8599;</a>
       <a class="open" href="out/soccer-sim.frames.jsonl" target="_blank" rel="noopener">Frames JSONL &#8599;</a>
     </div>
@@ -3542,6 +3543,14 @@ mod tests {
         assert!(names.len() >= 56, "expected the full engine catalogue");
         assert!(names.contains(&"main_build_site"));
         assert!(names.contains(&"main_electric_circuit"));
+    }
+
+    #[test]
+    fn landing_page_links_live_soccer_simulation() {
+        assert!(LANDING_HTML.contains("href=\"soccer/live\""));
+        assert!(LANDING_HTML.contains("Live game"));
+        assert!(LANDING_HTML.contains("href=\"out/soccer-sim.html\""));
+        assert!(LANDING_HTML.contains("Static game"));
     }
 
     #[test]
