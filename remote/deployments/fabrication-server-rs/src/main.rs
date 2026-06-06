@@ -3467,7 +3467,6 @@ fn wants_bound_metal_filament_printing(value: &str) -> bool {
         || token.contains("filamet")
         || token.contains("virtual-foundry");
     !wants_metal_powder_bed_printing(&token)
-        && !wants_binder_jet_printing(&token)
         && !wants_directed_energy_deposition(&token)
         && (token.contains("bound-metal-fff")
             || token.contains("bound-metal-filament")
@@ -44049,6 +44048,84 @@ mod tests {
     }
 
     #[test]
+    fn default_additive_fleet_generates_multi_material_fdm_printer_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-multi-material-fdm-printer".to_string()),
+            objective:
+                "multi-material AMS/MMU PLA PETG support-interface enclosure with color change, purge tower, wipe tower, filament slot map, and toolchanger resume verification"
+                    .to_string(),
+            material: Some(material("pla", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.16),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("multi-material FDM printer plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "multi-material-fdm-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.operation.contains("AMS/MMU") && step.operation.contains("purge/wipe")
+        }));
+        let multi_material_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "multi-material-fdm-printer")
+            .expect("multi-material FDM program should be generated");
+        assert_eq!(multi_material_program.language, "multi-material-fdm-job");
+        assert!(multi_material_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft multi-material FDM/toolchanger")));
+        assert!(multi_material_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("MATERIAL_MAP")));
+        assert!(multi_material_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("TOOLCHANGE_SEQUENCE")));
+        assert!(multi_material_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("PURGE_TOWER")));
+        assert!(multi_material_program
+            .instructions
+            .iter()
+            .any(|line| { line.contains("multi-material-fdm-purge-resume-boundary") }));
+        assert!(multi_material_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("AMS/MMU/IDEX/toolchanger")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "multi-material-fdm-printer"
+                    && target.postprocessor == "multi-material-fdm-job-packager"
+                    && target.output_format == "multi-material-fdm-job-package"
+            }));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .iter()
+            .any(|artifact| artifact == "material-slot-map-and-filament-lot-record"));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .iter()
+            .any(|artifact| artifact == "purge-tower-wipe-and-resume-record"));
+    }
+
+    #[test]
     fn default_additive_fleet_generates_pellet_fgf_printer_job() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-pellet-fgf-printer".to_string()),
@@ -44206,7 +44283,7 @@ mod tests {
         assert!(response
             .process_plan
             .iter()
-            .any(|step| step.operation.contains("debind")));
+            .any(|step| step.machine_kind == "bound-metal-fff-printer"));
         let bound_metal_program = response
             .generated_programs
             .iter()
@@ -51579,6 +51656,96 @@ mod tests {
     }
 
     #[test]
+    fn text_multi_material_fdm_jobs_require_material_map_and_purge_resume_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("multi-material-fdm-missing-map-evidence".to_string()),
+                machine_id: Some("mmu-fdm-1".to_string()),
+                machine_kind: Some("multi-material-fdm-printer".to_string()),
+                language: Some("multi-material-fdm-job".to_string()),
+                instructions: vec![
+                    "Multi-material FDM AMS/MMU enclosure print with purge tower, wipe tower, prime volume, tool-change script, tip-shaping, runout sensor, resume G92, wipe to infill, and filament reload verified".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("multi-material-fdm-missing-purge-resume-evidence".to_string()),
+                machine_id: Some("mmu-fdm-1".to_string()),
+                machine_kind: Some("multi-material-fdm-printer".to_string()),
+                language: Some("multi-material-fdm-job".to_string()),
+                instructions: vec![
+                    "Multi-material FDM material map, color map, AMS slot map, filament lot PLA-44, spool lot PETG-12, support interface material, temperature profile, filament profile, and nozzle compatibility recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("multi-material-fdm-with-evidence".to_string()),
+                machine_id: Some("mmu-fdm-1".to_string()),
+                machine_kind: Some("multi-material-fdm-printer".to_string()),
+                language: Some("multi-material-fdm-job".to_string()),
+                instructions: vec![
+                    "Multi-material FDM material map, color map, AMS slot map, filament lot PLA-44, spool lot PETG-12, support interface material, temperature profile, filament profile, and nozzle compatibility recorded".to_string(),
+                    "Purge tower, wipe tower, purge volume, prime volume, tool-change script, tip-shaping, runout sensor, resume G92, wipe to infill, and filament reload verified".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "multi-material-fdm-map-evidence-missing"
+                && finding.program_id.as_deref() == Some("multi-material-fdm-missing-map-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "multi-material-fdm-purge-resume-evidence-missing"
+                && finding.program_id.as_deref()
+                    == Some("multi-material-fdm-missing-purge-resume-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("multi-material-fdm-")
+                && finding.program_id.as_deref() == Some("multi-material-fdm-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "multi-material-fdm-material-map-boundary"
+                && boundary.program_id.as_deref() == Some("multi-material-fdm-missing-map-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("slot assignments")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "multi-material-fdm-purge-resume-boundary"
+                && boundary.program_id.as_deref()
+                    == Some("multi-material-fdm-missing-purge-resume-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("resume G92")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-multi-material-fdm-map-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("multi-material-fdm-missing-map-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-multi-material-fdm-purge-resume-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("multi-material-fdm-missing-purge-resume-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0].instructions.iter().any(|line| {
+            line.starts_with("CHECKPOINT [multi-material-fdm-material-map-boundary]")
+        }));
+        assert!(improved[1].changed);
+        assert!(improved[1].instructions.iter().any(|line| {
+            line.starts_with("CHECKPOINT [multi-material-fdm-purge-resume-boundary]")
+        }));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [multi-material-fdm-")));
+    }
+
+    #[test]
     fn text_pellet_fgf_jobs_require_material_and_bead_thermal_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -51792,7 +51959,7 @@ mod tests {
                 language: Some("bound-metal-fff-job".to_string()),
                 instructions: vec![
                     "Bound metal filament job with metal filament lot, filament profile, binder content, hardened nozzle, dry storage, shrinkage scale, raft, support interface, green part fixture, wall compensation, and extrusion multiplier recorded".to_string(),
-                    "Solvent debind, catalytic debind backup, brown part handling, sintering furnace profile, setter support, shrinkage coupon, density coupon, argon atmosphere, forming gas review, and post-sinter dimensional inspection recorded".to_string(),
+                    "Bound metal FFF solvent debind, catalytic debind backup, brown part handling, sintering furnace profile, setter support, shrinkage coupon, density coupon, argon atmosphere, forming gas review, and post-sinter dimensional inspection recorded".to_string(),
                 ],
             },
         ];
@@ -51822,8 +51989,7 @@ mod tests {
         }));
         assert!(validation.failure_boundaries.iter().any(|boundary| {
             boundary.kind == "bound-metal-fff-debind-sinter-boundary"
-                && boundary.program_id.as_deref()
-                    == Some("bound-metal-missing-debind-sinter")
+                && boundary.program_id.as_deref() == Some("bound-metal-missing-debind-sinter")
                 && boundary.requires_human_intervention
                 && boundary.suggested_resolution.contains("sinter furnace")
         }));
@@ -51833,8 +51999,7 @@ mod tests {
         }));
         assert!(improvements.iter().any(|improvement| {
             improvement.action == "add-bound-metal-fff-debind-sinter-evidence"
-                && improvement.program_id.as_deref()
-                    == Some("bound-metal-missing-debind-sinter")
+                && improvement.program_id.as_deref() == Some("bound-metal-missing-debind-sinter")
         }));
 
         let improved = improve_instruction_programs(&programs, &validation, &improvements);
