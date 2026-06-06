@@ -345,6 +345,8 @@ fn parse_provider(s: &str) -> AppResult<ProviderKind> {
         "solana_wallet" => Ok(ProviderKind::SolanaWallet),
         "revolut" => Ok(ProviderKind::Revolut),
         "remitly" => Ok(ProviderKind::Remitly),
+        "moneygram" => Ok(ProviderKind::MoneyGram),
+        "western_union" => Ok(ProviderKind::WesternUnion),
         "robinhood" => Ok(ProviderKind::Robinhood),
         "mercury" => Ok(ProviderKind::Mercury),
         "bridge" => Ok(ProviderKind::Bridge),

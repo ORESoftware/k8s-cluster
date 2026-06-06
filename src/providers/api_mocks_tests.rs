@@ -17,10 +17,13 @@ use super::fireblocks::{FireblocksApi, FireblocksCredential};
 use super::gocardless::{GoCardlessApi, GoCardlessCredential};
 use super::mercury::{MercuryApi, MercuryCredential};
 use super::mock_http::{ExpectedRequest, ProviderMock};
+use super::moneygram::{MoneyGramApi, MoneyGramCredential};
 use super::paypal::{PaypalOAuth, verify_webhook_signature as verify_paypal_webhook_signature};
 use super::plaid::PlaidLink;
+use super::remitly::{RemitlyApi, RemitlyCredential};
 use super::revolut::{RevolutApi, RevolutCredential};
 use super::stripe::StripeApi;
+use super::western_union::{WesternUnionApi, WesternUnionCredential};
 use super::wise::{WiseApi, WiseCredential};
 
 #[tokio::test]
@@ -440,6 +443,138 @@ async fn wise_activities_use_profile_path_and_cursor() {
 
     assert_eq!(items[0].id, "wise_act_1");
     assert_eq!(next, Some("cursor_2".into()));
+    mock.assert_finished().await;
+}
+
+#[tokio::test]
+async fn remitly_partner_transfers_use_configured_base_url_and_partner_header() {
+    let mock = ProviderMock::start(vec![
+        ExpectedRequest::get("/transfers")
+            .query("limit", "25")
+            .query("cursor", "cursor_1")
+            .query("recipientId", "recipient_1")
+            .header("authorization", "Bearer remitly_key")
+            .header("x-remitly-partner-id", "partner_1")
+            .respond_json(json!({
+                "data": [{
+                    "id": "remitly_tr_1",
+                    "recipientId": "recipient_1",
+                    "status": "delivered",
+                    "sendAmount": "100.00",
+                    "sendCurrency": "USD",
+                    "receiveAmount": "5125.00",
+                    "receiveCurrency": "PHP"
+                }],
+                "nextCursor": "cursor_2"
+            })),
+    ])
+    .await;
+
+    let api = RemitlyApi::with_base_url_for_tests(
+        RemitlyCredential {
+            api_key: Some("remitly_key".into()),
+            partner_id: Some("partner_1".into()),
+            watched_recipients: vec!["recipient_1".into()],
+            api_base_url: None,
+            environment: "sandbox".into(),
+            notes: None,
+        },
+        mock.base_url(),
+    )
+    .unwrap();
+    let (items, next) = api
+        .list_partner_transfers(25, Some("cursor_1"), Some("recipient_1"))
+        .await
+        .unwrap();
+
+    assert_eq!(items[0].id, "remitly_tr_1");
+    assert_eq!(items[0].recipient_id.as_deref(), Some("recipient_1"));
+    assert_eq!(next.as_deref(), Some("cursor_2"));
+    mock.assert_finished().await;
+}
+
+#[tokio::test]
+async fn moneygram_status_lookup_gets_token_then_queries_reference_number() {
+    let auth = format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode("mg_client:mg_secret")
+    );
+    let mock = ProviderMock::start(vec![
+        ExpectedRequest::get("/oauth/accesstoken")
+            .query("grant_type", "client_credentials")
+            .header("authorization", auth)
+            .header("accept", "application/json")
+            .respond_json(json!({
+                "access_token": "mg_access",
+                "expires_in": "3599",
+                "token_type": "BearerToken"
+            })),
+        ExpectedRequest::get("/status/v1/transactions")
+            .query("agentPartnerId", "agent_1")
+            .query("referenceNumber", "12345678")
+            .query("userLanguage", "en-US")
+            .query("targetAudience", "AGENT_FACING")
+            .header("authorization", "Bearer mg_access")
+            .header("accept", "application/json")
+            .header_present("x-mg-clientrequestid")
+            .respond_json(json!({
+                "transactionId": "mg_tx_1",
+                "referenceNumber": "12345678",
+                "transactionStatus": "AVAILABLE",
+                "transactionSubStatus": "READY_FOR_PICKUP"
+            })),
+    ])
+    .await;
+
+    let api = MoneyGramApi::with_base_url_for_tests(
+        MoneyGramCredential {
+            client_id: "mg_client".into(),
+            client_secret: "mg_secret".into(),
+            agent_partner_id: "agent_1".into(),
+            user_language: "en-US".into(),
+            environment: "sandbox".into(),
+            webhook_secret: None,
+        },
+        mock.base_url(),
+    );
+    let status = api
+        .retrieve_transaction_status("12345678", Some("AGENT_FACING"))
+        .await
+        .unwrap();
+
+    assert_eq!(status.transaction_id.as_deref(), Some("mg_tx_1"));
+    assert_eq!(status.transaction_status.as_deref(), Some("AVAILABLE"));
+    mock.assert_finished().await;
+}
+
+#[tokio::test]
+async fn western_union_holding_balance_uses_client_and_currency_path() {
+    let mock = ProviderMock::start(vec![
+        ExpectedRequest::get("/HoldingBalance/client_1/USD").respond_json(json!({
+            "clientId": "client_1",
+            "currencyCode": "USD",
+            "balance": {
+                "currencyCode": "USD",
+                "amount": 1250.75
+            }
+        })),
+    ])
+    .await;
+
+    let api = WesternUnionApi::with_base_url_for_tests(
+        WesternUnionCredential {
+            client_id: "client_1".into(),
+            environment: "sandbox".into(),
+            client_certificate_pem: None,
+            client_private_key_pem: None,
+            notes: None,
+        },
+        mock.base_url(),
+    );
+    let balance = api.get_holding_balance("usd").await.unwrap();
+
+    assert_eq!(balance.client_id.as_deref(), Some("client_1"));
+    assert_eq!(balance.balance.and_then(|b| b.amount), Some(1250.75));
     mock.assert_finished().await;
 }
 
