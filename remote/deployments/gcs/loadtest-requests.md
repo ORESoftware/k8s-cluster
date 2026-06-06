@@ -28,3 +28,7 @@
 - 2026-06-05 20k-medium goroutine-fix retry after disabling MIP Argo/KEDA owner: 4 loader replicas x 5000 clients, 2.5 msg/(conn*second), 180s.
 - 2026-06-05 20k-medium goroutine-fix retry with fewer loader pods: 3 loader replicas x 6667 clients, 2.5 msg/(conn*second), 180s.
 - 2026-06-05 snapshot after passing 20k-medium goroutine-fix 3x6667 run: collect CPU, memory, router, load-shed, and dependency telemetry.
+- 2026-06-06 40k-light one-pod pprof campaign: strict aggregate target 40000, 3 loader replicas per loader, 1.0 msg/(conn*second), 180s.
+- 2026-06-06 40k-medium one-pod pprof campaign: strict aggregate target 40000, 3 loader replicas per loader, 2.5 msg/(conn*second), 180s.
+- 2026-06-06 50k-light one-pod pprof campaign: strict aggregate target 50000, 3 loader replicas per loader, 1.0 msg/(conn*second), 180s.
+- 2026-06-06 50k-medium one-pod pprof campaign: strict aggregate target 50000, 3 loader replicas per loader, 2.5 msg/(conn*second), 180s.

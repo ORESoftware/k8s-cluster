@@ -131,6 +131,7 @@ spec:
                 '"path": "/fabrication/simulation/catalog"' \
                 '"path": "/fabrication/quality/catalog"' \
                 '"path": "/fabrication/interventions/catalog"' \
+                '"path": "/fabrication/postprocess/catalog"' \
                 '"path": "/fabrication/design/formats"' \
                 '"path": "/fabrication/instructions/languages"' \
                 '"path": "/fabrication/boundaries/catalog"' \
