@@ -87,12 +87,20 @@ spec:
               # node can lag Git after an Argo-only sync, so prefer a fresh clone
               # of this k8s repo and fall back to the mount only if GitHub is
               # unavailable.
+              build_root="$(mktemp -d /tmp/dd-des-rs-build.XXXXXX)"
+              copy_source_tree() {
+                src="$1"
+                dst="$2"
+                mkdir -p "${dst}"
+                tar -C "${src}" --exclude=./.git --exclude=./target -cf - . | tar -C "${dst}" -xf -
+              }
+
               server_src="/opt/dd-next-1/remote/deployments/des-rs"
+              server_clone="${build_root}/k8s-source"
               if [ -n "${DES_SERVER_GIT_URL:-}" ]; then
-                rm -rf /tmp/k8s-source
-                if git clone --depth 1 --branch "${DES_SERVER_GIT_REF:-dev}" "${DES_SERVER_GIT_URL}" /tmp/k8s-source; then
-                  server_src=/tmp/k8s-source/remote/deployments/des-rs
-                  echo "[dd-des-rs] server: cloned ${DES_SERVER_GIT_URL}@${DES_SERVER_GIT_REF:-dev} ($(git -C /tmp/k8s-source rev-parse --short HEAD))"
+                if git clone --depth 1 --branch "${DES_SERVER_GIT_REF:-dev}" "${DES_SERVER_GIT_URL}" "${server_clone}"; then
+                  server_src="${server_clone}/remote/deployments/des-rs"
+                  echo "[dd-des-rs] server: cloned ${DES_SERVER_GIT_URL}@${DES_SERVER_GIT_REF:-dev} ($(git -C "${server_clone}" rev-parse --short HEAD))"
                 else
                   echo "[dd-des-rs] server clone failed; using mounted source at ${server_src}" >&2
                 fi
@@ -104,25 +112,24 @@ spec:
               # fails — or DES_ENGINE_GIT_URL is set empty — we fall back to the
               # pinned submodule in the read-only repo mount.
               engine_src="/opt/dd-next-1/remote/submodules/discrete-event-system.rs"
+              engine_clone="${build_root}/engine-source"
               if [ -n "${DES_ENGINE_GIT_URL:-}" ]; then
-                rm -rf /tmp/engine
-                if git clone --depth 1 --no-checkout "${DES_ENGINE_GIT_URL}" /tmp/engine \
-                  && git -C /tmp/engine fetch --depth 1 origin "${DES_ENGINE_GIT_REF:-main}" \
-                  && git -C /tmp/engine switch --detach FETCH_HEAD; then
-                  engine_src=/tmp/engine
-                  echo "[dd-des-rs] engine: cloned ${DES_ENGINE_GIT_URL}@${DES_ENGINE_GIT_REF:-main} ($(git -C /tmp/engine rev-parse --short HEAD))"
+                if git clone --depth 1 --no-checkout "${DES_ENGINE_GIT_URL}" "${engine_clone}" \
+                  && git -C "${engine_clone}" fetch --depth 1 origin "${DES_ENGINE_GIT_REF:-main}" \
+                  && git -C "${engine_clone}" switch --detach FETCH_HEAD; then
+                  engine_src="${engine_clone}"
+                  echo "[dd-des-rs] engine: cloned ${DES_ENGINE_GIT_URL}@${DES_ENGINE_GIT_REF:-main} ($(git -C "${engine_clone}" rev-parse --short HEAD))"
                 else
                   echo "[dd-des-rs] engine clone failed; using pinned submodule at ${engine_src}" >&2
                 fi
               fi
               # Build from a writable copy so the engine path dependency can be
-              # repointed and Cargo.lock stays writable under the read-only root fs.
-              rm -rf /tmp/des-rs
-              mkdir -p /tmp/des-rs
-              cp -a "${server_src}/." /tmp/des-rs/
-              rm -rf /tmp/des-rs/target
-              cd /tmp/des-rs
-              sed -i "s#path = \"../../submodules/discrete-event-system.rs\"#path = \"${engine_src}\"#" Cargo.toml
+              # resolved and Cargo.lock stays writable under the read-only root fs.
+              build_src="${build_root}/remote/deployments/des-rs"
+              build_engine="${build_root}/remote/submodules/discrete-event-system.rs"
+              copy_source_tree "${server_src}" "${build_src}"
+              copy_source_tree "${engine_src}" "${build_engine}"
+              cd "${build_src}"
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOST
@@ -227,6 +234,8 @@ spec:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 16Gi
         - name: tools
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 512Mi
