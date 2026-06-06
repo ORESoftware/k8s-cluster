@@ -2418,6 +2418,9 @@ struct TextInstructionSignals {
     has_pellet_fgf_text_context: bool,
     has_pellet_fgf_material_evidence: bool,
     has_pellet_fgf_bead_thermal_evidence: bool,
+    has_paste_extrusion_text_context: bool,
+    has_paste_extrusion_rheology_evidence: bool,
+    has_paste_extrusion_drying_evidence: bool,
     has_material_jetting_text_context: bool,
     has_material_jetting_material_evidence: bool,
     has_material_jetting_support_evidence: bool,
@@ -10931,6 +10934,93 @@ fn has_text_pellet_fgf_bead_thermal_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_paste_extrusion_context(language: &str, line: &str) -> bool {
+    wants_paste_extrusion_printing(language)
+        || wants_paste_extrusion_printing(line)
+        || language_or_line_has_any(
+            language,
+            line,
+            &[
+                "paste extrusion",
+                "paste-extrusion",
+                "paste print",
+                "clay print",
+                "clay printer",
+                "clay extrusion",
+                "ceramic extrusion",
+                "ceramic print",
+                "direct ink writing",
+                "direct-ink-writing",
+                "syringe extrusion",
+                "ram extrusion",
+                "auger extrusion",
+                "green part support",
+                "green-body support",
+            ],
+        )
+}
+
+fn has_text_paste_extrusion_rheology_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "rheology",
+            "viscosity",
+            "slump test",
+            "slump",
+            "water content",
+            "water_content",
+            "deair",
+            "de-air",
+            "vacuum mix",
+            "air bubble",
+            "paste lot",
+            "clay lot",
+            "ceramic lot",
+            "cartridge",
+            "syringe",
+            "ram speed",
+            "ram_speed",
+            "auger",
+            "extrusion pressure",
+            "pressure",
+            "nozzle diameter",
+            "nozzle",
+            "bead width",
+            "bead_width",
+        ],
+    )
+}
+
+fn has_text_paste_extrusion_drying_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "drying schedule",
+            "drying",
+            "humidity",
+            "shrinkage",
+            "shrink allowance",
+            "shrinkage allowance",
+            "green strength",
+            "green-strength",
+            "green part support",
+            "green-part support",
+            "green body",
+            "green-body",
+            "leather hard",
+            "leather-hard",
+            "crack control",
+            "support fixture",
+            "kiln",
+            "bisque",
+            "firing",
+            "sinter",
+            "cure handoff",
+        ],
+    )
+}
+
 fn has_text_ded_context(language: &str, line: &str) -> bool {
     let language_token = normalize_token(language);
     let line_token = normalize_token(line);
@@ -12714,6 +12804,18 @@ fn inspect_text_instruction_line(
         signals.has_pellet_fgf_bead_thermal_evidence = true;
         signals.has_process_preparation = true;
     }
+    let paste_extrusion_context = has_text_paste_extrusion_context(language, raw_line);
+    if paste_extrusion_context {
+        signals.has_paste_extrusion_text_context = true;
+    }
+    if paste_extrusion_context && has_text_paste_extrusion_rheology_evidence(raw_line) {
+        signals.has_paste_extrusion_rheology_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if paste_extrusion_context && has_text_paste_extrusion_drying_evidence(raw_line) {
+        signals.has_paste_extrusion_drying_evidence = true;
+        signals.has_process_preparation = true;
+    }
     let ded_context = has_text_ded_context(language, raw_line);
     if ded_context {
         signals.has_ded_text_context = true;
@@ -13327,6 +13429,9 @@ fn analyze_instruction_programs(
         let mut has_pellet_fgf_text_context = false;
         let mut has_pellet_fgf_material_evidence = false;
         let mut has_pellet_fgf_bead_thermal_evidence = false;
+        let mut has_paste_extrusion_text_context = false;
+        let mut has_paste_extrusion_rheology_evidence = false;
+        let mut has_paste_extrusion_drying_evidence = false;
         let mut has_material_jetting_text_context = false;
         let mut has_material_jetting_material_evidence = false;
         let mut has_material_jetting_support_evidence = false;
@@ -13432,6 +13537,10 @@ fn analyze_instruction_programs(
                 has_pellet_fgf_material_evidence |= signals.has_pellet_fgf_material_evidence;
                 has_pellet_fgf_bead_thermal_evidence |=
                     signals.has_pellet_fgf_bead_thermal_evidence;
+                has_paste_extrusion_text_context |= signals.has_paste_extrusion_text_context;
+                has_paste_extrusion_rheology_evidence |=
+                    signals.has_paste_extrusion_rheology_evidence;
+                has_paste_extrusion_drying_evidence |= signals.has_paste_extrusion_drying_evidence;
                 has_material_jetting_text_context |= signals.has_material_jetting_text_context;
                 has_material_jetting_material_evidence |=
                     signals.has_material_jetting_material_evidence;
@@ -17022,6 +17131,76 @@ fn analyze_instruction_programs(
                     action: "add-pellet-fgf-bead-thermal-evidence".to_string(),
                     reason:
                         "pellet/FGF text instructions should retain bead, thermal, cooling, clearance, warpage, and trim evidence before release"
+                    .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_paste_extrusion_text_context)
+                && has_paste_extrusion_text_context
+                && !has_paste_extrusion_rheology_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "paste-extrusion-rheology-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "paste/clay extrusion text job lacks rheology, viscosity, slump, deairing, nozzle, cartridge, or pressure evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "paste-extrusion-rheology-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "paste and clay extrusion can slump, clog, trap air, or under-extrude when water content, rheology/slump, deairing, nozzle diameter, cartridge/syringe/ram state, and pressure evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach paste or clay lot, water content, rheology/viscosity or slump test, deairing record, nozzle diameter, cartridge/syringe/ram state, bead coupon, and extrusion-pressure evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-paste-extrusion-rheology-evidence".to_string(),
+                    reason:
+                        "paste/clay extrusion text instructions should retain rheology, nozzle, deairing, bead, and pressure evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_paste_extrusion_text_context)
+                && has_paste_extrusion_text_context
+                && !has_paste_extrusion_drying_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "paste-extrusion-drying-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "paste/clay extrusion text job lacks drying, humidity, shrinkage, support, green-strength, kiln, firing, or cure-handoff evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "paste-extrusion-drying-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "paste and clay parts can crack, slump, shrink, lose green strength, or miss kiln/firing handoff when drying schedule, humidity, support fixtures, shrinkage allowance, and green-part evidence are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "split paste/clay release into drying schedule, humidity control, shrinkage allowance, support fixture, green-strength inspection, crack-control review, and kiln/firing or cure handoff evidence"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-paste-extrusion-drying-evidence".to_string(),
+                    reason:
+                        "paste/clay extrusion text instructions should retain drying, shrinkage, support, green-strength, and firing/cure handoff evidence before release"
                             .to_string(),
                 });
             }
@@ -19018,6 +19197,12 @@ fn design_model_intent_for_part(part: &PartPlan) -> Vec<String> {
         MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => {
             intent.push(
                 "preserve drain paths, support touchpoints, and cure-sensitive wall features"
+                    .to_string(),
+            );
+        }
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
+            intent.push(
+                "preserve bead width, shrinkage witnesses, green-part support, drying surfaces, and firing/cure handoff features"
                     .to_string(),
             );
         }
@@ -22061,6 +22246,13 @@ fn postprocess_required_artifacts(targets: &[PostprocessTarget]) -> Vec<String> 
             artifacts.insert("robot-path-or-fixture-simulation-report".to_string());
             artifacts.insert("final-fit-metrology-record".to_string());
             continue;
+        }
+        if is_paste_extrusion_printer_kind(&target.machine_kind)
+            || wants_paste_extrusion_printing(&target.output_format)
+            || wants_paste_extrusion_printing(&target.controller)
+        {
+            artifacts.insert("paste-rheology-and-nozzle-record".to_string());
+            artifacts.insert("drying-shrinkage-and-green-part-support-record".to_string());
         }
         if matches!(machine_class(&target.machine_kind), MachineClass::Lathe)
             && !is_mill_turn_kind(&target.machine_kind)
@@ -26098,6 +26290,9 @@ fn material_feedstock_kind(part: &PartPlan) -> &'static str {
         MachineClass::Additive if is_metal_pbf_printer_kind(&part.machine_kind) => {
             "qualified-metal-powder-lot"
         }
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
+            "paste-or-clay-feedstock"
+        }
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
             "polymer-powder-lot"
         }
@@ -26109,6 +26304,9 @@ fn material_feedstock_kind(part: &PartPlan) -> &'static str {
         }
         MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => {
             "material-and-support-cartridges"
+        }
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
+            "paste-or-clay-feedstock"
         }
         MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => {
             "pellet-feedstock"
@@ -26145,6 +26343,7 @@ fn material_estimated_quantity(part: &PartPlan, quantity: u32) -> f64 {
         MachineClass::Additive if is_composite_fiber_printer_kind(&part.machine_kind) => 90.0,
         MachineClass::Additive if wants_directed_energy_deposition(&part.machine_kind) => 180.0,
         MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => 40.0,
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => 600.0,
         MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => 450.0,
         MachineClass::Additive => 85.0,
         MachineClass::Lathe => 120.0,
@@ -26162,6 +26361,7 @@ fn material_scrap_allowance_pct(part: &PartPlan) -> f64 {
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => 25.0,
         MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => 20.0,
         MachineClass::Additive if wants_directed_energy_deposition(&part.machine_kind) => 30.0,
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => 25.0,
         MachineClass::Additive => 15.0,
         MachineClass::Lathe => 20.0,
         MachineClass::Mill | MachineClass::Router => 18.0,
@@ -26198,6 +26398,12 @@ fn material_conditioning(part: &PartPlan) -> Vec<String> {
         MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => vec![
             "verify model and support cartridge levels plus purge/wipe station state".to_string(),
             "confirm UV lamp exposure and support-removal compatibility".to_string(),
+        ],
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => vec![
+            "condition paste or clay batch, deair, and verify rheology/slump before loading"
+                .to_string(),
+            "confirm nozzle, syringe/ram or auger pressure, bead coupon, drying, shrinkage, and green-part support plan"
+                .to_string(),
         ],
         MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => vec![
             "dry pellet feedstock to material profile and verify hopper refill capacity"
@@ -26570,6 +26776,10 @@ fn fixture_strategy_for_part(part: &PartPlan) -> String {
             "build plate leveling, resin vat inspection, support touchpoint review, and wash/cure fixtures"
                 .to_string()
         }
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
+            "paste/clay build board, green-part support fixture, drying tray, and shrinkage witness review"
+                .to_string()
+        }
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
             "powder-bed nesting, thermal pack spacing, cooldown containment, and depowder fixtures"
                 .to_string()
@@ -26670,6 +26880,9 @@ fn quality_stage_for_part(part: &PartPlan) -> &'static str {
         MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => {
             "post-wash-cure-first-article"
         }
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
+            "post-drying-green-part-first-article"
+        }
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
             "post-cooldown-depowder-first-article"
         }
@@ -26684,6 +26897,9 @@ fn quality_method_for_part(part: &PartPlan) -> String {
     match machine_class(&part.machine_kind) {
         MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => {
             "dimensional first article, support-touchpoint review, wash/cure log, and resin batch trace".to_string()
+        }
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
+            "dimensional first article, bead coupon, rheology/slump record, drying/shrinkage log, green-strength review, and firing or cure handoff".to_string()
         }
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
             "dimensional first article, depowder completeness, warp review, surface finish, and powder lot trace".to_string()
@@ -26720,6 +26936,9 @@ fn quality_measurement_feature(part: &PartPlan) -> &'static str {
         MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => {
             "cured critical envelope and support touchpoints"
         }
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
+            "dried green-part critical envelope and shrinkage witness"
+        }
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
             "depowdered critical envelope and warp witness"
         }
@@ -26742,6 +26961,9 @@ fn quality_instrument_for_part(part: &PartPlan) -> &'static str {
     match machine_class(&part.machine_kind) {
         MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => {
             "digital calipers, pin gauges, cure log, and surface comparator"
+        }
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
+            "digital calipers, shrinkage witness gauge, moisture/humidity log, and green-strength checklist"
         }
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
             "digital calipers, height gauge, depowder checklist, and surface comparator"
@@ -27063,6 +27285,14 @@ fn tooling_required_tools(part: &PartPlan) -> Vec<String> {
             "leveled build plate, resin vat, and filtered resin pour tools".to_string(),
             "wash station basket, cure station, scraper, and PPE kit".to_string(),
         ],
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => vec![
+            "paste/clay toolpath profile, nozzle set, syringe/ram or auger loader, and purge cup"
+                .to_string(),
+            "rheology or slump test tools, deairing/vacuum tools, bead coupon board, and pressure log"
+                .to_string(),
+            "drying tray, humidity monitor, shrinkage witness, green-part support fixture, and firing/cure handoff checklist"
+                .to_string(),
+        ],
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => vec![
             "powder-bed nesting profile and thermal-pack spacing template".to_string(),
             "powder sieve, recovery bin, depowder wand, and blast cabinet".to_string(),
@@ -27136,6 +27366,11 @@ fn tooling_workholding(part: &PartPlan) -> Vec<String> {
             workholding
                 .push("supported orientation with drain paths and peel-force review".to_string());
         }
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
+            workholding.push(
+                "green-part support fixture with shrinkage witness and drying tray".to_string(),
+            );
+        }
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
             workholding.push("nested powder pack spacing with cooldown containment".to_string());
         }
@@ -27188,6 +27423,11 @@ fn tooling_consumables(part: &PartPlan) -> Vec<String> {
             MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => vec![
                 format!("{} resin lot with filtered reserve", part.material.name),
                 "nitrile gloves, wipes, IPA/wash fluid, cure log, and resin waste container"
+                    .to_string(),
+            ],
+            MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => vec![
+                format!("{} paste or clay batch with water-content and rheology record", part.material.name),
+                "deairing supplies, cartridge/syringe or hopper liner, purge cup, drying supports, and shrinkage witness"
                     .to_string(),
             ],
             MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => vec![
@@ -35739,7 +35979,19 @@ fn material_catalog_family(material: &str) -> &'static str {
         "metal"
     } else if summary_text_has_any(&token, &["resin", "photopolymer", "digital-material"]) {
         "photopolymer"
-    } else if summary_text_has_any(&token, &["powder", "sand", "ceramic"]) {
+    } else if summary_text_has_any(
+        &token,
+        &[
+            "powder",
+            "sand",
+            "ceramic",
+            "clay",
+            "porcelain",
+            "stoneware",
+            "earthenware",
+            "cementitious",
+        ],
+    ) {
         "powder-or-ceramic"
     } else if summary_text_has_any(&token, &["fiber", "kevlar", "onyx"]) {
         "composite"
@@ -35785,6 +36037,9 @@ fn material_catalog_feedstock_kind(machine_kind: &str) -> &'static str {
         }
         MachineClass::Additive if is_material_jetting_printer_kind(machine_kind) => {
             "material-and-support-cartridges"
+        }
+        MachineClass::Additive if is_paste_extrusion_printer_kind(machine_kind) => {
+            "paste-or-clay-feedstock"
         }
         MachineClass::Additive if is_pellet_fgf_printer_kind(machine_kind) => "pellet-feedstock",
         MachineClass::Additive => "filament-spool",
@@ -36021,6 +36276,8 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "sla-job",
         "resin-job",
         "pellet-fgf-job",
+        "paste-extrusion-job",
+        "clay-print-job",
         "material-jetting-job",
         "directed-energy-deposition-job",
         "composite-fiber-job",
@@ -36056,6 +36313,9 @@ fn instruction_language_family(language: &str) -> &'static str {
         || token.contains("sla")
         || token.contains("resin")
         || token.contains("pellet")
+        || token.contains("paste")
+        || token.contains("clay")
+        || token.contains("ceramic")
         || token.contains("material-jetting")
         || token.contains("directed-energy")
         || token.contains("composite")
@@ -36109,10 +36369,13 @@ fn instruction_language_machine_classes(language: &str) -> Vec<String> {
         vec![
             "fdm-printer",
             "pellet-fgf-printer",
+            "paste-extrusion-printer",
             "sla-msla-resin-printer",
         ]
     } else if token.contains("sla") || token.contains("resin") {
         vec!["sla-msla-resin-printer"]
+    } else if token.contains("paste") || token.contains("clay") || token.contains("ceramic") {
+        vec!["paste-extrusion-printer"]
     } else if token.contains("pellet") {
         vec!["pellet-fgf-printer"]
     } else if token.contains("material-jetting") {
@@ -36738,6 +37001,9 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
                 languages.insert("resin-job".to_string());
             } else if is_material_jetting_printer_kind(&machine.kind) {
                 languages.insert("material-jetting-job".to_string());
+            } else if is_paste_extrusion_printer_kind(&machine.kind) {
+                languages.insert("paste-extrusion-job".to_string());
+                languages.insert("clay-print-job".to_string());
             } else if is_pellet_fgf_printer_kind(&machine.kind) {
                 languages.insert("pellet-fgf-job".to_string());
             } else if is_composite_fiber_printer_kind(&machine.kind) {
