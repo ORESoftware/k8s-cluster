@@ -3360,6 +3360,45 @@ fn wants_material_jetting_printing(value: &str) -> bool {
         || token.contains("full-color photopolymer")
 }
 
+fn wants_paste_extrusion_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_diw_segment = token == "diw"
+        || token.starts_with("diw-")
+        || token.ends_with("-diw")
+        || token.contains("-diw-");
+    !wants_binder_jet_printing(&token)
+        && (token.contains("paste-extrusion")
+            || token.contains("paste-printer")
+            || token.contains("paste-print")
+            || token.contains("clay-printer")
+            || token.contains("clay-print")
+            || token.contains("clay-extrusion")
+            || token.contains("ceramic-printer")
+            || token.contains("ceramic-print")
+            || token.contains("ceramic-extrusion")
+            || token.contains("direct-ink-writing")
+            || has_diw_segment
+            || token.contains("syringe-extrusion")
+            || token.contains("ram-extrusion")
+            || token.contains("auger-extrusion")
+            || token == "clay"
+            || token == "porcelain"
+            || token == "stoneware"
+            || token == "earthenware"
+            || (token.contains("paste")
+                && (token.contains("print")
+                    || token.contains("extrusion")
+                    || token.contains("additive")))
+            || (token.contains("clay")
+                && (token.contains("print")
+                    || token.contains("extrusion")
+                    || token.contains("additive")))
+            || (token.contains("ceramic")
+                && (token.contains("print")
+                    || token.contains("extrusion")
+                    || token.contains("additive"))))
+}
+
 fn wants_pellet_fgf_printing(value: &str) -> bool {
     let token = normalize_token(value);
     let has_fgf_segment = token == "fgf"
@@ -3549,6 +3588,10 @@ fn is_material_jetting_printer_kind(kind: &str) -> bool {
     wants_material_jetting_printing(kind)
 }
 
+fn is_paste_extrusion_printer_kind(kind: &str) -> bool {
+    wants_paste_extrusion_printing(kind)
+}
+
 fn is_pellet_fgf_printer_kind(kind: &str) -> bool {
     wants_pellet_fgf_printing(kind)
 }
@@ -3727,6 +3770,7 @@ fn machine_class(kind: &str) -> MachineClass {
         || token.contains("fdm")
         || token.contains("sla")
         || token.contains("sls")
+        || wants_paste_extrusion_printing(&token)
         || wants_pellet_fgf_printing(&token)
         || token.contains("material-jet")
         || token.contains("polyjet")
@@ -3801,6 +3845,35 @@ fn default_machines() -> Vec<MachineProfile> {
                 "extruder-purge".to_string(),
                 "bead-tamping".to_string(),
                 "trim-allowance".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "paste-extrusion-printer-1".to_string(),
+            kind: "paste-extrusion-printer".to_string(),
+            controller: Some("paste-extrusion-job".to_string()),
+            materials: Some(vec![
+                "clay".to_string(),
+                "ceramic".to_string(),
+                "porcelain".to_string(),
+                "stoneware".to_string(),
+                "earthenware".to_string(),
+                "paste".to_string(),
+                "silicone".to_string(),
+                "hydrogel".to_string(),
+                "cement".to_string(),
+                "cementitious".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![450.0, 450.0, 350.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "paste-extrusion-print".to_string(),
+                "clay-print".to_string(),
+                "ceramic-extrusion".to_string(),
+                "syringe-or-ram-extrusion".to_string(),
+                "rheology-slump-test".to_string(),
+                "drying-shrinkage-control".to_string(),
+                "green-part-support".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -5560,6 +5633,8 @@ fn infer_requested_parts(
         wants_resin_printing(&objective_token) || wants_resin_printing(&material.name);
     let wants_material_jetting_part = wants_material_jetting_printing(&objective_token)
         || wants_material_jetting_printing(&material.name);
+    let wants_paste_extrusion_part = wants_paste_extrusion_printing(&objective_token)
+        || wants_paste_extrusion_printing(&material.name);
     let wants_pellet_fgf_part =
         wants_pellet_fgf_printing(&objective_token) || wants_pellet_fgf_printing(&material.name);
     let wants_ded_part = wants_directed_energy_deposition(&objective_token)
@@ -5601,6 +5676,7 @@ fn infer_requested_parts(
     let needs_sheet_cut_part = wants_sheet_cutting(&objective_token);
     let needs_routed_part = !wants_resin_part
         && !wants_material_jetting_part
+        && !wants_paste_extrusion_part
         && !wants_pellet_fgf_part
         && !wants_ded_part
         && !wants_composite_fiber_part
@@ -5618,6 +5694,7 @@ fn infer_requested_parts(
             || is_router_material(material));
     let needs_printed_part = wants_resin_part
         || wants_material_jetting_part
+        || wants_paste_extrusion_part
         || wants_pellet_fgf_part
         || wants_ded_part
         || wants_composite_fiber_part
@@ -5637,6 +5714,8 @@ fn infer_requested_parts(
     if needs_printed_part {
         let preferred_method = if wants_material_jetting_part {
             "material-jetting-print"
+        } else if wants_paste_extrusion_part {
+            "paste-extrusion-print"
         } else if wants_pellet_fgf_part {
             "pellet-fgf-print"
         } else if wants_ded_part {
@@ -5899,6 +5978,12 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_material_jetting_printing(value));
+    let wants_paste_extrusion_printer = preferred
+        .as_deref()
+        .is_some_and(wants_paste_extrusion_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_paste_extrusion_printing(value));
     let wants_pellet_fgf_printer = preferred.as_deref().is_some_and(wants_pellet_fgf_printing)
         || preferred_methods
             .iter()
@@ -6000,6 +6085,13 @@ fn choose_machine<'a>(
     if wants_material_jetting_printer {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_material_jetting_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_paste_extrusion_printer {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_paste_extrusion_printer_kind(&machine.kind)
         }) {
             return machine;
         }
@@ -6234,6 +6326,7 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
     } else if tokens.iter().any(|token| {
         wants_resin_printing(token)
             || wants_material_jetting_printing(token)
+            || wants_paste_extrusion_printing(token)
             || wants_pellet_fgf_printing(token)
             || wants_directed_energy_deposition(token)
             || wants_composite_fiber_printing(token)
@@ -6256,6 +6349,9 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
     let wants_material_jetting = tokens
         .iter()
         .any(|token| wants_material_jetting_printing(token));
+    let wants_paste_extrusion = tokens
+        .iter()
+        .any(|token| wants_paste_extrusion_printing(token));
     let wants_pellet_fgf = tokens.iter().any(|token| wants_pellet_fgf_printing(token));
     let wants_ded = tokens
         .iter()
@@ -6280,6 +6376,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         || wants_horizontal
         || wants_resin
         || wants_material_jetting
+        || wants_paste_extrusion
         || wants_pellet_fgf
         || wants_ded
         || wants_composite_fiber
@@ -6301,6 +6398,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_horizontal || is_horizontal_mill_kind(&machine.kind))
         && (!wants_resin || is_resin_printer_kind(&machine.kind))
         && (!wants_material_jetting || is_material_jetting_printer_kind(&machine.kind))
+        && (!wants_paste_extrusion || is_paste_extrusion_printer_kind(&machine.kind))
         && (!wants_pellet_fgf || is_pellet_fgf_printer_kind(&machine.kind))
         && (!wants_ded || is_directed_energy_deposition_kind(&machine.kind))
         && (!wants_composite_fiber || is_composite_fiber_printer_kind(&machine.kind))
@@ -6330,6 +6428,18 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || (preference.contains("material-jet") && operation.contains("material-jet"))
         || (preference.contains("polyjet") && operation.contains("polyjet"))
         || (preference.contains("mjp") && operation.contains("material-jet"))
+        || (wants_paste_extrusion_printing(preference)
+            && (operation.contains("paste")
+                || operation.contains("clay")
+                || operation.contains("ceramic")
+                || operation.contains("syringe")
+                || operation.contains("ram-extrusion")
+                || operation.contains("auger")
+                || operation.contains("rheology")
+                || operation.contains("slump")
+                || operation.contains("drying")
+                || operation.contains("shrinkage")
+                || operation.contains("green-part")))
         || (preference.contains("directed-energy") && operation.contains("directed-energy"))
         || (preference.contains("laser-cladding") && operation.contains("laser-cladding"))
         || (preference.contains("waam") && operation.contains("waam"))
@@ -6621,6 +6731,9 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         }
         MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => {
             "pack tray, jet photopolymer/material channels, UV cure, remove supports, and inspect color/material interfaces"
+        }
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
+            "condition paste or clay, verify rheology/nozzle state, purge syringe or auger, print bead path, control drying/shrinkage, and support the green part"
         }
         MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => {
             "dry pellets, purge high-flow extruder, print large-format bead path, monitor bead/thermal state, and leave trim allowance"
@@ -7475,6 +7588,38 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: final material jetting parameters must come from the printer profile, photopolymer/support-material datasheets, tray packing, material-channel map, printhead/nozzle checks, and UV calibration."
                     .to_string(),
                 "Human signoff is required for support removal, solvent or waterjet cleaning, UV exposure, color/material channel verification, fragile-feature handling, and dimensional inspection."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Additive if is_paste_extrusion_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "paste-extrusion-job".to_string()),
+            vec![
+                "; draft paste/clay extrusion job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [paste-extrusion-rheology-boundary]: verify paste/clay lot, water content, deairing, viscosity or slump test, nozzle diameter, cartridge/syringe/ram state, and extrusion pressure"
+                    .to_string(),
+                "CONDITION_PASTE material=operator-reviewed water_content_pct=operator-reviewed deaired=true viscosity_or_slump=operator-reviewed"
+                    .to_string(),
+                "PURGE_SYRINGE_OR_AUGER nozzle_mm=operator-reviewed pressure_or_ram_speed=operator-reviewed bead_width_mm=operator-reviewed"
+                    .to_string(),
+                "PRINT_PASTE_PATH layer_height_mm=operator-reviewed bead_width_mm=operator-reviewed support_green_part=true"
+                    .to_string(),
+                "MONITOR bead slumping, nozzle clogging, extrusion pressure, layer adhesion, green-part support, and wall stability"
+                    .to_string(),
+                "CHECKPOINT [paste-extrusion-drying-boundary]: verify drying schedule, humidity, shrinkage allowance, crack-control support, green strength, and kiln/firing or cure handoff"
+                    .to_string(),
+                "DRY_GREEN_PART humidity=operator-reviewed hours=operator-reviewed shrinkage_allowance_pct=operator-reviewed support_fixture=operator-reviewed"
+                    .to_string(),
+                "COMPLETE record paste/clay lot, rheology or slump test, nozzle state, extrusion pressure, bead coupon, drying/shrinkage log, green-strength inspection, and firing/cure handoff"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final paste/clay extrusion parameters must come from the material batch, rheology/slump test, nozzle and syringe/auger hardware, bead coupon, drying schedule, shrinkage compensation, and kiln/firing or cure plan."
+                    .to_string(),
+                "Human signoff is required for paste conditioning, deairing, extrusion pressure, nozzle clog risk, green-part handling, support fixtures, drying humidity, shrinkage/crack control, and firing or cure handoff."
                     .to_string(),
             ],
         ),
@@ -21769,6 +21914,8 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "fanuc-turning-postprocessor"
     } else if token.contains("iso-gcode") || token == "gcode" || token.contains("-gcode-") {
         "iso-gcode-postprocessor"
+    } else if wants_paste_extrusion_printing(&token) {
+        "paste-extrusion-job-packager"
     } else if wants_pellet_fgf_printing(&token) {
         "pellet-fgf-job-packager"
     } else if token.contains("sla") || token.contains("resin") {
@@ -21839,6 +21986,8 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "turning-controller-gcode".to_string()
     } else if token.contains("marlin") || token.contains("gcode") {
         "controller-gcode".to_string()
+    } else if wants_paste_extrusion_printing(&token) {
+        "paste-extrusion-job-package".to_string()
     } else if wants_pellet_fgf_printing(&token) {
         "pellet-fgf-job-package".to_string()
     } else if token.contains("sla") || token.contains("resin") {
@@ -32901,6 +33050,8 @@ async fn root() -> impl IntoResponse {
             "GET /fabrication/setup/catalog",
             "GET /postprocess/catalog",
             "GET /fabrication/postprocess/catalog",
+            "GET /artifacts/catalog",
+            "GET /fabrication/artifacts/catalog",
             "GET /learning/capabilities",
             "GET /fabrication/learning/capabilities",
             "GET /schema",
@@ -36793,6 +36944,121 @@ async fn machine_catalog() -> impl IntoResponse {
     Json(machine_catalog_response())
 }
 
+fn artifact_catalog_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "family": "design-and-cad-handoff",
+            "artifacts": ["design-summary", "parametric-design", "design-package", "design-export-bundle", "design-input-review", "manufacturing-handoff"],
+            "sourceSurfaces": ["designPackage", "designExports", "designInputReview", "manufacturingHandoff"],
+            "usedFor": ["CAD/CAM/slicer regeneration", "native CAD and neutral export review", "part coordinate frames", "shop-floor handoff"],
+            "releaseGate": "draft until design input conversion, topology/scale review, simulation, quality, and machine-release blockers clear"
+        }),
+        json!({
+            "family": "generated-design-exports",
+            "artifacts": ["generated-design-export", "design-export-bundle"],
+            "sourceSurfaces": ["designExports.partExports", "designExports.assemblyExports", "designPackage.parts.exportTargets"],
+            "usedFor": ["3MF/STL/STEP/DXF/CAM setup/nesting export packages", "assembly export contracts", "program/process-node linking"],
+            "releaseGate": "draft until export blockers, slicer/CAM regeneration, controller review, and operator or automation signoff clear"
+        }),
+        json!({
+            "family": "generated-and-imported-instruction-work",
+            "artifacts": ["program-*", "improved-program-*", "instruction-patch-manifest"],
+            "sourceSurfaces": ["generatedPrograms.instructions", "improvedPrograms.instructions", "improvedPrograms.patchManifest.operations"],
+            "usedFor": ["printer G-code", "mill/router/lathe/sheet machine code", "slicer or job-sheet instructions", "review-draft instruction rewrites"],
+            "releaseGate": "machineReady=false until validation, simulation, postprocessor, setup, and human or automation evidence clear"
+        }),
+        json!({
+            "family": "release-and-execution-evidence",
+            "artifacts": ["boundary-summary", "resolution-plan", "machine-release", "execution-plan", "postprocess-plan", "controller-plan", "release-package-plan"],
+            "sourceSurfaces": ["validation.failureBoundaries", "resolutionPlan", "machineRelease", "executionPlan", "postprocessPlan", "controllerPlan", "releasePackagePlan"],
+            "usedFor": ["failure-boundary triage", "machine-start preflight", "controller output package readiness", "operator-visible release packages"],
+            "releaseGate": "machine-ready release remains blocked while any release package, controller, execution, postprocess, or boundary evidence is unresolved"
+        }),
+        json!({
+            "family": "setup-quality-and-monitoring-evidence",
+            "artifacts": ["production-plan", "machine-schedule", "des-schedule-model", "quality-plan", "tooling-plan", "fixture-plan", "monitoring-plan", "simulation-report"],
+            "sourceSurfaces": ["productionPlan", "machineSchedule", "desScheduleModel", "qualityPlan", "toolingPlan", "fixturePlan", "monitoringPlan", "simulation"],
+            "usedFor": ["batch and lane planning", "tooling/workholding/fixture evidence", "inspection targets", "runtime monitoring and dry-run proof"],
+            "releaseGate": "draft until schedule holds, setup evidence, quality gates, monitoring channels, and simulation risks clear"
+        }),
+        json!({
+            "family": "split-combine-and-assembly-evidence",
+            "artifacts": ["process-graph", "hybrid-make-plan", "interface-control-plan", "decomposition-plan", "intervention-map", "analysis-intervention-map"],
+            "sourceSurfaces": ["processGraph", "hybridMakePlan", "interfaceControlPlan", "decompositionPlan", "interventionMap"],
+            "usedFor": ["operation ordering", "split/combine decisions", "join and recomposition gates", "human intervention and automation paths"],
+            "releaseGate": "draft until decomposition, recomposition, interface fit, automation, and required operator checkpoints clear"
+        }),
+        json!({
+            "family": "mdp-pomdp-neural-learning-evidence",
+            "artifacts": ["learning-plan", "analysis-learning-plan", "mdp-request", "analysis-mdp-request", "pomdp-belief-state", "analysis-pomdp-belief-state", "release-probe-plan", "analysis-release-probe-plan", "neural-training-corpus", "analysis-neural-training-corpus", "analysis-des-instruction-model"],
+            "sourceSurfaces": ["learning", "pomdpBeliefState", "releaseProbePlan", "neuralTrainingCorpus", "desInstructionModel"],
+            "usedFor": ["DES-backed MDP/POMDP policy preview", "release probe prioritization", "neural training examples", "instruction review queue modeling"],
+            "releaseGate": "learning artifacts are advisory and cannot clear validation, simulation, controller, setup, quality, or signoff blockers"
+        }),
+        json!({
+            "family": "outcome-learning-evidence",
+            "artifacts": ["reward-signal", "mdp-experience", "outcome-remediation-plan", "pomdp-observations", "neural-example", "outcome-learning-event"],
+            "sourceSurfaces": ["learning outcome responses", "policy memory", "remediation risks", "boundary learning examples"],
+            "usedFor": ["reward shaping", "failure root-cause learning", "retry/remediation planning", "future method, machine, and operation-sequence preferences"],
+            "releaseGate": "learned preferences remain advisory until future job evidence and machine-release gates clear"
+        }),
+    ]
+}
+
+fn artifact_catalog_response() -> Value {
+    let artifact_contracts = artifact_catalog_contracts();
+    let families = unique_sorted(artifact_contracts.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.artifact-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /artifacts/catalog", "GET /fabrication/artifacts/catalog"],
+        "artifactContractCount": artifact_contracts.len(),
+        "families": families,
+        "retrievalRoutes": ["GET /jobs", "GET /jobs/:job_id", "GET /jobs/:job_id/artifacts/:artifact_id"],
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "learningRoutes": [
+            "POST /learning/observe",
+            "POST /fabrication/learning/observe",
+            "GET /learning/outcomes",
+            "GET /fabrication/learning/outcomes",
+            "POST /learning/outcomes",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "responseSurfaces": [
+            "job.artifacts",
+            "artifacts[].artifactId",
+            "artifacts[].kind",
+            "artifacts[].mediaType",
+            "artifacts[].draft",
+            "artifacts[].machineReady",
+            "artifacts[].content",
+            "generatedPrograms",
+            "improvedPrograms",
+            "designExports",
+            "releasePackagePlan",
+            "learning"
+        ],
+        "storagePolicy": [
+            "artifact catalog entries describe retained in-process evidence surfaces, not durable database storage or certified machine release",
+            "generated design exports, machine programs, improved programs, release packages, DES/POMDP/neural artifacts, and learning outcomes remain draft evidence until validation, simulation, controller, setup, quality, and signoff gates clear",
+            "artifact IDs are stable within the bounded runtime ledger and are retrieved through GET /jobs/:job_id/artifacts/:artifact_id"
+        ],
+        "artifactContracts": artifact_contracts
+    })
+}
+
+async fn artifact_catalog_http() -> impl IntoResponse {
+    Json(artifact_catalog_response())
+}
+
 fn learning_capability_catalog_response() -> Value {
     json!({
         "ok": true,
@@ -36946,6 +37212,8 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/setup/catalog",
                 "GET /postprocess/catalog",
                 "GET /fabrication/postprocess/catalog",
+                "GET /artifacts/catalog",
+                "GET /fabrication/artifacts/catalog",
                 "GET /learning/capabilities",
                 "GET /fabrication/learning/capabilities",
                 "GET /schema",
@@ -37340,6 +37608,7 @@ async fn request_schema() -> impl IntoResponse {
             "interventionCatalog": ["GET /interventions/catalog", "GET /fabrication/interventions/catalog"],
             "setupCatalog": ["GET /setup/catalog", "GET /fabrication/setup/catalog"],
             "postprocessCatalog": ["GET /postprocess/catalog", "GET /fabrication/postprocess/catalog"],
+            "artifactCatalog": ["GET /artifacts/catalog", "GET /fabrication/artifacts/catalog"],
             "learningCapabilities": ["GET /learning/capabilities", "GET /fabrication/learning/capabilities"],
             "plan": ["POST /plan", "POST /fabrication/plan"],
             "instructionAnalysis": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
@@ -38223,6 +38492,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/postprocess/catalog",
             get(postprocess_catalog_http),
         )
+        .route("/artifacts/catalog", get(artifact_catalog_http))
+        .route("/fabrication/artifacts/catalog", get(artifact_catalog_http))
         .route("/learning/capabilities", get(learning_capabilities))
         .route(
             "/fabrication/learning/capabilities",
@@ -40852,6 +41123,93 @@ mod tests {
             .expect("artifact contracts should be present");
         assert!(artifact_contracts.iter().any(|item| {
             item.get("artifact").and_then(Value::as_str) == Some("postprocess-traveler")
+        }));
+    }
+
+    #[test]
+    fn artifact_catalog_endpoint_exposes_generated_release_and_learning_artifacts() {
+        let payload = artifact_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.artifact-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/artifacts/catalog"))));
+        assert!(payload
+            .get("artifactContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 8));
+        assert!(payload
+            .get("retrievalRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /jobs/:job_id/artifacts/:artifact_id")
+            })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("releasePackagePlan"))));
+        assert!(payload
+            .get("storagePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine programs")))));
+
+        let families = payload
+            .get("families")
+            .and_then(Value::as_array)
+            .expect("artifact families should be present");
+        for family in [
+            "design-and-cad-handoff",
+            "generated-design-exports",
+            "generated-and-imported-instruction-work",
+            "release-and-execution-evidence",
+            "mdp-pomdp-neural-learning-evidence",
+            "outcome-learning-evidence",
+        ] {
+            assert!(
+                families.iter().any(|item| item.as_str() == Some(family)),
+                "missing artifact family {family}"
+            );
+        }
+
+        let contracts = payload
+            .get("artifactContracts")
+            .and_then(Value::as_array)
+            .expect("artifact contracts should be present");
+        assert!(contracts.iter().any(|item| {
+            item.get("artifacts")
+                .and_then(Value::as_array)
+                .is_some_and(|artifacts| {
+                    artifacts
+                        .iter()
+                        .any(|artifact| artifact.as_str() == Some("generated-design-export"))
+                })
+        }));
+        assert!(contracts.iter().any(|item| {
+            item.get("artifacts")
+                .and_then(Value::as_array)
+                .is_some_and(|artifacts| {
+                    artifacts
+                        .iter()
+                        .any(|artifact| artifact.as_str() == Some("mdp-request"))
+                })
+        }));
+        assert!(contracts.iter().any(|item| {
+            item.get("artifacts")
+                .and_then(Value::as_array)
+                .is_some_and(|artifacts| {
+                    artifacts
+                        .iter()
+                        .any(|artifact| artifact.as_str() == Some("improved-program-*"))
+                })
         }));
     }
 
