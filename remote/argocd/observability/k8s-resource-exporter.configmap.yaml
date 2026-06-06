@@ -25,7 +25,7 @@ data:
     PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
     BASE_URL = "https://%s:%s" % (HOST, PORT)
     SCRAPE_TIMEOUT = float(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "5"))
-    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,default,headlamp,kafka,messaging,observability,presence,spark,vpn"
+    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,big-data,default,headlamp,kafka,messaging,observability,presence,spark,vpn"
     DEFAULT_WATCH_APPS = (
         "dd-agent-worker-broker,dd-ai-ml-pipeline,dd-akka-ws-server,dd-bastion,"
         "dd-airbyte-postgresql,dd-billing-server,dd-browser-job-runner,dd-browser-test-server,dd-build-server,"
@@ -50,7 +50,8 @@ data:
         "dd-ws-loadtest-rs-akkaws-akkastreams,dd-ws-loadtest-rs-akkaws-asyncjava,"
         "dd-ws-loadtest-rs-dart,dd-ws-loadtest-rs-fsharp-rx,dd-ws-loadtest-rs-gcs,"
         "dd-ws-loadtest-rs-go-wss,dd-ws-loadtest-rs-rust-wss,gcs,gcs-kafka,"
-        "gcs-mongodb,gcs-rabbitmq,gcs-router,headlamp,presence,reloader"
+        "gcs-mongodb,gcs-rabbitmq,gcs-router,headlamp,minio,presence,reloader,"
+        "spark,spark-master,spark-worker,airflow"
     )
     WATCH_NAMESPACES = [v.strip() for v in os.environ.get("WATCH_NAMESPACES", DEFAULT_WATCH_NAMESPACES).split(",") if v.strip()]
     WATCH_APPS = set(v.strip() for v in os.environ.get("WATCH_APPS", DEFAULT_WATCH_APPS).split(",") if v.strip())
