@@ -629,6 +629,10 @@ class DesSoccerLearningPolicyVersionsTable extends Table {
   IntColumn get targetEntryCount => integer().named("target_entry_count").clientDefault(() => 0)();
   Int64Column get visitCount => int64().named("visit_count").clientDefault(() => 0)();
   Int64Column get fitnessMicros => int64().named("fitness_micros").clientDefault(() => 0)();
+  TextColumn get branchKey => text().named("branch_key").customConstraint("UUID")();
+  TextColumn get retentionKind => text().named("retention_kind").clientDefault(() => 'branch_tip')();
+  BoolColumn get fullEntriesRetained => boolean().named("full_entries_retained").clientDefault(() => true)();
+  DateTimeColumn get fullEntriesPrunedAt => dateTime().named("full_entries_pruned_at").nullable().customConstraint("TIMESTAMPTZ")();
   DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
   DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
   TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();

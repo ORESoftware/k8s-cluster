@@ -2165,10 +2165,11 @@ class DesSoccerLearningExperimentsRow {
 }
 
 const desSoccerLearningPolicyVersionsTable = "des_soccer_learning_policy_versions";
-const desSoccerLearningPolicyVersionsSelectSql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      parent_policy_version_id::text as parent_policy_version_id,\n      generation,\n      version_label,\n      source_kind,\n      status,\n      options::text as options_json,\n      config::text as config_json,\n      lineage::text as lineage_json,\n      metrics::text as metrics_json,\n      entry_count,\n      target_entry_count,\n      visit_count,\n      fitness_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from des_soccer_learning_policy_versions";
+const desSoccerLearningPolicyVersionsSelectSql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      parent_policy_version_id::text as parent_policy_version_id,\n      generation,\n      version_label,\n      source_kind,\n      status,\n      options::text as options_json,\n      config::text as config_json,\n      lineage::text as lineage_json,\n      metrics::text as metrics_json,\n      entry_count,\n      target_entry_count,\n      visit_count,\n      fitness_micros,\n      branch_key::text as branch_key,\n      retention_kind,\n      full_entries_retained,\n      to_char(full_entries_pruned_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as full_entries_pruned_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from des_soccer_learning_policy_versions";
 
 const desSoccerLearningPolicyVersionsSourceKindValues = <String>["seed", "merge", "mutation", "crossover", "import", "replay"];
 const desSoccerLearningPolicyVersionsStatusValues = <String>["candidate", "active", "archived", "rejected"];
+const desSoccerLearningPolicyVersionsRetentionKindValues = <String>["branch_tip", "retain_all", "metadata_only"];
 
 class DesSoccerLearningPolicyVersionsRow {
   const DesSoccerLearningPolicyVersionsRow({
@@ -2187,6 +2188,10 @@ class DesSoccerLearningPolicyVersionsRow {
     required this.targetEntryCount,
     required this.visitCount,
     required this.fitnessMicros,
+    required this.branchKey,
+    required this.retentionKind,
+    required this.fullEntriesRetained,
+    this.fullEntriesPrunedAt,
     required this.createdAt,
     required this.updatedAt,
     this.createdBy,
@@ -2208,6 +2213,10 @@ class DesSoccerLearningPolicyVersionsRow {
   final int targetEntryCount;
   final int visitCount;
   final int fitnessMicros;
+  final String branchKey;
+  final String retentionKind;
+  final bool fullEntriesRetained;
+  final String? fullEntriesPrunedAt;
   final String createdAt;
   final String updatedAt;
   final String? createdBy;
@@ -2230,6 +2239,10 @@ class DesSoccerLearningPolicyVersionsRow {
       targetEntryCount: _readRequiredInt(json, "targetEntryCount"),
       visitCount: _readRequiredInt(json, "visitCount"),
       fitnessMicros: _readRequiredInt(json, "fitnessMicros"),
+      branchKey: _readRequiredString(json, "branchKey"),
+      retentionKind: _readRequiredString(json, "retentionKind"),
+      fullEntriesRetained: _readRequiredBool(json, "fullEntriesRetained"),
+      fullEntriesPrunedAt: _readOptionalString(json, "fullEntriesPrunedAt"),
       createdAt: _readRequiredString(json, "createdAt"),
       updatedAt: _readRequiredString(json, "updatedAt"),
       createdBy: _readOptionalString(json, "createdBy"),
@@ -2253,6 +2266,10 @@ class DesSoccerLearningPolicyVersionsRow {
     "targetEntryCount": targetEntryCount,
     "visitCount": visitCount,
     "fitnessMicros": fitnessMicros,
+    "branchKey": branchKey,
+    "retentionKind": retentionKind,
+    "fullEntriesRetained": fullEntriesRetained,
+    "fullEntriesPrunedAt": fullEntriesPrunedAt,
     "createdAt": createdAt,
     "updatedAt": updatedAt,
     "createdBy": createdBy,
@@ -2278,6 +2295,9 @@ class DesSoccerLearningPolicyVersionsRow {
     }
     if (targetEntryCount < 0) {
       errors.add("des_soccer_learning_policy_versions.target_entry_count is below the minimum");
+    }
+    if (!desSoccerLearningPolicyVersionsRetentionKindValues.contains(retentionKind)) {
+      errors.add("unsupported des_soccer_learning_policy_versions.retention_kind");
     }
     return errors;
   }

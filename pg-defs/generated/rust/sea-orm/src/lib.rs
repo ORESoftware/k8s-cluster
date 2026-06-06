@@ -996,6 +996,14 @@ pub struct Model {
     pub visit_count: i64,
     #[sea_orm(column_name = "fitness_micros")]
     pub fitness_micros: i64,
+    #[sea_orm(column_name = "branch_key")]
+    pub branch_key: Uuid,
+    #[sea_orm(column_name = "retention_kind")]
+    pub retention_kind: String,
+    #[sea_orm(column_name = "full_entries_retained")]
+    pub full_entries_retained: bool,
+    #[sea_orm(column_name = "full_entries_pruned_at")]
+    pub full_entries_pruned_at: Option<DateTimeWithTimeZone>,
     #[sea_orm(column_name = "created_at")]
     pub created_at: DateTimeWithTimeZone,
     #[sea_orm(column_name = "updated_at")]

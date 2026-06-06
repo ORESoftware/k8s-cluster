@@ -1303,6 +1303,10 @@ create table if not exists des_soccer_learning_policy_versions (
   target_entry_count integer default 0 not null,
   visit_count bigint default 0 not null,
   fitness_micros bigint default 0 not null,
+  branch_key uuid not null,
+  retention_kind varchar(32) default 'branch_tip' not null,
+  full_entries_retained boolean default true not null,
+  full_entries_pruned_at timestamptz,
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null,
   created_by uuid,
@@ -1328,7 +1332,9 @@ create table if not exists des_soccer_learning_policy_versions (
   constraint des_soccer_learning_policy_versions_target_entry_count_chk
     check (target_entry_count >= 0),
   constraint des_soccer_learning_policy_versions_visit_count_chk
-    check (visit_count >= 0)
+    check (visit_count >= 0),
+  constraint des_soccer_learning_policy_versions_retention_kind_chk
+    check (retention_kind in ('branch_tip', 'retain_all', 'metadata_only'))
 );
 
 create unique index if not exists des_soccer_learning_policy_versions_label_uq
@@ -1341,6 +1347,15 @@ create index if not exists des_soccer_learning_policy_versions_active_idx
 create index if not exists des_soccer_learning_policy_versions_fitness_idx
   on des_soccer_learning_policy_versions (experiment_id, fitness_micros desc, updated_at desc)
   where status in ('active', 'candidate');
+
+create index if not exists des_soccer_learning_policy_versions_branch_tip_idx
+  on des_soccer_learning_policy_versions (
+    experiment_id,
+    branch_key,
+    generation desc,
+    updated_at desc
+  )
+  where full_entries_retained = true;
 
 create table if not exists des_soccer_learning_policy_entries (
   id uuid primary key default gen_random_uuid(),
