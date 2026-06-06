@@ -89,6 +89,9 @@ struct Metrics {
     generated_programs_total: AtomicU64,
     validation_findings_total: AtomicU64,
     failure_boundaries_total: AtomicU64,
+    operator_actions_total: AtomicU64,
+    fixture_release_blockers_total: AtomicU64,
+    split_combine_reviews_total: AtomicU64,
     errors_total: AtomicU64,
     nats_messages_total: AtomicU64,
     nats_published_total: AtomicU64,
@@ -293,6 +296,10 @@ struct FabricationPlanResponse {
     quality_plan: QualityPlan,
     tooling_plan: ToolingPlan,
     fixture_plan: FixturePlan,
+    monitoring_plan: MonitoringPlan,
+    interface_control_plan: InterfaceControlPlan,
+    decomposition_plan: DecompositionPlan,
+    release_package_plan: ReleasePackagePlan,
     process_plan: Vec<ProcessStep>,
     process_graph: ProcessGraph,
     hybrid_make_plan: HybridMakePlan,
@@ -305,6 +312,7 @@ struct FabricationPlanResponse {
     machine_release: MachineReleaseReport,
     execution_plan: ExecutionReadinessPlan,
     postprocess_plan: PostprocessPlan,
+    controller_plan: ControllerPlan,
     simulation: SimulationReport,
     improvements: Vec<InstructionImprovement>,
     improved_programs: Vec<ImprovedInstructionProgram>,
@@ -1004,6 +1012,106 @@ struct FixtureDatumTransfer {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct MonitoringPlan {
+    schema_version: &'static str,
+    status: String,
+    human_review_required: bool,
+    unattended_run_allowed: bool,
+    monitor_points: Vec<MonitoringPoint>,
+    alert_rules: Vec<MonitoringAlertRule>,
+    recovery_actions: Vec<String>,
+    release_gates: Vec<String>,
+    learning_observations: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MonitoringPoint {
+    monitor_id: String,
+    part_id: String,
+    program_id: Option<String>,
+    process_node_id: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: String,
+    channels: Vec<String>,
+    expected_signals: Vec<String>,
+    required_evidence: Vec<String>,
+    alert_rule_ids: Vec<String>,
+    recovery_actions: Vec<String>,
+    release_blockers: Vec<String>,
+    requires_human_intervention: bool,
+    learning_observation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MonitoringAlertRule {
+    rule_id: String,
+    part_id: String,
+    program_id: Option<String>,
+    machine_kind: String,
+    channel: String,
+    condition: String,
+    severity: String,
+    automated_response: String,
+    requires_human_intervention: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InterfaceControlPlan {
+    schema_version: &'static str,
+    status: String,
+    interface_count: usize,
+    decision_count: usize,
+    human_review_required: bool,
+    machine_release_blocked: bool,
+    controls: Vec<InterfaceControlRecord>,
+    decision_links: Vec<InterfaceDecisionLink>,
+    release_gates: Vec<String>,
+    learning_observations: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InterfaceControlRecord {
+    control_id: String,
+    interface_id: String,
+    from_part_id: String,
+    to_part_id: String,
+    joint_type: String,
+    fit: String,
+    strategy: String,
+    inspection_gate: String,
+    linked_join_id: Option<String>,
+    linked_fixture_transfer_id: Option<String>,
+    datum_transfer_required: bool,
+    required_evidence: Vec<String>,
+    acceptance_criteria: Vec<String>,
+    release_blockers: Vec<String>,
+    requires_human_intervention: bool,
+    learning_observation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InterfaceDecisionLink {
+    link_id: String,
+    decision_id: String,
+    decision_type: String,
+    source: String,
+    part_ids: Vec<String>,
+    linked_interface_ids: Vec<String>,
+    action: String,
+    required_evidence: Vec<String>,
+    requires_human_review: bool,
+    learning_observation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ProductionPlan {
     schema_version: &'static str,
     quantity: u32,
@@ -1551,6 +1659,71 @@ struct PostprocessBlocker {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ControllerPlan {
+    schema_version: &'static str,
+    status: String,
+    machine_release_blocked: bool,
+    target_count: usize,
+    dialect_count: usize,
+    compatibility_targets: Vec<ControllerCompatibilityTarget>,
+    dialect_summaries: Vec<ControllerDialectSummary>,
+    release_gates: Vec<ControllerReleaseGate>,
+    required_artifacts: Vec<String>,
+    learning_observations: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ControllerCompatibilityTarget {
+    target_id: String,
+    source: String,
+    program_id: String,
+    part_id: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: String,
+    language: String,
+    controller: String,
+    postprocessor: String,
+    postprocessor_known: bool,
+    input_format: String,
+    output_format: String,
+    dialect_family: String,
+    compatibility_status: String,
+    requires_dry_run: bool,
+    requires_operator_signoff: bool,
+    required_checks: Vec<String>,
+    required_evidence: Vec<String>,
+    release_blockers: Vec<String>,
+    learning_observation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ControllerDialectSummary {
+    dialect_family: String,
+    target_ids: Vec<String>,
+    controllers: Vec<String>,
+    languages: Vec<String>,
+    output_formats: Vec<String>,
+    risk_level: String,
+    required_checks: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ControllerReleaseGate {
+    gate_id: String,
+    target_id: Option<String>,
+    gate_type: String,
+    status: String,
+    required_before: String,
+    evidence: String,
+    release_blocker: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SimulationReport {
     ok: bool,
     severity: String,
@@ -1754,6 +1927,143 @@ struct HybridSplitCombineDecision {
     source: String,
     learning_observation: String,
     requires_human_review: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DecompositionPlan {
+    schema_version: &'static str,
+    status: String,
+    release_blocked: bool,
+    human_review_required: bool,
+    part_count: usize,
+    decomposition_target_count: usize,
+    recomposition_interface_count: usize,
+    route_contract_count: usize,
+    targets: Vec<DecompositionTarget>,
+    route_contracts: Vec<DecompositionRouteContract>,
+    recomposition_interfaces: Vec<DecompositionInterface>,
+    release_gates: Vec<DecompositionReleaseGate>,
+    learning_observations: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DecompositionTarget {
+    target_id: String,
+    target_kind: String,
+    source: String,
+    source_part_id: Option<String>,
+    boundary_kind: Option<String>,
+    program_id: Option<String>,
+    line: Option<usize>,
+    recommended_action: String,
+    reason: String,
+    replacement_part_ids: Vec<String>,
+    route_contract_ids: Vec<String>,
+    interface_ids: Vec<String>,
+    required_evidence: Vec<String>,
+    release_blockers: Vec<String>,
+    requires_human_review: bool,
+    learning_observation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DecompositionRouteContract {
+    contract_id: String,
+    part_id: String,
+    route_type: String,
+    manufacturing_method: String,
+    machine_kind: String,
+    process_node_id: Option<String>,
+    program_id: Option<String>,
+    must_remain_separate_until: Vec<String>,
+    recomposition_after: Vec<String>,
+    required_evidence: Vec<String>,
+    learning_observation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DecompositionInterface {
+    interface_id: String,
+    from_part_id: String,
+    to_part_id: String,
+    joint_type: String,
+    fit: String,
+    inspection_gate: String,
+    source: String,
+    requires_human_intervention: bool,
+    learning_observation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DecompositionReleaseGate {
+    gate_id: String,
+    gate_type: String,
+    source: String,
+    boundary_kind: Option<String>,
+    interface_id: Option<String>,
+    required_before: String,
+    required_evidence: Vec<String>,
+    release_blocker: bool,
+    next_state: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReleasePackagePlan {
+    schema_version: &'static str,
+    status: String,
+    machine_release_blocked: bool,
+    package_count: usize,
+    ready_package_count: usize,
+    blocked_package_count: usize,
+    packages: Vec<ReleasePackage>,
+    release_gates: Vec<ReleasePackageGate>,
+    required_artifacts: Vec<String>,
+    learning_observations: Vec<String>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReleasePackage {
+    package_id: String,
+    package_kind: String,
+    part_id: Option<String>,
+    program_id: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    process_node_id: Option<String>,
+    controller_target_ids: Vec<String>,
+    design_export_ids: Vec<String>,
+    fixture_setup_ids: Vec<String>,
+    monitoring_point_ids: Vec<String>,
+    quality_inspection_ids: Vec<String>,
+    decomposition_target_ids: Vec<String>,
+    interface_control_ids: Vec<String>,
+    required_artifacts: Vec<String>,
+    release_blockers: Vec<String>,
+    release_state: String,
+    machine_ready: bool,
+    requires_human_review: bool,
+    learning_observation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReleasePackageGate {
+    gate_id: String,
+    package_id: Option<String>,
+    gate_type: String,
+    status: String,
+    required_before: String,
+    evidence: String,
+    release_blocker: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -19202,6 +19512,7 @@ fn parametric_design_content(response: &FabricationPlanResponse) -> Value {
         "executionPlan": response.execution_plan,
         "operatorInterventionPlan": response.operator_intervention_plan,
         "postprocessPlan": response.postprocess_plan,
+        "controllerPlan": response.controller_plan,
         "pomdpBeliefState": response.learning.pomdp_belief_state,
         "releaseProbePlan": response.learning.release_probe_plan,
         "releaseState": {
@@ -19220,6 +19531,10 @@ fn parametric_design_content(response: &FabricationPlanResponse) -> Value {
         "qualityPlan": response.quality_plan,
         "toolingPlan": response.tooling_plan,
         "fixturePlan": response.fixture_plan,
+        "monitoringPlan": response.monitoring_plan,
+        "interfaceControlPlan": response.interface_control_plan,
+        "decompositionPlan": response.decomposition_plan,
+        "releasePackagePlan": response.release_package_plan,
         "parts": parts,
         "processLinks": process_links,
         "manufacturingHandoff": response.manufacturing_handoff,
@@ -19340,6 +19655,30 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             response.generated_at_ms,
         ),
         json_artifact(
+            "monitoring-plan".to_string(),
+            "monitoring-plan",
+            json!(response.monitoring_plan),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "interface-control-plan".to_string(),
+            "interface-control-plan",
+            json!(response.interface_control_plan),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "decomposition-plan".to_string(),
+            "decomposition-plan",
+            json!(response.decomposition_plan),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "release-package-plan".to_string(),
+            "release-package-plan",
+            json!(response.release_package_plan),
+            response.generated_at_ms,
+        ),
+        json_artifact(
             "assembly-plan".to_string(),
             "assembly-plan",
             json!(response.assembly),
@@ -19391,6 +19730,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             "postprocess-plan".to_string(),
             "postprocess-plan",
             json!(response.postprocess_plan),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "controller-plan".to_string(),
+            "controller-plan",
+            json!(response.controller_plan),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -21898,6 +22243,442 @@ fn postprocess_plan(
     }
 }
 
+fn controller_dialect_family(
+    controller: &str,
+    language: &str,
+    machine_kind: &str,
+    output_format: &str,
+) -> String {
+    let token = normalize_token(&format!(
+        "{controller}-{language}-{machine_kind}-{output_format}"
+    ));
+    if wants_mill_turning(&token) {
+        "mill-turn-controller-dialect".to_string()
+    } else if wants_rotary_index_milling(&token)
+        || token.contains("five-axis")
+        || token.contains("5-axis")
+        || token.contains("multi-axis")
+        || token.contains("multiaxis")
+    {
+        "multi-axis-milling-controller-dialect".to_string()
+    } else if token.contains("lathe") || token.contains("turning") || token.contains("fanuc") {
+        "turning-controller-dialect".to_string()
+    } else if token.contains("haas")
+        || token.contains("grbl")
+        || token.contains("mill")
+        || token.contains("router")
+        || token.contains("iso-gcode")
+    {
+        "subtractive-gcode-controller-dialect".to_string()
+    } else if token.contains("marlin") || token.contains("fdm") || token.contains("gcode") {
+        "additive-firmware-gcode-dialect".to_string()
+    } else if token.contains("sls")
+        || token.contains("powder")
+        || token.contains("binder")
+        || token.contains("resin")
+        || token.contains("sla")
+        || token.contains("material-jet")
+        || token.contains("polyjet")
+        || token.contains("pbf")
+        || token.contains("ded")
+        || token.contains("waam")
+        || token.contains("composite")
+    {
+        "additive-job-package-dialect".to_string()
+    } else if token.contains("wire-edm") || token.contains("sinker-edm") || token.contains("edm") {
+        "edm-controller-dialect".to_string()
+    } else if token.contains("laser") || token.contains("waterjet") || token.contains("plasma") {
+        "sheet-cutting-controller-dialect".to_string()
+    } else if wants_assembly_joining(&token) {
+        "assembly-cell-controller-dialect".to_string()
+    } else {
+        "manual-controller-review-dialect".to_string()
+    }
+}
+
+fn controller_required_checks(dialect_family: &str, machine_kind: &str) -> Vec<String> {
+    let mut checks = vec![
+        "verify controller, firmware, postprocessor, units, coordinate frame, and program revision"
+            .to_string(),
+        "retain dry-run or simulation evidence before machine-ready release".to_string(),
+    ];
+    if dialect_family.contains("additive-firmware") {
+        checks.extend([
+            "verify slicer start/end code, temperature waits, extrusion mode, bed mesh, and material profile"
+                .to_string(),
+            "confirm pause/resume, filament-change, fan, chamber, and recovery behavior on the exact firmware"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("subtractive")
+        || dialect_family.contains("milling")
+        || dialect_family.contains("turning")
+    {
+        checks.extend([
+            "verify work offsets, tool length or nose compensation, spindle/feed modes, coolant/chip evacuation, and program end state"
+                .to_string(),
+            "capture tool table, fixture offset backup, setup sheet, and controller-specific macro/subprogram package"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("additive-job-package") {
+        checks.extend([
+            "verify printer job package metadata, build profile, material lot, support media, and postprocess traveler"
+                .to_string(),
+            "capture build preview, nesting/build plate map, environmental controls, and recovery instructions"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("edm") {
+        checks.extend([
+            "verify power table, wire/electrode setup, offsets, dielectric/flushing, slug retention, and skim/orbit strategy"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("sheet") {
+        checks.extend([
+            "verify cut chart, kerf, pierce settings, gas/abrasive/fume controls, tabs, and part-retention strategy"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("assembly") {
+        checks.extend([
+            "verify robot path, gripper/end-effector, interlocks, join recipe, torque/press/cure limits, and final metrology"
+                .to_string(),
+        ]);
+    } else {
+        checks.push(
+            "route through manual controller review and attach operator-approved conversion evidence"
+                .to_string(),
+        );
+    }
+    if is_rotary_index_mill_kind(machine_kind) || wants_rotary_index_milling(machine_kind) {
+        checks.push("verify rotary/index axis zero, clamp/brake state, pivot/centerline, clearance sweep, and datum re-probe".to_string());
+    }
+    if is_mill_turn_kind(machine_kind) {
+        checks.push("verify live-tool orientation, C/Y/B-axis modes, spindle phase sync, subspindle transfer macros, and polar interpolation".to_string());
+    }
+    checks.sort();
+    checks.dedup();
+    checks
+}
+
+fn controller_required_evidence(target: &PostprocessTarget, dialect_family: &str) -> Vec<String> {
+    let mut evidence = vec![
+        format!(
+            "postprocessed output {} generated by {} from {}",
+            target.output_format, target.postprocessor, target.input_format
+        ),
+        format!(
+            "controller {} setup sheet for machine kind {}",
+            target.controller, target.machine_kind
+        ),
+        "dry-run or simulation report linked to the exact postprocessed output checksum"
+            .to_string(),
+        "operator or automation signoff record before machine start".to_string(),
+    ];
+    evidence.extend(controller_required_checks(
+        dialect_family,
+        &target.machine_kind,
+    ));
+    if target.requires_dry_run {
+        evidence.push("dry-run remains required because the target is draft, unproven, or missing safe-clearance evidence".to_string());
+    }
+    if target.requires_human_signoff {
+        evidence.push(
+            "human or automation-cell signoff remains required before controller release"
+                .to_string(),
+        );
+    }
+    evidence.sort();
+    evidence.dedup();
+    evidence
+}
+
+fn controller_release_blockers_for_target(
+    target: &PostprocessTarget,
+    postprocess_plan: &PostprocessPlan,
+) -> Vec<String> {
+    let mut blockers = postprocess_plan
+        .blockers
+        .iter()
+        .filter(|blocker| {
+            blocker.program_id.is_none()
+                || blocker.program_id.as_deref() == Some(target.program_id.as_str())
+        })
+        .map(|blocker| {
+            format!(
+                "{}:{} -> {}",
+                blocker.severity, blocker.reason, blocker.required_action
+            )
+        })
+        .collect::<Vec<_>>();
+    if target.postprocessor == "manual-controller-review" {
+        blockers.push("manual controller review is required because no deterministic postprocessor was selected".to_string());
+    }
+    if target.status == "postprocess-blocked" && blockers.is_empty() {
+        blockers.push("postprocess target is blocked before controller release".to_string());
+    }
+    blockers.sort();
+    blockers.dedup();
+    blockers
+}
+
+fn controller_plan(postprocess_plan: &PostprocessPlan) -> ControllerPlan {
+    let compatibility_targets = postprocess_plan
+        .controller_targets
+        .iter()
+        .map(|target| {
+            let dialect_family = controller_dialect_family(
+                &target.controller,
+                &target.language,
+                &target.machine_kind,
+                &target.output_format,
+            );
+            let release_blockers = controller_release_blockers_for_target(target, postprocess_plan);
+            let postprocessor_known = target.postprocessor != "manual-controller-review";
+            let compatibility_status = if target.status == "postprocess-blocked"
+                || release_blockers
+                    .iter()
+                    .any(|blocker| blocker.starts_with("error:"))
+            {
+                "controller-release-blocked"
+            } else if !postprocessor_known
+                || target.requires_dry_run
+                || target.requires_human_signoff
+                || !release_blockers.is_empty()
+            {
+                "controller-review-required"
+            } else {
+                "controller-ready"
+            };
+            ControllerCompatibilityTarget {
+                target_id: format!("controller-target-{}", normalize_token(&target.target_id)),
+                source: target.source.clone(),
+                program_id: target.program_id.clone(),
+                part_id: target.part_id.clone(),
+                machine_id: target.machine_id.clone(),
+                machine_kind: target.machine_kind.clone(),
+                language: target.language.clone(),
+                controller: target.controller.clone(),
+                postprocessor: target.postprocessor.clone(),
+                postprocessor_known,
+                input_format: target.input_format.clone(),
+                output_format: target.output_format.clone(),
+                dialect_family: dialect_family.clone(),
+                compatibility_status: compatibility_status.to_string(),
+                requires_dry_run: target.requires_dry_run,
+                requires_operator_signoff: target.requires_human_signoff,
+                required_checks: controller_required_checks(&dialect_family, &target.machine_kind),
+                required_evidence: controller_required_evidence(target, &dialect_family),
+                release_blockers,
+                learning_observation: format!(
+                    "controller-target:{}:{}:{}",
+                    normalize_token(&target.program_id),
+                    normalize_token(&dialect_family),
+                    normalize_token(compatibility_status)
+                ),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let dialect_families = compatibility_targets
+        .iter()
+        .map(|target| target.dialect_family.clone())
+        .collect::<BTreeSet<_>>();
+    let dialect_summaries = dialect_families
+        .iter()
+        .map(|dialect_family| {
+            let family_targets = compatibility_targets
+                .iter()
+                .filter(|target| target.dialect_family == *dialect_family)
+                .collect::<Vec<_>>();
+            let risk_level = if family_targets
+                .iter()
+                .any(|target| target.compatibility_status == "controller-release-blocked")
+            {
+                "high"
+            } else if family_targets
+                .iter()
+                .any(|target| target.compatibility_status == "controller-review-required")
+            {
+                "medium"
+            } else {
+                "low"
+            };
+            let machine_kind = family_targets
+                .first()
+                .map(|target| target.machine_kind.as_str())
+                .unwrap_or("unknown");
+            ControllerDialectSummary {
+                dialect_family: dialect_family.clone(),
+                target_ids: family_targets
+                    .iter()
+                    .map(|target| target.target_id.clone())
+                    .collect(),
+                controllers: family_targets
+                    .iter()
+                    .map(|target| target.controller.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
+                languages: family_targets
+                    .iter()
+                    .map(|target| target.language.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
+                output_formats: family_targets
+                    .iter()
+                    .map(|target| target.output_format.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
+                risk_level: risk_level.to_string(),
+                required_checks: controller_required_checks(dialect_family, machine_kind),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let target_by_postprocess_id = compatibility_targets
+        .iter()
+        .map(|target| {
+            (
+                target
+                    .target_id
+                    .trim_start_matches("controller-target-")
+                    .to_string(),
+                target.target_id.clone(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut release_gates = Vec::new();
+    for target in &postprocess_plan.controller_targets {
+        let controller_target_id = target_by_postprocess_id
+            .get(&normalize_token(&target.target_id))
+            .cloned()
+            .unwrap_or_else(|| format!("controller-target-{}", normalize_token(&target.target_id)));
+        for gate in &target.gates {
+            release_gates.push(ControllerReleaseGate {
+                gate_id: format!(
+                    "controller-gate-{}-{}",
+                    normalize_token(&controller_target_id),
+                    normalize_token(&gate.gate_id)
+                ),
+                target_id: Some(controller_target_id.clone()),
+                gate_type: gate.gate_type.clone(),
+                status: gate.status.clone(),
+                required_before: gate.required_before.clone(),
+                evidence: gate.evidence.clone(),
+                release_blocker: gate.status == "blocked" || gate.status == "review",
+            });
+        }
+    }
+    for blocker in &postprocess_plan.blockers {
+        release_gates.push(ControllerReleaseGate {
+            gate_id: format!(
+                "controller-blocker-gate-{}",
+                normalize_token(&blocker.blocker_id)
+            ),
+            target_id: blocker
+                .program_id
+                .as_ref()
+                .map(|program_id| format!("controller-target-{}", normalize_token(program_id))),
+            gate_type: "controller-release-blocker".to_string(),
+            status: blocker.severity.clone(),
+            required_before: "controller-output".to_string(),
+            evidence: format!("{} -> {}", blocker.reason, blocker.required_action),
+            release_blocker: true,
+        });
+    }
+    release_gates.sort_by(|left, right| left.gate_id.cmp(&right.gate_id));
+    release_gates.dedup_by(|left, right| left.gate_id == right.gate_id);
+
+    let machine_release_blocked = postprocess_plan.machine_release_blocked
+        || compatibility_targets
+            .iter()
+            .any(|target| target.compatibility_status == "controller-release-blocked")
+        || release_gates.iter().any(|gate| gate.status == "error");
+    let status = if machine_release_blocked {
+        "controller-release-blocked"
+    } else if compatibility_targets
+        .iter()
+        .any(|target| target.compatibility_status == "controller-review-required")
+        || release_gates.iter().any(|gate| gate.release_blocker)
+    {
+        "controller-review-required"
+    } else {
+        "controller-ready"
+    };
+
+    let mut required_artifacts = postprocess_plan
+        .required_artifacts
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    required_artifacts.insert("controller-compatibility-report".to_string());
+    required_artifacts.insert("controller-dialect-checklist".to_string());
+    required_artifacts.insert("postprocessor-version-record".to_string());
+
+    let mut learning_observations = BTreeSet::new();
+    learning_observations.insert(format!("controller-status:{status}"));
+    for target in &compatibility_targets {
+        learning_observations.insert(target.learning_observation.clone());
+    }
+    for summary in &dialect_summaries {
+        learning_observations.insert(format!(
+            "controller-dialect:{}:{}",
+            normalize_token(&summary.dialect_family),
+            summary.risk_level
+        ));
+    }
+    for gate in &release_gates {
+        learning_observations.insert(format!(
+            "controller-gate:{}:{}",
+            normalize_token(&gate.gate_type),
+            normalize_token(&gate.status)
+        ));
+    }
+
+    ControllerPlan {
+        schema_version: "dd.fabrication.controller-plan.v1",
+        status: status.to_string(),
+        machine_release_blocked,
+        target_count: compatibility_targets.len(),
+        dialect_count: dialect_summaries.len(),
+        compatibility_targets,
+        dialect_summaries,
+        release_gates,
+        required_artifacts: required_artifacts.into_iter().collect(),
+        learning_observations: learning_observations.into_iter().collect(),
+        notes: vec![
+            "Controller plan is a controller/dialect compatibility contract for generated, improved, and submitted instructions; it is not a certified machine release".to_string(),
+            "Controller-ready release requires deterministic postprocessor selection or manual controller review, dry-run evidence, and operator or automation signoff for the exact output artifact".to_string(),
+        ],
+    }
+}
+
+fn controller_plan_learning_actions(plan: &ControllerPlan) -> Vec<String> {
+    let mut actions = plan
+        .compatibility_targets
+        .iter()
+        .map(|target| {
+            let token = normalize_token(&target.program_id);
+            if target.compatibility_status == "controller-release-blocked" {
+                format!("clear-controller-blockers-{token}")
+            } else if target.compatibility_status == "controller-review-required" {
+                format!("verify-controller-target-{token}")
+            } else {
+                format!("release-controller-target-{token}")
+            }
+        })
+        .collect::<Vec<_>>();
+    actions.extend(plan.dialect_summaries.iter().map(|summary| {
+        format!(
+            "validate-controller-dialect-{}",
+            normalize_token(&summary.dialect_family)
+        )
+    }));
+    actions.sort();
+    actions.dedup();
+    actions
+}
+
 fn add_additive_design_boundaries(
     objective: &str,
     part: &PartPlan,
@@ -22909,6 +23690,7 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         &[],
         Some(&process_graph),
     );
+    let controller_plan = controller_plan(&postprocess_plan);
     let machine_schedule = machine_schedule(
         &production_plan,
         &process_graph,
@@ -22958,6 +23740,27 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         &machine_release,
         &assembly,
     );
+    let monitoring_plan = monitoring_plan(
+        &part_plans,
+        &process_plan,
+        &generated_programs,
+        &fixture_plan,
+        &validation,
+        &machine_release,
+    );
+    let interface_control_plan = interface_control_plan(
+        &assembly,
+        &hybrid_make_plan,
+        &fixture_plan,
+        &machine_release,
+    );
+    let decomposition_plan = decomposition_plan(
+        &part_plans,
+        &process_graph,
+        &hybrid_make_plan,
+        &intervention_map,
+        &machine_release,
+    );
     let object_id = "generated-fabrication-object".to_string();
     let design_package = design_package(
         &object_id,
@@ -22970,6 +23773,18 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         &design_package,
         &generated_programs,
         &process_graph,
+        &machine_release,
+    );
+    let release_package_plan = release_package_plan(
+        &generated_programs,
+        &design_exports,
+        &process_graph,
+        &quality_plan,
+        &fixture_plan,
+        &monitoring_plan,
+        &interface_control_plan,
+        &decomposition_plan,
+        &controller_plan,
         &machine_release,
     );
 
@@ -23005,6 +23820,10 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         quality_plan,
         tooling_plan,
         fixture_plan,
+        monitoring_plan,
+        interface_control_plan,
+        decomposition_plan,
+        release_package_plan,
         process_plan,
         process_graph,
         hybrid_make_plan,
@@ -23017,6 +23836,7 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         machine_release,
         execution_plan,
         postprocess_plan,
+        controller_plan,
         simulation,
         improvements,
         improved_programs,
@@ -23770,6 +24590,1314 @@ fn hybrid_make_plan(
             "Learning observations are compact signals for MDP/POMDP/neural workers to compare future make-or-split outcomes".to_string(),
         ],
     }
+}
+
+fn decomposition_route_contract_id(part_id: &str) -> String {
+    format!("decomposition-route-{}", normalize_token(part_id))
+}
+
+fn decomposition_machine_evidence(machine_kind: &str) -> Vec<String> {
+    match machine_class(machine_kind) {
+        MachineClass::Additive => vec![
+            "slicer profile, orientation, support, and material lot for the separated printable body"
+                .to_string(),
+            "part ID, build plate position, and postprocess traceability before recomposition"
+                .to_string(),
+        ],
+        MachineClass::Mill | MachineClass::Router => vec![
+            "stock, fixture, work offset, tool list, and datum transfer evidence for the split route"
+                .to_string(),
+            "CAM regeneration and dry-run evidence after the decomposition boundary is accepted"
+                .to_string(),
+        ],
+        MachineClass::Lathe => vec![
+            "stock support, chuck/subspindle or tailstock plan, datum pickup, and part-off evidence"
+                .to_string(),
+            "turned insert or cylindrical interface metrology before assembly lock-in".to_string(),
+        ],
+        MachineClass::SheetCut => vec![
+            "sheet nesting, kerf compensation, tab/slug retention, and deburr traceability"
+                .to_string(),
+            "flatness and edge-condition inspection before recomposition".to_string(),
+        ],
+        MachineClass::Other if is_assembly_cell_kind(machine_kind) => vec![
+            "kit trace, gripper, robot path, fixture simulation, and interlock evidence".to_string(),
+            "join recipe, torque/press/cure result, and final assembly metrology".to_string(),
+        ],
+        MachineClass::Other => vec![
+            "special-process traveler, operator qualification, and first-article evidence".to_string(),
+            "route-specific release signoff before recomposition".to_string(),
+        ],
+    }
+}
+
+fn decomposition_target_kind_from_action(action: &str) -> &'static str {
+    let normalized = action.to_ascii_lowercase();
+    if normalized.contains("split") || normalized.contains("separate") {
+        "split-boundary-decomposition"
+    } else if normalized.contains("combine")
+        || normalized.contains("join")
+        || normalized.contains("assembl")
+    {
+        "combine-boundary-recomposition"
+    } else {
+        "hybrid-route-decomposition-review"
+    }
+}
+
+fn decomposition_target_kind_from_hybrid(decision: &HybridSplitCombineDecision) -> &'static str {
+    let normalized = format!("{} {}", decision.decision_type, decision.action).to_ascii_lowercase();
+    if normalized.contains("split") || normalized.contains("separate") {
+        "split-candidate-decomposition"
+    } else if normalized.contains("combine")
+        || normalized.contains("join")
+        || normalized.contains("assembl")
+    {
+        "combine-candidate-recomposition"
+    } else {
+        "learned-hybrid-decomposition-review"
+    }
+}
+
+fn decomposition_target_required_evidence(
+    target_kind: &str,
+    boundary_kind: Option<&str>,
+    route_machine_kinds: &[String],
+    interface_ids: &[String],
+) -> Vec<String> {
+    let mut evidence = vec![
+        "source geometry/body partition with units, revision, and tolerance stack evidence"
+            .to_string(),
+        "explicit datum or witness feature that survives split, machine work, and recomposition"
+            .to_string(),
+    ];
+    if target_kind.contains("split") {
+        evidence.push(
+            "child-part CAD/mesh/CAM regeneration plus proof each child route fits the selected machine envelope"
+                .to_string(),
+        );
+        evidence.push(
+            "recombination interface, fastener/bond/press-fit strategy, and dry-fit inspection gate"
+                .to_string(),
+        );
+    } else if target_kind.contains("combine") || target_kind.contains("recomposition") {
+        evidence.push(
+            "dry-fit metrology, mating-surface condition, join recipe, clamp/torque/cure plan, and final inspection"
+                .to_string(),
+        );
+    } else {
+        evidence.push(
+            "route comparison showing why this body should remain one piece or become multiple pieces"
+                .to_string(),
+        );
+    }
+    if let Some(boundary_kind) = boundary_kind {
+        evidence.push(format!(
+            "boundary-specific clearance, automation, or operator evidence for {boundary_kind}"
+        ));
+    }
+    for machine_kind in route_machine_kinds {
+        evidence.extend(decomposition_machine_evidence(machine_kind));
+    }
+    for interface_id in interface_ids {
+        evidence.push(format!(
+            "interface {interface_id} fit, datum transfer, and release-check evidence"
+        ));
+    }
+    evidence.sort();
+    evidence.dedup();
+    evidence
+}
+
+fn decomposition_boundary_kind_from_hybrid(
+    decision: &HybridSplitCombineDecision,
+) -> Option<String> {
+    if decision.source != "validation-boundary" {
+        return None;
+    }
+    decision
+        .reason
+        .split_once(" boundary:")
+        .map(|(kind, _)| kind.to_string())
+}
+
+fn decomposition_interfaces_for_parts(
+    part_ids: &[String],
+    interfaces: &BTreeMap<String, DecompositionInterface>,
+) -> Vec<String> {
+    let part_set = part_ids.iter().collect::<BTreeSet<_>>();
+    interfaces
+        .values()
+        .filter(|interface| {
+            part_set.contains(&interface.from_part_id) || part_set.contains(&interface.to_part_id)
+        })
+        .map(|interface| interface.interface_id.clone())
+        .collect()
+}
+
+fn decomposition_release_blockers_for_program(
+    program_id: Option<&String>,
+    machine_release: &MachineReleaseReport,
+) -> Vec<String> {
+    machine_release
+        .blockers
+        .iter()
+        .filter(|blocker| blocker.program_id.as_ref() == program_id || blocker.program_id.is_none())
+        .map(|blocker| {
+            format!(
+                "{}:{} -> {}",
+                blocker.blocker_type, blocker.reason, blocker.required_action
+            )
+        })
+        .collect()
+}
+
+fn decomposition_release_blockers_for_parts(
+    part_ids: &[String],
+    route_by_part: &BTreeMap<String, &HybridPartRoute>,
+    machine_release: &MachineReleaseReport,
+) -> Vec<String> {
+    let mut blockers = part_ids
+        .iter()
+        .flat_map(|part_id| {
+            let program_id = route_by_part
+                .get(part_id)
+                .and_then(|route| route.program_id.as_ref());
+            decomposition_release_blockers_for_program(program_id, machine_release)
+        })
+        .collect::<Vec<_>>();
+    blockers.sort();
+    blockers.dedup();
+    blockers
+}
+
+fn decomposition_plan(
+    parts: &[PartPlan],
+    process_graph: &ProcessGraph,
+    hybrid_make_plan: &HybridMakePlan,
+    intervention_map: &BoundaryInterventionMap,
+    machine_release: &MachineReleaseReport,
+) -> DecompositionPlan {
+    let route_by_part = hybrid_make_plan
+        .part_routes
+        .iter()
+        .map(|route| (route.part_id.clone(), route))
+        .collect::<BTreeMap<_, _>>();
+    let mut interfaces = BTreeMap::<String, DecompositionInterface>::new();
+    for decision in &intervention_map.split_combine_decisions {
+        let interface = &decision.interface_plan;
+        interfaces
+            .entry(interface.interface_id.clone())
+            .or_insert_with(|| DecompositionInterface {
+                interface_id: interface.interface_id.clone(),
+                from_part_id: interface.from_part_id.clone(),
+                to_part_id: interface.to_part_id.clone(),
+                joint_type: interface.joint_type.clone(),
+                fit: interface.fit.clone(),
+                inspection_gate: interface.inspection_gate.clone(),
+                source: "intervention-map".to_string(),
+                requires_human_intervention: decision.requires_human_intervention,
+                learning_observation: format!(
+                    "decomposition-interface:{}:{}:{}",
+                    normalize_token(&interface.interface_id),
+                    normalize_token(&interface.fit),
+                    normalize_token(&interface.inspection_gate)
+                ),
+            });
+    }
+    for join in &hybrid_make_plan.join_operations {
+        interfaces
+            .entry(join.interface_id.clone())
+            .or_insert_with(|| DecompositionInterface {
+                interface_id: join.interface_id.clone(),
+                from_part_id: join.from_part_id.clone(),
+                to_part_id: join.to_part_id.clone(),
+                joint_type: join.joint_type.clone(),
+                fit: join.fit.clone(),
+                inspection_gate: join.inspection_gate.clone(),
+                source: "hybrid-make-plan".to_string(),
+                requires_human_intervention: join.requires_human_intervention,
+                learning_observation: format!(
+                    "decomposition-interface:{}:{}:{}",
+                    normalize_token(&join.interface_id),
+                    normalize_token(&join.fit),
+                    normalize_token(&join.inspection_gate)
+                ),
+            });
+    }
+
+    let mut targets = Vec::new();
+    let mut release_gates = Vec::new();
+    for decision in &intervention_map.split_combine_decisions {
+        let target_kind = decomposition_target_kind_from_action(&decision.action);
+        let replacement_part_ids = if decision.candidate_parts.is_empty() {
+            decision.part_id.iter().cloned().collect::<Vec<_>>()
+        } else {
+            decision.candidate_parts.clone()
+        };
+        let route_contract_ids = replacement_part_ids
+            .iter()
+            .map(|part_id| decomposition_route_contract_id(part_id))
+            .collect::<Vec<_>>();
+        let interface_ids = vec![decision.interface_plan.interface_id.clone()];
+        let route_machine_kinds = replacement_part_ids
+            .iter()
+            .filter_map(|part_id| {
+                route_by_part
+                    .get(part_id)
+                    .map(|route| route.machine_kind.clone())
+            })
+            .collect::<Vec<_>>();
+        let release_blockers = decomposition_release_blockers_for_program(
+            decision.program_id.as_ref(),
+            machine_release,
+        );
+        let required_evidence = decomposition_target_required_evidence(
+            target_kind,
+            Some(decision.boundary_kind.as_str()),
+            &route_machine_kinds,
+            &interface_ids,
+        );
+        let target_id = format!(
+            "decomposition-target-{}",
+            normalize_token(&decision.decision_id)
+        );
+        let learning_observation = format!(
+            "decomposition-target:{}:{}:{}",
+            normalize_token(target_kind),
+            normalize_token(&decision.boundary_kind),
+            normalize_token(&decision.action)
+        );
+        let requires_human_review =
+            decision.requires_human_intervention || !release_blockers.is_empty();
+        release_gates.push(DecompositionReleaseGate {
+            gate_id: format!("decomposition-gate-{}", normalize_token(&target_id)),
+            gate_type: target_kind.to_string(),
+            source: "intervention-map".to_string(),
+            boundary_kind: Some(decision.boundary_kind.clone()),
+            interface_id: interface_ids.first().cloned(),
+            required_before: "cad-cam-freeze".to_string(),
+            required_evidence: required_evidence.clone(),
+            release_blocker: requires_human_review,
+            next_state: "assembly-required".to_string(),
+        });
+        targets.push(DecompositionTarget {
+            target_id,
+            target_kind: target_kind.to_string(),
+            source: "intervention-map".to_string(),
+            source_part_id: decision.part_id.clone(),
+            boundary_kind: Some(decision.boundary_kind.clone()),
+            program_id: decision.program_id.clone(),
+            line: decision.line,
+            recommended_action: decision.action.clone(),
+            reason: decision.rationale.clone(),
+            replacement_part_ids,
+            route_contract_ids,
+            interface_ids,
+            required_evidence,
+            release_blockers,
+            requires_human_review,
+            learning_observation,
+        });
+    }
+
+    let mut target_ids = targets
+        .iter()
+        .map(|target| target.target_id.clone())
+        .collect::<BTreeSet<_>>();
+    for decision in &hybrid_make_plan.split_combine_decisions {
+        let target_id = format!(
+            "decomposition-target-{}",
+            normalize_token(&decision.decision_id)
+        );
+        if !target_ids.insert(target_id.clone()) {
+            continue;
+        }
+        let target_kind = decomposition_target_kind_from_hybrid(decision);
+        let replacement_part_ids = decision.part_ids.clone();
+        let route_contract_ids = replacement_part_ids
+            .iter()
+            .map(|part_id| decomposition_route_contract_id(part_id))
+            .collect::<Vec<_>>();
+        let interface_ids = decomposition_interfaces_for_parts(&replacement_part_ids, &interfaces);
+        let route_machine_kinds = replacement_part_ids
+            .iter()
+            .filter_map(|part_id| {
+                route_by_part
+                    .get(part_id)
+                    .map(|route| route.machine_kind.clone())
+            })
+            .collect::<Vec<_>>();
+        let boundary_kind = decomposition_boundary_kind_from_hybrid(decision);
+        let mut release_blockers = decomposition_release_blockers_for_parts(
+            &replacement_part_ids,
+            &route_by_part,
+            machine_release,
+        );
+        if decision.requires_human_review && release_blockers.is_empty() {
+            release_blockers
+                .push("split/combine decision still requires human review evidence".to_string());
+        }
+        let required_evidence = decomposition_target_required_evidence(
+            target_kind,
+            boundary_kind.as_deref(),
+            &route_machine_kinds,
+            &interface_ids,
+        );
+        let requires_human_review = decision.requires_human_review || !release_blockers.is_empty();
+        release_gates.push(DecompositionReleaseGate {
+            gate_id: format!("decomposition-gate-{}", normalize_token(&target_id)),
+            gate_type: target_kind.to_string(),
+            source: decision.source.clone(),
+            boundary_kind: boundary_kind.clone(),
+            interface_id: interface_ids.first().cloned(),
+            required_before: "cad-cam-freeze".to_string(),
+            required_evidence: required_evidence.clone(),
+            release_blocker: requires_human_review,
+            next_state: if target_kind.contains("split") || target_kind.contains("combine") {
+                "assembly-required".to_string()
+            } else {
+                "inspection-required".to_string()
+            },
+        });
+        targets.push(DecompositionTarget {
+            target_id,
+            target_kind: target_kind.to_string(),
+            source: decision.source.clone(),
+            source_part_id: replacement_part_ids.first().cloned(),
+            boundary_kind,
+            program_id: None,
+            line: None,
+            recommended_action: decision.action.clone(),
+            reason: decision.reason.clone(),
+            replacement_part_ids,
+            route_contract_ids,
+            interface_ids,
+            required_evidence,
+            release_blockers,
+            requires_human_review,
+            learning_observation: format!(
+                "decomposition-target:{}:{}:{}",
+                normalize_token(target_kind),
+                normalize_token(&decision.source),
+                normalize_token(&decision.decision_type)
+            ),
+        });
+    }
+
+    let interface_values = interfaces.values().cloned().collect::<Vec<_>>();
+    for interface in &interface_values {
+        release_gates.push(DecompositionReleaseGate {
+            gate_id: format!(
+                "decomposition-interface-gate-{}",
+                normalize_token(&interface.interface_id)
+            ),
+            gate_type: "recomposition-interface-fit-check".to_string(),
+            source: interface.source.clone(),
+            boundary_kind: None,
+            interface_id: Some(interface.interface_id.clone()),
+            required_before: "assembly-lock-in".to_string(),
+            required_evidence: vec![
+                format!("{} inspection gate result", interface.inspection_gate),
+                format!("{} fit evidence between {} and {}", interface.fit, interface.from_part_id, interface.to_part_id),
+                "operator or automation cell signoff before adhesive, press, torque, or cure lock-in"
+                    .to_string(),
+            ],
+            release_blocker: interface.requires_human_intervention,
+            next_state: "assembly-required".to_string(),
+        });
+    }
+
+    let route_contracts = hybrid_make_plan
+        .part_routes
+        .iter()
+        .map(|route| {
+            let must_remain_separate_until = targets
+                .iter()
+                .filter(|target| target.replacement_part_ids.contains(&route.part_id))
+                .map(|target| target.target_id.clone())
+                .chain(
+                    process_graph
+                        .gates
+                        .iter()
+                        .filter(|gate| gate.requires_human_intervention)
+                        .filter_map(|gate| {
+                            route.process_node_id.as_ref().and_then(|node_id| {
+                                if gate.node_id.as_ref() == Some(node_id) {
+                                    Some(gate.gate_id.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                        }),
+                )
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            let recomposition_after = interface_values
+                .iter()
+                .filter(|interface| {
+                    interface.from_part_id == route.part_id || interface.to_part_id == route.part_id
+                })
+                .map(|interface| interface.interface_id.clone())
+                .collect::<Vec<_>>();
+            let mut required_evidence = vec![
+                "part ID traceability from design source through machine program and inspection result"
+                    .to_string(),
+                "route output checksum or controller/program revision captured before recomposition"
+                    .to_string(),
+            ];
+            required_evidence.extend(decomposition_machine_evidence(&route.machine_kind));
+            required_evidence.sort();
+            required_evidence.dedup();
+            DecompositionRouteContract {
+                contract_id: decomposition_route_contract_id(&route.part_id),
+                part_id: route.part_id.clone(),
+                route_type: route.route_type.clone(),
+                manufacturing_method: route.manufacturing_method.clone(),
+                machine_kind: route.machine_kind.clone(),
+                process_node_id: route.process_node_id.clone(),
+                program_id: route.program_id.clone(),
+                must_remain_separate_until,
+                recomposition_after,
+                required_evidence,
+                learning_observation: format!(
+                    "decomposition-route:{}:{}:{}",
+                    normalize_token(&route.part_id),
+                    normalize_token(&route.route_type),
+                    normalize_token(&route.machine_kind)
+                ),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let release_blocked = machine_release.machine_release_blocked
+        || targets
+            .iter()
+            .any(|target| !target.release_blockers.is_empty())
+        || release_gates.iter().any(|gate| gate.release_blocker);
+    let human_review_required = release_blocked
+        || targets.iter().any(|target| target.requires_human_review)
+        || interface_values
+            .iter()
+            .any(|interface| interface.requires_human_intervention);
+    let status = if release_blocked {
+        "decomposition-release-blocked"
+    } else if targets.is_empty() && interface_values.is_empty() {
+        "single-body-decomposition-not-required"
+    } else if human_review_required {
+        "decomposition-review-required"
+    } else {
+        "decomposition-plan-ready"
+    };
+
+    let mut learning_observations = BTreeSet::new();
+    for target in &targets {
+        learning_observations.insert(target.learning_observation.clone());
+    }
+    for contract in &route_contracts {
+        learning_observations.insert(contract.learning_observation.clone());
+    }
+    for interface in &interface_values {
+        learning_observations.insert(interface.learning_observation.clone());
+    }
+    for gate in &release_gates {
+        learning_observations.insert(format!(
+            "decomposition-release-gate:{}:{}",
+            normalize_token(&gate.gate_type),
+            if gate.release_blocker {
+                "blocked"
+            } else {
+                "ready"
+            }
+        ));
+    }
+    if learning_observations.is_empty() {
+        learning_observations.insert("decomposition:no-split-combine-needed".to_string());
+    }
+
+    DecompositionPlan {
+        schema_version: "dd.fabrication.decomposition-plan.v1",
+        status: status.to_string(),
+        release_blocked,
+        human_review_required,
+        part_count: parts.len(),
+        decomposition_target_count: targets.len(),
+        recomposition_interface_count: interface_values.len(),
+        route_contract_count: route_contracts.len(),
+        targets,
+        route_contracts,
+        recomposition_interfaces: interface_values,
+        release_gates,
+        learning_observations: learning_observations.into_iter().collect(),
+        notes: vec![
+            "Decomposition plan is the explicit split, route, recomposition, and release-evidence contract for CAD/CAM, slicer, robot, operator, and learning workers".to_string(),
+            "Targets stay blocked until child geometry, per-route machine code, interface metrology, and recomposition evidence prove the job can complete without hidden human intervention".to_string(),
+            "Learning observations let MDP/POMDP/neural workers compare single-piece, split-route, and recomposed outcomes across future fabrication jobs".to_string(),
+        ],
+    }
+}
+
+fn decomposition_plan_learning_actions(plan: &DecompositionPlan) -> Vec<String> {
+    let mut actions = Vec::new();
+    for target in &plan.targets {
+        let target_token = normalize_token(&target.target_id);
+        if target.target_kind.contains("split") {
+            actions.push(
+                if target.requires_human_review || !target.release_blockers.is_empty() {
+                    format!("resolve-split-decomposition-{target_token}")
+                } else {
+                    format!("verify-split-decomposition-{target_token}")
+                },
+            );
+        } else if target.target_kind.contains("combine")
+            || target.target_kind.contains("recomposition")
+        {
+            actions.push(
+                if target.requires_human_review || !target.release_blockers.is_empty() {
+                    format!("resolve-combine-recomposition-{target_token}")
+                } else {
+                    format!("verify-combine-recomposition-{target_token}")
+                },
+            );
+        } else {
+            actions.push(format!("verify-decomposition-target-{target_token}"));
+        }
+    }
+    actions.extend(plan.recomposition_interfaces.iter().map(|interface| {
+        format!(
+            "verify-recomposition-interface-{}",
+            normalize_token(&interface.interface_id)
+        )
+    }));
+    actions.extend(plan.release_gates.iter().map(|gate| {
+        if gate.release_blocker {
+            format!(
+                "clear-decomposition-gate-{}",
+                normalize_token(&gate.gate_id)
+            )
+        } else {
+            format!(
+                "verify-decomposition-gate-{}",
+                normalize_token(&gate.gate_id)
+            )
+        }
+    }));
+    actions.sort();
+    actions.dedup();
+    actions
+}
+
+fn release_package_design_export_ids(
+    part_id: Option<&str>,
+    program_id: Option<&str>,
+    design_exports: &DesignExportBundle,
+) -> Vec<String> {
+    let mut ids = BTreeSet::new();
+    for export in &design_exports.part_exports {
+        if part_id.is_some_and(|part| export.part_id == part)
+            || program_id.is_some_and(|program| export.program_id.as_deref() == Some(program))
+        {
+            ids.insert(export.export_id.clone());
+        }
+    }
+    ids.into_iter().collect()
+}
+
+fn release_package_fixture_setup_ids(
+    part_id: Option<&str>,
+    program_id: Option<&str>,
+    fixture_plan: &FixturePlan,
+) -> Vec<String> {
+    let mut ids = BTreeSet::new();
+    for setup in &fixture_plan.setups {
+        if part_id.is_some_and(|part| setup.part_id == part)
+            || program_id.is_some_and(|program| setup.program_id.as_deref() == Some(program))
+        {
+            ids.insert(setup.setup_id.clone());
+        }
+    }
+    ids.into_iter().collect()
+}
+
+fn release_package_monitoring_point_ids(
+    part_id: Option<&str>,
+    program_id: Option<&str>,
+    monitoring_plan: &MonitoringPlan,
+) -> Vec<String> {
+    let mut ids = BTreeSet::new();
+    for point in &monitoring_plan.monitor_points {
+        if part_id.is_some_and(|part| point.part_id == part)
+            || program_id.is_some_and(|program| point.program_id.as_deref() == Some(program))
+        {
+            ids.insert(point.monitor_id.clone());
+        }
+    }
+    ids.into_iter().collect()
+}
+
+fn release_package_quality_inspection_ids(
+    part_id: Option<&str>,
+    program_id: Option<&str>,
+    quality_plan: &QualityPlan,
+) -> Vec<String> {
+    let mut ids = BTreeSet::new();
+    for point in &quality_plan.inspection_points {
+        if part_id.is_some_and(|part| point.part_id == part)
+            || program_id.is_some_and(|program| point.program_id.as_deref() == Some(program))
+        {
+            ids.insert(point.inspection_id.clone());
+        }
+    }
+    ids.into_iter().collect()
+}
+
+fn release_package_decomposition_target_ids(
+    part_id: Option<&str>,
+    program_id: Option<&str>,
+    decomposition_plan: &DecompositionPlan,
+) -> Vec<String> {
+    let mut ids = BTreeSet::new();
+    for target in &decomposition_plan.targets {
+        if part_id.is_some_and(|part| {
+            target.source_part_id.as_deref() == Some(part)
+                || target
+                    .replacement_part_ids
+                    .iter()
+                    .any(|replacement| replacement == part)
+        }) || program_id.is_some_and(|program| target.program_id.as_deref() == Some(program))
+        {
+            ids.insert(target.target_id.clone());
+        }
+    }
+    ids.into_iter().collect()
+}
+
+fn release_package_interface_control_ids(
+    part_id: Option<&str>,
+    interface_control_plan: &InterfaceControlPlan,
+) -> Vec<String> {
+    let mut ids = BTreeSet::new();
+    for control in &interface_control_plan.controls {
+        if part_id.is_some_and(|part| control.from_part_id == part || control.to_part_id == part) {
+            ids.insert(control.control_id.clone());
+        }
+    }
+    ids.into_iter().collect()
+}
+
+fn release_package_controller_target_ids(
+    program_id: Option<&str>,
+    controller_plan: &ControllerPlan,
+) -> Vec<String> {
+    let mut ids = BTreeSet::new();
+    for target in &controller_plan.compatibility_targets {
+        if program_id.is_some_and(|program| target.program_id == program) {
+            ids.insert(target.target_id.clone());
+        }
+    }
+    ids.into_iter().collect()
+}
+
+fn release_package_process_node_id(
+    program_id: Option<&str>,
+    part_id: Option<&str>,
+    process_graph: &ProcessGraph,
+) -> Option<String> {
+    process_graph
+        .nodes
+        .iter()
+        .find(|node| {
+            program_id.is_some_and(|program| node.program_id.as_deref() == Some(program))
+                || part_id.is_some_and(|part| node.part_id == part)
+        })
+        .map(|node| node.node_id.clone())
+}
+
+fn release_package_required_artifacts(
+    program_id: Option<&str>,
+    design_export_ids: &[String],
+    fixture_setup_ids: &[String],
+    monitoring_point_ids: &[String],
+    quality_inspection_ids: &[String],
+    decomposition_target_ids: &[String],
+    interface_control_ids: &[String],
+    controller_target_ids: &[String],
+) -> Vec<String> {
+    let mut artifacts = BTreeSet::new();
+    artifacts.insert("machine-release".to_string());
+    artifacts.insert("manufacturing-handoff".to_string());
+    artifacts.insert("design-package".to_string());
+    artifacts.insert("design-export-bundle".to_string());
+    if let Some(program_id) = program_id {
+        artifacts.insert(artifact_id("program", program_id));
+    }
+    if !design_export_ids.is_empty() {
+        artifacts.extend(design_export_ids.iter().cloned());
+    }
+    if !fixture_setup_ids.is_empty() {
+        artifacts.insert("fixture-plan".to_string());
+    }
+    if !monitoring_point_ids.is_empty() {
+        artifacts.insert("monitoring-plan".to_string());
+    }
+    if !quality_inspection_ids.is_empty() {
+        artifacts.insert("quality-plan".to_string());
+    }
+    if !decomposition_target_ids.is_empty() {
+        artifacts.insert("decomposition-plan".to_string());
+    }
+    if !interface_control_ids.is_empty() {
+        artifacts.insert("interface-control-plan".to_string());
+    }
+    if !controller_target_ids.is_empty() {
+        artifacts.insert("controller-plan".to_string());
+        artifacts.insert("postprocess-plan".to_string());
+    }
+    artifacts.into_iter().collect()
+}
+
+fn release_package_blockers(
+    part_id: Option<&str>,
+    program_id: Option<&str>,
+    design_exports: &DesignExportBundle,
+    fixture_plan: &FixturePlan,
+    monitoring_plan: &MonitoringPlan,
+    decomposition_plan: &DecompositionPlan,
+    interface_control_plan: &InterfaceControlPlan,
+    controller_plan: &ControllerPlan,
+    machine_release: &MachineReleaseReport,
+) -> Vec<String> {
+    let mut blockers = BTreeSet::new();
+    for blocker in &machine_release.blockers {
+        if program_id.is_some_and(|program| blocker.program_id.as_deref() == Some(program)) {
+            blockers.insert(format!(
+                "machine-release:{}:{}",
+                blocker.blocker_type, blocker.reason
+            ));
+        }
+    }
+    for export in &design_exports.part_exports {
+        if part_id.is_some_and(|part| export.part_id == part)
+            || program_id.is_some_and(|program| export.program_id.as_deref() == Some(program))
+        {
+            blockers.extend(
+                export
+                    .blockers
+                    .iter()
+                    .map(|blocker| format!("design-export:{}:{blocker}", export.export_id)),
+            );
+        }
+    }
+    for setup in &fixture_plan.setups {
+        if part_id.is_some_and(|part| setup.part_id == part)
+            || program_id.is_some_and(|program| setup.program_id.as_deref() == Some(program))
+        {
+            blockers.extend(
+                setup
+                    .release_blockers
+                    .iter()
+                    .map(|blocker| format!("fixture:{}:{blocker}", setup.setup_id)),
+            );
+        }
+    }
+    for point in &monitoring_plan.monitor_points {
+        if part_id.is_some_and(|part| point.part_id == part)
+            || program_id.is_some_and(|program| point.program_id.as_deref() == Some(program))
+        {
+            blockers.extend(
+                point
+                    .release_blockers
+                    .iter()
+                    .map(|blocker| format!("monitoring:{}:{blocker}", point.monitor_id)),
+            );
+        }
+    }
+    for target in &decomposition_plan.targets {
+        if part_id.is_some_and(|part| {
+            target.source_part_id.as_deref() == Some(part)
+                || target
+                    .replacement_part_ids
+                    .iter()
+                    .any(|replacement| replacement == part)
+        }) || program_id.is_some_and(|program| target.program_id.as_deref() == Some(program))
+        {
+            blockers.extend(
+                target
+                    .release_blockers
+                    .iter()
+                    .map(|blocker| format!("decomposition:{}:{blocker}", target.target_id)),
+            );
+        }
+    }
+    for control in &interface_control_plan.controls {
+        if part_id.is_some_and(|part| control.from_part_id == part || control.to_part_id == part) {
+            blockers.extend(
+                control
+                    .release_blockers
+                    .iter()
+                    .map(|blocker| format!("interface:{}:{blocker}", control.control_id)),
+            );
+        }
+    }
+    for target in &controller_plan.compatibility_targets {
+        if program_id.is_some_and(|program| target.program_id == program) {
+            blockers.extend(
+                target
+                    .release_blockers
+                    .iter()
+                    .map(|blocker| format!("controller:{}:{blocker}", target.target_id)),
+            );
+        }
+    }
+    if blockers.is_empty() && machine_release.machine_release_blocked {
+        blockers.insert(format!(
+            "machine-release-blocked:{}",
+            machine_release.status
+        ));
+    }
+    blockers.into_iter().collect()
+}
+
+fn release_package_state(release_blockers: &[String], machine_ready: bool) -> String {
+    if !release_blockers.is_empty() {
+        "release-blocked".to_string()
+    } else if machine_ready {
+        "machine-ready".to_string()
+    } else {
+        "release-review-ready".to_string()
+    }
+}
+
+fn release_package_gates_for_package(package: &ReleasePackage) -> Vec<ReleasePackageGate> {
+    let package_token = normalize_token(&package.package_id);
+    let blocked = !package.release_blockers.is_empty();
+    let review_status = if blocked { "blocked" } else { "pending-review" };
+    let mut gates = vec![
+        ReleasePackageGate {
+            gate_id: format!("release-package-gate-{package_token}-design"),
+            package_id: Some(package.package_id.clone()),
+            gate_type: "design-export-review".to_string(),
+            status: review_status.to_string(),
+            required_before: "machine-code-or-operator-traveler-release".to_string(),
+            evidence: if package.design_export_ids.is_empty() {
+                "design package and parametric-design artifact retained for review".to_string()
+            } else {
+                format!(
+                    "review generated design exports: {}",
+                    package.design_export_ids.join(", ")
+                )
+            },
+            release_blocker: blocked,
+        },
+        ReleasePackageGate {
+            gate_id: format!("release-package-gate-{package_token}-setup-quality-monitoring"),
+            package_id: Some(package.package_id.clone()),
+            gate_type: "setup-quality-monitoring-evidence".to_string(),
+            status: review_status.to_string(),
+            required_before: "unattended-or-machine-ready-run".to_string(),
+            evidence: format!(
+                "fixture setups={}, quality inspections={}, monitoring points={}",
+                package.fixture_setup_ids.len(),
+                package.quality_inspection_ids.len(),
+                package.monitoring_point_ids.len()
+            ),
+            release_blocker: blocked,
+        },
+        ReleasePackageGate {
+            gate_id: format!("release-package-gate-{package_token}-machine-release"),
+            package_id: Some(package.package_id.clone()),
+            gate_type: "machine-release-signoff".to_string(),
+            status: package.release_state.clone(),
+            required_before: "machine-ready-release".to_string(),
+            evidence: if package.release_blockers.is_empty() {
+                "no package-specific blockers retained; operator/controller signoff still required for draft artifacts"
+                    .to_string()
+            } else {
+                package.release_blockers.join(" | ")
+            },
+            release_blocker: blocked,
+        },
+    ];
+    if !package.controller_target_ids.is_empty() {
+        gates.push(ReleasePackageGate {
+            gate_id: format!("release-package-gate-{package_token}-controller"),
+            package_id: Some(package.package_id.clone()),
+            gate_type: "controller-postprocess-compatibility".to_string(),
+            status: review_status.to_string(),
+            required_before: "controller-load-or-dry-run".to_string(),
+            evidence: format!(
+                "controller compatibility targets: {}",
+                package.controller_target_ids.join(", ")
+            ),
+            release_blocker: blocked,
+        });
+    }
+    if !package.decomposition_target_ids.is_empty() || !package.interface_control_ids.is_empty() {
+        gates.push(ReleasePackageGate {
+            gate_id: format!("release-package-gate-{package_token}-split-combine"),
+            package_id: Some(package.package_id.clone()),
+            gate_type: "split-combine-interface-release".to_string(),
+            status: review_status.to_string(),
+            required_before: "child-route-or-recomposition-release".to_string(),
+            evidence: format!(
+                "decomposition targets={}, interface controls={}",
+                package.decomposition_target_ids.len(),
+                package.interface_control_ids.len()
+            ),
+            release_blocker: blocked,
+        });
+    }
+    gates
+}
+
+fn release_package_for_program(
+    program: &GeneratedProgram,
+    design_exports: &DesignExportBundle,
+    process_graph: &ProcessGraph,
+    quality_plan: &QualityPlan,
+    fixture_plan: &FixturePlan,
+    monitoring_plan: &MonitoringPlan,
+    interface_control_plan: &InterfaceControlPlan,
+    decomposition_plan: &DecompositionPlan,
+    controller_plan: &ControllerPlan,
+    machine_release: &MachineReleaseReport,
+) -> ReleasePackage {
+    let part_id = Some(program.part_id.as_str());
+    let program_id = Some(program.program_id.as_str());
+    let design_export_ids = release_package_design_export_ids(part_id, program_id, design_exports);
+    let fixture_setup_ids = release_package_fixture_setup_ids(part_id, program_id, fixture_plan);
+    let monitoring_point_ids =
+        release_package_monitoring_point_ids(part_id, program_id, monitoring_plan);
+    let quality_inspection_ids =
+        release_package_quality_inspection_ids(part_id, program_id, quality_plan);
+    let decomposition_target_ids =
+        release_package_decomposition_target_ids(part_id, program_id, decomposition_plan);
+    let interface_control_ids =
+        release_package_interface_control_ids(part_id, interface_control_plan);
+    let controller_target_ids = release_package_controller_target_ids(program_id, controller_plan);
+    let release_blockers = release_package_blockers(
+        part_id,
+        program_id,
+        design_exports,
+        fixture_plan,
+        monitoring_plan,
+        decomposition_plan,
+        interface_control_plan,
+        controller_plan,
+        machine_release,
+    );
+    let machine_ready = program.machine_ready
+        && release_blockers.is_empty()
+        && !machine_release.machine_release_blocked;
+    let release_state = release_package_state(&release_blockers, machine_ready);
+    let required_artifacts = release_package_required_artifacts(
+        program_id,
+        &design_export_ids,
+        &fixture_setup_ids,
+        &monitoring_point_ids,
+        &quality_inspection_ids,
+        &decomposition_target_ids,
+        &interface_control_ids,
+        &controller_target_ids,
+    );
+    let package_id = artifact_id("release-package", &program.program_id);
+    ReleasePackage {
+        learning_observation: format!("release-package:{}:{release_state}", package_id),
+        package_id,
+        package_kind: "machine-program-release".to_string(),
+        part_id: Some(program.part_id.clone()),
+        program_id: Some(program.program_id.clone()),
+        machine_id: Some(program.machine_id.clone()),
+        machine_kind: Some(program.machine_kind.clone()),
+        process_node_id: release_package_process_node_id(program_id, part_id, process_graph),
+        controller_target_ids,
+        design_export_ids,
+        fixture_setup_ids,
+        monitoring_point_ids,
+        quality_inspection_ids,
+        decomposition_target_ids,
+        interface_control_ids,
+        required_artifacts,
+        release_blockers,
+        release_state,
+        machine_ready,
+        requires_human_review: !machine_ready,
+    }
+}
+
+fn assembly_release_package(
+    design_exports: &DesignExportBundle,
+    quality_plan: &QualityPlan,
+    fixture_plan: &FixturePlan,
+    monitoring_plan: &MonitoringPlan,
+    interface_control_plan: &InterfaceControlPlan,
+    decomposition_plan: &DecompositionPlan,
+    machine_release: &MachineReleaseReport,
+) -> Option<ReleasePackage> {
+    if design_exports.assembly_exports.is_empty()
+        && interface_control_plan.controls.is_empty()
+        && decomposition_plan.recomposition_interfaces.is_empty()
+    {
+        return None;
+    }
+    let mut part_ids = BTreeSet::new();
+    for control in &interface_control_plan.controls {
+        part_ids.insert(control.from_part_id.clone());
+        part_ids.insert(control.to_part_id.clone());
+    }
+    for interface in &decomposition_plan.recomposition_interfaces {
+        part_ids.insert(interface.from_part_id.clone());
+        part_ids.insert(interface.to_part_id.clone());
+    }
+
+    let design_export_ids = design_exports
+        .assembly_exports
+        .iter()
+        .map(|export| export.export_id.clone())
+        .collect::<Vec<_>>();
+    let fixture_setup_ids = fixture_plan
+        .setups
+        .iter()
+        .filter(|setup| part_ids.contains(&setup.part_id))
+        .map(|setup| setup.setup_id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let monitoring_point_ids = monitoring_plan
+        .monitor_points
+        .iter()
+        .filter(|point| part_ids.contains(&point.part_id))
+        .map(|point| point.monitor_id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let quality_inspection_ids = quality_plan
+        .inspection_points
+        .iter()
+        .filter(|point| part_ids.contains(&point.part_id))
+        .map(|point| point.inspection_id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let decomposition_target_ids = decomposition_plan
+        .targets
+        .iter()
+        .filter(|target| {
+            target.target_kind.contains("combine")
+                || target.target_kind.contains("recomposition")
+                || target
+                    .source_part_id
+                    .as_ref()
+                    .is_some_and(|part| part_ids.contains(part))
+                || target
+                    .replacement_part_ids
+                    .iter()
+                    .any(|part| part_ids.contains(part))
+        })
+        .map(|target| target.target_id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let interface_control_ids = interface_control_plan
+        .controls
+        .iter()
+        .map(|control| control.control_id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut release_blockers = BTreeSet::new();
+    for export in &design_exports.assembly_exports {
+        release_blockers.extend(
+            export
+                .blockers
+                .iter()
+                .map(|blocker| format!("assembly-design-export:{}:{blocker}", export.export_id)),
+        );
+    }
+    for control in &interface_control_plan.controls {
+        release_blockers.extend(
+            control
+                .release_blockers
+                .iter()
+                .map(|blocker| format!("interface:{}:{blocker}", control.control_id)),
+        );
+    }
+    for target in &decomposition_plan.targets {
+        release_blockers.extend(
+            target
+                .release_blockers
+                .iter()
+                .map(|blocker| format!("decomposition:{}:{blocker}", target.target_id)),
+        );
+    }
+    if release_blockers.is_empty() && machine_release.machine_release_blocked {
+        release_blockers.insert(format!(
+            "machine-release-blocked:{}",
+            machine_release.status
+        ));
+    }
+    let release_blockers = release_blockers.into_iter().collect::<Vec<_>>();
+    let machine_ready = release_blockers.is_empty() && !machine_release.machine_release_blocked;
+    let release_state = release_package_state(&release_blockers, machine_ready);
+    let mut required_artifacts = BTreeSet::from([
+        "assembly-plan".to_string(),
+        "design-package".to_string(),
+        "design-export-bundle".to_string(),
+        "interface-control-plan".to_string(),
+        "decomposition-plan".to_string(),
+        "machine-release".to_string(),
+    ]);
+    required_artifacts.extend(design_export_ids.iter().cloned());
+    if !fixture_setup_ids.is_empty() {
+        required_artifacts.insert("fixture-plan".to_string());
+    }
+    if !monitoring_point_ids.is_empty() {
+        required_artifacts.insert("monitoring-plan".to_string());
+    }
+    if !quality_inspection_ids.is_empty() {
+        required_artifacts.insert("quality-plan".to_string());
+    }
+    let package_id = "release-package-assembly-recomposition".to_string();
+    Some(ReleasePackage {
+        learning_observation: format!("release-package:{}:{release_state}", package_id),
+        package_id,
+        package_kind: "assembly-recomposition-release".to_string(),
+        part_id: None,
+        program_id: None,
+        machine_id: None,
+        machine_kind: Some("assembly-or-manual-cell".to_string()),
+        process_node_id: None,
+        controller_target_ids: Vec::new(),
+        design_export_ids,
+        fixture_setup_ids,
+        monitoring_point_ids,
+        quality_inspection_ids,
+        decomposition_target_ids,
+        interface_control_ids,
+        required_artifacts: required_artifacts.into_iter().collect(),
+        release_blockers,
+        release_state,
+        machine_ready,
+        requires_human_review: true,
+    })
+}
+
+fn release_package_plan(
+    generated_programs: &[GeneratedProgram],
+    design_exports: &DesignExportBundle,
+    process_graph: &ProcessGraph,
+    quality_plan: &QualityPlan,
+    fixture_plan: &FixturePlan,
+    monitoring_plan: &MonitoringPlan,
+    interface_control_plan: &InterfaceControlPlan,
+    decomposition_plan: &DecompositionPlan,
+    controller_plan: &ControllerPlan,
+    machine_release: &MachineReleaseReport,
+) -> ReleasePackagePlan {
+    let mut packages = generated_programs
+        .iter()
+        .map(|program| {
+            release_package_for_program(
+                program,
+                design_exports,
+                process_graph,
+                quality_plan,
+                fixture_plan,
+                monitoring_plan,
+                interface_control_plan,
+                decomposition_plan,
+                controller_plan,
+                machine_release,
+            )
+        })
+        .collect::<Vec<_>>();
+    if let Some(assembly_package) = assembly_release_package(
+        design_exports,
+        quality_plan,
+        fixture_plan,
+        monitoring_plan,
+        interface_control_plan,
+        decomposition_plan,
+        machine_release,
+    ) {
+        packages.push(assembly_package);
+    }
+
+    let release_gates = packages
+        .iter()
+        .flat_map(release_package_gates_for_package)
+        .collect::<Vec<_>>();
+    let ready_package_count = packages
+        .iter()
+        .filter(|package| package.release_blockers.is_empty())
+        .count();
+    let blocked_package_count = packages.len().saturating_sub(ready_package_count);
+    let machine_release_blocked =
+        machine_release.machine_release_blocked || blocked_package_count > 0;
+    let status = if machine_release_blocked {
+        "release-package-blocked"
+    } else if packages.iter().all(|package| package.machine_ready) {
+        "machine-ready"
+    } else {
+        "release-package-review-ready"
+    };
+    let mut required_artifacts = BTreeSet::from(["release-package-plan".to_string()]);
+    for package in &packages {
+        required_artifacts.extend(package.required_artifacts.iter().cloned());
+    }
+    let mut learning_observations = BTreeSet::new();
+    learning_observations.insert(format!("release-package-status:{status}"));
+    learning_observations.insert(format!("release-package-count:{}", packages.len()));
+    learning_observations.extend(
+        packages
+            .iter()
+            .map(|package| package.learning_observation.clone()),
+    );
+    if blocked_package_count > 0 {
+        learning_observations.insert(format!("release-package-blocked:{blocked_package_count}"));
+    }
+
+    ReleasePackagePlan {
+        schema_version: "dd.fabrication.release-package-plan.v1",
+        status: status.to_string(),
+        machine_release_blocked,
+        package_count: packages.len(),
+        ready_package_count,
+        blocked_package_count,
+        packages,
+        release_gates,
+        required_artifacts: required_artifacts.into_iter().collect(),
+        learning_observations: learning_observations.into_iter().collect(),
+        notes: vec![
+            "Release packages bundle each machine program or assembly handoff with the design exports, controller targets, setup, quality, monitoring, split/combine, and blocker evidence needed by downstream review workers".to_string(),
+            "Packages are draft release packets; machine-ready status remains false until controller/postprocessor checks, simulation or dry-run evidence, profile evidence, and operator or automation signoff clear all gates".to_string(),
+            "Learning observations let MDP/POMDP/neural workers compare which package evidence cleared or blocked print, mill, lathe, sheet-cut, EDM, and assembly routes".to_string(),
+        ],
+    }
+}
+
+fn release_package_plan_learning_actions(plan: &ReleasePackagePlan) -> Vec<String> {
+    let mut actions = Vec::new();
+    for package in &plan.packages {
+        let package_token = normalize_token(&package.package_id);
+        if package.release_blockers.is_empty() {
+            actions.push(format!("verify-release-package-{package_token}"));
+        } else {
+            actions.push(format!("clear-release-package-{package_token}"));
+        }
+    }
+    actions.extend(plan.release_gates.iter().map(|gate| {
+        let gate_token = normalize_token(&gate.gate_id);
+        if gate.release_blocker {
+            format!("clear-release-package-gate-{gate_token}")
+        } else {
+            format!("verify-release-package-gate-{gate_token}")
+        }
+    }));
+    actions.sort();
+    actions.dedup();
+    actions
 }
 
 fn stock_strategy_for_part(part: &PartPlan) -> String {
@@ -25766,6 +27894,908 @@ fn fixture_plan_learning_actions(plan: &FixturePlan) -> Vec<String> {
     actions
 }
 
+fn monitoring_boundary_related(text: &str) -> bool {
+    summary_text_has_any(
+        text,
+        &[
+            "monitor",
+            "sensor",
+            "telemetry",
+            "unattended",
+            "alert",
+            "alarm",
+            "recovery",
+            "runout",
+            "spindle load",
+            "tool load",
+            "breakage",
+            "thermal",
+            "temperature",
+            "oxygen",
+            "inert",
+            "fume",
+            "fire",
+            "smoke",
+            "coolant",
+            "dust",
+            "vacuum",
+            "chuck pressure",
+            "part catcher",
+            "camera",
+            "first-layer",
+        ],
+    )
+}
+
+fn monitoring_boundary_applies(
+    boundary: &FailureBoundary,
+    part: &PartPlan,
+    program: Option<&GeneratedProgram>,
+) -> bool {
+    let combined = format!(
+        "{} {} {} {}",
+        boundary.kind,
+        boundary.reason,
+        boundary.suggested_resolution,
+        boundary.program_id.as_deref().unwrap_or_default()
+    );
+    monitoring_boundary_related(&combined)
+        && (boundary.program_id.is_none()
+            || program.is_some_and(|program| {
+                boundary.program_id.as_deref() == Some(program.program_id.as_str())
+            })
+            || combined.contains(&part.id)
+            || combined.contains(&part.role)
+            || combined.contains(&part.machine_kind))
+}
+
+fn monitoring_channels(part: &PartPlan) -> Vec<String> {
+    let mut channels = match machine_class(&part.machine_kind) {
+        MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => vec![
+            "resin-vat-level".to_string(),
+            "build-plate-adhesion".to_string(),
+            "peel-force-or-z-lift".to_string(),
+            "chamber-temperature".to_string(),
+            "camera-or-image-preview".to_string(),
+        ],
+        MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => vec![
+            "powder-bed-temperature".to_string(),
+            "recoater-load-or-streak".to_string(),
+            "oxygen-or-inert-gas".to_string(),
+            "thermal-cooldown-state".to_string(),
+            "depowder-containment".to_string(),
+        ],
+        MachineClass::Additive => vec![
+            "nozzle-temperature".to_string(),
+            "bed-or-chamber-temperature".to_string(),
+            "extrusion-flow-or-pressure".to_string(),
+            "filament-runout-or-material-remaining".to_string(),
+            "first-layer-camera".to_string(),
+            "thermal-runaway-or-smoke".to_string(),
+        ],
+        MachineClass::Mill if is_rotary_index_mill_kind(&part.machine_kind) => vec![
+            "spindle-load".to_string(),
+            "tool-breakage".to_string(),
+            "coolant-flow".to_string(),
+            "rotary-brake-clamp-state".to_string(),
+            "probe-or-index-position".to_string(),
+            "enclosure-door-or-interlock".to_string(),
+        ],
+        MachineClass::Mill => vec![
+            "spindle-load".to_string(),
+            "tool-breakage".to_string(),
+            "coolant-flow".to_string(),
+            "chip-evacuation".to_string(),
+            "probe-or-work-offset-state".to_string(),
+            "enclosure-door-or-interlock".to_string(),
+        ],
+        MachineClass::Lathe => vec![
+            "spindle-load".to_string(),
+            "chuck-pressure".to_string(),
+            "bar-support-or-tailstock-state".to_string(),
+            "runout-or-vibration".to_string(),
+            "part-catcher-or-subspindle-state".to_string(),
+            "coolant-flow".to_string(),
+        ],
+        MachineClass::Router => vec![
+            "spindle-load".to_string(),
+            "vacuum-or-hold-down".to_string(),
+            "dust-collection-flow".to_string(),
+            "tool-breakage".to_string(),
+            "fire-or-smoke".to_string(),
+            "camera-or-tab-retention".to_string(),
+        ],
+        MachineClass::SheetCut => vec![
+            "pierce-height-or-focus".to_string(),
+            "assist-gas-or-abrasive-flow".to_string(),
+            "fume-fire-smoke".to_string(),
+            "material-thickness-or-sheet-origin".to_string(),
+            "slug-drop-or-tab-retention".to_string(),
+            "kerf-or-cut-quality".to_string(),
+        ],
+        MachineClass::Other => vec![
+            "cell-interlock".to_string(),
+            "robot-or-axis-load".to_string(),
+            "vision-or-fixture-presence".to_string(),
+            "end-effector-force".to_string(),
+            "operator-check-in".to_string(),
+        ],
+    };
+    channels.sort();
+    channels.dedup();
+    channels
+}
+
+fn monitoring_expected_signals(part: &PartPlan) -> Vec<String> {
+    let mut signals = match machine_class(&part.machine_kind) {
+        MachineClass::Additive => vec![
+            "thermal state stays inside material/process profile before extrusion or exposure"
+                .to_string(),
+            "material remaining, flow, and first-layer/first-slice evidence stay valid during run"
+                .to_string(),
+            "pause, power-loss, runout, smoke, and thermal-runaway alarms route to an operator or automation stop"
+                .to_string(),
+        ],
+        MachineClass::Mill | MachineClass::Router => vec![
+            "spindle/tool load stays below reviewed cut envelope".to_string(),
+            "tool breakage, coolant/chip/dust, fixture, and interlock sensors remain normal"
+                .to_string(),
+            "feed hold or operator checkpoint is triggered before recovery after alarm".to_string(),
+        ],
+        MachineClass::Lathe => vec![
+            "chuck pressure, spindle load, runout/vibration, support, and catcher state stay normal"
+                .to_string(),
+            "CSS/RPM and part-off/threading monitoring produce hold-before-recovery evidence".to_string(),
+        ],
+        MachineClass::SheetCut => vec![
+            "pierce, kerf, gas/abrasive, fume/fire, slug/drop, and sheet-origin signals stay normal"
+                .to_string(),
+            "cut abort or hold triggers before unattended fire, fume, wire-break, or slug-drop recovery"
+                .to_string(),
+        ],
+        MachineClass::Other => vec![
+            "cell interlocks, vision/fixture presence, force, and operator check-in stay valid".to_string(),
+            "safe stop and restart evidence is captured before continuing after an alert".to_string(),
+        ],
+    };
+    if part.tolerance_mm <= 0.05 {
+        signals.push(
+            "tight-tolerance route requires first-article or in-process measurement feedback"
+                .to_string(),
+        );
+    }
+    signals.sort();
+    signals.dedup();
+    signals
+}
+
+fn monitoring_recovery_actions_for_part(part: &PartPlan) -> Vec<String> {
+    let mut actions = match machine_class(&part.machine_kind) {
+        MachineClass::Additive => vec![
+            "pause print and hold heaters in safe material-specific state".to_string(),
+            "record camera/thermal/runout evidence before resume or scrap decision".to_string(),
+            "rerun slicer/profile review before restarting after material or adhesion fault"
+                .to_string(),
+        ],
+        MachineClass::Mill | MachineClass::Router => vec![
+            "feed hold, stop spindle/coolant/dust, and preserve position before opening enclosure"
+                .to_string(),
+            "inspect tool, workholding, chips, datum, and part before optional restart".to_string(),
+            "rerun dry-run/simulation if tool, fixture, or work offset changes".to_string(),
+        ],
+        MachineClass::Lathe => vec![
+            "feed hold, stop spindle/coolant, verify chuck/support state, and secure part"
+                .to_string(),
+            "inspect tool, runout, part-off/catcher state, and datum before restart".to_string(),
+            "require operator approval before resuming threading, part-off, or transfer"
+                .to_string(),
+        ],
+        MachineClass::SheetCut => vec![
+            "pause cut, stop energy/wire/abrasive if unsafe, and verify fume/fire/slug state"
+                .to_string(),
+            "inspect kerf, pierce, sheet origin, material support, and consumables before restart"
+                .to_string(),
+            "rerun recipe/cut-chart review if material thickness or cut quality differs"
+                .to_string(),
+        ],
+        MachineClass::Other => vec![
+            "hold cell, enter safe interlocked state, and capture fixture/vision/force evidence"
+                .to_string(),
+            "operator or qualified automation controller approves restart from recorded safe state"
+                .to_string(),
+        ],
+    };
+    actions.sort();
+    actions.dedup();
+    actions
+}
+
+fn monitoring_required_evidence(
+    part: &PartPlan,
+    step: Option<&ProcessStep>,
+    fixture_setup: Option<&FixtureSetupPlan>,
+) -> Vec<String> {
+    let mut evidence = monitoring_channels(part)
+        .into_iter()
+        .map(|channel| format!("channel configured and alarmed: {channel}"))
+        .collect::<Vec<_>>();
+    evidence.extend(monitoring_expected_signals(part));
+    if let Some(step) = step {
+        evidence.push(format!(
+            "monitoring covers machine {} operation {}",
+            step.machine_id, step.operation
+        ));
+        if step.requires_human_intervention {
+            evidence.push(
+                "operator checkpoint remains linked to runtime monitoring alerts".to_string(),
+            );
+        }
+    }
+    if let Some(fixture_setup) = fixture_setup {
+        evidence.push(format!(
+            "fixture monitoring linked to setup {} and {} clearance check(s)",
+            fixture_setup.setup_id,
+            fixture_setup.clearance_checks.len()
+        ));
+    }
+    evidence.push(
+        "alert destination, operator check-in, safe-stop, and restart owner are recorded"
+            .to_string(),
+    );
+    evidence.sort();
+    evidence.dedup();
+    evidence
+}
+
+fn monitoring_release_blockers(
+    part: &PartPlan,
+    program: Option<&GeneratedProgram>,
+    fixture_setup: Option<&FixtureSetupPlan>,
+    validation: &ValidationReport,
+    machine_release: &MachineReleaseReport,
+) -> Vec<String> {
+    let mut blockers = validation
+        .failure_boundaries
+        .iter()
+        .filter(|boundary| monitoring_boundary_applies(boundary, part, program))
+        .map(|boundary| {
+            format!(
+                "{}: {} -> {}",
+                boundary.kind, boundary.reason, boundary.suggested_resolution
+            )
+        })
+        .collect::<Vec<_>>();
+    blockers.extend(machine_release.blockers.iter().filter_map(|blocker| {
+        let combined = format!(
+            "{} {} {}",
+            blocker.blocker_type, blocker.reason, blocker.required_action
+        );
+        if monitoring_boundary_related(&combined)
+            && (blocker.program_id.is_none()
+                || program.is_some_and(|program| {
+                    blocker.program_id.as_deref() == Some(program.program_id.as_str())
+                }))
+        {
+            Some(format!(
+                "{}:{} -> {}",
+                blocker.blocker_type, blocker.reason, blocker.required_action
+            ))
+        } else {
+            None
+        }
+    }));
+    if let Some(fixture_setup) = fixture_setup {
+        if !fixture_setup.release_blockers.is_empty()
+            && matches!(
+                machine_class(&part.machine_kind),
+                MachineClass::Mill
+                    | MachineClass::Lathe
+                    | MachineClass::Router
+                    | MachineClass::SheetCut
+                    | MachineClass::Other
+            )
+        {
+            blockers.push(
+                "fixture/setup blockers must be cleared before unattended runtime monitoring can be trusted"
+                    .to_string(),
+            );
+        }
+    }
+    if blockers.is_empty() {
+        blockers.push(
+            "runtime monitoring evidence must be linked before machine-ready or unattended release"
+                .to_string(),
+        );
+    }
+    blockers.sort();
+    blockers.dedup();
+    blockers
+}
+
+fn monitoring_alert_rules(
+    part: &PartPlan,
+    program_id: Option<&String>,
+    channels: &[String],
+) -> Vec<MonitoringAlertRule> {
+    channels
+        .iter()
+        .map(|channel| {
+            let severity = if summary_text_has_any(
+                channel,
+                &["fire", "smoke", "thermal", "chuck", "spindle-load", "tool-breakage"],
+            ) {
+                "critical"
+            } else if summary_text_has_any(channel, &["first-layer", "kerf", "camera", "quality"]) {
+                "warning"
+            } else {
+                "hold"
+            };
+            MonitoringAlertRule {
+                rule_id: format!(
+                    "monitor-alert-{}-{}",
+                    normalize_token(&part.id),
+                    normalize_token(channel)
+                ),
+                part_id: part.id.clone(),
+                program_id: program_id.cloned(),
+                machine_kind: part.machine_kind.clone(),
+                channel: channel.clone(),
+                condition: format!("{channel} outside reviewed process envelope or missing heartbeat"),
+                severity: severity.to_string(),
+                automated_response: if severity == "critical" {
+                    "feed-hold-or-safe-stop, preserve state, alert operator, and block restart until evidence review".to_string()
+                } else {
+                    "pause or flag for operator review before continuing to the next release gate".to_string()
+                },
+                requires_human_intervention: true,
+            }
+        })
+        .collect()
+}
+
+fn monitoring_plan(
+    parts: &[PartPlan],
+    process_plan: &[ProcessStep],
+    generated_programs: &[GeneratedProgram],
+    fixture_plan: &FixturePlan,
+    validation: &ValidationReport,
+    machine_release: &MachineReleaseReport,
+) -> MonitoringPlan {
+    let step_by_part = process_plan
+        .iter()
+        .map(|step| (step.part_id.clone(), step))
+        .collect::<BTreeMap<_, _>>();
+    let program_by_part = generated_programs
+        .iter()
+        .map(|program| (program.part_id.clone(), program))
+        .collect::<BTreeMap<_, _>>();
+    let fixture_by_part = fixture_plan
+        .setups
+        .iter()
+        .map(|setup| (setup.part_id.clone(), setup))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut alert_rules = Vec::new();
+    let monitor_points = parts
+        .iter()
+        .map(|part| {
+            let step = step_by_part.get(&part.id).copied();
+            let program = program_by_part.get(&part.id).copied();
+            let fixture_setup = fixture_by_part.get(&part.id).copied();
+            let channels = monitoring_channels(part);
+            let point_alert_rules =
+                monitoring_alert_rules(part, program.map(|program| &program.program_id), &channels);
+            let alert_rule_ids = point_alert_rules
+                .iter()
+                .map(|rule| rule.rule_id.clone())
+                .collect::<Vec<_>>();
+            alert_rules.extend(point_alert_rules);
+            let release_blockers = monitoring_release_blockers(
+                part,
+                program,
+                fixture_setup,
+                validation,
+                machine_release,
+            );
+            let requires_human_intervention = step
+                .is_some_and(|step| step.requires_human_intervention)
+                || !release_blockers.is_empty();
+            MonitoringPoint {
+                monitor_id: format!("monitor-{}", normalize_token(&part.id)),
+                part_id: part.id.clone(),
+                program_id: program.map(|program| program.program_id.clone()),
+                process_node_id: step.map(process_node_id),
+                machine_id: step.map(|step| step.machine_id.clone()),
+                machine_kind: part.machine_kind.clone(),
+                channels,
+                expected_signals: monitoring_expected_signals(part),
+                required_evidence: monitoring_required_evidence(part, step, fixture_setup),
+                alert_rule_ids,
+                recovery_actions: monitoring_recovery_actions_for_part(part),
+                release_blockers,
+                requires_human_intervention,
+                learning_observation: format!(
+                    "monitoring-route:{}:{}:{}",
+                    normalize_token(&part.id),
+                    normalize_token(&part.machine_kind),
+                    if requires_human_intervention {
+                        "review-required"
+                    } else {
+                        "automation-candidate"
+                    }
+                ),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut recovery_actions = monitor_points
+        .iter()
+        .flat_map(|point| point.recovery_actions.iter().cloned())
+        .collect::<Vec<_>>();
+    recovery_actions.sort();
+    recovery_actions.dedup();
+
+    let mut release_gates = monitor_points
+        .iter()
+        .map(|point| {
+            format!(
+                "monitoring-review:{}:{}:{} blocker(s)",
+                point.part_id,
+                point.machine_kind,
+                point.release_blockers.len()
+            )
+        })
+        .collect::<Vec<_>>();
+    release_gates.push(
+        "runtime monitoring channels, alarm routing, and safe-stop behavior reviewed".to_string(),
+    );
+    release_gates.push(
+        "operator check-in and restart authority recorded before unattended release".to_string(),
+    );
+    release_gates.sort();
+    release_gates.dedup();
+
+    let mut learning_observations = monitor_points
+        .iter()
+        .flat_map(|point| {
+            [
+                point.learning_observation.clone(),
+                format!(
+                    "monitoring-blockers:{}:{}",
+                    normalize_token(&point.part_id),
+                    point.release_blockers.len()
+                ),
+                format!(
+                    "monitoring-channels:{}:{}",
+                    normalize_token(&point.part_id),
+                    point.channels.len()
+                ),
+            ]
+        })
+        .collect::<Vec<_>>();
+    learning_observations.extend(alert_rules.iter().map(|rule| {
+        format!(
+            "monitoring-alert:{}:{}:{}",
+            normalize_token(&rule.part_id),
+            normalize_token(&rule.channel),
+            rule.severity
+        )
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    let blocked = machine_release.machine_release_blocked
+        || monitor_points
+            .iter()
+            .any(|point| !point.release_blockers.is_empty());
+    let human_review_required = blocked
+        || monitor_points
+            .iter()
+            .any(|point| point.requires_human_intervention);
+    let unattended_run_allowed = !blocked && !human_review_required;
+    let status = if blocked {
+        "monitoring-blocked"
+    } else if human_review_required {
+        "monitoring-review-required"
+    } else {
+        "monitoring-plan-ready"
+    };
+
+    MonitoringPlan {
+        schema_version: "dd.fabrication.monitoring-plan.v1",
+        status: status.to_string(),
+        human_review_required,
+        unattended_run_allowed,
+        monitor_points,
+        alert_rules,
+        recovery_actions,
+        release_gates,
+        learning_observations,
+        notes: vec![
+            "Monitoring plan is a runtime evidence contract for operators, automation, MDP/POMDP workers, and outcome learning; it is not a certified safety system".to_string(),
+            "Machine-ready release still requires controller-specific alarm wiring, safe-stop validation, operator check-in, and restart authority outside this draft plan".to_string(),
+        ],
+    }
+}
+
+fn monitoring_plan_learning_actions(plan: &MonitoringPlan) -> Vec<String> {
+    let mut actions = plan
+        .monitor_points
+        .iter()
+        .map(|point| {
+            if point.release_blockers.is_empty() {
+                format!("verify-monitoring-plan-{}", normalize_token(&point.part_id))
+            } else {
+                format!(
+                    "clear-monitoring-blockers-{}",
+                    normalize_token(&point.part_id)
+                )
+            }
+        })
+        .collect::<Vec<_>>();
+    actions.extend(plan.alert_rules.iter().map(|rule| {
+        format!(
+            "ack-monitoring-alert-{}-{}",
+            normalize_token(&rule.part_id),
+            normalize_token(&rule.channel)
+        )
+    }));
+    actions.sort();
+    actions.dedup();
+    actions
+}
+
+fn interface_control_required_evidence(
+    interface: &AssemblyInterface,
+    fixture_transfer: Option<&FixtureDatumTransfer>,
+    join: Option<&HybridJoinOperation>,
+) -> Vec<String> {
+    let mut evidence = vec![
+        format!("interface strategy reviewed: {}", interface.strategy),
+        format!("fit gate reviewed: {}", interface.fit),
+        format!("inspection gate captured: {}", interface.inspection_gate),
+        "mating surface datum, access path, and tolerance stack are approved before final assembly"
+            .to_string(),
+        "interface witness record links both part revisions and generated program IDs".to_string(),
+    ];
+    if let Some(transfer) = fixture_transfer {
+        evidence.extend(
+            transfer
+                .required_evidence
+                .iter()
+                .map(|item| format!("fixture datum transfer: {item}")),
+        );
+    }
+    if let Some(join) = join {
+        evidence.push(format!(
+            "hybrid join operation {} reviewed before lock-in",
+            join.join_id
+        ));
+    }
+    let combined = format!(
+        "{} {} {}",
+        interface.joint_type, interface.fit, interface.strategy
+    );
+    if summary_text_has_any(&combined, &["printed-pocket", "turned-insert", "lathe"]) {
+        evidence.extend([
+            "turned insert OD, pocket ID, lead-in chamfer, insertion depth, and retention method verified"
+                .to_string(),
+            "press/thermal/adhesive allowance checked against printed material creep and machined surface finish"
+                .to_string(),
+        ]);
+    } else if summary_text_has_any(&combined, &["machined-datum", "mill", "router"]) {
+        evidence.extend([
+            "machined datum face, printed shell reference surface, fastener pattern, and clamp access verified"
+                .to_string(),
+            "dry-fit confirms cutter-finished features align with printed or routed geometry".to_string(),
+        ]);
+    } else if summary_text_has_any(&combined, &["sheet", "tabbed"]) {
+        evidence.extend([
+            "tab/slot kerf, deburr state, bend or register feature, and retained slug/drop evidence verified"
+                .to_string(),
+            "sheet interface cannot release until part separation and edge-finish records are attached"
+                .to_string(),
+        ]);
+    } else if summary_text_has_any(&combined, &["fastened", "bonded", "adhesive"]) {
+        evidence.extend([
+            "hardware lot, torque sequence, adhesive mix/open time, cure profile, and clamp fixture verified"
+                .to_string(),
+            "final assembly witness record links fastener, adhesive, or press recipe to the interface".to_string(),
+        ]);
+    }
+    evidence.sort();
+    evidence.dedup();
+    evidence
+}
+
+fn interface_control_acceptance_criteria(interface: &AssemblyInterface) -> Vec<String> {
+    let mut criteria = match interface.fit.as_str() {
+        "metrology-controlled-fit" => vec![
+            "CMM, bore gauge, pin gauge, thread gauge, or optical metrology record proves the interface stays within requested tolerance".to_string(),
+            "first-article fit check passes before additional parts are printed, milled, turned, or joined".to_string(),
+        ],
+        "controlled-clearance-fit" => vec![
+            "go/no-go, feeler, shim, or measured clearance record is inside the reviewed assembly allowance".to_string(),
+            "dry-fit shows no force, bind, rocking, or datum shift before final join".to_string(),
+        ],
+        _ => vec![
+            "dry-fit witness, mating-surface inspection, and operator signoff pass before final assembly".to_string(),
+            "joint recipe records torque, clamp, cure, press, heat-set, or fastener state as applicable".to_string(),
+        ],
+    };
+    criteria.push(format!(
+        "inspection gate `{}` is closed with retained evidence",
+        interface.inspection_gate
+    ));
+    criteria.sort();
+    criteria.dedup();
+    criteria
+}
+
+fn interface_control_release_blockers(
+    interface: &AssemblyInterface,
+    fixture_transfer: Option<&FixtureDatumTransfer>,
+    machine_release: &MachineReleaseReport,
+) -> Vec<String> {
+    let mut blockers = Vec::new();
+    if interface.requires_human_intervention {
+        blockers.push(format!(
+            "interface {} needs human-reviewed fit, datum-transfer, and assembly evidence before combine/release",
+            interface.interface_id
+        ));
+    }
+    if let Some(blocker) = fixture_transfer.and_then(|transfer| transfer.release_blocker.as_ref()) {
+        blockers.push(format!("fixture datum transfer blocker: {blocker}"));
+    }
+    if machine_release.machine_release_blocked {
+        blockers.push(format!(
+            "machine release status {} blocks final interface-control release",
+            machine_release.status
+        ));
+    }
+    blockers.sort();
+    blockers.dedup();
+    blockers
+}
+
+fn interface_decision_linked_interfaces(
+    decision: &HybridSplitCombineDecision,
+    interfaces: &[AssemblyInterface],
+) -> Vec<String> {
+    let decision_parts = decision
+        .part_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let decision_text = format!(
+        "{} {} {}",
+        decision.decision_id, decision.reason, decision.action
+    )
+    .to_ascii_lowercase();
+    let mut ids = interfaces
+        .iter()
+        .filter(|interface| {
+            decision_parts.is_empty()
+                || decision_parts.contains(interface.from_part_id.as_str())
+                || decision_parts.contains(interface.to_part_id.as_str())
+                || decision_text.contains(&normalize_token(&interface.interface_id))
+                || decision_text.contains(&normalize_token(&interface.from_part_id))
+                || decision_text.contains(&normalize_token(&interface.to_part_id))
+        })
+        .map(|interface| interface.interface_id.clone())
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+fn interface_control_plan(
+    assembly: &AssemblyPlan,
+    hybrid_make_plan: &HybridMakePlan,
+    fixture_plan: &FixturePlan,
+    machine_release: &MachineReleaseReport,
+) -> InterfaceControlPlan {
+    let mut fixture_by_interface = BTreeMap::new();
+    for transfer in &fixture_plan.datum_transfers {
+        for interface_id in &transfer.interface_ids {
+            fixture_by_interface.insert(interface_id.clone(), transfer);
+        }
+    }
+    let join_by_interface = hybrid_make_plan
+        .join_operations
+        .iter()
+        .map(|join| (join.interface_id.clone(), join))
+        .collect::<BTreeMap<_, _>>();
+
+    let controls = assembly
+        .assembly_graph
+        .interfaces
+        .iter()
+        .map(|interface| {
+            let fixture_transfer = fixture_by_interface.get(&interface.interface_id).copied();
+            let join = join_by_interface.get(&interface.interface_id).copied();
+            let release_blockers =
+                interface_control_release_blockers(interface, fixture_transfer, machine_release);
+            InterfaceControlRecord {
+                control_id: format!(
+                    "interface-control-{}",
+                    normalize_token(&interface.interface_id)
+                ),
+                interface_id: interface.interface_id.clone(),
+                from_part_id: interface.from_part_id.clone(),
+                to_part_id: interface.to_part_id.clone(),
+                joint_type: interface.joint_type.clone(),
+                fit: interface.fit.clone(),
+                strategy: interface.strategy.clone(),
+                inspection_gate: interface.inspection_gate.clone(),
+                linked_join_id: join.map(|join| join.join_id.clone()),
+                linked_fixture_transfer_id: fixture_transfer
+                    .map(|transfer| transfer.transfer_id.clone()),
+                datum_transfer_required: fixture_transfer.is_some(),
+                required_evidence: interface_control_required_evidence(
+                    interface,
+                    fixture_transfer,
+                    join,
+                ),
+                acceptance_criteria: interface_control_acceptance_criteria(interface),
+                release_blockers,
+                requires_human_intervention: interface.requires_human_intervention,
+                learning_observation: format!(
+                    "interface-control:{}:{}:{}",
+                    normalize_token(&interface.interface_id),
+                    normalize_token(&interface.joint_type),
+                    normalize_token(&interface.fit)
+                ),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let decision_links = hybrid_make_plan
+        .split_combine_decisions
+        .iter()
+        .map(|decision| {
+            let linked_interface_ids =
+                interface_decision_linked_interfaces(decision, &assembly.assembly_graph.interfaces);
+            InterfaceDecisionLink {
+                link_id: format!("interface-decision-{}", normalize_token(&decision.decision_id)),
+                decision_id: decision.decision_id.clone(),
+                decision_type: decision.decision_type.clone(),
+                source: decision.source.clone(),
+                part_ids: decision.part_ids.clone(),
+                linked_interface_ids,
+                action: decision.action.clone(),
+                required_evidence: vec![
+                    "review split/combine decision before CAD/CAM freeze".to_string(),
+                    "verify affected interface controls before combining, separating, or releasing parts".to_string(),
+                    "record accepted decision as a learning observation for future hybrid planning".to_string(),
+                ],
+                requires_human_review: decision.requires_human_review,
+                learning_observation: format!(
+                    "interface-decision:{}:{}",
+                    normalize_token(&decision.decision_id),
+                    normalize_token(&decision.decision_type)
+                ),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut release_gates = controls
+        .iter()
+        .map(|control| {
+            format!(
+                "interface-control:{}:{}:{} blocker(s)",
+                control.interface_id,
+                control.inspection_gate,
+                control.release_blockers.len()
+            )
+        })
+        .collect::<Vec<_>>();
+    release_gates.extend(decision_links.iter().map(|link| {
+        format!(
+            "interface-decision:{}:{}:{} linked interface(s)",
+            link.decision_id,
+            link.decision_type,
+            link.linked_interface_ids.len()
+        )
+    }));
+    if controls.is_empty() && decision_links.is_empty() {
+        release_gates.push("no multi-part interface controls required for this plan".to_string());
+    } else {
+        release_gates.push(
+            "all interface-control evidence must be attached before final combine/release"
+                .to_string(),
+        );
+    }
+    release_gates.sort();
+    release_gates.dedup();
+
+    let mut learning_observations = controls
+        .iter()
+        .flat_map(|control| {
+            [
+                control.learning_observation.clone(),
+                format!(
+                    "interface-blockers:{}:{}",
+                    normalize_token(&control.interface_id),
+                    control.release_blockers.len()
+                ),
+            ]
+        })
+        .collect::<Vec<_>>();
+    learning_observations.extend(
+        decision_links
+            .iter()
+            .map(|link| link.learning_observation.clone()),
+    );
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    let machine_release_blocked = machine_release.machine_release_blocked
+        || controls
+            .iter()
+            .any(|control| !control.release_blockers.is_empty());
+    let human_review_required = machine_release_blocked
+        || controls
+            .iter()
+            .any(|control| control.requires_human_intervention)
+        || decision_links.iter().any(|link| link.requires_human_review);
+    let status = if controls.is_empty() && decision_links.is_empty() {
+        "interface-control-not-required"
+    } else if machine_release_blocked {
+        "interface-control-blocked"
+    } else if human_review_required {
+        "interface-control-review-required"
+    } else {
+        "interface-control-ready"
+    };
+
+    InterfaceControlPlan {
+        schema_version: "dd.fabrication.interface-control-plan.v1",
+        status: status.to_string(),
+        interface_count: controls.len(),
+        decision_count: decision_links.len(),
+        human_review_required,
+        machine_release_blocked,
+        controls,
+        decision_links,
+        release_gates,
+        learning_observations,
+        notes: vec![
+            "Interface control plan is a draft verification contract for split/combine, datum-transfer, dry-fit, and final assembly evidence".to_string(),
+            "Machine-ready release still requires final CAD constraints, metrology records, fixture proof, and operator or automation signoff".to_string(),
+        ],
+    }
+}
+
+fn interface_control_plan_learning_actions(plan: &InterfaceControlPlan) -> Vec<String> {
+    let mut actions = plan
+        .controls
+        .iter()
+        .map(|control| {
+            if control.release_blockers.is_empty() {
+                format!(
+                    "verify-interface-control-{}",
+                    normalize_token(&control.interface_id)
+                )
+            } else {
+                format!(
+                    "clear-interface-blockers-{}",
+                    normalize_token(&control.interface_id)
+                )
+            }
+        })
+        .collect::<Vec<_>>();
+    actions.extend(plan.decision_links.iter().map(|link| {
+        format!(
+            "review-interface-decision-{}",
+            normalize_token(&link.decision_id)
+        )
+    }));
+    actions.sort();
+    actions.dedup();
+    actions
+}
+
 fn manufacturing_handoff(
     parts: &[PartPlan],
     process_plan: &[ProcessStep],
@@ -27025,6 +30055,16 @@ fn pomdp_observation_source(observation: &str) -> &'static str {
         "instruction-patch"
     } else if observation.starts_with("fixture-") {
         "fixture-plan"
+    } else if observation.starts_with("monitoring-") {
+        "monitoring-plan"
+    } else if observation.starts_with("interface-") {
+        "interface-control-plan"
+    } else if observation.starts_with("decomposition-") {
+        "decomposition-plan"
+    } else if observation.starts_with("controller-") {
+        "controller-plan"
+    } else if observation.starts_with("release-package") {
+        "release-package-plan"
     } else if observation.starts_with("automation-required:") {
         "automation-requirement"
     } else if observation.starts_with("resolution-step:") {
@@ -28796,7 +31836,12 @@ fn learning_mdp_target_state(state: &str, action: &str) -> String {
         "automation-required".to_string()
     } else if action.contains("insert-human-inspection") {
         "inspection-required".to_string()
-    } else if action.contains("combine") || action.contains("split") {
+    } else if action.contains("combine")
+        || action.contains("split")
+        || action.contains("interface")
+        || action.contains("decomposition")
+        || action.contains("recomposition")
+    {
         "assembly-required".to_string()
     } else if action.contains("assign-") || action.contains("choose-") {
         "process-selected".to_string()
@@ -29133,10 +32178,31 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
     let states = response.learning.mdp_states.clone();
     let mut actions = response.learning.actions.clone();
     actions.extend(fixture_plan_learning_actions(&response.fixture_plan));
+    actions.extend(monitoring_plan_learning_actions(&response.monitoring_plan));
+    actions.extend(interface_control_plan_learning_actions(
+        &response.interface_control_plan,
+    ));
+    actions.extend(decomposition_plan_learning_actions(
+        &response.decomposition_plan,
+    ));
+    actions.extend(controller_plan_learning_actions(&response.controller_plan));
+    actions.extend(release_package_plan_learning_actions(
+        &response.release_package_plan,
+    ));
     actions.sort();
     actions.dedup();
     let mut observations = response.learning.pomdp_observations.clone();
     observations.extend(response.fixture_plan.learning_observations.clone());
+    observations.extend(response.monitoring_plan.learning_observations.clone());
+    observations.extend(
+        response
+            .interface_control_plan
+            .learning_observations
+            .clone(),
+    );
+    observations.extend(response.decomposition_plan.learning_observations.clone());
+    observations.extend(response.controller_plan.learning_observations.clone());
+    observations.extend(response.release_package_plan.learning_observations.clone());
     observations.sort();
     observations.dedup();
     let des_mdp_spec = des_learning_mdp_spec(&states, &actions);
@@ -29207,6 +32273,8 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "interventionMap": response.intervention_map,
         "executionPlan": response.execution_plan,
         "postprocessPlan": response.postprocess_plan,
+        "controllerPlan": response.controller_plan,
+        "releasePackagePlan": response.release_package_plan,
         "simulation": response.simulation,
         "strategyCandidates": response.learning.strategy_candidates,
         "interventionSignals": response.learning.intervention_signals,
@@ -29225,6 +32293,26 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         );
         object.insert("toolingPlan".to_string(), json!(&response.tooling_plan));
         object.insert("fixturePlan".to_string(), json!(&response.fixture_plan));
+        object.insert(
+            "monitoringPlan".to_string(),
+            json!(&response.monitoring_plan),
+        );
+        object.insert(
+            "interfaceControlPlan".to_string(),
+            json!(&response.interface_control_plan),
+        );
+        object.insert(
+            "decompositionPlan".to_string(),
+            json!(&response.decomposition_plan),
+        );
+        object.insert(
+            "controllerPlan".to_string(),
+            json!(&response.controller_plan),
+        );
+        object.insert(
+            "releasePackagePlan".to_string(),
+            json!(&response.release_package_plan),
+        );
     }
     request
 }
@@ -29408,6 +32496,38 @@ fn record_plan_metrics(state: &AppState, response: &FabricationPlanResponse) {
         response.validation.failure_boundaries.len() as u64,
         Ordering::Relaxed,
     );
+    state.metrics.operator_actions_total.fetch_add(
+        response
+            .operator_intervention_plan
+            .required_operator_actions
+            .len() as u64,
+        Ordering::Relaxed,
+    );
+    let fixture_release_blockers = response
+        .fixture_plan
+        .setups
+        .iter()
+        .map(|setup| setup.release_blockers.len())
+        .sum::<usize>()
+        + response
+            .fixture_plan
+            .datum_transfers
+            .iter()
+            .filter(|transfer| transfer.release_blocker.is_some())
+            .count();
+    state
+        .metrics
+        .fixture_release_blockers_total
+        .fetch_add(fixture_release_blockers as u64, Ordering::Relaxed);
+    let split_combine_reviews = response
+        .operator_intervention_plan
+        .split_combine_reviews
+        .len()
+        + response.hybrid_make_plan.split_combine_decisions.len();
+    state
+        .metrics
+        .split_combine_reviews_total
+        .fetch_add(split_combine_reviews as u64, Ordering::Relaxed);
 }
 
 fn record_analysis_metrics(state: &AppState, response: &InstructionAnalysisResponse) {
@@ -29417,6 +32537,20 @@ fn record_analysis_metrics(state: &AppState, response: &InstructionAnalysisRespo
         .fetch_add(response.validation.findings.len() as u64, Ordering::Relaxed);
     state.metrics.failure_boundaries_total.fetch_add(
         response.validation.failure_boundaries.len() as u64,
+        Ordering::Relaxed,
+    );
+    state.metrics.operator_actions_total.fetch_add(
+        response
+            .operator_intervention_plan
+            .required_operator_actions
+            .len() as u64,
+        Ordering::Relaxed,
+    );
+    state.metrics.split_combine_reviews_total.fetch_add(
+        response
+            .operator_intervention_plan
+            .split_combine_reviews
+            .len() as u64,
         Ordering::Relaxed,
     );
 }
@@ -29728,6 +32862,34 @@ async fn root() -> impl IntoResponse {
             "GET /metrics",
             "GET /capabilities",
             "GET /fabrication/capabilities",
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /controllers/catalog",
+            "GET /fabrication/controllers/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /design/formats",
+            "GET /fabrication/design/formats",
+            "GET /design/generation/catalog",
+            "GET /fabrication/design/generation/catalog",
+            "GET /instructions/languages",
+            "GET /fabrication/instructions/languages",
+            "GET /improvements/catalog",
+            "GET /fabrication/improvements/catalog",
+            "GET /boundaries/catalog",
+            "GET /fabrication/boundaries/catalog",
+            "GET /decomposition/catalog",
+            "GET /fabrication/decomposition/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog",
+            "GET /simulation/catalog",
+            "GET /fabrication/simulation/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog",
+            "GET /interventions/catalog",
+            "GET /fabrication/interventions/catalog",
+            "GET /learning/capabilities",
+            "GET /fabrication/learning/capabilities",
             "GET /schema",
             "GET /fabrication/schema",
             "GET /examples",
@@ -29746,6 +32908,8 @@ async fn root() -> impl IntoResponse {
             "POST /fabrication/instructions/analyze",
             "POST /learning/observe",
             "POST /fabrication/learning/observe",
+            "GET /learning/outcomes",
+            "GET /fabrication/learning/outcomes",
             "POST /learning/outcomes",
             "POST /fabrication/learning/outcomes"
         ],
@@ -29753,14 +32917,2003 @@ async fn root() -> impl IntoResponse {
             "hybrid additive/subtractive/turning process planning",
             "draft G-code and operator instruction generation",
             "existing instruction validation and improvement hints",
+            "simulation and dry-run catalog discovery for machine-envelope, clearance, collision, and remediation evidence",
             "CAD, organic-model, neutral mesh, and slicer project input review",
             "bounded machine profile evidence intake for calibration, tooling, fixtures, materials, support media, and blockers",
             "bounded job and artifact inspection",
             "fabrication outcome reward ingestion and policy snapshots",
             "machine-failure and human-intervention boundary detection",
-            "MDP/POMDP/neural policy feature contract"
+            "MDP/POMDP/DES/neural policy feature contract"
         ]
     }))
+}
+
+fn safety_boundary_classes() -> Vec<&'static str> {
+    vec![
+        "machine-release-blocker",
+        "machine-envelope",
+        "human-intervention",
+        "split-boundary",
+        "combine-or-assembly-boundary",
+        "automation-capability-gap",
+        "postprocess-gate",
+        "inspection-gate",
+        "machine-profile-blocker",
+        "material-machine-boundary",
+    ]
+}
+
+fn boundary_catalog_family(boundary_kind: &str) -> &'static str {
+    match boundary_kind {
+        "machine-release-blocker" | "machine-envelope" | "machine-profile-blocker" => {
+            "machine-release"
+        }
+        "human-intervention" | "automation-capability-gap" => "intervention-readiness",
+        "split-boundary" | "combine-or-assembly-boundary" => "split-combine",
+        "postprocess-gate" | "inspection-gate" => "quality-release",
+        "material-machine-boundary" => "material-route",
+        _ => "general-boundary",
+    }
+}
+
+fn boundary_catalog_detection_sources(boundary_kind: &str) -> Vec<&'static str> {
+    match boundary_kind {
+        "machine-release-blocker" => vec![
+            "machineRelease.releaseBlockers",
+            "executionPlan.releaseBlockers",
+            "postprocessPlan.blockers",
+            "controllerPlan.blockers",
+        ],
+        "machine-envelope" => vec![
+            "simulation.programTraces",
+            "validation.failureBoundaries",
+            "machineProfile.workEnvelopeMm",
+        ],
+        "human-intervention" => vec![
+            "validation.failureBoundaries.requiresHumanIntervention",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "executionPlan.stopPoints",
+        ],
+        "split-boundary" => vec![
+            "boundarySummary.splitCandidates",
+            "hybridMakePlan.splitCombineDecisions",
+            "decompositionPlan.splitTargets",
+        ],
+        "combine-or-assembly-boundary" => vec![
+            "assembly.assemblyGraph",
+            "interfaceControlPlan.interfaces",
+            "decompositionPlan.recompositionInterfaces",
+        ],
+        "automation-capability-gap" => vec![
+            "boundarySummary.automationRequirements",
+            "interventionMap.automationRequirements",
+            "releaseProbePlan.probes",
+        ],
+        "postprocess-gate" => vec![
+            "postprocessPlan.targets",
+            "controllerPlan.controllerTargets",
+            "releasePackagePlan.packages",
+        ],
+        "inspection-gate" => vec![
+            "qualityPlan.inspectionPoints",
+            "monitoringPlan.monitoringPoints",
+            "machineRelease.checklist",
+        ],
+        "machine-profile-blocker" => vec![
+            "machineProfile.profileEvidence.blockers",
+            "machineSelection.releaseBlockers",
+            "materialPlan.releaseBlockers",
+        ],
+        "material-machine-boundary" => vec![
+            "materialPlan.routeRequirements",
+            "validation.findings",
+            "toolingPlan.releaseBlockers",
+        ],
+        _ => vec!["validation.failureBoundaries"],
+    }
+}
+
+fn boundary_catalog_release_evidence(boundary_kind: &str) -> Vec<&'static str> {
+    match boundary_kind {
+        "machine-release-blocker" => vec![
+            "controller/postprocessor review",
+            "dry-run or simulation evidence",
+            "operator or automation signoff",
+        ],
+        "machine-envelope" => vec![
+            "axis envelope proof",
+            "clearance sweep",
+            "fixture and stock setup evidence",
+        ],
+        "human-intervention" => vec![
+            "named operator checkpoint",
+            "verified automation substitute",
+            "resume or handoff evidence",
+        ],
+        "split-boundary" => vec![
+            "split target with datum transfer",
+            "separate fixture or support plan",
+            "recomposition acceptance criteria",
+        ],
+        "combine-or-assembly-boundary" => vec![
+            "join graph and mating-surface evidence",
+            "fit-up or cure/torque record",
+            "final metrology record",
+        ],
+        "automation-capability-gap" => vec![
+            "automation requirement owner",
+            "verified sensor/actuator coverage",
+            "human fallback before release",
+        ],
+        "postprocess-gate" => vec![
+            "postprocessor target evidence",
+            "controller dialect check",
+            "machine-ready output review",
+        ],
+        "inspection-gate" => vec![
+            "inspection point record",
+            "acceptance threshold",
+            "quality signoff artifact",
+        ],
+        "machine-profile-blocker" => vec![
+            "bounded profileEvidence update",
+            "calibration/tool/fixture/material proof",
+            "maintenance or release blocker closure",
+        ],
+        "material-machine-boundary" => vec![
+            "material compatibility proof",
+            "stock/feedstock conditioning evidence",
+            "route-specific tooling or process approval",
+        ],
+        _ => vec!["review evidence"],
+    }
+}
+
+fn boundary_catalog_resolution_actions(boundary_kind: &str) -> Vec<&'static str> {
+    match boundary_kind {
+        "machine-release-blocker" => vec![
+            "hold machineReady=false",
+            "attach missing release evidence",
+            "rerun validation before packaging",
+        ],
+        "machine-envelope" => vec![
+            "regenerate path inside envelope",
+            "split setup or choose larger machine",
+            "add fixture clearance proof",
+        ],
+        "human-intervention" => vec![
+            "insert operator checkpoint",
+            "split job at pause or material-change point",
+            "prove verified automation before unattended release",
+        ],
+        "split-boundary" => vec![
+            "decompose body into routeable parts",
+            "add datum-transfer gates",
+            "block recomposition until interface evidence passes",
+        ],
+        "combine-or-assembly-boundary" => vec![
+            "create assembly/recomposition handoff",
+            "add interface-control acceptance criteria",
+            "require fit/metrology evidence before release",
+        ],
+        "automation-capability-gap" => vec![
+            "route to human-reviewed checkpoint",
+            "add sensor/interlock/actuator evidence",
+            "delay unattended execution",
+        ],
+        "postprocess-gate" => vec![
+            "select or review postprocessor",
+            "add controller dialect checks",
+            "retain draft output until dry-run evidence exists",
+        ],
+        "inspection-gate" => vec![
+            "add first-article inspection",
+            "capture measurement evidence",
+            "feed result to outcome learning",
+        ],
+        "machine-profile-blocker" => vec![
+            "submit profileEvidence",
+            "resolve calibration/tooling/fixture blocker",
+            "re-evaluate machine selection",
+        ],
+        "material-machine-boundary" => vec![
+            "choose compatible material route",
+            "condition stock/feedstock",
+            "split or reroute incompatible operation",
+        ],
+        _ => vec!["manual review"],
+    }
+}
+
+fn boundary_catalog_learning_signals(boundary_kind: &str) -> Vec<String> {
+    vec![
+        format!("boundary-kind:{boundary_kind}"),
+        format!("boundary-family:{}", boundary_catalog_family(boundary_kind)),
+        format!("boundary-release-evidence-required:{boundary_kind}"),
+        format!("boundary-remediation-action:{boundary_kind}"),
+    ]
+}
+
+fn boundary_catalog_machine_failure_risk(boundary_kind: &str) -> bool {
+    matches!(
+        boundary_kind,
+        "machine-release-blocker"
+            | "machine-envelope"
+            | "machine-profile-blocker"
+            | "material-machine-boundary"
+            | "postprocess-gate"
+    )
+}
+
+fn boundary_catalog_requires_human_intervention(boundary_kind: &str) -> bool {
+    matches!(
+        boundary_kind,
+        "human-intervention"
+            | "automation-capability-gap"
+            | "split-boundary"
+            | "combine-or-assembly-boundary"
+            | "inspection-gate"
+    )
+}
+
+fn boundary_catalog_split_combine_relevant(boundary_kind: &str) -> bool {
+    matches!(
+        boundary_kind,
+        "split-boundary" | "combine-or-assembly-boundary"
+    )
+}
+
+fn boundary_catalog() -> Vec<Value> {
+    safety_boundary_classes()
+        .into_iter()
+        .map(|boundary_kind| {
+            json!({
+                "boundaryKind": boundary_kind,
+                "family": boundary_catalog_family(boundary_kind),
+                "detectionSources": boundary_catalog_detection_sources(boundary_kind),
+                "releaseEvidence": boundary_catalog_release_evidence(boundary_kind),
+                "resolutionActions": boundary_catalog_resolution_actions(boundary_kind),
+                "learningSignals": boundary_catalog_learning_signals(boundary_kind),
+                "machineFailureRisk": boundary_catalog_machine_failure_risk(boundary_kind),
+                "requiresHumanIntervention": boundary_catalog_requires_human_intervention(boundary_kind),
+                "splitCombineRelevant": boundary_catalog_split_combine_relevant(boundary_kind),
+                "releaseBlocking": true
+            })
+        })
+        .collect()
+}
+
+fn boundary_catalog_family_counts(catalog: &[Value]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for item in catalog {
+        if let Some(family) = item.get("family").and_then(Value::as_str) {
+            *counts.entry(family.to_string()).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+fn boundary_catalog_response() -> Value {
+    let catalog = boundary_catalog();
+    let families = unique_sorted(catalog.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.boundary-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /boundaries/catalog", "GET /fabrication/boundaries/catalog"],
+        "boundaryCount": catalog.len(),
+        "families": families,
+        "familyCounts": boundary_catalog_family_counts(&catalog),
+        "analysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "responseSurfaces": [
+            "validation.failureBoundaries",
+            "boundarySummary",
+            "resolutionPlan",
+            "interventionMap",
+            "operatorInterventionPlan",
+            "releaseProbePlan",
+            "decompositionPlan",
+            "releasePackagePlan"
+        ],
+        "releasePolicy": [
+            "boundary catalog entries describe analyzer coverage and release evidence, not controller-certified safety",
+            "machine-ready release remains blocked while any cataloged machine-failure, human-intervention, split/combine, automation, postprocess, inspection, profile, or material boundary is unresolved",
+            "boundary kinds are converted into MDP/POMDP/neural observations so workers can learn which jobs need regeneration, split/combine, automation proof, or human intervention"
+        ],
+        "boundaries": catalog
+    })
+}
+
+async fn boundary_catalog_http() -> impl IntoResponse {
+    Json(boundary_catalog_response())
+}
+
+fn decomposition_catalog_target_kinds() -> Vec<&'static str> {
+    vec![
+        "split-boundary-decomposition",
+        "combine-boundary-recomposition",
+        "hybrid-route-decomposition-review",
+        "learned-hybrid-decomposition-review",
+        "recomposition-interface-fit-check",
+    ]
+}
+
+fn decomposition_catalog_family(target_kind: &str) -> &'static str {
+    if target_kind.contains("split") {
+        "split"
+    } else if target_kind.contains("interface") {
+        "interface-control"
+    } else if target_kind.contains("combine") || target_kind.contains("recomposition") {
+        "combine"
+    } else if target_kind.contains("learned") {
+        "learning-review"
+    } else {
+        "route-review"
+    }
+}
+
+fn decomposition_catalog_boundary_kind(target_kind: &str) -> Option<&'static str> {
+    if target_kind.contains("split") {
+        Some("split-boundary")
+    } else if target_kind.contains("combine") || target_kind.contains("recomposition") {
+        Some("combine-or-assembly-boundary")
+    } else {
+        None
+    }
+}
+
+fn decomposition_catalog_source_surfaces(target_kind: &str) -> Vec<&'static str> {
+    match decomposition_catalog_family(target_kind) {
+        "split" => vec![
+            "validation.failureBoundaries",
+            "boundarySummary.splitCandidates",
+            "interventionMap.splitCombineDecisions",
+            "decompositionPlan.targets",
+        ],
+        "combine" => vec![
+            "assembly.assemblyGraph.interfaces",
+            "hybridMakePlan.joinOperations",
+            "decompositionPlan.recompositionInterfaces",
+            "interfaceControlPlan.controls",
+        ],
+        "learning-review" => vec![
+            "learning.outcomes",
+            "hybridMakePlan.splitCombineDecisions",
+            "decompositionPlan.learningObservations",
+            "mdp-request.artifacts.decompositionPlan",
+        ],
+        "interface-control" => vec![
+            "interfaceControlPlan.controls",
+            "interfaceControlPlan.decisionLinks",
+            "decompositionPlan.releaseGates",
+            "releasePackagePlan.packages",
+        ],
+        _ => vec![
+            "hybridMakePlan.partRoutes",
+            "processGraph.nodes",
+            "machineSelection",
+            "decompositionPlan.routeContracts",
+        ],
+    }
+}
+
+fn decomposition_catalog_route_machine_kinds(target_kind: &str) -> Vec<String> {
+    match decomposition_catalog_family(target_kind) {
+        "split" => vec![
+            "fdm-printer".to_string(),
+            "vertical-mill".to_string(),
+            "lathe".to_string(),
+        ],
+        "combine" => vec!["robotic-assembly-cell".to_string()],
+        "learning-review" => vec![
+            "five-axis-mill".to_string(),
+            "metal-pbf-printer".to_string(),
+            "robotic-assembly-cell".to_string(),
+        ],
+        "interface-control" => vec!["robotic-assembly-cell".to_string()],
+        _ => vec![
+            "five-axis-mill".to_string(),
+            "horizontal-mill".to_string(),
+            "metal-pbf-printer".to_string(),
+        ],
+    }
+}
+
+fn decomposition_catalog_interface_ids(target_kind: &str) -> Vec<String> {
+    match decomposition_catalog_family(target_kind) {
+        "split" => vec!["catalog-split-fit-interface".to_string()],
+        "combine" => vec!["catalog-recomposition-interface".to_string()],
+        "learning-review" => vec![
+            "catalog-learned-route-interface".to_string(),
+            "catalog-learned-assembly-interface".to_string(),
+        ],
+        "interface-control" => vec!["catalog-interface-control".to_string()],
+        _ => Vec::new(),
+    }
+}
+
+fn decomposition_catalog_release_gates(target_kind: &str) -> Vec<&'static str> {
+    match decomposition_catalog_family(target_kind) {
+        "split" => vec![
+            "cad-cam-freeze-child-geometry-review",
+            "route-contract-evidence-before-recomposition",
+            "dry-fit-interface-and-datum-transfer-check",
+        ],
+        "combine" => vec![
+            "assembly-lock-in-interface-fit-check",
+            "join-recipe-torque-cure-or-press-evidence",
+            "final-metrology-before-machine-ready-release",
+        ],
+        "learning-review" => vec![
+            "retain-mdp-pomdp-neural-learning-observations",
+            "compare-single-piece-split-route-and-recomposed-outcomes",
+            "operator-review-before-promoting-learned-route",
+        ],
+        "interface-control" => vec![
+            "interface-control-fit-and-datum-transfer-evidence",
+            "linked-split-combine-decision-review",
+            "operator-or-automation-cell-signoff-before-final-combine",
+        ],
+        _ => vec![
+            "route-comparison-review",
+            "per-route-machine-program-and-inspection-evidence",
+            "hold-part-separate-until-release-gates-pass",
+        ],
+    }
+}
+
+fn decomposition_catalog_learning_signals(target_kind: &str) -> Vec<String> {
+    vec![
+        format!("decomposition-target:{target_kind}"),
+        format!(
+            "decomposition-family:{}",
+            decomposition_catalog_family(target_kind)
+        ),
+        format!("decomposition-release-evidence-required:{target_kind}"),
+        format!("interface-control-required:{target_kind}"),
+    ]
+}
+
+fn decomposition_catalog_target_contracts() -> Vec<Value> {
+    decomposition_catalog_target_kinds()
+        .into_iter()
+        .map(|target_kind| {
+            let route_machine_kinds = decomposition_catalog_route_machine_kinds(target_kind);
+            let interface_ids = decomposition_catalog_interface_ids(target_kind);
+            let required_evidence = decomposition_target_required_evidence(
+                target_kind,
+                decomposition_catalog_boundary_kind(target_kind),
+                &route_machine_kinds,
+                &interface_ids,
+            );
+            json!({
+                "targetKind": target_kind,
+                "family": decomposition_catalog_family(target_kind),
+                "boundaryKind": decomposition_catalog_boundary_kind(target_kind),
+                "sourceSurfaces": decomposition_catalog_source_surfaces(target_kind),
+                "routeMachineKinds": route_machine_kinds,
+                "interfaceIds": interface_ids,
+                "requiredEvidence": required_evidence,
+                "releaseGates": decomposition_catalog_release_gates(target_kind),
+                "learningSignals": decomposition_catalog_learning_signals(target_kind),
+                "responseLinks": [
+                    "decompositionPlan.targets",
+                    "decompositionPlan.routeContracts",
+                    "decompositionPlan.recompositionInterfaces",
+                    "interfaceControlPlan.controls",
+                    "releasePackagePlan.packages"
+                ],
+                "requiresHumanReview": true,
+                "releaseBlocking": true
+            })
+        })
+        .collect()
+}
+
+fn decomposition_catalog_family_counts(catalog: &[Value]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for item in catalog {
+        if let Some(family) = item.get("family").and_then(Value::as_str) {
+            *counts.entry(family.to_string()).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+fn decomposition_catalog_interface_modes() -> Vec<Value> {
+    vec![
+        json!({
+            "fit": "metrology-controlled-fit",
+            "jointTypes": ["precision-fastened", "press-fit", "turned-insert"],
+            "requiredEvidence": [
+                "CMM, bore gauge, pin gauge, thread gauge, or optical metrology record",
+                "datum transfer witness feature that survives each route",
+                "first-article fit check before additional parts are released"
+            ],
+            "acceptanceCriteria": [
+                "measured interface stays within requested tolerance",
+                "no datum shift after dry-fit and removal",
+                "inspection gate closes with retained evidence"
+            ],
+            "learningSignals": ["interface-control:metrology-controlled-fit"]
+        }),
+        json!({
+            "fit": "controlled-clearance-fit",
+            "jointTypes": ["slip-fit", "socket", "bolted-tab"],
+            "requiredEvidence": [
+                "go/no-go, feeler, shim, or measured clearance record",
+                "fixture datum transfer and orientation proof",
+                "dry-fit witness before final join"
+            ],
+            "acceptanceCriteria": [
+                "dry-fit shows no force, bind, rocking, or datum shift",
+                "clearance remains inside the reviewed assembly allowance",
+                "operator or automation cell signoff is retained"
+            ],
+            "learningSignals": ["interface-control:controlled-clearance-fit"]
+        }),
+        json!({
+            "fit": "operator-reviewed-assembly-fit",
+            "jointTypes": ["adhesive", "fastener", "weld-braze", "manual-fixture"],
+            "requiredEvidence": [
+                "mating surface inspection",
+                "torque, clamp, cure, press, or heat-set recipe record",
+                "final assembly witness linked to the interface"
+            ],
+            "acceptanceCriteria": [
+                "assembly recipe completes without unplanned human intervention",
+                "post-join inspection and final metrology pass",
+                "learning outcome captures split/combine result"
+            ],
+            "learningSignals": ["interface-control:operator-reviewed-assembly-fit"]
+        }),
+    ]
+}
+
+fn decomposition_catalog_response() -> Value {
+    let target_contracts = decomposition_catalog_target_contracts();
+    let families = unique_sorted(target_contracts.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let target_kinds = unique_sorted(target_contracts.iter().filter_map(|item| {
+        item.get("targetKind")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let route_machine_kinds = unique_sorted(target_contracts.iter().flat_map(|item| {
+        item.get("routeMachineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.decomposition-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /decomposition/catalog", "GET /fabrication/decomposition/catalog"],
+        "targetCount": target_contracts.len(),
+        "interfaceModeCount": decomposition_catalog_interface_modes().len(),
+        "families": families,
+        "familyCounts": decomposition_catalog_family_counts(&target_contracts),
+        "targetKinds": target_kinds,
+        "routeMachineKinds": route_machine_kinds,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "responseSurfaces": [
+            "hybridMakePlan.splitCombineDecisions",
+            "decompositionPlan.targets",
+            "decompositionPlan.routeContracts",
+            "decompositionPlan.recompositionInterfaces",
+            "decompositionPlan.releaseGates",
+            "interfaceControlPlan.controls",
+            "interfaceControlPlan.decisionLinks",
+            "releasePackagePlan.packages"
+        ],
+        "learningSurfaces": [
+            "decompositionPlan.learningObservations",
+            "interfaceControlPlan.learningObservations",
+            "mdp-request.artifacts.decompositionPlan",
+            "mdp-request.artifacts.interfaceControlPlan",
+            "learning.outcomes"
+        ],
+        "releasePolicy": [
+            "decomposition catalog entries are draft split/combine and interface-control contracts, not certified assembly release",
+            "machine-ready release remains blocked until child geometry, per-route machine code, datum transfer, interface metrology, recomposition, and operator or automation evidence are retained",
+            "split/combine target kinds and interface-control signals are emitted as MDP/POMDP/neural observations so workers can compare single-piece, split-route, and recomposed outcomes"
+        ],
+        "targetContracts": target_contracts,
+        "interfaceModes": decomposition_catalog_interface_modes()
+    })
+}
+
+async fn decomposition_catalog_http() -> impl IntoResponse {
+    Json(decomposition_catalog_response())
+}
+
+fn release_catalog_gate_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "gateType": "design-export-review",
+            "requiredBefore": "machine-code-or-operator-traveler-release",
+            "evidence": [
+                "design-package artifact",
+                "design-export-bundle artifact",
+                "parametric-design artifact",
+                "reviewed generated design export IDs when present"
+            ],
+            "responseSurfaces": [
+                "releasePackagePlan.releaseGates",
+                "releasePackagePlan.packages.designExportIds",
+                "designPackage",
+                "designExports"
+            ],
+            "releaseBlocking": true
+        }),
+        json!({
+            "gateType": "setup-quality-monitoring-evidence",
+            "requiredBefore": "unattended-or-machine-ready-run",
+            "evidence": [
+                "fixture setup IDs",
+                "quality inspection IDs",
+                "monitoring point IDs",
+                "workholding, metrology, and runtime alert evidence"
+            ],
+            "responseSurfaces": [
+                "fixturePlan.setups",
+                "qualityPlan.inspectionPoints",
+                "monitoringPlan.monitorPoints",
+                "releasePackagePlan.releaseGates"
+            ],
+            "releaseBlocking": true
+        }),
+        json!({
+            "gateType": "machine-release-signoff",
+            "requiredBefore": "machine-ready-release",
+            "evidence": [
+                "machineRelease.checklist",
+                "machineRelease.blockers cleared",
+                "controller/postprocessor checks",
+                "simulation or dry-run evidence",
+                "operator or automation signoff"
+            ],
+            "responseSurfaces": [
+                "machineRelease.status",
+                "machineRelease.blockers",
+                "machineRelease.checklist",
+                "releasePackagePlan.releaseGates"
+            ],
+            "releaseBlocking": true
+        }),
+        json!({
+            "gateType": "controller-postprocess-compatibility",
+            "requiredBefore": "controller-load-or-dry-run",
+            "evidence": [
+                "controller target IDs",
+                "postprocessor target evidence",
+                "controller dialect checklist",
+                "exact output retained for review"
+            ],
+            "responseSurfaces": [
+                "controllerPlan.compatibilityTargets",
+                "controllerPlan.releaseGates",
+                "postprocessPlan.targets",
+                "releasePackagePlan.packages.controllerTargetIds"
+            ],
+            "releaseBlocking": true
+        }),
+        json!({
+            "gateType": "split-combine-interface-release",
+            "requiredBefore": "child-route-or-recomposition-release",
+            "evidence": [
+                "decomposition target IDs",
+                "interface control IDs",
+                "datum transfer evidence",
+                "dry-fit, final metrology, torque, cure, press, or join recipe record"
+            ],
+            "responseSurfaces": [
+                "decompositionPlan.targets",
+                "decompositionPlan.releaseGates",
+                "interfaceControlPlan.controls",
+                "releasePackagePlan.packages.interfaceControlIds"
+            ],
+            "releaseBlocking": true
+        }),
+    ]
+}
+
+fn release_catalog_package_kinds() -> Vec<Value> {
+    vec![
+        json!({
+            "packageKind": "machine-program-release",
+            "appliesTo": [
+                "generated printer jobs",
+                "CNC mill/router/lathe G-code",
+                "sheet-cutting, EDM, DED, binder-jet, resin, powder, and assembly-cell job sheets"
+            ],
+            "requiredArtifacts": [
+                "generated machine program or job sheet",
+                "design-package",
+                "design-export-bundle",
+                "machine-release",
+                "controller-plan",
+                "postprocess-plan",
+                "quality-plan",
+                "fixture-plan",
+                "monitoring-plan"
+            ],
+            "releaseStates": ["release-blocked", "release-review-ready", "machine-ready"],
+            "learningSignalPrefix": "release-package:"
+        }),
+        json!({
+            "packageKind": "assembly-recomposition-release",
+            "appliesTo": [
+                "split bodies",
+                "joined printed and machined parts",
+                "robotic assembly or manual recomposition travelers"
+            ],
+            "requiredArtifacts": [
+                "assembly-plan",
+                "interface-control-plan",
+                "decomposition-plan",
+                "design-export-bundle",
+                "fixture-plan",
+                "quality-plan",
+                "machine-release"
+            ],
+            "releaseStates": ["release-blocked", "release-review-ready", "machine-ready"],
+            "learningSignalPrefix": "release-package:"
+        }),
+    ]
+}
+
+fn release_catalog_blocker_sources() -> Vec<Value> {
+    vec![
+        json!({
+            "source": "validation-boundary",
+            "responseSurface": "machineRelease.blockers",
+            "blocks": ["machine-ready release", "releasePackagePlan.readyPackageCount"],
+            "learningSignals": ["boundary-kind:*", "release-package-blocked:*"]
+        }),
+        json!({
+            "source": "validation-finding",
+            "responseSurface": "machineRelease.blockers",
+            "blocks": ["generated instruction release", "improved instruction release"],
+            "learningSignals": ["validation-finding:*", "release-package-blocked:*"]
+        }),
+        json!({
+            "source": "release-probe",
+            "responseSurface": "machineRelease.blockers",
+            "blocks": ["uncertain machine-failure, human-intervention, split/combine, automation, or program-valid states"],
+            "learningSignals": ["release-probe:*", "pomdpBeliefState.hiddenStates"]
+        }),
+        json!({
+            "source": "package-evidence",
+            "responseSurface": "releasePackagePlan.releaseGates",
+            "blocks": ["design export, setup, quality, monitoring, controller, or split/combine release"],
+            "learningSignals": ["release-package-status:*", "release-package:*"]
+        }),
+    ]
+}
+
+fn release_catalog_required_artifacts() -> Vec<&'static str> {
+    vec![
+        "release-package-plan",
+        "machine-release",
+        "design-package",
+        "design-export-bundle",
+        "controller-plan",
+        "postprocess-plan",
+        "simulation-report",
+        "fixture-plan",
+        "quality-plan",
+        "monitoring-plan",
+        "interface-control-plan",
+        "decomposition-plan",
+        "mdp-request",
+    ]
+}
+
+fn release_catalog_response() -> Value {
+    let gate_contracts = release_catalog_gate_contracts();
+    let gate_types = unique_sorted(gate_contracts.iter().filter_map(|item| {
+        item.get("gateType")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let package_kinds = release_catalog_package_kinds();
+    let package_kind_names = unique_sorted(package_kinds.iter().filter_map(|item| {
+        item.get("packageKind")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.release-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /release/catalog", "GET /fabrication/release/catalog"],
+        "packageKindCount": package_kinds.len(),
+        "gateCount": gate_contracts.len(),
+        "packageKinds": package_kind_names,
+        "gateTypes": gate_types,
+        "releaseStates": ["release-blocked", "release-review-ready", "machine-ready"],
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "responseSurfaces": [
+            "machineRelease.status",
+            "machineRelease.blockers",
+            "machineRelease.checklist",
+            "releasePackagePlan.packages",
+            "releasePackagePlan.releaseGates",
+            "releasePackagePlan.requiredArtifacts",
+            "releasePackagePlan.learningObservations",
+            "controllerPlan.releaseGates",
+            "postprocessPlan.blockers",
+            "simulation.riskProfile",
+            "decompositionPlan.releaseGates",
+            "interfaceControlPlan.releaseGates"
+        ],
+        "learningSurfaces": [
+            "releasePackagePlan.learningObservations",
+            "releaseProbePlan.probes",
+            "pomdpBeliefState.hiddenStates",
+            "neuralTrainingCorpus.examples",
+            "mdp-request.artifacts.releasePackagePlan"
+        ],
+        "requiredArtifacts": release_catalog_required_artifacts(),
+        "blockerSources": release_catalog_blocker_sources(),
+        "releasePolicy": [
+            "release catalog entries describe machine-ready evidence contracts, not certified equipment safety",
+            "machine-ready release remains blocked until validation findings, failure boundaries, release probes, controller/postprocessor checks, simulation or dry-run evidence, split/combine interface gates, and operator or automation signoff clear",
+            "release-package observations are emitted for MDP/POMDP/neural workers so future planning can learn which evidence cleared or blocked printed, milled, turned, sheet-cut, EDM, and recomposed routes"
+        ],
+        "packageKindContracts": package_kinds,
+        "gateContracts": gate_contracts
+    })
+}
+
+async fn release_catalog_http() -> impl IntoResponse {
+    Json(release_catalog_response())
+}
+
+fn simulation_catalog_risk_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "riskType": "toolpath-envelope-excursion",
+            "sourceSurfaces": [
+                "simulation.programs.axisExtents",
+                "simulation.findings",
+                "simulation.failureBoundaries",
+                "simulation.riskProfile.programRisks"
+            ],
+            "findingCodes": ["simulated-axis-envelope-exceeded"],
+            "boundaryKinds": ["simulated-machine-envelope", "machine-envelope"],
+            "primaryRisks": ["machine-envelope-exceeded"],
+            "requiredEvidence": [
+                "machine work envelope",
+                "stock and fixture envelope",
+                "work-offset and datum proof",
+                "regenerated or split toolpath inside envelope"
+            ],
+            "releaseBlocks": ["machine-ready release", "unattended run"],
+            "learningSignals": ["simulation-risk:*", "boundary-kind:machine-envelope:*"]
+        }),
+        json!({
+            "riskType": "arc-sweep-envelope-excursion",
+            "sourceSurfaces": [
+                "simulation.programs.axisExtents",
+                "simulation.findings",
+                "simulation.failureBoundaries"
+            ],
+            "findingCodes": ["simulated-axis-envelope-exceeded"],
+            "boundaryKinds": ["simulated-machine-envelope"],
+            "primaryRisks": ["machine-envelope-exceeded"],
+            "requiredEvidence": [
+                "plane-matched I/J/K or R arc proof",
+                "arc sweep simulation",
+                "controller postprocessor review",
+                "fixture and stock clearance proof"
+            ],
+            "releaseBlocks": ["machine-ready release", "controller release"],
+            "learningSignals": ["simulation-risk:*", "simulation-boundary-count:*"]
+        }),
+        json!({
+            "riskType": "rapid-clearance-collision",
+            "sourceSurfaces": [
+                "simulation.programs.safeClearanceObserved",
+                "simulation.findings",
+                "simulation.failureBoundaries",
+                "executionPlan.stopPoints"
+            ],
+            "findingCodes": ["simulated-rapid-below-clearance"],
+            "boundaryKinds": ["simulated-rapid-clearance"],
+            "primaryRisks": ["safe-clearance-not-observed"],
+            "requiredEvidence": [
+                "separate safe Z retract before lateral rapid motion",
+                "clamp, tab, and fixture clearance proof",
+                "dry-run checkpoint before machine start"
+            ],
+            "releaseBlocks": ["machine start", "unattended run"],
+            "learningSignals": ["simulation-risk:*", "execution-stop:*"]
+        }),
+        json!({
+            "riskType": "process-start-state-missing",
+            "sourceSurfaces": [
+                "simulation.programs.spindleOrHeatupObserved",
+                "simulation.riskProfile.programRisks",
+                "machineRelease.checklist"
+            ],
+            "findingCodes": [],
+            "boundaryKinds": ["process-start-state", "machine-failure"],
+            "primaryRisks": ["process-start-not-observed"],
+            "requiredEvidence": [
+                "spindle, beam, jet, heater, extrusion, or equivalent process-start proof",
+                "controller state feedback",
+                "post-start dry-run or first-article evidence"
+            ],
+            "releaseBlocks": ["machine-ready release", "process run"],
+            "learningSignals": ["simulation-risk:*", "machine-failure-boundary:*"]
+        }),
+        json!({
+            "riskType": "rotary-index-clearance-review",
+            "sourceSurfaces": [
+                "simulation.failureBoundaries",
+                "releasePackagePlan.requiredArtifacts",
+                "operatorInterventionPlan.requiredOperatorActions"
+            ],
+            "findingCodes": [],
+            "boundaryKinds": ["simulated-rotary-clearance", "indexed-setup-boundary"],
+            "primaryRisks": ["human-intervention-boundary"],
+            "requiredEvidence": [
+                "rotary/index axis zero",
+                "brake/clamp state",
+                "pivot/centerline and fixture clearance sweep",
+                "datum re-probe after index"
+            ],
+            "releaseBlocks": ["machine-ready release", "rotary/index operation"],
+            "requiredArtifacts": ["rotary-clearance-simulation-report"],
+            "learningSignals": ["simulation-risk:*", "operator-action:*"]
+        }),
+    ]
+}
+
+fn simulation_catalog_trace_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "surface": "simulation.programs",
+            "struct": "SimulationProgramTrace",
+            "fields": [
+                "programId",
+                "machineId",
+                "machineKind",
+                "language",
+                "motionLineCount",
+                "workEnvelopeMm",
+                "axisExtents",
+                "safeClearanceObserved",
+                "spindleOrHeatupObserved"
+            ],
+            "usedFor": [
+                "per-program dry-run trace",
+                "machine-envelope and clearance risk scoring",
+                "learning feature generation"
+            ]
+        }),
+        json!({
+            "surface": "simulation.riskProfile",
+            "struct": "SimulationRiskProfile",
+            "schemaVersion": "dd.fabrication.simulation-risk-profile.v1",
+            "fields": [
+                "status",
+                "aggregateRiskScore",
+                "highRiskProgramCount",
+                "machineFailureBoundaryCount",
+                "humanInterventionBoundaryCount",
+                "programRisks",
+                "learningObservations",
+                "recommendedActions"
+            ],
+            "usedFor": [
+                "machine-release blocker promotion",
+                "POMDP release probe prioritization",
+                "MDP/neural training examples"
+            ]
+        }),
+        json!({
+            "surface": "simulation.failureBoundaries",
+            "struct": "FailureBoundary",
+            "usedFor": [
+                "machine-failure boundary promotion",
+                "operator intervention planning",
+                "split/combine or regeneration decisions"
+            ]
+        }),
+    ]
+}
+
+fn simulation_catalog_dry_run_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "contract": "toolpath-envelope-dry-run",
+            "requiredBefore": ["machine-release", "machine-start"],
+            "requiredEvidence": [
+                "retained simulation-report or analysis-simulation-report",
+                "axis extents compared against selected machine envelope",
+                "fixture, stock, and datum evidence",
+                "operator or automation signoff when risk is not low"
+            ]
+        }),
+        json!({
+            "contract": "rotary-index-clearance-dry-run",
+            "requiredBefore": ["rotary/index operation", "child-route release"],
+            "requiredEvidence": [
+                "rotary-clearance-simulation-report",
+                "brake/clamp state",
+                "clearance sweep",
+                "datum re-probe"
+            ]
+        }),
+        json!({
+            "contract": "robot-fixture-path-dry-run",
+            "requiredBefore": ["assembly-cell release", "unattended assembly"],
+            "requiredEvidence": [
+                "robot-path-or-fixture-simulation-report",
+                "gripper/end-effector proof",
+                "fixture model and reach envelope",
+                "vision/interlock evidence"
+            ]
+        }),
+        json!({
+            "contract": "process-start-state-proof",
+            "requiredBefore": ["cutting motion", "printing extrusion", "beam/jet/process feed"],
+            "requiredEvidence": [
+                "spindle, beam, jet, heater, extrusion, or process-start state",
+                "controller or sensor feedback",
+                "dry-run or first-article review"
+            ]
+        }),
+    ]
+}
+
+fn simulation_catalog_response() -> Value {
+    let risk_contracts = simulation_catalog_risk_contracts();
+    let trace_contracts = simulation_catalog_trace_contracts();
+    let dry_run_contracts = simulation_catalog_dry_run_contracts();
+    let risk_types = unique_sorted(risk_contracts.iter().filter_map(|item| {
+        item.get("riskType")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.simulation-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /simulation/catalog", "GET /fabrication/simulation/catalog"],
+        "riskContractCount": risk_contracts.len(),
+        "traceContractCount": trace_contracts.len(),
+        "dryRunContractCount": dry_run_contracts.len(),
+        "riskTypes": risk_types,
+        "riskStatuses": [
+            "simulation-risk-low",
+            "simulation-risk-review-required",
+            "simulation-risk-blocked"
+        ],
+        "simulationInputs": [
+            "generatedPrograms",
+            "existingInstructions",
+            "machineProfiles",
+            "machineProfileEvidence",
+            "postprocessor/controller evidence"
+        ],
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "responseSurfaces": [
+            "simulation.programs",
+            "simulation.programs.axisExtents",
+            "simulation.programs.safeClearanceObserved",
+            "simulation.programs.spindleOrHeatupObserved",
+            "simulation.riskProfile",
+            "simulation.riskProfile.programRisks",
+            "simulation.riskProfile.learningObservations",
+            "simulation.findings",
+            "simulation.failureBoundaries",
+            "validation.failureBoundaries",
+            "machineRelease.blockers",
+            "executionPlan.stopPoints",
+            "releaseProbePlan.probes"
+        ],
+        "artifactSurfaces": [
+            "simulation-report",
+            "analysis-simulation-report",
+            "mdp-request.artifacts.simulation",
+            "release-package-plan.requiredArtifacts",
+            "rotary-clearance-simulation-report",
+            "robot-path-or-fixture-simulation-report"
+        ],
+        "learningSurfaces": [
+            "simulation.riskProfile.learningObservations",
+            "simulation.riskProfile.programRisks.learningObservations",
+            "learning.interventionSignals",
+            "neuralTrainingCorpus.examples",
+            "mdp-request.artifacts.releaseProbePlan"
+        ],
+        "releasePolicy": [
+            "simulation catalog entries describe dry-run and risk evidence contracts, not certified machine safety",
+            "machine-ready release remains blocked while simulation risk is blocked, envelope or clearance boundaries remain open, process-start proof is missing, or required dry-run artifacts are absent",
+            "simulation-risk observations are emitted for MDP/POMDP/neural workers so future planning can learn when to reroute, split parts, add clearance, or require operator review"
+        ],
+        "riskContracts": risk_contracts,
+        "traceContracts": trace_contracts,
+        "dryRunContracts": dry_run_contracts
+    })
+}
+
+async fn simulation_catalog_http() -> impl IntoResponse {
+    Json(simulation_catalog_response())
+}
+
+fn quality_catalog_inspection_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "contract": "first-article-dimensional-inspection",
+            "family": "dimensional-metrology",
+            "appliesTo": ["additive", "mill", "router", "lathe", "sheet-cutting", "edm", "assembly"],
+            "requiredBefore": ["machine-ready release", "batch continuation", "unattended repeat run"],
+            "requiredEvidence": [
+                "qualityPlan.inspectionPoints",
+                "qualityPlan.measurementTargets",
+                "first article report or signed dimensional inspection",
+                "calibrated instrument and sample-size record"
+            ],
+            "responseSurfaces": ["qualityPlan.inspectionPoints", "qualityPlan.measurementTargets"],
+            "blocksMachineRelease": true
+        }),
+        json!({
+            "contract": "additive-postprocess-and-support-inspection",
+            "family": "additive-postprocess",
+            "appliesTo": ["fdm-printer", "resin-printer", "material-jetting-printer", "powder-bed-printer", "binder-jet-printer", "metal-pbf-printer"],
+            "requiredBefore": ["support removal", "wash/cure/depowder transfer", "customer release"],
+            "requiredEvidence": [
+                "support removal or depowdering record",
+                "resin wash/cure or thermal cycle evidence when applicable",
+                "surface, crack, warp, density, or color/material inspection",
+                "postprocessPlan.requiredArtifacts"
+            ],
+            "responseSurfaces": ["postprocessPlan.controllerTargets", "qualityPlan.releaseGates"],
+            "blocksMachineRelease": true
+        }),
+        json!({
+            "contract": "subtractive-datum-surface-finish-metrology",
+            "family": "subtractive-metrology",
+            "appliesTo": ["vertical-mill", "horizontal-mill", "five-axis-mill", "cnc-router", "lathe", "mill-turn-center"],
+            "requiredBefore": ["fixture release", "datum transfer", "finish-pass acceptance"],
+            "requiredEvidence": [
+                "datum or work-offset verification record",
+                "surface finish or tolerance inspection",
+                "tool wear, fresh-edge, or load-monitor evidence for long feeds",
+                "fixture/setup witness"
+            ],
+            "responseSurfaces": ["fixturePlan.releaseGates", "qualityPlan.measurementTargets"],
+            "blocksMachineRelease": true
+        }),
+        json!({
+            "contract": "sheet-cut-edge-and-retention-inspection",
+            "family": "sheet-cut-quality",
+            "appliesTo": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter"],
+            "requiredBefore": ["part removal", "tab or slug release", "edge acceptance"],
+            "requiredEvidence": [
+                "kerf, taper, pierce, or offset coupon",
+                "assist gas, abrasive, flushing, or wire condition record",
+                "part retention/tab/slug release inspection",
+                "edge inspection and deburr plan"
+            ],
+            "responseSurfaces": ["qualityPlan.inspectionPoints", "releaseProbePlan.probes"],
+            "blocksMachineRelease": true
+        }),
+        json!({
+            "contract": "assembly-interface-fit-metrology",
+            "family": "assembly-quality",
+            "appliesTo": ["robotic-assembly-cell", "hybrid split/combine jobs", "manual-or-special-process"],
+            "requiredBefore": ["recomposition release", "join cure/torque/press release", "final acceptance"],
+            "requiredEvidence": [
+                "interface-control fit record",
+                "dry-fit or go/no-go metrology",
+                "join recipe, torque, cure, press, or adhesive lot evidence",
+                "final fit or functional inspection"
+            ],
+            "responseSurfaces": ["interfaceControlPlan.controls", "qualityPlan.releaseGates"],
+            "blocksMachineRelease": true
+        }),
+        json!({
+            "contract": "traceability-and-process-coupon-quality",
+            "family": "traceability-quality",
+            "appliesTo": ["composite-printer", "directed-energy-deposition-cell", "binder-jet-printer", "metal-pbf-printer", "surface-finishing"],
+            "requiredBefore": ["material release", "thermal postprocess release", "quality signoff"],
+            "requiredEvidence": [
+                "material lot and feedstock trace",
+                "coupon, density, tensile, hardness, or continuity result",
+                "thermal, atmosphere, chemistry, masking, PPE, or waste record when applicable",
+                "operator or automation signoff"
+            ],
+            "responseSurfaces": ["materialPlan.conditioning", "qualityPlan.releaseGates"],
+            "blocksMachineRelease": true
+        }),
+    ]
+}
+
+fn quality_catalog_measurement_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "target": "critical-dimensions",
+            "instrumentOptions": ["caliper", "micrometer", "CMM", "vision measurement", "go/no-go gauge"],
+            "samplePlan": "first article plus risk-adjusted batch sampling",
+            "acceptanceSource": "qualityPlan.measurementTargets.toleranceMm",
+            "learningSignal": "measurement-target:*"
+        }),
+        json!({
+            "target": "surface-finish-and-edge-quality",
+            "instrumentOptions": ["surface comparator", "profilometer", "visual edge inspection", "deburr checklist"],
+            "samplePlan": "per setup, tool change, or sheet-cut recipe change",
+            "acceptanceSource": "qualityPlan.inspectionPoints.acceptanceCriteria",
+            "learningSignal": "quality-gate:surface-finish"
+        }),
+        json!({
+            "target": "interface-fit-and-assembly-lock",
+            "instrumentOptions": ["dry-fit gauge", "torque record", "pull test", "vision alignment", "functional test"],
+            "samplePlan": "each recomposed or joined interface before final release",
+            "acceptanceSource": "interfaceControlPlan.controls.acceptanceCriteria",
+            "learningSignal": "assembly-quality-interfaces:*"
+        }),
+        json!({
+            "target": "material-process-witness",
+            "instrumentOptions": ["coupon", "thermal log", "density/porosity result", "hardness result", "moisture or oxygen trace"],
+            "samplePlan": "per material lot, feedstock change, thermal cycle, or powder reuse state",
+            "acceptanceSource": "materialPlan.conditioning and postprocessPlan.requiredArtifacts",
+            "learningSignal": "quality-boundary:*"
+        }),
+    ]
+}
+
+fn quality_catalog_response() -> Value {
+    let inspection_contracts = quality_catalog_inspection_contracts();
+    let measurement_contracts = quality_catalog_measurement_contracts();
+    let families = unique_sorted(inspection_contracts.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.quality-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /quality/catalog", "GET /fabrication/quality/catalog"],
+        "inspectionContractCount": inspection_contracts.len(),
+        "measurementContractCount": measurement_contracts.len(),
+        "families": families,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "responseSurfaces": [
+            "qualityPlan.status",
+            "qualityPlan.inspectionPoints",
+            "qualityPlan.measurementTargets",
+            "qualityPlan.releaseGates",
+            "validation.failureBoundaries",
+            "machineRelease.blockers",
+            "postprocessPlan.blockers",
+            "releasePackagePlan.releaseGates",
+            "interfaceControlPlan.controls"
+        ],
+        "artifactSurfaces": [
+            "quality-plan",
+            "mdp-request.artifacts.qualityPlan",
+            "first-article-metrology-record",
+            "final-fit-metrology-record",
+            "surface-finish-inspection-record",
+            "material-process-coupon-record"
+        ],
+        "learningSurfaces": [
+            "qualityPlan.learningObservations",
+            "quality-gate:*",
+            "measurement-target:*",
+            "quality-boundary:*",
+            "assembly-quality-interfaces:*"
+        ],
+        "releasePolicy": [
+            "quality catalog entries describe inspection and measurement evidence contracts, not certified acceptance results",
+            "machine-ready release remains blocked while required quality inspection, postprocess, material traceability, interface fit, or metrology evidence is absent",
+            "quality observations are retained for MDP/POMDP/neural workers so future planning can learn when to add inspection, split parts, adjust processes, or require human signoff"
+        ],
+        "inspectionContracts": inspection_contracts,
+        "measurementContracts": measurement_contracts
+    })
+}
+
+async fn quality_catalog_http() -> impl IntoResponse {
+    Json(quality_catalog_response())
+}
+
+fn intervention_catalog_action_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "actionType": "human-review",
+            "family": "operator-action",
+            "nextState": "inspection-required",
+            "requiredEvidence": operator_required_evidence(
+                "human-review",
+                "manual or human intervention boundary requires operator review",
+                "inspection-required",
+            ),
+            "sourceSurfaces": [
+                "interventionMap.humanInterventionPoints",
+                "operatorInterventionPlan.requiredOperatorActions",
+                "executionPlan.stopPoints"
+            ],
+            "learningSignals": ["human-intervention:*", "operator-action:*"],
+            "blocksMachineStart": true
+        }),
+        json!({
+            "actionType": "resolve-machine-failure-risk",
+            "family": "machine-failure-resolution",
+            "nextState": "failed-until-resolved",
+            "requiredEvidence": operator_required_evidence(
+                "resolve-machine-failure-risk",
+                "machine failure risk or validation error blocks release",
+                "failed-until-resolved",
+            ),
+            "sourceSurfaces": [
+                "machineRelease.blockers",
+                "executionPlan.stopPoints",
+                "operatorInterventionPlan.requiredOperatorActions",
+                "releasePackagePlan.releaseGates"
+            ],
+            "learningSignals": ["machine-failure-boundary:*", "execution-stop:*"],
+            "blocksMachineStart": true
+        }),
+        json!({
+            "actionType": "add-verified-automation",
+            "family": "automation-substitution",
+            "nextState": "automation-required",
+            "requiredEvidence": operator_required_evidence(
+                "add-verified-automation",
+                "operator or manual action can be replaced only with verified automation evidence",
+                "automation-required",
+            ),
+            "sourceSurfaces": [
+                "boundarySummary.automationRequirements",
+                "interventionMap.automationPaths",
+                "operatorInterventionPlan.automationCandidates",
+                "releaseProbePlan.probes"
+            ],
+            "learningSignals": ["automation-required:*", "operator-automation:*"],
+            "blocksMachineStart": true
+        }),
+        json!({
+            "actionType": "split-job-or-part",
+            "family": "split-combine-review",
+            "nextState": "assembly-required",
+            "requiredEvidence": operator_required_evidence(
+                "split-job-or-part",
+                "split, separate, or decompose the job before it can complete safely",
+                "assembly-required",
+            ),
+            "sourceSurfaces": [
+                "boundarySummary.recommendedActions",
+                "interventionMap.splitCombineDecisions",
+                "operatorInterventionPlan.splitCombineReviews",
+                "decompositionPlan.targets"
+            ],
+            "learningSignals": ["split-combine:*", "operator-split-combine:*"],
+            "blocksMachineStart": true
+        }),
+        json!({
+            "actionType": "combine-or-assemble-parts",
+            "family": "split-combine-review",
+            "nextState": "assembly-required",
+            "requiredEvidence": operator_required_evidence(
+                "combine-or-assemble-parts",
+                "combine, assemble, or join separately manufactured parts",
+                "assembly-required",
+            ),
+            "sourceSurfaces": [
+                "interventionMap.splitCombineDecisions",
+                "operatorInterventionPlan.splitCombineReviews",
+                "interfaceControlPlan.controls",
+                "releasePackagePlan.packages"
+            ],
+            "learningSignals": ["split-combine:*", "interface-control:*"],
+            "blocksMachineStart": true
+        }),
+    ]
+}
+
+fn intervention_catalog_automation_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "automationType": "material-change-automation",
+            "appliesTo": ["AMS/MMU filament changes", "multi-tool material swaps", "tool-change automation evidence"],
+            "requiredEvidence": ["validated changer sequence", "purge/prime proof", "post-change inspection", "manual fallback traveler"],
+            "fallbackState": "operator-gate-automation",
+            "learningSignals": ["automation-required:material-change-automation"]
+        }),
+        json!({
+            "automationType": "assembly-cell-automation",
+            "appliesTo": ["robot path", "gripper", "vision fiducial", "press force", "torque trace", "adhesive dispense"],
+            "requiredEvidence": ["robot path simulation", "end-effector and fixture proof", "interlock/vision evidence", "final assembly metrology"],
+            "fallbackState": "human-review",
+            "learningSignals": ["automation-required:assembly-cell-automation"]
+        }),
+        json!({
+            "automationType": "process-cell-automation",
+            "appliesTo": ["resin wash/cure", "powder depowder/recovery", "fume/fire/dielectric/flushing controls"],
+            "requiredEvidence": ["cell recipe", "PPE/ventilation/interlock proof", "waste or recovery trace", "operator fallback"],
+            "fallbackState": "operator-gate-automation",
+            "learningSignals": ["automation-required:process-cell-automation"]
+        }),
+        json!({
+            "automationType": "robotic-load-unload",
+            "appliesTo": ["robotic load", "robotic unload", "operator-loaded fixtures"],
+            "requiredEvidence": ["load/unload path proof", "part presence sensing", "safe-zone interlock", "manual recovery checkpoint"],
+            "fallbackState": "human-review",
+            "learningSignals": ["automation-required:robotic-load-unload"]
+        }),
+        json!({
+            "automationType": "fixture-automation",
+            "appliesTo": ["fixture clamp", "workholding tab", "probe/datum transfer", "automated setup verification"],
+            "requiredEvidence": ["clamp force or sensor proof", "datum/probe record", "clearance sweep", "manual setup fallback"],
+            "fallbackState": "inspection-required",
+            "learningSignals": ["automation-required:fixture-automation"]
+        }),
+        json!({
+            "automationType": "operator-gate-automation",
+            "appliesTo": ["manual checkpoints", "operator gates", "human intervention substitutes"],
+            "requiredEvidence": ["verified sensor/actuator coverage", "operator acknowledgement", "fallback stop point", "release signoff"],
+            "fallbackState": "human-review",
+            "learningSignals": ["automation-required:operator-gate-automation"]
+        }),
+    ]
+}
+
+fn intervention_catalog_evidence_gate_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "gateType": "operator-evidence-gate",
+            "sourceSurface": "operatorInterventionPlan.evidenceGates",
+            "requiredBefore": ["machine-release", "machine-start"],
+            "blocks": ["machine start", "unattended run", "release package readiness"],
+            "requiredEvidence": ["reviewer identity", "timestamp", "machine/program/part context", "operator or automation acknowledgement"]
+        }),
+        json!({
+            "gateType": "execution-stop-point",
+            "sourceSurface": "executionPlan.stopPoints",
+            "requiredBefore": ["machine-start", "restart/release"],
+            "blocks": ["program run", "unattended run"],
+            "requiredEvidence": ["root cause", "required action", "next-state signoff", "dry-run or simulation when machine-failure risk exists"]
+        }),
+        json!({
+            "gateType": "automation-candidate",
+            "sourceSurface": "operatorInterventionPlan.automationCandidates",
+            "requiredBefore": ["unattended-run eligibility"],
+            "blocks": ["unattended run until verified or replaced by operator checkpoint"],
+            "requiredEvidence": ["automation type", "sensor/actuator proof", "manual fallback", "release-probe closure"]
+        }),
+        json!({
+            "gateType": "split-combine-review",
+            "sourceSurface": "operatorInterventionPlan.splitCombineReviews",
+            "requiredBefore": ["CAD/CAM freeze", "assembly lock-in", "machine-ready release"],
+            "blocks": ["single-piece release", "child-route release", "recomposition release"],
+            "requiredEvidence": ["approved decision", "interface datum", "fit check", "assembly inspection record"]
+        }),
+    ]
+}
+
+fn intervention_catalog_response() -> Value {
+    let action_contracts = intervention_catalog_action_contracts();
+    let action_types = unique_sorted(action_contracts.iter().filter_map(|item| {
+        item.get("actionType")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let action_families = unique_sorted(action_contracts.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let automation_contracts = intervention_catalog_automation_contracts();
+    let automation_types = unique_sorted(automation_contracts.iter().filter_map(|item| {
+        item.get("automationType")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let evidence_gates = intervention_catalog_evidence_gate_contracts();
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.intervention-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /interventions/catalog", "GET /fabrication/interventions/catalog"],
+        "actionCount": action_contracts.len(),
+        "automationTypeCount": automation_contracts.len(),
+        "evidenceGateCount": evidence_gates.len(),
+        "actionTypes": action_types,
+        "actionFamilies": action_families,
+        "automationTypes": automation_types,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "responseSurfaces": [
+            "boundarySummary.automationRequirements",
+            "interventionMap.humanInterventionPoints",
+            "interventionMap.automationPaths",
+            "interventionMap.splitCombineDecisions",
+            "interventionMap.programBoundaries",
+            "executionPlan.stopPoints",
+            "executionPlan.checkpoints",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "operatorInterventionPlan.evidenceGates",
+            "operatorInterventionPlan.automationCandidates",
+            "operatorInterventionPlan.splitCombineReviews",
+            "releaseProbePlan.probes",
+            "pomdpBeliefState.hiddenStates"
+        ],
+        "learningSurfaces": [
+            "interventionMap.learningObservations",
+            "operatorInterventionPlan.learningObservations",
+            "executionPlan.learningObservations",
+            "learning.interventionSignals",
+            "neuralTrainingCorpus.examples",
+            "mdp-request.artifacts.operatorInterventionPlan"
+        ],
+        "releasePolicy": [
+            "intervention catalog entries describe preflight evidence contracts, not controller-certified restart instructions",
+            "machine-ready release remains blocked while required operator actions, unresolved execution stop points, split/combine reviews, or unverified automation candidates remain open",
+            "human-intervention and automation observations are emitted for MDP/POMDP/neural workers so future planning can learn when to add automation, split jobs, or keep human checkpoints"
+        ],
+        "actionContracts": action_contracts,
+        "automationContracts": automation_contracts,
+        "evidenceGateContracts": evidence_gates
+    })
+}
+
+async fn intervention_catalog_http() -> impl IntoResponse {
+    Json(intervention_catalog_response())
+}
+
+fn controller_catalog_dialect_counts(catalog: &[Value]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for item in catalog {
+        if let Some(dialect) = item.get("dialectFamily").and_then(Value::as_str) {
+            *counts.entry(dialect.to_string()).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+fn controller_catalog_targets() -> Vec<Value> {
+    default_machines()
+        .into_iter()
+        .map(|machine| {
+            let controller = machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "manual-controller-review".to_string());
+            let language = controller.clone();
+            let output_format = postprocess_output_format(&language, &machine.kind);
+            let postprocessor = postprocessor_for(&controller, &language, &machine.kind);
+            let postprocessor_known = postprocessor != "manual-controller-review";
+            let dialect_family =
+                controller_dialect_family(&controller, &language, &machine.kind, &output_format);
+            let mut release_evidence = vec![
+                format!("postprocessor {postprocessor} selected for controller {controller}"),
+                format!(
+                    "postprocessed output {output_format} retained with checksum and source revision"
+                ),
+                "controller-setup-sheet".to_string(),
+                "postprocessor-version-record".to_string(),
+                "dry-run-or-simulation-report".to_string(),
+                "operator-or-automation-signoff-record".to_string(),
+            ];
+            if !postprocessor_known {
+                release_evidence
+                    .push("manual-controller-review-record before machine-ready release".to_string());
+            }
+
+            json!({
+                "machineId": machine.id,
+                "machineKind": machine.kind,
+                "processClass": machine_class_name(machine_class(&machine.kind)),
+                "controller": controller,
+                "inputLanguage": language,
+                "outputFormat": output_format,
+                "postprocessor": postprocessor,
+                "postprocessorKnown": postprocessor_known,
+                "dialectFamily": dialect_family,
+                "axes": machine.axes,
+                "supportedOperations": machine.operations.unwrap_or_default(),
+                "supportedMaterials": machine.materials.unwrap_or_default(),
+                "requiredChecks": controller_required_checks(&dialect_family, &machine.kind),
+                "releaseEvidence": release_evidence,
+                "releaseGates": [
+                    "controller-postprocessor-selection",
+                    "controller-dialect-checklist",
+                    "dry-run-or-simulation-evidence",
+                    "operator-or-automation-signoff"
+                ],
+                "releaseBlocking": true
+            })
+        })
+        .collect()
+}
+
+fn controller_postprocessor_catalog_response() -> Value {
+    let catalog = controller_catalog_targets();
+    let controllers = unique_sorted(catalog.iter().filter_map(|item| {
+        item.get("controller")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let postprocessors = unique_sorted(catalog.iter().filter_map(|item| {
+        item.get("postprocessor")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let dialect_families = unique_sorted(catalog.iter().filter_map(|item| {
+        item.get("dialectFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let output_formats = unique_sorted(catalog.iter().filter_map(|item| {
+        item.get("outputFormat")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let process_classes = unique_sorted(catalog.iter().filter_map(|item| {
+        item.get("processClass")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let postprocessor_known_count = catalog
+        .iter()
+        .filter(|item| {
+            item.get("postprocessorKnown")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.controller-postprocessor-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /controllers/catalog", "GET /fabrication/controllers/catalog"],
+        "targetCount": catalog.len(),
+        "controllerCount": controllers.len(),
+        "postprocessorCount": postprocessors.len(),
+        "postprocessorKnownCount": postprocessor_known_count,
+        "manualReviewTargetCount": catalog.len().saturating_sub(postprocessor_known_count),
+        "controllers": controllers,
+        "postprocessors": postprocessors,
+        "dialectFamilies": dialect_families,
+        "dialectFamilyCounts": controller_catalog_dialect_counts(&catalog),
+        "outputFormats": output_formats,
+        "processClasses": process_classes,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "responseSurfaces": [
+            "postprocessPlan.controllerTargets",
+            "controllerPlan.compatibilityTargets",
+            "controllerPlan.dialectSummaries",
+            "controllerPlan.releaseGates",
+            "releasePackagePlan.packages"
+        ],
+        "releasePolicy": [
+            "controller catalog entries describe current postprocessor selection and review gates, not certified machine release",
+            "machine-ready release remains blocked until the exact postprocessed output, controller setup sheet, dry-run or simulation evidence, and operator or automation signoff are retained",
+            "unknown controller/postprocessor combinations are routed to manual controller review instead of being marked machine-ready"
+        ],
+        "targets": catalog
+    })
+}
+
+async fn controller_catalog_http() -> impl IntoResponse {
+    Json(controller_postprocessor_catalog_response())
+}
+
+fn material_catalog_family(material: &str) -> &'static str {
+    let token = normalize_token(material);
+    if summary_text_has_any(
+        &token,
+        &[
+            "aluminum", "steel", "brass", "bronze", "titanium", "inconel", "nickel", "cobalt",
+            "metal", "316l",
+        ],
+    ) {
+        "metal"
+    } else if summary_text_has_any(&token, &["resin", "photopolymer", "digital-material"]) {
+        "photopolymer"
+    } else if summary_text_has_any(&token, &["powder", "sand", "ceramic"]) {
+        "powder-or-ceramic"
+    } else if summary_text_has_any(&token, &["fiber", "kevlar", "onyx"]) {
+        "composite"
+    } else if summary_text_has_any(
+        &token,
+        &[
+            "pla",
+            "petg",
+            "abs",
+            "asa",
+            "pc",
+            "polycarbonate",
+            "nylon",
+            "pa",
+            "polymer",
+            "plastic",
+            "tpu",
+            "hdpe",
+            "pp",
+            "pellet",
+            "granulate",
+            "regrind",
+        ],
+    ) {
+        "polymer"
+    } else {
+        "operator-declared"
+    }
+}
+
+fn material_catalog_feedstock_kind(machine_kind: &str) -> &'static str {
+    match machine_class(machine_kind) {
+        MachineClass::Additive if is_resin_printer_kind(machine_kind) => "photopolymer-resin",
+        MachineClass::Additive if is_metal_pbf_printer_kind(machine_kind) => {
+            "qualified-metal-powder-lot"
+        }
+        MachineClass::Additive if is_powder_bed_printer_kind(machine_kind) => "polymer-powder-lot",
+        MachineClass::Additive if is_composite_fiber_printer_kind(machine_kind) => {
+            "matrix-material-and-fiber-spool"
+        }
+        MachineClass::Additive if wants_directed_energy_deposition(machine_kind) => {
+            "wire-or-powder-feedstock"
+        }
+        MachineClass::Additive if is_material_jetting_printer_kind(machine_kind) => {
+            "material-and-support-cartridges"
+        }
+        MachineClass::Additive if is_pellet_fgf_printer_kind(machine_kind) => "pellet-feedstock",
+        MachineClass::Additive => "filament-spool",
+        MachineClass::Lathe => "round-bar-or-tube-stock",
+        MachineClass::Mill | MachineClass::Router => "block-plate-or-sheet-blank",
+        MachineClass::SheetCut => "sheet-plate-or-panel",
+        MachineClass::Other if is_assembly_cell_kind(machine_kind) => "assembly-kit-materials",
+        MachineClass::Other => "operator-declared-material-kit",
+    }
+}
+
+fn material_catalog_conditioning(family: &str, feedstock_kinds: &[String]) -> Vec<String> {
+    let mut conditioning = vec![
+        "retain material lot, certificate, or operator-declared equivalent before release"
+            .to_string(),
+        "prove available quantity covers planned quantity plus scrap allowance".to_string(),
+        "verify material is compatible with selected machine, process, and safety controls"
+            .to_string(),
+    ];
+    match family {
+        "metal" => conditioning.extend([
+            "verify stock alloy, hardness/temper, heat number, and machining or powder-build profile"
+                .to_string(),
+            "record chip, coolant, shielding gas, powder handling, or stress-relief evidence when applicable"
+                .to_string(),
+        ]),
+        "photopolymer" => conditioning.extend([
+            "verify resin/cartridge batch, exposure profile, vat/tray state, wash, and cure evidence"
+                .to_string(),
+            "capture PPE, ventilation, support-removal, and tack-free inspection evidence".to_string(),
+        ]),
+        "powder-or-ceramic" => conditioning.extend([
+            "verify powder lot, refresh ratio, humidity, sieve/recovery, and depowder controls"
+                .to_string(),
+            "record furnace, sinter, infiltrate, or thermal pack evidence before release".to_string(),
+        ]),
+        "composite" => conditioning.extend([
+            "verify matrix lot, fiber spool lot, cutter state, layup direction, and coupon evidence"
+                .to_string(),
+            "capture fiber continuity, compaction, and post-cure or delamination inspection evidence"
+                .to_string(),
+        ]),
+        "polymer" => conditioning.extend([
+            "dry or condition hygroscopic polymer feedstock to the material profile".to_string(),
+            "verify spool, pellet, sheet, nozzle, bed, runout, and purge/prime evidence when applicable"
+                .to_string(),
+        ]),
+        _ => conditioning.push(
+            "require operator-reviewed material handling and process-specific release signoff"
+                .to_string(),
+        ),
+    }
+    if feedstock_kinds
+        .iter()
+        .any(|kind| kind.contains("pellet") || kind.contains("powder"))
+    {
+        conditioning.push(
+            "retain feedstock moisture, recovery/refresh, hopper, sieve, or contamination evidence"
+                .to_string(),
+        );
+    }
+    conditioning.sort();
+    conditioning.dedup();
+    conditioning
+}
+
+fn material_catalog_release_gates(family: &str) -> Vec<String> {
+    let mut gates = vec![
+        "material-machine-compatibility-review".to_string(),
+        "material-lot-or-certificate-evidence".to_string(),
+        "quantity-plus-scrap-allowance-proof".to_string(),
+        "machine-ready-release-blocked-until-profile-controller-simulation-and-operator-evidence"
+            .to_string(),
+    ];
+    match family {
+        "metal" => gates.push("alloy-temper-hardness-or-powder-build-profile-review".to_string()),
+        "photopolymer" => gates.push("resin-exposure-wash-cure-and-ppe-review".to_string()),
+        "powder-or-ceramic" => {
+            gates.push("powder-refresh-depowder-and-thermal-process-review".to_string())
+        }
+        "composite" => gates.push("matrix-fiber-layup-coupon-and-delamination-review".to_string()),
+        "polymer" => gates.push("polymer-drying-profile-spool-pellet-or-sheet-review".to_string()),
+        _ => gates.push("operator-declared-material-kit-review".to_string()),
+    }
+    gates.sort();
+    gates.dedup();
+    gates
+}
+
+fn material_catalog_targets() -> Vec<Value> {
+    let machines = default_machines();
+    let materials = unique_sorted(
+        machines
+            .iter()
+            .flat_map(|machine| machine.materials.clone().unwrap_or_default()),
+    );
+
+    materials
+        .into_iter()
+        .map(|material| {
+            let family = material_catalog_family(&material);
+            let spec = MaterialSpec {
+                name: material.clone(),
+                family: Some(family.to_string()),
+                hardness: None,
+            };
+            let compatible: Vec<&MachineProfile> = machines
+                .iter()
+                .filter(|machine| material_supported(machine, &spec))
+                .collect();
+            let machine_kinds =
+                unique_sorted(compatible.iter().map(|machine| machine.kind.clone()));
+            let machine_ids = unique_sorted(compatible.iter().map(|machine| machine.id.clone()));
+            let process_classes = unique_sorted(
+                compatible
+                    .iter()
+                    .map(|machine| machine_class_name(machine_class(&machine.kind)).to_string()),
+            );
+            let feedstock_kinds = unique_sorted(
+                compatible
+                    .iter()
+                    .map(|machine| material_catalog_feedstock_kind(&machine.kind).to_string()),
+            );
+            let operations = unique_sorted(
+                compatible
+                    .iter()
+                    .flat_map(|machine| machine.operations.clone().unwrap_or_default()),
+            );
+            let boundary_signals = vec![
+                format!("material-catalog:{material}"),
+                format!("material-family:{family}"),
+                format!("material-machine-boundary:{material}"),
+                format!("material-release-evidence-required:{material}"),
+            ];
+
+            json!({
+                "material": material,
+                "family": family,
+                "compatibleMachineIds": machine_ids,
+                "compatibleMachineKinds": machine_kinds,
+                "processClasses": process_classes,
+                "feedstockKinds": feedstock_kinds,
+                "operations": operations,
+                "conditioning": material_catalog_conditioning(family, &feedstock_kinds),
+                "releaseGates": material_catalog_release_gates(family),
+                "boundarySignals": boundary_signals,
+                "profileEvidenceRequired": true,
+                "releaseBlocking": true
+            })
+        })
+        .collect()
+}
+
+fn material_catalog_family_counts(catalog: &[Value]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for item in catalog {
+        if let Some(family) = item.get("family").and_then(Value::as_str) {
+            *counts.entry(family.to_string()).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+fn material_catalog_response() -> Value {
+    let catalog = material_catalog_targets();
+    let families = unique_sorted(catalog.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(catalog.iter().flat_map(|item| {
+        item.get("compatibleMachineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let feedstock_kinds = unique_sorted(catalog.iter().flat_map(|item| {
+        item.get("feedstockKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.material-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /materials/catalog", "GET /fabrication/materials/catalog"],
+        "materialCount": catalog.len(),
+        "families": families,
+        "familyCounts": material_catalog_family_counts(&catalog),
+        "machineKinds": machine_kinds,
+        "feedstockKinds": feedstock_kinds,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "responseSurfaces": [
+            "materialPlan.routeRequirements",
+            "materialPlan.releaseGates",
+            "validation.failureBoundaries",
+            "boundarySummary",
+            "toolingPlan.releaseBlockers",
+            "releasePackagePlan.packages"
+        ],
+        "releasePolicy": [
+            "catalog materials are default planning compatibility labels, not certified inventory",
+            "machine-ready release remains blocked until material lot/certificate or operator evidence, quantity plus scrap proof, machine profile evidence, process conditioning, and simulation or dry-run review are retained",
+            "material-machine-boundary signals are emitted for MDP/POMDP/neural workers when material and selected machine evidence do not match"
+        ],
+        "materials": catalog
+    })
+}
+
+async fn material_catalog_http() -> impl IntoResponse {
+    Json(material_catalog_response())
 }
 
 fn accepted_instruction_languages() -> Vec<&'static str> {
@@ -29804,6 +34957,802 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
     ]
 }
 
+fn instruction_language_family(language: &str) -> &'static str {
+    let token = normalize_token(language);
+    if token.contains("gcode") {
+        "controller-gcode"
+    } else if token.contains("slicer")
+        || token.contains("printer")
+        || token.contains("sla")
+        || token.contains("resin")
+        || token.contains("pellet")
+        || token.contains("material-jetting")
+        || token.contains("directed-energy")
+        || token.contains("composite")
+        || token.contains("binder")
+        || token.contains("sls")
+        || token.contains("powder")
+        || token.contains("pbf")
+    {
+        "additive-job-sheet"
+    } else if token.contains("laser")
+        || token.contains("waterjet")
+        || token.contains("plasma")
+        || token.contains("sheet")
+    {
+        "sheet-cutting-job-sheet"
+    } else if token.contains("edm") {
+        "edm-job-sheet"
+    } else if token.contains("mill")
+        || token.contains("turn")
+        || token.contains("lathe")
+        || token.contains("router")
+    {
+        "subtractive-job-sheet"
+    } else if token.contains("assembly")
+        || token.contains("separation")
+        || token.contains("operator")
+        || token.contains("setup")
+        || token.contains("checklist")
+    {
+        "operator-text-instruction"
+    } else {
+        "general-text-instruction"
+    }
+}
+
+fn instruction_language_machine_classes(language: &str) -> Vec<String> {
+    let token = normalize_token(language);
+    let classes = if token.contains("marlin") || token == "gcode" || token == "printer-job" {
+        vec!["fdm-printer"]
+    } else if token.contains("haas") || token.contains("iso") {
+        vec!["vertical-mill", "horizontal-mill"]
+    } else if token.contains("fanuc") {
+        vec!["vertical-mill", "lathe"]
+    } else if token.contains("mill-turn") {
+        vec!["mill-turn-center"]
+    } else if token.contains("indexed-mill") {
+        vec!["rotary-indexer-mill", "five-axis-mill"]
+    } else if token.contains("grbl") || token.contains("router") {
+        vec!["cnc-router"]
+    } else if token.contains("slicer") {
+        vec![
+            "fdm-printer",
+            "pellet-fgf-printer",
+            "sla-msla-resin-printer",
+        ]
+    } else if token.contains("sla") || token.contains("resin") {
+        vec!["sla-msla-resin-printer"]
+    } else if token.contains("pellet") {
+        vec!["pellet-fgf-printer"]
+    } else if token.contains("material-jetting") {
+        vec!["material-jetting-printer"]
+    } else if token.contains("directed-energy") {
+        vec!["directed-energy-deposition-cell"]
+    } else if token.contains("composite") {
+        vec!["continuous-fiber-composite-printer"]
+    } else if token.contains("binder") {
+        vec!["binder-jet-printer"]
+    } else if token.contains("sls") || token.contains("powder-bed") {
+        vec!["sls-mjf-powder-bed-printer"]
+    } else if token.contains("metal-pbf") {
+        vec!["metal-pbf-printer"]
+    } else if token.contains("powder") {
+        vec!["sls-mjf-powder-bed-printer", "metal-pbf-printer"]
+    } else if token.contains("laser") {
+        vec!["laser-sheet-cutter"]
+    } else if token.contains("waterjet") {
+        vec!["waterjet-sheet-cutter"]
+    } else if token.contains("plasma") {
+        vec!["plasma-sheet-cutter"]
+    } else if token.contains("wire-edm") {
+        vec!["wire-edm-sheet-cutter"]
+    } else if token.contains("sinker-edm") {
+        vec!["sinker-edm-cell"]
+    } else if token.contains("sheet") {
+        vec![
+            "laser-sheet-cutter",
+            "waterjet-sheet-cutter",
+            "plasma-sheet-cutter",
+            "wire-edm-sheet-cutter",
+        ]
+    } else if token.contains("lathe") || token.contains("turning") {
+        vec!["lathe"]
+    } else if token.contains("assembly") {
+        vec!["robotic-assembly-cell", "manual-or-special-process"]
+    } else {
+        vec!["manual-or-special-process"]
+    };
+    classes.into_iter().map(ToOwned::to_owned).collect()
+}
+
+fn instruction_language_analysis_focus(language: &str) -> Vec<String> {
+    let family = instruction_language_family(language);
+    let mut focus = vec![
+        "machine-failure boundaries".to_string(),
+        "human-intervention boundaries".to_string(),
+        "release-blocker evidence before machine-ready state".to_string(),
+    ];
+    match family {
+        "controller-gcode" => focus.extend([
+            "modal state, units, plane, work offsets, compensation, feed/spindle, coolant/support, macro/subprogram, and program-end state".to_string(),
+            "simulation traces for envelope, clearance, rotary/index, and process-state risk".to_string(),
+        ]),
+        "additive-job-sheet" => focus.extend([
+            "heatup, homing, extrusion state, bed/chamber/material evidence, slicer profile, support media, pause/resume, and postprocess handling".to_string(),
+            "material lot, build profile, recovery, first-layer, powder/resin/feedstock, and environmental evidence".to_string(),
+        ]),
+        "sheet-cutting-job-sheet" => focus.extend([
+            "pierce/kerf/cut-chart evidence, support media, fume/gas/abrasive controls, part retention, slug/drop handling, and restart safety".to_string(),
+        ]),
+        "edm-job-sheet" => focus.extend([
+            "wire/electrode setup, power table, dielectric/flushing, slug retention, burn depth, skim/orbit strategy, and recast/surface evidence".to_string(),
+        ]),
+        "subtractive-job-sheet" => focus.extend([
+            "setup/datum/workholding, tool table, feed/speed, tool-life, chip/coolant, compensation, threading/part-off, and spindle/tool-change state".to_string(),
+        ]),
+        _ => focus.extend([
+            "operator checklist completeness, setup evidence, split/combine gates, fit/metrology, and safe handoff review".to_string(),
+        ]),
+    }
+    focus.sort();
+    focus.dedup();
+    focus
+}
+
+fn instruction_language_release_gates(language: &str) -> Vec<String> {
+    let mut gates = vec![
+        "parse-or-review-submitted-instructions".to_string(),
+        "run-validation-and-simulation-where-machine-code-is-present".to_string(),
+        "retain-improved-program-and-patch-manifest-when-repairable".to_string(),
+        "block-machine-ready-release-until-controller/postprocess/operator-evidence-is-attached"
+            .to_string(),
+    ];
+    if instruction_language_family(language) == "operator-text-instruction" {
+        gates.push("attach-human-reviewed-shop-floor-traveler-or-checklist".to_string());
+    } else {
+        gates.push("attach-controller-specific-dry-run-or-equivalent-review".to_string());
+    }
+    gates.sort();
+    gates.dedup();
+    gates
+}
+
+fn instruction_language_catalog() -> Vec<Value> {
+    accepted_instruction_languages()
+        .into_iter()
+        .map(|language| {
+            json!({
+                "language": language,
+                "family": instruction_language_family(language),
+                "machineClasses": instruction_language_machine_classes(language),
+                "analysisFocus": instruction_language_analysis_focus(language),
+                "releaseGates": instruction_language_release_gates(language),
+                "reviewDraftOnly": true
+            })
+        })
+        .collect()
+}
+
+fn instruction_language_family_counts(catalog: &[Value]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for item in catalog {
+        if let Some(family) = item.get("family").and_then(Value::as_str) {
+            *counts.entry(family.to_string()).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+fn instruction_language_catalog_response() -> Value {
+    let catalog = instruction_language_catalog();
+    let families = unique_sorted(catalog.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_classes = unique_sorted(catalog.iter().flat_map(|item| {
+        item.get("machineClasses")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-language-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /instructions/languages", "GET /fabrication/instructions/languages"],
+        "languageCount": catalog.len(),
+        "families": families,
+        "familyCounts": instruction_language_family_counts(&catalog),
+        "machineClasses": machine_classes,
+        "analysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "releasePolicy": [
+            "submitted instruction streams are review evidence and remain draft-only until validation, simulation or equivalent review, controller postprocessing, and operator/automation signoff are attached",
+            "G-code-like inputs receive modal/process-state simulation when possible; text job sheets receive bounded evidence-boundary analysis and improvement drafts",
+            "machine-ready release stays blocked when machine-failure, human-intervention, split/combine, controller, postprocess, or setup evidence boundaries remain unresolved"
+        ],
+        "languages": catalog
+    })
+}
+
+async fn instruction_languages() -> impl IntoResponse {
+    Json(instruction_language_catalog_response())
+}
+
+fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "family": "machine-code-modal-defaults",
+            "actions": [
+                "add-units-mode",
+                "add-positioning-mode",
+                "add-coordinate-reference"
+            ],
+            "appliesTo": ["gcode", "marlin-gcode", "iso-gcode", "lathe-gcode", "mill-turn-gcode"],
+            "operationKinds": ["insert-before-program"],
+            "generatedContent": ["G21 metric units", "G90 absolute positioning", "G54 or G28 coordinate reference"],
+            "sourceSurfaces": ["improvements", "improvedPrograms.instructions", "improvedPrograms.patchManifest.operations"],
+            "releaseBlocks": ["machine-ready release", "controller release"],
+            "learningSignals": ["instruction-patch-action:add-units-mode", "patch-action:add-coordinate-reference"]
+        }),
+        json!({
+            "family": "machine-code-finding-repair",
+            "actions": [
+                "resolve-finding-missing-spindle-start",
+                "resolve-finding-missing-printer-heatup",
+                "resolve-finding-missing-bed-temperature-wait",
+                "resolve-finding-missing-program-end"
+            ],
+            "appliesTo": ["cnc programs", "printer G-code", "sheet-cutting programs"],
+            "operationKinds": ["insert-before-first-risk-motion", "insert-after-program"],
+            "generatedContent": ["review stop for process start", "review stop for heat-up or bed wait", "explicit M30 or M84 end state"],
+            "sourceSurfaces": ["validation.findings", "improvedPrograms.patchManifest.operations"],
+            "releaseBlocks": ["machine start", "process run"],
+            "learningSignals": ["instruction-patch:insert-before-first-risk-motion:*"]
+        }),
+        json!({
+            "family": "slicer-and-additive-evidence",
+            "actions": [
+                "add-slicer-profile-record",
+                "add-slicer-support-orientation-review",
+                "add-slicer-first-layer-evidence",
+                "add-slicer-mesh-topology-evidence",
+                "add-slicer-high-speed-kinematic-evidence",
+                "add-resin-print-profile-evidence",
+                "add-resin-layer-manifest-evidence",
+                "add-resin-vat-capacity-evidence",
+                "add-resin-postprocess-evidence",
+                "add-powder-bed-build-profile-evidence",
+                "add-powder-bed-recoater-thermal-evidence",
+                "add-powder-bed-handling-evidence"
+            ],
+            "appliesTo": ["slicer-job", "printer-job", "resin-job", "powder-job"],
+            "operationKinds": ["review-line", "insert-review-checkpoint"],
+            "generatedContent": ["REVIEW checkpoints and retained evidence notes"],
+            "sourceSurfaces": ["improvements", "improvedPrograms.notes", "analysis-improvements"],
+            "releaseBlocks": ["printed-part release", "unattended print"],
+            "learningSignals": ["instruction-patch-action:add-slicer-profile-record", "simulation-risk:*"]
+        }),
+        json!({
+            "family": "advanced-additive-and-special-process-evidence",
+            "actions": [
+                "add-material-jetting-material-evidence",
+                "add-material-jetting-support-uv-inspection-evidence",
+                "add-pellet-fgf-material-evidence",
+                "add-pellet-fgf-bead-thermal-evidence",
+                "add-ded-feedstock-path-evidence",
+                "add-ded-energy-thermal-inspection-evidence",
+                "add-composite-fiber-layup-evidence",
+                "add-composite-fiber-process-inspection-evidence",
+                "add-binder-jet-process-evidence",
+                "add-binder-jet-postprocess-shrinkage-evidence"
+            ],
+            "appliesTo": ["material-jetting-job", "pellet-fgf-job", "directed-energy-deposition-job", "composite-fiber-job", "binder-jet-job"],
+            "operationKinds": ["review-line", "insert-review-checkpoint"],
+            "generatedContent": ["process recipe, postprocess, inspection, and material evidence review notes"],
+            "sourceSurfaces": ["improvements", "improvedPrograms.notes", "releasePackagePlan.requiredArtifacts"],
+            "releaseBlocks": ["machine-ready release", "postprocess release"],
+            "learningSignals": ["instruction-patch-action:add-ded-feedstock-path-evidence", "material-route:*"]
+        }),
+        json!({
+            "family": "subtractive-sheet-edm-and-turning-evidence",
+            "actions": [
+                "add-subtractive-text-setup-evidence",
+                "add-subtractive-text-process-evidence",
+                "add-sheet-cutting-recipe-evidence",
+                "add-wire-edm-text-evidence",
+                "add-sinker-edm-text-evidence",
+                "add-mill-turn-live-tooling-evidence",
+                "add-mill-turn-spindle-transfer-evidence",
+                "add-lathe-text-threading-sync-evidence",
+                "add-lathe-text-partoff-support-evidence"
+            ],
+            "appliesTo": ["setup-sheet", "operator-checklist", "laser-job", "waterjet-job", "plasma-job", "wire-edm-job", "sinker-edm-job", "lathe-job", "mill-turn-job"],
+            "operationKinds": ["review-line", "insert-review-checkpoint"],
+            "generatedContent": ["setup/process evidence notes and operator review checkpoints"],
+            "sourceSurfaces": ["improvements", "improvedPrograms.notes", "machineRelease.blockers"],
+            "releaseBlocks": ["machine-ready release", "operator start"],
+            "learningSignals": ["instruction-patch-action:add-wire-edm-text-evidence", "instruction-patch-action:add-subtractive-text-setup-evidence"]
+        }),
+        json!({
+            "family": "assembly-postprocess-monitoring-and-structured-text",
+            "actions": [
+                "normalize-text-setup-sheet",
+                "add-assembly-cell-automation-evidence",
+                "add-assembly-cell-join-process-evidence",
+                "add-part-separation-evidence",
+                "add-precision-metrology-evidence",
+                "add-unattended-monitoring-evidence",
+                "add-thermal-postprocess-evidence",
+                "add-surface-finishing-evidence",
+                "add-indexed-setup-evidence",
+                "add-structured-text-checkpoints"
+            ],
+            "appliesTo": ["operator-checklist", "assembly-cell-job", "part-separation-checklist", "thermal-postprocess", "surface-finishing", "indexed-setup"],
+            "operationKinds": ["insert-review-checkpoint", "review-line"],
+            "generatedContent": ["setup-boundary, process-boundary, and completion-boundary checkpoints"],
+            "sourceSurfaces": ["improvements", "improvedPrograms.instructions", "operatorInterventionPlan.requiredOperatorActions"],
+            "releaseBlocks": ["unattended run", "assembly release", "postprocess release"],
+            "learningSignals": ["instruction-patch-action:add-structured-text-checkpoints", "operator-action:*"]
+        }),
+    ]
+}
+
+fn instruction_improvement_catalog_patch_operations() -> Vec<Value> {
+    vec![
+        json!({
+            "operation": "insert-before-line",
+            "source": "validation.failureBoundaries",
+            "usedFor": "boundary gate insertion before a risky source line",
+            "requiresHumanReview": true
+        }),
+        json!({
+            "operation": "insert-before-program",
+            "source": "global machine-code improvements",
+            "usedFor": "modal defaults, coordinate references, and program preflight gates",
+            "requiresHumanReview": true
+        }),
+        json!({
+            "operation": "insert-before-first-risk-motion",
+            "source": "validation.findings",
+            "usedFor": "process-start, heat-up, bed-wait, or equivalent review stops",
+            "requiresHumanReview": true
+        }),
+        json!({
+            "operation": "insert-after-program",
+            "source": "validation.findings",
+            "usedFor": "explicit machine/program end state",
+            "requiresHumanReview": true
+        }),
+        json!({
+            "operation": "review-line",
+            "source": "line-scoped InstructionImprovement",
+            "usedFor": "attach evidence review to the original instruction line",
+            "requiresHumanReview": true
+        }),
+        json!({
+            "operation": "insert-review-checkpoint",
+            "source": "text job sheet and operator checklist improvements",
+            "usedFor": "setup/process/completion checkpoints for non-machine-code instructions",
+            "requiresHumanReview": true
+        }),
+    ]
+}
+
+fn instruction_improvement_catalog_response() -> Value {
+    let action_contracts = instruction_improvement_catalog_action_contracts();
+    let patch_operations = instruction_improvement_catalog_patch_operations();
+    let action_families = unique_sorted(action_contracts.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let action_types = unique_sorted(action_contracts.iter().flat_map(|item| {
+        item.get("actions")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let operation_kinds = unique_sorted(patch_operations.iter().filter_map(|item| {
+        item.get("operation")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-improvement-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /improvements/catalog", "GET /fabrication/improvements/catalog"],
+        "actionFamilyCount": action_families.len(),
+        "actionCount": action_types.len(),
+        "patchOperationCount": patch_operations.len(),
+        "actionFamilies": action_families,
+        "actionTypes": action_types,
+        "patchOperationKinds": operation_kinds,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "responseSurfaces": [
+            "improvements",
+            "improvedPrograms",
+            "improvedPrograms.instructions",
+            "improvedPrograms.notes",
+            "improvedPrograms.machineReady",
+            "improvedPrograms.patchManifest",
+            "improvedPrograms.patchManifest.operations",
+            "improvedPrograms.patchManifest.learningObservations",
+            "validation.findings",
+            "validation.failureBoundaries",
+            "machineRelease.blockers",
+            "releasePackagePlan.requiredArtifacts"
+        ],
+        "artifactSurfaces": [
+            "plan-improvements",
+            "analysis-improvements",
+            "improved-program-*",
+            "mdp-request.artifacts.improvedPrograms",
+            "analysis-mdp-request.artifacts.improvedPrograms"
+        ],
+        "learningSurfaces": [
+            "instruction-patch:*",
+            "instruction-patch-action:*",
+            "patch-action:*",
+            "neuralTrainingCorpus.examples",
+            "learning.interventionSignals"
+        ],
+        "releasePolicy": [
+            "improved programs are review drafts and keep machineReady=false until validation, simulation, controller/postprocessor review, and operator or automation signoff clear",
+            "patch manifests describe repair intent, not executable-certified controller code",
+            "instruction-patch observations are emitted for MDP/POMDP/neural workers so future planning can learn which evidence, defaults, checkpoints, and split/combine gates reduce failures"
+        ],
+        "patchManifestSchema": "dd.fabrication.instruction-patch-manifest.v1",
+        "actionContracts": action_contracts,
+        "patchOperationContracts": patch_operations
+    })
+}
+
+async fn instruction_improvement_catalog_http() -> impl IntoResponse {
+    Json(instruction_improvement_catalog_response())
+}
+
+fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String> {
+    let mut languages = BTreeSet::new();
+    if let Some(controller) = machine.controller.as_ref() {
+        languages.insert(controller.clone());
+    }
+    languages.insert("setup-sheet".to_string());
+    languages.insert("operator-checklist".to_string());
+
+    match machine_class(&machine.kind) {
+        MachineClass::Additive => {
+            languages.insert("printer-job".to_string());
+            languages.insert("slicer-job".to_string());
+            if is_resin_printer_kind(&machine.kind) {
+                languages.insert("sla-job".to_string());
+                languages.insert("resin-job".to_string());
+            } else if is_material_jetting_printer_kind(&machine.kind) {
+                languages.insert("material-jetting-job".to_string());
+            } else if is_pellet_fgf_printer_kind(&machine.kind) {
+                languages.insert("pellet-fgf-job".to_string());
+            } else if is_composite_fiber_printer_kind(&machine.kind) {
+                languages.insert("composite-fiber-job".to_string());
+            } else if wants_directed_energy_deposition(&machine.kind) {
+                languages.insert("directed-energy-deposition-job".to_string());
+            } else if is_binder_jet_printer_kind(&machine.kind) {
+                languages.insert("binder-jet-job".to_string());
+            } else if is_metal_pbf_printer_kind(&machine.kind) {
+                languages.insert("metal-pbf-job".to_string());
+                languages.insert("powder-bed-job".to_string());
+            } else if is_powder_bed_printer_kind(&machine.kind) {
+                languages.insert("sls-job".to_string());
+                languages.insert("powder-job".to_string());
+                languages.insert("powder-bed-job".to_string());
+            } else {
+                languages.insert("marlin-gcode".to_string());
+            }
+        }
+        MachineClass::Mill => {
+            languages.insert("gcode".to_string());
+            languages.insert("iso-gcode".to_string());
+            if is_rotary_index_mill_kind(&machine.kind) {
+                languages.insert("indexed-mill-gcode".to_string());
+            }
+            if is_horizontal_mill_kind(&machine.kind) {
+                languages.insert("haas-gcode".to_string());
+            }
+        }
+        MachineClass::Lathe => {
+            if is_mill_turn_kind(&machine.kind) {
+                languages.insert("mill-turn-gcode".to_string());
+                languages.insert("mill-turn-job".to_string());
+            } else {
+                languages.insert("fanuc-gcode".to_string());
+                languages.insert("lathe-job".to_string());
+                languages.insert("turning-job".to_string());
+            }
+        }
+        MachineClass::Router => {
+            languages.insert("grbl-gcode".to_string());
+            languages.insert("router-profile".to_string());
+        }
+        MachineClass::SheetCut => {
+            languages.insert("sheet-cutting-job".to_string());
+            if is_laser_cutter_kind(&machine.kind) {
+                languages.insert("laser-job".to_string());
+            } else if is_waterjet_cutter_kind(&machine.kind) {
+                languages.insert("waterjet-job".to_string());
+            } else if is_plasma_cutter_kind(&machine.kind) {
+                languages.insert("plasma-job".to_string());
+            } else if is_wire_edm_kind(&machine.kind) {
+                languages.insert("wire-edm-job".to_string());
+            }
+        }
+        MachineClass::Other if is_sinker_edm_kind(&machine.kind) => {
+            languages.insert("sinker-edm-job".to_string());
+        }
+        MachineClass::Other if is_assembly_cell_kind(&machine.kind) => {
+            languages.insert("assembly-cell-job".to_string());
+            languages.insert("assembly-checklist".to_string());
+            languages.insert("part-separation-checklist".to_string());
+        }
+        MachineClass::Other => {}
+    }
+
+    languages.into_iter().collect()
+}
+
+fn machine_catalog_release_gates(machine: &MachineProfile) -> Vec<String> {
+    let mut gates = vec![
+        "validate bounded machine profile, envelope, axes, controller, material, and operation evidence before scheduling".to_string(),
+        "simulate or dry-run generated and imported instructions before machine-ready release".to_string(),
+        "block machine-ready release while profileEvidence.blockers, validation findings, or machine-failure boundaries remain unresolved".to_string(),
+    ];
+    match machine_class(&machine.kind) {
+        MachineClass::Additive => gates.push(
+            "verify material lot, heatup, homing, extrusion state, support/postprocess, and first-article evidence"
+                .to_string(),
+        ),
+        MachineClass::Mill => gates.push(
+            "verify workholding, datum, tooling, tool length, feed/speed, spindle, coolant/chip control, and controller dry-run evidence"
+                .to_string(),
+        ),
+        MachineClass::Lathe if is_mill_turn_kind(&machine.kind) => gates.push(
+            "verify chucking, live-tooling, C/Y-axis state, transfer synchronization, tool/turret, spindle, and part-off support evidence"
+                .to_string(),
+        ),
+        MachineClass::Lathe => gates.push(
+            "verify chuck/collet/tailstock, stick-out, runout, threading feed mode, tool-nose compensation, and part-off support evidence"
+                .to_string(),
+        ),
+        MachineClass::Router => gates.push(
+            "verify hold-down/workholding, datum/touch-off, spindle, feed, dust/chip control, tabs, and bridge lift evidence"
+                .to_string(),
+        ),
+        MachineClass::SheetCut => gates.push(
+            "verify material/thickness, cut chart, pierce/kerf, support media, fume/gas/abrasive/dielectric controls, and part-retention evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_sinker_edm_kind(&machine.kind) => gates.push(
+            "verify electrode, dielectric, power table, flushing, burn depth, orbit/skim strategy, and recast or surface evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_assembly_cell_kind(&machine.kind) => gates.push(
+            "verify kit traceability, robot path, gripper/fixture, vision/interlock, fit-up, join recipe, cure/torque, and final metrology evidence"
+                .to_string(),
+        ),
+        MachineClass::Other => gates.push(
+            "verify operator-reviewed setup traveler, manual/special-process controls, and completion evidence"
+                .to_string(),
+        ),
+    }
+    gates
+}
+
+fn machine_catalog_process_class_counts(machines: &[MachineProfile]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for machine in machines {
+        *counts
+            .entry(machine_class_name(machine_class(&machine.kind)).to_string())
+            .or_insert(0) += 1;
+    }
+    counts
+}
+
+fn machine_catalog_response() -> Value {
+    let machines = default_machines();
+    let machine_kinds = unique_sorted(machines.iter().map(|machine| machine.kind.clone()));
+    let process_classes = unique_sorted(
+        machines
+            .iter()
+            .map(|machine| machine_class_name(machine_class(&machine.kind)).to_string()),
+    );
+    let controllers = unique_sorted(
+        machines
+            .iter()
+            .filter_map(|machine| machine.controller.clone()),
+    );
+    let materials = unique_sorted(
+        machines
+            .iter()
+            .flat_map(|machine| machine.materials.clone().unwrap_or_default()),
+    );
+    let operations = unique_sorted(
+        machines
+            .iter()
+            .flat_map(|machine| machine.operations.clone().unwrap_or_default()),
+    );
+    let max_axes = machines
+        .iter()
+        .filter_map(|machine| machine.axes)
+        .max()
+        .unwrap_or(0);
+    let machine_count = machines.len();
+    let process_class_counts = machine_catalog_process_class_counts(&machines);
+    let catalog: Vec<Value> = machines
+        .into_iter()
+        .map(|machine| {
+            let instruction_languages = machine_catalog_instruction_languages(&machine);
+            let release_gates = machine_catalog_release_gates(&machine);
+            json!({
+                "id": machine.id,
+                "kind": machine.kind,
+                "processClass": machine_class_name(machine_class(&machine.kind)),
+                "controller": machine.controller,
+                "materials": machine.materials,
+                "workEnvelopeMm": machine.work_envelope_mm,
+                "axes": machine.axes,
+                "operations": machine.operations,
+                "acceptedInstructionLanguages": instruction_languages,
+                "releaseGates": release_gates,
+                "profileEvidenceRequired": true
+            })
+        })
+        .collect();
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.machine-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /machines/catalog", "GET /fabrication/machines/catalog"],
+        "machineCount": machine_count,
+        "machineKinds": machine_kinds,
+        "processClasses": process_classes,
+        "processClassCounts": process_class_counts,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "maxAxes": max_axes,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "releasePolicy": [
+            "catalog machines are default planning profiles, not certified shop-floor assets",
+            "callers can submit bounded machine profile evidence to override or harden the defaults before planning",
+            "machine-ready release remains blocked until profile evidence, controller/postprocessor checks, simulation or dry-run review, and operator or automation signoff pass"
+        ],
+        "machines": catalog
+    })
+}
+
+async fn machine_catalog() -> impl IntoResponse {
+    Json(machine_catalog_response())
+}
+
+fn learning_capability_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.learning-capability-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /learning/capabilities",
+            "GET /fabrication/learning/capabilities"
+        ],
+        "engine": {
+            "crateName": "des_engine",
+            "sourceCrate": "remote/submodules/discrete-event-system.rs",
+            "sdkModule": "des_engine::sdk",
+            "preferredFor": [
+                "fabrication MDP value iteration",
+                "POMDP hidden-state preview via QMDP underlying solver",
+                "DES Studio queue-capacity and instruction-review graphs",
+                "bounded feed-forward neural policy sketches"
+            ],
+            "decisionSchemas": {
+                "mdp": MDP_SCHEMA,
+                "pomdp": POMDP_SCHEMA,
+                "studioGraph": STUDIO_GRAPH_SCHEMA
+            }
+        },
+        "decisionPrimitives": [
+            {
+                "name": "des_engine::des::decision::solve_mdp",
+                "method": "value-iteration",
+                "inputSchema": MDP_SCHEMA,
+                "usedFor": [
+                    "machine/process action scoring",
+                    "failure-boundary remediation action ranking",
+                    "hybrid make/split/combine policy previews"
+                ],
+                "releaseGate": "draft policy only; simulation and operator evidence remain required before machine-ready release"
+            },
+            {
+                "name": "des_engine::des::decision::solve_pomdp_underlying",
+                "method": "qmdp-underlying-preview",
+                "inputSchema": POMDP_SCHEMA,
+                "usedFor": [
+                    "hidden human-intervention risk estimation",
+                    "release probe prioritization",
+                    "uncertain split/combine or machine-failure boundary review"
+                ],
+                "releaseGate": "belief states trigger probe requirements and do not certify unattended release"
+            }
+        ],
+        "desStudioPrimitives": [
+            {
+                "name": "des_engine::des::studio::StudioModelSpec",
+                "schema": STUDIO_GRAPH_SCHEMA,
+                "usedFor": [
+                    "per-machine Constant -> Queue -> Sink schedule models",
+                    "instruction review queue models",
+                    "worker-lane dispatch and capacity planning"
+                ]
+            },
+            {
+                "name": "des_engine::des::studio::analyze_model_spec",
+                "schema": STUDIO_GRAPH_SCHEMA,
+                "usedFor": [
+                    "local DES graph validation",
+                    "queue structure sanity checks",
+                    "learning artifact release evidence"
+                ]
+            }
+        ],
+        "neuralPrimitives": [
+            {
+                "name": "des_engine::des::general::neural_network::FeedForwardNetwork",
+                "activationFamilies": ["relu", "sigmoid", "tanh", "linear"],
+                "usedFor": [
+                    "bounded neural-policy sketches",
+                    "feature-to-action score previews",
+                    "training-corpus compatibility checks"
+                ],
+                "releaseGate": "neural scores are advisory and remain subordinate to validation findings, simulation, and review evidence"
+            }
+        ],
+        "learningRoutes": [
+            "GET /learning/policy",
+            "GET /fabrication/learning/policy",
+            "POST /learning/observe",
+            "POST /fabrication/learning/observe",
+            "POST /learning/outcomes",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "natsSubjects": {
+            "mdpOptimize": MDP_OPTIMIZE_SUBJECT,
+            "fabricationRequests": FABRICATION_REQUESTS_SUBJECT,
+            "fabricationResults": FABRICATION_RESULTS_SUBJECT
+        },
+        "releasePolicy": [
+            "DES, MDP, POMDP, and neural outputs are retained as learning evidence and planning previews, not controller-certified release",
+            "machine-ready release remains blocked while validation findings, unresolved failure boundaries, missing probe evidence, or human-intervention gates remain open",
+            "workers should prefer the local des_engine crate before introducing separate math or learning implementations"
+        ]
+    })
+}
+
+async fn learning_capabilities() -> impl IntoResponse {
+    Json(learning_capability_catalog_response())
+}
+
 async fn capabilities() -> impl IntoResponse {
     Json(json!({
         "ok": true,
@@ -29814,6 +35763,34 @@ async fn capabilities() -> impl IntoResponse {
             "discovery": [
                 "GET /capabilities",
                 "GET /fabrication/capabilities",
+                "GET /machines/catalog",
+                "GET /fabrication/machines/catalog",
+                "GET /controllers/catalog",
+                "GET /fabrication/controllers/catalog",
+                "GET /materials/catalog",
+                "GET /fabrication/materials/catalog",
+                "GET /design/formats",
+                "GET /fabrication/design/formats",
+                "GET /design/generation/catalog",
+                "GET /fabrication/design/generation/catalog",
+                "GET /instructions/languages",
+                "GET /fabrication/instructions/languages",
+                "GET /improvements/catalog",
+                "GET /fabrication/improvements/catalog",
+                "GET /boundaries/catalog",
+                "GET /fabrication/boundaries/catalog",
+                "GET /decomposition/catalog",
+                "GET /fabrication/decomposition/catalog",
+                "GET /release/catalog",
+                "GET /fabrication/release/catalog",
+                "GET /simulation/catalog",
+                "GET /fabrication/simulation/catalog",
+                "GET /quality/catalog",
+                "GET /fabrication/quality/catalog",
+                "GET /interventions/catalog",
+                "GET /fabrication/interventions/catalog",
+                "GET /learning/capabilities",
+                "GET /fabrication/learning/capabilities",
                 "GET /schema",
                 "GET /fabrication/schema",
                 "GET /examples",
@@ -29826,6 +35803,10 @@ async fn capabilities() -> impl IntoResponse {
                 "POST /fabrication/learning/observe",
                 "POST /learning/outcomes",
                 "POST /fabrication/learning/outcomes",
+                "GET /learning/outcomes",
+                "GET /fabrication/learning/outcomes",
+                "GET /learning/capabilities",
+                "GET /fabrication/learning/capabilities",
                 "GET /learning/policy",
                 "GET /fabrication/learning/policy"
             ],
@@ -29893,26 +35874,288 @@ async fn capabilities() -> impl IntoResponse {
             "neural-training-corpus",
             "fabrication-outcome-rewards",
             "compact-learning-outcomes",
+            "des-engine-capability-catalog",
             "material-method-remediation-risks"
         ],
-        "safetyBoundaryClasses": [
-            "machine-release-blocker",
-            "machine-envelope",
-            "human-intervention",
-            "split-boundary",
-            "combine-or-assembly-boundary",
-            "automation-capability-gap",
-            "postprocess-gate",
-            "inspection-gate",
-            "machine-profile-blocker",
-            "material-machine-boundary"
-        ],
+        "safetyBoundaryClasses": safety_boundary_classes(),
         "notes": [
             "Capabilities describe draft planning and validation support, not controller-certified machine release.",
             "Clients may submit their own machine profiles; defaultMachines are the built-in fallback fleet used when no fleet is supplied.",
             "Generated programs and improved programs remain machineReady=false until downstream CAD/CAM, slicer, simulation, workholding, and operator review are complete."
         ]
     }))
+}
+
+fn design_format_category_counts(formats: &[SupportedDesignFormat]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for format in formats {
+        *counts.entry(format.category.clone()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn design_format_catalog_response() -> Value {
+    let formats = design_format_catalog();
+    let source_systems = unique_sorted(formats.iter().map(|format| format.source_system.clone()));
+    let ecosystems = unique_sorted(formats.iter().map(|format| format.ecosystem.clone()));
+    let categories = unique_sorted(formats.iter().map(|format| format.category.clone()));
+    let preferred_neutral_exports = unique_sorted(
+        formats
+            .iter()
+            .flat_map(|format| format.preferred_neutral_exports.iter().cloned()),
+    );
+    let slicer_targets = unique_sorted(
+        formats
+            .iter()
+            .flat_map(|format| format.slicer_targets.iter().cloned()),
+    );
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.design-format-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /design/formats", "GET /fabrication/design/formats"],
+        "formatCount": formats.len(),
+        "sourceSystems": source_systems,
+        "ecosystems": ecosystems,
+        "categories": categories,
+        "categoryCounts": design_format_category_counts(&formats),
+        "preferredNeutralExports": preferred_neutral_exports,
+        "slicerTargets": slicer_targets,
+        "conversionSubjects": {
+            "requests": FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
+            "results": FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
+            "queueGroup": "dd-fabrication-design-conversion"
+        },
+        "releasePolicy": [
+            "native CAD, CAD-kernel, cloud CAD, lightweight PMI, mesh, scan, profile, and slicer project inputs are accepted as source evidence, not certified machine geometry",
+            "machine-ready release stays blocked until translator output, topology/scale/profile review, simulation, and operator or automation signoff are attached",
+            "prefer STEP or 3MF for mechanical CAD handoff, 3MF/STL/OBJ for mesh handoff, DXF/DWG for sheet profiles, and CAM setup JSON for controller-specific downstream workers"
+        ],
+        "formats": formats
+    })
+}
+
+async fn design_formats() -> impl IntoResponse {
+    Json(design_format_catalog_response())
+}
+
+fn design_generation_catalog_export_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "format": "dd-parametric-csg-json",
+            "consumer": "design-agent",
+            "sourceSurface": "designPackage.parts.primitive",
+            "artifactSurface": "parametric-design",
+            "purpose": "authoritative editable planning primitive with coordinate frames and model intent",
+            "releaseGate": "draft until model regeneration, simulation, quality, and machine-release evidence clear"
+        }),
+        json!({
+            "format": "3MF",
+            "consumer": "slicer",
+            "sourceSurface": "designPackage.parts.exportTargets",
+            "artifactSurface": "design-export-bundle.partExports",
+            "purpose": "slicer-ready mesh package with material and orientation metadata",
+            "releaseGate": "draft until slicer profile, support/orientation, mesh, and first-layer evidence clear"
+        }),
+        json!({
+            "format": "STL",
+            "consumer": "mesh-review",
+            "sourceSurface": "designExports.partExports",
+            "artifactSurface": "generated-design-export",
+            "purpose": "neutral mesh handoff for additive review",
+            "releaseGate": "draft until watertight/manifold/normals/wall-thickness review clears"
+        }),
+        json!({
+            "format": "STEP",
+            "consumer": "cam",
+            "sourceSurface": "designExports.partExports",
+            "artifactSurface": "generated-design-export",
+            "purpose": "B-rep solid handoff for CAM feature recognition",
+            "releaseGate": "draft until CAM regeneration, datum, simulation, and controller review clear"
+        }),
+        json!({
+            "format": "DXF",
+            "consumer": "sheet-cam",
+            "sourceSurface": "designExports.partExports",
+            "artifactSurface": "generated-design-export",
+            "purpose": "2D sheet profile with kerf, lead-in, pierce, and tab metadata",
+            "releaseGate": "draft until kerf, pierce, fume/support media, and part-retention evidence clear"
+        }),
+        json!({
+            "format": "dd-cam-setup-json",
+            "consumer": "cam-setup-agent",
+            "sourceSurface": "designExports.partExports.content.camSetup",
+            "artifactSurface": "design-export-bundle",
+            "purpose": "datum, stock, fixture, tolerance, and operation setup handoff",
+            "releaseGate": "draft until fixture/workholding, tool, and simulation evidence clear"
+        }),
+        json!({
+            "format": "dd-sheet-nesting-json",
+            "consumer": "nesting-agent",
+            "sourceSurface": "designExports.partExports.content.nesting",
+            "artifactSurface": "design-export-bundle",
+            "purpose": "sheet nesting, kerf coupon, retained-tab, and support-media handoff",
+            "releaseGate": "draft until nesting, cut recipe, and part-retention gates clear"
+        }),
+        json!({
+            "format": "STEP-assembly",
+            "consumer": "cad-cam-assembly",
+            "sourceSurface": "designPackage.assemblyExports",
+            "artifactSurface": "designExports.assemblyExports",
+            "purpose": "neutral assembly handoff with part transforms and join references",
+            "releaseGate": "draft until interface-control, dry-fit, datum transfer, and final metrology clear"
+        }),
+        json!({
+            "format": "dd-assembly-graph-json",
+            "consumer": "assembly-planner",
+            "sourceSurface": "assembly.assemblyGraph",
+            "artifactSurface": "designExports.assemblyExports",
+            "purpose": "machine-readable join graph and split/combine design intent",
+            "releaseGate": "draft until split/combine reviews and recomposition release gates clear"
+        }),
+        json!({
+            "format": "operator-review-packet",
+            "consumer": "operator",
+            "sourceSurface": "manufacturingHandoff.parts",
+            "artifactSurface": "manufacturing-handoff",
+            "purpose": "special-process drawing, setup, inspection, and acceptance review packet",
+            "releaseGate": "draft until operator signoff and machine-release blockers clear"
+        }),
+    ]
+}
+
+fn design_generation_catalog_handoff_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "surface": "designPackage",
+            "schemaVersion": "dd.fabrication.design-package.v1",
+            "fields": ["representation", "units", "releaseState", "parts", "assemblyExports", "exportTargets", "blockers"],
+            "usedFor": ["CAD/CAM/slicer export targets", "part coordinate frames", "model intent", "assembly export contracts"]
+        }),
+        json!({
+            "surface": "designExports",
+            "schemaVersion": "dd.fabrication.design-export-bundle.v1",
+            "fields": ["partExports", "assemblyExports", "summary", "notes"],
+            "usedFor": ["deterministic draft export payloads", "format/media-type dispatch", "blocked export accounting"]
+        }),
+        json!({
+            "surface": "designInputReview",
+            "schemaVersion": "design input review payload",
+            "fields": ["inputs", "conversionPlan", "supportedFormats", "reviewRequiredCount"],
+            "usedFor": ["source CAD/mesh/slicer review", "conversion worker dispatch", "release blockers for unsupported or ambiguous inputs"]
+        }),
+        json!({
+            "surface": "manufacturingHandoff",
+            "schemaVersion": "dd.fabrication.manufacturing-handoff.v1",
+            "fields": ["machineReady", "reviewRequired", "parts", "releaseGates"],
+            "usedFor": ["part-level geometry envelopes", "stock/datum/fixture setup", "program and process-node links", "release gates"]
+        }),
+        json!({
+            "surface": "processGraph",
+            "schemaVersion": "process graph response payload",
+            "fields": ["nodes", "dependencies", "gates", "releaseState"],
+            "usedFor": ["operation graph links", "generated program links", "release-gate propagation", "hybrid route dependencies"]
+        }),
+        json!({
+            "surface": "hybridMakePlan",
+            "schemaVersion": "hybrid make plan response payload",
+            "fields": ["partRoutes", "joinOperations", "splitCombineDecisions", "learningObservations"],
+            "usedFor": ["printed/milled/turned route combinations", "join planning", "split/combine learning"]
+        }),
+    ]
+}
+
+fn design_generation_catalog_response() -> Value {
+    let export_contracts = design_generation_catalog_export_contracts();
+    let handoff_contracts = design_generation_catalog_handoff_contracts();
+    let export_formats = unique_sorted(export_contracts.iter().filter_map(|item| {
+        item.get("format")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let consumers = unique_sorted(export_contracts.iter().filter_map(|item| {
+        item.get("consumer")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.design-generation-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /design/generation/catalog", "GET /fabrication/design/generation/catalog"],
+        "exportContractCount": export_contracts.len(),
+        "handoffContractCount": handoff_contracts.len(),
+        "exportFormats": export_formats,
+        "consumers": consumers,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "designInputRoutes": ["GET /design/formats", "GET /fabrication/design/formats"],
+        "responseSurfaces": [
+            "designPackage",
+            "designPackage.parts",
+            "designPackage.parts.coordinateFrame",
+            "designPackage.parts.primitive",
+            "designPackage.parts.exportTargets",
+            "designPackage.assemblyExports",
+            "designExports",
+            "designExports.partExports",
+            "designExports.assemblyExports",
+            "designExports.summary",
+            "designInputReview",
+            "designInputReview.conversionPlan",
+            "manufacturingHandoff",
+            "manufacturingHandoff.parts",
+            "manufacturingHandoff.releaseGates",
+            "processGraph.nodes",
+            "processGraph.gates",
+            "hybridMakePlan.splitCombineDecisions",
+            "machineRelease.blockers",
+            "releasePackagePlan.requiredArtifacts"
+        ],
+        "artifactSurfaces": [
+            "design-summary",
+            "parametric-design",
+            "design-package",
+            "design-export-bundle",
+            "design-input-review",
+            "generated-design-export",
+            "generated-assembly-design-export",
+            "manufacturing-handoff",
+            "process-graph",
+            "hybrid-make-plan",
+            "mdp-request.artifacts.designPackage",
+            "mdp-request.artifacts.designExports"
+        ],
+        "learningSurfaces": [
+            "hybridMakePlan.learningObservations",
+            "decompositionPlan.learningObservations",
+            "interfaceControlPlan.learningObservations",
+            "neuralTrainingCorpus.examples",
+            "learning.interventionSignals"
+        ],
+        "releasePolicy": [
+            "design generation catalog entries describe deterministic draft payloads and handoff contracts, not certified CAD, mesh, CAM, or controller output",
+            "machine-ready release remains blocked while generated exports are blocked, design input conversion is unresolved, machine release is blocked, or manufacturing handoff gates require review",
+            "design, export, handoff, and split/combine observations are emitted for MDP/POMDP/neural workers so future planning can learn when to regenerate geometry, split parts, combine assemblies, or choose alternate machines"
+        ],
+        "schemas": [
+            "dd.fabrication.design-package.v1",
+            "dd.fabrication.design-export-bundle.v1",
+            "dd.fabrication.generated-design-export.v1",
+            "dd.fabrication.generated-assembly-export.v1",
+            "dd.fabrication.parametric-design.v1",
+            "dd.fabrication.manufacturing-handoff.v1"
+        ],
+        "exportContracts": export_contracts,
+        "handoffContracts": handoff_contracts
+    })
+}
+
+async fn design_generation_catalog_http() -> impl IntoResponse {
+    Json(design_generation_catalog_response())
 }
 
 async fn request_schema() -> impl IntoResponse {
@@ -29922,9 +36165,24 @@ async fn request_schema() -> impl IntoResponse {
         "schemaVersion": "dd.fabrication.request-schema.v1",
         "serviceSchemaVersion": SCHEMA_VERSION,
         "routes": {
+            "machineCatalog": ["GET /machines/catalog", "GET /fabrication/machines/catalog"],
+            "controllerCatalog": ["GET /controllers/catalog", "GET /fabrication/controllers/catalog"],
+            "materialCatalog": ["GET /materials/catalog", "GET /fabrication/materials/catalog"],
+            "designFormats": ["GET /design/formats", "GET /fabrication/design/formats"],
+            "designGenerationCatalog": ["GET /design/generation/catalog", "GET /fabrication/design/generation/catalog"],
+            "instructionLanguages": ["GET /instructions/languages", "GET /fabrication/instructions/languages"],
+            "instructionImprovementCatalog": ["GET /improvements/catalog", "GET /fabrication/improvements/catalog"],
+            "boundaryCatalog": ["GET /boundaries/catalog", "GET /fabrication/boundaries/catalog"],
+            "decompositionCatalog": ["GET /decomposition/catalog", "GET /fabrication/decomposition/catalog"],
+            "releaseCatalog": ["GET /release/catalog", "GET /fabrication/release/catalog"],
+            "simulationCatalog": ["GET /simulation/catalog", "GET /fabrication/simulation/catalog"],
+            "qualityCatalog": ["GET /quality/catalog", "GET /fabrication/quality/catalog"],
+            "interventionCatalog": ["GET /interventions/catalog", "GET /fabrication/interventions/catalog"],
+            "learningCapabilities": ["GET /learning/capabilities", "GET /fabrication/learning/capabilities"],
             "plan": ["POST /plan", "POST /fabrication/plan"],
             "instructionAnalysis": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
             "learningObserve": ["POST /learning/observe", "POST /fabrication/learning/observe"],
+            "learningOutcomesMemory": ["GET /learning/outcomes", "GET /fabrication/learning/outcomes"],
             "learningOutcome": ["POST /learning/outcomes", "POST /fabrication/learning/outcomes"]
         },
         "planRequest": {
@@ -30372,6 +36630,15 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_fabrication_server_failure_boundaries_total Failure boundaries emitted.\n\
          # TYPE dd_fabrication_server_failure_boundaries_total counter\n\
          dd_fabrication_server_failure_boundaries_total {}\n\
+         # HELP dd_fabrication_server_operator_actions_total Required operator intervention actions emitted by plan and instruction-analysis responses.\n\
+         # TYPE dd_fabrication_server_operator_actions_total counter\n\
+         dd_fabrication_server_operator_actions_total {}\n\
+         # HELP dd_fabrication_server_fixture_release_blockers_total Fixture/setup release blockers emitted by plan responses.\n\
+         # TYPE dd_fabrication_server_fixture_release_blockers_total counter\n\
+         dd_fabrication_server_fixture_release_blockers_total {}\n\
+         # HELP dd_fabrication_server_split_combine_reviews_total Split/combine decision or review records emitted before machine-ready release.\n\
+         # TYPE dd_fabrication_server_split_combine_reviews_total counter\n\
+         dd_fabrication_server_split_combine_reviews_total {}\n\
          # HELP dd_fabrication_server_errors_total Requests or background events that failed.\n\
          # TYPE dd_fabrication_server_errors_total counter\n\
          dd_fabrication_server_errors_total {}\n\
@@ -30419,6 +36686,18 @@ async fn metrics(State(state): State<AppState>) -> Response {
         state
             .metrics
             .failure_boundaries_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .operator_actions_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .fixture_release_blockers_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .split_combine_reviews_total
             .load(Ordering::Relaxed),
         state.metrics.errors_total.load(Ordering::Relaxed),
         state.metrics.nats_messages_total.load(Ordering::Relaxed),
@@ -30628,6 +36907,38 @@ async fn learning_policy_http(State(state): State<AppState>) -> Response {
     }
 }
 
+fn learning_outcomes_memory_response(memory: &LearningMemory) -> Value {
+    let snapshot = memory.snapshot();
+    let outcomes = memory.outcomes.iter().cloned().collect::<Vec<_>>();
+    json!({
+        "ok": true,
+        "schemaVersion": "dd.fabrication.learning-outcome-memory.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /learning/outcomes", "GET /fabrication/learning/outcomes"],
+        "postRoutes": ["POST /learning/outcomes", "POST /fabrication/learning/outcomes"],
+        "outcomeCount": outcomes.len(),
+        "maxOutcomes": memory.max_outcomes,
+        "bounded": true,
+        "policy": snapshot,
+        "outcomes": outcomes,
+        "releasePolicy": [
+            "outcomes are bounded in-process learning evidence used to shape future MDP/POMDP/neural planning previews",
+            "learned preferences do not certify machine-ready release; validation, simulation, controller review, and operator or automation signoff remain required"
+        ]
+    })
+}
+
+async fn learning_outcomes_http(State(state): State<AppState>) -> Response {
+    match state.learning.read() {
+        Ok(memory) => Json(learning_outcomes_memory_response(&memory)).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false, "error": format!("learning memory lock failed: {error}") })),
+        )
+            .into_response(),
+    }
+}
+
 async fn api_docs_html() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!("../generated/api-docs.html"))
 }
@@ -30670,6 +36981,67 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/readyz", get(healthz))
         .route("/capabilities", get(capabilities))
         .route("/fabrication/capabilities", get(capabilities))
+        .route("/machines/catalog", get(machine_catalog))
+        .route("/fabrication/machines/catalog", get(machine_catalog))
+        .route("/controllers/catalog", get(controller_catalog_http))
+        .route(
+            "/fabrication/controllers/catalog",
+            get(controller_catalog_http),
+        )
+        .route("/materials/catalog", get(material_catalog_http))
+        .route("/fabrication/materials/catalog", get(material_catalog_http))
+        .route("/design/formats", get(design_formats))
+        .route("/fabrication/design/formats", get(design_formats))
+        .route(
+            "/design/generation/catalog",
+            get(design_generation_catalog_http),
+        )
+        .route(
+            "/fabrication/design/generation/catalog",
+            get(design_generation_catalog_http),
+        )
+        .route("/instructions/languages", get(instruction_languages))
+        .route(
+            "/fabrication/instructions/languages",
+            get(instruction_languages),
+        )
+        .route(
+            "/improvements/catalog",
+            get(instruction_improvement_catalog_http),
+        )
+        .route(
+            "/fabrication/improvements/catalog",
+            get(instruction_improvement_catalog_http),
+        )
+        .route("/boundaries/catalog", get(boundary_catalog_http))
+        .route(
+            "/fabrication/boundaries/catalog",
+            get(boundary_catalog_http),
+        )
+        .route("/decomposition/catalog", get(decomposition_catalog_http))
+        .route(
+            "/fabrication/decomposition/catalog",
+            get(decomposition_catalog_http),
+        )
+        .route("/release/catalog", get(release_catalog_http))
+        .route("/fabrication/release/catalog", get(release_catalog_http))
+        .route("/simulation/catalog", get(simulation_catalog_http))
+        .route(
+            "/fabrication/simulation/catalog",
+            get(simulation_catalog_http),
+        )
+        .route("/quality/catalog", get(quality_catalog_http))
+        .route("/fabrication/quality/catalog", get(quality_catalog_http))
+        .route("/interventions/catalog", get(intervention_catalog_http))
+        .route(
+            "/fabrication/interventions/catalog",
+            get(intervention_catalog_http),
+        )
+        .route("/learning/capabilities", get(learning_capabilities))
+        .route(
+            "/fabrication/learning/capabilities",
+            get(learning_capabilities),
+        )
         .route("/schema", get(request_schema))
         .route("/fabrication/schema", get(request_schema))
         .route("/examples", get(examples))
@@ -30689,10 +37061,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/instructions/analyze", post(analyze_http))
         .route("/learning/observe", post(learning_observe_http))
         .route("/fabrication/learning/observe", post(learning_observe_http))
-        .route("/learning/outcomes", post(learning_outcome_http))
+        .route(
+            "/learning/outcomes",
+            get(learning_outcomes_http).post(learning_outcome_http),
+        )
         .route(
             "/fabrication/learning/outcomes",
-            post(learning_outcome_http),
+            get(learning_outcomes_http).post(learning_outcome_http),
         )
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
@@ -31543,6 +37918,1458 @@ mod tests {
     }
 
     #[test]
+    fn design_format_catalog_endpoint_exposes_cad_slicer_and_conversion_contract() {
+        let payload = design_format_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.design-format-catalog.v1")
+        );
+        assert_eq!(
+            payload.get("formatCount").and_then(Value::as_u64),
+            Some(design_format_catalog().len() as u64)
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/design/formats"))));
+        let source_systems = payload
+            .get("sourceSystems")
+            .and_then(Value::as_array)
+            .expect("source systems should be present");
+        for system in [
+            "PTC Creo / Pro/ENGINEER",
+            "SOLIDWORKS",
+            "Autodesk Fusion",
+            "Siemens NX",
+            "CATIA",
+            "Onshape",
+            "FreeCAD",
+            "OpenSCAD",
+            "Blender",
+            "ZBrush",
+            "PrusaSlicer",
+            "OrcaSlicer",
+            "Cura",
+            "Bambu Studio",
+        ] {
+            assert!(
+                source_systems
+                    .iter()
+                    .any(|source_system| source_system.as_str() == Some(system)),
+                "missing design format source system {system}"
+            );
+        }
+        assert!(payload
+            .get("categoryCounts")
+            .and_then(|counts| counts.get("native-cad"))
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+        assert_eq!(
+            payload
+                .get("conversionSubjects")
+                .and_then(|subjects| subjects.get("requests"))
+                .and_then(Value::as_str),
+            Some(FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT)
+        );
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release stays blocked")))));
+        assert!(payload
+            .get("formats")
+            .and_then(Value::as_array)
+            .is_some_and(|formats| formats.iter().any(|format| format
+                .get("normalizedFormat")
+                .and_then(Value::as_str)
+                == Some("solidworks-native"))));
+    }
+
+    #[test]
+    fn design_generation_catalog_endpoint_exposes_package_export_and_handoff_contract() {
+        let payload = design_generation_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.design-generation-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/design/generation/catalog")
+            })));
+        assert!(payload
+            .get("exportContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 10));
+        assert!(payload
+            .get("handoffContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 6));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("designPackage.parts.primitive"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("manufacturingHandoff.parts"))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("design-export-bundle"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("hybridMakePlan.learningObservations"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let export_formats = payload
+            .get("exportFormats")
+            .and_then(Value::as_array)
+            .expect("export formats should be present");
+        for format in [
+            "3MF",
+            "STL",
+            "STEP",
+            "DXF",
+            "dd-cam-setup-json",
+            "dd-parametric-csg-json",
+            "STEP-assembly",
+            "dd-assembly-graph-json",
+        ] {
+            assert!(
+                export_formats
+                    .iter()
+                    .any(|item| item.as_str() == Some(format)),
+                "missing design export format {format}"
+            );
+        }
+
+        let schemas = payload
+            .get("schemas")
+            .and_then(Value::as_array)
+            .expect("schemas should be present");
+        for schema in [
+            "dd.fabrication.design-package.v1",
+            "dd.fabrication.design-export-bundle.v1",
+            "dd.fabrication.generated-design-export.v1",
+            "dd.fabrication.manufacturing-handoff.v1",
+        ] {
+            assert!(
+                schemas.iter().any(|item| item.as_str() == Some(schema)),
+                "missing design generation schema {schema}"
+            );
+        }
+
+        let handoff_contracts = payload
+            .get("handoffContracts")
+            .and_then(Value::as_array)
+            .expect("handoff contracts should be present");
+        let manufacturing_handoff = handoff_contracts
+            .iter()
+            .find(|item| {
+                item.get("surface").and_then(Value::as_str) == Some("manufacturingHandoff")
+            })
+            .expect("manufacturing handoff contract should be present");
+        assert_eq!(
+            manufacturing_handoff
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.manufacturing-handoff.v1")
+        );
+    }
+
+    #[test]
+    fn instruction_language_catalog_endpoint_exposes_machine_program_and_review_contract() {
+        let payload = instruction_language_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-language-catalog.v1")
+        );
+        assert_eq!(
+            payload.get("languageCount").and_then(Value::as_u64),
+            Some(accepted_instruction_languages().len() as u64)
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/instructions/languages"))));
+        assert!(payload
+            .get("analysisRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/instructions/analyze"))));
+
+        let families = payload
+            .get("families")
+            .and_then(Value::as_array)
+            .expect("families should be present");
+        for family in [
+            "additive-job-sheet",
+            "controller-gcode",
+            "operator-text-instruction",
+            "subtractive-job-sheet",
+        ] {
+            assert!(
+                families.iter().any(|item| item.as_str() == Some(family)),
+                "missing instruction language family {family}"
+            );
+        }
+        assert!(payload
+            .get("familyCounts")
+            .and_then(|counts| counts.get("controller-gcode"))
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+
+        let machine_classes = payload
+            .get("machineClasses")
+            .and_then(Value::as_array)
+            .expect("machine classes should be present");
+        for class in [
+            "vertical-mill",
+            "lathe",
+            "sls-mjf-powder-bed-printer",
+            "robotic-assembly-cell",
+        ] {
+            assert!(
+                machine_classes
+                    .iter()
+                    .any(|item| item.as_str() == Some(class)),
+                "missing machine class {class}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release stays blocked")))));
+
+        let languages = payload
+            .get("languages")
+            .and_then(Value::as_array)
+            .expect("languages should be present");
+        let haas = languages
+            .iter()
+            .find(|item| item.get("language").and_then(Value::as_str) == Some("haas-gcode"))
+            .expect("haas-gcode language should be present");
+        assert_eq!(
+            haas.get("family").and_then(Value::as_str),
+            Some("controller-gcode")
+        );
+        assert!(haas
+            .get("machineClasses")
+            .and_then(Value::as_array)
+            .is_some_and(|classes| classes
+                .iter()
+                .any(|class| class.as_str() == Some("horizontal-mill"))));
+
+        let separation = languages
+            .iter()
+            .find(|item| {
+                item.get("language").and_then(Value::as_str) == Some("part-separation-checklist")
+            })
+            .expect("part separation checklist language should be present");
+        assert_eq!(
+            separation.get("family").and_then(Value::as_str),
+            Some("operator-text-instruction")
+        );
+        assert!(separation
+            .get("releaseGates")
+            .and_then(Value::as_array)
+            .is_some_and(|gates| gates.iter().any(|gate| gate
+                .as_str()
+                .is_some_and(|gate| gate.contains("human-reviewed-shop-floor-traveler")))));
+    }
+
+    #[test]
+    fn instruction_improvement_catalog_endpoint_exposes_patch_and_review_contract() {
+        let payload = instruction_improvement_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-improvement-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/improvements/catalog"))));
+        assert!(payload
+            .get("actionCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 40));
+        assert!(payload
+            .get("patchOperationCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 6));
+        assert_eq!(
+            payload.get("patchManifestSchema").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-patch-manifest.v1")
+        );
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("improvedPrograms.patchManifest.operations")
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("improved-program-*"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("instruction-patch-action:*"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
+
+        let action_types = payload
+            .get("actionTypes")
+            .and_then(Value::as_array)
+            .expect("action types should be present");
+        for action in [
+            "add-slicer-profile-record",
+            "add-wire-edm-text-evidence",
+            "add-subtractive-text-setup-evidence",
+            "add-structured-text-checkpoints",
+            "add-coordinate-reference",
+        ] {
+            assert!(
+                action_types
+                    .iter()
+                    .any(|item| item.as_str() == Some(action)),
+                "missing improvement action {action}"
+            );
+        }
+
+        let patch_operations = payload
+            .get("patchOperationKinds")
+            .and_then(Value::as_array)
+            .expect("patch operation kinds should be present");
+        for operation in [
+            "insert-before-line",
+            "insert-before-program",
+            "insert-before-first-risk-motion",
+            "insert-after-program",
+            "insert-review-checkpoint",
+            "review-line",
+        ] {
+            assert!(
+                patch_operations
+                    .iter()
+                    .any(|item| item.as_str() == Some(operation)),
+                "missing patch operation {operation}"
+            );
+        }
+
+        let action_contracts = payload
+            .get("actionContracts")
+            .and_then(Value::as_array)
+            .expect("action contracts should be present");
+        let slicer_contract = action_contracts
+            .iter()
+            .find(|item| {
+                item.get("family").and_then(Value::as_str) == Some("slicer-and-additive-evidence")
+            })
+            .expect("slicer/additive improvement family should be present");
+        assert!(slicer_contract
+            .get("actions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions
+                .iter()
+                .any(|action| action.as_str() == Some("add-slicer-profile-record"))));
+    }
+
+    #[test]
+    fn controller_postprocessor_catalog_endpoint_exposes_controller_release_contract() {
+        let payload = controller_postprocessor_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.controller-postprocessor-catalog.v1")
+        );
+        assert_eq!(
+            payload.get("targetCount").and_then(Value::as_u64),
+            Some(default_machines().len() as u64)
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/controllers/catalog"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| surface
+                .as_str()
+                .is_some_and(|surface| surface == "controllerPlan.compatibilityTargets"))));
+
+        let targets = payload
+            .get("targets")
+            .and_then(Value::as_array)
+            .expect("controller targets should be present");
+        let fdm = targets
+            .iter()
+            .find(|item| item.get("machineId").and_then(Value::as_str) == Some("fdm-printer-1"))
+            .expect("fdm printer target should be present");
+        assert_eq!(
+            fdm.get("postprocessor").and_then(Value::as_str),
+            Some("marlin-additive-gcode-postprocessor")
+        );
+        assert_eq!(
+            fdm.get("dialectFamily").and_then(Value::as_str),
+            Some("additive-firmware-gcode-dialect")
+        );
+
+        let vertical_mill = targets
+            .iter()
+            .find(|item| item.get("machineId").and_then(Value::as_str) == Some("vertical-mill-1"))
+            .expect("vertical mill target should be present");
+        assert_eq!(
+            vertical_mill.get("postprocessor").and_then(Value::as_str),
+            Some("haas-mill-gcode-postprocessor")
+        );
+        assert!(vertical_mill
+            .get("requiredChecks")
+            .and_then(Value::as_array)
+            .is_some_and(|checks| checks.iter().any(|check| check
+                .as_str()
+                .is_some_and(|check| check.contains("work offsets")))));
+
+        let waterjet = targets
+            .iter()
+            .find(|item| item.get("machineId").and_then(Value::as_str) == Some("waterjet-cutter-1"))
+            .expect("waterjet target should be present");
+        assert_eq!(
+            waterjet.get("postprocessor").and_then(Value::as_str),
+            Some("waterjet-sheet-cut-postprocessor")
+        );
+        assert_eq!(
+            waterjet.get("dialectFamily").and_then(Value::as_str),
+            Some("sheet-cutting-controller-dialect")
+        );
+    }
+
+    #[test]
+    fn material_catalog_endpoint_exposes_feedstock_compatibility_and_release_contract() {
+        let payload = material_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.material-catalog.v1")
+        );
+        assert!(payload
+            .get("materialCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 20));
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/materials/catalog"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("materialPlan.routeRequirements"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let families = payload
+            .get("families")
+            .and_then(Value::as_array)
+            .expect("families should be present");
+        for family in ["metal", "polymer", "photopolymer", "composite"] {
+            assert!(
+                families.iter().any(|item| item.as_str() == Some(family)),
+                "missing material family {family}"
+            );
+        }
+        let feedstock_kinds = payload
+            .get("feedstockKinds")
+            .and_then(Value::as_array)
+            .expect("feedstock kinds should be present");
+        for kind in [
+            "filament-spool",
+            "photopolymer-resin",
+            "qualified-metal-powder-lot",
+            "sheet-plate-or-panel",
+        ] {
+            assert!(
+                feedstock_kinds
+                    .iter()
+                    .any(|item| item.as_str() == Some(kind)),
+                "missing feedstock kind {kind}"
+            );
+        }
+
+        let materials = payload
+            .get("materials")
+            .and_then(Value::as_array)
+            .expect("materials should be present");
+        let aluminum = materials
+            .iter()
+            .find(|item| item.get("material").and_then(Value::as_str) == Some("aluminum"))
+            .expect("aluminum material should be present");
+        assert_eq!(
+            aluminum.get("family").and_then(Value::as_str),
+            Some("metal")
+        );
+        assert!(aluminum
+            .get("compatibleMachineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|kinds| kinds
+                .iter()
+                .any(|kind| kind.as_str() == Some("vertical-mill"))));
+        assert!(aluminum
+            .get("boundarySignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|signal| signal
+                .as_str()
+                .is_some_and(|signal| signal == "material-machine-boundary:aluminum"))));
+
+        let resin = materials
+            .iter()
+            .find(|item| item.get("material").and_then(Value::as_str) == Some("resin"))
+            .expect("resin material should be present");
+        assert_eq!(
+            resin.get("family").and_then(Value::as_str),
+            Some("photopolymer")
+        );
+        assert!(resin
+            .get("conditioning")
+            .and_then(Value::as_array)
+            .is_some_and(|conditioning| conditioning
+                .iter()
+                .any(|item| item.as_str().is_some_and(|item| item.contains("wash")))));
+    }
+
+    #[test]
+    fn boundary_catalog_endpoint_exposes_failure_intervention_and_split_combine_contract() {
+        let payload = boundary_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.boundary-catalog.v1")
+        );
+        assert_eq!(
+            payload.get("boundaryCount").and_then(Value::as_u64),
+            Some(safety_boundary_classes().len() as u64)
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/boundaries/catalog"))));
+        assert!(payload
+            .get("analysisRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/instructions/analyze"))));
+        assert!(payload
+            .get("planningRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/plan"))));
+
+        let families = payload
+            .get("families")
+            .and_then(Value::as_array)
+            .expect("families should be present");
+        for family in [
+            "machine-release",
+            "intervention-readiness",
+            "split-combine",
+            "quality-release",
+            "material-route",
+        ] {
+            assert!(
+                families.iter().any(|item| item.as_str() == Some(family)),
+                "missing boundary catalog family {family}"
+            );
+        }
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("releasePackagePlan"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let boundaries = payload
+            .get("boundaries")
+            .and_then(Value::as_array)
+            .expect("boundaries should be present");
+        let machine_envelope = boundaries
+            .iter()
+            .find(|item| {
+                item.get("boundaryKind").and_then(Value::as_str) == Some("machine-envelope")
+            })
+            .expect("machine-envelope boundary should be present");
+        assert_eq!(
+            machine_envelope
+                .get("machineFailureRisk")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(machine_envelope
+            .get("detectionSources")
+            .and_then(Value::as_array)
+            .is_some_and(|sources| sources
+                .iter()
+                .any(|source| source.as_str() == Some("simulation.programTraces"))));
+
+        let human_intervention = boundaries
+            .iter()
+            .find(|item| {
+                item.get("boundaryKind").and_then(Value::as_str) == Some("human-intervention")
+            })
+            .expect("human-intervention boundary should be present");
+        assert_eq!(
+            human_intervention
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(human_intervention
+            .get("resolutionActions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions.iter().any(|action| action
+                .as_str()
+                .is_some_and(|action| action.contains("operator checkpoint")))));
+
+        let split_boundary = boundaries
+            .iter()
+            .find(|item| item.get("boundaryKind").and_then(Value::as_str) == Some("split-boundary"))
+            .expect("split-boundary should be present");
+        assert_eq!(
+            split_boundary
+                .get("splitCombineRelevant")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(split_boundary
+            .get("learningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|signal| signal
+                .as_str()
+                .is_some_and(|signal| signal == "boundary-kind:split-boundary"))));
+    }
+
+    #[test]
+    fn decomposition_catalog_endpoint_exposes_split_combine_and_interface_contract() {
+        let payload = decomposition_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.decomposition-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/decomposition/catalog"))));
+        assert!(payload
+            .get("targetCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("interfaceControlPlan.controls"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| {
+                surfaces.iter().any(|surface| {
+                    surface.as_str() == Some("decompositionPlan.learningObservations")
+                })
+            }));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let families = payload
+            .get("families")
+            .and_then(Value::as_array)
+            .expect("decomposition catalog families should be present");
+        for family in [
+            "split",
+            "combine",
+            "route-review",
+            "learning-review",
+            "interface-control",
+        ] {
+            assert!(
+                families.iter().any(|item| item.as_str() == Some(family)),
+                "missing decomposition catalog family {family}"
+            );
+        }
+
+        let target_contracts = payload
+            .get("targetContracts")
+            .and_then(Value::as_array)
+            .expect("target contracts should be present");
+        let split = target_contracts
+            .iter()
+            .find(|item| {
+                item.get("targetKind").and_then(Value::as_str)
+                    == Some("split-boundary-decomposition")
+            })
+            .expect("split decomposition contract should be present");
+        assert_eq!(
+            split.get("boundaryKind").and_then(Value::as_str),
+            Some("split-boundary")
+        );
+        assert!(split
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("child-part CAD/mesh/CAM regeneration")))));
+        assert!(split
+            .get("learningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(
+                |signals| signals.iter().any(|signal| signal.as_str().is_some_and(
+                    |signal| signal == "decomposition-target:split-boundary-decomposition"
+                ))
+            ));
+
+        let combine = target_contracts
+            .iter()
+            .find(|item| {
+                item.get("targetKind").and_then(Value::as_str)
+                    == Some("combine-boundary-recomposition")
+            })
+            .expect("combine recomposition contract should be present");
+        assert!(combine
+            .get("releaseGates")
+            .and_then(Value::as_array)
+            .is_some_and(|gates| gates
+                .iter()
+                .any(|gate| gate.as_str() == Some("assembly-lock-in-interface-fit-check"))));
+
+        let interface_modes = payload
+            .get("interfaceModes")
+            .and_then(Value::as_array)
+            .expect("interface modes should be present");
+        let clearance_fit = interface_modes
+            .iter()
+            .find(|item| {
+                item.get("fit").and_then(Value::as_str) == Some("controlled-clearance-fit")
+            })
+            .expect("controlled clearance fit should be present");
+        assert!(clearance_fit
+            .get("acceptanceCriteria")
+            .and_then(Value::as_array)
+            .is_some_and(|criteria| criteria
+                .iter()
+                .any(|item| item.as_str().is_some_and(|item| item.contains("dry-fit")))));
+    }
+
+    #[test]
+    fn release_catalog_endpoint_exposes_machine_ready_package_contract() {
+        let payload = release_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.release-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/release/catalog"))));
+        assert!(payload
+            .get("gateCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("machineRelease.blockers"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("releasePackagePlan.learningObservations")
+            })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let package_kinds = payload
+            .get("packageKinds")
+            .and_then(Value::as_array)
+            .expect("release package kinds should be present");
+        for package_kind in ["machine-program-release", "assembly-recomposition-release"] {
+            assert!(
+                package_kinds
+                    .iter()
+                    .any(|item| item.as_str() == Some(package_kind)),
+                "missing package kind {package_kind}"
+            );
+        }
+
+        let gate_contracts = payload
+            .get("gateContracts")
+            .and_then(Value::as_array)
+            .expect("gate contracts should be present");
+        for gate_type in [
+            "machine-release-signoff",
+            "controller-postprocess-compatibility",
+            "split-combine-interface-release",
+        ] {
+            assert!(
+                gate_contracts.iter().any(|item| {
+                    item.get("gateType").and_then(Value::as_str) == Some(gate_type)
+                }),
+                "missing release gate {gate_type}"
+            );
+        }
+        let split_combine_gate = gate_contracts
+            .iter()
+            .find(|item| {
+                item.get("gateType").and_then(Value::as_str)
+                    == Some("split-combine-interface-release")
+            })
+            .expect("split/combine release gate should be present");
+        assert!(split_combine_gate
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("decomposition target IDs")))));
+
+        let blocker_sources = payload
+            .get("blockerSources")
+            .and_then(Value::as_array)
+            .expect("blocker sources should be present");
+        assert!(blocker_sources
+            .iter()
+            .any(|item| { item.get("source").and_then(Value::as_str) == Some("release-probe") }));
+
+        let required_artifacts = payload
+            .get("requiredArtifacts")
+            .and_then(Value::as_array)
+            .expect("required artifacts should be present");
+        for artifact in [
+            "release-package-plan",
+            "machine-release",
+            "simulation-report",
+        ] {
+            assert!(
+                required_artifacts
+                    .iter()
+                    .any(|item| item.as_str() == Some(artifact)),
+                "missing required release artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn simulation_catalog_endpoint_exposes_dry_run_and_risk_contract() {
+        let payload = simulation_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.simulation-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/simulation/catalog"))));
+        assert!(payload
+            .get("riskContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+        assert!(payload
+            .get("dryRunContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 4));
+        assert!(payload
+            .get("riskStatuses")
+            .and_then(Value::as_array)
+            .is_some_and(|statuses| statuses
+                .iter()
+                .any(|status| status.as_str() == Some("simulation-risk-blocked"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("simulation.riskProfile"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("simulation.programs.axisExtents") })));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("simulation.riskProfile.learningObservations")
+            })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let risk_types = payload
+            .get("riskTypes")
+            .and_then(Value::as_array)
+            .expect("risk types should be present");
+        for risk_type in [
+            "toolpath-envelope-excursion",
+            "arc-sweep-envelope-excursion",
+            "rapid-clearance-collision",
+            "rotary-index-clearance-review",
+        ] {
+            assert!(
+                risk_types
+                    .iter()
+                    .any(|item| item.as_str() == Some(risk_type)),
+                "missing simulation risk type {risk_type}"
+            );
+        }
+
+        let risk_contracts = payload
+            .get("riskContracts")
+            .and_then(Value::as_array)
+            .expect("risk contracts should be present");
+        let envelope_contract = risk_contracts
+            .iter()
+            .find(|item| {
+                item.get("riskType").and_then(Value::as_str) == Some("toolpath-envelope-excursion")
+            })
+            .expect("toolpath envelope risk contract should be present");
+        assert!(envelope_contract
+            .get("findingCodes")
+            .and_then(Value::as_array)
+            .is_some_and(|codes| codes
+                .iter()
+                .any(|code| code.as_str() == Some("simulated-axis-envelope-exceeded"))));
+        assert!(envelope_contract
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence
+                .iter()
+                .any(|item| item.as_str() == Some("machine work envelope"))));
+
+        let dry_run_contracts = payload
+            .get("dryRunContracts")
+            .and_then(Value::as_array)
+            .expect("dry-run contracts should be present");
+        let rotary_contract = dry_run_contracts
+            .iter()
+            .find(|item| {
+                item.get("contract").and_then(Value::as_str)
+                    == Some("rotary-index-clearance-dry-run")
+            })
+            .expect("rotary dry-run contract should be present");
+        assert!(rotary_contract
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence
+                .iter()
+                .any(|item| item.as_str() == Some("rotary-clearance-simulation-report"))));
+    }
+
+    #[test]
+    fn quality_catalog_endpoint_exposes_inspection_metrology_and_release_contract() {
+        let payload = quality_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.quality-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/quality/catalog"))));
+        assert!(payload
+            .get("inspectionContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 6));
+        assert!(payload
+            .get("measurementContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 4));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("qualityPlan.inspectionPoints"))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("quality-plan"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("measurement-target:*"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let families = payload
+            .get("families")
+            .and_then(Value::as_array)
+            .expect("quality families should be present");
+        for family in [
+            "dimensional-metrology",
+            "additive-postprocess",
+            "subtractive-metrology",
+            "assembly-quality",
+        ] {
+            assert!(
+                families.iter().any(|item| item.as_str() == Some(family)),
+                "missing quality family {family}"
+            );
+        }
+
+        let measurement_contracts = payload
+            .get("measurementContracts")
+            .and_then(Value::as_array)
+            .expect("measurement contracts should be present");
+        assert!(measurement_contracts.iter().any(|item| {
+            item.get("target").and_then(Value::as_str) == Some("interface-fit-and-assembly-lock")
+        }));
+    }
+
+    #[test]
+    fn intervention_catalog_endpoint_exposes_operator_automation_and_execution_contract() {
+        let payload = intervention_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.intervention-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/interventions/catalog"))));
+        assert!(payload
+            .get("actionCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+        assert!(payload
+            .get("automationTypeCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 6));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("operatorInterventionPlan.requiredOperatorActions")
+            })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("executionPlan.stopPoints"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("operatorInterventionPlan.learningObservations")
+            })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let action_types = payload
+            .get("actionTypes")
+            .and_then(Value::as_array)
+            .expect("action types should be present");
+        for action_type in [
+            "human-review",
+            "add-verified-automation",
+            "split-job-or-part",
+            "combine-or-assemble-parts",
+        ] {
+            assert!(
+                action_types
+                    .iter()
+                    .any(|item| item.as_str() == Some(action_type)),
+                "missing intervention action type {action_type}"
+            );
+        }
+
+        let automation_types = payload
+            .get("automationTypes")
+            .and_then(Value::as_array)
+            .expect("automation types should be present");
+        for automation_type in [
+            "assembly-cell-automation",
+            "fixture-automation",
+            "operator-gate-automation",
+        ] {
+            assert!(
+                automation_types
+                    .iter()
+                    .any(|item| item.as_str() == Some(automation_type)),
+                "missing automation type {automation_type}"
+            );
+        }
+
+        let action_contracts = payload
+            .get("actionContracts")
+            .and_then(Value::as_array)
+            .expect("action contracts should be present");
+        let automation_action = action_contracts
+            .iter()
+            .find(|item| {
+                item.get("actionType").and_then(Value::as_str) == Some("add-verified-automation")
+            })
+            .expect("verified automation action contract should be present");
+        assert!(automation_action
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("automation") || item.contains("robot")))));
+
+        let evidence_gate_contracts = payload
+            .get("evidenceGateContracts")
+            .and_then(Value::as_array)
+            .expect("evidence gate contracts should be present");
+        let execution_stop_gate = evidence_gate_contracts
+            .iter()
+            .find(|item| {
+                item.get("gateType").and_then(Value::as_str) == Some("execution-stop-point")
+            })
+            .expect("execution stop evidence gate should be present");
+        assert!(execution_stop_gate
+            .get("blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| blocks
+                .iter()
+                .any(|item| item.as_str() == Some("program run"))));
+        let split_combine_gate = evidence_gate_contracts
+            .iter()
+            .find(|item| {
+                item.get("gateType").and_then(Value::as_str) == Some("split-combine-review")
+            })
+            .expect("split/combine evidence gate should be present");
+        assert!(split_combine_gate
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence
+                .iter()
+                .any(|item| item.as_str() == Some("approved decision"))));
+    }
+
+    #[test]
+    fn machine_catalog_endpoint_exposes_default_fleet_and_release_contract() {
+        let payload = machine_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.machine-catalog.v1")
+        );
+        assert_eq!(
+            payload.get("machineCount").and_then(Value::as_u64),
+            Some(default_machines().len() as u64)
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/machines/catalog"))));
+        assert!(payload
+            .get("planningRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/plan"))));
+        assert!(payload
+            .get("instructionAnalysisRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/instructions/analyze"))));
+
+        let process_classes = payload
+            .get("processClasses")
+            .and_then(Value::as_array)
+            .expect("process classes should be present");
+        for process_class in [
+            "additive",
+            "milling",
+            "turning",
+            "routing",
+            "sheet-cutting",
+            "other",
+        ] {
+            assert!(
+                process_classes
+                    .iter()
+                    .any(|item| item.as_str() == Some(process_class)),
+                "missing machine process class {process_class}"
+            );
+        }
+        assert!(payload
+            .get("processClassCounts")
+            .and_then(|counts| counts.get("additive"))
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+        assert!(payload
+            .get("maxAxes")
+            .and_then(Value::as_u64)
+            .is_some_and(|axes| axes >= 5));
+
+        let materials = payload
+            .get("materials")
+            .and_then(Value::as_array)
+            .expect("materials should be present");
+        for material in ["pla", "petg", "aluminum", "tool-steel", "resin"] {
+            assert!(
+                materials.iter().any(|item| item.as_str() == Some(material)),
+                "missing machine catalog material {material}"
+            );
+        }
+        let operations = payload
+            .get("operations")
+            .and_then(Value::as_array)
+            .expect("operations should be present");
+        for operation in [
+            "additive-print",
+            "five-axis-milling",
+            "turn",
+            "profile",
+            "wire-edm-cut",
+            "assembly-joining",
+        ] {
+            assert!(
+                operations
+                    .iter()
+                    .any(|item| item.as_str() == Some(operation)),
+                "missing machine catalog operation {operation}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let machines = payload
+            .get("machines")
+            .and_then(Value::as_array)
+            .expect("machines should be present");
+        for kind in [
+            "fdm-printer",
+            "vertical-mill",
+            "horizontal-mill",
+            "lathe",
+            "mill-turn-center",
+            "laser-cutter",
+            "wire-edm",
+            "sinker-edm",
+            "robotic-assembly-cell",
+        ] {
+            assert!(
+                machines
+                    .iter()
+                    .any(|machine| machine.get("kind").and_then(Value::as_str) == Some(kind)),
+                "missing machine kind {kind}"
+            );
+        }
+
+        let mill = machines
+            .iter()
+            .find(|machine| machine.get("kind").and_then(Value::as_str) == Some("vertical-mill"))
+            .expect("vertical mill should be present");
+        assert_eq!(
+            mill.get("processClass").and_then(Value::as_str),
+            Some("milling")
+        );
+        assert!(mill
+            .get("acceptedInstructionLanguages")
+            .and_then(Value::as_array)
+            .is_some_and(|languages| languages
+                .iter()
+                .any(|language| language.as_str() == Some("iso-gcode"))));
+        assert!(mill
+            .get("releaseGates")
+            .and_then(Value::as_array)
+            .is_some_and(|gates| gates.iter().any(|gate| gate
+                .as_str()
+                .is_some_and(|gate| gate.contains("workholding")))));
+
+        let assembly = machines
+            .iter()
+            .find(|machine| {
+                machine.get("kind").and_then(Value::as_str) == Some("robotic-assembly-cell")
+            })
+            .expect("robotic assembly cell should be present");
+        assert!(assembly
+            .get("acceptedInstructionLanguages")
+            .and_then(Value::as_array)
+            .is_some_and(|languages| languages
+                .iter()
+                .any(|language| language.as_str() == Some("part-separation-checklist"))));
+        assert!(assembly
+            .get("releaseGates")
+            .and_then(Value::as_array)
+            .is_some_and(|gates| gates.iter().any(|gate| gate
+                .as_str()
+                .is_some_and(|gate| gate.contains("final metrology")))));
+    }
+
+    #[test]
+    fn learning_capability_catalog_endpoint_exposes_des_mdp_pomdp_and_neural_contract() {
+        let payload = learning_capability_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.learning-capability-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/learning/capabilities"))));
+        assert_eq!(
+            payload
+                .get("engine")
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str),
+            Some("des_engine")
+        );
+        assert_eq!(
+            payload
+                .get("engine")
+                .and_then(|engine| engine.get("sourceCrate"))
+                .and_then(Value::as_str),
+            Some("remote/submodules/discrete-event-system.rs")
+        );
+        assert_eq!(
+            payload
+                .get("engine")
+                .and_then(|engine| engine.get("decisionSchemas"))
+                .and_then(|schemas| schemas.get("mdp"))
+                .and_then(Value::as_str),
+            Some(MDP_SCHEMA)
+        );
+        assert_eq!(
+            payload
+                .get("engine")
+                .and_then(|engine| engine.get("decisionSchemas"))
+                .and_then(|schemas| schemas.get("pomdp"))
+                .and_then(Value::as_str),
+            Some(POMDP_SCHEMA)
+        );
+        assert_eq!(
+            payload
+                .get("engine")
+                .and_then(|engine| engine.get("decisionSchemas"))
+                .and_then(|schemas| schemas.get("studioGraph"))
+                .and_then(Value::as_str),
+            Some(STUDIO_GRAPH_SCHEMA)
+        );
+        assert!(payload
+            .get("decisionPrimitives")
+            .and_then(Value::as_array)
+            .is_some_and(|primitives| primitives
+                .iter()
+                .any(|primitive| primitive.get("name").and_then(Value::as_str)
+                    == Some("des_engine::des::decision::solve_mdp"))));
+        assert!(payload
+            .get("desStudioPrimitives")
+            .and_then(Value::as_array)
+            .is_some_and(|primitives| primitives
+                .iter()
+                .any(|primitive| primitive.get("name").and_then(Value::as_str)
+                    == Some("des_engine::des::studio::StudioModelSpec"))));
+        assert!(payload
+            .get("neuralPrimitives")
+            .and_then(Value::as_array)
+            .is_some_and(|primitives| primitives
+                .iter()
+                .any(|primitive| primitive.get("name").and_then(Value::as_str)
+                    == Some("des_engine::des::general::neural_network::FeedForwardNetwork"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+    }
+
+    #[test]
     fn design_input_review_hardens_ambiguous_extensions_and_redacts_uris() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-cad-hardening".to_string()),
@@ -32060,6 +39887,30 @@ mod tests {
             .learning_observations
             .iter()
             .any(|observation| observation.starts_with("postprocess-status:")));
+        assert_eq!(
+            response.controller_plan.schema_version,
+            "dd.fabrication.controller-plan.v1"
+        );
+        assert_eq!(
+            response.controller_plan.target_count,
+            response.postprocess_plan.controller_targets.len()
+        );
+        assert!(!response.controller_plan.compatibility_targets.is_empty());
+        assert!(!response.controller_plan.dialect_summaries.is_empty());
+        assert!(response
+            .controller_plan
+            .compatibility_targets
+            .iter()
+            .all(|target| !target.required_evidence.is_empty()
+                && !target.required_checks.is_empty()
+                && target
+                    .learning_observation
+                    .starts_with("controller-target:")));
+        assert!(response
+            .controller_plan
+            .learning_observations
+            .iter()
+            .any(|observation| observation.starts_with("controller-status:")));
         assert_eq!(
             response.machine_schedule.schema_version,
             "dd.fabrication.machine-schedule.v1"
@@ -42023,6 +49874,79 @@ mod tests {
                 .learning_observation
                 .starts_with("fixture-datum-transfer:")));
         assert_eq!(
+            response.monitoring_plan.schema_version,
+            "dd.fabrication.monitoring-plan.v1"
+        );
+        assert!(response.monitoring_plan.human_review_required);
+        assert!(!response.monitoring_plan.unattended_run_allowed);
+        assert!(response.monitoring_plan.monitor_points.iter().all(|point| {
+            !point.channels.is_empty()
+                && !point.expected_signals.is_empty()
+                && !point.required_evidence.is_empty()
+                && !point.alert_rule_ids.is_empty()
+                && !point.recovery_actions.is_empty()
+        }));
+        assert!(response
+            .monitoring_plan
+            .learning_observations
+            .iter()
+            .any(|observation| observation.starts_with("monitoring-route:")));
+        assert_eq!(
+            response.interface_control_plan.schema_version,
+            "dd.fabrication.interface-control-plan.v1"
+        );
+        assert!(response.interface_control_plan.human_review_required);
+        assert!(response
+            .interface_control_plan
+            .learning_observations
+            .iter()
+            .any(|observation| observation.starts_with("interface-")));
+        assert_eq!(
+            response.decomposition_plan.schema_version,
+            "dd.fabrication.decomposition-plan.v1"
+        );
+        assert!(response.decomposition_plan.human_review_required);
+        assert!(response.decomposition_plan.route_contract_count >= response.design.parts.len());
+        assert!(response
+            .decomposition_plan
+            .route_contracts
+            .iter()
+            .all(|contract| !contract.required_evidence.is_empty()));
+        assert!(response
+            .decomposition_plan
+            .learning_observations
+            .iter()
+            .any(|observation| observation.starts_with("decomposition-")));
+        assert_eq!(
+            response.release_package_plan.schema_version,
+            "dd.fabrication.release-package-plan.v1"
+        );
+        assert!(response.release_package_plan.package_count >= response.generated_programs.len());
+        assert!(!response.release_package_plan.packages.is_empty());
+        assert!(!response.release_package_plan.release_gates.is_empty());
+        assert!(response
+            .release_package_plan
+            .required_artifacts
+            .iter()
+            .any(|artifact| artifact == "machine-release"));
+        assert!(response
+            .release_package_plan
+            .packages
+            .iter()
+            .all(|package| {
+                !package.required_artifacts.is_empty()
+                    && (!package.design_export_ids.is_empty()
+                        || package.package_kind == "assembly-recomposition-release")
+                    && !package.fixture_setup_ids.is_empty()
+                    && !package.monitoring_point_ids.is_empty()
+                    && !package.quality_inspection_ids.is_empty()
+            }));
+        assert!(response
+            .release_package_plan
+            .learning_observations
+            .iter()
+            .any(|observation| observation.starts_with("release-package:")));
+        assert_eq!(
             response.learning.model_family,
             "mdp-pomdp-neural-cam-policy"
         );
@@ -42329,6 +50253,90 @@ mod tests {
                 .is_some_and(|action| action.starts_with("clear-fixture-blockers-")
                     || action.starts_with("verify-fixture-setup-")))));
         assert!(mdp_request
+            .get("monitoringPlan")
+            .and_then(|plan| plan.get("monitorPoints"))
+            .and_then(Value::as_array)
+            .is_some_and(|points| !points.is_empty()));
+        assert!(mdp_request
+            .get("observations")
+            .and_then(Value::as_array)
+            .is_some_and(
+                |observations| observations.iter().any(|observation| observation
+                    .as_str()
+                    .is_some_and(|observation| observation.starts_with("monitoring-route:")))
+            ));
+        assert!(mdp_request
+            .get("actions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions.iter().any(|action| action
+                .as_str()
+                .is_some_and(|action| action.starts_with("clear-monitoring-blockers-")
+                    || action.starts_with("verify-monitoring-plan-")))));
+        assert_eq!(
+            response.interface_control_plan.schema_version,
+            "dd.fabrication.interface-control-plan.v1"
+        );
+        assert!(!response
+            .interface_control_plan
+            .learning_observations
+            .is_empty());
+        assert!(mdp_request
+            .get("interfaceControlPlan")
+            .and_then(|plan| plan.get("decisionLinks"))
+            .and_then(Value::as_array)
+            .is_some_and(|links| !links.is_empty()));
+        assert!(mdp_request
+            .get("observations")
+            .and_then(Value::as_array)
+            .is_some_and(
+                |observations| observations.iter().any(|observation| observation
+                    .as_str()
+                    .is_some_and(|observation| observation.starts_with("interface-")))
+            ));
+        assert!(mdp_request
+            .get("actions")
+            .and_then(Value::as_array)
+            .is_some_and(
+                |actions| actions.iter().any(|action| action
+                    .as_str()
+                    .is_some_and(|action| action.starts_with("verify-interface-control-")
+                        || action.starts_with("clear-interface-blockers-")
+                        || action.starts_with("review-interface-decision-")))
+            ));
+        assert_eq!(
+            response.decomposition_plan.schema_version,
+            "dd.fabrication.decomposition-plan.v1"
+        );
+        assert!(response.decomposition_plan.route_contract_count >= response.design.parts.len());
+        assert!(!response.decomposition_plan.release_gates.is_empty());
+        assert!(response
+            .decomposition_plan
+            .learning_observations
+            .iter()
+            .any(|observation| observation.starts_with("decomposition-")));
+        assert!(mdp_request
+            .get("decompositionPlan")
+            .and_then(|plan| plan.get("routeContracts"))
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| !contracts.is_empty()));
+        assert!(mdp_request
+            .get("observations")
+            .and_then(Value::as_array)
+            .is_some_and(
+                |observations| observations.iter().any(|observation| observation
+                    .as_str()
+                    .is_some_and(|observation| observation.starts_with("decomposition-")))
+            ));
+        assert!(mdp_request
+            .get("actions")
+            .and_then(Value::as_array)
+            .is_some_and(
+                |actions| actions.iter().any(|action| action
+                    .as_str()
+                    .is_some_and(|action| action.contains("decomposition")
+                        || action.contains("recomposition")))
+            ));
+        assert!(mdp_request
             .get("processGraph")
             .and_then(|graph| graph.get("nodes"))
             .and_then(Value::as_array)
@@ -42353,6 +50361,44 @@ mod tests {
             .and_then(|plan| plan.get("controllerTargets"))
             .and_then(Value::as_array)
             .is_some_and(|targets| !targets.is_empty()));
+        assert!(mdp_request
+            .get("controllerPlan")
+            .and_then(|plan| plan.get("compatibilityTargets"))
+            .and_then(Value::as_array)
+            .is_some_and(|targets| !targets.is_empty()));
+        assert!(mdp_request
+            .get("releasePackagePlan")
+            .and_then(|plan| plan.get("packages"))
+            .and_then(Value::as_array)
+            .is_some_and(|packages| !packages.is_empty()));
+        assert!(mdp_request
+            .get("observations")
+            .and_then(Value::as_array)
+            .is_some_and(
+                |observations| observations.iter().any(|observation| observation
+                    .as_str()
+                    .is_some_and(|observation| observation.starts_with("controller-")))
+            ));
+        assert!(mdp_request
+            .get("actions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions.iter().any(|action| action
+                .as_str()
+                .is_some_and(|action| action.contains("controller")))));
+        assert!(mdp_request
+            .get("observations")
+            .and_then(Value::as_array)
+            .is_some_and(
+                |observations| observations.iter().any(|observation| observation
+                    .as_str()
+                    .is_some_and(|observation| observation.starts_with("release-package")))
+            ));
+        assert!(mdp_request
+            .get("actions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions.iter().any(|action| action
+                .as_str()
+                .is_some_and(|action| action.contains("release-package")))));
         assert!(mdp_request.get("resolutionPlan").is_some());
         assert!(mdp_request
             .get("transitions")
@@ -42493,6 +50539,112 @@ mod tests {
             .method_preferences
             .iter()
             .any(|preference| preference.key == "milling"));
+    }
+
+    #[test]
+    fn learning_outcomes_memory_endpoint_exposes_bounded_records_and_policy_snapshot() {
+        let first_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("memory-success-1".to_string()),
+            job_id: Some("plan-memory-1".to_string()),
+            objective: Some("printed jig with milled datum".to_string()),
+            material: Some(material("petg", "polymer")),
+            manufacturing_methods: Some(vec!["additive-print".to_string(), "milling".to_string()]),
+            machine_kind: Some("vertical-mill".to_string()),
+            operation_sequence: Some(vec!["additive-print".to_string(), "milling".to_string()]),
+            assembly_strategy: Some("printed body plus milled datum face".to_string()),
+            success: true,
+            reward: Some(2.5),
+            observations: Some(vec!["datum inspection passed".to_string()]),
+            notes: Some(vec!["keep hybrid route".to_string()]),
+        })
+        .expect("first memory outcome should be valid");
+        let second_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("memory-success-2".to_string()),
+            job_id: Some("plan-memory-2".to_string()),
+            objective: Some("printed bracket with milled bearing pad".to_string()),
+            material: Some(material("petg", "polymer")),
+            manufacturing_methods: Some(vec!["additive-print".to_string(), "milling".to_string()]),
+            machine_kind: Some("vertical-mill".to_string()),
+            operation_sequence: Some(vec!["additive-print".to_string(), "milling".to_string()]),
+            assembly_strategy: Some("printed body plus milled datum face".to_string()),
+            success: true,
+            reward: Some(3.0),
+            observations: Some(vec!["bearing pad passed".to_string()]),
+            notes: Some(vec!["reuse datum allowance".to_string()]),
+        })
+        .expect("second memory outcome should be valid");
+        let failed_route = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("memory-failure-1".to_string()),
+            job_id: Some("plan-memory-3".to_string()),
+            objective: Some("single-piece milled PETG jig".to_string()),
+            material: Some(material("petg", "polymer")),
+            manufacturing_methods: Some(vec!["milling".to_string()]),
+            machine_kind: Some("vertical-mill".to_string()),
+            operation_sequence: Some(vec!["milling".to_string()]),
+            assembly_strategy: Some("single-piece machining".to_string()),
+            success: false,
+            reward: Some(-2.0),
+            observations: Some(vec!["thin wall chatter".to_string()]),
+            notes: Some(vec!["prefer printed blank before milling".to_string()]),
+        })
+        .expect("failed memory outcome should be valid");
+
+        let mut memory = LearningMemory::new(2);
+        memory.insert(first_success);
+        memory.insert(second_success);
+        memory.insert(failed_route);
+        let payload = learning_outcomes_memory_response(&memory);
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.learning-outcome-memory.v1")
+        );
+        assert_eq!(payload.get("outcomeCount").and_then(Value::as_u64), Some(2));
+        assert_eq!(payload.get("maxOutcomes").and_then(Value::as_u64), Some(2));
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/learning/outcomes"))));
+        let outcomes = payload
+            .get("outcomes")
+            .and_then(Value::as_array)
+            .expect("bounded outcomes should be present");
+        assert!(!outcomes
+            .iter()
+            .any(|outcome| outcome.get("requestId").and_then(Value::as_str)
+                == Some("memory-success-1")));
+        assert!(outcomes
+            .iter()
+            .any(|outcome| outcome.get("requestId").and_then(Value::as_str)
+                == Some("memory-success-2")));
+        assert!(outcomes
+            .iter()
+            .any(|outcome| outcome.get("requestId").and_then(Value::as_str)
+                == Some("memory-failure-1")));
+        assert_eq!(
+            payload
+                .get("policy")
+                .and_then(|policy| policy.get("outcomeCount"))
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert!(payload
+            .get("policy")
+            .and_then(|policy| policy.get("methodCombinationPreferences"))
+            .and_then(Value::as_array)
+            .is_some_and(|preferences| preferences
+                .iter()
+                .any(|preference| preference.get("key").and_then(Value::as_str)
+                    == Some("additive-print+milling"))));
+        assert!(payload
+            .get("policy")
+            .and_then(|policy| policy.get("remediationRisks"))
+            .and_then(Value::as_array)
+            .is_some_and(|risks| risks
+                .iter()
+                .any(|risk| risk.get("method").and_then(Value::as_str) == Some("milling"))));
     }
 
     #[test]
@@ -43408,6 +51560,7 @@ mod tests {
         assert!(job.artifacts.contains_key("machine-release"));
         assert!(job.artifacts.contains_key("execution-plan"));
         assert!(job.artifacts.contains_key("postprocess-plan"));
+        assert!(job.artifacts.contains_key("controller-plan"));
         assert!(job.artifacts.contains_key("machine-selection"));
         assert!(job.artifacts.contains_key("process-graph"));
         assert!(job.artifacts.contains_key("hybrid-make-plan"));
@@ -43418,6 +51571,9 @@ mod tests {
         assert!(job.artifacts.contains_key("quality-plan"));
         assert!(job.artifacts.contains_key("tooling-plan"));
         assert!(job.artifacts.contains_key("fixture-plan"));
+        assert!(job.artifacts.contains_key("monitoring-plan"));
+        assert!(job.artifacts.contains_key("interface-control-plan"));
+        assert!(job.artifacts.contains_key("decomposition-plan"));
         assert!(job.artifacts.contains_key("pomdp-belief-state"));
         assert!(job.artifacts.contains_key("release-probe-plan"));
         assert!(job.artifacts.contains_key("neural-training-corpus"));
@@ -43573,6 +51729,18 @@ mod tests {
             .is_some_and(|version| version == "dd.fabrication.postprocess-plan.v1"));
         assert!(parametric_design
             .content
+            .get("controllerPlan")
+            .and_then(|plan| plan.get("schemaVersion"))
+            .and_then(Value::as_str)
+            .is_some_and(|version| version == "dd.fabrication.controller-plan.v1"));
+        assert!(parametric_design
+            .content
+            .get("releasePackagePlan")
+            .and_then(|plan| plan.get("schemaVersion"))
+            .and_then(Value::as_str)
+            .is_some_and(|version| version == "dd.fabrication.release-package-plan.v1"));
+        assert!(parametric_design
+            .content
             .get("pomdpBeliefState")
             .and_then(|state| state.get("schemaVersion"))
             .and_then(Value::as_str)
@@ -43661,6 +51829,24 @@ mod tests {
             .and_then(|plan| plan.get("setups"))
             .and_then(Value::as_array)
             .is_some_and(|setups| !setups.is_empty()));
+        assert!(parametric_design
+            .content
+            .get("monitoringPlan")
+            .and_then(|plan| plan.get("monitorPoints"))
+            .and_then(Value::as_array)
+            .is_some_and(|points| !points.is_empty()));
+        assert!(parametric_design
+            .content
+            .get("interfaceControlPlan")
+            .and_then(|plan| plan.get("schemaVersion"))
+            .and_then(Value::as_str)
+            .is_some_and(|version| version == "dd.fabrication.interface-control-plan.v1"));
+        assert!(parametric_design
+            .content
+            .get("decompositionPlan")
+            .and_then(|plan| plan.get("routeContracts"))
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| !contracts.is_empty()));
         assert!(parametric_design
             .content
             .get("machineRelease")
@@ -43824,6 +52010,70 @@ mod tests {
                 .get("requiredEvidence")
                 .and_then(Value::as_array)
                 .is_some_and(|evidence| !evidence.is_empty()))));
+        let monitoring_plan = job
+            .artifacts
+            .get("monitoring-plan")
+            .expect("monitoring plan artifact should be retained");
+        assert_eq!(
+            monitoring_plan
+                .content
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.monitoring-plan.v1")
+        );
+        assert!(monitoring_plan
+            .content
+            .get("monitorPoints")
+            .and_then(Value::as_array)
+            .is_some_and(|points| points.iter().any(|point| point
+                .get("channels")
+                .and_then(Value::as_array)
+                .is_some_and(|channels| !channels.is_empty()))));
+        let interface_control_plan = job
+            .artifacts
+            .get("interface-control-plan")
+            .expect("interface control plan artifact should be retained");
+        assert_eq!(
+            interface_control_plan
+                .content
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.interface-control-plan.v1")
+        );
+        assert!(interface_control_plan
+            .content
+            .get("releaseGates")
+            .and_then(Value::as_array)
+            .is_some_and(|gates| !gates.is_empty()));
+        assert!(interface_control_plan
+            .content
+            .get("controls")
+            .and_then(Value::as_array)
+            .is_some_and(|controls| controls.iter().any(|control| control
+                .get("requiredEvidence")
+                .and_then(Value::as_array)
+                .is_some_and(|evidence| !evidence.is_empty()))));
+        let decomposition_plan = job
+            .artifacts
+            .get("decomposition-plan")
+            .expect("decomposition plan artifact should be retained");
+        assert_eq!(
+            decomposition_plan
+                .content
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.decomposition-plan.v1")
+        );
+        assert!(decomposition_plan
+            .content
+            .get("routeContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| !contracts.is_empty()));
+        assert!(decomposition_plan
+            .content
+            .get("releaseGates")
+            .and_then(Value::as_array)
+            .is_some_and(|gates| !gates.is_empty()));
         let intervention_map = job
             .artifacts
             .get("intervention-map")
@@ -43895,6 +52145,72 @@ mod tests {
             .is_some_and(|artifacts| artifacts
                 .iter()
                 .any(|artifact| artifact.as_str() == Some("postprocessed-program"))));
+        let controller_plan = job
+            .artifacts
+            .get("controller-plan")
+            .expect("controller plan artifact should be retained");
+        assert_eq!(
+            controller_plan
+                .content
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.controller-plan.v1")
+        );
+        assert!(controller_plan
+            .content
+            .get("compatibilityTargets")
+            .and_then(Value::as_array)
+            .is_some_and(|targets| !targets.is_empty()));
+        assert!(controller_plan
+            .content
+            .get("requiredArtifacts")
+            .and_then(Value::as_array)
+            .is_some_and(|artifacts| artifacts
+                .iter()
+                .any(|artifact| artifact.as_str() == Some("controller-compatibility-report"))));
+        let release_package_plan = job
+            .artifacts
+            .get("release-package-plan")
+            .expect("release package plan artifact should be retained");
+        assert_eq!(
+            release_package_plan
+                .content
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.release-package-plan.v1")
+        );
+        assert!(release_package_plan
+            .content
+            .get("packages")
+            .and_then(Value::as_array)
+            .is_some_and(|packages| packages.iter().any(|package| {
+                package
+                    .get("requiredArtifacts")
+                    .and_then(Value::as_array)
+                    .is_some_and(|artifacts| !artifacts.is_empty())
+                    && package
+                        .get("designExportIds")
+                        .and_then(Value::as_array)
+                        .is_some_and(|exports| !exports.is_empty())
+                    && package
+                        .get("controllerTargetIds")
+                        .and_then(Value::as_array)
+                        .is_some()
+            })));
+        assert!(release_package_plan
+            .content
+            .get("releaseGates")
+            .and_then(Value::as_array)
+            .is_some_and(|gates| !gates.is_empty()));
+        assert!(release_package_plan
+            .content
+            .get("learningObservations")
+            .and_then(Value::as_array)
+            .is_some_and(
+                |observations| observations.iter().any(|observation| observation
+                    .as_str()
+                    .is_some_and(|observation| observation.starts_with("release-package")))
+            ));
         let machine_selection = job
             .artifacts
             .get("machine-selection")

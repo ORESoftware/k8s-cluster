@@ -777,9 +777,14 @@ data:
           "targets": [
             { "expr": "sum(rate(dd_fabrication_server_failure_boundaries_total[10m]))", "legendFormat": "machine-failure boundaries", "refId": "A" },
             { "expr": "sum(rate(dd_fabrication_server_validation_findings_total[10m]))", "legendFormat": "validation findings", "refId": "B" },
-            { "expr": "sum(rate(dd_fabrication_server_errors_total[5m]))", "legendFormat": "server errors", "refId": "C" }
+            { "expr": "sum(rate(dd_fabrication_server_errors_total[5m]))", "legendFormat": "server errors", "refId": "C" },
+            { "expr": "sum(rate(dd_fabrication_server_operator_actions_total[10m]))", "legendFormat": "operator actions", "refId": "D" },
+            { "expr": "sum(rate(dd_fabrication_server_fixture_release_blockers_total[10m]))", "legendFormat": "fixture/setup blockers", "refId": "E" },
+            { "expr": "sum(rate(dd_fabrication_server_split_combine_reviews_total[10m]))", "legendFormat": "split/combine reviews", "refId": "F" },
+            { "expr": "sum(rate(dd_fabrication_server_failure_boundaries_total[10m])) + sum(rate(dd_fabrication_server_operator_actions_total[10m])) + sum(rate(dd_fabrication_server_fixture_release_blockers_total[10m])) + sum(rate(dd_fabrication_server_split_combine_reviews_total[10m]))", "legendFormat": "release-readiness blockers", "refId": "G" },
+            { "expr": "sum(rate(dd_fabrication_server_operator_actions_total[10m])) + sum(rate(dd_fabrication_server_split_combine_reviews_total[10m]))", "legendFormat": "intervention/automation reviews", "refId": "H" }
           ],
-          "title": "Failure Boundaries and Errors",
+          "title": "Failure, Intervention, and Setup Pressure",
           "type": "timeseries"
         },
         {
@@ -979,6 +984,20 @@ data:
             { "expr": "sum(rate(dd_fabrication_server_artifact_requests_total[5m]))", "legendFormat": "artifact detail requests", "refId": "E" }
           ],
           "title": "Generated Programs, Artifacts, Learning Events, and Fetches",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 102 },
+          "id": 23,
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_fabrication_server_nats_messages_total[5m]))", "legendFormat": "nats queued requests in", "refId": "A" },
+            { "expr": "sum(rate(dd_fabrication_server_nats_published_total[5m]))", "legendFormat": "all nats publishes", "refId": "B" },
+            { "expr": "sum(rate(dd_fabrication_server_nats_results_published_total[5m]))", "legendFormat": "result publishes", "refId": "C" }
+          ],
+          "title": "NATS Queue Ingest and Publish Attempts",
           "type": "timeseries"
         }
       ],

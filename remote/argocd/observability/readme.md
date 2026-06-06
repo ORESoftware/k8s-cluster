@@ -146,9 +146,16 @@ Currently opted-in:
   cannot quietly mask one replica's retained fabrication evidence.
   The `Fabrication Planner` Grafana dashboard (uid `dd-fabrication-planner`)
   groups those signals with request intake, validation-finding and
-  machine-failure boundary rates, NATS result fanout, MDP optimization fanout, generated-program,
+  machine-failure boundary rates, required operator-action, fixture/setup
+  blocker, and split/combine review rates, NATS queued request ingest, all-publish attempts,
+  panel legends for validation-finding, machine-failure boundary, required operator-action, fixture/setup blocker, and
+  split/combine review rates,
+  a composite release-readiness blocker rate, intervention/automation review
+  pressure,
+  result fanout, MDP optimization fanout, generated-program,
   job/artifact, learning-event, and artifact detail-request throughput, in-memory
-  job/artifact/learning evidence ledgers,
+  job/artifact/learning evidence ledgers, including an artifact high-watermark
+  alert for retained design, machine-code, and instruction evidence,
   runtime-config push delivery, dependency scrape health, HPA capacity, CPU and
   memory limit headroom, Loki-derived gateway guardrail rejection counters for
   `/fabrication` auth/internal-route/method/payload/rate-limit failures, gateway edge-latency
@@ -176,6 +183,22 @@ Currently opted-in:
   service failures. CPU and memory near-limit alerts use the same exporter
   resource gauges, because sustained saturation can delay instruction analysis,
   result fanout, and learning feedback even when the scrape target stays up.
+  Separate intervention/setup alerts fire when the Rust server starts emitting
+  required operator actions, fixture/setup blockers, or split/combine review
+  records, because those counters mean generated or imported fabrication work is
+  explicitly not machine-ready until human, workholding, decomposition,
+  recomposition, or interface-control evidence is resolved. A composite
+  release-readiness alert also groups machine-failure boundaries, operator
+  actions, fixture/setup blockers, and split/combine reviews so operators see a
+  single service-scoped machine-release hold while the detailed blocker alerts
+  remain available for triage. A separate intervention/automation review alert
+  groups operator actions with split/combine reviews so automation candidates,
+  human handoffs, `interventionMap`, `operatorInterventionPlan`, and
+  `executionPlan` evidence stay visible before unattended machine release. A separate
+  queued-NATS fanout alert fires when the Rust server consumes
+  `dd_fabrication_server_nats_messages_total` traffic but stops increasing
+  `dd_fabrication_server_nats_results_published_total`, so queue-worker
+  regressions are visible even without concurrent HTTP requests.
   It also emits watched HPA current/desired/min/max replica
   gauges plus an at-max signal, and Prometheus alerts when the
   `dd-fabrication-server` autoscaler holds at its configured ceiling during

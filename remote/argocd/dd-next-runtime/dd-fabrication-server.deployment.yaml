@@ -123,6 +123,18 @@ spec:
               for route in \
                 '"path": "/fabrication/plan"' \
                 '"path": "/fabrication/instructions/analyze"' \
+                '"path": "/fabrication/machines/catalog"' \
+                '"path": "/fabrication/controllers/catalog"' \
+                '"path": "/fabrication/materials/catalog"' \
+                '"path": "/fabrication/decomposition/catalog"' \
+                '"path": "/fabrication/release/catalog"' \
+                '"path": "/fabrication/simulation/catalog"' \
+                '"path": "/fabrication/quality/catalog"' \
+                '"path": "/fabrication/interventions/catalog"' \
+                '"path": "/fabrication/design/formats"' \
+                '"path": "/fabrication/instructions/languages"' \
+                '"path": "/fabrication/boundaries/catalog"' \
+                '"path": "/fabrication/learning/capabilities"' \
                 '"path": "/jobs"' \
                 '"path": "/jobs/:job_id"' \
                 '"path": "/jobs/:job_id/artifacts/:artifact_id"' \

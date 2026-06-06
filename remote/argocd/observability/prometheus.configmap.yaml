@@ -416,6 +416,51 @@ data:
             annotations:
               summary: Fabrication server is finding machine-failure boundaries
               description: "dd-fabrication-server is emitting fabrication failure boundaries; review the affected plans or submitted instructions before operators run the generated machine work."
+          - alert: DDFabricationServerOperatorInterventionsIncreasing
+            expr: sum(rate(dd_fabrication_server_operator_actions_total[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server is requiring operator intervention
+              description: "dd-fabrication-server is emitting required operator actions from planning or instruction-analysis responses; affected jobs are not machine-ready until the intervention evidence is resolved."
+          - alert: DDFabricationServerFixtureBlockersIncreasing
+            expr: sum(rate(dd_fabrication_server_fixture_release_blockers_total[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication fixture or setup blockers are increasing
+              description: "dd-fabrication-server is emitting fixture/setup release blockers; verify workholding, datum transfer, clearance, fixture proof, or setup evidence before releasing generated machine work."
+          - alert: DDFabricationServerSplitCombineReviewsIncreasing
+            expr: sum(rate(dd_fabrication_server_split_combine_reviews_total[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication split/combine reviews are increasing
+              description: "dd-fabrication-server is emitting split/combine review records; inspect decomposition, recomposition, interface-control, or assembly evidence before treating the job as machine-ready."
+          - alert: DDFabricationServerReleaseReadinessBlocked
+            expr: (sum(rate(dd_fabrication_server_failure_boundaries_total[10m])) + sum(rate(dd_fabrication_server_operator_actions_total[10m])) + sum(rate(dd_fabrication_server_fixture_release_blockers_total[10m])) + sum(rate(dd_fabrication_server_split_combine_reviews_total[10m]))) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication machine-release readiness is blocked
+              description: "dd-fabrication-server is emitting one or more release-readiness blockers across machine-failure boundaries, operator actions, fixture/setup blockers, or split/combine reviews; treat generated or imported machine work as draft until machineRelease and releasePackagePlan evidence is resolved."
+          - alert: DDFabricationServerInterventionAutomationReviewsIncreasing
+            expr: (sum(rate(dd_fabrication_server_operator_actions_total[10m])) + sum(rate(dd_fabrication_server_split_combine_reviews_total[10m]))) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication intervention or automation reviews are increasing
+              description: "dd-fabrication-server is emitting operator-action or split/combine review records; inspect interventionMap, operatorInterventionPlan, executionPlan, automation candidates, and assembly/decomposition evidence before treating the generated or imported work as unattended machine-ready."
           - alert: DDFabricationServerResultFanoutStalled
             expr: (sum(rate(dd_fabrication_server_nats_results_published_total[10m])) == 0) and ((sum(rate(dd_fabrication_server_plan_requests_total[10m])) + sum(rate(dd_fabrication_server_analysis_requests_total[10m])) + sum(rate(dd_fabrication_server_learning_requests_total[10m]))) > 0)
             for: 10m
@@ -425,6 +470,15 @@ data:
             annotations:
               summary: Fabrication server result fan-out appears stalled
               description: "dd-fabrication-server is accepting successful plan, analysis, or learning requests but has not published fabrication result messages to NATS."
+          - alert: DDFabricationServerQueuedNatsResultFanoutStalled
+            expr: (sum(rate(dd_fabrication_server_nats_results_published_total[10m])) == 0) and (sum(rate(dd_fabrication_server_nats_messages_total[10m])) > 0)
+            for: 10m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server queued NATS result fan-out appears stalled
+              description: "dd-fabrication-server is consuming queued fabrication requests from NATS but has not published fabrication result messages back to NATS."
           - alert: DDFabricationServerMdpFanoutStalled
             expr: (sum(rate(dd_fabrication_server_mdp_published_total[10m])) == 0) and (sum(rate(dd_fabrication_server_plan_requests_total[10m])) > 0)
             for: 10m
@@ -435,14 +489,14 @@ data:
               summary: Fabrication server MDP fan-out appears stalled
               description: "dd-fabrication-server is accepting successful plan requests but has not published MDP optimization jobs for fabrication policy learning."
           - alert: DDFabricationServerMemoryLedgerNearCapacity
-            expr: max(dd_fabrication_server_current_jobs) > 110 or max(dd_fabrication_server_current_learning_outcomes) > 460
+            expr: max(dd_fabrication_server_current_jobs) > 110 or max(dd_fabrication_server_current_artifacts) > 440 or max(dd_fabrication_server_current_learning_outcomes) > 460
             for: 5m
             labels:
               severity: warning
               service: dd-fabrication-server
             annotations:
               summary: Fabrication server in-memory ledgers are near capacity
-              description: "dd-fabrication-server is close to evicting retained job/artifact or learning-outcome evidence from its bounded in-process ledgers."
+              description: "dd-fabrication-server is close to evicting retained job, artifact, or learning-outcome evidence from its bounded in-process ledgers, or artifact evidence volume is approaching the expected high-watermark for retained jobs."
           - alert: DDOtelCollectorRejectedTelemetry
             expr: sum(rate({__name__=~"otelcol_receiver_refused_(spans|metric_points|log_records)"}[5m])) > 0
             for: 2m
