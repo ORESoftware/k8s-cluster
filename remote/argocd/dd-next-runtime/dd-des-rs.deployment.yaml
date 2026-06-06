@@ -22,8 +22,8 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-06-des-rs-latest-e215c28'
-        dd.dev/des-engine-revision: 'e215c28911192df57d4b89af7f8d71543446aaf9'
+        dd.dev/telemetry-revision: '2026-06-06-des-rs-latest-3eb57b8'
+        dd.dev/des-engine-revision: '3eb57b8d725968f204cf878b9a621126dff4be37'
       labels:
         app: dd-des-rs
     spec:
@@ -149,7 +149,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: e215c28911192df57d4b89af7f8d71543446aaf9
+              value: 3eb57b8d725968f204cf878b9a621126dff4be37
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
