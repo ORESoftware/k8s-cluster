@@ -1552,58 +1552,133 @@ fn validate_branch_constraint(constraint: &BranchConstraint, n: usize) -> Result
     Ok(())
 }
 
-fn vec_f64(command: &Value, key: &str) -> Option<Vec<f64>> {
-    command.get(key)?.as_array().map(|items| {
-        items
-            .iter()
-            .map(|value| value.as_f64().unwrap_or(0.0))
-            .collect()
-    })
+fn finite_f64(value: &Value, label: &str) -> Result<f64, String> {
+    let Some(number) = value.as_f64() else {
+        return Err(format!("{label} must be a finite number"));
+    };
+    if !number.is_finite() {
+        return Err(format!("{label} must be a finite number"));
+    }
+    Ok(number)
 }
 
-fn vec_vec_f64(command: &Value, key: &str) -> Option<Vec<Vec<f64>>> {
-    command.get(key)?.as_array().map(|rows| {
-        rows.iter()
-            .map(|row| {
-                row.as_array()
-                    .map(|cells| {
-                        cells
-                            .iter()
-                            .map(|value| value.as_f64().unwrap_or(0.0))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            })
-            .collect()
-    })
+fn vec_f64(command: &Value, key: &str) -> Result<Option<Vec<f64>>, String> {
+    let Some(value) = command.get(key) else {
+        return Ok(None);
+    };
+    let Some(items) = value.as_array() else {
+        return Err(format!("{key} must be an array of finite numbers"));
+    };
+    items
+        .iter()
+        .enumerate()
+        .map(|(index, value)| finite_f64(value, &format!("{key}[{index}]")))
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
 }
 
-fn usize_at(command: &Value, key: &str) -> Option<usize> {
-    command.get(key).and_then(Value::as_u64).map(|v| v as usize)
+fn vec_vec_f64(command: &Value, key: &str) -> Result<Option<Vec<Vec<f64>>>, String> {
+    let Some(value) = command.get(key) else {
+        return Ok(None);
+    };
+    let Some(rows) = value.as_array() else {
+        return Err(format!("{key} must be an array of numeric rows"));
+    };
+    rows.iter()
+        .enumerate()
+        .map(|(row_index, row)| {
+            let Some(cells) = row.as_array() else {
+                return Err(format!(
+                    "{key}[{row_index}] must be an array of finite numbers"
+                ));
+            };
+            cells
+                .iter()
+                .enumerate()
+                .map(|(col_index, value)| {
+                    finite_f64(value, &format!("{key}[{row_index}][{col_index}]"))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
 }
 
-fn f64_at(command: &Value, key: &str, fallback: f64) -> f64 {
-    command.get(key).and_then(Value::as_f64).unwrap_or(fallback)
+fn usize_at(command: &Value, key: &str) -> Result<Option<usize>, String> {
+    let Some(value) = command.get(key) else {
+        return Ok(None);
+    };
+    let Some(number) = value.as_u64() else {
+        return Err(format!("{key} must be a non-negative integer"));
+    };
+    usize::try_from(number)
+        .map(Some)
+        .map_err(|_| format!("{key} is too large for this platform"))
 }
 
-fn bool_at(command: &Value, key: &str, fallback: bool) -> bool {
+fn f64_at(command: &Value, key: &str, fallback: f64) -> Result<f64, String> {
     command
         .get(key)
-        .and_then(Value::as_bool)
-        .unwrap_or(fallback)
+        .map(|value| finite_f64(value, key))
+        .unwrap_or(Ok(fallback))
 }
 
-fn vec_string(command: &Value, key: &str) -> Option<Vec<String>> {
-    command.get(key)?.as_array().map(|items| {
-        items
-            .iter()
-            .map(|value| value.as_str().unwrap_or_default().to_string())
-            .collect()
-    })
+fn bool_at(command: &Value, key: &str, fallback: bool) -> Result<bool, String> {
+    let Some(value) = command.get(key) else {
+        return Ok(fallback);
+    };
+    value
+        .as_bool()
+        .ok_or_else(|| format!("{key} must be a boolean"))
 }
 
-fn str_at(command: &Value, key: &str) -> Option<String> {
-    command.get(key).and_then(Value::as_str).map(String::from)
+fn vec_bool(command: &Value, key: &str) -> Result<Option<Vec<bool>>, String> {
+    let Some(value) = command.get(key) else {
+        return Ok(None);
+    };
+    let Some(items) = value.as_array() else {
+        return Err(format!("{key} must be an array of booleans"));
+    };
+    items
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            value
+                .as_bool()
+                .ok_or_else(|| format!("{key}[{index}] must be a boolean"))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+fn vec_string(command: &Value, key: &str) -> Result<Option<Vec<String>>, String> {
+    let Some(value) = command.get(key) else {
+        return Ok(None);
+    };
+    let Some(items) = value.as_array() else {
+        return Err(format!("{key} must be an array of strings"));
+    };
+    items
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            value
+                .as_str()
+                .map(String::from)
+                .ok_or_else(|| format!("{key}[{index}] must be a string"))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+fn str_at(command: &Value, key: &str) -> Result<Option<String>, String> {
+    let Some(value) = command.get(key) else {
+        return Ok(None);
+    };
+    value
+        .as_str()
+        .map(|value| Some(value.to_string()))
+        .ok_or_else(|| format!("{key} must be a string"))
 }
 
 fn parse_problem_from_commands(
@@ -1640,18 +1715,14 @@ fn apply_stream_command(
                 .map_err(|err| format!("invalid problem: {err}"))?
         } else {
             MipProblemSpec {
-                sense: str_at(command, "sense").unwrap_or_else(default_sense),
-                c: vec_f64(command, "c").unwrap_or_default(),
-                a: vec_vec_f64(command, "a").unwrap_or_default(),
-                b: vec_f64(command, "b").unwrap_or_default(),
-                integer_vars: command
-                    .get("integerVars")
-                    .and_then(Value::as_array)
-                    .map(|items| items.iter().map(|v| v.as_bool().unwrap_or(false)).collect())
-                    .unwrap_or_default(),
-                ub: vec_f64(command, "ub"),
-                var_names: vec_string(command, "varNames"),
-                con_names: vec_string(command, "conNames"),
+                sense: str_at(command, "sense")?.unwrap_or_else(default_sense),
+                c: vec_f64(command, "c")?.unwrap_or_default(),
+                a: vec_vec_f64(command, "a")?.unwrap_or_default(),
+                b: vec_f64(command, "b")?.unwrap_or_default(),
+                integer_vars: vec_bool(command, "integerVars")?.unwrap_or_default(),
+                ub: vec_f64(command, "ub")?,
+                var_names: vec_string(command, "varNames")?,
+                con_names: vec_string(command, "conNames")?,
             }
         };
         next = normalized_problem(next)?;
@@ -1666,11 +1737,11 @@ fn apply_stream_command(
         .ok_or_else(|| "no problem initialized; send init first".to_string())?;
     match op {
         "add_constraint" => {
-            let coefs = vec_f64(command, "coefs").unwrap_or_default();
+            let coefs = vec_f64(command, "coefs")?.unwrap_or_default();
             if coefs.len() != p.c.len() {
                 return Err("coefs length must equal variable count".to_string());
             }
-            let rhs = f64_at(command, "rhs", 0.0);
+            let rhs = f64_at(command, "rhs", 0.0)?;
             if !rhs.is_finite() {
                 return Err("rhs must be finite".to_string());
             }
@@ -1678,7 +1749,7 @@ fn apply_stream_command(
             p.b.push(rhs);
             if let Some(names) = p.con_names.as_mut() {
                 names.push(
-                    str_at(command, "name")
+                    str_at(command, "name")?
                         .unwrap_or_else(|| format!("constraint{}", p.a.len() - 1)),
                 );
             }
@@ -1687,29 +1758,29 @@ fn apply_stream_command(
         | "modify_constraint"
         | "change_constraint_weights"
         | "set_constraint_weights" => {
-            let index = usize_at(command, "index").ok_or("index is required")?;
+            let index = usize_at(command, "index")?.ok_or("index is required")?;
             if index >= p.a.len() {
                 return Err("constraint index out of range".to_string());
             }
-            if let Some(coefs) = vec_f64(command, "coefs") {
+            if let Some(coefs) = vec_f64(command, "coefs")? {
                 if coefs.len() != p.c.len() {
                     return Err("coefs length must equal variable count".to_string());
                 }
                 p.a[index] = coefs;
             }
             if command.get("rhs").is_some() {
-                let rhs = f64_at(command, "rhs", p.b[index]);
+                let rhs = f64_at(command, "rhs", p.b[index])?;
                 if !rhs.is_finite() {
                     return Err("rhs must be finite".to_string());
                 }
                 p.b[index] = rhs;
             }
-            if let (Some(name), Some(names)) = (str_at(command, "name"), p.con_names.as_mut()) {
+            if let (Some(name), Some(names)) = (str_at(command, "name")?, p.con_names.as_mut()) {
                 names[index] = name;
             }
         }
         "remove_constraint" | "rm_constraint" => {
-            let index = usize_at(command, "index").ok_or("index is required")?;
+            let index = usize_at(command, "index")?.ok_or("index is required")?;
             if index >= p.a.len() {
                 return Err("constraint index out of range".to_string());
             }
@@ -1720,60 +1791,61 @@ fn apply_stream_command(
             }
         }
         "set_rhs" => {
-            let index = usize_at(command, "index").ok_or("index is required")?;
+            let index = usize_at(command, "index")?.ok_or("index is required")?;
             if index >= p.b.len() {
                 return Err("constraint index out of range".to_string());
             }
-            let rhs = f64_at(command, "rhs", p.b[index]);
+            let rhs = f64_at(command, "rhs", p.b[index])?;
             if !rhs.is_finite() {
                 return Err("rhs must be finite".to_string());
             }
             p.b[index] = rhs;
         }
         "set_coefficient" | "set_constraint_weight" | "change_constraint_weight" => {
-            let row = usize_at(command, "row").ok_or("row is required")?;
-            let col = usize_at(command, "col").ok_or("col is required")?;
+            let row = usize_at(command, "row")?.ok_or("row is required")?;
+            let col = usize_at(command, "col")?.ok_or("col is required")?;
             if row >= p.a.len() || col >= p.c.len() {
                 return Err("coefficient index out of range".to_string());
             }
-            p.a[row][col] = f64_at(command, "value", p.a[row][col]);
+            p.a[row][col] = f64_at(command, "value", p.a[row][col])?;
         }
         "add_variable" => {
-            let column = vec_f64(command, "column").unwrap_or_else(|| vec![0.0; p.a.len()]);
+            let column = vec_f64(command, "column")?.unwrap_or_else(|| vec![0.0; p.a.len()]);
             if column.len() != p.a.len() {
                 return Err("column length must equal constraint count".to_string());
             }
-            p.c.push(f64_at(command, "c", 0.0));
-            p.integer_vars.push(bool_at(command, "integer", false));
+            p.c.push(f64_at(command, "c", 0.0)?);
+            p.integer_vars.push(bool_at(command, "integer", false)?);
             for (row, value) in p.a.iter_mut().zip(column.iter()) {
                 row.push(*value);
             }
             if p.ub.is_some() || command.get("ub").is_some() {
-                let upper = f64_at(command, "ub", f64::INFINITY);
+                let upper = f64_at(command, "ub", f64::INFINITY)?;
                 p.ub.get_or_insert_with(|| vec![f64::INFINITY; p.c.len() - 1])
                     .push(upper);
             }
             if let Some(names) = p.var_names.as_mut() {
-                names
-                    .push(str_at(command, "name").unwrap_or_else(|| format!("x{}", p.c.len() - 1)));
+                names.push(
+                    str_at(command, "name")?.unwrap_or_else(|| format!("x{}", p.c.len() - 1)),
+                );
             }
         }
         "set_variable" | "modify_variable" => {
-            let index = usize_at(command, "index").ok_or("index is required")?;
+            let index = usize_at(command, "index")?.ok_or("index is required")?;
             if index >= p.c.len() {
                 return Err("variable index out of range".to_string());
             }
             if command.get("c").is_some() {
-                p.c[index] = f64_at(command, "c", p.c[index]);
+                p.c[index] = f64_at(command, "c", p.c[index])?;
             }
             if command.get("integer").is_some() {
-                p.integer_vars[index] = bool_at(command, "integer", p.integer_vars[index]);
+                p.integer_vars[index] = bool_at(command, "integer", p.integer_vars[index])?;
             }
             if command.get("ub").is_some() {
                 p.ub.get_or_insert_with(|| vec![f64::INFINITY; p.c.len()])[index] =
-                    f64_at(command, "ub", f64::INFINITY);
+                    f64_at(command, "ub", f64::INFINITY)?;
             }
-            if let Some(column) = vec_f64(command, "column") {
+            if let Some(column) = vec_f64(command, "column")? {
                 if column.len() != p.a.len() {
                     return Err("column length must equal constraint count".to_string());
                 }
@@ -1781,12 +1853,12 @@ fn apply_stream_command(
                     row[index] = *value;
                 }
             }
-            if let (Some(name), Some(names)) = (str_at(command, "name"), p.var_names.as_mut()) {
+            if let (Some(name), Some(names)) = (str_at(command, "name")?, p.var_names.as_mut()) {
                 names[index] = name;
             }
         }
         "remove_variable" | "rm_variable" => {
-            let index = usize_at(command, "index").ok_or("index is required")?;
+            let index = usize_at(command, "index")?.ok_or("index is required")?;
             if index >= p.c.len() {
                 return Err("variable index out of range".to_string());
             }
@@ -1806,29 +1878,29 @@ fn apply_stream_command(
             }
         }
         "set_objective" => {
-            let c = vec_f64(command, "c").unwrap_or_default();
+            let c = vec_f64(command, "c")?.unwrap_or_default();
             if c.len() != p.c.len() {
                 return Err("c length must equal variable count".to_string());
             }
             p.c = c;
         }
         "set_integer" => {
-            let index = usize_at(command, "index").ok_or("index is required")?;
+            let index = usize_at(command, "index")?.ok_or("index is required")?;
             if index >= p.integer_vars.len() {
                 return Err("variable index out of range".to_string());
             }
-            p.integer_vars[index] = bool_at(command, "integer", true);
+            p.integer_vars[index] = bool_at(command, "integer", true)?;
         }
         "set_upper_bound" | "set_ub" => {
-            let index = usize_at(command, "index").ok_or("index is required")?;
+            let index = usize_at(command, "index")?.ok_or("index is required")?;
             if index >= p.c.len() {
                 return Err("variable index out of range".to_string());
             }
             p.ub.get_or_insert_with(|| vec![f64::INFINITY; p.c.len()])[index] =
-                f64_at(command, "ub", f64::INFINITY);
+                f64_at(command, "ub", f64::INFINITY)?;
         }
         "set_sense" => {
-            p.sense = str_at(command, "sense").unwrap_or_else(default_sense);
+            p.sense = str_at(command, "sense")?.unwrap_or_else(default_sense);
         }
         "snapshot" => {
             frames.push(json!({
@@ -7059,6 +7131,56 @@ mod tests {
         }
     }
 
+    fn hundred_variable_one_hundred_fifty_constraint_dispatch_mip() -> MipProblemSpec {
+        let n = 100;
+        let mut c = vec![0.0; n];
+        for pair in 0..50 {
+            c[pair * 2] = 1000.0 - pair as f64;
+            c[pair * 2 + 1] = 25.0 + pair as f64;
+        }
+
+        let mut a = Vec::with_capacity(150);
+        let mut b = Vec::with_capacity(150);
+        let mut con_names = Vec::with_capacity(150);
+
+        let fleet_budget = vec![2.0; n];
+        a.push(fleet_budget);
+        b.push(99.0);
+        con_names.push("fleet_budget_allows_49_full_dispatches".to_string());
+
+        for pair in 0..50 {
+            let mut row = vec![0.0; n];
+            row[pair * 2] = 1.0;
+            row[pair * 2 + 1] = 1.0;
+            a.push(row);
+            b.push(1.0);
+            con_names.push(format!("route_pair_{pair}_choose_at_most_one"));
+        }
+
+        for var in 0..99 {
+            let mut row = vec![0.0; n];
+            row[var] = 1.0;
+            a.push(row);
+            b.push(1.0);
+            con_names.push(format!("dispatch_{var}_capacity"));
+        }
+
+        assert_eq!(a.len(), 150);
+        assert_eq!(b.len(), 150);
+        assert_eq!(con_names.len(), 150);
+
+        MipProblemSpec {
+            sense: "max".to_string(),
+            c,
+            a,
+            b,
+            integer_vars: vec![true; n],
+            ub: Some(vec![1.0; n]),
+            var_names: Some((0..n).map(|index| format!("dispatch_{index}")).collect()),
+            con_names: Some(con_names),
+        }
+    }
+
     fn test_job(problem: MipProblemSpec) -> SubproblemJob {
         SubproblemJob {
             solve_id: "solve-test".to_string(),
@@ -7190,6 +7312,34 @@ mod tests {
         assert!(frames
             .iter()
             .any(|frame| frame.get("event") == Some(&json!("model"))));
+    }
+
+    #[test]
+    fn streaming_edits_reject_non_numeric_scalars_instead_of_defaulting() {
+        let commands = vec![
+            json!({"op":"init","sense":"max","c":[1.0],"a":[[1.0]],"b":[1.0],"integerVars":[true]}),
+            json!({"op":"set_rhs","index":0,"rhs":"not-a-number"}),
+        ];
+
+        let error = parse_problem_from_commands(&commands).unwrap_err();
+
+        assert!(error.contains("rhs must be a finite number"));
+    }
+
+    #[test]
+    fn streaming_init_rejects_non_numeric_matrix_cells() {
+        let commands = vec![json!({
+            "op": "init",
+            "sense": "max",
+            "c": [1.0],
+            "a": [["bad-cell"]],
+            "b": [1.0],
+            "integerVars": [true]
+        })];
+
+        let error = parse_problem_from_commands(&commands).unwrap_err();
+
+        assert!(error.contains("a[0][0] must be a finite number"));
     }
 
     #[test]
@@ -8037,6 +8187,109 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn simulated_three_slave_delegation_solves_real_100_by_150_dispatch_mip() {
+        let state = test_state(NodeRole::Master);
+        let problem =
+            normalized_problem(hundred_variable_one_hundred_fifty_constraint_dispatch_mip())
+                .unwrap();
+        let options = SolveOptions {
+            split_depth: Some(2),
+            max_subproblems: Some(8),
+            max_nodes: Some(20_000),
+            max_ticks: Some(20_000),
+            lp_max_iters: Some(10_000),
+            ..SolveOptions::default()
+        };
+        assert_eq!(problem.c.len(), 100);
+        assert_eq!(problem.a.len(), 150);
+
+        let (jobs, warnings) = build_frontier_jobs(
+            &problem,
+            "solve-dispatch-test",
+            "request-dispatch-test",
+            "66666666-6666-4666-8666-666666666666",
+            12,
+            "master-test",
+            &options,
+        )
+        .unwrap();
+        assert!(
+            jobs.len() >= 3,
+            "expected at least three delegated subproblems, got {} with warnings {:?}",
+            jobs.len(),
+            warnings
+        );
+
+        let workers = ["slave-a", "slave-b", "slave-c"];
+        let mut pending: VecDeque<SubproblemJob> = jobs.into_iter().collect();
+        let mut results = Vec::new();
+        let mut used_workers = HashSet::new();
+        let mut jobs_expected = pending.len();
+        let mut jobs_published = pending.len();
+        let mut jobs_split = 0usize;
+        let mut next_worker = 0usize;
+
+        while let Some(job) = pending.pop_front() {
+            let worker = workers[next_worker % workers.len()].to_string();
+            next_worker += 1;
+            used_workers.insert(worker.clone());
+            let result = solve_subproblem(job, worker);
+            if result.status == "split" && !result.child_jobs.is_empty() {
+                jobs_split += 1;
+                jobs_expected =
+                    jobs_expected.saturating_add(result.child_jobs.len().saturating_sub(1));
+                jobs_published = jobs_published.saturating_add(result.child_jobs.len());
+                for child in result.child_jobs {
+                    pending.push_back(child);
+                }
+            } else {
+                results.push(result);
+            }
+        }
+
+        let response = aggregate_results(
+            "solve-dispatch-test".to_string(),
+            "request-dispatch-test".to_string(),
+            None,
+            12,
+            &problem,
+            jobs_expected,
+            jobs_published,
+            0,
+            jobs_split,
+            results,
+            false,
+            true,
+            &state,
+            warnings,
+        );
+
+        let expected_z = (0..49).map(|pair| 1000.0 - pair as f64).sum::<f64>();
+        assert_eq!(used_workers.len(), 3, "used workers: {used_workers:?}");
+        assert!(response.ok, "response warnings: {:?}", response.warnings);
+        assert_eq!(response.status, "optimal");
+        assert_eq!(response.revision, 12);
+        assert_eq!(response.jobs_expected, response.jobs_completed);
+        assert!(response.jobs_published >= 3);
+        assert!(response.distributed);
+        assert_eq!(response.z, Some(expected_z));
+        assert_eq!(response.x.len(), 100);
+        assert_eq!(response.x.iter().filter(|value| **value > 0.5).count(), 49);
+        for pair in 0..49 {
+            assert!(
+                response.x[pair * 2] > 0.5,
+                "expected primary dispatch option for pair {pair}"
+            );
+            assert!(
+                response.x[pair * 2 + 1] < 1e-6,
+                "did not expect alternate dispatch option for pair {pair}"
+            );
+        }
+        assert!(response.x[98] < 1e-6);
+        assert!(response.x[99] < 1e-6);
     }
 
     #[tokio::test]
