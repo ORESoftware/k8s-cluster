@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: big-data-resource-budget
+  namespace: big-data
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 6Gi
+    limits.cpu: "6"
+    limits.memory: 10Gi
+    requests.storage: 20Gi
+    persistentvolumeclaims: "4"
+    pods: "12"
+    services: "8"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: big-data-default-container-limits
+  namespace: big-data
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      default:
+        cpu: "1"
+        memory: 1Gi
+      max:
+        cpu: "2"
+        memory: 4Gi
+      min:
+        cpu: 25m
+        memory: 64Mi

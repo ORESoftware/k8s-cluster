@@ -25,6 +25,8 @@ spec:
       namespace: kafka
     - server: https://kubernetes.default.svc
       namespace: spark
+    - server: https://kubernetes.default.svc
+      namespace: big-data
   clusterResourceWhitelist:
     - group: ""
       kind: Namespace

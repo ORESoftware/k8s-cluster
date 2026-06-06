@@ -66,6 +66,7 @@ Heavier platform tools are kept as separate Argo CD `Application` manifests in
 | LLM pipelines | LlamaIndex | service/workflow image dependency |
 | Vector DB | Qdrant | `dd-qdrant.application.yaml` |
 | Data ingestion | Airbyte | `dd-airbyte.application.yaml` with external DB/S3 chart values |
+| Development big-data stack | Spark standalone, Airflow, MinIO | `dd-big-data.application.yaml` |
 
 Apply `remote/argocd/apps/dd-ai-ml-platform.appproject.yaml` before syncing these optional apps.
 The AppProject restricts them to the expected chart/git repos and the `ai-ml`, `airbyte`, `kafka`,
