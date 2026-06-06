@@ -500,7 +500,7 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;background:#080d14;borde
 	      </div>
 	      <div id="authPanel" class="auth-panel" hidden>
 	        <label for="authHeaderName">Source auth header name</label>
-	        <input id="authHeaderName" autocomplete="off" spellcheck="false" value="Auth">
+	        <input id="authHeaderName" autocomplete="off" spellcheck="false" value="Authorization">
 	        <label for="authHeader">Source auth header value</label>
 	        <input id="authHeader" type="password" autocomplete="off" spellcheck="false" placeholder="shared secret or bearer token">
 	        <label for="cookieHeader">Cookie header</label>
@@ -578,7 +578,7 @@ function sourceAccess(){return $("sourceAccess").value;}
 function sourcePlatform(){return $("sourcePlatform").value;}
 function authCredentials(){
   const cookieFile=$("sourceCookies").files&&$("sourceCookies").files[0];
-  const authHeaderName=($("authHeaderName").value.trim()||"Auth");
+  const authHeaderName=($("authHeaderName").value.trim()||"Authorization");
   const authHeader=$("authHeader").value.trim();
   const cookieHeader=$("cookieHeader").value.trim();
   return {
@@ -602,7 +602,7 @@ function command(){
     const prompt=promptText();
     const access=sourceAccess();
     const cookieFile=$("sourceCookies").files&&$("sourceCookies").files[0];
-    const authHeaderName=($("authHeaderName").value.trim()||"Auth");
+    const authHeaderName=($("authHeaderName").value.trim()||"Authorization");
     const authHeader=$("authHeader").value.trim();
     const promptPath="out/music-sample-seed-prompt.txt";
     const cookieFlag=access==="authenticated"?` --cookies "${cookieFile?cookieFile.name:"/absolute/path/to/cookies.txt"}"`:"";
@@ -710,7 +710,7 @@ async function renderSampleSeed(){
   if(url) fd.append("source_url",url);
   fd.append("source_auth_mode",access);
   fd.append("source_platform",sourcePlatform());
-  const authHeaderName=($("authHeaderName").value.trim()||"Auth");
+  const authHeaderName=($("authHeaderName").value.trim()||"Authorization");
   const authHeader=$("authHeader").value.trim();
   const cookieHeader=$("cookieHeader").value.trim();
   const cookieFile=$("sourceCookies").files&&$("sourceCookies").files[0];
@@ -724,9 +724,7 @@ async function renderSampleSeed(){
   result.className="result";
   result.textContent="rendering on des-rs...";
   try{
-    const headers={};
-    if(authHeader&&authHeaderName.toLowerCase()==="auth") headers.Auth=authHeader;
-    const r=await fetch("music/sample-seed",{method:"POST",body:fd,headers});
+    const r=await fetch("music/sample-seed",{method:"POST",body:fd});
     const d=await r.json();
     if(!r.ok||!d.ok){throw new Error(d.error||("HTTP "+r.status));}
     result.className="result ok";
@@ -1204,7 +1202,6 @@ fn sanitize_url_in_error(value: &str, raw_url: &str, redacted_url: &str) -> Stri
 
 async fn music_sample_seed_render(
     State(state): State<AppState>,
-    headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
     let mut sample_bytes: Option<Vec<u8>> = None;
@@ -1378,29 +1375,6 @@ async fn music_sample_seed_render(
             StatusCode::BAD_REQUEST,
             format!("title must be at most {MAX_MUSIC_TITLE_CHARS} characters"),
         );
-    }
-
-    if source_auth_header.is_none() {
-        let auth_header_name = HeaderName::from_static("auth");
-        if let Some(value) = headers.get(&auth_header_name) {
-            let value = match value.to_str() {
-                Ok(value) => value.to_string(),
-                Err(e) => {
-                    return json_error(
-                        StatusCode::BAD_REQUEST,
-                        format!("invalid Auth request header: {e}"),
-                    )
-                }
-            };
-            match clean_music_auth_field(value, "Auth request header") {
-                Ok(Some(value)) => {
-                    source_auth_header = Some(value);
-                    source_auth_header_name = Some(auth_header_name);
-                }
-                Ok(None) => {}
-                Err(e) => return json_error(StatusCode::BAD_REQUEST, e),
-            }
-        }
     }
 
     let now = now_ms();

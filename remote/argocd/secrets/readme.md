@@ -24,7 +24,7 @@ Required AWS secret names:
 - `dd/remote-dev/ai-ml-platform-secrets` -> consumed by the optional AI/ML chart
   `ExternalSecret`s in `remote/argocd/ai-ml-platform`
 - `dd/remote-dev/big-data-secrets` -> consumed by the optional
-  `remote/submodules/discrete-event-system.rs/k8s/big-data` ExternalSecrets for Airflow and MinIO
+  `remote/argocd/big-data` ExternalSecrets for Airflow and MinIO
 
 `dd/remote-dev/lmx-admin-token` must include `LMX_ADMIN_TOKEN`. Both broker
 deployments (`dd-rust-network-mutex` and `dd-live-mutex`) consume it through
@@ -97,8 +97,9 @@ and `RDS_DATABASE_URL` for `dd-spark-pipeline-server` Postgres access. Do not us
 
 `dd/remote-dev/big-data-secrets` must include `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`,
 `AIRFLOW_ADMIN_USERNAME`, and `AIRFLOW_ADMIN_PASSWORD` before applying the optional
-`k8s/big-data` bundle. Keep those values rotation-friendly in AWS Secrets Manager; do not restore
-literal fallback credentials to the manifests or docs.
+`remote/argocd/big-data` bundle or syncing `dd-big-data.application.yaml`. Keep those values
+rotation-friendly in AWS Secrets Manager; do not restore literal fallback credentials to the
+manifests or docs.
 
 `dd/remote-dev/ai-ml-platform-secrets` must include the chart-owned Airbyte auth, Airbyte
 database/storage, Airflow, Dagster, MLflow, and Qdrant keys listed in

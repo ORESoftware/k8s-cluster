@@ -2415,9 +2415,15 @@ struct TextInstructionSignals {
     has_slicer_mesh_topology_evidence: bool,
     has_slicer_high_speed_context: bool,
     has_slicer_high_speed_kinematic_evidence: bool,
+    has_multi_material_fdm_text_context: bool,
+    has_multi_material_fdm_map_evidence: bool,
+    has_multi_material_fdm_purge_resume_evidence: bool,
     has_pellet_fgf_text_context: bool,
     has_pellet_fgf_material_evidence: bool,
     has_pellet_fgf_bead_thermal_evidence: bool,
+    has_bound_metal_fff_text_context: bool,
+    has_bound_metal_fff_profile_evidence: bool,
+    has_bound_metal_fff_debind_sinter_evidence: bool,
     has_paste_extrusion_text_context: bool,
     has_paste_extrusion_rheology_evidence: bool,
     has_paste_extrusion_drying_evidence: bool,
@@ -3363,6 +3369,47 @@ fn wants_material_jetting_printing(value: &str) -> bool {
         || token.contains("full-color photopolymer")
 }
 
+fn wants_multi_material_fdm_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_mmu_segment = token == "mmu"
+        || token.starts_with("mmu-")
+        || token.ends_with("-mmu")
+        || token.contains("-mmu-");
+    let has_ams_segment = token == "ams"
+        || token.starts_with("ams-")
+        || token.ends_with("-ams")
+        || token.contains("-ams-");
+    let has_idex_segment = token == "idex"
+        || token.starts_with("idex-")
+        || token.ends_with("-idex")
+        || token.contains("-idex-");
+    !wants_material_jetting_printing(&token)
+        && (token.contains("multi-material-fdm")
+            || token.contains("multi-material-print")
+            || token.contains("multimaterial")
+            || token.contains("multi-filament")
+            || token.contains("multi-color")
+            || token.contains("multicolor")
+            || token.contains("dual-extruder")
+            || token.contains("dual-material")
+            || token.contains("toolchanger")
+            || token.contains("tool-changer")
+            || token.contains("toolchanging")
+            || token.contains("tool-changing")
+            || token.contains("purge-tower")
+            || token.contains("wipe-tower")
+            || token.contains("filament-change")
+            || token.contains("filament-swap")
+            || (has_mmu_segment || has_ams_segment || has_idex_segment)
+            || ((token.contains("color-change") || token.contains("material-change"))
+                && (token.contains("print")
+                    || token.contains("filament")
+                    || token.contains("fdm")
+                    || token.contains("additive")))
+            || (token.contains("support-interface")
+                && (token.contains("print") || token.contains("filament"))))
+}
+
 fn wants_paste_extrusion_printing(value: &str) -> bool {
     let token = normalize_token(value);
     let has_diw_segment = token == "diw"
@@ -3400,6 +3447,40 @@ fn wants_paste_extrusion_printing(value: &str) -> bool {
                 && (token.contains("print")
                     || token.contains("extrusion")
                     || token.contains("additive"))))
+}
+
+fn wants_bound_metal_filament_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_bound_metal_phrase = token.contains("bound-metal")
+        || token.contains("bound metal")
+        || token.contains("metal-filament")
+        || token.contains("metal filament")
+        || token.contains("metal-fff")
+        || token.contains("metal fff")
+        || token.contains("metal-fdm")
+        || token.contains("metal fdm")
+        || token.contains("metal-extrusion")
+        || token.contains("metal extrusion")
+        || token.contains("metal-polymer-filament")
+        || token.contains("metal polymer filament")
+        || token.contains("ultrafuse")
+        || token.contains("filamet")
+        || token.contains("virtual-foundry");
+    !wants_metal_powder_bed_printing(&token)
+        && !wants_binder_jet_printing(&token)
+        && !wants_directed_energy_deposition(&token)
+        && (token.contains("bound-metal-fff")
+            || token.contains("bound-metal-filament")
+            || has_bound_metal_phrase
+            || (token.contains("debind")
+                && token.contains("sinter")
+                && (token.contains("filament")
+                    || token.contains("fff")
+                    || token.contains("fdm")
+                    || token.contains("print")))
+            || (token.contains("green-part")
+                && token.contains("sinter")
+                && token.contains("filament")))
 }
 
 fn wants_pellet_fgf_printing(value: &str) -> bool {
@@ -3591,8 +3672,16 @@ fn is_material_jetting_printer_kind(kind: &str) -> bool {
     wants_material_jetting_printing(kind)
 }
 
+fn is_multi_material_fdm_printer_kind(kind: &str) -> bool {
+    wants_multi_material_fdm_printing(kind)
+}
+
 fn is_paste_extrusion_printer_kind(kind: &str) -> bool {
     wants_paste_extrusion_printing(kind)
+}
+
+fn is_bound_metal_filament_printer_kind(kind: &str) -> bool {
+    wants_bound_metal_filament_printing(kind)
 }
 
 fn is_pellet_fgf_printer_kind(kind: &str) -> bool {
@@ -3773,7 +3862,9 @@ fn machine_class(kind: &str) -> MachineClass {
         || token.contains("fdm")
         || token.contains("sla")
         || token.contains("sls")
+        || wants_multi_material_fdm_printing(&token)
         || wants_paste_extrusion_printing(&token)
+        || wants_bound_metal_filament_printing(&token)
         || wants_pellet_fgf_printing(&token)
         || token.contains("material-jet")
         || token.contains("polyjet")
@@ -3819,6 +3910,37 @@ fn default_machines() -> Vec<MachineProfile> {
             work_envelope_mm: Some(vec![220.0, 220.0, 250.0]),
             axes: Some(3),
             operations: Some(vec!["additive-print".to_string()]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "multi-material-fdm-printer-1".to_string(),
+            kind: "multi-material-fdm-printer".to_string(),
+            controller: Some("multi-material-fdm-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "pla".to_string(),
+                "petg".to_string(),
+                "abs".to_string(),
+                "asa".to_string(),
+                "nylon".to_string(),
+                "tpu".to_string(),
+                "pva".to_string(),
+                "hips".to_string(),
+                "support-material".to_string(),
+                "filament".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![256.0, 256.0, 256.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "multi-material-fdm-print".to_string(),
+                "ams-mmu-print".to_string(),
+                "idex-print".to_string(),
+                "toolchanger-print".to_string(),
+                "material-map".to_string(),
+                "purge-tower".to_string(),
+                "wipe-tower".to_string(),
+                "filament-change-automation".to_string(),
+            ]),
             profile_evidence: None,
         },
         MachineProfile {
@@ -3877,6 +3999,34 @@ fn default_machines() -> Vec<MachineProfile> {
                 "rheology-slump-test".to_string(),
                 "drying-shrinkage-control".to_string(),
                 "green-part-support".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "bound-metal-fff-printer-1".to_string(),
+            kind: "bound-metal-fff-printer".to_string(),
+            controller: Some("bound-metal-fff-job".to_string()),
+            materials: Some(vec![
+                "bound-metal-filament".to_string(),
+                "metal-filament".to_string(),
+                "metal-polymer-filament".to_string(),
+                "ultrafuse-316l".to_string(),
+                "filamet".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "bronze".to_string(),
+                "copper".to_string(),
+                "metal".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![250.0, 210.0, 200.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "bound-metal-fff-print".to_string(),
+                "metal-filament-print".to_string(),
+                "green-part-handling".to_string(),
+                "catalytic-or-solvent-debind".to_string(),
+                "sintering-furnace-cycle".to_string(),
+                "shrinkage-compensation".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -5636,8 +5786,16 @@ fn infer_requested_parts(
         wants_resin_printing(&objective_token) || wants_resin_printing(&material.name);
     let wants_material_jetting_part = wants_material_jetting_printing(&objective_token)
         || wants_material_jetting_printing(&material.name);
+    let wants_multi_material_part = wants_multi_material_fdm_printing(&objective_token)
+        || wants_multi_material_fdm_printing(&material.name);
     let wants_paste_extrusion_part = wants_paste_extrusion_printing(&objective_token)
         || wants_paste_extrusion_printing(&material.name);
+    let wants_bound_metal_fff_part = wants_bound_metal_filament_printing(&objective_token)
+        || wants_bound_metal_filament_printing(&material.name)
+        || material
+            .family
+            .as_ref()
+            .is_some_and(|family| wants_bound_metal_filament_printing(family));
     let wants_pellet_fgf_part =
         wants_pellet_fgf_printing(&objective_token) || wants_pellet_fgf_printing(&material.name);
     let wants_ded_part = wants_directed_energy_deposition(&objective_token)
@@ -5679,7 +5837,9 @@ fn infer_requested_parts(
     let needs_sheet_cut_part = wants_sheet_cutting(&objective_token);
     let needs_routed_part = !wants_resin_part
         && !wants_material_jetting_part
+        && !wants_multi_material_part
         && !wants_paste_extrusion_part
+        && !wants_bound_metal_fff_part
         && !wants_pellet_fgf_part
         && !wants_ded_part
         && !wants_composite_fiber_part
@@ -5697,7 +5857,9 @@ fn infer_requested_parts(
             || is_router_material(material));
     let needs_printed_part = wants_resin_part
         || wants_material_jetting_part
+        || wants_multi_material_part
         || wants_paste_extrusion_part
+        || wants_bound_metal_fff_part
         || wants_pellet_fgf_part
         || wants_ded_part
         || wants_composite_fiber_part
@@ -5717,8 +5879,12 @@ fn infer_requested_parts(
     if needs_printed_part {
         let preferred_method = if wants_material_jetting_part {
             "material-jetting-print"
+        } else if wants_multi_material_part {
+            "multi-material-fdm-print"
         } else if wants_paste_extrusion_part {
             "paste-extrusion-print"
+        } else if wants_bound_metal_fff_part {
+            "bound-metal-fff-print"
         } else if wants_pellet_fgf_part {
             "pellet-fgf-print"
         } else if wants_ded_part {
@@ -5981,12 +6147,24 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_material_jetting_printing(value));
+    let wants_multi_material_fdm_printer = preferred
+        .as_deref()
+        .is_some_and(wants_multi_material_fdm_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_multi_material_fdm_printing(value));
     let wants_paste_extrusion_printer = preferred
         .as_deref()
         .is_some_and(wants_paste_extrusion_printing)
         || preferred_methods
             .iter()
             .any(|value| wants_paste_extrusion_printing(value));
+    let wants_bound_metal_fff_printer = preferred
+        .as_deref()
+        .is_some_and(wants_bound_metal_filament_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_bound_metal_filament_printing(value));
     let wants_pellet_fgf_printer = preferred.as_deref().is_some_and(wants_pellet_fgf_printing)
         || preferred_methods
             .iter()
@@ -6092,9 +6270,23 @@ fn choose_machine<'a>(
             return machine;
         }
     }
+    if wants_multi_material_fdm_printer {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_multi_material_fdm_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
     if wants_paste_extrusion_printer {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_paste_extrusion_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_bound_metal_fff_printer {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_bound_metal_filament_printer_kind(&machine.kind)
         }) {
             return machine;
         }
@@ -6329,7 +6521,9 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
     } else if tokens.iter().any(|token| {
         wants_resin_printing(token)
             || wants_material_jetting_printing(token)
+            || wants_multi_material_fdm_printing(token)
             || wants_paste_extrusion_printing(token)
+            || wants_bound_metal_filament_printing(token)
             || wants_pellet_fgf_printing(token)
             || wants_directed_energy_deposition(token)
             || wants_composite_fiber_printing(token)
@@ -6352,6 +6546,9 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
     let wants_material_jetting = tokens
         .iter()
         .any(|token| wants_material_jetting_printing(token));
+    let wants_multi_material_fdm = tokens
+        .iter()
+        .any(|token| wants_multi_material_fdm_printing(token));
     let wants_paste_extrusion = tokens
         .iter()
         .any(|token| wants_paste_extrusion_printing(token));
@@ -6379,6 +6576,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         || wants_horizontal
         || wants_resin
         || wants_material_jetting
+        || wants_multi_material_fdm
         || wants_paste_extrusion
         || wants_pellet_fgf
         || wants_ded
@@ -6401,6 +6599,7 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_horizontal || is_horizontal_mill_kind(&machine.kind))
         && (!wants_resin || is_resin_printer_kind(&machine.kind))
         && (!wants_material_jetting || is_material_jetting_printer_kind(&machine.kind))
+        && (!wants_multi_material_fdm || is_multi_material_fdm_printer_kind(&machine.kind))
         && (!wants_paste_extrusion || is_paste_extrusion_printer_kind(&machine.kind))
         && (!wants_pellet_fgf || is_pellet_fgf_printer_kind(&machine.kind))
         && (!wants_ded || is_directed_energy_deposition_kind(&machine.kind))
@@ -6431,6 +6630,17 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || (preference.contains("material-jet") && operation.contains("material-jet"))
         || (preference.contains("polyjet") && operation.contains("polyjet"))
         || (preference.contains("mjp") && operation.contains("material-jet"))
+        || (wants_multi_material_fdm_printing(preference)
+            && (operation.contains("multi-material")
+                || operation.contains("ams")
+                || operation.contains("mmu")
+                || operation.contains("idex")
+                || operation.contains("toolchanger")
+                || operation.contains("tool-changer")
+                || operation.contains("material-map")
+                || operation.contains("purge-tower")
+                || operation.contains("wipe-tower")
+                || operation.contains("filament-change")))
         || (wants_paste_extrusion_printing(preference)
             && (operation.contains("paste")
                 || operation.contains("clay")
@@ -6735,8 +6945,14 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => {
             "pack tray, jet photopolymer/material channels, UV cure, remove supports, and inspect color/material interfaces"
         }
+        MachineClass::Additive if is_multi_material_fdm_printer_kind(&part.machine_kind) => {
+            "map filaments to AMS/MMU/toolheads, slice multi-material regions, verify purge/wipe tower and resume state, print material changes, and inspect interfaces"
+        }
         MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
             "condition paste or clay, verify rheology/nozzle state, purge syringe or auger, print bead path, control drying/shrinkage, and support the green part"
+        }
+        MachineClass::Additive if is_bound_metal_filament_printer_kind(&part.machine_kind) => {
+            "slice bound-metal filament, print green part, debind, sinter, inspect shrinkage, and hand off dense metal features for finishing"
         }
         MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => {
             "dry pellets, purge high-flow extruder, print large-format bead path, monitor bead/thermal state, and leave trim allowance"
@@ -7594,6 +7810,38 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                     .to_string(),
             ],
         ),
+        MachineClass::Additive if is_multi_material_fdm_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "multi-material-fdm-job".to_string()),
+            vec![
+                "; draft multi-material FDM/toolchanger job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [multi-material-fdm-material-map-boundary]: verify filament spool lots, AMS/MMU/toolhead slots, material/color map, support-interface material, temperature profile, and nozzle compatibility"
+                    .to_string(),
+                "MATERIAL_MAP slot_A=operator-reviewed slot_B=operator-reviewed support_interface=operator-reviewed colors=operator-reviewed"
+                    .to_string(),
+                "SLICE_MULTIMATERIAL layer_height_mm=0.200 material_regions=operator-reviewed wipe_to_infill=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [multi-material-fdm-purge-resume-boundary]: verify purge tower or wipe tower, prime volume, tool-change script, tip-shaping, runout sensors, and resume G92 state"
+                    .to_string(),
+                "TOOLCHANGE_SEQUENCE automation=ams_mmu_idex_or_toolchanger verified=true unload_load=operator-reviewed"
+                    .to_string(),
+                "PURGE_TOWER volume_mm3=operator-reviewed wipe_strategy=operator-reviewed prime_after_change=true"
+                    .to_string(),
+                "PRINT_MULTIMATERIAL material_changes=operator-reviewed interface_layers=operator-reviewed pause_fallback=operator-reviewed"
+                    .to_string(),
+                "COMPLETE record filament lots, slot map, purge/wipe evidence, tool-change script, runout or filament-sensor state, interface inspection, and dimensional review"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final multi-material FDM parameters must come from the slicer project, filament profiles, AMS/MMU/IDEX/toolchanger hardware, material/color map, purge tower, wipe strategy, and resume-state validation."
+                    .to_string(),
+                "Human signoff is required for material compatibility, slot mapping, support-interface release, purge volume, tool-change script, runout handling, interface quality, and fallback pause behavior."
+                    .to_string(),
+            ],
+        ),
         MachineClass::Additive if is_paste_extrusion_printer_kind(&machine.kind) => (
             machine
                 .controller
@@ -7623,6 +7871,38 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: final paste/clay extrusion parameters must come from the material batch, rheology/slump test, nozzle and syringe/auger hardware, bead coupon, drying schedule, shrinkage compensation, and kiln/firing or cure plan."
                     .to_string(),
                 "Human signoff is required for paste conditioning, deairing, extrusion pressure, nozzle clog risk, green-part handling, support fixtures, drying humidity, shrinkage/crack control, and firing or cure handoff."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Additive if is_bound_metal_filament_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "bound-metal-fff-job".to_string()),
+            vec![
+                "; draft bound-metal filament FFF job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [bound-metal-fff-profile-boundary]: verify metal-polymer filament lot, dry-storage state, nozzle/hardened-drive setup, slicer profile, shrinkage scale factors, raft/support strategy, and green-part handling fixtures"
+                    .to_string(),
+                "LOAD_BOUND_METAL_FILAMENT material=operator-reviewed lot=operator-reviewed dry_storage=verified nozzle_mm=operator-reviewed"
+                    .to_string(),
+                "SLICE_BOUND_METAL_FFF shrinkage_scale_xyz=operator-reviewed infill=operator-reviewed wall_count=operator-reviewed support_strategy=operator-reviewed"
+                    .to_string(),
+                "PRINT_GREEN_PART extrusion_multiplier=operator-reviewed bed_adhesion=verified green_part_fixture=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [bound-metal-fff-debind-sinter-boundary]: verify debind chemistry or thermal cycle, furnace atmosphere, setter/support media, sinter ramp/soak/cooldown, shrinkage coupon, and dense-part inspection"
+                    .to_string(),
+                "DEBIND_GREEN_PART method=operator-reviewed solvent_or_catalytic_or_thermal=operator-reviewed brown_part_fragility=reviewed"
+                    .to_string(),
+                "SINTER_PART furnace_profile=operator-reviewed atmosphere=operator-reviewed setter_support=operator-reviewed shrinkage_coupon=required"
+                    .to_string(),
+                "COMPLETE record filament lot, dry storage, slicer shrinkage compensation, green-part handling, debind run, sinter furnace chart, shrinkage coupon, density, and final dimensional inspection"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final bound-metal FFF parameters must come from the filament vendor profile, nozzle/drive hardware, slicer shrinkage compensation, green-part handling plan, debind chemistry or furnace cycle, sinter atmosphere, and inspection plan."
+                    .to_string(),
+                "Human signoff is required before release because green and brown parts are fragile, furnace cycles are material-specific, and shrinkage/density evidence decides whether the printed part is usable as a metal component."
                     .to_string(),
             ],
         ),
@@ -10521,6 +10801,84 @@ fn has_text_additive_high_speed_context(language: &str, line: &str) -> bool {
     )
 }
 
+fn has_text_multi_material_fdm_context(language: &str, line: &str) -> bool {
+    wants_multi_material_fdm_printing(language)
+        || wants_multi_material_fdm_printing(line)
+        || language_or_line_has_any(
+            language,
+            line,
+            &[
+                "multi-material fdm",
+                "multi material fdm",
+                "multi-material print",
+                "multimaterial",
+                "multi-color",
+                "multicolor",
+                "dual extruder",
+                "dual-extruder",
+                "ams",
+                "mmu",
+                "idex",
+                "toolchanger",
+                "tool changer",
+                "purge tower",
+                "wipe tower",
+                "filament change",
+                "support interface",
+            ],
+        )
+}
+
+fn has_text_multi_material_fdm_map_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "material map",
+            "material-map",
+            "color map",
+            "slot map",
+            "slot-map",
+            "ams slot",
+            "mmu slot",
+            "toolhead",
+            "tool head",
+            "filament lot",
+            "spool lot",
+            "spool weight",
+            "support interface",
+            "interface material",
+            "temperature profile",
+            "filament profile",
+            "nozzle compatibility",
+        ],
+    )
+}
+
+fn has_text_multi_material_fdm_purge_resume_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "purge tower",
+            "wipe tower",
+            "purge volume",
+            "prime volume",
+            "prime after",
+            "tool-change script",
+            "tool change script",
+            "tip shaping",
+            "tip-shaping",
+            "filament sensor",
+            "runout sensor",
+            "resume state",
+            "resume g92",
+            "g92 e0",
+            "wipe to infill",
+            "flush volume",
+            "filament reload",
+        ],
+    )
+}
+
 fn has_text_resin_context(language: &str, line: &str) -> bool {
     language_or_line_has_any(
         language,
@@ -11017,6 +11375,163 @@ fn has_text_paste_extrusion_drying_evidence(line: &str) -> bool {
             "firing",
             "sinter",
             "cure handoff",
+        ],
+    )
+}
+
+fn has_text_bound_metal_fff_context(language: &str, line: &str) -> bool {
+    wants_bound_metal_filament_printing(language)
+        || wants_bound_metal_filament_printing(line)
+        || language_or_line_has_any(
+            language,
+            line,
+            &[
+                "bound-metal fff",
+                "bound metal fff",
+                "bound-metal filament",
+                "metal filament",
+                "metal fdm",
+                "metal fff",
+                "ultrafuse",
+                "filamet",
+                "virtual foundry",
+                "green part sinter",
+                "debind sinter",
+                "debind and sinter",
+            ],
+        )
+}
+
+fn has_text_bound_metal_fff_profile_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "metal filament lot",
+            "filament lot",
+            "spool lot",
+            "material profile",
+            "filament profile",
+            "binder content",
+            "green part",
+            "green-part",
+            "green strength",
+            "shrinkage scale",
+            "scale factor",
+            "oversize",
+            "hardened nozzle",
+            "abrasive filament",
+            "dry storage",
+            "dry box",
+            "raft",
+            "support interface",
+            "wall compensation",
+        ],
+    )
+}
+
+fn has_text_bound_metal_fff_debind_sinter_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "debind",
+            "debinding",
+            "solvent debind",
+            "catalytic debind",
+            "brown part",
+            "sinter",
+            "sintering",
+            "furnace",
+            "furnace profile",
+            "setter",
+            "support setter",
+            "shrinkage coupon",
+            "scale compensation",
+            "density coupon",
+            "density",
+            "atmosphere",
+            "argon",
+            "forming gas",
+            "carbon support",
+            "post-sinter",
+        ],
+    )
+}
+
+fn has_text_bound_metal_fff_context(language: &str, line: &str) -> bool {
+    wants_bound_metal_filament_printing(language)
+        || wants_bound_metal_filament_printing(line)
+        || language_or_line_has_any(
+            language,
+            line,
+            &[
+                "bound metal fff",
+                "bound-metal fff",
+                "bound-metal filament",
+                "metal filament",
+                "metal-polymer filament",
+                "metal fdm",
+                "metal fff",
+                "ultrafuse",
+                "filamet",
+                "virtual foundry",
+                "green part debind",
+                "brown part sinter",
+            ],
+        )
+}
+
+fn has_text_bound_metal_fff_profile_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "filament lot",
+            "material lot",
+            "dry storage",
+            "dry-storage",
+            "desiccant",
+            "hardened nozzle",
+            "nozzle diameter",
+            "drive gear",
+            "slicer profile",
+            "extrusion multiplier",
+            "flow multiplier",
+            "shrinkage scale",
+            "shrinkage compensation",
+            "scale factor",
+            "green part fixture",
+            "green-part fixture",
+            "raft",
+            "support strategy",
+        ],
+    )
+}
+
+fn has_text_bound_metal_fff_debind_sinter_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "debind",
+            "debinding",
+            "brown part",
+            "brown-part",
+            "sinter",
+            "sintering",
+            "furnace",
+            "furnace profile",
+            "furnace chart",
+            "furnace cycle",
+            "ramp",
+            "soak",
+            "cooldown",
+            "setter",
+            "support media",
+            "atmosphere",
+            "forming gas",
+            "argon",
+            "shrinkage coupon",
+            "density",
+            "relative density",
+            "dimensional inspection",
         ],
     )
 }
@@ -12623,6 +13138,18 @@ fn inspect_text_instruction_line(
         signals.has_slicer_high_speed_kinematic_evidence = true;
         signals.has_process_preparation = true;
     }
+    let multi_material_fdm_context = has_text_multi_material_fdm_context(language, raw_line);
+    if multi_material_fdm_context {
+        signals.has_multi_material_fdm_text_context = true;
+    }
+    if multi_material_fdm_context && has_text_multi_material_fdm_map_evidence(raw_line) {
+        signals.has_multi_material_fdm_map_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if multi_material_fdm_context && has_text_multi_material_fdm_purge_resume_evidence(raw_line) {
+        signals.has_multi_material_fdm_purge_resume_evidence = true;
+        signals.has_process_preparation = true;
+    }
     if text_has_any(
         raw_line,
         &[
@@ -12814,6 +13341,18 @@ fn inspect_text_instruction_line(
     }
     if paste_extrusion_context && has_text_paste_extrusion_drying_evidence(raw_line) {
         signals.has_paste_extrusion_drying_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let bound_metal_fff_context = has_text_bound_metal_fff_context(language, raw_line);
+    if bound_metal_fff_context {
+        signals.has_bound_metal_fff_text_context = true;
+    }
+    if bound_metal_fff_context && has_text_bound_metal_fff_profile_evidence(raw_line) {
+        signals.has_bound_metal_fff_profile_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if bound_metal_fff_context && has_text_bound_metal_fff_debind_sinter_evidence(raw_line) {
+        signals.has_bound_metal_fff_debind_sinter_evidence = true;
         signals.has_process_preparation = true;
     }
     let ded_context = has_text_ded_context(language, raw_line);
@@ -13426,12 +13965,18 @@ fn analyze_instruction_programs(
         let mut has_slicer_mesh_topology_evidence = false;
         let mut has_slicer_high_speed_context = false;
         let mut has_slicer_high_speed_kinematic_evidence = false;
+        let mut has_multi_material_fdm_text_context = false;
+        let mut has_multi_material_fdm_map_evidence = false;
+        let mut has_multi_material_fdm_purge_resume_evidence = false;
         let mut has_pellet_fgf_text_context = false;
         let mut has_pellet_fgf_material_evidence = false;
         let mut has_pellet_fgf_bead_thermal_evidence = false;
         let mut has_paste_extrusion_text_context = false;
         let mut has_paste_extrusion_rheology_evidence = false;
         let mut has_paste_extrusion_drying_evidence = false;
+        let mut has_bound_metal_fff_text_context = false;
+        let mut has_bound_metal_fff_profile_evidence = false;
+        let mut has_bound_metal_fff_debind_sinter_evidence = false;
         let mut has_material_jetting_text_context = false;
         let mut has_material_jetting_material_evidence = false;
         let mut has_material_jetting_support_evidence = false;
@@ -13533,6 +14078,10 @@ fn analyze_instruction_programs(
                 has_slicer_high_speed_context |= signals.has_slicer_high_speed_context;
                 has_slicer_high_speed_kinematic_evidence |=
                     signals.has_slicer_high_speed_kinematic_evidence;
+                has_multi_material_fdm_text_context |= signals.has_multi_material_fdm_text_context;
+                has_multi_material_fdm_map_evidence |= signals.has_multi_material_fdm_map_evidence;
+                has_multi_material_fdm_purge_resume_evidence |=
+                    signals.has_multi_material_fdm_purge_resume_evidence;
                 has_pellet_fgf_text_context |= signals.has_pellet_fgf_text_context;
                 has_pellet_fgf_material_evidence |= signals.has_pellet_fgf_material_evidence;
                 has_pellet_fgf_bead_thermal_evidence |=
@@ -13541,6 +14090,11 @@ fn analyze_instruction_programs(
                 has_paste_extrusion_rheology_evidence |=
                     signals.has_paste_extrusion_rheology_evidence;
                 has_paste_extrusion_drying_evidence |= signals.has_paste_extrusion_drying_evidence;
+                has_bound_metal_fff_text_context |= signals.has_bound_metal_fff_text_context;
+                has_bound_metal_fff_profile_evidence |=
+                    signals.has_bound_metal_fff_profile_evidence;
+                has_bound_metal_fff_debind_sinter_evidence |=
+                    signals.has_bound_metal_fff_debind_sinter_evidence;
                 has_material_jetting_text_context |= signals.has_material_jetting_text_context;
                 has_material_jetting_material_evidence |=
                     signals.has_material_jetting_material_evidence;
@@ -17096,6 +17650,76 @@ fn analyze_instruction_programs(
                     action: "add-pellet-fgf-material-evidence".to_string(),
                     reason:
                         "pellet/FGF text instructions should retain pellet lot, drying, moisture, hopper, purge, and nozzle evidence before machine-ready release"
+                    .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_multi_material_fdm_text_context)
+                && has_multi_material_fdm_text_context
+                && !has_multi_material_fdm_map_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "multi-material-fdm-map-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "multi-material FDM text job lacks material/color map, slot, filament lot, support-interface, temperature-profile, or nozzle-compatibility evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "multi-material-fdm-material-map-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "AMS/MMU/IDEX/toolchanger prints can load the wrong filament, mix incompatible materials, miss support-interface behavior, or use invalid temperatures when material/color maps, slot assignments, filament lots, and nozzle compatibility are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach material/color map, AMS/MMU/toolhead slot assignments, filament or spool lots, support-interface material, filament temperature profiles, and nozzle-compatibility evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-multi-material-fdm-map-evidence".to_string(),
+                    reason:
+                        "multi-material FDM text instructions should retain material maps, slot assignments, filament lots, support-interface, and profile evidence before release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_multi_material_fdm_text_context)
+                && has_multi_material_fdm_text_context
+                && !has_multi_material_fdm_purge_resume_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "multi-material-fdm-purge-resume-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "multi-material FDM text job lacks purge/wipe tower, prime, tool-change script, tip-shaping, runout-sensor, or resume-state evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "multi-material-fdm-purge-resume-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "multi-material FDM prints can jam, under-extrude, smear colors, lose tool offsets, or resume with a bad extrusion origin when purge/wipe towers, tool-change scripts, runout sensing, prime volume, and G92 resume state are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach purge tower or wipe tower settings, flush/prime volume, tool-change script, tip-shaping record, runout or filament-sensor state, and resume G92 evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-multi-material-fdm-purge-resume-evidence".to_string(),
+                    reason:
+                        "multi-material FDM text instructions should retain purge/wipe, tool-change, sensor, prime, and resume-state evidence before release"
                             .to_string(),
                 });
             }
@@ -17201,6 +17825,76 @@ fn analyze_instruction_programs(
                     action: "add-paste-extrusion-drying-evidence".to_string(),
                     reason:
                         "paste/clay extrusion text instructions should retain drying, shrinkage, support, green-strength, and firing/cure handoff evidence before release"
+                    .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_bound_metal_fff_text_context)
+                && has_bound_metal_fff_text_context
+                && !has_bound_metal_fff_profile_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "bound-metal-fff-profile-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "bound-metal FFF text job lacks metal-filament lot, material profile, green-part, shrinkage-scale, nozzle, dry-storage, or support evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "bound-metal-fff-profile-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "bound-metal filament prints can abrade hardware, miss green strength, distort during shrinkage, or fail support release when filament lot, profile, scale compensation, nozzle compatibility, and green-part evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach metal-filament lot, material/profile settings, hardened-nozzle compatibility, green-part handling plan, support or raft strategy, dry-storage record, and shrinkage scale factor before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-bound-metal-fff-profile-evidence".to_string(),
+                    reason:
+                        "bound-metal FFF text instructions should retain filament profile, hardware, green-part, support, and shrinkage evidence before release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_bound_metal_fff_text_context)
+                && has_bound_metal_fff_text_context
+                && !has_bound_metal_fff_debind_sinter_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "bound-metal-fff-debind-sinter-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "bound-metal FFF text job lacks debind, brown-part, sinter furnace, setter, shrinkage coupon, density, or atmosphere evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "bound-metal-fff-debind-sinter-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "bound-metal FFF green parts cannot become dense metal without controlled debind, brown-part handling, sintering atmosphere, setter support, shrinkage coupon, and density inspection evidence"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "split bound-metal FFF release into solvent or catalytic debind, brown-part handling, sinter furnace profile, setter/support plan, shrinkage coupon, density inspection, and atmosphere evidence"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-bound-metal-fff-debind-sinter-evidence".to_string(),
+                    reason:
+                        "bound-metal FFF text instructions should retain debind, sinter, shrinkage, density, setter, and atmosphere evidence before release"
                             .to_string(),
                 });
             }
@@ -22079,7 +22773,9 @@ fn postprocess_controller(
 
 fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> String {
     let token = normalize_token(&format!("{controller}-{language}-{machine_kind}"));
-    if token.contains("marlin") {
+    if wants_multi_material_fdm_printing(&token) {
+        "multi-material-fdm-job-packager"
+    } else if token.contains("marlin") {
         "marlin-additive-gcode-postprocessor"
     } else if token.contains("grbl") {
         "grbl-router-postprocessor"
@@ -22101,6 +22797,8 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "iso-gcode-postprocessor"
     } else if wants_paste_extrusion_printing(&token) {
         "paste-extrusion-job-packager"
+    } else if wants_bound_metal_filament_printing(&token) {
+        "bound-metal-fff-job-packager"
     } else if wants_pellet_fgf_printing(&token) {
         "pellet-fgf-job-packager"
     } else if token.contains("sla") || token.contains("resin") {
@@ -22157,7 +22855,9 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
 
 fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
     let token = normalize_token(&format!("{language}-{machine_kind}"));
-    if wants_rotary_index_milling(&token) {
+    if wants_multi_material_fdm_printing(&token) {
+        "multi-material-fdm-job-package".to_string()
+    } else if wants_rotary_index_milling(&token) {
         "indexed-mill-controller-gcode".to_string()
     } else if token.contains("five-axis")
         || token.contains("5-axis")
@@ -22173,6 +22873,8 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "controller-gcode".to_string()
     } else if wants_paste_extrusion_printing(&token) {
         "paste-extrusion-job-package".to_string()
+    } else if wants_bound_metal_filament_printing(&token) {
+        "bound-metal-fff-job-package".to_string()
     } else if wants_pellet_fgf_printing(&token) {
         "pellet-fgf-job-package".to_string()
     } else if token.contains("sla") || token.contains("resin") {
@@ -22253,6 +22955,21 @@ fn postprocess_required_artifacts(targets: &[PostprocessTarget]) -> Vec<String> 
         {
             artifacts.insert("paste-rheology-and-nozzle-record".to_string());
             artifacts.insert("drying-shrinkage-and-green-part-support-record".to_string());
+        }
+        if is_bound_metal_filament_printer_kind(&target.machine_kind)
+            || wants_bound_metal_filament_printing(&target.output_format)
+            || wants_bound_metal_filament_printing(&target.controller)
+        {
+            artifacts.insert("bound-metal-filament-profile-record".to_string());
+            artifacts.insert("debind-sinter-furnace-cycle-record".to_string());
+            artifacts.insert("sintered-density-and-shrinkage-inspection-record".to_string());
+        }
+        if is_multi_material_fdm_printer_kind(&target.machine_kind)
+            || wants_multi_material_fdm_printing(&target.output_format)
+            || wants_multi_material_fdm_printing(&target.controller)
+        {
+            artifacts.insert("material-slot-map-and-filament-lot-record".to_string());
+            artifacts.insert("purge-tower-wipe-and-resume-record".to_string());
         }
         if matches!(machine_class(&target.machine_kind), MachineClass::Lathe)
             && !is_mill_turn_kind(&target.machine_kind)
@@ -26290,6 +27007,9 @@ fn material_feedstock_kind(part: &PartPlan) -> &'static str {
         MachineClass::Additive if is_metal_pbf_printer_kind(&part.machine_kind) => {
             "qualified-metal-powder-lot"
         }
+        MachineClass::Additive if is_multi_material_fdm_printer_kind(&part.machine_kind) => {
+            "multi-filament-spool-set"
+        }
         MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
             "paste-or-clay-feedstock"
         }
@@ -26304,9 +27024,6 @@ fn material_feedstock_kind(part: &PartPlan) -> &'static str {
         }
         MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => {
             "material-and-support-cartridges"
-        }
-        MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
-            "paste-or-clay-feedstock"
         }
         MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => {
             "pellet-feedstock"
@@ -26343,6 +27060,7 @@ fn material_estimated_quantity(part: &PartPlan, quantity: u32) -> f64 {
         MachineClass::Additive if is_composite_fiber_printer_kind(&part.machine_kind) => 90.0,
         MachineClass::Additive if wants_directed_energy_deposition(&part.machine_kind) => 180.0,
         MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => 40.0,
+        MachineClass::Additive if is_multi_material_fdm_printer_kind(&part.machine_kind) => 140.0,
         MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => 600.0,
         MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => 450.0,
         MachineClass::Additive => 85.0,
@@ -26361,6 +27079,7 @@ fn material_scrap_allowance_pct(part: &PartPlan) -> f64 {
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => 25.0,
         MachineClass::Additive if is_resin_printer_kind(&part.machine_kind) => 20.0,
         MachineClass::Additive if wants_directed_energy_deposition(&part.machine_kind) => 30.0,
+        MachineClass::Additive if is_multi_material_fdm_printer_kind(&part.machine_kind) => 22.0,
         MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => 25.0,
         MachineClass::Additive => 15.0,
         MachineClass::Lathe => 20.0,
@@ -26398,6 +27117,11 @@ fn material_conditioning(part: &PartPlan) -> Vec<String> {
         MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => vec![
             "verify model and support cartridge levels plus purge/wipe station state".to_string(),
             "confirm UV lamp exposure and support-removal compatibility".to_string(),
+        ],
+        MachineClass::Additive if is_multi_material_fdm_printer_kind(&part.machine_kind) => vec![
+            "dry or condition each filament spool and verify slot/material/color map".to_string(),
+            "confirm AMS/MMU/IDEX/toolchanger state, purge tower or wipe tower, prime volume, runout sensors, and resume G92 evidence"
+                .to_string(),
         ],
         MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => vec![
             "condition paste or clay batch, deair, and verify rheology/slump before loading"
@@ -36038,6 +36762,9 @@ fn material_catalog_feedstock_kind(machine_kind: &str) -> &'static str {
         MachineClass::Additive if is_material_jetting_printer_kind(machine_kind) => {
             "material-and-support-cartridges"
         }
+        MachineClass::Additive if is_multi_material_fdm_printer_kind(machine_kind) => {
+            "multi-filament-spool-set"
+        }
         MachineClass::Additive if is_paste_extrusion_printer_kind(machine_kind) => {
             "paste-or-clay-feedstock"
         }
@@ -36275,9 +37002,14 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "slicer-job",
         "sla-job",
         "resin-job",
+        "multi-material-fdm-job",
+        "ams-mmu-job",
+        "idex-toolchanger-job",
         "pellet-fgf-job",
         "paste-extrusion-job",
         "clay-print-job",
+        "bound-metal-fff-job",
+        "metal-filament-job",
         "material-jetting-job",
         "directed-energy-deposition-job",
         "composite-fiber-job",
@@ -36312,10 +37044,18 @@ fn instruction_language_family(language: &str) -> &'static str {
         || token.contains("printer")
         || token.contains("sla")
         || token.contains("resin")
+        || token.contains("multi-material")
+        || token.contains("ams")
+        || token.contains("mmu")
+        || token.contains("idex")
+        || token.contains("toolchanger")
         || token.contains("pellet")
         || token.contains("paste")
         || token.contains("clay")
         || token.contains("ceramic")
+        || token.contains("bound-metal")
+        || token.contains("metal-filament")
+        || token.contains("metal-fff")
         || token.contains("material-jetting")
         || token.contains("directed-energy")
         || token.contains("composite")
@@ -36368,14 +37108,20 @@ fn instruction_language_machine_classes(language: &str) -> Vec<String> {
     } else if token.contains("slicer") {
         vec![
             "fdm-printer",
+            "multi-material-fdm-printer",
             "pellet-fgf-printer",
             "paste-extrusion-printer",
+            "bound-metal-fff-printer",
             "sla-msla-resin-printer",
         ]
     } else if token.contains("sla") || token.contains("resin") {
         vec!["sla-msla-resin-printer"]
+    } else if wants_multi_material_fdm_printing(&token) {
+        vec!["multi-material-fdm-printer"]
     } else if token.contains("paste") || token.contains("clay") || token.contains("ceramic") {
         vec!["paste-extrusion-printer"]
+    } else if wants_bound_metal_filament_printing(&token) {
+        vec!["bound-metal-fff-printer"]
     } else if token.contains("pellet") {
         vec!["pellet-fgf-printer"]
     } else if token.contains("material-jetting") {
@@ -36561,12 +37307,12 @@ fn instruction_generation_catalog_program_contracts() -> Vec<Value> {
         }),
         json!({
             "family": "advanced-additive-process-sheets",
-            "generatedLanguages": ["pellet-fgf-job", "material-jetting-job", "directed-energy-deposition-job", "composite-fiber-job", "binder-jet-job"],
-            "machineClasses": ["pellet-fgf-printer", "material-jetting-printer", "directed-energy-deposition-cell", "continuous-fiber-composite-printer", "binder-jet-printer"],
+            "generatedLanguages": ["multi-material-fdm-job", "pellet-fgf-job", "material-jetting-job", "directed-energy-deposition-job", "composite-fiber-job", "binder-jet-job"],
+            "machineClasses": ["multi-material-fdm-printer", "pellet-fgf-printer", "material-jetting-printer", "directed-energy-deposition-cell", "continuous-fiber-composite-printer", "binder-jet-printer"],
             "generatorBranch": "generate_program::MachineClass::Additive special-process branches",
-            "generatedInstructionKinds": ["material conditioning", "process coupon or purge evidence", "bead, jetting, fiber, binder, or melt-pool review", "postprocess transfer"],
+            "generatedInstructionKinds": ["material conditioning", "process coupon or purge evidence", "material map, bead, jetting, fiber, binder, or melt-pool review", "postprocess transfer"],
             "releaseGates": ["feedstock or material lot", "hardware calibration", "thermal/process profile", "coupon or NDE evidence", "operator signoff"],
-            "boundarySignals": ["pellet-fgf-material-boundary", "pellet-fgf-bead-thermal-boundary", "interpass-boundary"],
+            "boundarySignals": ["multi-material-fdm-material-map-boundary", "multi-material-fdm-purge-resume-boundary", "pellet-fgf-material-boundary", "pellet-fgf-bead-thermal-boundary", "interpass-boundary"],
             "artifactKinds": ["generated-machine-program", "program-*"]
         }),
         json!({
@@ -36804,6 +37550,8 @@ fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
             "actions": [
                 "add-material-jetting-material-evidence",
                 "add-material-jetting-support-uv-inspection-evidence",
+                "add-multi-material-fdm-map-evidence",
+                "add-multi-material-fdm-purge-resume-evidence",
                 "add-pellet-fgf-material-evidence",
                 "add-pellet-fgf-bead-thermal-evidence",
                 "add-ded-feedstock-path-evidence",
@@ -36813,7 +37561,7 @@ fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
                 "add-binder-jet-process-evidence",
                 "add-binder-jet-postprocess-shrinkage-evidence"
             ],
-            "appliesTo": ["material-jetting-job", "pellet-fgf-job", "directed-energy-deposition-job", "composite-fiber-job", "binder-jet-job"],
+            "appliesTo": ["multi-material-fdm-job", "material-jetting-job", "pellet-fgf-job", "directed-energy-deposition-job", "composite-fiber-job", "binder-jet-job"],
             "operationKinds": ["review-line", "insert-review-checkpoint"],
             "generatedContent": ["process recipe, postprocess, inspection, and material evidence review notes"],
             "sourceSurfaces": ["improvements", "improvedPrograms.notes", "releasePackagePlan.requiredArtifacts"],
@@ -37001,6 +37749,10 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
                 languages.insert("resin-job".to_string());
             } else if is_material_jetting_printer_kind(&machine.kind) {
                 languages.insert("material-jetting-job".to_string());
+            } else if is_multi_material_fdm_printer_kind(&machine.kind) {
+                languages.insert("multi-material-fdm-job".to_string());
+                languages.insert("ams-mmu-job".to_string());
+                languages.insert("idex-toolchanger-job".to_string());
             } else if is_paste_extrusion_printer_kind(&machine.kind) {
                 languages.insert("paste-extrusion-job".to_string());
                 languages.insert("clay-print-job".to_string());
@@ -43434,6 +44186,76 @@ mod tests {
                     && target.postprocessor == "pellet-fgf-job-packager"
                     && target.output_format == "pellet-fgf-job-package"
             }));
+    }
+
+    #[test]
+    fn default_additive_fleet_generates_paste_extrusion_printer_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-paste-extrusion-printer".to_string()),
+            objective:
+                "ceramic clay paste extrusion planter with thick walls, rheology control, drying shrinkage, green-part support, and kiln firing"
+                    .to_string(),
+            material: Some(material("clay", "ceramic")),
+            stock: None,
+            tolerance_mm: Some(0.35),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("paste/clay extrusion printer plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "paste-extrusion-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response
+            .process_plan
+            .iter()
+            .any(|step| step.operation.contains("verify rheology/nozzle")));
+        let paste_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "paste-extrusion-printer")
+            .expect("paste extrusion program should be generated");
+        assert_eq!(paste_program.language, "paste-extrusion-job");
+        assert!(paste_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft paste/clay extrusion job")));
+        assert!(paste_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("CONDITION_PASTE")));
+        assert!(paste_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("PRINT_PASTE_PATH")));
+        assert!(paste_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("paste-extrusion-drying-boundary")));
+        assert!(paste_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("rheology/slump test")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "paste-extrusion-printer"
+                    && target.postprocessor == "paste-extrusion-job-packager"
+                    && target.output_format == "paste-extrusion-job-package"
+            }));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .iter()
+            .any(|artifact| artifact == "paste-rheology-and-nozzle-record"));
     }
 
     #[test]
@@ -50859,6 +51681,100 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.starts_with("CHECKPOINT [pellet-fgf-")));
+    }
+
+    #[test]
+    fn text_paste_extrusion_jobs_require_rheology_and_drying_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("paste-extrusion-missing-rheology-evidence".to_string()),
+                machine_id: Some("paste-extrusion-1".to_string()),
+                machine_kind: Some("paste-extrusion-printer".to_string()),
+                language: Some("paste-extrusion-job".to_string()),
+                instructions: vec![
+                    "Clay extrusion planter with drying schedule, humidity control, shrinkage allowance, support fixture, green strength, crack control, kiln firing, and cure handoff recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("paste-extrusion-missing-drying-evidence".to_string()),
+                machine_id: Some("paste-extrusion-1".to_string()),
+                machine_kind: Some("paste-extrusion-printer".to_string()),
+                language: Some("paste-extrusion-job".to_string()),
+                instructions: vec![
+                    "Paste extrusion job with clay lot, water content, deairing, viscosity, slump test, syringe cartridge, ram speed, nozzle diameter, bead width, and extrusion pressure recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("paste-extrusion-with-evidence".to_string()),
+                machine_id: Some("paste-extrusion-1".to_string()),
+                machine_kind: Some("paste-extrusion-printer".to_string()),
+                language: Some("paste-extrusion-job".to_string()),
+                instructions: vec![
+                    "Paste extrusion job with clay lot, water content, deairing, viscosity, slump test, syringe cartridge, ram speed, nozzle diameter, bead width, and extrusion pressure recorded".to_string(),
+                    "Clay print drying schedule with humidity control, shrinkage allowance, green-part support fixture, green strength, crack control, kiln firing, and cure handoff recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "paste-extrusion-rheology-evidence-missing"
+                && finding.program_id.as_deref()
+                    == Some("paste-extrusion-missing-rheology-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "paste-extrusion-drying-evidence-missing"
+                && finding.program_id.as_deref() == Some("paste-extrusion-missing-drying-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("paste-extrusion-")
+                && finding.program_id.as_deref() == Some("paste-extrusion-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "paste-extrusion-rheology-boundary"
+                && boundary.program_id.as_deref()
+                    == Some("paste-extrusion-missing-rheology-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("slump test")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "paste-extrusion-drying-boundary"
+                && boundary.program_id.as_deref() == Some("paste-extrusion-missing-drying-evidence")
+                && boundary.requires_human_intervention
+                && boundary
+                    .suggested_resolution
+                    .contains("shrinkage allowance")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-paste-extrusion-rheology-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("paste-extrusion-missing-rheology-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-paste-extrusion-drying-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("paste-extrusion-missing-drying-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [paste-extrusion-rheology-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [paste-extrusion-drying-boundary]")));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [paste-extrusion-")));
     }
 
     #[test]

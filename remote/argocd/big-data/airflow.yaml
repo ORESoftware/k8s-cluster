@@ -1,0 +1,168 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-dags
+  namespace: big-data
+data:
+  big_data_smoke_dag.py: |
+    from datetime import datetime
+
+    from airflow.decorators import dag, task
+
+
+    @dag(
+        dag_id="big_data_smoke",
+        start_date=datetime(2024, 1, 1),
+        schedule=None,
+        catchup=False,
+        tags=["big-data", "smoke"],
+    )
+    def big_data_smoke():
+        @task
+        def hello():
+            return "Spark, Airflow, and MinIO are deployed."
+
+        hello()
+
+
+    big_data_smoke()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow
+  namespace: big-data
+  labels:
+    app.kubernetes.io/name: airflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: airflow
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: airflow
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: big-data-workload
+      securityContext:
+        fsGroup: 0
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: airflow
+          image: docker.io/apache/airflow:2.10.5@sha256:6499a680a93463846d3a6be980e85d601dc97b0d81e82eed9ef5e5cb9da31b79
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 50000
+            runAsGroup: 0
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - bash
+            - -ec
+          args:
+            - |
+              airflow db migrate
+              airflow users create \
+                --username "${AIRFLOW_ADMIN_USERNAME}" \
+                --password "${AIRFLOW_ADMIN_PASSWORD}" \
+                --firstname Big \
+                --lastname Data \
+                --role Admin \
+                --email admin@example.local || true
+              airflow scheduler &
+              exec airflow webserver --port 8080
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow/runtime
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: SequentialExecutor
+            - name: AIRFLOW__CORE__DAGS_FOLDER
+              value: /opt/airflow/dags
+            - name: AIRFLOW__CORE__LOAD_EXAMPLES
+              value: "false"
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: sqlite:////opt/airflow/runtime/airflow.db
+            - name: AIRFLOW__LOGGING__BASE_LOG_FOLDER
+              value: /opt/airflow/runtime/logs
+            - name: AIRFLOW__WEBSERVER__EXPOSE_CONFIG
+              value: "false"
+            - name: TMPDIR
+              value: /tmp
+            - name: AIRFLOW_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-admin
+                  key: username
+            - name: AIRFLOW_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-admin
+                  key: password
+          ports:
+            - name: web
+              containerPort: 8080
+          volumeMounts:
+            - name: airflow-runtime
+              mountPath: /opt/airflow/runtime
+            - name: dags
+              mountPath: /opt/airflow/dags
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: web
+            initialDelaySeconds: 45
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 8
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: web
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: airflow-runtime
+          emptyDir: {}
+        - name: dags
+          configMap:
+            name: airflow-dags
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow
+  namespace: big-data
+  labels:
+    app.kubernetes.io/name: airflow
+spec:
+  selector:
+    app.kubernetes.io/name: airflow
+  ports:
+    - name: web
+      port: 8080
+      targetPort: web

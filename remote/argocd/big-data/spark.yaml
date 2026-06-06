@@ -1,0 +1,227 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-master
+  namespace: big-data
+  labels:
+    app.kubernetes.io/name: spark
+    app.kubernetes.io/component: master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: spark
+      app.kubernetes.io/component: master
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: spark
+        app.kubernetes.io/component: master
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: big-data-workload
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: spark-master
+          image: docker.io/apache/spark:3.5.5@sha256:39321d67b23e2e0953f81b60778f74bf40c40a18dfb0e881e6a38593af60afa1
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /opt/spark/bin/spark-class
+          args:
+            - org.apache.spark.deploy.master.Master
+            - --host
+            - 0.0.0.0
+            - --port
+            - "7077"
+            - --webui-port
+            - "8080"
+          env:
+            - name: HOME
+              value: /tmp
+            - name: SPARK_LOCAL_DIRS
+              value: /tmp/spark-local
+            - name: SPARK_LOG_DIR
+              value: /tmp/spark-logs
+          ports:
+            - name: cluster
+              containerPort: 7077
+            - name: web
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: web
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: web
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: spark-work
+              mountPath: /opt/spark/work-dir
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: spark-work
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-master
+  namespace: big-data
+  labels:
+    app.kubernetes.io/name: spark
+    app.kubernetes.io/component: master
+spec:
+  selector:
+    app.kubernetes.io/name: spark
+    app.kubernetes.io/component: master
+  ports:
+    - name: cluster
+      port: 7077
+      targetPort: cluster
+    - name: web
+      port: 8080
+      targetPort: web
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-worker
+  namespace: big-data
+  labels:
+    app.kubernetes.io/name: spark
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: spark
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: spark
+        app.kubernetes.io/component: worker
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: big-data-workload
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: spark-worker
+          image: docker.io/apache/spark:3.5.5@sha256:39321d67b23e2e0953f81b60778f74bf40c40a18dfb0e881e6a38593af60afa1
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /opt/spark/bin/spark-class
+          args:
+            - org.apache.spark.deploy.worker.Worker
+            - spark://spark-master.big-data.svc.cluster.local:7077
+            - --webui-port
+            - "8081"
+            - --cores
+            - "1"
+            - --memory
+            - 1g
+          env:
+            - name: HOME
+              value: /tmp
+            - name: SPARK_LOCAL_DIRS
+              value: /tmp/spark-local
+            - name: SPARK_LOG_DIR
+              value: /tmp/spark-logs
+            - name: SPARK_WORKER_DIR
+              value: /opt/spark/work-dir
+          ports:
+            - name: web
+              containerPort: 8081
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: web
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: web
+            initialDelaySeconds: 45
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: spark-work
+              mountPath: /opt/spark/work-dir
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: spark-work
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-worker
+  namespace: big-data
+  labels:
+    app.kubernetes.io/name: spark
+    app.kubernetes.io/component: worker
+spec:
+  selector:
+    app.kubernetes.io/name: spark
+    app.kubernetes.io/component: worker
+  ports:
+    - name: web
+      port: 8081
+      targetPort: web
