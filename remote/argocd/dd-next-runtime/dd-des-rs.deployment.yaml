@@ -22,9 +22,9 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-06-des-rs-footage-rotate-72e3e92'
+        dd.dev/telemetry-revision: '2026-06-06-des-rs-json-calibration-2edffbd'
         dd.dev/des-server-revision: 'b9e6103207d7512ac72f03c9f2880b342cd866a1'
-        dd.dev/des-engine-revision: '72e3e92b9759a0c40a90e4322b638b0c4079b583'
+        dd.dev/des-engine-revision: '2edffbd6085b954625531c546ba13a507d19427a'
       labels:
         app: dd-des-rs
     spec:
@@ -150,7 +150,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: 72e3e92b9759a0c40a90e4322b638b0c4079b583
+              value: 2edffbd6085b954625531c546ba13a507d19427a
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
