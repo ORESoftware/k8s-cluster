@@ -157,6 +157,8 @@ spec:
               value: '512'
             - name: GCS_WS_SIDE_EFFECT_LOCAL_PRESSURE_SHED
               value: 'true'
+            - name: GCS_WS_SIDE_EFFECT_SHED_MONGO_AFTER_LOCAL_FANOUT
+              value: 'true'
             - name: GCS_WS_SIDE_EFFECT_SHED_IN_FLIGHT_PERCENT
               value: '50'
             - name: GCS_WS_SIDE_EFFECT_SHED_GOROUTINES
@@ -209,6 +211,8 @@ spec:
               value: '1024'
             - name: GCS_WS_MONGO_BATCH_QUEUE_SIZE
               value: '262144'
+            - name: GCS_WS_MONGO_BATCH_PRESSURE_PERCENT
+              value: '25'
             - name: GCS_WS_MONGO_BATCH_WORKERS
               value: '64'
             - name: GCS_WS_MONGO_BATCH_FLUSH_MS
