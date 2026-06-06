@@ -144,6 +144,10 @@ Currently opted-in:
   Prometheus alerts when the `dd-fabrication-server-pods` target set is
   absent or an individual pod target stays down, so a broken direct scrape
   cannot quietly mask one replica's retained fabrication evidence.
+  A separate direct pod scrape coverage alert fires when Prometheus sees
+  fewer ready direct pod scrapes than desired replicas, catching partial
+  discovery or collector-export gaps before the service scrape makes the
+  planner look healthier than its replica-local evidence really is.
   The `Fabrication Planner` Grafana dashboard (uid `dd-fabrication-planner`)
   groups those signals with request intake, validation-finding and
   machine-failure boundary rates, required operator-action, fixture/setup
@@ -164,7 +168,9 @@ Currently opted-in:
   `upstream_status`, request-size p95/max panels from `request_length` so payload growth is visible
   before the `512k` gateway cap returns 413s, response-size p95/max panels from
   `body_bytes_sent` for generated design, machine-code, and artifact responses, gateway access/guardrail logs, and
-  warning/error logs for the Rust planner.
+  warning/error logs for the Rust planner. Its direct pod scrape coverage
+  panel compares ready `dd-fabrication-server-pods` scrapes with desired
+  Deployment replicas and shows the scrape coverage gap.
   The gateway log panel reads the redacted `dd.gateway.access.v1` access-log
   lines, which include request IDs, statuses, upstream status/timing, and
   path-only URIs without Auth headers, cookies, or query strings.

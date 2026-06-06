@@ -398,6 +398,15 @@ data:
             annotations:
               summary: Fabrication server pod scrape target is down
               description: "A direct dd-fabrication-server pod scrape target is down; one replica's retained fabrication evidence or learning counters may be invisible even if the Service scrape still succeeds."
+          - alert: DDFabricationServerPodScrapeCoverageBelowDesired
+            expr: sum(up{job="dd-fabrication-server-pods"} == bool 1) < max(dd_k8s_deployment_desired_replicas{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"})
+            for: 10m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server direct pod scrape coverage is below desired replicas
+              description: "Prometheus is scraping fewer ready dd-fabrication-server pod targets than the Deployment desires; replica-local job/artifact ledgers, learning memory, failure-boundary counters, and NATS/MDP fan-out evidence may be partially invisible."
           - alert: DDFabricationServerErrorsIncreasing
             expr: sum(rate(dd_fabrication_server_errors_total[5m])) > 0
             for: 2m

@@ -550,6 +550,10 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(dashboardText, /dd_k8s_hpa_current_at_max/);
   assert.match(dashboardText, /dd_k8s_deployment_updated_replicas/);
   assert.match(dashboardText, /dd_k8s_deployment_unavailable_replicas/);
+  assert.match(dashboardText, /Direct Pod Scrape Coverage/);
+  assert.match(dashboardText, /ready direct pod scrapes/);
+  assert.match(dashboardText, /scrape coverage gap/);
+  assert.match(dashboardText, /dd_k8s_deployment_desired_replicas/);
   assert.match(dashboardText, /Runtime CPU and Memory Limit Headroom/);
   assert.match(dashboardText, /dd_k8s_pod_container_cpu_usage_cores/);
   assert.match(dashboardText, /dd_k8s_pod_container_memory_usage_bytes/);
@@ -601,6 +605,8 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(observabilityReadme, /request-size p95\/max panels/);
   assert.match(observabilityReadme, /request_length/);
   assert.match(observabilityReadme, /512k/);
+  assert.match(observabilityReadme, /direct pod scrape coverage/);
+  assert.match(observabilityReadme, /fewer ready direct pod scrapes than desired replicas/);
   assert.match(observabilityReadme, /response-size p95\/max panels/);
   assert.match(observabilityReadme, /body_bytes_sent/);
   assert.match(gateway, /log_format dd_gateway_json escape=json/);
@@ -665,6 +671,7 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(dashboardText, /dd_k8s_pod_container_waiting/);
   assert.match(prometheus, /alert:\s*DDFabricationServerServingContainerWaiting/);
   assert.match(prometheus, /alert:\s*DDFabricationServerRolloutUpdatedReplicasLagging/);
+  assert.match(prometheus, /alert:\s*DDFabricationServerPodScrapeCoverageBelowDesired/);
   assert.match(prometheus, /alert:\s*DDFabricationServerCpuNearLimit/);
   assert.match(prometheus, /alert:\s*DDFabricationServerMemoryNearLimit/);
   assert.match(
@@ -674,6 +681,10 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(
     prometheus,
     /dd_k8s_deployment_updated_replicas\{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"\}/,
+  );
+  assert.match(
+    prometheus,
+    /sum\(up\{job="dd-fabrication-server-pods"\} == bool 1\) < max\(dd_k8s_deployment_desired_replicas\{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"\}\)/,
   );
   assert.match(
     prometheus,

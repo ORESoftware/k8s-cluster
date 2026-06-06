@@ -32884,6 +32884,8 @@ async fn root() -> impl IntoResponse {
             "GET /fabrication/decomposition/catalog",
             "GET /release/catalog",
             "GET /fabrication/release/catalog",
+            "GET /schedule/catalog",
+            "GET /fabrication/schedule/catalog",
             "GET /simulation/catalog",
             "GET /fabrication/simulation/catalog",
             "GET /quality/catalog",
@@ -33794,6 +33796,165 @@ fn release_catalog_response() -> Value {
 
 async fn release_catalog_http() -> impl IntoResponse {
     Json(release_catalog_response())
+}
+
+fn schedule_catalog_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "contract": "quantity-aware-production-batching",
+            "family": "production-planning",
+            "sourceSurface": "productionPlan.batches",
+            "artifactSurface": "production-plan",
+            "schemas": ["dd.fabrication.production-plan.v1"],
+            "appliesTo": ["all generated plan parts", "quantity > 1", "repeat manufacturing"],
+            "planningSignals": ["batch capacity", "setup repeats", "estimated machine minutes", "first-article review before repeat"],
+            "releaseBlocks": ["machineRelease.blockers", "batch.releaseBlockers", "operator-checkpoint-before-each-batch"],
+            "learningSignals": ["production batch count", "batch-review-required", "unattended-run eligibility"]
+        }),
+        json!({
+            "contract": "machine-lane-capacity-schedule",
+            "family": "machine-lane-scheduling",
+            "sourceSurface": "machineSchedule.machineLanes",
+            "artifactSurface": "machine-schedule",
+            "schemas": ["dd.fabrication.machine-schedule.v1"],
+            "appliesTo": ["additive printers", "mills", "routers", "sheet cutters", "lathes", "assembly cells"],
+            "planningSignals": ["scheduled operations", "scheduled minutes", "blocked operations", "utilization ratio", "next available minute"],
+            "releaseBlocks": ["schedule-blocked", "schedule-review-required"],
+            "learningSignals": ["machine-schedule-lane:*"]
+        }),
+        json!({
+            "contract": "operation-window-and-setup-teardown",
+            "family": "operation-window-scheduling",
+            "sourceSurface": "machineSchedule.operations",
+            "artifactSurface": "machine-schedule",
+            "schemas": ["dd.fabrication.machine-schedule.v1"],
+            "appliesTo": ["production batches with generated programs", "hybrid process graph nodes"],
+            "planningSignals": ["start minute", "setup minutes", "run minutes", "teardown minutes", "end minute", "queue index", "predecessor operation ids"],
+            "releaseBlocks": ["blocked-before-machine-release", "operator-review-required"],
+            "learningSignals": ["machine-schedule-status:*", "operation status and human-intervention labels"]
+        }),
+        json!({
+            "contract": "dependency-release-and-postprocess-holds",
+            "family": "schedule-hold-gates",
+            "sourceSurface": "machineSchedule.dependencyHolds",
+            "artifactSurface": "machine-schedule",
+            "schemas": ["dd.fabrication.machine-schedule.v1"],
+            "appliesTo": ["process graph dependencies", "machine release blockers", "postprocess targets", "operator or automation assignments"],
+            "planningSignals": ["hold source", "dependency type", "required action", "blocks machine start"],
+            "releaseBlocks": ["process-graph-dependency", "machine-release", "postprocess-plan", "operator-intervention"],
+            "learningSignals": ["machine-schedule-hold:*"]
+        }),
+        json!({
+            "contract": "des-studio-queue-model",
+            "family": "des-capacity-model",
+            "sourceSurface": "desScheduleModel",
+            "artifactSurface": "des-schedule-model",
+            "schemas": ["dd.fabrication.des-schedule-model.v1", "des.studio.graph.v1"],
+            "appliesTo": ["external DES workers", "MDP/POMDP optimizers", "scheduler visualizers"],
+            "planningSignals": ["Constant -> Queue -> Sink blocks", "service rate per minute", "lane utilization", "blocked operation counts", "structural analysis"],
+            "releaseBlocks": ["DES output is advisory and cannot certify machine release"],
+            "learningSignals": ["desScheduleModel.laneModels", "learningEngine.desMdpSpec"]
+        }),
+    ]
+}
+
+fn schedule_catalog_response() -> Value {
+    let contracts = schedule_catalog_contracts();
+    let families = unique_sorted(contracts.iter().filter_map(|contract| {
+        contract
+            .get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let schemas = unique_sorted(contracts.iter().flat_map(|contract| {
+        contract
+            .get("schemas")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.schedule-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /schedule/catalog", "GET /fabrication/schedule/catalog"],
+        "scheduleContractCount": contracts.len(),
+        "families": families,
+        "schemas": schemas,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "relatedCatalogRoutes": [
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog",
+            "GET /simulation/catalog",
+            "GET /fabrication/simulation/catalog",
+            "GET /setup/catalog",
+            "GET /fabrication/setup/catalog",
+            "GET /postprocess/catalog",
+            "GET /fabrication/postprocess/catalog",
+            "GET /learning/capabilities",
+            "GET /fabrication/learning/capabilities"
+        ],
+        "responseSurfaces": [
+            "productionPlan",
+            "productionPlan.quantity",
+            "productionPlan.totalBatches",
+            "productionPlan.totalEstimatedMachineMinutes",
+            "productionPlan.batches",
+            "productionPlan.batches.setupRepeats",
+            "productionPlan.batches.canRunUnattended",
+            "productionPlan.batches.reviewGates",
+            "productionPlan.batches.releaseBlockers",
+            "machineSchedule",
+            "machineSchedule.horizonMinutes",
+            "machineSchedule.machineLanes",
+            "machineSchedule.machineLanes.utilizationRatio",
+            "machineSchedule.operations",
+            "machineSchedule.operations.startMinute",
+            "machineSchedule.operations.endMinute",
+            "machineSchedule.operations.predecessorOperationIds",
+            "machineSchedule.dependencyHolds",
+            "machineSchedule.learningObservations",
+            "desScheduleModel",
+            "desScheduleModel.modelSpec",
+            "desScheduleModel.analysis",
+            "desScheduleModel.laneModels"
+        ],
+        "artifactSurfaces": [
+            "production-plan",
+            "machine-schedule",
+            "des-schedule-model",
+            "parametric-design.productionPlan",
+            "parametric-design.machineSchedule",
+            "parametric-design.desScheduleModel",
+            "mdp-request.artifacts.productionPlan",
+            "mdp-request.artifacts.machineSchedule",
+            "mdp-request.artifacts.desScheduleModel"
+        ],
+        "learningSurfaces": [
+            "machineSchedule.learningObservations",
+            "machine-schedule-status:*",
+            "machine-schedule-lane:*",
+            "machine-schedule-hold:*",
+            "desScheduleModel.laneModels",
+            "learningEngine.desMdpSpec",
+            "learningEngine.desPomdpSpec",
+            "neuralTrainingCorpus.examples"
+        ],
+        "releasePolicy": [
+            "schedule catalog entries describe deterministic production batching, machine-lane sequencing, dependency holds, and DES queue-model handoff contracts, not certified MES dispatch or controller output",
+            "machine-ready release remains blocked while production batches, machine schedule operations, dependency holds, release blockers, postprocess targets, setup evidence, or operator and automation assignments remain unresolved",
+            "schedule and DES observations are retained for MDP/POMDP/neural workers so future planning can learn which machines, batch sizes, split/combine routes, and setup sequences reduce blocked starts or human intervention"
+        ],
+        "scheduleContracts": contracts
+    })
+}
+
+async fn schedule_catalog_http() -> impl IntoResponse {
+    Json(schedule_catalog_response())
 }
 
 fn simulation_catalog_risk_contracts() -> Vec<Value> {
@@ -36361,6 +36522,8 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/decomposition/catalog",
                 "GET /release/catalog",
                 "GET /fabrication/release/catalog",
+                "GET /schedule/catalog",
+                "GET /fabrication/schedule/catalog",
                 "GET /simulation/catalog",
                 "GET /fabrication/simulation/catalog",
                 "GET /quality/catalog",
@@ -36758,6 +36921,7 @@ async fn request_schema() -> impl IntoResponse {
             "boundaryCatalog": ["GET /boundaries/catalog", "GET /fabrication/boundaries/catalog"],
             "decompositionCatalog": ["GET /decomposition/catalog", "GET /fabrication/decomposition/catalog"],
             "releaseCatalog": ["GET /release/catalog", "GET /fabrication/release/catalog"],
+            "scheduleCatalog": ["GET /schedule/catalog", "GET /fabrication/schedule/catalog"],
             "simulationCatalog": ["GET /simulation/catalog", "GET /fabrication/simulation/catalog"],
             "qualityCatalog": ["GET /quality/catalog", "GET /fabrication/quality/catalog"],
             "interventionCatalog": ["GET /interventions/catalog", "GET /fabrication/interventions/catalog"],
@@ -37618,6 +37782,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/release/catalog", get(release_catalog_http))
         .route("/fabrication/release/catalog", get(release_catalog_http))
+        .route("/schedule/catalog", get(schedule_catalog_http))
+        .route("/fabrication/schedule/catalog", get(schedule_catalog_http))
         .route("/simulation/catalog", get(simulation_catalog_http))
         .route(
             "/fabrication/simulation/catalog",
@@ -39535,6 +39701,107 @@ mod tests {
                 "missing required release artifact {artifact}"
             );
         }
+    }
+
+    #[test]
+    fn schedule_catalog_endpoint_exposes_batch_lane_and_des_contract() {
+        let payload = schedule_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.schedule-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/schedule/catalog"))));
+        assert!(payload
+            .get("scheduleContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("productionPlan.batches"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("machineSchedule.machineLanes.utilizationRatio")
+            })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("machineSchedule.dependencyHolds"))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("des-schedule-model"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("machine-schedule-hold:*"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let schemas = payload
+            .get("schemas")
+            .and_then(Value::as_array)
+            .expect("schedule schemas should be present");
+        for schema in [
+            "dd.fabrication.production-plan.v1",
+            "dd.fabrication.machine-schedule.v1",
+            "dd.fabrication.des-schedule-model.v1",
+            "des.studio.graph.v1",
+        ] {
+            assert!(
+                schemas.iter().any(|item| item.as_str() == Some(schema)),
+                "missing schedule schema {schema}"
+            );
+        }
+
+        let contracts = payload
+            .get("scheduleContracts")
+            .and_then(Value::as_array)
+            .expect("schedule contracts should be present");
+        for contract in [
+            "quantity-aware-production-batching",
+            "machine-lane-capacity-schedule",
+            "dependency-release-and-postprocess-holds",
+            "des-studio-queue-model",
+        ] {
+            assert!(
+                contracts
+                    .iter()
+                    .any(|item| { item.get("contract").and_then(Value::as_str) == Some(contract) }),
+                "missing schedule contract {contract}"
+            );
+        }
+        let des_contract = contracts
+            .iter()
+            .find(|item| {
+                item.get("contract").and_then(Value::as_str) == Some("des-studio-queue-model")
+            })
+            .expect("DES schedule contract should be present");
+        assert!(des_contract
+            .get("planningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|signal| signal
+                .as_str()
+                .is_some_and(|signal| signal.contains("Constant -> Queue -> Sink")))));
     }
 
     #[test]

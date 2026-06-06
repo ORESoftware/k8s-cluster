@@ -999,6 +999,20 @@ data:
           ],
           "title": "NATS Queue Ingest and Publish Attempts",
           "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 109 },
+          "id": 24,
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(up{job=\"dd-fabrication-server-pods\"} == bool 1) or vector(0)", "legendFormat": "ready direct pod scrapes", "refId": "A" },
+            { "expr": "max(dd_k8s_deployment_desired_replicas{namespace=\"default\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"})", "legendFormat": "desired replicas", "refId": "B" },
+            { "expr": "max(dd_k8s_deployment_desired_replicas{namespace=\"default\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"}) - (sum(up{job=\"dd-fabrication-server-pods\"} == bool 1) or vector(0))", "legendFormat": "scrape coverage gap", "refId": "C" }
+          ],
+          "title": "Direct Pod Scrape Coverage",
+          "type": "timeseries"
         }
       ],
       "refresh": "10s",
