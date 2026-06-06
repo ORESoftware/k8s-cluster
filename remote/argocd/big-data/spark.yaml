@@ -8,6 +8,8 @@ metadata:
     app.kubernetes.io/component: master
 spec:
   replicas: 1
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 600
   selector:
     matchLabels:
       app.kubernetes.io/name: spark
@@ -19,8 +21,15 @@ spec:
         app.kubernetes.io/component: master
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: false
       serviceAccountName: big-data-workload
+      terminationGracePeriodSeconds: 30
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 185
+        runAsGroup: 185
+        fsGroup: 185
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -32,6 +41,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
+            runAsUser: 185
+            runAsGroup: 185
             capabilities:
               drop:
                 - ALL
@@ -63,9 +74,18 @@ spec:
             requests:
               cpu: 100m
               memory: 256Mi
+              ephemeral-storage: 512Mi
             limits:
               cpu: "1"
               memory: 1Gi
+              ephemeral-storage: 1Gi
+          startupProbe:
+            httpGet:
+              path: /
+              port: web
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18
           readinessProbe:
             httpGet:
               path: /
@@ -89,9 +109,11 @@ spec:
               mountPath: /tmp
       volumes:
         - name: spark-work
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 2Gi
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 1Gi
 ---
 apiVersion: v1
 kind: Service
@@ -107,9 +129,11 @@ spec:
     app.kubernetes.io/component: master
   ports:
     - name: cluster
+      appProtocol: tcp
       port: 7077
       targetPort: cluster
     - name: web
+      appProtocol: http
       port: 8080
       targetPort: web
 ---
@@ -123,6 +147,8 @@ metadata:
     app.kubernetes.io/component: worker
 spec:
   replicas: 2
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 600
   selector:
     matchLabels:
       app.kubernetes.io/name: spark
@@ -134,8 +160,15 @@ spec:
         app.kubernetes.io/component: worker
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: false
       serviceAccountName: big-data-workload
+      terminationGracePeriodSeconds: 30
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 185
+        runAsGroup: 185
+        fsGroup: 185
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -147,6 +180,8 @@ spec:
             privileged: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
+            runAsUser: 185
+            runAsGroup: 185
             capabilities:
               drop:
                 - ALL
@@ -179,9 +214,18 @@ spec:
             requests:
               cpu: 250m
               memory: 1Gi
+              ephemeral-storage: 1Gi
             limits:
               cpu: "1"
               memory: 1536Mi
+              ephemeral-storage: 2Gi
+          startupProbe:
+            httpGet:
+              path: /
+              port: web
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 24
           readinessProbe:
             httpGet:
               path: /
@@ -205,9 +249,11 @@ spec:
               mountPath: /tmp
       volumes:
         - name: spark-work
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 4Gi
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 2Gi
 ---
 apiVersion: v1
 kind: Service
@@ -223,5 +269,6 @@ spec:
     app.kubernetes.io/component: worker
   ports:
     - name: web
+      appProtocol: http
       port: 8081
       targetPort: web

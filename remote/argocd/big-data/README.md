@@ -4,7 +4,8 @@ This bundle deploys a small development-oriented big-data stack with the same ba
 posture as the surrounding remote runtime:
 
 - Apache Spark standalone cluster: one master and two workers.
-- Apache Airflow: one webserver/scheduler pod with a smoke-test DAG.
+- Apache Airflow: one pod with separate init, webserver, and scheduler containers plus a smoke-test
+  DAG.
 - MinIO: S3-compatible object storage for data-lake style inputs and outputs.
 
 Databricks is not included because it is normally consumed as a managed service
@@ -51,16 +52,23 @@ These manifests are still a development stack, not the full production path:
   cannot drift between syncs.
 - MinIO uses a small `ReadWriteOnce` PVC so object data survives pod restarts, and its Deployment
   uses `Recreate` rollouts to avoid two pods contending for the same RWO volume during updates.
-- Airflow runs the webserver and scheduler in one pod.
-- Pod service-account tokens are disabled, containers drop Linux capabilities, Spark/MinIO/Airflow
-  use runtime-default seccomp profiles, and a same-namespace default-deny NetworkPolicy is included
-  for NetworkPolicy-capable CNIs.
+- Airflow runs the webserver and scheduler as separate containers in one pod; an init container
+  migrates the SQLite metadata database and bootstraps the admin user without putting the password
+  in process arguments.
+- Pod service-account tokens are disabled, service-link environment injection is disabled,
+  containers drop Linux capabilities, Spark/MinIO/Airflow use runtime-default seccomp profiles, and
+  the namespace enforces the latest restricted Pod Security profile.
+- A default-deny NetworkPolicy is included for NetworkPolicy-capable CNIs. Follow-up policies only
+  allow DNS, Airflow-to-Spark/MinIO client traffic, Spark master/worker traffic, and MinIO API
+  ingress from Airflow/Spark pods.
 - Workloads use a dedicated `big-data-workload` ServiceAccount with token automount disabled and no
   RBAC bindings.
 - Spark, Airflow, and MinIO run with read-only root filesystems; their runtime state is limited to
-  explicit `emptyDir` or PVC mounts.
-- The namespace includes a ResourceQuota and LimitRange so future dev jobs cannot consume the whole
-  EC2 cluster by accident.
+  explicit size-bounded `emptyDir` or PVC mounts.
+- The namespace includes CPU, memory, ephemeral-storage, storage, PVC, pod, and service quotas plus
+  a LimitRange so future dev jobs cannot consume the whole EC2 cluster by accident.
+- Deployments cap revision history, declare startup/readiness/liveness probes, and pin service
+  ports with `appProtocol` metadata for clearer platform inspection.
 - Spark workers have a PodDisruptionBudget with `minAvailable: 1`; the single-replica Spark master,
   Airflow, and MinIO pods remain development singletons.
 - For production, prefer the official Airflow Helm chart, a Spark Operator or managed Spark
