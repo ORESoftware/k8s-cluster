@@ -1620,6 +1620,27 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"machineRelease\.blockers"/);
   assert.match(source, /"split-combine-interface-release"/);
   assert.match(source, /release_catalog_endpoint_exposes_machine_ready_package_contract/);
+  assert.match(source, /async fn strategy_catalog_http/);
+  assert.match(source, /fn strategy_catalog_response/);
+  assert.match(source, /fn strategy_catalog_contracts/);
+  assert.match(source, /dd\.fabrication\.strategy-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/strategy\/catalog"/);
+  assert.match(source, /"strategyCandidates\.score"/);
+  assert.match(source, /"mdp-request\.desPomdpSolution"/);
+  assert.match(source, /"hybrid-route-candidate-scoring"/);
+  assert.match(
+    source,
+    /strategy_catalog_endpoint_exposes_hybrid_learning_and_policy_contract/,
+  );
+  assert.match(source, /async fn schedule_catalog_http/);
+  assert.match(source, /fn schedule_catalog_response/);
+  assert.match(source, /fn schedule_catalog_contracts/);
+  assert.match(source, /dd\.fabrication\.schedule-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/schedule\/catalog"/);
+  assert.match(source, /"productionPlan\.batches"/);
+  assert.match(source, /"machineSchedule\.machineLanes\.utilizationRatio"/);
+  assert.match(source, /"desScheduleModel\.laneModels"/);
+  assert.match(source, /schedule_catalog_endpoint_exposes_batch_lane_and_des_contract/);
   assert.match(source, /async fn simulation_catalog_http/);
   assert.match(source, /fn simulation_catalog_response/);
   assert.match(source, /fn simulation_catalog_risk_contracts/);
@@ -1800,6 +1821,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   assert.match(source, /\.route\("\/release\/catalog", get\(release_catalog_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/release\/catalog", get\(release_catalog_http\)\)/);
+  assert.match(source, /\.route\("\/schedule\/catalog", get\(schedule_catalog_http\)\)/);
+  assert.match(source, /\.route\("\/fabrication\/schedule\/catalog", get\(schedule_catalog_http\)\)/);
   assert.match(source, /\.route\("\/simulation\/catalog", get\(simulation_catalog_http\)\)/);
   assert.match(
     source,
@@ -1915,6 +1938,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /release package kinds, package\s+states, gate types, blocker sources/);
   assert.match(readme, /`machineRelease\.blockers`/);
   assert.match(readme, /`releasePackagePlan\.releaseGates`/);
+  assert.match(readme, /`GET \/schedule\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/schedule\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.schedule-catalog\.v1/);
+  assert.match(readme, /production batching, machine-lane\s+scheduling/);
+  assert.match(readme, /`productionPlan\.batches`/);
+  assert.match(readme, /`machineSchedule\.dependencyHolds`/);
+  assert.match(readme, /`desScheduleModel\.laneModels`/);
+  assert.match(readme, /Schedule and\s+DES observations are retained for MDP\/POMDP\/neural workers/);
   assert.match(readme, /`GET \/simulation\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/simulation\/catalog`/);
   assert.match(readme, /dd\.fabrication\.simulation-catalog\.v1/);
@@ -2872,6 +2903,13 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /dd\.fabrication\.release-catalog\.v1/);
   assert.match(readme, /controller\/postprocessor checks, simulation or dry-run evidence/);
   assert.match(readme, /which evidence cleared or blocked printed, milled, turned/);
+  assert.match(readme, /GET \/strategy\/catalog/);
+  assert.match(readme, /GET \/fabrication\/strategy\/catalog/);
+  assert.match(readme, /dd\.fabrication\.strategy-catalog\.v1/);
+  assert.match(readme, /advisory hybrid route,\s+learned preference, MDP\/POMDP policy/);
+  assert.match(readme, /strategyCandidates\.score/);
+  assert.match(readme, /mdp-request` strategy\s+candidates/);
+  assert.match(readme, /not certified manufacturing strategy\s+approval/);
   assert.match(readme, /GET \/postprocess\/catalog/);
   assert.match(readme, /GET \/fabrication\/postprocess\/catalog/);
   assert.match(readme, /dd\.fabrication\.postprocess-catalog\.v1/);
@@ -2920,6 +2958,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/decomposition\/catalog"/);
   assert.match(docs, /"path": "\/release\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/release\/catalog"/);
+  assert.match(docs, /"path": "\/strategy\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/strategy\/catalog"/);
+  assert.match(docs, /"path": "\/schedule\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/schedule\/catalog"/);
   assert.match(docs, /"path": "\/simulation\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/simulation\/catalog"/);
   assert.match(docs, /"path": "\/quality\/catalog"/);
