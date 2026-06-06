@@ -43579,6 +43579,10 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/simulation/result",
         "GET /quality/catalog",
         "GET /fabrication/quality/catalog",
+        "POST /quality/plan",
+        "POST /fabrication/quality/plan",
+        "POST /quality/result",
+        "POST /fabrication/quality/result",
         "GET /calibration/catalog",
         "GET /fabrication/calibration/catalog",
         "POST /calibration/plan",
@@ -46867,6 +46871,622 @@ fn quality_planning_response(
         }),
     );
     Value::Object(object)
+}
+
+fn validate_quality_result_measurements(
+    measurements: Option<Vec<QualityResultMeasurement>>,
+) -> Result<Vec<Value>, String> {
+    let measurements = measurements.unwrap_or_default();
+    if measurements.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "measurements must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    measurements
+        .into_iter()
+        .enumerate()
+        .map(|(index, measurement)| {
+            let measurement_id = validate_label(
+                &measurement.measurement_id,
+                &format!("measurements[{index}].measurementId"),
+            )?;
+            if !seen.insert(measurement_id.clone()) {
+                return Err(format!(
+                    "measurements must have unique measurementId values; duplicate {measurement_id}"
+                ));
+            }
+            let nominal_mm = measurement
+                .nominal_mm
+                .map(|value| finite_non_negative(value, &format!("measurements[{index}].nominalMm")))
+                .transpose()?;
+            let measured_mm = measurement
+                .measured_mm
+                .map(|value| finite_non_negative(value, &format!("measurements[{index}].measuredMm")))
+                .transpose()?;
+            let tolerance_mm = measurement
+                .tolerance_mm
+                .map(|value| finite_non_negative(value, &format!("measurements[{index}].toleranceMm")))
+                .transpose()?;
+            let deviation_mm = match measurement.deviation_mm {
+                Some(value) if !value.is_finite() => {
+                    return Err(format!("measurements[{index}].deviationMm must be finite"));
+                }
+                Some(value) => Some(value),
+                None => nominal_mm.zip(measured_mm).map(|(nominal, measured)| measured - nominal),
+            };
+            Ok(json!({
+                "measurementId": measurement_id,
+                "targetId": validate_optional_label(measurement.target_id, &format!("measurements[{index}].targetId"))?,
+                "partId": validate_optional_label(measurement.part_id, &format!("measurements[{index}].partId"))?,
+                "featureId": validate_optional_label(measurement.feature_id, &format!("measurements[{index}].featureId"))?,
+                "instrument": validate_optional_text(measurement.instrument, &format!("measurements[{index}].instrument"), MAX_LABEL_LEN)?,
+                "nominalMm": nominal_mm,
+                "measuredMm": measured_mm,
+                "toleranceMm": tolerance_mm,
+                "deviationMm": deviation_mm,
+                "status": validate_label(&measurement.status, &format!("measurements[{index}].status"))?,
+                "evidence": validate_signal_list(measurement.evidence, &format!("measurements[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_quality_result_findings(
+    findings: Option<Vec<QualityResultFinding>>,
+) -> Result<Vec<Value>, String> {
+    let findings = findings.unwrap_or_default();
+    if findings.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "findings must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    findings
+        .into_iter()
+        .enumerate()
+        .map(|(index, finding)| {
+            let finding_id =
+                validate_label(&finding.finding_id, &format!("findings[{index}].findingId"))?;
+            if !seen.insert(finding_id.clone()) {
+                return Err(format!(
+                    "findings must have unique findingId values; duplicate {finding_id}"
+                ));
+            }
+            Ok(json!({
+                "findingId": finding_id,
+                "severity": validate_label(&finding.severity, &format!("findings[{index}].severity"))?,
+                "code": validate_label(&finding.code, &format!("findings[{index}].code"))?,
+                "message": validate_text(&finding.message, &format!("findings[{index}].message"), MAX_TEXT_LEN)?,
+                "partId": validate_optional_label(finding.part_id, &format!("findings[{index}].partId"))?,
+                "operationId": validate_optional_label(finding.operation_id, &format!("findings[{index}].operationId"))?,
+                "machineId": validate_optional_label(finding.machine_id, &format!("findings[{index}].machineId"))?,
+                "requiresHumanIntervention": finding.requires_human_intervention.unwrap_or(false),
+                "recommendedAction": validate_optional_text(finding.recommended_action, &format!("findings[{index}].recommendedAction"), MAX_LABEL_LEN)?,
+                "evidence": validate_signal_list(finding.evidence, &format!("findings[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_quality_result_inspection_gates(
+    gates: Option<Vec<QualityResultInspectionGate>>,
+) -> Result<Vec<Value>, String> {
+    let gates = gates.unwrap_or_default();
+    if gates.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "inspectionGates must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    gates
+        .into_iter()
+        .enumerate()
+        .map(|(index, gate)| {
+            let gate_id =
+                validate_label(&gate.gate_id, &format!("inspectionGates[{index}].gateId"))?;
+            if !seen.insert(gate_id.clone()) {
+                return Err(format!(
+                    "inspectionGates must have unique gateId values; duplicate {gate_id}"
+                ));
+            }
+            Ok(json!({
+                "gateId": gate_id,
+                "gateKind": validate_label(&gate.gate_kind, &format!("inspectionGates[{index}].gateKind"))?,
+                "status": validate_label(&gate.status, &format!("inspectionGates[{index}].status"))?,
+                "required": gate.required.unwrap_or(true),
+                "humanInterventionRequired": gate.human_intervention_required.unwrap_or(false),
+                "message": validate_optional_text(gate.message, &format!("inspectionGates[{index}].message"), MAX_TEXT_LEN)?,
+                "evidence": validate_signal_list(gate.evidence, &format!("inspectionGates[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_quality_result_artifacts(
+    artifacts: Option<Vec<QualityResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id =
+                validate_label(&artifact.artifact_id, &format!("artifacts[{index}].artifactId"))?;
+            if !seen.insert(artifact_id.clone()) {
+                return Err(format!(
+                    "artifacts must have unique artifactId values; duplicate {artifact_id}"
+                ));
+            }
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": validate_label(&artifact.artifact_kind, &format!("artifacts[{index}].artifactKind"))?,
+                "sourceRefId": validate_optional_label(artifact.source_ref_id, &format!("artifacts[{index}].sourceRefId"))?,
+                "uri": validate_optional_text(artifact.uri, &format!("artifacts[{index}].uri"), MAX_TEXT_LEN)?,
+                "sha256": validate_optional_text(artifact.sha256, &format!("artifacts[{index}].sha256"), MAX_LABEL_LEN)?,
+                "format": validate_optional_label(artifact.format, &format!("artifacts[{index}].format"))?,
+                "evidence": validate_signal_list(artifact.evidence, &format!("artifacts[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn quality_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    !matches!(
+        status.as_str(),
+        "complete"
+            | "completed"
+            | "success"
+            | "succeeded"
+            | "ok"
+            | "pass"
+            | "passed"
+            | "ready"
+            | "approved"
+            | "released"
+            | "clear"
+            | "cleared"
+            | "resolved"
+            | "verified"
+            | "accepted"
+            | "in-tolerance"
+            | "within-tolerance"
+    )
+}
+
+fn quality_measurement_blocks_release(measurement: &Value) -> bool {
+    let status = measurement
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    if quality_status_blocks_release(status) {
+        return true;
+    }
+    let deviation = measurement.get("deviationMm").and_then(Value::as_f64);
+    let tolerance = measurement.get("toleranceMm").and_then(Value::as_f64);
+    matches!((deviation, tolerance), (Some(deviation), Some(tolerance)) if deviation.abs() > tolerance)
+}
+
+fn quality_finding_blocks_release(finding: &Value) -> bool {
+    if finding
+        .get("requiresHumanIntervention")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    let severity = finding
+        .get("severity")
+        .and_then(Value::as_str)
+        .map(normalize_token)
+        .unwrap_or_default();
+    matches!(
+        severity.as_str(),
+        "error"
+            | "critical"
+            | "blocker"
+            | "fail"
+            | "failed"
+            | "reject"
+            | "rework"
+            | "nonconformance"
+    )
+}
+
+fn quality_gate_blocks_release(gate: &Value) -> bool {
+    let required = gate
+        .get("required")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let human_required = gate
+        .get("humanInterventionRequired")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let status = gate
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    human_required || (required && quality_status_blocks_release(status))
+}
+
+fn quality_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact.get("uri").and_then(Value::as_str).is_none()
+        || artifact.get("sha256").and_then(Value::as_str).is_none()
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn quality_result_review_response(request: QualityResultReviewRequest) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "quality-result");
+    let generated_at_ms = now_ms();
+    let quality_result_job_id = safe_job_id("quality-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let inspector = validate_optional_label(request.inspector, "inspector")?;
+    let inspector_version =
+        validate_optional_text(request.inspector_version, "inspectorVersion", MAX_LABEL_LEN)?;
+    let measurements = validate_quality_result_measurements(request.measurements)?;
+    let findings = validate_quality_result_findings(request.findings)?;
+    let inspection_gates = validate_quality_result_inspection_gates(request.inspection_gates)?;
+    let artifacts = validate_quality_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+    let measurement_blocker_count = measurements
+        .iter()
+        .filter(|measurement| quality_measurement_blocks_release(measurement))
+        .count();
+    let finding_blocker_count = findings
+        .iter()
+        .filter(|finding| quality_finding_blocks_release(finding))
+        .count();
+    let human_intervention_finding_count = findings
+        .iter()
+        .filter(|finding| {
+            finding
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let gate_blocker_count = inspection_gates
+        .iter()
+        .filter(|gate| quality_gate_blocks_release(gate))
+        .count();
+    let human_intervention_gate_count = inspection_gates
+        .iter()
+        .filter(|gate| {
+            gate.get("humanInterventionRequired")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| quality_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let human_intervention_required =
+        human_intervention_finding_count > 0 || human_intervention_gate_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || measurement_blocker_count > 0
+        || finding_blocker_count > 0
+        || gate_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if !request.success {
+        "quality-result-worker-failed-release-blocked"
+    } else if measurement_blocker_count > 0 {
+        "quality-result-measurements-release-blocked"
+    } else if finding_blocker_count > 0 {
+        "quality-result-findings-release-blocked"
+    } else if gate_blocker_count > 0 {
+        "quality-result-gates-release-blocked"
+    } else if artifact_evidence_missing {
+        "quality-result-artifact-evidence-required"
+    } else if request.machine_ready {
+        "quality-result-ready-for-release-review"
+    } else {
+        "quality-result-machine-ready-review-required"
+    };
+
+    let mut learning_observations = vec![
+        format!("quality-worker:{worker_id}"),
+        format!("quality-result:{review_status}"),
+    ];
+    if let Some(inspector) = inspector.as_ref() {
+        learning_observations.push(format!("quality-inspector:{}", normalize_token(inspector)));
+    }
+    if release_blocked {
+        learning_observations.push("quality:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("quality:human-intervention-required".to_string());
+    }
+    if artifact_evidence_missing {
+        learning_observations.push("quality:artifact-evidence-missing".to_string());
+    }
+    learning_observations.extend(measurements.iter().filter_map(|measurement| {
+        measurement
+            .get("targetId")
+            .and_then(Value::as_str)
+            .map(|target| format!("quality-measurement-target:{}", normalize_token(target)))
+    }));
+    learning_observations.extend(measurements.iter().filter_map(|measurement| {
+        measurement
+            .get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("quality-measurement-status:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(findings.iter().filter_map(|finding| {
+        finding
+            .get("code")
+            .and_then(Value::as_str)
+            .map(|code| format!("quality-finding:{}", normalize_token(code)))
+    }));
+    learning_observations.extend(findings.iter().filter_map(|finding| {
+        finding
+            .get("severity")
+            .and_then(Value::as_str)
+            .map(|severity| format!("quality-finding-severity:{}", normalize_token(severity)))
+    }));
+    learning_observations.extend(findings.iter().filter_map(|finding| {
+        finding
+            .get("recommendedAction")
+            .and_then(Value::as_str)
+            .map(|action| format!("quality-recommended-action:{}", normalize_token(action)))
+    }));
+    learning_observations.extend(inspection_gates.iter().filter_map(|gate| {
+        gate.get("gateKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("quality-gate:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(inspection_gates.iter().filter_map(|gate| {
+        gate.get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("quality-gate-status:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(artifacts.iter().filter_map(|artifact| {
+        artifact
+            .get("artifactKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("quality-artifact:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.quality-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "qualityResultJobId": quality_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": [
+            "POST /quality/result",
+            "POST /fabrication/quality/result"
+        ],
+        "qualityRoutes": [
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog",
+            "POST /quality/plan",
+            "POST /fabrication/quality/plan"
+        ],
+        "releaseRoutes": [
+            "POST /release/preview",
+            "POST /fabrication/release/preview",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ],
+        "learningRoutes": [
+            "POST /learning/outcomes",
+            "POST /fabrication/learning/outcomes",
+            "GET /learning/policy",
+            "GET /fabrication/learning/policy"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "measurementCount": measurements.len(),
+        "measurementBlockerCount": measurement_blocker_count,
+        "findingCount": findings.len(),
+        "findingBlockerCount": finding_blocker_count,
+        "humanInterventionFindingCount": human_intervention_finding_count,
+        "inspectionGateCount": inspection_gates.len(),
+        "gateBlockerCount": gate_blocker_count,
+        "humanInterventionGateCount": human_intervention_gate_count,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "humanInterventionRequired": human_intervention_required,
+        "warningCount": warnings.len(),
+        "qualityResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "inspector": inspector,
+            "inspectorVersion": inspector_version,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "measurements": measurements,
+            "findings": findings,
+            "inspectionGates": inspection_gates,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "measurements are in tolerance or dispositioned through explicit rework or waiver gates",
+                "quality findings with reject, rework, nonconformance, or human-intervention severity are resolved with retained evidence",
+                "required inspection gates are complete or converted into release-readiness blockers",
+                "metrology, inspection, coupon, and final-fit artifacts carry URI, checksum, and evidence labels"
+            ],
+            "targetSurfaces": [
+                "qualityPlan",
+                "machineRelease",
+                "releasePackagePlan",
+                "postprocessPlan",
+                "interfaceControlPlan",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "quality-result",
+            "quality-measurements",
+            "quality-findings",
+            "quality-inspection-gates",
+            "quality-artifacts",
+            "quality-learning-observations",
+            "first-article-metrology-record",
+            "final-fit-metrology-record",
+            "surface-finish-inspection-record",
+            "material-process-coupon-record",
+            "mdp-request.artifacts.qualityResult"
+        ],
+        "qualityPolicy": [
+            "quality results are retained inspection evidence, not certified acceptance or a shop-floor safety waiver",
+            "machine-ready release remains blocked until measurements, findings, gates, artifacts, and human-intervention dispositions clear",
+            "quality result observations feed MDP/POMDP/neural learning so future plans can add inspection, adjust processes, split parts, combine assemblies, or require human signoff before release"
+        ]
+    }))
+}
+
+fn quality_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("measurements-release-blocked")
+        || status.contains("findings-release-blocked")
+        || status.contains("gates-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_quality_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "quality-result");
+    let job_id = response_str_field(
+        response,
+        "qualityResultJobId",
+        &safe_job_id("quality-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "quality-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("qualityResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let measurements = result
+        .get("measurements")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let findings = result.get("findings").cloned().unwrap_or_else(|| json!([]));
+    let inspection_gates = result
+        .get("inspectionGates")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let quality_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "quality-result".to_string(),
+            "quality-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "quality-measurements".to_string(),
+            "quality-measurements",
+            measurements,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "quality-findings".to_string(),
+            "quality-findings",
+            findings,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "quality-inspection-gates".to_string(),
+            "quality-inspection-gates",
+            inspection_gates,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "quality-artifacts".to_string(),
+            "quality-artifacts",
+            quality_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "quality-learning-observations".to_string(),
+            "quality-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "quality-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: quality_result_job_severity(response),
+            summary: format!("quality result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_quality_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_quality_result_job(response));
 }
 
 async fn quality_catalog_http() -> impl IntoResponse {
@@ -51772,6 +52392,10 @@ async fn capabilities() -> impl IntoResponse {
                 "POST /fabrication/simulation/result",
                 "GET /quality/catalog",
                 "GET /fabrication/quality/catalog",
+                "POST /quality/plan",
+                "POST /fabrication/quality/plan",
+                "POST /quality/result",
+                "POST /fabrication/quality/result",
                 "GET /calibration/catalog",
                 "GET /fabrication/calibration/catalog",
                 "GET /interventions/catalog",
@@ -51821,6 +52445,12 @@ async fn capabilities() -> impl IntoResponse {
                 "POST /fabrication/simulation/run",
                 "POST /simulation/result",
                 "POST /fabrication/simulation/result"
+            ],
+            "quality": [
+                "POST /quality/plan",
+                "POST /fabrication/quality/plan",
+                "POST /quality/result",
+                "POST /fabrication/quality/result"
             ],
             "assemblyPlanning": [
                 "POST /assembly/plan",
@@ -52864,6 +53494,8 @@ async fn request_schema() -> impl IntoResponse {
             "simulationRun": ["POST /simulation/run", "POST /fabrication/simulation/run"],
             "instructionSimulationResult": ["POST /simulation/result", "POST /fabrication/simulation/result"],
             "qualityCatalog": ["GET /quality/catalog", "GET /fabrication/quality/catalog"],
+            "qualityPlan": ["POST /quality/plan", "POST /fabrication/quality/plan"],
+            "qualityResult": ["POST /quality/result", "POST /fabrication/quality/result"],
             "calibrationCatalog": ["GET /calibration/catalog", "GET /fabrication/calibration/catalog"],
             "interventionCatalog": ["GET /interventions/catalog", "GET /fabrication/interventions/catalog"],
             "setupCatalog": ["GET /setup/catalog", "GET /fabrication/setup/catalog"],
@@ -54141,6 +54773,23 @@ async fn quality_plan_http(
     }
 }
 
+async fn quality_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<QualityResultReviewRequest>,
+) -> Response {
+    match quality_result_review_response(request) {
+        Ok(response) => {
+            store_quality_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 async fn setup_plan_http(
     State(state): State<AppState>,
     Json(request): Json<FabricationPlanRequest>,
@@ -54699,6 +55348,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/quality/catalog", get(quality_catalog_http))
         .route("/quality/plan", post(quality_plan_http))
         .route("/fabrication/quality/plan", post(quality_plan_http))
+        .route("/quality/result", post(quality_result_http))
+        .route("/fabrication/quality/result", post(quality_result_http))
         .route("/calibration/catalog", get(calibration_catalog_http))
         .route(
             "/fabrication/calibration/catalog",
@@ -60515,6 +61166,163 @@ mod tests {
             assert!(
                 job.artifacts.contains_key(artifact),
                 "missing quality planning artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn quality_result_endpoint_reviews_metrology_findings_gates_and_learning() {
+        let payload = quality_result_review_response(QualityResultReviewRequest {
+            request_id: Some("unit-quality-result".to_string()),
+            plan_request_id: Some("unit-quality-plan".to_string()),
+            job_id: Some("quality-job-321".to_string()),
+            worker_id: "quality-worker-01".to_string(),
+            inspector: Some("cmm-fit-inspector".to_string()),
+            inspector_version: Some("2026.06".to_string()),
+            success: true,
+            machine_ready: false,
+            measurements: Some(vec![QualityResultMeasurement {
+                measurement_id: "datum-bore-measurement".to_string(),
+                target_id: Some("critical-datum-bore".to_string()),
+                part_id: Some("printed-body".to_string()),
+                feature_id: Some("datum-bore".to_string()),
+                instrument: Some("cmm-probe".to_string()),
+                nominal_mm: Some(20.0),
+                measured_mm: Some(20.18),
+                tolerance_mm: Some(0.05),
+                deviation_mm: None,
+                status: "out-of-tolerance".to_string(),
+                evidence: Some(vec![
+                    "cmm-run-331".to_string(),
+                    "datum-bore-profile".to_string(),
+                ]),
+            }]),
+            findings: Some(vec![QualityResultFinding {
+                finding_id: "datum-bore-finding".to_string(),
+                severity: "nonconformance".to_string(),
+                code: "datum-bore-oversize".to_string(),
+                message: "Measured datum bore is outside the release tolerance window".to_string(),
+                part_id: Some("printed-body".to_string()),
+                operation_id: Some("final-fit".to_string()),
+                machine_id: Some("cmm-cell-1".to_string()),
+                requires_human_intervention: Some(true),
+                recommended_action: Some("rework-or-split-insert".to_string()),
+                evidence: Some(vec!["operator-disposition-required".to_string()]),
+            }]),
+            inspection_gates: Some(vec![QualityResultInspectionGate {
+                gate_id: "final-fit-gate".to_string(),
+                gate_kind: "final-fit-metrology".to_string(),
+                status: "blocked".to_string(),
+                required: Some(true),
+                human_intervention_required: Some(true),
+                message: Some(
+                    "Final fit metrology is blocked pending human disposition".to_string(),
+                ),
+                evidence: Some(vec!["quality-gate-review".to_string()]),
+            }]),
+            artifacts: Some(vec![QualityResultArtifact {
+                artifact_id: "first-article-record".to_string(),
+                artifact_kind: "first-article-metrology-record".to_string(),
+                source_ref_id: Some("cmm-run-331".to_string()),
+                uri: Some("s3://fabrication-quality/unit-quality-result/cmm.json".to_string()),
+                sha256: Some("a".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec!["retained-metrology-report".to_string()]),
+            }]),
+            warnings: None,
+            review_metadata: Some(json!({
+                "reviewer": "unit-test",
+                "cell": "inspection"
+            })),
+        })
+        .expect("quality result review should succeed");
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.quality-result-review.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/quality/result"))));
+        assert_eq!(
+            payload.get("reviewStatus").and_then(Value::as_str),
+            Some("quality-result-measurements-release-blocked")
+        );
+        assert_eq!(
+            payload.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload
+                .get("measurementBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("findingBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("gateBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("missingArtifactEvidenceCount")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+
+        let observations = payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be present");
+        for observation in [
+            "quality-measurement-target:critical-datum-bore",
+            "quality-finding:datum-bore-oversize",
+            "quality:human-intervention-required",
+            "quality-gate:final-fit-metrology",
+            "quality-artifact:first-article-metrology-record",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing quality observation {observation}"
+            );
+        }
+
+        let job = stored_quality_result_job(&payload);
+        assert!(job
+            .record
+            .job_id
+            .starts_with("quality-result-unit-quality-result-"));
+        assert_eq!(job.record.kind, "quality-result");
+        assert_eq!(
+            job.record.status,
+            "quality-result-measurements-release-blocked"
+        );
+        assert!(!job.record.ok);
+        assert_eq!(job.record.severity, "error");
+        for artifact in [
+            "quality-result",
+            "quality-measurements",
+            "quality-findings",
+            "quality-inspection-gates",
+            "quality-artifacts",
+            "quality-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact),
+                "missing quality result artifact {artifact}"
             );
         }
     }
