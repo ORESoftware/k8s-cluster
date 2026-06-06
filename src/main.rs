@@ -3486,6 +3486,10 @@ fn wants_surface_finishing(value: &str) -> bool {
         || token.contains("surface-treatment-cell")
         || token.contains("surface-finishing-job")
         || token.contains("coating-job")
+        || token.contains("plating-job")
+        || token.contains("anodizing-job")
+        || token.contains("media-blasting-job")
+        || token.contains("powder-coating-job")
         || token.contains("deburr-polish-job")
         || token.contains("finish-checklist");
     let has_named_process = token.contains("surface-finishing")
@@ -38110,6 +38114,10 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "heat-treatment-job",
         "surface-finishing-job",
         "coating-job",
+        "plating-job",
+        "anodizing-job",
+        "media-blasting-job",
+        "powder-coating-job",
         "deburr-polish-job",
         "mill-turn-job",
         "lathe-job",
@@ -38512,7 +38520,7 @@ fn instruction_generation_catalog_program_contracts() -> Vec<Value> {
         }),
         json!({
             "family": "surface-finishing-release",
-            "generatedLanguages": ["surface-finishing-job", "coating-job", "deburr-polish-job"],
+            "generatedLanguages": ["surface-finishing-job", "coating-job", "plating-job", "anodizing-job", "media-blasting-job", "powder-coating-job", "deburr-polish-job"],
             "machineClasses": ["surface-finishing-cell"],
             "generatorBranch": "generate_program::MachineClass::Other surface finishing cell",
             "generatedInstructionKinds": ["material compatibility and SDS/media review", "masking/protected-feature setup", "finishing media or chemistry", "ventilation/PPE/waste controls", "dry/cure release", "thickness, adhesion, color, roughness, and finish inspection"],
@@ -38990,6 +38998,10 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
         MachineClass::Other if is_surface_finishing_kind(&machine.kind) => {
             languages.insert("surface-finishing-job".to_string());
             languages.insert("coating-job".to_string());
+            languages.insert("plating-job".to_string());
+            languages.insert("anodizing-job".to_string());
+            languages.insert("media-blasting-job".to_string());
+            languages.insert("powder-coating-job".to_string());
             languages.insert("deburr-polish-job".to_string());
             languages.insert("operator-checklist".to_string());
         }
@@ -54642,6 +54654,10 @@ mod tests {
             "heat-treatment-job",
             "surface-finishing-job",
             "coating-job",
+            "plating-job",
+            "anodizing-job",
+            "media-blasting-job",
+            "powder-coating-job",
             "deburr-polish-job",
             "mill-turn-job",
             "assembly-cell-job",
