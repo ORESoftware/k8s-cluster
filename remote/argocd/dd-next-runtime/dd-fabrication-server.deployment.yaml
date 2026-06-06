@@ -141,6 +141,7 @@ spec:
                 '"path": "/fabrication/controllers/catalog"' \
                 '"path": "/fabrication/materials/catalog"' \
                 '"path": "/fabrication/materials/plan"' \
+                '"path": "/fabrication/materials/result"' \
                 '"path": "/fabrication/design/import/catalog"' \
                 '"path": "/fabrication/design/import/review"' \
                 '"path": "/fabrication/design/convert/plan"' \
@@ -161,6 +162,7 @@ spec:
                 '"path": "/fabrication/strategy/catalog"' \
                 '"path": "/fabrication/strategy/recommend"' \
                 '"path": "/fabrication/schedule/catalog"' \
+                '"path": "/fabrication/schedule/result"' \
                 '"path": "/fabrication/execution/plan"' \
                 '"path": "/fabrication/simulation/catalog"' \
                 '"path": "/fabrication/simulation/run"' \
