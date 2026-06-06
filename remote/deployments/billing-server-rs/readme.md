@@ -201,6 +201,12 @@ Western Union are accepted as `limited_fit`: typed provider DTOs and mock tests
 exist, but automatic ledger sync is intentionally disabled until a tenant's
 partner contract maps cleanly to postings.
 
+Remitly partner-export credentials are all-or-nothing: `api_key` and
+`api_base_url` must be provided together, and the base URL must be an HTTPS
+public provider hostname with no URL credentials, query, or fragment. Western
+Union mTLS certificate/key PEMs are accepted only as a pair and validated before
+the credential payload is sealed.
+
 ## Webhook posture
 
 Inbound webhook payloads are stored with `signature_ok`, `payload_sha256`,
