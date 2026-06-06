@@ -24,6 +24,8 @@
 //! - `GET /soccer/planner` — interactive 11-a-side rotation planner UI.
 //! - `POST /soccer/planner/solve` — re-solve the planner request with the Rust IP/MIP solver.
 //! - `POST /soccer/planner/stream` — soccer planner JSONL stream alias.
+//! - `GET /soccer/live` — live 2D 11v11 soccer UI with soft-real-time controls.
+//! - `GET|POST /api/*` — live soccer bridge API used by `/soccer/live`.
 //! - `GET /music` — generative music production workbench UI.
 //! - `POST /music/sample-seed` — upload or link a 10-50s MP4 plus a prompt and render a WAV variation.
 //!   Public and authenticated social/media links are supported via direct HTTP
@@ -55,10 +57,11 @@ use std::{
 };
 
 use axum::{
+    body::Bytes,
     extract::{rejection::JsonRejection, DefaultBodyLimit, Multipart, Path, Query, State},
-    http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
+    http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
     response::{Html, IntoResponse, Redirect, Response},
-    routing::{get, post},
+    routing::{any, get, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -72,7 +75,10 @@ use des_engine::des::general::music_production::{
     analyze_music_sample_prompt, derive_music_sample_seed_from_mp4, generate_microtonal_song,
     song_spec_from_music_sample_seed_with_prompt, ArrangementSummary,
 };
-use des_engine::des::general::soccer::{run_default_simulation, SimulationTrace};
+use des_engine::des::general::soccer::{
+    run_default_simulation, SimulationTrace, SoccerLiveHttpBridge, SoccerLiveHttpReply,
+    SoccerLiveServerConfig,
+};
 use des_engine::des::model::{with_builtins, CitizenError};
 use des_engine::des::service::{
     Capability, DesExtension, EndpointKind, EngineCatalogExtension, ServiceBuilder,
@@ -765,6 +771,8 @@ struct AppState {
     elevator_pomdp_html: Arc<str>,
     /// Interactive 11-a-side rotation planner (roster constraints + re-solve).
     soccer_planner_html: Arc<str>,
+    /// Live 2D soccer gameplay bridge with its own shared session state.
+    soccer_live_bridge: Arc<SoccerLiveHttpBridge>,
 }
 
 fn now_ms() -> u128 {
@@ -2070,6 +2078,8 @@ async fn info(State(state): State<AppState>) -> Response {
             "streamModel": "POST /streaming/:name  (JSONL in -> JSONL out)",
             "elevatorFel": "GET /elevator-fel  (new next-event elevator sim, animated)",
             "soccerVideogame": "GET /out/soccer-sim.html  (2D 11v11 soccer videogame / learning sim artifact)",
+            "soccerLive": "GET /soccer/live  (live 2D 11v11 soccer UI with soft-real-time controls)",
+            "soccerLiveApi": "GET/POST /api/state, /api/step, /api/reset, /api/input/*, /api/team-policy/*  (live soccer bridge)",
             "soccerVideogameTrace": "GET /out/soccer-sim.json  (full soccer match trace: config, summary, frames, events)",
             "soccerVideogameFrames": "GET /out/soccer-sim.frames.jsonl  (header + frame/event/summary records)",
             "soccerPlanner": "GET /soccer/planner  (11-a-side rotation planner UI)",
@@ -2493,6 +2503,30 @@ async fn soccer_planner_solve(
 /// `streaming/soccer-planner` JSONL endpoint.
 async fn soccer_planner_stream(State(state): State<AppState>, body: String) -> Response {
     run_streaming_model(state, "soccer-planner".to_string(), body).await
+}
+
+fn soccer_live_reply_response(reply: SoccerLiveHttpReply) -> Response {
+    let status = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut response = (status, reply.body).into_response();
+    let content_type = HeaderValue::from_str(&reply.content_type)
+        .unwrap_or_else(|_| HeaderValue::from_static("text/plain; charset=utf-8"));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, content_type);
+    response
+}
+
+async fn soccer_live_bridge_request(
+    State(state): State<AppState>,
+    method: Method,
+    uri: Uri,
+    body: Bytes,
+) -> Response {
+    let body = String::from_utf8_lossy(&body).into_owned();
+    let reply = state
+        .soccer_live_bridge
+        .handle_request(method.as_str(), uri.path(), &body);
+    soccer_live_reply_response(reply)
 }
 
 /// Render the elevator MDP/POMDP players at startup, degrading to a small error
@@ -3129,6 +3163,18 @@ fn build_descriptor() -> ServiceDescriptor {
         )
         .endpoint(
             "GET",
+            "/soccer/live",
+            "Live 2D 11v11 soccer UI with soft-real-time controls and live learning state.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET/POST",
+            "/api/state|step|reset|input/*|team-policy/*",
+            "Live soccer bridge API used by /soccer/live.",
+            EndpointKind::Action,
+        )
+        .endpoint(
+            "GET",
             "/out/soccer-sim.json",
             "Rendered soccer game trace JSON with config, summary, frames, and events.",
             EndpointKind::Service,
@@ -3384,6 +3430,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let elevator_pomdp_html: Arc<str> =
         Arc::from(render_model_player("pomdp", &elevator_pomdp_spec()));
     let soccer_planner_html: Arc<str> = Arc::from(planner_page_html());
+    let soccer_live_bridge = Arc::new(SoccerLiveHttpBridge::new(SoccerLiveServerConfig::default()));
 
     let state = AppState {
         out_dir: Arc::new(out_dir),
@@ -3396,6 +3443,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         elevator_mdp_html,
         elevator_pomdp_html,
         soccer_planner_html,
+        soccer_live_bridge,
     };
 
     // Populate `out/` in the background so /healthz comes up immediately while
@@ -3446,6 +3494,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/soccer/planner", get(soccer_planner_page))
         .route("/soccer/planner/solve", post(soccer_planner_solve))
         .route("/soccer/planner/stream", post(soccer_planner_stream))
+        .route("/soccer/live", any(soccer_live_bridge_request))
+        .route("/soccer/live/*path", any(soccer_live_bridge_request))
+        .route("/fresh", any(soccer_live_bridge_request))
+        .route("/new-match", any(soccer_live_bridge_request))
+        .route("/new_match", any(soccer_live_bridge_request))
+        .route("/reset", any(soccer_live_bridge_request))
+        .route("/api/*path", any(soccer_live_bridge_request))
         .route("/music", get(music_production_page))
         .route(
             "/music/sample-seed",
@@ -3522,6 +3577,8 @@ mod tests {
         assert!(paths.contains(&"/soccer/planner"));
         assert!(paths.contains(&"/soccer/planner/solve"));
         assert!(paths.contains(&"/soccer/planner/stream"));
+        assert!(paths.contains(&"/soccer/live"));
+        assert!(paths.contains(&"/api/state|step|reset|input/*|team-policy/*"));
         assert!(paths.contains(&"/out/soccer-sim.html"));
         assert!(paths.contains(&"/out/soccer-sim.json"));
         assert!(paths.contains(&"/out/soccer-sim.frames.jsonl"));
