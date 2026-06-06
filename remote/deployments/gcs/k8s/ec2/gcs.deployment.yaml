@@ -152,13 +152,13 @@ spec:
             - name: GCS_WS_SHED_MESSAGE_LATENCY
               value: '10s'
             - name: GCS_WS_SHED_FANOUT_LATENCY
-              value: '2s'
+              value: '8s'
             - name: GCS_WS_SHED_FANOUT_PENDING_PERCENT
-              value: '50'
+              value: '95'
             - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
               value: '30s'
             - name: GCS_WS_WRITE_TIMEOUT
-              value: '1s'
+              value: '2s'
             - name: GCS_WS_SIDE_EFFECT_MAX_IN_FLIGHT
               value: '512'
             - name: GCS_WS_SIDE_EFFECT_LOCAL_PRESSURE_SHED
@@ -182,15 +182,15 @@ spec:
             - name: GCS_WS_CONV_FANOUT_BATCH_ENABLED
               value: 'true'
             - name: GCS_WS_CONV_FANOUT_BATCH_MS
-              value: '10'
+              value: '50'
             - name: GCS_WS_CONV_FANOUT_BATCH_MAX
-              value: '32'
+              value: '64'
             - name: GCS_WS_CONV_FANOUT_PENDING_MAX
-              value: '128'
+              value: '256'
             - name: GCS_WS_CONV_FANOUT_GLOBAL_PENDING_MAX
-              value: '8192'
+              value: '32768'
             - name: GCS_WS_CONV_FANOUT_FLUSH_WORKERS
-              value: '4'
+              value: '8'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
