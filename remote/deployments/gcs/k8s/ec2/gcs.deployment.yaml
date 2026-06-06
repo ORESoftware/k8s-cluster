@@ -182,15 +182,17 @@ spec:
             - name: GCS_WS_CONV_FANOUT_BATCH_ENABLED
               value: 'true'
             - name: GCS_WS_CONV_FANOUT_BATCH_MS
-              value: '50'
+              value: '200'
             - name: GCS_WS_CONV_FANOUT_BATCH_MAX
-              value: '64'
+              value: '256'
             - name: GCS_WS_CONV_FANOUT_PENDING_MAX
-              value: '512'
+              value: '2048'
             - name: GCS_WS_CONV_FANOUT_GLOBAL_PENDING_MAX
-              value: '65536'
+              value: '524288'
             - name: GCS_WS_CONV_FANOUT_FLUSH_WORKERS
-              value: '16'
+              value: '64'
+            - name: GCS_WS_CONV_FANOUT_FLUSH_QUEUE
+              value: '65536'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
