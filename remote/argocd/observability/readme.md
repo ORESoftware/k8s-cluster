@@ -160,6 +160,10 @@ Currently opted-in:
   job/artifact, learning-event, and artifact detail-request throughput, in-memory
   job/artifact/learning evidence ledgers, including an artifact high-watermark
   alert for retained design, machine-code, and instruction evidence,
+  a machine-release readiness versus learning-fanout panel that correlates
+  release blockers, draft generated programs, NATS result publication, MDP
+  optimizer fanout, and server errors before operators trust generated or
+  imported machine work,
   runtime-config push delivery, dependency scrape health, HPA capacity, CPU and
   memory limit headroom, Loki-derived gateway guardrail rejection counters for
   `/fabrication` auth/internal-route/method/payload/rate-limit failures, gateway edge-latency
@@ -189,7 +193,9 @@ Currently opted-in:
   service failures. CPU and memory near-limit alerts use the same exporter
   resource gauges, because sustained saturation can delay instruction analysis,
   result fanout, and learning feedback even when the scrape target stays up.
-  Separate intervention/setup alerts fire when the Rust server starts emitting
+  A validation-finding alert fires when generated or submitted fabrication
+  instructions start producing validation findings, so rejected, improved, or
+  draft machine work is reviewed before release. Separate intervention/setup alerts fire when the Rust server starts emitting
   required operator actions, fixture/setup blockers, or split/combine review
   records, because those counters mean generated or imported fabrication work is
   explicitly not machine-ready until human, workholding, decomposition,
