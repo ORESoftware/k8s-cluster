@@ -594,8 +594,7 @@ function normalizeDefault(value) {
 }
 
 function checkEquivalent(desired, actualDefinition) {
-  const normalizedActual = actualDefinition.replace(/^CHECK\s*\(/i, "").replace(/\)$/i, "");
-  return normalizeCheck(desired) === normalizeCheck(normalizedActual);
+  return normalizeCheck(desired) === normalizeCheck(actualDefinition);
 }
 
 function routineEquivalent(desired, actual) {
@@ -639,7 +638,11 @@ function triggerFunctionName(actionStatement) {
 }
 
 function normalizeRoutineArgs(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  return String(value ?? "")
+    .replace(/\s+default\s+(?:'[^']*(?:''[^']*)*'|[^,\s)]+)/gi, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeStringList(value) {
@@ -712,6 +715,10 @@ function normalizeCheck(value) {
     /([a-z_][\w]*)\s*=\s*any\s*\(\s*\(?\s*array\s*\[([^\]]+)\]\s*\)?\s*(?:\[\])?\s*\)/gi,
     "$1 in ($2)",
   );
+  normalized = normalized.replace(
+    /([a-z_][\w]*)\s*=\s*any\s*\(\s*array\s*\[([^\]]+)\]\s*\)/gi,
+    "$1 in ($2)",
+  );
 
   // Repeatedly apply paren-flattening passes until idempotent so nested
   // wraps like `(((x is null)))` collapse cleanly without depth-specific
@@ -740,6 +747,10 @@ function normalizeCheck(value) {
       /\(\s*([a-z_][\w]*(?:\([^()]*\))?\s+in\s*\([^()]*\))\s*\)/gi,
       "$1",
     );
+    normalized = normalized.replace(
+      /([a-z_][\w]*)\s*=\s*any\s*\(\s*array\s*\[([^\]]+)\]\s*\)/gi,
+      "$1 in ($2)",
+    );
     // `(X) AND (Y)` / `(X) OR (Y)` — strip parens around top-level boolean
     // operands when each operand is itself a simple comparison/predicate.
     normalized = normalized.replace(
@@ -765,6 +776,10 @@ function normalizeCheck(value) {
     normalized = normalized.replace(/\s+/g, " ").trim();
     if (normalized === before) break;
   }
+  normalized = normalized.replace(
+    /^\(\s*([a-z_][\w]*(?:\([^()]*\))?\s+in\s*\([^()]*\))$/i,
+    "$1",
+  );
   return normalized.toLowerCase();
 }
 
