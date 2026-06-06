@@ -1,7 +1,8 @@
 # `remote/deployments/fabrication-server-rs`
 
 Rust fabrication planning service for additive including large-format pellet/FGF,
-subtractive, turning, mill-turn/swiss-turning, and hybrid machine workflows.
+robotic/gantry additive cells, and sheet-lamination/LOM/UAM printers, subtractive, turning,
+mill-turn/swiss-turning, and hybrid machine workflows.
 
 It exposes:
 
@@ -19,36 +20,72 @@ It exposes:
 - `GET /fabrication/materials/catalog`
 - `GET /design/formats`
 - `GET /fabrication/design/formats`
+- `GET /design/import/catalog`
+- `GET /fabrication/design/import/catalog`
+- `POST /design/import/review`
+- `POST /fabrication/design/import/review`
 - `GET /design/generation/catalog`
 - `GET /fabrication/design/generation/catalog`
+- `POST /design/generate`
+- `POST /fabrication/design/generate`
+- `GET /handoff/catalog`
+- `GET /fabrication/handoff/catalog`
 - `GET /instructions/languages`
 - `GET /fabrication/instructions/languages`
 - `GET /instructions/generation/catalog`
 - `GET /fabrication/instructions/generation/catalog`
+- `POST /instructions/generate`
+- `POST /fabrication/instructions/generate`
+- `POST /machine-code/generate`
+- `POST /fabrication/machine-code/generate`
 - `GET /improvements/catalog`
 - `GET /fabrication/improvements/catalog`
 - `GET /boundaries/catalog`
 - `GET /fabrication/boundaries/catalog`
 - `GET /decomposition/catalog`
 - `GET /fabrication/decomposition/catalog`
+- `POST /decomposition/plan`
+- `POST /fabrication/decomposition/plan`
+- `GET /assembly/catalog`
+- `GET /fabrication/assembly/catalog`
+- `POST /assembly/plan`
+- `POST /fabrication/assembly/plan`
 - `GET /release/catalog`
 - `GET /fabrication/release/catalog`
+- `POST /release/preview`
+- `POST /fabrication/release/preview`
+- `POST /execution/plan`
+- `POST /fabrication/execution/plan`
 - `GET /strategy/catalog`
 - `GET /fabrication/strategy/catalog`
+- `POST /strategy/recommend`
+- `POST /fabrication/strategy/recommend`
 - `GET /schedule/catalog`
 - `GET /fabrication/schedule/catalog`
 - `GET /simulation/catalog`
 - `GET /fabrication/simulation/catalog`
+- `POST /simulation/run`
+- `POST /fabrication/simulation/run`
 - `GET /quality/catalog`
 - `GET /fabrication/quality/catalog`
+- `POST /quality/plan`
+- `POST /fabrication/quality/plan`
 - `GET /calibration/catalog`
 - `GET /fabrication/calibration/catalog`
 - `GET /interventions/catalog`
 - `GET /fabrication/interventions/catalog`
 - `GET /setup/catalog`
 - `GET /fabrication/setup/catalog`
+- `POST /setup/plan`
+- `POST /fabrication/setup/plan`
+- `GET /monitoring/catalog`
+- `GET /fabrication/monitoring/catalog`
+- `POST /monitoring/plan`
+- `POST /fabrication/monitoring/plan`
 - `GET /postprocess/catalog`
 - `GET /fabrication/postprocess/catalog`
+- `POST /postprocess/plan`
+- `POST /fabrication/postprocess/plan`
 - `GET /artifacts/catalog`
 - `GET /fabrication/artifacts/catalog`
 - `GET /learning/capabilities`
@@ -61,14 +98,23 @@ It exposes:
 - `GET /api/docs`
 - `GET /api/docs.json`
 - `GET /jobs`
+- `GET /fabrication/jobs`
 - `GET /jobs/:job_id`
+- `GET /fabrication/jobs/:job_id`
 - `GET /jobs/:job_id/artifacts/:artifact_id`
+- `GET /fabrication/jobs/:job_id/artifacts/:artifact_id`
 - `GET /learning/policy`
 - `GET /fabrication/learning/policy`
 - `POST /plan`
 - `POST /fabrication/plan`
 - `POST /instructions/analyze`
 - `POST /fabrication/instructions/analyze`
+- `POST /instructions/validate`
+- `POST /fabrication/instructions/validate`
+- `POST /instructions/improve`
+- `POST /fabrication/instructions/improve`
+- `POST /instructions/boundaries/review`
+- `POST /fabrication/instructions/boundaries/review`
 - `POST /learning/observe`
 - `POST /fabrication/learning/observe`
 - `GET /learning/outcomes`
@@ -149,6 +195,7 @@ is supplied.
   design-conversion NATS request/result subjects, preferred neutral exports,
   required evidence, review gates, and machine-release blockers.
 - A process plan and structured `processGraph` across 3D printers,
+  robotic/gantry additive cells, sheet-lamination/LOM/UAM printers,
   vertical/5-axis/4th-axis/horizontal mills, routers, laser, waterjet, plasma, wire EDM/sheet cutters,
   sinker/ram EDM cells, precision grinding/lapping/honing cells, CMM/vision inspection cells, thermal postprocess furnace/oven cells, robotic assembly/joining cells,
   mill-turn/swiss-turning centers, and lathes when those machine profiles are
@@ -172,7 +219,14 @@ is supplied.
   AMS/MMU/IDEX/toolhead slots, purge/wipe tower, tool-change script, runout/resume-state,
   and interface inspection gates, large-format pellet/FGF job sheets with pellet lot, drying/moisture,
   hopper/purge, bead/thermal/cooling, gantry-clearance, warpage, and trim-allowance
-  gates, paste/clay extrusion job sheets with rheology/slump,
+  gates, robotic/gantry additive job sheets with robot frame/TCP, reach,
+  collision simulation, external-axis/positioner sync, interlock dry run,
+  feedstock/nozzle purge, bead coupon, flow pressure, cooling/cure,
+  trim-allowance, and dimensional-scan
+  gates, sheet-lamination/LOM/UAM job sheets with sheet/foil lot,
+  thickness/gauge, stack order, registration/fiducials, adhesive or ultrasonic
+  consolidation, trim/cut path, coupon/peel or lap-shear, delamination, and
+  dimensional-release gates, paste/clay extrusion job sheets with rheology/slump,
   nozzle/pressure, drying/humidity, shrinkage, green-part support, and kiln/firing gates,
   bound-metal filament FFF job sheets with filament/profile, hardened-nozzle,
   green-part, debind, sinter, furnace-atmosphere, shrinkage-coupon, density, and
@@ -181,7 +235,14 @@ is supplied.
   photopolymer job sheets with cartridge, channel-map, printhead, support-removal,
   UV, and color/material inspection gates, continuous-fiber composite
   matrix/fiber-layup job sheets with fiber orientation, cutter, spool, coupon, and
-  delamination gates, SLS/MJF-style powder-bed
+  delamination gates, composite layup/vacuum-bag/autoclave job sheets with
+  mold/mandrel revision, release film or agent, ply kit/schedule,
+  resin/prepreg/core lots, vacuum-bag leak-down, debulk/cure trace, demold,
+  trim/drill, coupon, NDI/void/delamination, and dimensional-release gates,
+  hot-wire foam cutting job sheets with foam density, blank thickness, template
+  or CNC profile, bow/wire tension, wire heat/current, kerf coupon, fume
+  extraction/PPE/fire-watch, taper/surface-melt, and dimensional-release gates,
+  SLS/MJF-style powder-bed
   print-cooldown-depowder job sheets, DMLS/SLM/LPBF metal powder-bed fusion job
   sheets with inert-gas/recoater/stress-relief/plate-removal gates, DED/WAAM
   directed-energy deposition job sheets with feedstock, bead-path, shielding-gas,
@@ -202,13 +263,33 @@ is supplied.
   disposition, and nonconformance-routing gates, thermal postprocess furnace job
   sheets with material batch, fixture/setter, ramp/soak, atmosphere,
   cooldown/quench, PPE, distortion, hardness/cure, and release-inspection gates,
-  surface finishing/coating/deburr-polish job sheets with material compatibility,
+  surface finishing/coating/plating/anodizing/media-blasting/powder-coating/deburr-polish job sheets with material compatibility,
   SDS/media, masking/plugs, ventilation/PPE/waste, dry/cure, thickness,
   adhesion/color/roughness, dimensional-impact, and finish-inspection gates,
+  metal-joining/welding/brazing/soldering job sheets with WPS/procedure,
+  qualification, filler/flux/gas lots, joint prep, fit-up, fixture/clamps,
+  fume controls, heat input, interpass temperature, distortion control,
+  inspection/NDE/leak-test, repair-disposition, and release gates,
+  molding/casting/vacuum-casting/urethane/silicone/injection-molding job
+  sheets with master/tool revision, mold material, parting line,
+  vents/sprues/runners/gates, release agent, mix ratio, pot life,
+  degas/vacuum/pressure, cure/exotherm, demold, shrinkage, void/bubble/flash,
+  dimensional-inspection, and release gates,
+  press-brake/sheet-forming job sheets with flat-pattern revision, grain
+  direction, material thickness, bend allowance/K-factor, punch/V-die tooling,
+  tonnage, backgauge, bend sequence, springback, guarding, angle/flange
+  inspection, and formed-part release gates,
+  gear-cutting/hobbing/spline-broaching job sheets with gear drawing, blank
+  datum, arbor/runout, cutter or hob/shaper/broach qualification, tooth count,
+  module or diametral pitch, pressure/helix/lead angle, index ratio/change-gear
+  or electronic-gearbox synchronization, deburr/burr-control, over-pins/span,
+  profile/runout, backlash, and gear-inspection gates,
   robotic assembly-cell job sheets with kit traceability, datum dry-fit,
   robot path/gripper/fixture/vision evidence, press/heat-set/torque/adhesive
-  join recipes, cure or clamp timing, and final metrology gates, mill-turn/swiss
+  join recipes, cure or clamp timing, and final metrology gates, mill-turn
   G-code with C/Y-axis live-tooling and subspindle transfer checkpoints,
+  Swiss/sliding-headstock G-code with guide-bushing, bar-feed, gang-tool/live-tool,
+  subspindle pickoff, cutoff/ejection, and first-article runout checkpoints,
   Fanuc-style turning G-code with chuck/stick-out/runout, G50/G95, threading,
   part-off catcher/support, coolant shutdown, and turret-stop checkpoints, or
   operator-only instructions for unsupported machine kinds.
@@ -242,11 +323,15 @@ is supplied.
   resin layer/exposure manifest image-hash/checksum and peel/lift/recoat evidence, resin
   vat-capacity/refill evidence, resin-handling/postprocess evidence,
   pellet/FGF pellet-lot/drying/moisture/hopper/purge and bead/screw/melt/cooling/gantry-clearance/warpage/trim-allowance evidence,
+  robotic additive robot frame/TCP/reach/collision/interlock/external-axis evidence and feedstock/nozzle/purge/bead/flow/cooling/cure/dimensional-scan evidence,
+  sheet-lamination sheet/foil stock/stack-order/surface-prep evidence and registration/trim/bond/consolidation/delamination/dimensional-release evidence,
   paste/clay rheology/slump/deairing/nozzle/pressure evidence and drying/humidity/shrinkage/green-part/firing evidence,
   bound-metal filament profile/nozzle/dry-storage/shrinkage evidence and debind/sinter/furnace/atmosphere/density inspection evidence,
   material-jetting cartridge/channel-map/printhead/tray and support-removal/UV/color/material inspection evidence,
   DED/WAAM feedstock/substrate/bead-path/standoff and laser/arc/shielding/interpass/NDE/coupon evidence,
   composite-fiber layup/orientation/load-case and spool/cutter/coupon/continuity evidence,
+  composite layup mold/mandrel/release-film/ply-schedule/resin-prepreg-core-lot/out-time evidence and vacuum-bag/leak-down/debulk/cure-trace/demold/trim-drill/coupon/NDI/dimensional-release evidence,
+  hot-wire foam density/blank-thickness/template-or-CNC-profile/bow-wire-tension/fume-fire-watch evidence and wire-heat/feed/kerf/wire-lag/taper/surface-melt/dimensional-release evidence,
   powder-bed build profile/powder lot/nesting evidence, powder-handling/cooldown-depowder evidence,
   metal powder-bed fusion alloy-lot/oxygen/recoater/stress-relief/plate-removal evidence,
   binder-jet binder-lot/saturation/printhead/green-strength and cure/debind/sinter/infiltration/shrink-compensation evidence,
@@ -259,6 +344,10 @@ is supplied.
   unattended/batch monitoring and recovery evidence,
   thermal postprocess temperature/fixture/cooldown evidence,
   surface/chemical finishing media/masking/PPE/waste/thickness/adhesion/inspection evidence,
+  metal-joining WPS/procedure/qualification/filler/flux/gas/fit-up/fume-control/heat-input/interpass/NDE/repair-disposition evidence,
+  molding/casting master/tool/mold-material/parting/vent-gate/release-agent/mix-ratio/pot-life/degas/vacuum/pressure/cure/demold/shrinkage/void/dimensional-release evidence,
+  press-brake/sheet-forming flat-pattern/bend-allowance/tooling/tonnage/backgauge/springback/angle-inspection evidence,
+  gear-cutting gear-drawing/tooth-count/module-or-DP/pressure-angle/helix-lead/cutter-arbor/index-ratio/blank-runout/deburr/over-pins/span/profile/backlash inspection evidence,
   indexed setup clamp/index/clearance/re-probe evidence,
   sheet-cutting material/thickness/cut-chart/recipe evidence, pierce/kerf/focus/gas/fume/support, retained-tab/microjoint/part-release evidence, waterjet pressure/abrasive-flow, plasma work-clamp evidence, wire EDM start-hole/thread/tension/dielectric/flushing/slug-retention/skim-pass evidence plus profile/skim-cut setup-order evidence, and sinker EDM electrode/dielectric/depth/wear/orbit-finish/recast release-gate evidence,
   deep-cut, arc-plane/geometry,
@@ -279,7 +368,8 @@ is supplied.
 - A `postprocessPlan` preflight with controller-specific targets, postprocessor
   selection, input/output formats, dry-run gates, blockers, required artifacts,
   and operator signoff requirements before any printer, mill, mill-turn center,
-  router, sheet cutter, lathe, inspection cell, robotic assembly cell, or manual cell can start.
+  router, sheet cutter, lathe, inspection cell, robotic additive cell, sheet-lamination printer, hot-wire foam cutter,
+  gear-cutting cell, robotic assembly cell, or manual cell can start.
 - A `controllerPlan` compatibility contract with controller dialect families,
   postprocessor-known status, required controller checks, required evidence,
   controller release gates, blockers, and `controller-*` learning observations
@@ -365,14 +455,14 @@ operator sign-off.
 `GET /capabilities` and the gateway-prefixed `GET /fabrication/capabilities`
 return the service capability contract before a caller submits work. The payload
 includes supported request families, built-in `defaultMachines`, machine classes
-for FDM, multi-material FDM/toolchanger, large-format pellet/FGF, paste/clay extrusion, bound-metal filament FFF, resin, material jetting, directed-energy deposition/WAAM, continuous-fiber composite, binder jet, polymer powder-bed, metal PBF, vertical milling, five-axis milling, rotary-indexed milling, horizontal milling, precision grinding/lapping/honing, CMM/vision inspection, thermal postprocess furnace/oven work, surface/chemical finishing and coating cells,
+for FDM, multi-material FDM/toolchanger, large-format pellet/FGF, robotic/gantry additive cells, sheet-lamination/LOM/UAM printers, paste/clay extrusion, bound-metal filament FFF, resin, material jetting, directed-energy deposition/WAAM, continuous-fiber composite, composite layup/vacuum-bag/autoclave cells, hot-wire foam cutters, binder jet, polymer powder-bed, metal PBF, vertical milling, five-axis milling, rotary-indexed milling, horizontal milling, precision grinding/lapping/honing, CMM/vision inspection, thermal postprocess furnace/oven work, surface/chemical finishing and coating cells, metal-joining/welding/brazing/soldering cells, molding/casting/vacuum-casting/urethane/silicone/injection-molding cells, press-brake/sheet-forming cells, gear-cutting/hobbing/spline-broaching cells,
 mill-turn/swiss-turning, routing, laser,
 waterjet, plasma, robotic assembly/joining, lathe, and manual/special-process
-work, accepted instruction kinds including slicer, multi-material FDM/toolchanger, pellet-FGF, paste/clay extrusion, bound-metal FFF,
+work, accepted instruction kinds including slicer, multi-material FDM/toolchanger, pellet-FGF, robotic-additive, robotic-pellet, robotic-extrusion, sheet-lamination, laminated-object, ultrasonic-additive, paste/clay extrusion, bound-metal FFF,
 metal-filament, SLA/resin,
-material-jetting, DED/WAAM, composite-fiber, binder-jet, SLS/powder, metal-PBF,
-mill-turn, lathe/turning, indexed-mill, assembly-cell, part-separation, laser/waterjet/plasma,
-wire-EDM, sinker-EDM, grinding, CMM inspection, vision inspection, metrology, furnace, heat-treatment, thermal-postprocess, surface-finishing, coating, and deburr-polish job sheets, design input format
+material-jetting, DED/WAAM, composite-fiber, composite-layup, wet-layup, prepreg-layup, vacuum-bag, autoclave-cure, resin-infusion, hot-wire-foam, hot-wire, foam-cutting, foam-core, wing-core, binder-jet, SLS/powder, metal-PBF,
+mill-turn, swiss-turning, lathe/turning, indexed-mill, assembly-cell, part-separation, laser/waterjet/plasma,
+wire-EDM, sinker-EDM, grinding, CMM inspection, vision inspection, metrology, furnace, heat-treatment, thermal-postprocess, surface-finishing, coating, plating, anodizing, media-blasting, powder-coating, deburr-polish, metal-joining, welding, brazing, soldering, molding-casting, casting, molding, urethane-casting, silicone-molding, vacuum-casting, injection-molding, press-brake, sheet-forming, bend, gear-cutting, gear-hobbing, and spline-broaching job sheets, design input format
 families, generated artifact families, learning
 channels, bounded `profileEvidence` buckets for submitted machine profiles, and
 safety boundary classes. These capabilities describe draft planning and
@@ -384,10 +474,10 @@ validation support, not controller-certified release.
 `GET /fabrication/machines/catalog` return the live
 `dd.fabrication.machine-catalog.v1` catalog derived from `default_machines()`.
 The payload exposes the supported default fleet for additive printers,
-large-format pellet/FGF, paste/clay extrusion, bound-metal filament FFF, resin, material jetting, fiber composite, binder jet,
+large-format pellet/FGF, robotic/gantry additive cells, sheet-lamination/LOM/UAM printers, paste/clay extrusion, bound-metal filament FFF, resin, material jetting, fiber composite, composite layup/vacuum-bag/autoclave, hot-wire foam cutting, binder jet,
 SLS/MJF/powder-bed, metal PBF, DED, vertical/horizontal/five-axis/indexed mills,
-CNC routers, mill-turn centers, lathes, laser/waterjet/plasma/wire EDM/sinker
-EDM cells, precision grinders, CMM/vision inspection cells, thermal postprocess furnaces, surface finishing/coating cells, and robotic assembly cells. It includes machine kinds, process-class
+CNC routers, mill-turn centers, Swiss/sliding-headstock turning centers, lathes, laser/waterjet/plasma/wire EDM/sinker
+EDM cells, precision grinders, CMM/vision inspection cells, thermal postprocess furnaces, surface finishing/coating cells, metal-joining/welding/brazing/soldering cells, molding/casting cells, composite layup cells, hot-wire foam cutters, press-brake/sheet-forming cells, gear-cutting/hobbing/spline-broaching cells, robotic additive cells, and robotic assembly cells. It includes machine kinds, process-class
 counts, controllers, supported materials, operation tags, work envelopes, axes,
 accepted instruction languages, planning and instruction-analysis route aliases,
 and per-machine release gates. Catalog machines are default planning profiles,
@@ -449,6 +539,46 @@ slicer targets, CAD design-conversion NATS request/result subjects, and release
 policy notes that keep machine-ready release blocked until translator output,
 topology/scale/profile review, simulation, and signoff evidence are attached.
 
+## `GET /fabrication/design/import/catalog`
+
+`GET /design/import/catalog` and the gateway-prefixed
+`GET /fabrication/design/import/catalog` return the live
+`dd.fabrication.design-import-catalog.v1` translator and import worker-lane
+catalog derived from the same supported CAD/model/slicer source definitions used
+by `designInputReview`. The payload maps Creo/Pro/ENGINEER, SOLIDWORKS, Fusion,
+Siemens NX, CATIA, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, JT/PMI,
+Parasolid/ACIS, STEP/IGES, DXF/DWG, 3MF/STL/OBJ/color mesh, and slicer project
+inputs to worker lanes such as `professional-cad-converter`,
+`parametric-cad-converter`, `lightweight-cad-pmi-inspector`,
+`cad-kernel-inspector`, `sheet-profile-cad-inspector`,
+`mesh-package-inspector`, and `slicer-profile-reviewer`.
+It also exposes design-conversion NATS request/result subjects, required source
+identity evidence, URI redaction and ambiguous `.prt`/`.asm` policies, review
+gates, preferred neutral exports, release blockers, response surfaces such as
+`designInputReview.conversionPlan`, and artifact surfaces such as
+`design-input-review`, `design-export-bundle`, and `mdp-request`. Machine-ready
+release remains blocked until conversion results, topology/scale/profile review,
+neutral export checksums, simulation, and operator or automation signoff are
+retained.
+
+## `POST /fabrication/design/import/review`
+
+`POST /design/import/review` and the gateway-prefixed
+`POST /fabrication/design/import/review` run the same bounded
+`designInputs` validation used by `/fabrication/plan` without generating a full
+fabrication plan. The request body accepts an optional `requestId` and
+`designInputs` array with `fileName`, `sourceUri`, `format`, `sourceSystem`,
+`role`, and `notes`; each entry must still include a source identity field, and
+source URIs are retained without userinfo, query strings, or fragments.
+The response returns `dd.fabrication.design-import-review.v1`,
+`designInputReview.inputs`, `designInputReview.conversionPlan`, worker lanes,
+target neutral exports, design-conversion NATS request/result subjects, release
+blocker counts, and the same notes-only/ambiguous `.prt` and `.asm` policies as
+the planner. It is an import review and dispatch contract, not a geometry
+certification route: `machineReady` remains false until translator/export
+results, topology/scale/profile review, neutral export checksums, simulation, and
+operator or automation signoff are attached back to the plan or release package.
+
 ## `GET /fabrication/design/generation/catalog`
 
 `GET /design/generation/catalog` and the gateway-prefixed
@@ -469,6 +599,51 @@ slicer, setup, MDP-request, and release-package workers, including
 while generated exports, conversion evidence, machine-release gates, or handoff
 proof are unresolved, and design/export/handoff/split-combine observations are
 emitted for MDP/POMDP/neural workers.
+
+## `POST /fabrication/design/generate`
+
+`POST /design/generate` and the gateway-prefixed
+`POST /fabrication/design/generate` run the same planner as
+`/fabrication/plan`, retain the normal plan artifacts, and return a compact
+`dd.fabrication.design-generation.v1` design-generation envelope for callers
+that want draft geometry and handoff surfaces without the full plan response.
+The response highlights `design`, `designPackage`, `designExports`,
+`designInputReview`, `manufacturingHandoff`, `processGraph`,
+`hybridMakePlan`, `machineSelection`, `generatedPrograms`,
+`releasePackagePlan`, and `machineRelease`, plus counts for design parts,
+generated design exports, handoff parts, generated programs, and release
+blockers. It also carries the local `des_engine` learning surfaces so
+MDP/POMDP/neural workers can learn from geometry regeneration, export failure,
+split/combine, and machine-selection outcomes. Generated design packages,
+native/neutral CAD, mesh, CAM, and slicer export payloads remain deterministic
+drafts, not certified machine-ready output, until translator/export evidence,
+topology/scale/profile review, simulation, setup, quality, release-package, and
+operator or automation signoff gates clear.
+
+## `GET /fabrication/handoff/catalog`
+
+`GET /handoff/catalog` and the gateway-prefixed
+`GET /fabrication/handoff/catalog` return the live
+`dd.fabrication.handoff-catalog.v1` downstream worker-lane catalog for moving
+draft design, machine-code, setup, release, and learning evidence through CAD,
+CAM, slicer, controller, operator, inspection, monitoring, assembly, and policy
+workers. The payload exposes handoff lanes for source CAD/model/slicer
+conversion, generated design and CAM exports, machine-program/controller release,
+setup-quality-monitoring release, hybrid split/combine assembly, and
+learning-policy/outcome feedback. It names source surfaces such as
+`designInputReview.conversionPlan`, `designPackage`, `designExports`,
+`manufacturingHandoff.parts`, `generatedPrograms`, `controllerPlan`,
+`postprocessPlan`, `releasePackagePlan.packages`, `toolingPlan`, `fixturePlan`,
+`qualityPlan`, `monitoringPlan`, `hybridMakePlan`, `decompositionPlan`,
+`interfaceControlPlan`, `mdp-request`, and `learning.outcomes`, plus artifact
+surfaces such as `design-export-bundle`, `generated-design-export`,
+`manufacturing-handoff`, `program-*`, `controller-plan`, `postprocess-plan`,
+`release-package-plan`, `monitoring-plan`, `interface-control-plan`,
+`decomposition-plan`, and `mdp-request`. Handoff lanes are worker contracts, not
+certified CAD, CAM, controller, fixture, inspection, or safety-system output;
+machine-ready release remains blocked while conversion, export, controller,
+setup, monitoring, split/combine, release-package, or learned-remediation
+evidence is unresolved.
 
 ## `GET /fabrication/instructions/languages`
 
@@ -492,16 +667,27 @@ handoff boundary.
 `GET /fabrication/instructions/generation/catalog` return the live
 `dd.fabrication.instruction-generation-catalog.v1` generated machine-program and
 job-sheet catalog for plan responses. The payload exposes generated program
-families for FDM printing, resin and powder-bed additive, pellet FGF, paste/clay
-extrusion, bound-metal filament FFF, material jetting, DED/WAAM, continuous-fiber, binder jet, vertical/horizontal/indexed
+families for FDM printing, resin and powder-bed additive, pellet FGF, robotic/gantry additive, paste/clay
+extrusion, bound-metal filament FFF, material jetting, DED/WAAM, continuous-fiber, composite layup/vacuum-bag/autoclave, hot-wire foam cutting, binder jet, vertical/horizontal/indexed
 milling, routing, laser/waterjet/plasma/wire EDM sheet cutting, sinker EDM,
-precision grinding/lapping/honing, CMM/vision dimensional inspection, thermal postprocess furnace/oven release, surface finishing/coating/deburr release, lathe, mill-turn, robotic assembly, part separation, and fallback manual
+precision grinding/lapping/honing, CMM/vision dimensional inspection, thermal postprocess furnace/oven release, surface finishing/coating/plating/anodizing/media-blasting/powder-coating/deburr release, metal-joining/welding/brazing/soldering release, molding/casting/vacuum-casting/urethane/silicone release, composite layup/prepreg/wet-layup/vacuum-bag/autoclave/resin-infusion release, hot-wire foam cutting release, press-brake/sheet-forming release, gear/spline cutting release, lathe, mill-turn, Swiss/sliding-headstock turning, robotic assembly, part separation, and fallback manual
 instructions. It lists generated languages such as `marlin-gcode`,
 `haas-gcode`, `indexed-mill-gcode`, `waterjet-job`, `wire-edm-job`,
 `grinding-job`, `cmm-inspection-job`, `vision-inspection-job`, `metrology-job`,
 `thermal-postprocess-job`, `furnace-job`, `heat-treatment-job`,
-`surface-finishing-job`, `coating-job`, `deburr-polish-job`, `mill-turn-gcode`,
-and `assembly-cell-job`, plus response surfaces including
+`surface-finishing-job`, `coating-job`, `plating-job`, `anodizing-job`,
+`media-blasting-job`, `powder-coating-job`, `deburr-polish-job`,
+`metal-joining-job`, `welding-job`, `brazing-job`, `soldering-job`,
+`molding-casting-job`, `mold-casting-job`, `casting-job`, `molding-job`,
+`urethane-casting-job`, `silicone-molding-job`, `vacuum-casting-job`,
+`injection-molding-job`,
+`composite-layup-job`, `wet-layup-job`, `prepreg-layup-job`,
+`vacuum-bag-job`, `autoclave-cure-job`, `resin-infusion-job`,
+`robotic-additive-job`, `robotic-pellet-job`, `robotic-extrusion-job`,
+`hot-wire-foam-job`, `hot-wire-job`, `foam-cutting-job`, `foam-core-job`,
+`wing-core-job`, `press-brake-job`, `sheet-forming-job`, `bend-job`, `gear-cutting-job`,
+`gear-hobbing-job`, `spline-broaching-job`, `mill-turn-gcode`,
+`swiss-turning-gcode`, `swiss-turning-job`, and `assembly-cell-job`, plus response surfaces including
 `generatedPrograms.instructions`, `generatedPrograms.machineReady`,
 `simulation.programs`, `executionPlan.programRuns`,
 `postprocessPlan.targets`, and `controllerPlan.controllerTargets`. Generated
@@ -513,6 +699,42 @@ controller/postprocessor review, fixture/material/profile proof, and operator
 or automation signoff clear. Program generation observations feed
 MDP/POMDP/neural workers so future plans can choose alternate machines,
 split/combine parts, regenerate programs, or add human checkpoints.
+
+## `POST /fabrication/instructions/generate`
+
+`POST /instructions/generate` and the gateway-prefixed
+`POST /fabrication/instructions/generate` accept the same request body as
+`POST /fabrication/plan`, apply the current bounded learning-policy memory,
+generate the deterministic draft program set, retain the normal plan artifacts,
+and publish the normal plan outputs when NATS is configured. The compact
+`dd.fabrication.instruction-generation.v1` response focuses on
+`generatedPrograms`, instruction line counts, `designExports`,
+`manufacturingHandoff`, controller and postprocess targets,
+`executionPlan.programRuns`, `simulation.programs`, `machineRelease.blockers`,
+and `releasePackagePlan.packages`. Generated instruction packages keep
+`draft=true` and `machineReady=false` until validation, simulation or dry-run
+evidence, controller/postprocessor review, setup, quality, release package, and
+operator or automation signoff gates clear.
+
+## `POST /fabrication/machine-code/generate`
+
+`POST /machine-code/generate` and the gateway-prefixed
+`POST /fabrication/machine-code/generate` accept the same request body as
+`POST /fabrication/plan`, apply the bounded learning-policy memory, retain the
+normal plan artifacts, publish normal plan outputs when NATS is configured, and
+return a compact `dd.fabrication.machine-code-generation.v1` envelope for
+generated controller, printer, mill, router, sheet-cutting, mill-turn, lathe,
+and special-process programs. The response highlights `generatedPrograms`,
+program languages, machine kinds, `controllerPlan.compatibilityTargets`,
+`controllerPlan.dialectSummaries`, `controllerPlan.releaseGates`,
+`postprocessPlan.controllerTargets`, `executionPlan.programRuns`,
+`simulation.programs`, `validation.failureBoundaries`,
+`machineRelease.generatedProgramsBlocked`, `releasePackagePlan.packages`, and
+the local `des_engine` learning surfaces. Machine-code generation remains a
+draft controller/postprocessor release package: generated programs keep
+`draft=true` and `machineReady=false` until validation, simulation or dry-run,
+controller/postprocessor compatibility, setup, quality, release package, and
+operator or automation signoff gates clear.
 
 ## `GET /fabrication/improvements/catalog`
 
@@ -583,6 +805,72 @@ evidence are retained. The catalog also exposes learning surfaces such as
 interface-control artifacts, and retained `learning.outcomes` so MDP/POMDP/neural
 workers can compare single-piece, split-route, and recomposed outcomes.
 
+## `POST /fabrication/decomposition/plan`
+
+`POST /decomposition/plan` and the gateway-prefixed
+`POST /fabrication/decomposition/plan` run the planner and return a compact
+`dd.fabrication.decomposition-planning.v1` split/combine package for generated or
+imported fabrication requests. The response keeps the full plan stored and
+published through the normal plan-result path while focusing the caller on
+`decompositionPlan.targets`, `decompositionPlan.routeContracts`,
+`decompositionPlan.recompositionInterfaces`, `interfaceControlPlan.controls`,
+`hybridMakePlan.partRoutes`, `hybridMakePlan.joinOperations`,
+`hybridMakePlan.splitCombineDecisions`, `assembly.assemblyGraph`,
+`releasePackagePlan.packages`, and `machineRelease.blockers`.
+
+The endpoint is a draft decomposition lane, not certified CAD/CAM/slicer,
+assembly, or controller output. Machine-ready release remains blocked until
+child geometry, per-route machine code, datum transfer, interface metrology,
+recomposition, release package, and operator or automation evidence are retained.
+It stores artifacts such as `decomposition-plan`, `interface-control-plan`,
+`hybrid-make-plan`, `assembly-plan`, `release-package-plan`, and `mdp-request`
+so MDP/POMDP/neural workers can learn when single-piece, split-route, or
+recomposed fabrication succeeds.
+
+## `GET /fabrication/assembly/catalog`
+
+`GET /assembly/catalog` and the gateway-prefixed
+`GET /fabrication/assembly/catalog` return the live
+`dd.fabrication.assembly-catalog.v1` hybrid assembly, recomposition, and joining
+catalog before a caller treats printed, milled, turned, sheet-cut, EDM, or
+special-process child routes as one released object. The payload exposes evidence
+contracts for `assembly.assemblyGraph`, `hybridMakePlan.joinOperations`,
+`hybridMakePlan.splitCombineDecisions`, `interfaceControlPlan.controls`,
+`qualityPlan.measurementTargets`, generated `assembly-cell-job` or
+metal-joining travelers, and `releasePackagePlan.packages`. It names worker
+families for assembly planning, interface-control review, metrology, robotic-cell
+review, metal-joining review, release packaging, and learning-outcome feedback.
+Catalog entries are worker-lane evidence contracts, not certified assembly or
+robot-cell release; machine-ready release remains blocked until child route
+packages, datum transfer, dry-fit or metrology, join recipe evidence, interlock
+or operator signoff, final inspection, and outcome feedback are retained.
+Assembly, interface, quality, release, and outcome observations feed
+MDP/POMDP/neural workers so future plans can learn when to split, combine,
+recompose, or keep a part single-piece.
+
+## `POST /fabrication/assembly/plan`
+
+`POST /assembly/plan` and the gateway-prefixed
+`POST /fabrication/assembly/plan` run the planner and return a compact
+`dd.fabrication.assembly-planning.v1` recomposition package for printed, milled,
+turned, sheet-cut, EDM, robotic, or special-process child routes. The response
+keeps the full plan stored and published through the normal plan-result path
+while focusing the caller on `assembly.assemblyGraph`,
+`assembly.assemblyGraph.interfaces`, `assembly.assemblyGraph.sequence`,
+`hybridMakePlan.joinOperations`, `hybridMakePlan.splitCombineDecisions`,
+`interfaceControlPlan.controls`, `qualityPlan.inspectionPoints`,
+`releasePackagePlan.packages`, `releasePackagePlan.releaseGates`, and
+`machineRelease.blockers`.
+
+The endpoint is a draft assembly lane, not certified assembly, robot-cell,
+inspection, or controller output. Machine-ready release remains blocked until
+child route packages, interface controls, dry-fit or metrology, join recipe,
+inspection, release package, and operator or automation signoff are retained. It
+stores artifacts such as `assembly-plan`, `hybrid-make-plan`,
+`interface-control-plan`, `quality-plan`, `release-package-plan`, and
+`mdp-request` so MDP/POMDP/neural workers can learn which recomposition and join
+strategies complete without hidden human intervention.
+
 ## `GET /fabrication/release/catalog`
 
 `GET /release/catalog` and the gateway-prefixed
@@ -606,6 +894,51 @@ observations are emitted for MDP/POMDP/neural workers so future planning can
 learn which evidence cleared or blocked printed, milled, turned, sheet-cut, EDM,
 and recomposed routes.
 
+## `POST /fabrication/release/preview`
+
+`POST /release/preview` and the gateway-prefixed
+`POST /fabrication/release/preview` accept the same request body as
+`POST /fabrication/plan`, apply the current bounded learning-policy memory, run
+the planner, and return a compact `dd.fabrication.release-preview.v1` advisory
+envelope. The response focuses on `machineRelease.status`,
+`machineRelease.blockers`, `machineRelease.checklist`,
+`releasePackagePlan.packages`, `releasePackagePlan.releaseGates`,
+`releasePackagePlan.requiredArtifacts`, `executionPlan.stopPoints`,
+`postprocessPlan.blockers`, `controllerPlan.compatibilityTargets`,
+`simulation.riskProfile`, operator intervention requirements,
+split/combine decisions, release-probe learning surfaces, and
+`manufacturingHandoff`. Release previews do not retain full plan jobs, publish
+controller code, or certify machine-ready artifacts; they keep
+`machineReady=false` while machine-release, controller, postprocess, simulation,
+setup, intervention, split/combine, schedule, or package gates remain blocked.
+
+## `POST /fabrication/execution/plan`
+
+`POST /execution/plan` and the gateway-prefixed
+`POST /fabrication/execution/plan` accept the same request body as
+`POST /fabrication/plan`, apply bounded learning-policy memory, run the planner,
+store and publish the full plan result, and return a compact
+`dd.fabrication.execution-planning.v1` preflight package. The response focuses on
+`executionPlan.programRuns`, `executionPlan.checkpoints`,
+`executionPlan.stopPoints`, `operatorInterventionPlan.requiredOperatorActions`,
+`operatorInterventionPlan.evidenceGates`,
+`operatorInterventionPlan.automationCandidates`,
+`operatorInterventionPlan.splitCombineReviews`, `interventionMap`,
+`machineSchedule.operations`, `machineSchedule.dependencyHolds`,
+`monitoringPlan.monitorPoints`, `monitoringPlan.recoveryActions`,
+`machineRelease.blockers`, `simulation.riskProfile`, and
+`learning.releaseProbePlan`.
+
+Execution plans are conservative preflight packages, not certified controller
+safety, unattended-run authorization, or shop-floor restart instructions.
+Machine-ready release remains blocked while stop points, required operator
+actions, unresolved evidence gates, dependency holds, monitoring recovery gaps,
+or release blockers remain open. Stored artifacts include `execution-plan`,
+`operator-intervention-plan`, `machine-schedule`, `monitoring-plan`,
+`machine-release`, `simulation-report`, and `mdp-request` so
+MDP/POMDP/neural workers can learn when to add automation, split jobs,
+regenerate instructions, or keep human checkpoints.
+
 ## `GET /fabrication/strategy/catalog`
 
 `GET /strategy/catalog` and the gateway-prefixed
@@ -627,6 +960,22 @@ approval; learned preferences can bias open-ended planning only when caller
 preferences are absent, and machine-ready release remains blocked until
 validation, setup, simulation, quality, intervention, postprocess, schedule, and
 release blockers clear.
+
+## `POST /fabrication/strategy/recommend`
+
+`POST /strategy/recommend` and the gateway-prefixed
+`POST /fabrication/strategy/recommend` accept the same request body as
+`POST /fabrication/plan`, apply the current bounded learning-policy memory, run
+the planner, and return a compact
+`dd.fabrication.strategy-recommendation.v1` advisory envelope. The response
+focuses on `strategyCandidates`, the top scored candidate,
+`hybridMakePlan.selectedStrategy`, part routes, join operations,
+split/combine decisions, policy-memory counts, DES-backed `learning.enginePolicy`,
+POMDP belief/probe surfaces, neural-policy inference, intervention signals, and
+`machineRelease.blockers`. Recommendation responses do not retain full plan jobs,
+publish generated controller code, or certify machine-ready release; they keep
+`machineReady=false` while validation, setup, simulation, quality, postprocess,
+schedule, intervention, or release blockers remain.
 
 ## `GET /fabrication/schedule/catalog`
 
@@ -676,6 +1025,30 @@ process-start proof is missing, or required dry-run artifacts such as
 observations are emitted for MDP/POMDP/neural workers so future planning can
 learn when to reroute, split parts, add clearance, or require operator review.
 
+## `POST /fabrication/simulation/run`
+
+`POST /simulation/run` and the gateway-prefixed
+`POST /fabrication/simulation/run` run the planner and return a compact
+`dd.fabrication.simulation-run.v1` dry-run and risk package for generated or
+imported programs. The response keeps the full plan stored and published
+through the normal plan-result path while focusing callers on
+`simulation.programs`, `simulation.programs.axisExtents`,
+`simulation.riskProfile`, `simulation.riskProfile.programRisks`,
+`simulation.findings`, `simulation.failureBoundaries`,
+`machineRelease.blockers`, `executionPlan.stopPoints`,
+`postprocessPlan.targets`, `releasePackagePlan.packages`, and
+`learning.releaseProbePlan`.
+
+The endpoint is a draft dry-run and risk lane, not certified machine safety,
+controller proof, or shop-floor authorization. Machine-ready release remains
+blocked while simulation risk is blocked or review-required, envelope or
+clearance boundaries remain open, process-start proof is missing, or required
+dry-run artifacts are absent. It stores artifacts such as `simulation-report`,
+`execution-plan`, `postprocess-plan`, `machine-release`,
+`release-package-plan`, and `mdp-request` so MDP/POMDP/neural workers can learn
+when to reroute, split parts, add clearance, regenerate programs, or require
+operator review.
+
 ## `GET /fabrication/quality/catalog`
 
 `GET /quality/catalog` and the gateway-prefixed
@@ -696,6 +1069,31 @@ inspection, postprocess, material traceability, interface fit, or metrology
 evidence is absent. Quality observations are retained for MDP/POMDP/neural
 workers so future planning can learn when to add inspection, split parts, adjust
 processes, or require human signoff.
+
+## `POST /fabrication/quality/plan`
+
+`POST /quality/plan` and the gateway-prefixed
+`POST /fabrication/quality/plan` accept the same request body as
+`POST /fabrication/plan`, apply bounded learning-policy memory, run the planner,
+store and publish the full plan result, and return a compact
+`dd.fabrication.quality-planning.v1` inspection and metrology package. The
+response focuses on `qualityPlan.status`, `qualityPlan.inspectionPoints`,
+`qualityPlan.inspectionPoints.recordsToCapture`,
+`qualityPlan.measurementTargets`, `qualityPlan.releaseGates`,
+`qualityPlan.learningObservations`, `postprocessPlan.requiredArtifacts`,
+`postprocessPlan.blockers`, `releasePackagePlan.packages`,
+`releasePackagePlan.releaseGates`, `interfaceControlPlan.controls`,
+`machineRelease.blockers`, `simulation.riskProfile`, and
+`learning.releaseProbePlan`.
+
+Quality plans are draft inspection and metrology evidence packages, not
+certified acceptance results or shop-floor release authorization. Machine-ready
+release remains blocked while required inspection, postprocess, traceability,
+interface-fit, release-package, or metrology evidence is absent. Stored
+artifacts include `quality-plan`, `postprocess-plan`, `release-package-plan`,
+`machine-release`, `simulation-report`, and `mdp-request` so
+MDP/POMDP/neural workers can learn when to add inspection, split parts, adjust
+processes, regenerate instructions, or require human signoff.
 
 ## `GET /fabrication/calibration/catalog`
 
@@ -749,7 +1147,7 @@ human checkpoints.
 `dd.fabrication.setup-catalog.v1` tooling, fixture, datum, workholding, runtime
 monitoring, and recovery evidence catalog before callers treat generated or
 imported work as machine-ready. The payload exposes setup contracts for additive
-build setup, mill/router tooling and fixtures, lathe and mill-turn grip/support,
+build setup, mill/router tooling and fixtures, lathe, mill-turn, and Swiss guide-bushing/bar-feed grip/support,
 sheet-cut support media, assembly/recomposition datum transfer, and unattended
 run monitoring. It names response surfaces such as
 `toolingPlan.requirements`, `toolingPlan.requirements.requiredTools`,
@@ -766,6 +1164,83 @@ or operator/automation signoff gates are unresolved. Setup, fixture, and
 monitoring observations are retained for MDP/POMDP/neural workers so future
 planning can learn when to change workholding, split setups, add automation, or
 require human intervention.
+
+## `POST /fabrication/setup/plan`
+
+`POST /setup/plan` and the gateway-prefixed
+`POST /fabrication/setup/plan` accept the same request body as
+`POST /fabrication/plan`, apply bounded learning-policy memory, run the planner,
+store and publish the full plan result, and return a compact
+`dd.fabrication.setup-planning.v1` setup-readiness package. The response focuses
+on `toolingPlan.requirements`, `toolingPlan.requirements.requiredTools`,
+`toolingPlan.requirements.workholding`, `toolingPlan.requirements.setupChecks`,
+`fixturePlan.setups`, `fixturePlan.setups.datumScheme`,
+`fixturePlan.setups.requiredEvidence`, `fixturePlan.setups.clearanceChecks`,
+`fixturePlan.datumTransfers`, `monitoringPlan.monitorPoints`,
+`monitoringPlan.monitorPoints.channels`, `monitoringPlan.alertRules`,
+`monitoringPlan.recoveryActions`, `machineRelease.blockers`,
+`releasePackagePlan.requiredArtifacts`, and `learning.releaseProbePlan`.
+
+Setup plans are draft tooling, fixture, datum, workholding, and monitoring
+evidence packages, not certified fixture designs or machine-safety approvals.
+Machine-ready release remains blocked while tooling blockers, fixture evidence
+gaps, datum-transfer gates, monitoring channels, recovery actions, or signoff
+gates are unresolved. Stored artifacts include `tooling-plan`, `fixture-plan`,
+`monitoring-plan`, `machine-release`, `release-package-plan`,
+`simulation-report`, and `mdp-request` so MDP/POMDP/neural workers can learn
+when to change workholding, split setups, add automation, regenerate
+instructions, or require human intervention.
+
+## `GET /fabrication/monitoring/catalog`
+
+`GET /monitoring/catalog` and the gateway-prefixed
+`GET /fabrication/monitoring/catalog` return the live
+`dd.fabrication.monitoring-catalog.v1` runtime monitoring, safe-stop, recovery,
+and restart-authority catalog before callers treat generated or imported work as
+machine-ready or unattended. The payload exposes monitoring contracts for
+additive printers, mill/router cells, turning and mill-turn/Swiss workholding,
+sheet-cut process-media/fire/fume/wire/slug monitoring, assembly-cell
+vision/force/interlock monitoring, and unattended recovery governance. It names
+response surfaces such as `monitoringPlan.monitorPoints`,
+`monitoringPlan.alertRules`, `monitoringPlan.recoveryActions`,
+`monitoringPlan.releaseGates`, `machineRelease.blockers`,
+`operatorInterventionPlan.requiredOperatorActions`,
+`validation.failureBoundaries`, and `releaseProbePlan.probes`, plus retained
+artifact surfaces `monitoring-plan`, `parametric-design.monitoringPlan`, and
+matching `mdp-request` monitoring artifacts. Catalog entries are runtime
+evidence contracts, not certified safety systems or controller restart
+procedures; machine-ready and unattended release remain blocked while monitor
+channels, alert rules, safe-stop behavior, recovery actions, or restart
+authority are unresolved. Monitoring and recovery observations are retained for
+MDP/POMDP/neural workers so future planning can learn when to add sensors, split
+jobs, require operators, or improve generated instructions.
+
+## `POST /fabrication/monitoring/plan`
+
+`POST /monitoring/plan` and the gateway-prefixed
+`POST /fabrication/monitoring/plan` accept the same request body as
+`POST /fabrication/plan`, apply bounded learning-policy memory, run the planner,
+store and publish the full plan result, and return a compact
+`dd.fabrication.monitoring-planning.v1` runtime monitoring and recovery package.
+The response focuses on `monitoringPlan.monitorPoints`,
+`monitoringPlan.monitorPoints.channels`,
+`monitoringPlan.monitorPoints.expectedSignals`,
+`monitoringPlan.monitorPoints.requiredEvidence`,
+`monitoringPlan.monitorPoints.recoveryActions`, `monitoringPlan.alertRules`,
+`monitoringPlan.alertRules.automatedResponse`,
+`monitoringPlan.recoveryActions`, `monitoringPlan.releaseGates`,
+`executionPlan.stopPoints`, `operatorInterventionPlan.requiredOperatorActions`,
+`machineRelease.blockers`, and `learning.releaseProbePlan`.
+
+Monitoring plans are draft runtime channel, alert, safe-stop, recovery, and
+restart-authority evidence packages, not certified safety systems or controller
+restart procedures. Machine-ready and unattended release remain blocked while
+monitor channels, alert rules, recovery actions, operator check-in, or restart
+authority are unresolved. Stored artifacts include `monitoring-plan`,
+`operator-intervention-plan`, `execution-plan`, `machine-release`,
+`simulation-report`, and `mdp-request` so MDP/POMDP/neural workers can learn
+when to add sensors, split jobs, require operators, add automation, or improve
+generated instructions.
 
 ## `GET /fabrication/postprocess/catalog`
 
@@ -784,7 +1259,21 @@ disposition records, thermal profile and furnace logs, fixture/setter and
 atmosphere records, cooldown/quench and PPE records,
 distortion/hardness/release inspection records, surface media/chemistry and SDS
 records, masking/plugging/protected-feature records, ventilation/PPE/waste
-records, and finish thickness/adhesion/inspection records,
+records, finish thickness/adhesion/inspection records, welding procedure and
+qualification records, joint fit-up/fixture/clamp records, filler/flux/gas and
+fume-control records, heat-input/interpass/distortion records,
+weld-inspection/NDE/repair records, mold master/tooling/release records,
+mix-ratio/pot-life/batch records, degas/vacuum/pressure/cure records,
+demold/shrinkage/void/dimensional records, flat-pattern and
+bend-allowance records, press-brake tooling and tonnage records,
+backgauge/bend-sequence/angle-inspection records, formed-part dimensional
+release records, foam blank density/template records, wire
+temperature/tension/kerf records, fume/fire-watch/PPE records, foam core
+surface/taper/dimensional records, gear drawing/blank datum records, gear
+cutter/arbor/indexing records, gear deburr/burr-control records, gear
+over-pins/span/profile inspection records, Swiss guide-bushing/bar-feed
+records, gang-tool/live-tool clearance records,
+pickoff/cutoff/ejection records, and first-article runout/remnant records,
 `postprocess-plan`, `analysis-postprocess-plan`, controller output packages, and
 postprocess travelers, plus planning and instruction-analysis route aliases,
 response surfaces such as `postprocessPlan.status`,
@@ -799,6 +1288,33 @@ observations are retained for MDP/POMDP/neural workers so future planning can
 learn when to add finishing operations, split parts, combine assemblies, or
 require human intervention.
 
+## `POST /fabrication/postprocess/plan`
+
+`POST /postprocess/plan` and the gateway-prefixed
+`POST /fabrication/postprocess/plan` accept the same request body as
+`POST /fabrication/plan`, apply bounded learning-policy memory, run the planner,
+store and publish the full plan result, and return a compact
+`dd.fabrication.postprocess-planning.v1` controller-output and traveler
+readiness package. The response focuses on `postprocessPlan.controllerTargets`,
+`postprocessPlan.controllerTargets.gates`,
+`postprocessPlan.controllerTargets.outputFormat`,
+`postprocessPlan.controllerTargets.postprocessor`,
+`postprocessPlan.requiredArtifacts`, `postprocessPlan.blockers`,
+`postprocessPlan.learningObservations`, `controllerPlan.compatibilityTargets`,
+`controllerPlan.releaseGates`, `releasePackagePlan.requiredArtifacts`,
+`machineRelease.blockers`, and `simulation.programs`.
+
+Postprocess plans are draft controller-output, traveler, dry-run, and signoff
+evidence packages, not certified machine-safety approvals or completed finishing
+records. Machine-ready release remains blocked while controller targets,
+postprocessors, dry-run gates, required artifacts, release packages, or
+operator/automation signoff remain unresolved. Stored artifacts include
+`postprocess-plan`, `controller-plan`, `release-package-plan`,
+`simulation-report`, `machine-release`, generated and improved instruction
+programs, and `mdp-request` so MDP/POMDP/neural workers can learn when to change
+postprocessors, add finishing operations, split parts, combine assemblies, or
+require human intervention.
+
 ## `GET /fabrication/artifacts/catalog`
 
 `GET /artifacts/catalog` and the gateway-prefixed
@@ -810,10 +1326,12 @@ generated design exports, generated or imported machine instruction work,
 release/execution evidence, setup/quality/monitoring evidence, split/combine and
 assembly evidence, DES-backed MDP/POMDP/neural learning evidence, and outcome
 learning evidence. It names retrieval routes such as `GET /jobs`,
-`GET /jobs/:job_id`, and `GET /jobs/:job_id/artifacts/:artifact_id`, plus
-surfaces including `generatedPrograms`, `improvedPrograms`, `designExports`,
-`releasePackagePlan`, `learning`, and artifact fields such as `artifactId`,
-`kind`, `mediaType`, `draft`, `machineReady`, and `content`. Catalog entries
+`GET /fabrication/jobs`, `GET /jobs/:job_id`, `GET /fabrication/jobs/:job_id`,
+`GET /jobs/:job_id/artifacts/:artifact_id`, and
+`GET /fabrication/jobs/:job_id/artifacts/:artifact_id`, plus surfaces including
+`generatedPrograms`, `improvedPrograms`, `designExports`, `releasePackagePlan`,
+`learning`, and artifact fields such as `artifactId`, `kind`, `mediaType`,
+`draft`, `machineReady`, and `content`. Catalog entries
 describe bounded in-process evidence surfaces, not durable database storage or
 certified machine release; generated design exports, machine programs, improved
 programs, release packages, DES/POMDP/neural artifacts, and learning outcomes
@@ -956,15 +1474,15 @@ Requests use camelCase JSON:
 ```
 
 If `machines` is omitted, the service uses a conservative default fleet with an
-FDM printer, SLA resin printer, multi-material FDM/toolchanger printer, paste/clay extrusion printer, bound-metal filament FFF printer, material-jetting printer, continuous-fiber composite printer, SLS powder-bed printer, DED/WAAM directed-energy deposition cell, metal PBF printer, binder jet printer, vertical
+FDM printer, SLA resin printer, multi-material FDM/toolchanger printer, paste/clay extrusion printer, bound-metal filament FFF printer, material-jetting printer, continuous-fiber composite printer, composite layup cell, SLS powder-bed printer, DED/WAAM directed-energy deposition cell, metal PBF printer, binder jet printer, vertical
 mill,
 five-axis mill, rotary-indexer mill, horizontal mill, CNC router, laser cutter, waterjet cutter, plasma cutter, wire
-EDM cutter, sinker EDM cell, precision grinder, CMM/vision inspection cell, thermal postprocess furnace, surface finishing cell, robotic assembly cell, and lathe. If `parts` is omitted, the planner infers
+EDM cutter, sinker EDM cell, precision grinder, CMM/vision inspection cell, thermal postprocess furnace, surface finishing cell, metal-joining cell, molding/casting cell, composite layup/vacuum-bag/autoclave cell, hot-wire foam cutter, press-brake forming cell, gear-cutting/hobbing/spline-broaching cell, robotic assembly cell, and lathe. If `parts` is omitted, the planner infers
 a first decomposition from the objective, material, and tolerance, including
-resin-print, multi-material-fdm-print, paste-extrusion-print, bound-metal-fff-print, material-jetting-print, directed-energy-deposition, composite-fiber-print, binder-jet-print, polymer powder-bed-print, metal PBF-print, five-axis-milled impellers/undercuts,
+resin-print, multi-material-fdm-print, paste-extrusion-print, bound-metal-fff-print, material-jetting-print, directed-energy-deposition, composite-fiber-print, composite-layup laminate releases, hot-wire foam cores/patterns, binder-jet-print, polymer powder-bed-print, metal PBF-print, five-axis-milled impellers/undercuts,
 4th-axis indexed multi-face milling, horizontal-milled side slots/keyways, laser,
 waterjet, plasma, wire EDM, sinker EDM cavity burns, precision-grinding datum finishes, CMM/vision first-article inspection releases, thermal anneal/stress-relief/heat-treatment/post-cure releases, assembly-joining/fit-up
-steps, surface finishing/coating/deburr releases, and kerf-controlled
+steps, surface finishing/coating/plating/anodizing/media-blasting/powder-coating/deburr releases, metal-joining/welding/brazing/soldering releases, molding/casting/vacuum-casting/urethane/silicone releases, composite layup/prepreg/wet-layup/vacuum-bag/autoclave/resin-infusion releases, press-brake sheet-metal flanges/bend sequences/formed brackets, gear teeth/splines/racks/keyways/worm profiles, and kerf-controlled
 sheet-cut profiles, and routed sheet/profile parts for wood,
 foam, acrylic, panel, sign, engraving, and tabbed-profile requests. Additive
 plans flag overhang, bridge, cantilever, thin-wall, snap-fit, and resin
@@ -1005,6 +1523,54 @@ materials, process support, maintenance, release evidence, and retained blockers
   ]
 }
 ```
+
+## `POST /instructions/validate`
+
+`POST /fabrication/instructions/validate` and its gateway-stripped alias
+`POST /instructions/validate` accept the same request body as
+`POST /fabrication/instructions/analyze`, run the same validation, boundary,
+simulation, release, and improvement pipeline, persist the same analysis
+artifacts, and return the compact
+`dd.fabrication.instruction-validation.v1` validation envelope. The payload
+focuses on `validation.findings`, `validation.failureBoundaries`,
+`boundarySummary`, `resolutionPlan.steps`, `interventionMap`,
+`operatorInterventionPlan`, `machineRelease.blockers`,
+`executionPlan.programRuns`, `postprocessPlan.controllerTargets`,
+`simulation.failureBoundaries`, `improvements`, `improvedPrograms.patchManifest`,
+and DES/neural learning surfaces. It is a validation and release-blocking
+contract, not controller certification: submitted CNC, printer, slicer,
+job-sheet, setup, and operator instructions keep `machineReady=false` while
+validation findings, simulation findings, machine-failure boundaries,
+human-intervention gates, split/combine reviews, or release blockers remain
+open.
+
+## `POST /instructions/improve`
+
+`POST /fabrication/instructions/improve` and its gateway-stripped alias
+`POST /instructions/improve` accept the same request body as
+`POST /fabrication/instructions/analyze`, run the same validation and simulation
+pipeline, persist the same analysis artifacts, and return the compact
+`dd.fabrication.instruction-improvement-review.v1` patch-review envelope. The
+payload focuses on changed program counts, patch operation counts,
+`improvedPrograms.patchManifest`, release blockers, `machineReady=false` review
+state, and `instruction-patch:*`/`instruction-patch-action:*` learning surfaces
+for downstream MDP/POMDP/neural workers.
+
+## `POST /instructions/boundaries/review`
+
+`POST /fabrication/instructions/boundaries/review` and its gateway-stripped
+alias `POST /instructions/boundaries/review` accept the same instruction-analysis
+request body and return the compact
+`dd.fabrication.instruction-boundary-review.v1` envelope. It focuses on
+`boundarySummary`, `resolutionPlan`, `interventionMap`,
+`operatorInterventionPlan`, `machineRelease`, `executionPlan`, and
+`simulation.riskProfile` so callers can review where submitted CNC, printer,
+slicer, setup-sheet, or operator instructions will fail without human
+intervention, verified automation, regeneration, split/combine work, or release
+evidence. The full analysis artifacts are still stored and published, and
+boundary observations such as `boundary-kind:*`, `resolution-action:*`, and
+`interventionMap.learningObservations` remain available to MDP/POMDP/neural
+workers.
 
 The analyzer is intentionally conservative. It checks common `G`, `M`, and `T`
 words, missing units or positioning modes, late or mid-program `G20`/`G21` unit-mode changes after motion without conversion review, CNC program end while still in `G91` incremental positioning without `G90` reset, CNC inverse-time `G93` feed motion without timing review or program end before `G94` cancel, `G43.4`/`G234` tool-center-point mode before rotary/linear motion or program end without TCP kinematic review and `G49` cancellation, `G92` work-coordinate offsets before motion or program end without temporary-offset review and `G92.1`/`G92.2` cancellation, `G10 L2`/`G10 L20` fixture/work-offset table writes without controller offset-table backup or review evidence, CNC subprogram calls, macro variables, conditionals, or jumps before controller dependency review evidence, printer extrusion before heat-up,
@@ -1048,14 +1614,14 @@ moves before explicit `G17`/`G18`/`G19` plane evidence, with center offsets that
 incompatibility with resolved machine profiles, and text-instruction boundaries
 where the job needs setup, subtractive text setup/process evidence for
 workholding/datum/tool-length and spindle/feed/coolant/kerf/pierce/cut-chart
-controls, slicer profile/support/orientation/first-layer evidence, missing slicer mesh unit/scale/watertight/manifold/normals/wall-thickness evidence for STL/3MF/OBJ/model inputs, slicer high-speed input-shaper/acceleration/volumetric-flow evidence, post-processing, missing multi-material FDM material/color map/slot/filament-lot/support-interface evidence, missing multi-material FDM purge/wipe tower/tool-change/runout-sensor/resume-state evidence, missing pellet/FGF pellet-lot/drying/moisture/hopper/purge/nozzle evidence, missing pellet/FGF bead width/layer height/screw/melt/cooling/gantry-clearance/warpage/trim evidence, missing paste/clay rheology/slump/deairing/nozzle/pressure evidence, missing paste/clay drying/humidity/shrinkage/green-part/firing evidence, missing bound-metal filament lot/profile/hardened-nozzle/dry-storage/shrinkage-scale evidence, missing bound-metal debind/brown-part/sinter-furnace/atmosphere/shrinkage-coupon/density evidence, missing material-jetting cartridge/material-channel/printhead/tray evidence, missing material-jetting support-removal/UV/color/material inspection evidence, missing DED/WAAM feedstock/substrate/bead-path/standoff/machining-allowance evidence, missing DED/WAAM energy/shielding/melt-pool/interpass/NDE/coupon evidence, missing composite-fiber layup/orientation/load-case evidence, missing composite-fiber spool/cutter/matrix/coupon/continuity inspection evidence, missing resin exposure/profile/layer/support/build-plate evidence, missing resin layer/exposure manifest image hash/checksum or peel/lift/recoat evidence, missing resin vat-volume/level/refill evidence for large resin jobs, resin IPA/wash/cure/drain/PPE/
+controls, slicer profile/support/orientation/first-layer evidence, missing slicer mesh unit/scale/watertight/manifold/normals/wall-thickness evidence for STL/3MF/OBJ/model inputs, slicer high-speed input-shaper/acceleration/volumetric-flow evidence, post-processing, missing multi-material FDM material/color map/slot/filament-lot/support-interface evidence, missing multi-material FDM purge/wipe tower/tool-change/runout-sensor/resume-state evidence, missing pellet/FGF pellet-lot/drying/moisture/hopper/purge/nozzle evidence, missing pellet/FGF bead width/layer height/screw/melt/cooling/gantry-clearance/warpage/trim evidence, missing robotic additive robot-frame/TCP/reach/collision/interlock/external-axis/dry-run evidence, missing robotic additive feedstock/nozzle/purge/bead/flow/cooling/cure/dimensional-scan evidence, missing paste/clay rheology/slump/deairing/nozzle/pressure evidence, missing paste/clay drying/humidity/shrinkage/green-part/firing evidence, missing bound-metal filament lot/profile/hardened-nozzle/dry-storage/shrinkage-scale evidence, missing bound-metal debind/brown-part/sinter-furnace/atmosphere/shrinkage-coupon/density evidence, missing material-jetting cartridge/material-channel/printhead/tray evidence, missing material-jetting support-removal/UV/color/material inspection evidence, missing DED/WAAM feedstock/substrate/bead-path/standoff/machining-allowance evidence, missing DED/WAAM energy/shielding/melt-pool/interpass/NDE/coupon evidence, missing composite-fiber layup/orientation/load-case evidence, missing composite-fiber spool/cutter/matrix/coupon/continuity inspection evidence, missing composite layup mold/mandrel/release-film/ply-schedule/resin-prepreg-core-lot/out-time evidence, missing composite layup vacuum-bag/leak-down/debulk/cure-trace/demold/trim-drill/coupon/NDI/dimensional-release evidence, missing hot-wire foam setup evidence for foam density/blank thickness/template-or-CNC-profile/bow-wire tension/fume extraction/PPE/fire watch, missing hot-wire foam process evidence for wire heat/current/feed/kerf/wire-lag/taper/surface-melt/dimensional inspection, missing resin exposure/profile/layer/support/build-plate evidence, missing resin layer/exposure manifest image hash/checksum or peel/lift/recoat evidence, missing resin vat-volume/level/refill evidence for large resin jobs, resin IPA/wash/cure/drain/PPE/
 waste controls or missing resin postprocess evidence, powder
 build profile/powder lot/nesting controls or missing powder-bed build/profile evidence,
 cooldown/depowder/recovery controls or missing powder-bed handling evidence, missing
 metal-PBF alloy-lot/oxygen/recoater/stress-relief/plate-removal evidence, missing
 powder-bed recoater clearance/thermal spacing/cooldown evidence, missing binder-jet binder/saturation/printhead/green-strength evidence, missing binder-jet cure/debind/sinter/infiltration/shrink-compensation evidence, assembly
-dry-fit/metrology/datum/torque/cure controls or missing assembly fit/metrology evidence, missing assembly-cell robot-path/gripper/fixture/vision/interlock evidence, missing assembly-cell press/heat-set/torque/adhesive/cure/final-metrology evidence, missing part-separation cut-path/fixture/kerf/heat/deburr/traceability/final-inspection evidence, missing precision tolerance/surface-finish metrology evidence, missing unattended/batch monitoring and recovery evidence, missing thermal postprocess temperature/furnace/atmosphere/cooldown/quench/inspection evidence, missing surface/chemical finishing media/masking/PPE/waste/thickness/inspection evidence, missing indexed setup clamp/brake/index-angle/clearance/re-probe evidence, unreviewed `G51` scaling/mirroring or `G68` coordinate rotation and missing `G50.1`/`G69` transform cancellation, `G43.4`/`G234` tool-center-point mode before rotary/linear motion or program end without TCP kinematic review and `G49` cancellation, `G92` work-coordinate offsets before motion or program end without temporary-offset review and `G92.1`/`G92.2` cancellation, `G10 L2`/`G10 L20` fixture/work-offset table writes without controller offset-table backup or review evidence, late or mid-program `G20`/`G21` unit-mode changes after motion without conversion review, sheet-cutting
-kerf/fire/fume checks or missing sheet-cutting material/thickness/cut-chart recipe evidence, missing wire EDM start-hole/threading/slug-retention/dielectric/flushing/skim-pass evidence, wire EDM profile/skim cuts before start-hole, wire-threading, guide/tension, conductive workholding, or slug-retention setup evidence, missing sinker EDM electrode/dielectric/flushing/debris-removal/depth/orbit-finish/recast evidence, missing precision grinding wheel dress/balance/coolant/workholding/spark-out/burn-check/surface-finish/final-metrology evidence, missing CMM/vision inspection probe or vision calibration, datum alignment, uncertainty, measured-values, pass/fail disposition, nonconformance-routing evidence, missing mill-turn live-tooling C-axis/Y-axis/polar-interpolation evidence, missing mill-turn subspindle pickup/clamp/sync/pull-force/transfer-clearance evidence, `G4`/`G04` dwell commands without positive `P`/`S`/`X`/`U` duration or operator-timed dwell review, lathe text threading feed-per-rev/pitch/spindle-encoder evidence, lathe text part-off catcher/subspindle/tailstock/stock-support evidence, assembly, splitting, or operator intervention. Improved
+dry-fit/metrology/datum/torque/cure controls or missing assembly fit/metrology evidence, missing assembly-cell robot-path/gripper/fixture/vision/interlock evidence, missing assembly-cell press/heat-set/torque/adhesive/cure/final-metrology evidence, missing part-separation cut-path/fixture/kerf/heat/deburr/traceability/final-inspection evidence, missing precision tolerance/surface-finish metrology evidence, missing unattended/batch monitoring and recovery evidence, missing thermal postprocess temperature/furnace/atmosphere/cooldown/quench/inspection evidence, missing surface/chemical finishing media/masking/PPE/waste/thickness/inspection evidence, missing metal-joining WPS/procedure/qualification/filler/flux/gas/fit-up/fume-control/heat-input/interpass/NDE/repair-disposition evidence, missing molding/casting master/tool/mold-material/parting/vent-gate/release-agent/mix-ratio/pot-life/degas/vacuum/pressure/cure/demold/shrinkage/void/dimensional-release evidence, missing composite layup mold/mandrel/release-film/ply-schedule/resin-prepreg-core-lot/out-time/vacuum-bag/leak-down/debulk/cure-trace/demold/trim-drill/coupon/NDI/dimensional-release evidence, missing press-brake/sheet-forming flat-pattern/bend-allowance/tooling/tonnage/backgauge/springback/angle-inspection evidence, missing gear-cutting/hobbing/spline-broaching gear-drawing/tooth-count/module-or-DP/pressure-angle/helix-lead/cutter-arbor/index-ratio/blank-runout/deburr/over-pins/span/profile/backlash inspection evidence, missing indexed setup clamp/brake/index-angle/clearance/re-probe evidence, unreviewed `G51` scaling/mirroring or `G68` coordinate rotation and missing `G50.1`/`G69` transform cancellation, `G43.4`/`G234` tool-center-point mode before rotary/linear motion or program end without TCP kinematic review and `G49` cancellation, `G92` work-coordinate offsets before motion or program end without temporary-offset review and `G92.1`/`G92.2` cancellation, `G10 L2`/`G10 L20` fixture/work-offset table writes without controller offset-table backup or review evidence, late or mid-program `G20`/`G21` unit-mode changes after motion without conversion review, sheet-cutting
+kerf/fire/fume checks or missing sheet-cutting material/thickness/cut-chart recipe evidence, missing wire EDM start-hole/threading/slug-retention/dielectric/flushing/skim-pass evidence, wire EDM profile/skim cuts before start-hole, wire-threading, guide/tension, conductive workholding, or slug-retention setup evidence, missing sinker EDM electrode/dielectric/flushing/debris-removal/depth/orbit-finish/recast evidence, missing precision grinding wheel dress/balance/coolant/workholding/spark-out/burn-check/surface-finish/final-metrology evidence, missing CMM/vision inspection probe or vision calibration, datum alignment, uncertainty, measured-values, pass/fail disposition, nonconformance-routing evidence, missing mill-turn live-tooling C-axis/Y-axis/polar-interpolation evidence, missing mill-turn subspindle pickup/clamp/sync/pull-force/transfer-clearance evidence, missing Swiss guide-bushing/bar-feed/collet/remnant evidence, missing Swiss gang-tool/live-tool clearance, missing Swiss subspindle pickoff/cutoff/ejection/runout evidence, `G4`/`G04` dwell commands without positive `P`/`S`/`X`/`U` duration or operator-timed dwell review, lathe text threading feed-per-rev/pitch/spindle-encoder evidence, lathe text part-off catcher/subspindle/tailstock/stock-support evidence, assembly, splitting, or operator intervention. Improved
 drafts are still marked `machineReady=false`; they are normalization aids for
 review, motion-envelope simulation, and controller-specific postprocessing.
 `resolutionPlan` converts those boundaries into ordered remediation steps before
@@ -1148,7 +1714,7 @@ The response, retained `machine-schedule`, retained `parametric-design`, and
 `mdp-request` artifacts include `machineSchedule` machine-lane utilization,
 operation windows, dependency holds, postprocessor holds, and operator or
 automation start gates so resource sequencers can see where generated work
-cannot enter a printer, mill, mill-turn center, router, sheet cutter, lathe, or
+cannot enter a printer, mill, mill-turn or Swiss center, router, sheet cutter, lathe, or
 manual cell.
 The response, retained `quality-plan`, retained `parametric-design`, and
 `mdp-request` artifacts include `qualityPlan` inspection points, measurement
@@ -1186,7 +1752,7 @@ routes, or a recomposed assembly.
 The response plus retained `machine-selection`, `parametric-design`, and
 `mdp-request` artifacts include `machineSelection` candidate scores and selected
 machine reasons so learning workers can compare alternate printers, mills,
-routers, mill-turn centers, wire EDM, sinker EDM, other sheet/special-process
+routers, mill-turn or Swiss centers, wire EDM, sinker EDM, other sheet/special-process
 cells, and lathes without rerunning the planner.
 Plan responses and the retained `process-graph`, `parametric-design`, and
 `mdp-request` artifacts include `processGraph` nodes, dependencies, and release
@@ -1207,7 +1773,7 @@ The response, retained `controller-plan`, retained `parametric-design`, and
 `mdp-request` artifacts include `controllerPlan` compatibility targets, dialect
 summaries, postprocessor-known status, required controller checks, required
 evidence, controller release gates, release blockers, and `controller-*`
-learning observations so printer, mill, router, sheet cutter, lathe, mill-turn,
+learning observations so printer, mill, router, sheet cutter, lathe, mill-turn, Swiss,
 EDM, and assembly-cell programs stay blocked until exact-controller review,
 dry-run evidence, and signoff are attached.
 
@@ -1333,10 +1899,13 @@ bounded in-process ledger. This is not durable storage yet; it is the current
 runtime inspection boundary while the database contract is still being designed.
 
 - `GET /jobs` lists retained jobs with status, severity, summary, and artifact
-  IDs.
+  IDs. `GET /fabrication/jobs` is the gateway-prefixed app alias for the same
+  ledger.
 - `GET /jobs/:job_id` returns the recorded plan or analysis response plus
-  artifact summaries.
+  artifact summaries. `GET /fabrication/jobs/:job_id` is the prefixed alias.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
+  with `GET /fabrication/jobs/:job_id/artifacts/:artifact_id` as the prefixed
+  alias,
   such as `design-summary`, `parametric-design`, `process-plan`,
   `design-package`, `design-export-bundle`, `design-input-review`, `production-plan`, `machine-schedule`, `des-schedule-model`, `machine-selection`, `process-graph`, `hybrid-make-plan`,
   `manufacturing-handoff`, `material-plan`, `quality-plan`, `tooling-plan`, `fixture-plan`, `monitoring-plan`, `interface-control-plan`, `decomposition-plan`, `release-package-plan`, `machine-release`,
@@ -1417,7 +1986,11 @@ runtime inspection boundary while the database contract is still being designed.
   `postprocess-plan`, `analysis-postprocess-plan`, `parametric-design`, and
   `mdp-request` include `postprocessPlan` controller targets, postprocessor
   choices, input/output formats, dry-run evidence gates, blockers, required
-  artifacts including inspection calibration records, datum alignment and
+  artifacts including robot frame/TCP and collision records, robotic extruder
+  feedstock and purge records, robotic bead coupon and flow records, robotic cell
+  interlock records, sheet-lamination stock/stack records, registration/trim
+  records, bond/consolidation records, delamination/dimensional-release records,
+  interlock and release records, inspection calibration records, datum alignment and
   uncertainty records, first-article measured-values reports, nonconformance
   disposition records, thermal profile and furnace logs, fixture/setter and
   atmosphere records, cooldown/quench and PPE records,
