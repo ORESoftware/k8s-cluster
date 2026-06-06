@@ -15,15 +15,16 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-des-rs
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-06-des-rs-latest-f1e29d7'
-        dd.dev/des-engine-revision: 'f1e29d7cdf3e4626cfcfb3d4f589a724808b1384'
+        dd.dev/telemetry-revision: '2026-06-06-des-rs-live-b9e6103'
+        dd.dev/des-server-revision: 'b9e6103207d7512ac72f03c9f2880b342cd866a1'
+        dd.dev/des-engine-revision: '3fd3178cedaa28fc578b1d354ccfd21be2fcd920'
       labels:
         app: dd-des-rs
     spec:
@@ -149,7 +150,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: f1e29d7cdf3e4626cfcfb3d4f589a724808b1384
+              value: 3fd3178cedaa28fc578b1d354ccfd21be2fcd920
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
@@ -199,10 +200,10 @@ spec:
               path: /healthz
               port: http
             # Cold release build of the engine + server from an empty /tmp can
-            # take several minutes on the 2-CPU node, so allow up to ~15 min
-            # before the startup probe gives up (5s * 180).
+            # take several minutes on the 2-CPU node, so allow up to ~50 min
+            # before the startup probe gives up (5s * 600).
             periodSeconds: 5
-            failureThreshold: 180
+            failureThreshold: 600
           # The landing page is available as soon as the server binds; rendered
           # /out artifacts warm in the background and should not remove routing.
           readinessProbe:

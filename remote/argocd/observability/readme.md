@@ -171,7 +171,14 @@ Currently opted-in:
   `upstream_response_time`, upstream 500/502/503/504 failure counters from
   `upstream_status`, request-size p95/max panels from `request_length` so payload growth is visible
   before the `512k` gateway cap returns 413s, response-size p95/max panels from
-  `body_bytes_sent` for generated design, machine-code, and artifact responses, gateway access/guardrail logs, and
+  `body_bytes_sent` for generated design, machine-code, and artifact responses, a CAD intake,
+  design export, and instruction review panel for `/fabrication/design/formats`,
+  `/fabrication/design/import/catalog`, `/fabrication/design/import/review`,
+  `/fabrication/design/generation/catalog`,
+  `/fabrication/handoff/catalog`, `/fabrication/assembly/catalog`, and
+  `/fabrication/instructions/generation/catalog`, plus `/fabrication/instructions/improve`
+  and `/fabrication/instructions/boundaries/review`
+  traffic, gateway access/guardrail logs, and
   warning/error logs for the Rust planner. Its direct pod scrape coverage
   panel compares ready `dd-fabrication-server-pods` scrapes with desired
   Deployment replicas and shows the scrape coverage gap.

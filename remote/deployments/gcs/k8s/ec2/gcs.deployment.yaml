@@ -115,7 +115,7 @@ spec:
             - name: GCS_DIAG_LOGS
               value: 'true'
             - name: GOMEMLIMIT
-              value: 2500MiB
+              value: 5120MiB
             - name: GOMAXPROCS
               value: '6'
             - name: GOGC
@@ -143,16 +143,22 @@ spec:
             - name: GCS_WS_SHED_WARN_GRACE
               value: '500ms'
             - name: GCS_WS_SHED_HEAP_BYTES
-              value: '2415919104'
+              value: '4294967296'
             # RSS pressure is the cgroup OOM guard; heap telemetry can miss spikes.
             - name: GCS_WS_SHED_RSS_BYTES
-              value: '3006477107'
+              value: '5368709120'
             - name: GCS_WS_SHED_GOROUTINES
               value: '120000'
             - name: GCS_WS_SHED_MESSAGE_LATENCY
               value: '10s'
+            - name: GCS_WS_SHED_FANOUT_LATENCY
+              value: '8s'
+            - name: GCS_WS_SHED_FANOUT_PENDING_PERCENT
+              value: '95'
             - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
               value: '30s'
+            - name: GCS_WS_WRITE_TIMEOUT
+              value: '2s'
             - name: GCS_WS_SIDE_EFFECT_MAX_IN_FLIGHT
               value: '512'
             - name: GCS_WS_SIDE_EFFECT_LOCAL_PRESSURE_SHED
@@ -176,11 +182,17 @@ spec:
             - name: GCS_WS_CONV_FANOUT_BATCH_ENABLED
               value: 'true'
             - name: GCS_WS_CONV_FANOUT_BATCH_MS
-              value: '250'
+              value: '200'
             - name: GCS_WS_CONV_FANOUT_BATCH_MAX
-              value: '4096'
+              value: '256'
             - name: GCS_WS_CONV_FANOUT_PENDING_MAX
-              value: '8192'
+              value: '2048'
+            - name: GCS_WS_CONV_FANOUT_GLOBAL_PENDING_MAX
+              value: '524288'
+            - name: GCS_WS_CONV_FANOUT_FLUSH_WORKERS
+              value: '64'
+            - name: GCS_WS_CONV_FANOUT_FLUSH_QUEUE
+              value: '65536'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
@@ -212,9 +224,9 @@ spec:
             - name: GCS_WS_MONGO_BATCH_SIZE
               value: '1024'
             - name: GCS_WS_MONGO_BATCH_QUEUE_SIZE
-              value: '262144'
+              value: '32768'
             - name: GCS_WS_MONGO_BATCH_PRESSURE_PERCENT
-              value: '25'
+              value: '5'
             - name: GCS_WS_MONGO_BATCH_WORKERS
               value: '64'
             - name: GCS_WS_MONGO_BATCH_FLUSH_MS
@@ -263,7 +275,7 @@ spec:
               memory: 512Mi
             limits:
               cpu: '6'
-              memory: 3Gi
+              memory: 6Gi
           startupProbe:
             httpGet:
               path: /chat/v1/health/3000

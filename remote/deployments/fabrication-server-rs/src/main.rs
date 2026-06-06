@@ -51,7 +51,7 @@ const MAX_NATS_PAYLOAD_BYTES: usize = 512 * 1024;
 const MAX_REQUEST_ID_LEN: usize = 128;
 const MAX_TEXT_LEN: usize = 8_192;
 const MAX_LABEL_LEN: usize = 96;
-const MAX_MACHINES: usize = 32;
+const MAX_MACHINES: usize = 40;
 const MAX_MACHINE_PROFILE_EVIDENCE: usize = 64;
 const MAX_PARTS: usize = 64;
 const MAX_PROGRAMS: usize = 32;
@@ -118,6 +118,13 @@ struct FabricationPlanRequest {
     design_inputs: Option<Vec<DesignInputFile>>,
     existing_instructions: Option<Vec<InstructionProgram>>,
     learning: Option<LearningHints>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignImportReviewRequest {
+    request_id: Option<String>,
+    design_inputs: Option<Vec<DesignInputFile>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -2421,6 +2428,12 @@ struct TextInstructionSignals {
     has_pellet_fgf_text_context: bool,
     has_pellet_fgf_material_evidence: bool,
     has_pellet_fgf_bead_thermal_evidence: bool,
+    has_robotic_additive_text_context: bool,
+    has_robotic_additive_path_evidence: bool,
+    has_robotic_additive_extrusion_evidence: bool,
+    has_sheet_lamination_text_context: bool,
+    has_sheet_lamination_stock_evidence: bool,
+    has_sheet_lamination_bond_evidence: bool,
     has_bound_metal_fff_text_context: bool,
     has_bound_metal_fff_profile_evidence: bool,
     has_bound_metal_fff_debind_sinter_evidence: bool,
@@ -2435,6 +2448,9 @@ struct TextInstructionSignals {
     has_ded_feedstock_path_evidence: bool,
     has_ded_energy_shielding_evidence: bool,
     has_ded_thermal_inspection_evidence: bool,
+    has_composite_layup_text_context: bool,
+    has_composite_layup_tooling_evidence: bool,
+    has_composite_layup_bag_cure_evidence: bool,
     has_composite_fiber_text_context: bool,
     has_composite_fiber_layup_evidence: bool,
     has_composite_fiber_process_evidence: bool,
@@ -2472,6 +2488,9 @@ struct TextInstructionSignals {
     has_lathe_text_partoff_support_evidence: bool,
     has_sheet_cutting_text_context: bool,
     has_sheet_cutting_recipe_evidence: bool,
+    has_hot_wire_foam_text_context: bool,
+    has_hot_wire_foam_setup_evidence: bool,
+    has_hot_wire_foam_process_evidence: bool,
     has_wire_edm_text_context: bool,
     has_wire_edm_setup_evidence: bool,
     has_wire_edm_process_evidence: bool,
@@ -2500,6 +2519,16 @@ struct TextInstructionSignals {
     has_text_thermal_postprocess_evidence: bool,
     has_text_surface_finishing_context: bool,
     has_text_surface_finishing_evidence: bool,
+    has_text_metal_joining_context: bool,
+    has_text_metal_joining_procedure_evidence: bool,
+    has_text_metal_joining_inspection_evidence: bool,
+    has_text_molding_casting_context: bool,
+    has_text_molding_casting_tooling_evidence: bool,
+    has_text_molding_casting_process_evidence: bool,
+    has_text_sheet_forming_context: bool,
+    has_text_sheet_forming_evidence: bool,
+    has_text_gear_cutting_context: bool,
+    has_text_gear_cutting_evidence: bool,
     has_text_indexed_setup_context: bool,
     has_text_indexed_setup_evidence: bool,
 }
@@ -3556,6 +3585,205 @@ fn wants_surface_finishing(value: &str) -> bool {
         || (has_broad_finish_process && has_release_context)
 }
 
+fn wants_metal_joining(value: &str) -> bool {
+    let token = normalize_token(value);
+    let token_parts = token.split('-').collect::<Vec<_>>();
+    let has_word = |word: &str| token_parts.iter().any(|part| *part == word);
+    let has_joining_cell = token.contains("metal-joining-cell")
+        || token.contains("metal-joining")
+        || token.contains("metal-joining-job")
+        || token.contains("welding-cell")
+        || token.contains("weld-cell")
+        || token.contains("welding-job")
+        || token.contains("weld-job")
+        || token.contains("weld-procedure-job")
+        || token.contains("brazing-job")
+        || token.contains("soldering-job")
+        || token.contains("weld-braze");
+    let has_explicit_welding_process = token.contains("welding")
+        || token.contains("tig-weld")
+        || token.contains("mig-weld")
+        || token.contains("gmaw")
+        || token.contains("gtaw")
+        || token.contains("smaw")
+        || token.contains("stick-weld")
+        || token.contains("arc-weld")
+        || token.contains("spot-weld")
+        || token.contains("resistance-weld")
+        || token.contains("laser-weld")
+        || token.contains("weld-procedure")
+        || token.contains("weldment")
+        || has_word("tig")
+        || has_word("mig");
+    let has_braze_or_solder_process = token.contains("braze")
+        || token.contains("brazing")
+        || token.contains("solder")
+        || token.contains("soldering");
+    let has_weld_action = has_word("weld") || has_word("welded") || has_word("welds");
+    let has_joining_procedure_context = token.contains("wps")
+        || token.contains("pqr")
+        || token.contains("qualification")
+        || token.contains("qualified")
+        || token.contains("joint")
+        || token.contains("fit-up")
+        || token.contains("fitup")
+        || token.contains("filler")
+        || token.contains("flux")
+        || token.contains("shielding")
+        || token.contains("purge")
+        || token.contains("argon")
+        || token.contains("interpass")
+        || token.contains("preheat")
+        || token.contains("heat-input")
+        || token.contains("distortion")
+        || token.contains("fume")
+        || token.contains("fire-watch")
+        || token.contains("nde")
+        || token.contains("leak-test");
+    has_joining_cell
+        || has_explicit_welding_process
+        || has_braze_or_solder_process
+        || (has_weld_action && (has_joining_procedure_context || !has_word("wire")))
+}
+
+fn wants_molding_casting(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_explicit_process = token.contains("molding-casting-cell")
+        || token.contains("molding-casting")
+        || token.contains("molding-casting-job")
+        || token.contains("mold-casting-job")
+        || token.contains("casting-job")
+        || token.contains("molding-job")
+        || token.contains("urethane-casting-job")
+        || token.contains("silicone-molding-job")
+        || token.contains("vacuum-casting-job")
+        || token.contains("injection-molding-job")
+        || token.contains("urethane-cast")
+        || token.contains("urethane-casting")
+        || token.contains("resin-cast")
+        || token.contains("resin-casting")
+        || token.contains("silicone-mold")
+        || token.contains("silicone-molding")
+        || token.contains("rtv-mold")
+        || token.contains("vacuum-cast")
+        || token.contains("vacuum-casting")
+        || token.contains("pressure-cast")
+        || token.contains("pressure-pot")
+        || token.contains("investment-cast")
+        || token.contains("lost-wax")
+        || token.contains("sand-cast")
+        || token.contains("mold-making")
+        || token.contains("mold-release")
+        || token.contains("release-agent")
+        || token.contains("parting-line")
+        || token.contains("sprue")
+        || token.contains("runner")
+        || token.contains("gate")
+        || token.contains("vent")
+        || token.contains("degas")
+        || token.contains("degassing")
+        || token.contains("demold")
+        || token.contains("demolding")
+        || token.contains("cure-shrinkage")
+        || token.contains("pot-life")
+        || token.contains("mix-ratio")
+        || token.contains("injection-molding")
+        || token.contains("injection-mold")
+        || token.contains("molded-part")
+        || token.contains("thermoforming")
+        || token.contains("vacuum-forming");
+    let has_mold_context = token.contains("mold")
+        && (token.contains("cast")
+            || token.contains("silicone")
+            || token.contains("urethane")
+            || token.contains("resin")
+            || token.contains("release")
+            || token.contains("demold")
+            || token.contains("parting")
+            || token.contains("sprue")
+            || token.contains("runner")
+            || token.contains("vent")
+            || token.contains("injection")
+            || token.contains("thermoform")
+            || token.contains("vacuum"));
+    has_explicit_process || has_mold_context
+}
+
+fn wants_sheet_forming(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_press_brake_cell = token.contains("press-brake")
+        || token.contains("brake-press")
+        || token.contains("press-brake-job")
+        || token.contains("sheet-forming-job")
+        || token.contains("bend-job")
+        || token.contains("bend-checklist")
+        || token.contains("press-brake-forming-cell")
+        || token.contains("sheet-forming-cell");
+    let has_named_forming_process = token.contains("sheet-forming")
+        || token.contains("sheet-metal-forming")
+        || token.contains("sheet-bending")
+        || token.contains("bend-allowance")
+        || token.contains("bend-deduction")
+        || token.contains("bend-line")
+        || token.contains("bend-lines")
+        || token.contains("k-factor")
+        || token.contains("v-die")
+        || token.contains("v-die-tool")
+        || token.contains("punch-die")
+        || token.contains("backgauge")
+        || token.contains("back-gauge")
+        || token.contains("air-bend")
+        || token.contains("air-bending")
+        || token.contains("bottom-bend")
+        || token.contains("bottom-bending")
+        || token.contains("hemming")
+        || token.contains("hem-bend")
+        || token.contains("formed-flange")
+        || token.contains("flange-form")
+        || token.contains("flange-bend");
+    let has_bend_context = (token.contains("sheet")
+        || token.contains("flange")
+        || token.contains("bracket")
+        || token.contains("enclosure")
+        || token.contains("flat-pattern"))
+        && (token.contains("bend") || token.contains("forming") || token.contains("formed"));
+    has_press_brake_cell || has_named_forming_process || has_bend_context
+}
+
+fn wants_gear_cutting(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_named_process = token.contains("gear-cutting")
+        || token.contains("gear-cutting-job")
+        || token.contains("gear-hobbing")
+        || token.contains("gear-hob")
+        || token.contains("gear-shaping")
+        || token.contains("gear-shaper")
+        || token.contains("spline-broaching")
+        || token.contains("spline-broach")
+        || token.contains("keyway-broaching")
+        || token.contains("rack-cutting")
+        || token.contains("worm-gear")
+        || token.contains("gear-cutting-cell")
+        || token.contains("gear-hobbing-job")
+        || token.contains("spline-broaching-job");
+    let has_gear_context = (token.contains("gear")
+        || token.contains("spline")
+        || token.contains("rack")
+        || token.contains("keyway"))
+        && (token.contains("tooth")
+            || token.contains("teeth")
+            || token.contains("module")
+            || token.contains("diametral-pitch")
+            || token.contains("pressure-angle")
+            || token.contains("helix")
+            || token.contains("lead-angle")
+            || token.contains("backlash")
+            || token.contains("hob")
+            || token.contains("shaper")
+            || token.contains("broach"));
+    has_named_process || has_gear_context
+}
+
 fn wants_resin_printing(value: &str) -> bool {
     let token = normalize_token(value);
     let material_jetting_context = token.contains("material-jet")
@@ -3734,6 +3962,118 @@ fn wants_pellet_fgf_printing(value: &str) -> bool {
         || (token.contains("granulate") && token.contains("print"))
 }
 
+fn wants_robotic_additive_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_robot_context = token.contains("robotic")
+        || token.contains("robot-arm")
+        || token.contains("six-axis")
+        || token.contains("6-axis")
+        || token.contains("cobot")
+        || token.contains("gantry")
+        || token.contains("external-axis")
+        || token.contains("positioner");
+    let has_additive_context = token.contains("additive")
+        || token.contains("3d-print")
+        || token.contains("3d-printer")
+        || token.contains("print")
+        || token.contains("printing")
+        || token.contains("extrusion")
+        || token.contains("deposition")
+        || token.contains("pellet")
+        || token.contains("feedstock")
+        || token.contains("nozzle")
+        || token.contains("bead")
+        || token.contains("bead-path")
+        || token.contains("toolpath");
+    token.contains("robotic-additive")
+        || token.contains("robotic-3d-print")
+        || token.contains("robotic-print")
+        || token.contains("robotic-extrusion")
+        || token.contains("robotic-deposition")
+        || token.contains("robot-print")
+        || token.contains("robot-additive")
+        || token.contains("robot-extrusion")
+        || token.contains("six-axis-print")
+        || token.contains("6-axis-print")
+        || token.contains("six-axis-additive")
+        || token.contains("6-axis-additive")
+        || token.contains("gantry-additive")
+        || token.contains("gantry-print")
+        || token.contains("large-format-robotic")
+        || token.contains("lfam-robot")
+        || token.contains("robot-bead")
+        || (has_robot_context && has_additive_context)
+}
+
+fn token_has_sheet_lamination_alias_segment(token: &str) -> bool {
+    ["lom", "uam"].iter().any(|segment| {
+        token == *segment
+            || token.starts_with(&format!("{segment}-"))
+            || token.ends_with(&format!("-{segment}"))
+            || token.contains(&format!("-{segment}-"))
+    })
+}
+
+fn wants_sheet_lamination_printing(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_sheet_or_foil_stock = token.contains("sheet")
+        || token.contains("foil")
+        || token.contains("film")
+        || token.contains("tape")
+        || token.contains("lamina")
+        || token.contains("layer-stack")
+        || token.contains("stack-and-bond")
+        || token.contains("cut-and-stack");
+    let has_lamination_process = token.contains("lamination")
+        || token.contains("laminated")
+        || token.contains("laminate")
+        || token.contains("bond")
+        || token.contains("ultrasonic")
+        || token.contains("weld")
+        || token.contains("adhesive")
+        || token.contains("consolidation");
+    let has_additive_context = token.contains("additive")
+        || token.contains("print")
+        || token.contains("printer")
+        || token.contains("manufacturing")
+        || token.contains("build")
+        || token.contains("job");
+    let composite_layup_only = token.contains("composite-layup")
+        || token.contains("wet-layup")
+        || token.contains("prepreg")
+        || token.contains("pre-preg")
+        || token.contains("vacuum-bag")
+        || token.contains("autoclave")
+        || token.contains("resin-infusion")
+        || token.contains("ply-schedule")
+        || token.contains("peel-ply")
+        || token.contains("release-film")
+        || token.contains("breather")
+        || token.contains("bleeder");
+    let explicit_sheet_lamination = token.contains("sheet-lamination")
+        || token.contains("sheet-laminating")
+        || token.contains("sheet-laminated")
+        || token.contains("laminated-object")
+        || token.contains("laminated-object-manufacturing")
+        || token.contains("ultrasonic-additive")
+        || token.contains("ultrasonic-consolidation")
+        || token.contains("ultrasonic-lamination")
+        || token.contains("ultrasonic-welding-additive")
+        || token.contains("foil-additive")
+        || token.contains("foil-lamination")
+        || token.contains("foil-stack")
+        || token.contains("metal-foil-additive")
+        || token.contains("paper-lamination")
+        || token.contains("adhesive-lamination")
+        || token.contains("stack-and-bond")
+        || token.contains("cut-and-stack")
+        || token_has_sheet_lamination_alias_segment(&token);
+
+    (explicit_sheet_lamination
+        || (has_sheet_or_foil_stock && has_lamination_process && has_additive_context))
+        && !(composite_layup_only && !explicit_sheet_lamination)
+}
+
 fn token_has_ded_segment(token: &str) -> bool {
     token == "ded"
         || token.starts_with("ded-")
@@ -3783,6 +4123,64 @@ fn wants_composite_fiber_printing(value: &str) -> bool {
         || (token.contains("composite") && token.contains("print"))
 }
 
+fn wants_composite_layup(value: &str) -> bool {
+    let token = normalize_token(value);
+    let has_explicit_process = token.contains("composite-layup-cell")
+        || token.contains("composite-layup")
+        || token.contains("composite-layup-job")
+        || token.contains("wet-layup")
+        || token.contains("wet-layup-job")
+        || token.contains("prepreg")
+        || token.contains("pre-preg")
+        || token.contains("prepreg-layup")
+        || token.contains("prepreg-layup-job")
+        || token.contains("vacuum-bag")
+        || token.contains("vacuum-bagging")
+        || token.contains("vacuum-bag-job")
+        || token.contains("autoclave")
+        || token.contains("autoclave-cure")
+        || token.contains("autoclave-cure-job")
+        || token.contains("oven-cure")
+        || token.contains("out-of-autoclave")
+        || token.contains("ooa-cure")
+        || token.contains("debulk")
+        || token.contains("resin-infusion")
+        || token.contains("resin-infusion-job")
+        || token.contains("vacuum-infusion")
+        || token.contains("resin-transfer-molding")
+        || token == "rtm"
+        || token.contains("laminate-release")
+        || token.contains("ply-schedule")
+        || token.contains("bag-leak")
+        || token.contains("leak-down")
+        || token.contains("peel-ply")
+        || token.contains("release-film")
+        || token.contains("breather")
+        || token.contains("bleeder");
+    let has_composite_material = token.contains("carbon-fiber")
+        || token.contains("carbon-fibre")
+        || token.contains("fiberglass")
+        || token.contains("glass-fiber")
+        || token.contains("glass-fibre")
+        || token.contains("kevlar")
+        || token.contains("aramid")
+        || token.contains("composite");
+    let has_layup_context = token.contains("layup")
+        || token.contains("laminate")
+        || token.contains("ply")
+        || token.contains("mandrel")
+        || token.contains("mold-tool")
+        || token.contains("tool-side")
+        || token.contains("bagging")
+        || token.contains("core-bonding")
+        || token.contains("honeycomb-core")
+        || token.contains("foam-core");
+    if !has_explicit_process && wants_composite_fiber_printing(&token) {
+        return false;
+    }
+    has_explicit_process || (has_composite_material && has_layup_context)
+}
+
 fn wants_binder_jet_printing(value: &str) -> bool {
     let token = normalize_token(value);
     token.contains("binder-jet")
@@ -3827,9 +4225,44 @@ fn wants_metal_powder_bed_printing(value: &str) -> bool {
         || token.contains("cobalt-chrome")
 }
 
+fn wants_hot_wire_foam_cutting(value: &str) -> bool {
+    let token = normalize_token(value);
+    let explicit_hot_wire = token.contains("hot-wire")
+        || token.contains("hotwire")
+        || token.contains("foam-cutter")
+        || token.contains("foam-cutting")
+        || token.contains("foam-cut")
+        || token.contains("foam-profile")
+        || token.contains("foam-core-cut")
+        || token.contains("wing-core")
+        || token.contains("airfoil-core")
+        || token.contains("lost-foam-pattern")
+        || token.contains("eps-core")
+        || token.contains("xps-core")
+        || token.contains("epp-core");
+    let has_foam_material = token.contains("foam")
+        || token.contains("eps")
+        || token.contains("xps")
+        || token.contains("epp")
+        || token.contains("styrofoam")
+        || token.contains("polystyrene")
+        || token.contains("urethane-foam");
+    let has_cutting_context = token.contains("wire")
+        || token.contains("bow")
+        || token.contains("core")
+        || token.contains("airfoil")
+        || token.contains("profile")
+        || token.contains("template")
+        || token.contains("pattern")
+        || token.contains("kerf")
+        || token.contains("taper");
+    explicit_hot_wire || (has_foam_material && has_cutting_context)
+}
+
 fn wants_sheet_cutting(value: &str) -> bool {
     let token = normalize_token(value);
     !wants_directed_energy_deposition(&token)
+        && !wants_hot_wire_foam_cutting(&token)
         && (token.contains("laser")
             || token.contains("waterjet")
             || token.contains("water-jet")
@@ -3896,6 +4329,30 @@ fn is_surface_finishing_kind(kind: &str) -> bool {
     wants_surface_finishing(kind)
 }
 
+fn is_metal_joining_kind(kind: &str) -> bool {
+    wants_metal_joining(kind)
+}
+
+fn is_molding_casting_kind(kind: &str) -> bool {
+    wants_molding_casting(kind)
+}
+
+fn is_composite_layup_kind(kind: &str) -> bool {
+    wants_composite_layup(kind)
+}
+
+fn is_hot_wire_foam_cutter_kind(kind: &str) -> bool {
+    wants_hot_wire_foam_cutting(kind)
+}
+
+fn is_sheet_forming_kind(kind: &str) -> bool {
+    wants_sheet_forming(kind)
+}
+
+fn is_gear_cutting_kind(kind: &str) -> bool {
+    wants_gear_cutting(kind)
+}
+
 fn is_horizontal_mill_kind(kind: &str) -> bool {
     let token = normalize_token(kind);
     token.contains("horizontal-mill")
@@ -3925,6 +4382,14 @@ fn is_bound_metal_filament_printer_kind(kind: &str) -> bool {
 
 fn is_pellet_fgf_printer_kind(kind: &str) -> bool {
     wants_pellet_fgf_printing(kind)
+}
+
+fn is_robotic_additive_printer_kind(kind: &str) -> bool {
+    wants_robotic_additive_printing(kind)
+}
+
+fn is_sheet_lamination_printer_kind(kind: &str) -> bool {
+    wants_sheet_lamination_printing(kind)
 }
 
 fn is_directed_energy_deposition_kind(kind: &str) -> bool {
@@ -4082,9 +4547,7 @@ fn wants_mill_turning(value: &str) -> bool {
         || token.contains("turn-mill")
         || token.contains("millturn")
         || token.contains("turnmill")
-        || token.contains("swiss")
-        || token.contains("swiss-type")
-        || token.contains("sliding-headstock")
+        || wants_swiss_turning(&token)
         || token.contains("live-tool")
         || token.contains("live-tooling")
         || token.contains("driven-tool")
@@ -4096,13 +4559,37 @@ fn wants_mill_turning(value: &str) -> bool {
         || token.contains("sub-spindle-transfer")
 }
 
+fn wants_swiss_turning(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("swiss")
+        || token.contains("swiss-type")
+        || token.contains("sliding-headstock")
+        || token.contains("sliding-head")
+        || token.contains("sliding-head-lathe")
+        || token.contains("guide-bushing")
+        || token.contains("guide-bush")
+        || token.contains("bar-fed-turning")
+        || token.contains("bar-feed-turning")
+        || token.contains("barfeeder-turning")
+        || token.contains("long-slender-turned")
+}
+
 fn is_mill_turn_kind(kind: &str) -> bool {
     wants_mill_turning(kind)
 }
 
+fn is_swiss_turning_kind(kind: &str) -> bool {
+    wants_swiss_turning(kind)
+}
+
 fn machine_class(kind: &str) -> MachineClass {
     let token = normalize_token(kind);
-    if token.contains("printer")
+    if is_composite_layup_kind(&token)
+        || is_hot_wire_foam_cutter_kind(&token)
+        || is_gear_cutting_kind(&token)
+    {
+        MachineClass::Other
+    } else if token.contains("printer")
         || token.contains("fdm")
         || token.contains("sla")
         || token.contains("sls")
@@ -4110,6 +4597,8 @@ fn machine_class(kind: &str) -> MachineClass {
         || wants_paste_extrusion_printing(&token)
         || wants_bound_metal_filament_printing(&token)
         || wants_pellet_fgf_printing(&token)
+        || wants_robotic_additive_printing(&token)
+        || wants_sheet_lamination_printing(&token)
         || token.contains("material-jet")
         || token.contains("polyjet")
         || token.contains("mjp")
@@ -4243,6 +4732,74 @@ fn default_machines() -> Vec<MachineProfile> {
                 "rheology-slump-test".to_string(),
                 "drying-shrinkage-control".to_string(),
                 "green-part-support".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "robotic-additive-cell-1".to_string(),
+            kind: "robotic-additive-cell".to_string(),
+            controller: Some("robotic-additive-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "plastic".to_string(),
+                "petg".to_string(),
+                "abs".to_string(),
+                "pla".to_string(),
+                "polycarbonate".to_string(),
+                "nylon".to_string(),
+                "pellet".to_string(),
+                "granulate".to_string(),
+                "regrind".to_string(),
+                "clay".to_string(),
+                "paste".to_string(),
+                "silicone".to_string(),
+                "cement".to_string(),
+                "concrete".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![2500.0, 1800.0, 1600.0]),
+            axes: Some(6),
+            operations: Some(vec![
+                "robotic-additive-print".to_string(),
+                "six-axis-print".to_string(),
+                "gantry-additive".to_string(),
+                "toolpath-frame-qualification".to_string(),
+                "robot-collision-simulation".to_string(),
+                "nozzle-feedstock-purge".to_string(),
+                "bead-coupon".to_string(),
+                "interlock-dry-run".to_string(),
+                "cooldown-or-cure".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "sheet-lamination-printer-1".to_string(),
+            kind: "sheet-lamination-printer".to_string(),
+            controller: Some("sheet-lamination-job".to_string()),
+            materials: Some(vec![
+                "paper".to_string(),
+                "polymer".to_string(),
+                "plastic".to_string(),
+                "foil".to_string(),
+                "aluminum".to_string(),
+                "copper".to_string(),
+                "steel".to_string(),
+                "titanium".to_string(),
+                "stainless".to_string(),
+                "metal".to_string(),
+                "adhesive".to_string(),
+                "composite".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![900.0, 600.0, 300.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "sheet-lamination-print".to_string(),
+                "laminated-object-manufacturing".to_string(),
+                "ultrasonic-additive-manufacturing".to_string(),
+                "foil-stack-bonding".to_string(),
+                "sheet-registration".to_string(),
+                "layer-cut-trim".to_string(),
+                "consolidation-coupon".to_string(),
+                "delamination-inspection".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -4535,6 +5092,34 @@ fn default_machines() -> Vec<MachineProfile> {
                 "c-axis-index".to_string(),
                 "y-axis-drill".to_string(),
                 "subspindle-transfer".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "swiss-turning-center-1".to_string(),
+            kind: "swiss-turning-center".to_string(),
+            controller: Some("swiss-turning-gcode".to_string()),
+            materials: Some(vec![
+                "aluminum".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "brass".to_string(),
+                "titanium".to_string(),
+                "plastic".to_string(),
+                "peek".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![32.0, 320.0, 80.0]),
+            axes: Some(7),
+            operations: Some(vec![
+                "swiss-turning".to_string(),
+                "sliding-headstock-turning".to_string(),
+                "guide-bushing-support".to_string(),
+                "bar-fed-turning".to_string(),
+                "gang-tool-turning".to_string(),
+                "live-tool-mill".to_string(),
+                "cross-drill".to_string(),
+                "subspindle-pickoff".to_string(),
+                "cutoff".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -4859,6 +5444,206 @@ fn default_machines() -> Vec<MachineProfile> {
                 "painting".to_string(),
                 "masking".to_string(),
                 "finish-inspection".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "press-brake-1".to_string(),
+            kind: "press-brake-forming-cell".to_string(),
+            controller: Some("press-brake-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "steel".to_string(),
+                "mild-steel".to_string(),
+                "stainless-steel".to_string(),
+                "aluminum".to_string(),
+                "brass".to_string(),
+                "copper".to_string(),
+                "sheet-metal".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![1200.0, 6.0, 250.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "sheet-forming".to_string(),
+                "press-brake".to_string(),
+                "air-bending".to_string(),
+                "bottom-bending".to_string(),
+                "hemming".to_string(),
+                "flange-forming".to_string(),
+                "bend-sequencing".to_string(),
+                "backgauge".to_string(),
+                "springback-compensation".to_string(),
+                "angle-inspection".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "gear-cutting-cell-1".to_string(),
+            kind: "gear-cutting-cell".to_string(),
+            controller: Some("gear-cutting-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "aluminum".to_string(),
+                "brass".to_string(),
+                "bronze".to_string(),
+                "plastic".to_string(),
+                "acetal".to_string(),
+                "nylon".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![250.0, 250.0, 300.0]),
+            axes: Some(4),
+            operations: Some(vec![
+                "gear-cutting".to_string(),
+                "gear-hobbing".to_string(),
+                "gear-shaping".to_string(),
+                "spline-broaching".to_string(),
+                "keyway-broaching".to_string(),
+                "rack-cutting".to_string(),
+                "indexing".to_string(),
+                "deburr".to_string(),
+                "gear-inspection".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "metal-joining-cell-1".to_string(),
+            kind: "metal-joining-cell".to_string(),
+            controller: Some("metal-joining-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "steel".to_string(),
+                "stainless-steel".to_string(),
+                "tool-steel".to_string(),
+                "aluminum".to_string(),
+                "titanium".to_string(),
+                "brass".to_string(),
+                "bronze".to_string(),
+                "copper".to_string(),
+                "nickel-alloy".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![1000.0, 600.0, 500.0]),
+            axes: Some(6),
+            operations: Some(vec![
+                "metal-joining".to_string(),
+                "welding".to_string(),
+                "tig-welding".to_string(),
+                "mig-welding".to_string(),
+                "spot-welding".to_string(),
+                "laser-welding".to_string(),
+                "brazing".to_string(),
+                "soldering".to_string(),
+                "joint-fit-up".to_string(),
+                "fixture-clamp".to_string(),
+                "shielding-gas".to_string(),
+                "purge".to_string(),
+                "interpass-temperature".to_string(),
+                "distortion-control".to_string(),
+                "weld-inspection".to_string(),
+                "nde".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "molding-casting-cell-1".to_string(),
+            kind: "molding-casting-cell".to_string(),
+            controller: Some("molding-casting-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "resin".to_string(),
+                "silicone".to_string(),
+                "urethane".to_string(),
+                "epoxy".to_string(),
+                "wax".to_string(),
+                "plaster".to_string(),
+                "investment".to_string(),
+                "sand".to_string(),
+                "metal".to_string(),
+                "aluminum".to_string(),
+                "bronze".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![600.0, 450.0, 300.0]),
+            axes: Some(1),
+            operations: Some(vec![
+                "mold-making".to_string(),
+                "molding".to_string(),
+                "casting".to_string(),
+                "urethane-casting".to_string(),
+                "silicone-molding".to_string(),
+                "vacuum-casting".to_string(),
+                "pressure-casting".to_string(),
+                "investment-casting".to_string(),
+                "injection-molding-review".to_string(),
+                "degas".to_string(),
+                "mold-release".to_string(),
+                "demolding".to_string(),
+                "cure-shrinkage-inspection".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "composite-layup-cell-1".to_string(),
+            kind: "composite-layup-cell".to_string(),
+            controller: Some("composite-layup-job".to_string()),
+            materials: Some(vec![
+                "composite".to_string(),
+                "carbon-fiber".to_string(),
+                "fiberglass".to_string(),
+                "kevlar".to_string(),
+                "aramid".to_string(),
+                "epoxy".to_string(),
+                "resin".to_string(),
+                "prepreg".to_string(),
+                "core".to_string(),
+                "foam".to_string(),
+                "honeycomb".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![1200.0, 800.0, 400.0]),
+            axes: Some(1),
+            operations: Some(vec![
+                "composite-layup".to_string(),
+                "wet-layup".to_string(),
+                "prepreg-layup".to_string(),
+                "vacuum-bagging".to_string(),
+                "debulk".to_string(),
+                "oven-cure".to_string(),
+                "autoclave-cure".to_string(),
+                "out-of-autoclave-cure".to_string(),
+                "resin-infusion".to_string(),
+                "core-bonding".to_string(),
+                "trim-drill".to_string(),
+                "coupon-inspection".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "hot-wire-foam-cutter-1".to_string(),
+            kind: "hot-wire-foam-cutter".to_string(),
+            controller: Some("hot-wire-foam-job".to_string()),
+            materials: Some(vec![
+                "foam".to_string(),
+                "eps".to_string(),
+                "xps".to_string(),
+                "epp".to_string(),
+                "polystyrene".to_string(),
+                "styrofoam".to_string(),
+                "urethane-foam".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![1200.0, 600.0, 500.0]),
+            axes: Some(4),
+            operations: Some(vec![
+                "hot-wire-cut".to_string(),
+                "foam-core-cut".to_string(),
+                "wing-core".to_string(),
+                "taper-profile".to_string(),
+                "wire-temperature".to_string(),
+                "wire-tension".to_string(),
+                "kerf-test".to_string(),
+                "template-alignment".to_string(),
+                "fume-extraction".to_string(),
+                "fire-watch".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -6120,6 +6905,95 @@ fn review_design_inputs(inputs: &[DesignInputFile]) -> DesignInputReview {
     }
 }
 
+fn design_import_review_status(review: &DesignInputReview) -> &'static str {
+    if review.input_count == 0 {
+        "no-design-inputs-supplied"
+    } else if review.unsupported_count > 0 {
+        "blocked-human-format-review"
+    } else if review.review_required_count > 0 {
+        "review-required-conversion"
+    } else {
+        "reviewed-no-blockers"
+    }
+}
+
+fn design_import_review_response(request: DesignImportReviewRequest) -> Result<Value, String> {
+    let request_id = request
+        .request_id
+        .map(|value| validate_label(&value, "requestId"))
+        .transpose()?
+        .unwrap_or_else(|| "design-import-review".to_string());
+    let design_inputs = validate_design_inputs(request.design_inputs)?;
+    let review = review_design_inputs(&design_inputs);
+    let worker_lanes = unique_sorted(
+        review
+            .conversion_plan
+            .iter()
+            .map(|step| step.worker_lane.clone()),
+    );
+    let target_exports = unique_sorted(
+        review
+            .conversion_plan
+            .iter()
+            .flat_map(|step| step.target_exports.iter().cloned()),
+    );
+    let release_blocker_count = review
+        .conversion_plan
+        .iter()
+        .map(|step| step.release_blockers.len())
+        .sum::<usize>();
+    let status = design_import_review_status(&review);
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.design-import-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "routes": ["POST /design/import/review", "POST /fabrication/design/import/review"],
+        "status": status,
+        "machineReady": false,
+        "reviewRequired": review.review_required_count > 0 || review.unsupported_count > 0,
+        "inputCount": review.input_count,
+        "supportedCount": review.supported_count,
+        "unsupportedCount": review.unsupported_count,
+        "reviewRequiredCount": review.review_required_count,
+        "releaseBlockerCount": release_blocker_count,
+        "workerLanes": worker_lanes,
+        "targetExports": target_exports,
+        "conversionSubjects": {
+            "requests": FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
+            "results": FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
+            "queueGroup": FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP
+        },
+        "relatedCatalogRoutes": [
+            "GET /design/formats",
+            "GET /fabrication/design/formats",
+            "GET /design/import/catalog",
+            "GET /fabrication/design/import/catalog",
+            "GET /design/generation/catalog",
+            "GET /fabrication/design/generation/catalog"
+        ],
+        "responseSurfaces": [
+            "designInputReview.inputs",
+            "designInputReview.conversionPlan",
+            "designInputReview.supportedFormats",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "design-input-review",
+            "parametric-design.designInputReview",
+            "mdp-request.artifacts.designInputReview"
+        ],
+        "releasePolicy": [
+            "standalone design import review validates source identity, URI redaction, format recognition, and conversion worker dispatch only",
+            "machine-ready release remains blocked until conversion results, topology/scale/profile review, neutral export checksums, simulation, and operator or automation signoff are retained",
+            "reviewed import evidence should be attached back to designInputReview, machineRelease blockers, and MDP/POMDP/neural learning surfaces before fabrication release"
+        ],
+        "designInputReview": review
+    }))
+}
+
 fn validate_request_parts(
     input: Option<Vec<RequestedPart>>,
     objective: &str,
@@ -6184,10 +7058,25 @@ fn infer_requested_parts(
             .is_some_and(|family| wants_bound_metal_filament_printing(family));
     let wants_pellet_fgf_part =
         wants_pellet_fgf_printing(&objective_token) || wants_pellet_fgf_printing(&material.name);
+    let wants_robotic_additive_part = wants_robotic_additive_printing(&objective_token)
+        || wants_robotic_additive_printing(&material.name);
+    let wants_sheet_lamination_part = wants_sheet_lamination_printing(&objective_token)
+        || wants_sheet_lamination_printing(&material.name)
+        || material
+            .family
+            .as_ref()
+            .is_some_and(|family| wants_sheet_lamination_printing(family));
     let wants_ded_part = wants_directed_energy_deposition(&objective_token)
         || wants_directed_energy_deposition(&material.name);
-    let wants_composite_fiber_part = wants_composite_fiber_printing(&objective_token)
-        || wants_composite_fiber_printing(&material.name);
+    let needs_composite_layup_part = wants_composite_layup(&objective_token)
+        || wants_composite_layup(&material.name)
+        || material
+            .family
+            .as_ref()
+            .is_some_and(|family| wants_composite_layup(family));
+    let wants_composite_fiber_part = !needs_composite_layup_part
+        && (wants_composite_fiber_printing(&objective_token)
+            || wants_composite_fiber_printing(&material.name));
     let wants_binder_jet_part =
         wants_binder_jet_printing(&objective_token) || wants_binder_jet_printing(&material.name);
     let wants_metal_pbf_part = wants_metal_powder_bed_printing(&objective_token)
@@ -6195,7 +7084,14 @@ fn infer_requested_parts(
     let wants_powder_bed_part = wants_metal_pbf_part
         || wants_powder_bed_printing(&objective_token)
         || wants_powder_bed_printing(&material.name);
+    let needs_hot_wire_foam_part = wants_hot_wire_foam_cutting(&objective_token)
+        || wants_hot_wire_foam_cutting(&material.name)
+        || material
+            .family
+            .as_ref()
+            .is_some_and(|family| wants_hot_wire_foam_cutting(family));
     let needs_assembly_join_part = wants_assembly_joining(&objective_token);
+    let needs_swiss_turn_part = wants_swiss_turning(&objective_token);
     let needs_mill_turn_part = wants_mill_turning(&objective_token);
     let needs_turned_part = needs_mill_turn_part
         || objective_token.contains("shaft")
@@ -6208,11 +7104,21 @@ fn infer_requested_parts(
     let needs_dimensional_inspection_part = wants_dimensional_inspection(&objective_token);
     let needs_thermal_postprocess_part = wants_thermal_postprocess(&objective_token);
     let needs_surface_finishing_part = wants_surface_finishing(&objective_token);
+    let needs_metal_joining_part = wants_metal_joining(&objective_token);
+    let needs_molding_casting_part = wants_molding_casting(&objective_token);
+    let needs_sheet_forming_part = wants_sheet_forming(&objective_token);
+    let needs_gear_cutting_part = wants_gear_cutting(&objective_token);
     let needs_five_axis_milled_part = wants_five_axis_milling(&objective_token);
     let needs_rotary_index_milled_part = wants_rotary_index_milling(&objective_token);
     let needs_horizontal_milled_part = wants_horizontal_milling(&objective_token);
     let needs_milled_part = !needs_mill_turn_part
         && !needs_sinker_edm_part
+        && !needs_molding_casting_part
+        && !needs_composite_layup_part
+        && !wants_sheet_lamination_part
+        && !needs_hot_wire_foam_part
+        && !needs_sheet_forming_part
+        && !needs_gear_cutting_part
         && (objective_token.contains("bracket")
             || objective_token.contains("plate")
             || objective_token.contains("pocket")
@@ -6231,11 +7137,18 @@ fn infer_requested_parts(
         && !wants_paste_extrusion_part
         && !wants_bound_metal_fff_part
         && !wants_pellet_fgf_part
+        && !wants_robotic_additive_part
+        && !wants_sheet_lamination_part
         && !wants_ded_part
         && !wants_composite_fiber_part
         && !wants_binder_jet_part
         && !wants_powder_bed_part
+        && !needs_composite_layup_part
+        && !needs_hot_wire_foam_part
         && !needs_sheet_cut_part
+        && !needs_molding_casting_part
+        && !needs_sheet_forming_part
+        && !needs_gear_cutting_part
         && (objective_token.contains("router")
             || objective_token.contains("routed")
             || objective_token.contains("sign")
@@ -6251,6 +7164,8 @@ fn infer_requested_parts(
         || wants_paste_extrusion_part
         || wants_bound_metal_fff_part
         || wants_pellet_fgf_part
+        || wants_robotic_additive_part
+        || wants_sheet_lamination_part
         || wants_ded_part
         || wants_composite_fiber_part
         || wants_binder_jet_part
@@ -6260,11 +7175,22 @@ fn infer_requested_parts(
         || objective_token.contains("cover")
         || objective_token.contains("organic")
         || objective_token.contains("ergonomic")
-        || (is_polymer(material) && !needs_routed_part && !needs_sheet_cut_part)
+        || (is_polymer(material)
+            && !needs_routed_part
+            && !needs_sheet_cut_part
+            && !needs_composite_layup_part
+            && !needs_hot_wire_foam_part
+            && !needs_molding_casting_part
+            && !needs_gear_cutting_part)
         || (!needs_turned_part
             && !needs_milled_part
             && !needs_routed_part
-            && !needs_sheet_cut_part);
+            && !needs_sheet_cut_part
+            && !needs_composite_layup_part
+            && !needs_hot_wire_foam_part
+            && !needs_molding_casting_part
+            && !needs_sheet_forming_part
+            && !needs_gear_cutting_part);
 
     if needs_printed_part {
         let preferred_method = if wants_material_jetting_part {
@@ -6275,6 +7201,10 @@ fn infer_requested_parts(
             "paste-extrusion-print"
         } else if wants_bound_metal_fff_part {
             "bound-metal-fff-print"
+        } else if wants_robotic_additive_part {
+            "robotic-additive-print"
+        } else if wants_sheet_lamination_part {
+            "sheet-lamination-print"
         } else if wants_pellet_fgf_part {
             "pellet-fgf-print"
         } else if wants_ded_part {
@@ -6298,6 +7228,39 @@ fn infer_requested_parts(
             material: Some(material.clone()),
             preferred_method: Some(preferred_method.to_string()),
             tolerance_mm: Some(tolerance_mm.max(0.15)),
+        });
+    }
+    if needs_composite_layup_part {
+        parts.push(RequestedPart {
+            id: "composite-laminate-release".to_string(),
+            description:
+                "vacuum-bagged, prepreg, wet-layup, infused, core-bonded, or autoclave-cured composite laminate release inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("composite-layup".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.25)),
+        });
+    }
+    if needs_hot_wire_foam_part {
+        parts.push(RequestedPart {
+            id: "hot-wire-foam-core".to_string(),
+            description:
+                "hot-wire cut foam core, airfoil, pattern, packaging insert, or lost-foam blank inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("hot-wire-foam-cutting".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.50)),
+        });
+    }
+    if needs_gear_cutting_part {
+        parts.push(RequestedPart {
+            id: "gear-tooth-profile".to_string(),
+            description:
+                "gear teeth, spline, rack, worm, or broached keyway profile inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("gear-cutting".to_string()),
+            tolerance_mm: Some(tolerance_mm.min(0.05)),
         });
     }
     if needs_routed_part {
@@ -6384,6 +7347,39 @@ fn infer_requested_parts(
             tolerance_mm: Some(tolerance_mm),
         });
     }
+    if needs_metal_joining_part {
+        parts.push(RequestedPart {
+            id: "metal-join-release".to_string(),
+            description:
+                "welding, brazing, soldering, joint fit-up, or metal joining release inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("metal-joining".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.10)),
+        });
+    }
+    if needs_molding_casting_part {
+        parts.push(RequestedPart {
+            id: "molded-cast-part".to_string(),
+            description:
+                "molded, cast, vacuum-cast, urethane/silicone, or injection-molded part release inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("molding-casting".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.20)),
+        });
+    }
+    if needs_sheet_forming_part {
+        parts.push(RequestedPart {
+            id: "sheet-formed-flange".to_string(),
+            description:
+                "press-brake sheet-metal flange, bend sequence, hem, tab, or formed bracket release inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("sheet-forming".to_string()),
+            tolerance_mm: Some(tolerance_mm),
+        });
+    }
     if needs_five_axis_milled_part {
         parts.push(RequestedPart {
             id: "five-axis-sculpted-feature".to_string(),
@@ -6428,7 +7424,9 @@ fn infer_requested_parts(
                 .to_string(),
             material: Some(material.clone()),
             preferred_method: Some(
-                if needs_mill_turn_part {
+                if needs_swiss_turn_part {
+                    "swiss-turning"
+                } else if needs_mill_turn_part {
                     "mill-turning"
                 } else {
                     "turning"
@@ -6603,18 +7601,41 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_pellet_fgf_printing(value));
+    let wants_robotic_additive_printer = preferred
+        .as_deref()
+        .is_some_and(wants_robotic_additive_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_robotic_additive_printing(value));
+    let wants_sheet_lamination_printer = preferred
+        .as_deref()
+        .is_some_and(wants_sheet_lamination_printing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_sheet_lamination_printing(value));
     let wants_ded_cell = preferred
         .as_deref()
         .is_some_and(wants_directed_energy_deposition)
         || preferred_methods
             .iter()
             .any(|value| wants_directed_energy_deposition(value));
-    let wants_composite_fiber_printer = preferred
-        .as_deref()
-        .is_some_and(wants_composite_fiber_printing)
+    let wants_composite_layup_cell = preferred.as_deref().is_some_and(wants_composite_layup)
         || preferred_methods
             .iter()
-            .any(|value| wants_composite_fiber_printing(value));
+            .any(|value| wants_composite_layup(value));
+    let wants_hot_wire_foam_cutter = preferred
+        .as_deref()
+        .is_some_and(wants_hot_wire_foam_cutting)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_hot_wire_foam_cutting(value));
+    let wants_composite_fiber_printer = !wants_composite_layup_cell
+        && (preferred
+            .as_deref()
+            .is_some_and(wants_composite_fiber_printing)
+            || preferred_methods
+                .iter()
+                .any(|value| wants_composite_fiber_printing(value)));
     let wants_binder_jet_printer = preferred.as_deref().is_some_and(wants_binder_jet_printing)
         || preferred_methods
             .iter()
@@ -6629,6 +7650,10 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_metal_powder_bed_printing(value));
+    let wants_swiss_turning_center = preferred.as_deref().is_some_and(wants_swiss_turning)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_swiss_turning(value));
     let wants_mill_turn_center = preferred.as_deref().is_some_and(wants_mill_turning)
         || preferred_methods
             .iter()
@@ -6672,6 +7697,22 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_surface_finishing(value));
+    let wants_metal_joining_cell = preferred.as_deref().is_some_and(wants_metal_joining)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_metal_joining(value));
+    let wants_molding_casting_cell = preferred.as_deref().is_some_and(wants_molding_casting)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_molding_casting(value));
+    let wants_sheet_forming_cell = preferred.as_deref().is_some_and(wants_sheet_forming)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_sheet_forming(value));
+    let wants_gear_cutting_cell = preferred.as_deref().is_some_and(wants_gear_cutting)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_gear_cutting(value));
     let wants_assembly_cell = preferred.as_deref().is_some_and(wants_assembly_joining)
         || preferred_methods
             .iter()
@@ -6681,6 +7722,13 @@ fn choose_machine<'a>(
             .iter()
             .any(|value| wants_sheet_cutting(value));
 
+    if wants_swiss_turning_center {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_swiss_turning_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
     if wants_mill_turn_center {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_mill_turn_kind(&machine.kind)
@@ -6751,9 +7799,37 @@ fn choose_machine<'a>(
             return machine;
         }
     }
+    if wants_robotic_additive_printer {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_robotic_additive_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_sheet_lamination_printer {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_sheet_lamination_printer_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
     if wants_ded_cell {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_directed_energy_deposition_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_composite_layup_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_composite_layup_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_hot_wire_foam_cutter {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_hot_wire_foam_cutter_kind(&machine.kind)
         }) {
             return machine;
         }
@@ -6838,6 +7914,34 @@ fn choose_machine<'a>(
     if wants_surface_finishing_cell {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_surface_finishing_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_metal_joining_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_metal_joining_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_molding_casting_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_molding_casting_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_sheet_forming_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_sheet_forming_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_gear_cutting_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_gear_cutting_kind(&machine.kind)
         }) {
             return machine;
         }
@@ -6969,7 +8073,12 @@ fn machine_selection_tokens(
 }
 
 fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> {
-    if tokens.iter().any(|token| {
+    if tokens
+        .iter()
+        .any(|token| wants_hot_wire_foam_cutting(token))
+    {
+        Some(MachineClass::Other)
+    } else if tokens.iter().any(|token| {
         wants_sheet_cutting(token)
             || wants_laser_cutting(token)
             || wants_waterjet_cutting(token)
@@ -6989,6 +8098,16 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
     } else if tokens.iter().any(|token| wants_thermal_postprocess(token)) {
         Some(MachineClass::Other)
     } else if tokens.iter().any(|token| wants_surface_finishing(token)) {
+        Some(MachineClass::Other)
+    } else if tokens.iter().any(|token| wants_metal_joining(token)) {
+        Some(MachineClass::Other)
+    } else if tokens.iter().any(|token| wants_molding_casting(token)) {
+        Some(MachineClass::Other)
+    } else if tokens.iter().any(|token| wants_composite_layup(token)) {
+        Some(MachineClass::Other)
+    } else if tokens.iter().any(|token| wants_sheet_forming(token)) {
+        Some(MachineClass::Other)
+    } else if tokens.iter().any(|token| wants_gear_cutting(token)) {
         Some(MachineClass::Other)
     } else if tokens.iter().any(|token| wants_assembly_joining(token)) {
         Some(MachineClass::Other)
@@ -7017,6 +8136,8 @@ fn required_machine_class_for_tokens(tokens: &[String]) -> Option<MachineClass> 
             || wants_paste_extrusion_printing(token)
             || wants_bound_metal_filament_printing(token)
             || wants_pellet_fgf_printing(token)
+            || wants_robotic_additive_printing(token)
+            || wants_sheet_lamination_printing(token)
             || wants_directed_energy_deposition(token)
             || wants_composite_fiber_printing(token)
             || wants_binder_jet_printing(token)
@@ -7045,12 +8166,23 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         .iter()
         .any(|token| wants_paste_extrusion_printing(token));
     let wants_pellet_fgf = tokens.iter().any(|token| wants_pellet_fgf_printing(token));
+    let wants_robotic_additive = tokens
+        .iter()
+        .any(|token| wants_robotic_additive_printing(token));
+    let wants_sheet_lamination = tokens
+        .iter()
+        .any(|token| wants_sheet_lamination_printing(token));
     let wants_ded = tokens
         .iter()
         .any(|token| wants_directed_energy_deposition(token));
-    let wants_composite_fiber = tokens
+    let wants_composite_layup = tokens.iter().any(|token| wants_composite_layup(token));
+    let wants_hot_wire_foam = tokens
         .iter()
-        .any(|token| wants_composite_fiber_printing(token));
+        .any(|token| wants_hot_wire_foam_cutting(token));
+    let wants_composite_fiber = !wants_composite_layup
+        && tokens
+            .iter()
+            .any(|token| wants_composite_fiber_printing(token));
     let wants_binder_jet = tokens.iter().any(|token| wants_binder_jet_printing(token));
     let wants_powder = tokens.iter().any(|token| wants_powder_bed_printing(token));
     let wants_metal_pbf = tokens
@@ -7067,6 +8199,11 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         .any(|token| wants_dimensional_inspection(token));
     let wants_thermal_postprocess = tokens.iter().any(|token| wants_thermal_postprocess(token));
     let wants_surface_finishing = tokens.iter().any(|token| wants_surface_finishing(token));
+    let wants_metal_joining = tokens.iter().any(|token| wants_metal_joining(token));
+    let wants_molding_casting =
+        !wants_composite_layup && tokens.iter().any(|token| wants_molding_casting(token));
+    let wants_sheet_forming = tokens.iter().any(|token| wants_sheet_forming(token));
+    let wants_gear_cutting = tokens.iter().any(|token| wants_gear_cutting(token));
     let wants_assembly_cell = tokens.iter().any(|token| wants_assembly_joining(token));
     let wants_mill_turn = tokens.iter().any(|token| wants_mill_turning(token));
     let has_special = wants_five_axis
@@ -7077,7 +8214,11 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         || wants_multi_material_fdm
         || wants_paste_extrusion
         || wants_pellet_fgf
+        || wants_robotic_additive
+        || wants_sheet_lamination
         || wants_ded
+        || wants_composite_layup
+        || wants_hot_wire_foam
         || wants_composite_fiber
         || wants_binder_jet
         || wants_powder
@@ -7091,6 +8232,10 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         || wants_dimensional_inspection
         || wants_thermal_postprocess
         || wants_surface_finishing
+        || wants_metal_joining
+        || wants_molding_casting
+        || wants_sheet_forming
+        || wants_gear_cutting
         || wants_assembly_cell
         || wants_mill_turn;
     if !has_special {
@@ -7104,7 +8249,11 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_multi_material_fdm || is_multi_material_fdm_printer_kind(&machine.kind))
         && (!wants_paste_extrusion || is_paste_extrusion_printer_kind(&machine.kind))
         && (!wants_pellet_fgf || is_pellet_fgf_printer_kind(&machine.kind))
+        && (!wants_robotic_additive || is_robotic_additive_printer_kind(&machine.kind))
+        && (!wants_sheet_lamination || is_sheet_lamination_printer_kind(&machine.kind))
         && (!wants_ded || is_directed_energy_deposition_kind(&machine.kind))
+        && (!wants_composite_layup || is_composite_layup_kind(&machine.kind))
+        && (!wants_hot_wire_foam || is_hot_wire_foam_cutter_kind(&machine.kind))
         && (!wants_composite_fiber || is_composite_fiber_printer_kind(&machine.kind))
         && (!wants_binder_jet || is_binder_jet_printer_kind(&machine.kind))
         && (!wants_powder || is_powder_bed_printer_kind(&machine.kind))
@@ -7118,6 +8267,10 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_dimensional_inspection || is_inspection_cell_kind(&machine.kind))
         && (!wants_thermal_postprocess || is_thermal_postprocess_kind(&machine.kind))
         && (!wants_surface_finishing || is_surface_finishing_kind(&machine.kind))
+        && (!wants_metal_joining || is_metal_joining_kind(&machine.kind))
+        && (!wants_molding_casting || is_molding_casting_kind(&machine.kind))
+        && (!wants_sheet_forming || is_sheet_forming_kind(&machine.kind))
+        && (!wants_gear_cutting || is_gear_cutting_kind(&machine.kind))
         && (!wants_assembly_cell || is_assembly_cell_kind(&machine.kind))
         && (!wants_mill_turn || is_mill_turn_kind(&machine.kind))
 }
@@ -7133,6 +8286,31 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || (preference.contains("lfam") && operation.contains("large-format"))
         || (preference.contains("pellet") && operation.contains("pellet"))
         || (preference.contains("granulate") && operation.contains("pellet-fgf"))
+        || (wants_robotic_additive_printing(preference)
+            && (operation.contains("robot")
+                || operation.contains("six-axis")
+                || operation.contains("6-axis")
+                || operation.contains("gantry")
+                || operation.contains("toolpath")
+                || operation.contains("frame")
+                || operation.contains("collision")
+                || operation.contains("interlock")
+                || operation.contains("bead")
+                || operation.contains("nozzle")
+                || operation.contains("feedstock")
+                || operation.contains("extrusion")
+                || operation.contains("dry-run")))
+        || (wants_sheet_lamination_printing(preference)
+            && (operation.contains("sheet-lamination")
+                || operation.contains("laminated-object")
+                || operation.contains("ultrasonic-additive")
+                || operation.contains("foil-stack")
+                || operation.contains("sheet-registration")
+                || operation.contains("layer-cut")
+                || operation.contains("trim")
+                || operation.contains("bond")
+                || operation.contains("consolidation")
+                || operation.contains("delamination")))
         || (preference.contains("material-jet") && operation.contains("material-jet"))
         || (preference.contains("polyjet") && operation.contains("polyjet"))
         || (preference.contains("mjp") && operation.contains("material-jet"))
@@ -7163,6 +8341,46 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
         || (preference.contains("laser-cladding") && operation.contains("laser-cladding"))
         || (preference.contains("waam") && operation.contains("waam"))
         || (token_has_ded_segment(preference) && operation.contains("directed-energy"))
+        || (wants_composite_layup(preference)
+            && (operation.contains("composite-layup")
+                || operation.contains("wet-layup")
+                || operation.contains("prepreg")
+                || operation.contains("vacuum-bag")
+                || operation.contains("bagging")
+                || operation.contains("debulk")
+                || operation.contains("autoclave")
+                || operation.contains("oven-cure")
+                || operation.contains("resin-infusion")
+                || operation.contains("core-bonding")
+                || operation.contains("trim")
+                || operation.contains("coupon")))
+        || (wants_hot_wire_foam_cutting(preference)
+            && (operation.contains("hot-wire")
+                || operation.contains("hotwire")
+                || operation.contains("foam")
+                || operation.contains("wing-core")
+                || operation.contains("airfoil")
+                || operation.contains("taper")
+                || operation.contains("wire-temperature")
+                || operation.contains("wire-tension")
+                || operation.contains("kerf")
+                || operation.contains("template")
+                || operation.contains("fume")
+                || operation.contains("fire")))
+        || (wants_gear_cutting(preference)
+            && (operation.contains("gear")
+                || operation.contains("hob")
+                || operation.contains("hobbing")
+                || operation.contains("shaping")
+                || operation.contains("shaper")
+                || operation.contains("spline")
+                || operation.contains("broach")
+                || operation.contains("keyway")
+                || operation.contains("rack")
+                || operation.contains("worm")
+                || operation.contains("index")
+                || operation.contains("deburr")
+                || operation.contains("inspection")))
         || (preference.contains("composite-fiber") && operation.contains("composite-fiber"))
         || (preference.contains("continuous-fiber") && operation.contains("composite-fiber"))
         || (preference.contains("carbon-fiber") && operation.contains("composite-fiber"))
@@ -7251,6 +8469,46 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
                 || operation.contains("paint")
                 || operation.contains("mask")
                 || operation.contains("inspection")))
+        || (wants_metal_joining(preference)
+            && (operation.contains("metal-joining")
+                || operation.contains("weld")
+                || operation.contains("braz")
+                || operation.contains("solder")
+                || operation.contains("joint")
+                || operation.contains("fixture")
+                || operation.contains("clamp")
+                || operation.contains("shielding")
+                || operation.contains("purge")
+                || operation.contains("interpass")
+                || operation.contains("distortion")
+                || operation.contains("nde")
+                || operation.contains("inspection")))
+        || (wants_molding_casting(preference)
+            && (operation.contains("mold")
+                || operation.contains("cast")
+                || operation.contains("urethane")
+                || operation.contains("silicone")
+                || operation.contains("vacuum")
+                || operation.contains("pressure")
+                || operation.contains("degas")
+                || operation.contains("release")
+                || operation.contains("demold")
+                || operation.contains("cure")
+                || operation.contains("shrinkage")
+                || operation.contains("parting")
+                || operation.contains("sprue")
+                || operation.contains("runner")
+                || operation.contains("vent")
+                || operation.contains("injection")))
+        || (wants_sheet_forming(preference)
+            && (operation.contains("press-brake")
+                || operation.contains("sheet-forming")
+                || operation.contains("bend")
+                || operation.contains("flange")
+                || operation.contains("hem")
+                || operation.contains("backgauge")
+                || operation.contains("springback")
+                || operation.contains("angle-inspection")))
         || (wants_assembly_joining(preference)
             && (operation.contains("assembly")
                 || operation.contains("join")
@@ -7506,6 +8764,12 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => {
             "dry pellets, purge high-flow extruder, print large-format bead path, monitor bead/thermal state, and leave trim allowance"
         }
+        MachineClass::Additive if is_robotic_additive_printer_kind(&part.machine_kind) => {
+            "qualify robot/base/tool frames, dry-run collision envelope, purge nozzle/feedstock, deposit robotic bead path, monitor interlocks and flow, then cool or cure before inspection"
+        }
+        MachineClass::Additive if is_sheet_lamination_printer_kind(&part.machine_kind) => {
+            "load sheet or foil stack, verify lot/thickness/stack order, register layers, cut or trim profiles, bond or ultrasonically consolidate, inspect coupon/delamination, and release dimensions"
+        }
         MachineClass::Additive if is_directed_energy_deposition_kind(&part.machine_kind) => {
             "prepare substrate, deposit DED/WAAM beads, monitor melt pool and interpass temperature, inspect, and leave finish-machining allowance"
         }
@@ -7532,6 +8796,9 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
             "index fixture, side-mill slots, and finish horizontal features"
         }
         MachineClass::Mill => "face, rough, contour, and finish critical features",
+        MachineClass::Lathe if is_swiss_turning_kind(&part.machine_kind) => {
+            "bar-feed through guide bushing, turn sliding-headstock features, cross-drill with live tooling, subspindle pickoff, cutoff, and inspect slender-part runout"
+        }
         MachineClass::Lathe if is_mill_turn_kind(&part.machine_kind) => {
             "turn, C/Y-axis live-tool mill, synchronize main/sub-spindle transfer, and inspect in one mill-turn setup"
         }
@@ -7549,6 +8816,24 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         }
         MachineClass::Other if is_surface_finishing_kind(&part.machine_kind) => {
             "mask or plug protected features, run reviewed finishing media or chemistry, control ventilation and waste, dry or cure, inspect thickness and finish, and record release"
+        }
+        MachineClass::Other if is_metal_joining_kind(&part.machine_kind) => {
+            "fit and fixture joints, verify WPS or joining procedure, run reviewed weld/braze/solder process, control shielding/purge/fume/heat input, inspect bead/joint/NDE, and record release"
+        }
+        MachineClass::Other if is_molding_casting_kind(&part.machine_kind) => {
+            "prepare master or mold, apply release, mix/degas material, cast or mold under reviewed vacuum/pressure/temperature, cure, demold, inspect shrinkage and surface, and record release"
+        }
+        MachineClass::Other if is_composite_layup_kind(&part.machine_kind) => {
+            "prepare mold or mandrel, kit ply schedule and resin/prepreg/core lots, lay up plies, vacuum bag and leak-check, debulk, cure in oven/autoclave, demold, trim/drill, inspect coupons and laminate, and record release"
+        }
+        MachineClass::Other if is_hot_wire_foam_cutter_kind(&part.machine_kind) => {
+            "verify foam blank density, template or CNC profile, bow/wire tension, fume extraction, and fire watch, run kerf coupon, hot-wire cut core/profile, inspect taper and surface, and record release"
+        }
+        MachineClass::Other if is_sheet_forming_kind(&part.machine_kind) => {
+            "verify flat blank, tooling, bend allowance, backgauge, bend sequence, springback, angle, flange, and formed-part inspection"
+        }
+        MachineClass::Other if is_gear_cutting_kind(&part.machine_kind) => {
+            "verify blank datum and arbor, qualify hob/shaper/broach, index gear teeth or splines, deburr, and inspect tooth profile/span/backlash"
         }
         MachineClass::Other if is_assembly_cell_kind(&part.machine_kind) => {
             "kit fabricated parts, verify datums, pick/place, join by press/fastener/adhesive, and inspect assembly"
@@ -8499,6 +9784,76 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                     .to_string(),
             ],
         ),
+        MachineClass::Additive if is_robotic_additive_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "robotic-additive-job".to_string()),
+            vec![
+                "; draft robotic / gantry additive job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [robotic-additive-path-boundary]: verify robot base/workobject frame, tool center point, nozzle angle, reach, singularity, external-axis or positioner state, fixture, interlocks, and collision simulation"
+                    .to_string(),
+                "LOAD_ROBOT_PATH frame=operator-reviewed tcp=operator-reviewed reach_collision_sim=required external_axis=operator-reviewed"
+                    .to_string(),
+                "DRY_RUN_ROBOT path=operator-reviewed speed=operator-reviewed interlocks=verified e_stop=verified no_extrusion=true"
+                    .to_string(),
+                "CHECKPOINT [robotic-additive-extrusion-boundary]: verify feedstock lot, dryer/moisture or mix state, nozzle, bead coupon, extrusion rate, flow pressure, cooling or cure plan, and purge"
+                    .to_string(),
+                "PURGE_ROBOTIC_EXTRUDER feedstock=operator-reviewed nozzle_mm=operator-reviewed flow_rate=operator-reviewed bead_width_mm=operator-reviewed"
+                    .to_string(),
+                "DEPOSIT_ROBOTIC_BEAD_PATH layer_or_path_plan=operator-reviewed orientation=operator-reviewed collision_watch=true"
+                    .to_string(),
+                "MONITOR robot speed, reach margin, singularity warnings, extrusion pressure, bead width, interlayer temperature, cooling airflow, cure state, and cell interlocks"
+                    .to_string(),
+                "CHECKPOINT [robotic-additive-cell-boundary]: hold part on fixture until cooldown/cure, verify access-zone lockout, trim allowance, dimensional scan, and operator release"
+                    .to_string(),
+                "COMPLETE record robot program revision, frame/TCP proof, dry-run simulation, feedstock lot, purge, bead coupon, interlock check, cooldown or cure log, and dimensional inspection"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final robotic additive parameters must come from the robot offline program, base/workobject frame, tool-center-point calibration, reach/collision simulation, extruder/nozzle profile, feedstock lot, bead coupon, interlock dry run, and cooldown or cure plan."
+                    .to_string(),
+                "Human signoff is required for robot cell access, pinch/crush zones, singularity/reach margins, external-axis synchronization, extrusion pressure, bead stability, fume controls, fire watch, and dimensional release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Additive if is_sheet_lamination_printer_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "sheet-lamination-job".to_string()),
+            vec![
+                "; draft sheet-lamination additive job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [sheet-lamination-stock-boundary]: verify sheet/foil stock lot, thickness, grain or fiber direction, adhesive or ultrasonic energy profile, storage, and stack order"
+                    .to_string(),
+                format!(
+                    "LOAD_SHEET_STACK material={} sheet_lot=operator-reviewed thickness=operator-reviewed stack_order=operator-reviewed",
+                    part.material.name
+                ),
+                "CHECKPOINT [sheet-lamination-registration-boundary]: verify layer registration, fiducials, datum pins, vacuum or hold-down, cut/trim path, and interlayer alignment"
+                    .to_string(),
+                "REGISTER_LAYER_STACK fiducials=operator-reviewed datum=operator-reviewed hold_down=operator-reviewed"
+                    .to_string(),
+                "CUT_OR_TRIM_LAYERS toolpath=operator-reviewed blade_or_laser=operator-reviewed kerf_or_offset=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [sheet-lamination-bond-boundary]: verify adhesive cure or press cycle, ultrasonic weld amplitude/force/speed, consolidation coupon, delamination inspection, and dimensional release"
+                    .to_string(),
+                "BOND_OR_CONSOLIDATE_LAYERS method=adhesive_press_or_ultrasonic amplitude_force_speed=operator-reviewed coupon=required"
+                    .to_string(),
+                "INSPECT_LAMINATION coupon=required peel_or_lap_shear=operator-reviewed delamination=review dimensional_scan=operator-reviewed"
+                    .to_string(),
+                "COMPLETE record laminated build traveler, sheet lot, stack registration, trim path, bond/consolidation record, delamination inspection, and dimensional release"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final sheet-lamination parameters must come from the qualified LOM/UAM process, vendor machine profile, sheet or foil lot, adhesive/press or ultrasonic weld profile, trim path, and inspection plan."
+                    .to_string(),
+                "Human signoff is required for sheet/foil handling, blade or laser trim, ultrasonic horn or press energy, adhesives and solvents, fume/heat/PPE controls, delamination risk, and dimensional release."
+                    .to_string(),
+            ],
+        ),
         MachineClass::Additive if is_composite_fiber_printer_kind(&machine.kind) => (
             machine
                 .controller
@@ -8993,6 +10348,40 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 )
             }
         }
+        MachineClass::Lathe if is_swiss_turning_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "swiss-turning-gcode".to_string()),
+            vec![
+                "(draft swiss turning program generated by dd-fabrication-server)".to_string(),
+                "G21 G90 G18 ; millimeters, absolute, turning plane".to_string(),
+                "G54 ; guide bushing, bar feeder, collet pressure, stick-out, stock straightness, and coolant verified".to_string(),
+                "T0101 ; gang rough-turn tool and guide-bushing clearance verified".to_string(),
+                "G50 S6000 ; spindle speed cap reviewed for bar diameter and guide bushing".to_string(),
+                "CHECKPOINT [swiss-guide-bushing-boundary]: verify guide-bushing clearance, bar straightness, bar-feed length, collet/chuck pressure, stock stick-out, and remnant handling".to_string(),
+                "G97 S2500 M3 ; fixed RPM sliding-headstock rough turn".to_string(),
+                "G0 X16.0 Z1.0".to_string(),
+                "G1 Z-28.0 F0.08 ; sliding-headstock turning pass".to_string(),
+                "M5 ; stop spindle before live-tool cross operation".to_string(),
+                "CHECKPOINT [swiss-live-tool-boundary]: verify gang-tool station, live spindle orientation, cross-drill clearance, coolant, guide-bushing support, and C-axis clamp".to_string(),
+                "T0606 ; live cross-drill or end mill".to_string(),
+                "M154 ; orient/clamp spindle for cross feature (verify controller-specific code)".to_string(),
+                "G17 ; live-tool milling/drilling plane".to_string(),
+                "G1 X8.0 C90.0 F80 ; cross-drill or mill feature with guide-bushing support".to_string(),
+                "CHECKPOINT [swiss-pickoff-cutoff-boundary]: verify subspindle pickoff, phase sync, grip check, cutoff tool width, remnant length, part catcher, and ejection path".to_string(),
+                "M5".to_string(),
+                "T0909 ; cutoff tool and pickoff clearance verified".to_string(),
+                "G1 X0 Z-32.0 F0.04 ; cutoff after pickoff/support signoff".to_string(),
+                "M30".to_string(),
+            ],
+            vec![
+                "Draft only: verify Swiss/sliding-headstock postprocessor, guide-bushing clearance, bar feeder, gang-tool station map, live-tool orientation, and pickoff/cutoff macros against the exact controller."
+                    .to_string(),
+                "Human signoff is required for stock straightness, bar-feed remnant, collet pressure, guide-bushing heat, live-tool clearance, subspindle pickoff, cutoff support, part ejection, and first-article runout before release."
+                    .to_string(),
+            ],
+        ),
         MachineClass::Lathe if is_mill_turn_kind(&machine.kind) => (
             machine
                 .controller
@@ -9189,6 +10578,187 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: final finishing parameters must come from the material compatibility review, SDS or media supplier data, masking plan, ventilation/PPE controls, waste route, and finish inspection criteria."
                     .to_string(),
                 "Human signoff is required for protected threads and fit features, chemistry or media compatibility, dwell or blast pressure, neutralization or media removal, dry/cure state, coating thickness, adhesion/color, dimensional impact, and release disposition."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_metal_joining_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "metal-joining-job".to_string()),
+            vec![
+                "; draft metal joining job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [metal-joining-procedure-boundary]: verify WPS/joining procedure, material compatibility, filler/flux/gas lot, welder or process qualification, joint prep, fit-up, fixture/clamps, and fume controls"
+                    .to_string(),
+                "PREP_JOINTS joint_design=operator-reviewed edge_prep=operator-reviewed fitup_gap_mm=operator-reviewed fixture=operator-reviewed"
+                    .to_string(),
+                "SET_JOINING_PROCESS process=operator-reviewed wps=operator-reviewed filler_or_solder=operator-reviewed shielding_or_flux=operator-reviewed"
+                    .to_string(),
+                "RUN_METAL_JOIN heat_input=operator-reviewed travel_speed=operator-reviewed interpass_temp_c=operator-reviewed tack_sequence=operator-reviewed distortion_control=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [metal-joining-inspection-boundary]: verify visual inspection, penetration/fillet size, distortion, heat-affected-zone risk, NDE or leak test, and repair disposition"
+                    .to_string(),
+                "INSPECT_JOIN visual=recorded fillet_or_penetration=operator-reviewed distortion=recorded nde_or_leak_test=operator-reviewed pass_fail=operator-reviewed"
+                    .to_string(),
+                "COMPLETE record WPS/procedure, qualification, filler/flux/gas lot, fit-up fixture, heat input/interpass, fume controls, inspection/NDE, repair disposition, and release"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final metal-joining parameters must come from the released WPS or joining procedure, material compatibility review, filler/flux/gas lot, fixture and fit-up plan, fume controls, and inspection/NDE criteria."
+                    .to_string(),
+                "Human signoff is required for welder or process qualification, joint preparation, fixture/clamps, shielding/purge/flux, heat input, interpass temperature, distortion control, fume/fire-watch controls, NDE or leak test, repair disposition, and release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_molding_casting_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "molding-casting-job".to_string()),
+            vec![
+                "; draft molding/casting job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [mold-tooling-boundary]: verify master/tool revision, mold material, parting line, vents/sprues/runners/gates, release agent, fixture/support, and PPE"
+                    .to_string(),
+                "PREPARE_MOLD master=operator-reviewed tool_revision=operator-reviewed release_agent=operator-reviewed vents=verified parting_line=operator-reviewed"
+                    .to_string(),
+                "MIX_CASTING_MATERIAL material=operator-reviewed mix_ratio=operator-reviewed pot_life_min=operator-reviewed batch=recorded"
+                    .to_string(),
+                "DEGAS_AND_CAST vacuum=operator-reviewed pressure=operator-reviewed fill_strategy=operator-reviewed temperature=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [mold-cure-demold-boundary]: verify cure schedule, exotherm/temperature, shrinkage allowance, demold method, flash/void/bubble inspection, and dimensional release"
+                    .to_string(),
+                "DEMOLD_AND_INSPECT demold_method=operator-reviewed flash=trimmed voids=inspected shrinkage=recorded dimensions=operator-reviewed"
+                    .to_string(),
+                "COMPLETE record master/tool revision, mold prep, release agent, mix ratio, pot life, degas/vacuum/pressure, cure, demold, shrinkage, void, bubble, flash, and dimensional inspection"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final molding/casting parameters must come from the master or tool revision, mold material, parting-line/vent/sprue/runner/gate design, release agent, material datasheet, vacuum/pressure plan, cure schedule, and inspection criteria."
+                    .to_string(),
+                "Human signoff is required for release-agent compatibility, mix ratio, pot life, degassing, exotherm/temperature, PPE, demold timing, void/bubble/flash inspection, shrinkage allowance, and dimensional release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_composite_layup_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "composite-layup-job".to_string()),
+            vec![
+                "; draft composite layup / vacuum-bag / autoclave job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [composite-layup-tooling-boundary]: verify mold/mandrel/tool revision, release film or agent, ply kit, fiber/resin/prepreg/core lot, orientation datum, and PPE"
+                    .to_string(),
+                "PREPARE_LAYUP_TOOL mold_or_mandrel=operator-reviewed release_system=operator-reviewed ply_kit=verified orientation_datum=operator-reviewed"
+                    .to_string(),
+                "LAYUP_PLIES ply_schedule=operator-reviewed fiber_orientation=operator-reviewed resin_or_prepreg_lot=operator-reviewed core_bonding=operator-reviewed"
+                    .to_string(),
+                "VACUUM_BAG_AND_LEAK_TEST bag_stack=peel_ply_release_film_breather_bleeder vacuum_kpa=operator-reviewed leak_down=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [composite-layup-bag-cure-boundary]: verify debulk schedule, oven/autoclave cure profile, vacuum/pressure/temperature trace, exotherm, demold, trim/drill, coupon, void/delamination, and dimensional release"
+                    .to_string(),
+                "CURE_LAMINATE cure_profile=operator-reviewed autoclave_or_oven=operator-reviewed pressure=operator-reviewed vacuum=recorded"
+                    .to_string(),
+                "DEMOLD_TRIM_INSPECT demold=operator-reviewed trim_drill=operator-reviewed coupon=required voids_delamination=inspected dimensions=operator-reviewed"
+                    .to_string(),
+                "COMPLETE record tool revision, release system, ply schedule, fiber/resin/prepreg/core lot, bag leak test, debulk/cure trace, demold, trim/drill, coupon, NDI/void, and dimensional release"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final composite layup parameters must come from the released ply schedule, mold or mandrel revision, material data sheet, resin/prepreg/core lot, vacuum bag stack, debulk and cure profile, and inspection plan."
+                    .to_string(),
+                "Human signoff is required for release-system compatibility, ply orientation, resin pot life or prepreg out-time, vacuum integrity, exotherm, autoclave/oven pressure and temperature limits, demold timing, trim/drill fixtures, coupons, NDI/void/delamination evidence, and dimensional release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_hot_wire_foam_cutter_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "hot-wire-foam-job".to_string()),
+            vec![
+                "; draft hot-wire foam cutting job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [hot-wire-foam-setup-boundary]: verify foam blank density/thickness, template or CNC profile, bow/wire tension, fixture/support, fume extraction, PPE, and fire watch"
+                    .to_string(),
+                "FOAM_BLANK_SETUP material=operator-reviewed density=operator-reviewed thickness_mm=operator-reviewed support=operator-reviewed"
+                    .to_string(),
+                "WIRE_HEAT_TENSION_CHECK wire_type=operator-reviewed current_or_temp=operator-reviewed bow_tension=verified"
+                    .to_string(),
+                "KERF_COUPON coupon_width_mm=operator-reviewed feed=operator-reviewed kerf_offset=operator-reviewed taper=operator-reviewed"
+                    .to_string(),
+                "HOT_WIRE_CUT profile=operator-reviewed feed=operator-reviewed synchronized_axes=operator-reviewed lead_in=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [hot-wire-foam-process-boundary]: verify kerf compensation, wire lag, surface melt, fumes, fire watch, part support, taper/airfoil thickness, and release inspection"
+                    .to_string(),
+                "COMPLETE record foam lot/density, template or CNC profile, wire heat/current, tension, feed, kerf coupon, fume/fire controls, surface/taper inspection, and dimensional release"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final hot-wire foam parameters must come from foam density, wire power/current, feed, template or CNC profile, kerf coupon, and taper compensation validation."
+                    .to_string(),
+                "Human signoff is required for flammable foam, fumes/ventilation, hot wire, bow tension, fire watch, template alignment, wire lag, taper, surface melt, and dimensional release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_sheet_forming_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "press-brake-job".to_string()),
+            vec![
+                "; draft press brake sheet-forming job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [press-brake-setup-boundary]: verify flat blank revision, grain direction, material thickness, bend allowance or K-factor, punch/V-die tooling, tonnage, backgauge, and guarding"
+                    .to_string(),
+                "LOAD_FLAT_BLANK material=operator-reviewed thickness_mm=operator-reviewed grain_direction=operator-reviewed protective_film=operator-reviewed"
+                    .to_string(),
+                "SET_BRAKE_TOOLING punch=operator-reviewed v_die=operator-reviewed tonnage=operator-reviewed radius=operator-reviewed"
+                    .to_string(),
+                "RUN_BEND_SEQUENCE sequence=operator-reviewed backgauge=verified angle_targets=operator-reviewed springback_compensation=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [press-brake-release-boundary]: verify bend order, flange clearance, hem/crack risk, springback compensation, formed envelope, and angle/dimensional inspection"
+                    .to_string(),
+                "INSPECT_FORMED_PART angle=recorded flange=recorded bend_radius=operator-reviewed flatness=operator-reviewed pass_fail=operator-reviewed"
+                    .to_string(),
+                "COMPLETE record flat pattern revision, bend allowance/K-factor, tooling, backgauge, bend sequence, tonnage, springback compensation, and formed-part inspection"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final press-brake parameters must come from the released flat pattern, material certificate and thickness, punch/V-die tooling, tonnage chart, bend allowance or K-factor, guarding, and formed-part inspection plan."
+                    .to_string(),
+                "Human signoff is required for pinch/guarding state, tonnage, tooling, backgauge, bend sequence, springback compensation, angle inspection, flange clearance, and dimensional release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_gear_cutting_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "gear-cutting-job".to_string()),
+            vec![
+                "; draft gear/spline cutting job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [gear-cutting-setup-boundary]: verify gear drawing, blank datum, arbor/fixture, blank runout, cutter/hob/shaper/broach, module or diametral pitch, pressure angle, helix/lead angle, and material hardness"
+                    .to_string(),
+                "LOAD_GEAR_BLANK material=operator-reviewed blank_datum=operator-reviewed arbor_or_fixture=operator-reviewed runout=recorded"
+                    .to_string(),
+                "SET_GEAR_TOOL tool=hob_shaper_broach_or_form_cutter module_or_dp=operator-reviewed pressure_angle=operator-reviewed helix_or_lead=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [gear-indexing-boundary]: verify index ratio/change gears/electronic gearbox, cutter lead, spindle sync, backlash, and trial tooth before production"
+                    .to_string(),
+                "CUT_GEAR_TEETH tooth_count=operator-reviewed index_ratio=operator-reviewed feed=operator-reviewed coolant=operator-reviewed"
+                    .to_string(),
+                "DEBURR_PROFILE burr_control=operator-reviewed tooth_edges=inspected keyway_or_spline_edges=inspected"
+                    .to_string(),
+                "CHECKPOINT [gear-inspection-boundary]: measure tooth thickness, root diameter, over-pins/span, runout, lead/profile, backlash, and burrs before release"
+                    .to_string(),
+                "COMPLETE record gear drawing, cutter/arbor setup, index ratio, lead/helix sync, deburr, over-pins/span/profile, backlash, and final inspection"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final gear/spline cutting parameters must come from the released gear drawing, tooth count, module or diametral pitch, pressure angle, helix/lead, blank datum, cutter qualification, and controller/indexing setup."
+                    .to_string(),
+                "Human signoff is required for cutter certificate or sharpness, arbor and blank runout, index ratio or electronic gearbox, lead/helix synchronization, burr control, and gear inspection over pins/span/profile/backlash."
                     .to_string(),
             ],
         ),
@@ -11969,6 +13539,185 @@ fn has_text_pellet_fgf_bead_thermal_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_robotic_additive_context(language: &str, line: &str) -> bool {
+    wants_robotic_additive_printing(language)
+        || wants_robotic_additive_printing(line)
+        || language_or_line_has_any(
+            language,
+            line,
+            &[
+                "robotic additive",
+                "robotic-additive",
+                "robotic 3d print",
+                "robotic-3d-print",
+                "robotic print",
+                "robot print",
+                "robot additive",
+                "six-axis print",
+                "6-axis print",
+                "six-axis additive",
+                "6-axis additive",
+                "gantry additive",
+                "robotic extrusion",
+                "robotic deposition",
+                "robot bead path",
+                "robotic bead path",
+                "robotic additive cell",
+            ],
+        )
+}
+
+fn has_text_robotic_additive_path_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "base frame",
+            "workobject",
+            "work object",
+            "tool center point",
+            "tcp",
+            "nozzle angle",
+            "reach",
+            "singularity",
+            "collision",
+            "offline program",
+            "robot path",
+            "path simulation",
+            "dry run",
+            "dry-run",
+            "external axis",
+            "positioner",
+            "fixture",
+            "interlock",
+            "e-stop",
+            "estop",
+            "lockout",
+        ],
+    )
+}
+
+fn has_text_robotic_additive_extrusion_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "feedstock lot",
+            "pellet lot",
+            "spool lot",
+            "mix state",
+            "dryer",
+            "drying",
+            "moisture",
+            "nozzle",
+            "purge",
+            "bead coupon",
+            "bead width",
+            "layer height",
+            "extrusion rate",
+            "flow rate",
+            "volumetric flow",
+            "melt pressure",
+            "extrusion pressure",
+            "screw rpm",
+            "interlayer temperature",
+            "cooling",
+            "cure",
+            "trim allowance",
+            "dimensional scan",
+        ],
+    )
+}
+
+fn has_text_sheet_lamination_context(language: &str, line: &str) -> bool {
+    wants_sheet_lamination_printing(language)
+        || wants_sheet_lamination_printing(line)
+        || language_or_line_has_any(
+            language,
+            line,
+            &[
+                "sheet lamination",
+                "sheet-lamination",
+                "laminated object",
+                "laminated-object",
+                "lom job",
+                "lom build",
+                "ultrasonic additive",
+                "ultrasonic-additive",
+                "ultrasonic consolidation",
+                "foil additive",
+                "foil stack",
+                "metal foil additive",
+                "paper lamination",
+                "adhesive lamination",
+                "cut and stack",
+                "stack and bond",
+            ],
+        )
+}
+
+fn has_text_sheet_lamination_stock_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "sheet lot",
+            "foil lot",
+            "film lot",
+            "paper lot",
+            "material lot",
+            "stock lot",
+            "sheet stock",
+            "foil stock",
+            "sheet thickness",
+            "foil thickness",
+            "thickness",
+            "gauge",
+            "grain direction",
+            "fiber direction",
+            "fibre direction",
+            "stack order",
+            "layer stack",
+            "lamina stack",
+            "adhesive lot",
+            "storage",
+            "humidity",
+            "surface prep",
+            "cleaning",
+        ],
+    )
+}
+
+fn has_text_sheet_lamination_bond_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "registration",
+            "fiducial",
+            "datum pin",
+            "alignment",
+            "vacuum",
+            "hold-down",
+            "holddown",
+            "adhesive cure",
+            "press cycle",
+            "ultrasonic amplitude",
+            "sonotrode",
+            "horn",
+            "weld force",
+            "weld speed",
+            "consolidation",
+            "bond strength",
+            "peel test",
+            "lap shear",
+            "coupon",
+            "delamination",
+            "void",
+            "trim path",
+            "cut path",
+            "dimensional scan",
+            "dimensional release",
+        ],
+    )
+}
+
 fn has_text_paste_extrusion_context(language: &str, line: &str) -> bool {
     wants_paste_extrusion_printing(language)
         || wants_paste_extrusion_printing(line)
@@ -12241,6 +13990,9 @@ fn has_text_ded_thermal_inspection_evidence(line: &str) -> bool {
 }
 
 fn has_text_composite_fiber_context(language: &str, line: &str) -> bool {
+    if has_text_composite_layup_context(language, line) {
+        return false;
+    }
     language_or_line_has_any(
         language,
         line,
@@ -12262,6 +14014,189 @@ fn has_text_composite_fiber_context(language: &str, line: &str) -> bool {
             "pa-cf",
             "cf nylon",
             "onyx",
+        ],
+    )
+}
+
+fn has_text_composite_layup_context(language: &str, line: &str) -> bool {
+    if wants_composite_layup(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "composite layup",
+            "wet layup",
+            "prepreg",
+            "pre-preg",
+            "vacuum bag",
+            "vacuum-bag",
+            "bagging",
+            "autoclave",
+            "oven cure",
+            "out of autoclave",
+            "debulk",
+            "resin infusion",
+            "vacuum infusion",
+            "resin transfer molding",
+            "laminate",
+            "ply schedule",
+            "mandrel",
+            "mold tool",
+            "tool-side",
+            "core bonding",
+            "honeycomb core",
+            "foam core",
+            "peel ply",
+            "breather",
+            "bleeder",
+        ],
+    )
+}
+
+fn has_text_composite_layup_tooling_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "tool revision",
+            "mold revision",
+            "mandrel revision",
+            "mold or mandrel",
+            "release film",
+            "release agent",
+            "release system",
+            "ply kit",
+            "ply schedule",
+            "cut book",
+            "fiber orientation",
+            "fibre orientation",
+            "orientation datum",
+            "fiber lot",
+            "fibre lot",
+            "resin lot",
+            "prepreg lot",
+            "pre-preg lot",
+            "core lot",
+            "honeycomb",
+            "foam core",
+            "material cert",
+            "out-time",
+            "pot life",
+        ],
+    )
+}
+
+fn has_text_composite_layup_bag_cure_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "vacuum bag",
+            "bag stack",
+            "peel ply",
+            "release film",
+            "breather",
+            "bleeder",
+            "vacuum level",
+            "vacuum gauge",
+            "leak test",
+            "leak-down",
+            "leak down",
+            "debulk",
+            "autoclave",
+            "oven cure",
+            "cure profile",
+            "ramp",
+            "soak",
+            "pressure",
+            "temperature trace",
+            "cure trace",
+            "exotherm",
+            "demold",
+            "trim",
+            "drill",
+            "coupon",
+            "void",
+            "delamination",
+            "ndi",
+            "ultrasonic",
+            "dimensional inspection",
+        ],
+    )
+}
+
+fn has_text_hot_wire_foam_context(language: &str, line: &str) -> bool {
+    if wants_hot_wire_foam_cutting(language) || wants_hot_wire_foam_cutting(line) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "hot-wire foam",
+            "hot wire foam",
+            "hotwire foam",
+            "foam cutter",
+            "foam cutting",
+            "foam profile",
+            "wing core",
+            "airfoil core",
+            "lost foam pattern",
+            "eps blank",
+            "xps blank",
+            "epp blank",
+            "polystyrene blank",
+            "urethane foam blank",
+        ],
+    )
+}
+
+fn has_text_hot_wire_foam_setup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "foam density",
+            "foam lot",
+            "foam blank",
+            "blank thickness",
+            "template",
+            "airfoil template",
+            "cnc profile",
+            "bow tension",
+            "wire tension",
+            "fixture",
+            "support",
+            "pin board",
+            "jig",
+            "fume extraction",
+            "ventilation",
+            "ppe",
+            "fire watch",
+        ],
+    )
+}
+
+fn has_text_hot_wire_foam_process_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "wire temperature",
+            "wire current",
+            "wire heat",
+            "current=",
+            "temperature=",
+            "feed rate",
+            "feed=",
+            "kerf coupon",
+            "kerf offset",
+            "wire lag",
+            "taper",
+            "surface melt",
+            "synchronized axes",
+            "axis sync",
+            "airfoil thickness",
+            "core thickness",
+            "dimensional inspection",
         ],
     )
 }
@@ -13715,6 +15650,322 @@ fn has_text_surface_finishing_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_metal_joining_context(language: &str, line: &str) -> bool {
+    if wants_metal_joining(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "metal-joining",
+            "metal joining",
+            "welding",
+            "welding-job",
+            "weld job",
+            "weld procedure",
+            "weldment",
+            "tig weld",
+            "tig welding",
+            "gtaw",
+            "mig weld",
+            "mig welding",
+            "gmaw",
+            "smaw",
+            "stick weld",
+            "spot weld",
+            "resistance weld",
+            "laser weld",
+            "braze",
+            "brazing",
+            "brazing-job",
+            "solder",
+            "soldering",
+            "soldering-job",
+        ],
+    )
+}
+
+fn has_text_metal_joining_procedure_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "wps",
+            "pqr",
+            "weld procedure",
+            "joining procedure",
+            "welder qualification",
+            "process qualification",
+            "qualified welder",
+            "filler lot",
+            "filler metal",
+            "wire lot",
+            "rod lot",
+            "solder lot",
+            "flux",
+            "shielding gas",
+            "argon",
+            "purge",
+            "backing gas",
+            "joint prep",
+            "joint preparation",
+            "bevel",
+            "root gap",
+            "fit-up",
+            "fitup",
+            "fixture",
+            "clamp",
+            "fume extraction",
+            "fume control",
+            "fire watch",
+        ],
+    )
+}
+
+fn has_text_metal_joining_inspection_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "heat input",
+            "amperage",
+            "voltage",
+            "travel speed",
+            "interpass temperature",
+            "interpass temp",
+            "preheat",
+            "postheat",
+            "distortion control",
+            "tack sequence",
+            "visual inspection",
+            "bead profile",
+            "fillet size",
+            "penetration",
+            "dye penetrant",
+            "magnetic particle",
+            "ultrasonic",
+            "radiograph",
+            "leak test",
+            "nde",
+            "nondestructive",
+            "repair disposition",
+        ],
+    )
+}
+
+fn has_text_molding_casting_context(language: &str, line: &str) -> bool {
+    if wants_molding_casting(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "molding-casting",
+            "molding casting",
+            "mold casting",
+            "molding job",
+            "casting job",
+            "mold making",
+            "mold-making",
+            "silicone mold",
+            "silicone molding",
+            "urethane casting",
+            "vacuum casting",
+            "pressure casting",
+            "resin casting",
+            "injection molding",
+            "thermoforming",
+            "vacuum forming",
+            "lost wax",
+            "investment casting",
+            "sand casting",
+            "demold",
+            "release agent",
+            "sprue",
+            "runner",
+            "gate",
+            "vent",
+            "parting line",
+            "degas",
+        ],
+    )
+}
+
+fn has_text_molding_casting_tooling_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "master revision",
+            "tool revision",
+            "mold revision",
+            "mold material",
+            "parting line",
+            "sprue",
+            "runner",
+            "gate",
+            "vent",
+            "release agent",
+            "mold release",
+            "mold support",
+            "fixture",
+            "clamp",
+            "draft angle",
+            "undercut review",
+        ],
+    )
+}
+
+fn has_text_molding_casting_process_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "mix ratio",
+            "pot life",
+            "batch",
+            "lot",
+            "degas",
+            "degassing",
+            "pressure pot",
+            "cure schedule",
+            "cure time",
+            "temperature",
+            "exotherm",
+            "demold",
+            "shrinkage",
+            "void",
+            "bubble",
+            "flash",
+            "dimensional inspection",
+            "first article",
+        ],
+    )
+}
+
+fn has_text_sheet_forming_context(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "press brake",
+            "press-brake",
+            "brake press",
+            "sheet forming",
+            "sheet-forming",
+            "sheet metal bend",
+            "sheet-metal bend",
+            "bend line",
+            "bend-lines",
+            "bend allowance",
+            "bend deduction",
+            "k-factor",
+            "v-die",
+            "punch die",
+            "punch/die",
+            "backgauge",
+            "back gauge",
+            "air bend",
+            "bottom bend",
+            "hem bend",
+            "formed flange",
+            "flange bend",
+        ],
+    )
+}
+
+fn has_text_sheet_forming_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "flat pattern",
+            "flat-pattern",
+            "grain direction",
+            "material thickness",
+            "thickness measured",
+            "bend allowance",
+            "bend deduction",
+            "k-factor",
+            "inside radius",
+            "punch",
+            "v-die",
+            "die opening",
+            "tonnage",
+            "tonnage chart",
+            "backgauge",
+            "back gauge",
+            "bend sequence",
+            "springback",
+            "angle inspection",
+            "angle measured",
+            "flange inspection",
+            "guarding",
+            "light curtain",
+            "formed envelope",
+            "first article",
+        ],
+    )
+}
+
+fn has_text_gear_cutting_context(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "gear cutting",
+            "gear-cutting",
+            "gear hobbing",
+            "gear-hobbing",
+            "gear hob",
+            "hob",
+            "gear shaping",
+            "gear shaper",
+            "gear tooth",
+            "gear teeth",
+            "spline broaching",
+            "spline broach",
+            "internal spline",
+            "external spline",
+            "keyway broach",
+            "rack cutting",
+            "worm gear",
+            "module",
+            "diametral pitch",
+            "pressure angle",
+            "lead angle",
+            "helix angle",
+        ],
+    )
+}
+
+fn has_text_gear_cutting_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "gear drawing",
+            "tooth count",
+            "module",
+            "diametral pitch",
+            "pressure angle",
+            "helix angle",
+            "lead angle",
+            "hob arbor",
+            "cutter certificate",
+            "cutter sharpness",
+            "index ratio",
+            "change gears",
+            "electronic gearbox",
+            "synchronization",
+            "blank runout",
+            "arbor runout",
+            "root diameter",
+            "span measurement",
+            "pin measurement",
+            "over pins",
+            "tooth thickness",
+            "backlash",
+            "gear inspection",
+            "burr control",
+        ],
+    )
+}
+
 fn has_text_indexed_setup_context(line: &str) -> bool {
     text_has_any(
         line,
@@ -14093,6 +16344,31 @@ fn inspect_text_instruction_line(
         signals.has_pellet_fgf_bead_thermal_evidence = true;
         signals.has_process_preparation = true;
     }
+    let robotic_additive_context = has_text_robotic_additive_context(language, raw_line);
+    if robotic_additive_context {
+        signals.has_robotic_additive_text_context = true;
+    }
+    if robotic_additive_context && has_text_robotic_additive_path_evidence(raw_line) {
+        signals.has_robotic_additive_path_evidence = true;
+        signals.has_setup_reference = true;
+    }
+    if robotic_additive_context && has_text_robotic_additive_extrusion_evidence(raw_line) {
+        signals.has_robotic_additive_extrusion_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let sheet_lamination_context = has_text_sheet_lamination_context(language, raw_line);
+    if sheet_lamination_context {
+        signals.has_sheet_lamination_text_context = true;
+    }
+    if sheet_lamination_context && has_text_sheet_lamination_stock_evidence(raw_line) {
+        signals.has_sheet_lamination_stock_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if sheet_lamination_context && has_text_sheet_lamination_bond_evidence(raw_line) {
+        signals.has_sheet_lamination_bond_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
     let paste_extrusion_context = has_text_paste_extrusion_context(language, raw_line);
     if paste_extrusion_context {
         signals.has_paste_extrusion_text_context = true;
@@ -14131,6 +16407,30 @@ fn inspect_text_instruction_line(
     }
     if ded_context && has_text_ded_thermal_inspection_evidence(raw_line) {
         signals.has_ded_thermal_inspection_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let composite_layup_context = has_text_composite_layup_context(language, raw_line);
+    if composite_layup_context {
+        signals.has_composite_layup_text_context = true;
+    }
+    if composite_layup_context && has_text_composite_layup_tooling_evidence(raw_line) {
+        signals.has_composite_layup_tooling_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if composite_layup_context && has_text_composite_layup_bag_cure_evidence(raw_line) {
+        signals.has_composite_layup_bag_cure_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let hot_wire_foam_context = has_text_hot_wire_foam_context(language, raw_line);
+    if hot_wire_foam_context {
+        signals.has_hot_wire_foam_text_context = true;
+    }
+    if hot_wire_foam_context && has_text_hot_wire_foam_setup_evidence(raw_line) {
+        signals.has_hot_wire_foam_setup_evidence = true;
+        signals.has_setup_reference = true;
+    }
+    if hot_wire_foam_context && has_text_hot_wire_foam_process_evidence(raw_line) {
+        signals.has_hot_wire_foam_process_evidence = true;
         signals.has_process_preparation = true;
     }
     let composite_fiber_context = has_text_composite_fiber_context(language, raw_line);
@@ -14433,6 +16733,51 @@ fn inspect_text_instruction_line(
     }
     if has_text_surface_finishing_evidence(raw_line) {
         signals.has_text_surface_finishing_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let metal_joining_context = has_text_metal_joining_context(language, raw_line);
+    if metal_joining_context {
+        signals.has_text_metal_joining_context = true;
+        signals.has_process_preparation = true;
+    }
+    if metal_joining_context && has_text_metal_joining_procedure_evidence(raw_line) {
+        signals.has_text_metal_joining_procedure_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if metal_joining_context && has_text_metal_joining_inspection_evidence(raw_line) {
+        signals.has_text_metal_joining_inspection_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let molding_casting_context = has_text_molding_casting_context(language, raw_line);
+    if molding_casting_context {
+        signals.has_text_molding_casting_context = true;
+        signals.has_process_preparation = true;
+    }
+    if molding_casting_context && has_text_molding_casting_tooling_evidence(raw_line) {
+        signals.has_text_molding_casting_tooling_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if molding_casting_context && has_text_molding_casting_process_evidence(raw_line) {
+        signals.has_text_molding_casting_process_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if has_text_sheet_forming_context(raw_line) {
+        signals.has_text_sheet_forming_context = true;
+        signals.has_process_preparation = true;
+    }
+    if has_text_sheet_forming_evidence(raw_line) {
+        signals.has_text_sheet_forming_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    if has_text_gear_cutting_context(raw_line) {
+        signals.has_text_gear_cutting_context = true;
+        signals.has_process_preparation = true;
+    }
+    if has_text_gear_cutting_evidence(raw_line) {
+        signals.has_text_gear_cutting_evidence = true;
+        signals.has_setup_reference = true;
         signals.has_process_preparation = true;
     }
     if has_text_indexed_setup_context(raw_line) {
@@ -14766,6 +17111,12 @@ fn analyze_instruction_programs(
         let mut has_pellet_fgf_text_context = false;
         let mut has_pellet_fgf_material_evidence = false;
         let mut has_pellet_fgf_bead_thermal_evidence = false;
+        let mut has_robotic_additive_text_context = false;
+        let mut has_robotic_additive_path_evidence = false;
+        let mut has_robotic_additive_extrusion_evidence = false;
+        let mut has_sheet_lamination_text_context = false;
+        let mut has_sheet_lamination_stock_evidence = false;
+        let mut has_sheet_lamination_bond_evidence = false;
         let mut has_paste_extrusion_text_context = false;
         let mut has_paste_extrusion_rheology_evidence = false;
         let mut has_paste_extrusion_drying_evidence = false;
@@ -14780,6 +17131,9 @@ fn analyze_instruction_programs(
         let mut has_ded_feedstock_path_evidence = false;
         let mut has_ded_energy_shielding_evidence = false;
         let mut has_ded_thermal_inspection_evidence = false;
+        let mut has_composite_layup_text_context = false;
+        let mut has_composite_layup_tooling_evidence = false;
+        let mut has_composite_layup_bag_cure_evidence = false;
         let mut has_composite_fiber_text_context = false;
         let mut has_composite_fiber_layup_evidence = false;
         let mut has_composite_fiber_process_evidence = false;
@@ -14817,6 +17171,9 @@ fn analyze_instruction_programs(
         let mut has_lathe_text_partoff_support_evidence = false;
         let mut has_sheet_cutting_text_context = false;
         let mut has_sheet_cutting_recipe_evidence = false;
+        let mut has_hot_wire_foam_text_context = false;
+        let mut has_hot_wire_foam_setup_evidence = false;
+        let mut has_hot_wire_foam_process_evidence = false;
         let mut has_wire_edm_text_context = false;
         let mut has_wire_edm_setup_evidence = false;
         let mut has_wire_edm_process_evidence = false;
@@ -14846,6 +17203,16 @@ fn analyze_instruction_programs(
         let mut has_text_thermal_postprocess_evidence = false;
         let mut has_text_surface_finishing_context = false;
         let mut has_text_surface_finishing_evidence = false;
+        let mut has_text_metal_joining_context = false;
+        let mut has_text_metal_joining_procedure_evidence = false;
+        let mut has_text_metal_joining_inspection_evidence = false;
+        let mut has_text_molding_casting_context = false;
+        let mut has_text_molding_casting_tooling_evidence = false;
+        let mut has_text_molding_casting_process_evidence = false;
+        let mut has_text_sheet_forming_context = false;
+        let mut has_text_sheet_forming_evidence = false;
+        let mut has_text_gear_cutting_context = false;
+        let mut has_text_gear_cutting_evidence = false;
         let mut has_text_indexed_setup_context = false;
         let mut has_text_indexed_setup_evidence = false;
         let findings_at_program_start = findings.len();
@@ -14887,6 +17254,13 @@ fn analyze_instruction_programs(
                 has_pellet_fgf_material_evidence |= signals.has_pellet_fgf_material_evidence;
                 has_pellet_fgf_bead_thermal_evidence |=
                     signals.has_pellet_fgf_bead_thermal_evidence;
+                has_robotic_additive_text_context |= signals.has_robotic_additive_text_context;
+                has_robotic_additive_path_evidence |= signals.has_robotic_additive_path_evidence;
+                has_robotic_additive_extrusion_evidence |=
+                    signals.has_robotic_additive_extrusion_evidence;
+                has_sheet_lamination_text_context |= signals.has_sheet_lamination_text_context;
+                has_sheet_lamination_stock_evidence |= signals.has_sheet_lamination_stock_evidence;
+                has_sheet_lamination_bond_evidence |= signals.has_sheet_lamination_bond_evidence;
                 has_paste_extrusion_text_context |= signals.has_paste_extrusion_text_context;
                 has_paste_extrusion_rheology_evidence |=
                     signals.has_paste_extrusion_rheology_evidence;
@@ -14907,6 +17281,11 @@ fn analyze_instruction_programs(
                 has_ded_feedstock_path_evidence |= signals.has_ded_feedstock_path_evidence;
                 has_ded_energy_shielding_evidence |= signals.has_ded_energy_shielding_evidence;
                 has_ded_thermal_inspection_evidence |= signals.has_ded_thermal_inspection_evidence;
+                has_composite_layup_text_context |= signals.has_composite_layup_text_context;
+                has_composite_layup_tooling_evidence |=
+                    signals.has_composite_layup_tooling_evidence;
+                has_composite_layup_bag_cure_evidence |=
+                    signals.has_composite_layup_bag_cure_evidence;
                 has_composite_fiber_text_context |= signals.has_composite_fiber_text_context;
                 has_composite_fiber_layup_evidence |= signals.has_composite_fiber_layup_evidence;
                 has_composite_fiber_process_evidence |=
@@ -14955,6 +17334,9 @@ fn analyze_instruction_programs(
                     signals.has_lathe_text_partoff_support_evidence;
                 has_sheet_cutting_text_context |= signals.has_sheet_cutting_text_context;
                 has_sheet_cutting_recipe_evidence |= signals.has_sheet_cutting_recipe_evidence;
+                has_hot_wire_foam_text_context |= signals.has_hot_wire_foam_text_context;
+                has_hot_wire_foam_setup_evidence |= signals.has_hot_wire_foam_setup_evidence;
+                has_hot_wire_foam_process_evidence |= signals.has_hot_wire_foam_process_evidence;
                 has_wire_edm_text_context |= signals.has_wire_edm_text_context;
                 has_wire_edm_setup_evidence |= signals.has_wire_edm_setup_evidence;
                 has_wire_edm_process_evidence |= signals.has_wire_edm_process_evidence;
@@ -14995,6 +17377,20 @@ fn analyze_instruction_programs(
                     signals.has_text_thermal_postprocess_evidence;
                 has_text_surface_finishing_context |= signals.has_text_surface_finishing_context;
                 has_text_surface_finishing_evidence |= signals.has_text_surface_finishing_evidence;
+                has_text_metal_joining_context |= signals.has_text_metal_joining_context;
+                has_text_metal_joining_procedure_evidence |=
+                    signals.has_text_metal_joining_procedure_evidence;
+                has_text_metal_joining_inspection_evidence |=
+                    signals.has_text_metal_joining_inspection_evidence;
+                has_text_molding_casting_context |= signals.has_text_molding_casting_context;
+                has_text_molding_casting_tooling_evidence |=
+                    signals.has_text_molding_casting_tooling_evidence;
+                has_text_molding_casting_process_evidence |=
+                    signals.has_text_molding_casting_process_evidence;
+                has_text_sheet_forming_context |= signals.has_text_sheet_forming_context;
+                has_text_sheet_forming_evidence |= signals.has_text_sheet_forming_evidence;
+                has_text_gear_cutting_context |= signals.has_text_gear_cutting_context;
+                has_text_gear_cutting_evidence |= signals.has_text_gear_cutting_evidence;
                 has_text_indexed_setup_context |= signals.has_text_indexed_setup_context;
                 has_text_indexed_setup_evidence |= signals.has_text_indexed_setup_evidence;
                 if signals.has_wire_edm_text_context
@@ -18569,6 +20965,146 @@ fn analyze_instruction_programs(
                     .to_string(),
                 });
             }
+            if (class == MachineClass::Additive || has_robotic_additive_text_context)
+                && has_robotic_additive_text_context
+                && !has_robotic_additive_path_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "robotic-additive-path-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "robotic additive text job lacks robot frame, TCP, reach, collision, interlock, fixture, external-axis, or dry-run evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "robotic-additive-path-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "robotic additive jobs can collide with fixtures, hit singularities, exceed reach, desynchronize external axes, or expose operators to robot-cell hazards when frame/TCP, reach, collision, interlock, fixture, and dry-run evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach base/workobject frame, tool-center-point or nozzle calibration, reach/singularity review, external-axis or positioner state, fixture model, interlock/E-stop proof, and robot dry-run or collision simulation before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-robotic-additive-path-evidence".to_string(),
+                    reason:
+                        "robotic additive text instructions should retain robot frame, TCP, collision, interlock, and dry-run evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_robotic_additive_text_context)
+                && has_robotic_additive_text_context
+                && !has_robotic_additive_extrusion_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "robotic-additive-extrusion-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "robotic additive text job lacks feedstock, nozzle, purge, bead coupon, extrusion-rate, cooling, cure, or dimensional-scan evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "robotic-additive-extrusion-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "robotic additive parts can under-extrude, slump, overheat, miss bead dimensions, or release unstable geometry when feedstock lot, nozzle/purge state, bead coupon, extrusion rate, cooling/cure, and dimensional inspection evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach feedstock lot and drying/mix state, nozzle and purge evidence, bead coupon, extrusion rate or volumetric-flow record, melt/extrusion pressure, cooling or cure plan, trim allowance, and dimensional scan before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-robotic-additive-extrusion-evidence".to_string(),
+                    reason:
+                        "robotic additive text instructions should retain feedstock, nozzle, bead, flow, cooling/cure, and dimensional evidence before release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_sheet_lamination_text_context)
+                && has_sheet_lamination_text_context
+                && !has_sheet_lamination_stock_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "sheet-lamination-stock-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "sheet-lamination text job lacks sheet/foil lot, thickness, stack-order, grain/fiber direction, adhesive, storage, surface-prep, or cleaning evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "sheet-lamination-stock-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "sheet lamination builds can delaminate, warp, mis-stack layers, or bond incompatible material when sheet or foil lot, thickness/gauge, grain/fiber direction, stack order, adhesive lot, storage, surface prep, and cleaning evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach sheet or foil stock lot, thickness/gauge, grain or fiber direction, stack order, adhesive lot or ultrasonic energy profile, storage condition, surface prep, and cleaning evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-sheet-lamination-stock-evidence".to_string(),
+                    reason:
+                        "sheet-lamination text instructions should retain stock, stack order, adhesive, storage, and surface-prep evidence before release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Additive || has_sheet_lamination_text_context)
+                && has_sheet_lamination_text_context
+                && !has_sheet_lamination_bond_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "sheet-lamination-bond-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "sheet-lamination text job lacks registration, fiducial, cut/trim, adhesive/press, ultrasonic weld, coupon, delamination, or dimensional-release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "sheet-lamination-bond-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "sheet lamination can shift layer registration, miss trim offsets, under-bond, void, or delaminate when fiducials, datum pins, hold-down/vacuum, cut/trim path, adhesive cure or ultrasonic weld profile, consolidation coupon, and release inspection are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach layer registration and fiducial/datum evidence, vacuum or hold-down proof, cut/trim path, adhesive cure or press cycle, ultrasonic amplitude/force/speed when used, coupon or peel/lap-shear result, delamination inspection, and dimensional release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-sheet-lamination-bond-evidence".to_string(),
+                    reason:
+                        "sheet-lamination text instructions should retain registration, trim, bond/consolidation, coupon, delamination, and dimensional evidence before release"
+                            .to_string(),
+                });
+            }
             if (class == MachineClass::Additive || has_paste_extrusion_text_context)
                 && has_paste_extrusion_text_context
                 && !has_paste_extrusion_rheology_evidence
@@ -18882,6 +21418,76 @@ fn analyze_instruction_programs(
                     action: "add-composite-fiber-layup-evidence".to_string(),
                     reason:
                         "continuous-fiber composite text instructions should retain fiber orientation and load-case layup evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Other || has_composite_layup_text_context)
+                && has_composite_layup_text_context
+                && !has_composite_layup_tooling_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "composite-layup-tooling-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "composite layup text job lacks mold/mandrel, release system, ply schedule, orientation, or material lot evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "composite-layup-tooling-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "wet-layup, prepreg, vacuum-bag, or autoclave jobs can bond to tooling, miss ply orientation, exceed material out-time, or lose traceability when mold/mandrel revision, release system, ply kit, fiber/resin/prepreg/core lot, and orientation datum evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach mold or mandrel revision, release film/agent, ply kit, ply schedule, fiber orientation, orientation datum, resin/prepreg/core lot, out-time or pot-life, and PPE evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-composite-layup-tooling-evidence".to_string(),
+                    reason:
+                        "composite layup text instructions should retain tooling, release-system, ply schedule, material lot, and orientation evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if (class == MachineClass::Other || has_composite_layup_text_context)
+                && has_composite_layup_text_context
+                && !has_composite_layup_bag_cure_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "composite-layup-bag-cure-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "composite layup text job lacks vacuum-bag, leak-test, debulk, cure, demold, trim, coupon, NDI, or dimensional release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "composite-layup-bag-cure-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "composite laminates can trap voids, delaminate, undercure, overheat, spring during demold, or fail trim/drill release when vacuum-bag stack, leak-down, debulk, cure profile, pressure/temperature trace, exotherm, coupon/NDI, and dimensional evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach bag stack, vacuum level, leak-down, debulk schedule, oven/autoclave cure profile, pressure and temperature trace, exotherm review, demold, trim/drill fixture, coupon, void/delamination or NDI, and dimensional release evidence"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-composite-layup-bag-cure-evidence".to_string(),
+                    reason:
+                        "composite layup text instructions should retain bag/leak/debulk/cure, demold, trim, coupon, NDI, and dimensional evidence before release"
                             .to_string(),
                 });
             }
@@ -19384,6 +21990,78 @@ fn analyze_instruction_programs(
             }
             let text_sheet_cutting_program =
                 class == MachineClass::SheetCut || has_sheet_cutting_text_context;
+            let text_hot_wire_foam_program =
+                is_hot_wire_foam_cutter_kind(&machine_kind) || has_hot_wire_foam_text_context;
+            if text_hot_wire_foam_program
+                && has_hot_wire_foam_text_context
+                && !has_hot_wire_foam_setup_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "hot-wire-foam-setup-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "hot-wire foam text job lacks foam blank, template/CNC profile, wire tension, fixture/support, fume, PPE, or fire-watch setup evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "hot-wire-foam-setup-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "hot-wire foam jobs can ignite foam, release fumes, cut the wrong profile, lose bow tension, or scrap cores when foam density/thickness, template or CNC profile, support/fixture, wire tension, fume extraction, PPE, and fire-watch evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach foam lot/density and blank thickness, template or CNC profile, bow/wire tension, fixture/support, fume extraction, PPE, and fire-watch evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-hot-wire-foam-setup-evidence".to_string(),
+                    reason:
+                        "hot-wire foam text instructions should retain foam blank, template/profile, wire tension, support, fume, PPE, and fire-watch evidence before machine-ready release"
+                            .to_string(),
+                });
+            }
+            if text_hot_wire_foam_program
+                && has_hot_wire_foam_text_context
+                && !has_hot_wire_foam_process_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "hot-wire-foam-process-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "hot-wire foam text job lacks wire heat/current, feed, kerf, wire-lag/taper, surface, synchronized-axis, or dimensional process evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "hot-wire-foam-process-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "hot-wire foam cores can taper incorrectly, melt surfaces, lag the profile, exceed thickness tolerance, or need manual recovery when wire heat/current, feed, kerf coupon, wire-lag/taper compensation, synchronized axes, surface melt, and dimensional evidence are omitted"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "attach wire temperature/current, feed, kerf coupon or offset, wire-lag/taper compensation, synchronized-axis/profile evidence, surface-melt review, and airfoil/core thickness inspection before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-hot-wire-foam-process-evidence".to_string(),
+                    reason:
+                        "hot-wire foam text instructions should retain wire heat/current, feed, kerf, wire-lag/taper, surface, and dimensional process evidence before release"
+                            .to_string(),
+                });
+            }
             if text_sheet_cutting_program
                 && has_wire_edm_text_context
                 && (!has_wire_edm_setup_evidence || !has_wire_edm_process_evidence)
@@ -19943,6 +22621,198 @@ fn analyze_instruction_programs(
                     reason:
                         "surface finishing text instructions should retain chemistry/media, masking, PPE, ventilation, waste, cure/dry, thickness, and inspection evidence before release"
                         .to_string(),
+                });
+            }
+            if has_text_metal_joining_context && !has_text_metal_joining_procedure_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "metal-joining-procedure-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "metal-joining text job lacks WPS, qualification, filler/flux/gas, fit-up, fixture, or fume-control evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "metal-joining-procedure-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "welding, brazing, or soldering can permanently lock in incompatible materials, wrong filler, poor fit-up, bad shielding or purge, unsafe fumes, or unqualified process parameters when WPS/procedure, qualification, joint prep, fixture, filler/flux/gas, and fume controls are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record WPS or joining procedure, welder/process qualification, material compatibility, filler/flux/gas lots, joint prep, fit-up, fixture/clamps, fume controls, PPE, and fire-watch evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-metal-joining-procedure-evidence".to_string(),
+                    reason:
+                        "metal-joining text instructions should retain procedure, qualification, filler/flux/gas, fit-up, fixture, and fume-control evidence before release"
+                            .to_string(),
+                });
+            }
+            if has_text_metal_joining_context && !has_text_metal_joining_inspection_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "metal-joining-inspection-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "metal-joining text job lacks heat input, interpass, distortion, visual inspection, NDE/leak test, or repair-disposition evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "metal-joining-inspection-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "joined metal parts can fail from poor penetration, overheating, heat-affected-zone damage, distortion, leaks, missed defects, or undocumented repairs when heat input, interpass temperature, visual inspection, NDE/leak test, and repair disposition are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record heat input, amperage/voltage or travel speed, preheat/interpass, tack sequence, distortion control, visual inspection, fillet or penetration checks, NDE or leak test, repair disposition, and release signoff"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-metal-joining-inspection-evidence".to_string(),
+                    reason:
+                        "metal-joining text instructions should retain heat-input, interpass, distortion, visual inspection, NDE/leak-test, repair, and release evidence"
+                            .to_string(),
+                });
+            }
+            if has_text_molding_casting_context && !has_text_molding_casting_tooling_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "molding-casting-tooling-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "molding/casting text job lacks master/tool revision, mold material, parting line, vent/sprue/runner/gate, release agent, or fixture evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "molding-casting-tooling-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "molding and casting can trap air, lock parts in the mold, miss release-agent compatibility, create unplanned parting lines, or require operator rescue when master/tool revision, mold material, parting line, vents/sprues/runners/gates, release agent, and fixture/support evidence are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record master/tool and mold revision, mold material, parting line, vent/sprue/runner/gate layout, release agent, fixture/support, draft or undercut review, PPE, and operator signoff before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-molding-casting-tooling-evidence".to_string(),
+                    reason:
+                        "molding/casting text instructions should retain master/tool, mold-material, parting, vent/gate, release-agent, fixture, and support evidence before release"
+                            .to_string(),
+                });
+            }
+            if has_text_molding_casting_context && !has_text_molding_casting_process_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "molding-casting-process-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "molding/casting text job lacks mix ratio, pot life, batch, degas/vacuum/pressure, cure, demold, shrinkage, void, bubble, flash, or dimensional-release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "molding-casting-process-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "cast or molded parts can gel early, overheat, void, bubble, flash, shrink outside tolerance, or fail during demold when mix ratio, pot life, batch, degas/vacuum/pressure, cure/exotherm, demold method, and inspection evidence are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record material batch/lot, mix ratio, pot life, degassing, vacuum/pressure plan, cure schedule, exotherm or temperature, demold method, shrinkage allowance, void/bubble/flash inspection, and dimensional release evidence"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-molding-casting-process-evidence".to_string(),
+                    reason:
+                        "molding/casting text instructions should retain mix, pot-life, degas, vacuum/pressure, cure, demold, shrinkage, void/bubble/flash, and dimensional evidence before release"
+                            .to_string(),
+                });
+            }
+            if has_text_sheet_forming_context && !has_text_sheet_forming_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "sheet-forming-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "text job declares press-brake, sheet-forming, bend, flange, or hem work without forming setup and release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "sheet-forming-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "press-brake sheet forming can overload tooling, miss bend allowance, collide with backgauge or flanges, crack hems, or release wrong angles when flat pattern, thickness, tooling, tonnage, bend sequence, springback, guarding, and inspection evidence are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record flat pattern revision, grain direction, measured material thickness, bend allowance or K-factor, punch/V-die tooling, tonnage chart, backgauge, bend sequence, springback compensation, guarding, angle inspection, flange inspection, and formed-part release evidence before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-sheet-forming-evidence".to_string(),
+                    reason:
+                        "press-brake sheet-forming text instructions should retain flat pattern, bend allowance, tooling, tonnage, backgauge, springback, guarding, and inspection evidence before release"
+                            .to_string(),
+                });
+            }
+            if has_text_gear_cutting_context && !has_text_gear_cutting_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "gear-cutting-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "text job declares gear hobbing, shaping, spline broaching, rack cutting, or keyway broaching without gear setup, indexing, and inspection evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "gear-cutting-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "gear and spline cutting can scrap teeth, lose lead or helix synchronization, overload a broach, or release noisy/backlash-heavy gears when drawing, cutter/arbor, index ratio, blank runout, deburr, and gear inspection evidence are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record gear drawing, tooth count, module or diametral pitch, pressure angle, helix/lead angle, hob/shaper/broach or cutter certificate, blank/arbor runout, index ratio or change gears/electronic gearbox, deburr/burr-control evidence, tooth thickness, over-pins/span, profile/runout, backlash, and gear inspection before release"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-gear-cutting-evidence".to_string(),
+                    reason:
+                        "gear/spline cutting text instructions should retain drawing, cutter/arbor, indexing, lead/helix, burr-control, and inspection evidence before release"
+                            .to_string(),
                 });
             }
             if has_text_indexed_setup_context && !has_text_indexed_setup_evidence {
@@ -20612,6 +23482,95 @@ fn improve_instruction_programs(
                 {
                     notes.push(
                         "Surface finishing job needs chemistry/media, masking, PPE, ventilation, waste, cure/dry, thickness, and inspection evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-metal-joining-procedure-evidence",
+                ) {
+                    notes.push(
+                        "Metal-joining job needs WPS/procedure, qualification, filler/flux/gas, joint prep, fit-up, fixture, fume controls, PPE, and fire-watch evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-metal-joining-inspection-evidence",
+                ) {
+                    notes.push(
+                        "Metal-joining job needs heat input, travel speed, preheat/interpass, distortion control, visual inspection, NDE or leak test, repair disposition, and release evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-molding-casting-tooling-evidence",
+                ) {
+                    notes.push(
+                        "Molding/casting job needs master/tool revision, mold material, parting-line, vent/sprue/runner/gate, release-agent, fixture/support, PPE, draft, and undercut evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-molding-casting-process-evidence",
+                ) {
+                    notes.push(
+                        "Molding/casting job needs mix ratio, pot life, batch, degas/vacuum/pressure, cure/exotherm, demold, shrinkage, void/bubble/flash, and dimensional-release evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-composite-layup-tooling-evidence",
+                ) {
+                    notes.push(
+                        "Composite layup job needs mold/mandrel revision, release film or agent, ply kit, ply schedule, fiber orientation, orientation datum, resin/prepreg/core lot, out-time or pot-life, PPE, and tooling evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-composite-layup-bag-cure-evidence",
+                ) {
+                    notes.push(
+                        "Composite layup job needs bag stack, vacuum level, leak-down, debulk, oven/autoclave cure profile, pressure and temperature trace, exotherm, demold, trim/drill, coupon, NDI/void/delamination, and dimensional-release evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(improvements, &program_id, "add-hot-wire-foam-setup-evidence")
+                {
+                    notes.push(
+                        "Hot-wire foam job needs foam density/blank thickness, template or CNC profile, bow/wire tension, fixture/support, fume extraction, PPE, and fire-watch evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-hot-wire-foam-process-evidence",
+                ) {
+                    notes.push(
+                        "Hot-wire foam job needs wire heat/current, feed, kerf coupon/offset, wire-lag/taper, surface melt, synchronized axes, and dimensional inspection evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(improvements, &program_id, "add-sheet-forming-evidence") {
+                    notes.push(
+                        "Press-brake sheet-forming job needs flat pattern, bend allowance/K-factor, tooling, tonnage, backgauge, springback, guarding, and angle/flange inspection evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(improvements, &program_id, "add-gear-cutting-evidence") {
+                    notes.push(
+                        "Gear/spline cutting job needs gear drawing, tooth count, module or diametral pitch, pressure angle, helix/lead, cutter/hob/shaper/broach and arbor evidence, index ratio or change gears/electronic gearbox, blank runout, deburr, over-pins/span/profile, backlash, and final gear inspection evidence"
                             .to_string(),
                     );
                 }
@@ -23782,6 +26741,18 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "thermal-postprocess-job-packager"
     } else if wants_surface_finishing(&token) {
         "surface-finishing-job-packager"
+    } else if wants_metal_joining(&token) {
+        "metal-joining-job-packager"
+    } else if wants_molding_casting(&token) {
+        "molding-casting-job-packager"
+    } else if wants_composite_layup(&token) {
+        "composite-layup-job-packager"
+    } else if wants_hot_wire_foam_cutting(&token) {
+        "hot-wire-foam-job-packager"
+    } else if wants_sheet_forming(&token) {
+        "press-brake-job-packager"
+    } else if wants_gear_cutting(&token) {
+        "gear-cutting-job-packager"
     } else if token.contains("marlin") {
         "marlin-additive-gcode-postprocessor"
     } else if token.contains("grbl") {
@@ -23794,6 +26765,8 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         || token.contains("multiaxis")
     {
         "five-axis-mill-postprocessor"
+    } else if wants_swiss_turning(&token) {
+        "swiss-turning-gcode-postprocessor"
     } else if wants_mill_turning(&token) {
         "mill-turn-gcode-postprocessor"
     } else if token.contains("haas") {
@@ -23808,6 +26781,10 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "bound-metal-fff-job-packager"
     } else if wants_pellet_fgf_printing(&token) {
         "pellet-fgf-job-packager"
+    } else if wants_robotic_additive_printing(&token) {
+        "robotic-additive-job-packager"
+    } else if wants_sheet_lamination_printing(&token) {
+        "sheet-lamination-job-packager"
     } else if token.contains("sla") || token.contains("resin") {
         "resin-printer-job-packager"
     } else if token.contains("material-jet")
@@ -23872,6 +26849,18 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "thermal-postprocess-job-package".to_string()
     } else if wants_surface_finishing(&token) {
         "surface-finishing-job-package".to_string()
+    } else if wants_metal_joining(&token) {
+        "metal-joining-job-package".to_string()
+    } else if wants_molding_casting(&token) {
+        "molding-casting-job-package".to_string()
+    } else if wants_composite_layup(&token) {
+        "composite-layup-job-package".to_string()
+    } else if wants_hot_wire_foam_cutting(&token) {
+        "hot-wire-foam-job-package".to_string()
+    } else if wants_sheet_forming(&token) {
+        "press-brake-job-package".to_string()
+    } else if wants_gear_cutting(&token) {
+        "gear-cutting-job-package".to_string()
     } else if wants_rotary_index_milling(&token) {
         "indexed-mill-controller-gcode".to_string()
     } else if token.contains("five-axis")
@@ -23880,6 +26869,8 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         || token.contains("multiaxis")
     {
         "five-axis-controller-gcode".to_string()
+    } else if wants_swiss_turning(&token) {
+        "swiss-turning-controller-gcode".to_string()
     } else if wants_mill_turning(&token) {
         "mill-turn-controller-gcode".to_string()
     } else if token.contains("fanuc") || token.contains("lathe") || token.contains("turning") {
@@ -23892,6 +26883,10 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "bound-metal-fff-job-package".to_string()
     } else if wants_pellet_fgf_printing(&token) {
         "pellet-fgf-job-package".to_string()
+    } else if wants_robotic_additive_printing(&token) {
+        "robotic-additive-job-package".to_string()
+    } else if wants_sheet_lamination_printing(&token) {
+        "sheet-lamination-job-package".to_string()
     } else if token.contains("sla") || token.contains("resin") {
         "resin-printer-job-package".to_string()
     } else if token.contains("material-jet")
@@ -23971,6 +26966,24 @@ fn postprocess_required_artifacts(targets: &[PostprocessTarget]) -> Vec<String> 
             artifacts.insert("paste-rheology-and-nozzle-record".to_string());
             artifacts.insert("drying-shrinkage-and-green-part-support-record".to_string());
         }
+        if is_robotic_additive_printer_kind(&target.machine_kind)
+            || wants_robotic_additive_printing(&target.output_format)
+            || wants_robotic_additive_printing(&target.controller)
+        {
+            artifacts.insert("robot-frame-tcp-and-collision-record".to_string());
+            artifacts.insert("robotic-extruder-feedstock-and-purge-record".to_string());
+            artifacts.insert("robotic-bead-coupon-and-flow-record".to_string());
+            artifacts.insert("robotic-cell-interlock-and-release-record".to_string());
+        }
+        if is_sheet_lamination_printer_kind(&target.machine_kind)
+            || wants_sheet_lamination_printing(&target.output_format)
+            || wants_sheet_lamination_printing(&target.controller)
+        {
+            artifacts.insert("sheet-lamination-stock-and-stack-record".to_string());
+            artifacts.insert("sheet-lamination-registration-and-trim-record".to_string());
+            artifacts.insert("sheet-lamination-bond-and-consolidation-record".to_string());
+            artifacts.insert("sheet-lamination-delamination-and-dimensional-record".to_string());
+        }
         if is_bound_metal_filament_printer_kind(&target.machine_kind)
             || wants_bound_metal_filament_printing(&target.output_format)
             || wants_bound_metal_filament_printing(&target.controller)
@@ -24014,6 +27027,61 @@ fn postprocess_required_artifacts(targets: &[PostprocessTarget]) -> Vec<String> 
             artifacts.insert("ventilation-ppe-and-waste-record".to_string());
             artifacts.insert("finish-thickness-adhesion-and-inspection-record".to_string());
         }
+        if is_metal_joining_kind(&target.machine_kind)
+            || wants_metal_joining(&target.output_format)
+            || wants_metal_joining(&target.controller)
+        {
+            artifacts.insert("welding-procedure-and-qualification-record".to_string());
+            artifacts.insert("joint-fitup-fixture-and-clamp-record".to_string());
+            artifacts.insert("filler-flux-gas-and-fume-control-record".to_string());
+            artifacts.insert("heat-input-interpass-and-distortion-record".to_string());
+            artifacts.insert("weld-inspection-nde-and-repair-record".to_string());
+        }
+        if is_molding_casting_kind(&target.machine_kind)
+            || wants_molding_casting(&target.output_format)
+            || wants_molding_casting(&target.controller)
+        {
+            artifacts.insert("mold-master-tooling-and-release-record".to_string());
+            artifacts.insert("mix-ratio-pot-life-and-batch-record".to_string());
+            artifacts.insert("degas-vacuum-pressure-and-cure-record".to_string());
+            artifacts.insert("demold-shrinkage-void-and-dimensional-record".to_string());
+        }
+        if is_composite_layup_kind(&target.machine_kind)
+            || wants_composite_layup(&target.output_format)
+            || wants_composite_layup(&target.controller)
+        {
+            artifacts.insert("composite-tooling-release-and-ply-kit-record".to_string());
+            artifacts.insert("fiber-resin-prepreg-core-lot-record".to_string());
+            artifacts.insert("vacuum-bag-leak-debulk-and-cure-record".to_string());
+            artifacts.insert("demold-trim-coupon-void-and-dimensional-record".to_string());
+        }
+        if is_hot_wire_foam_cutter_kind(&target.machine_kind)
+            || wants_hot_wire_foam_cutting(&target.output_format)
+            || wants_hot_wire_foam_cutting(&target.controller)
+        {
+            artifacts.insert("foam-blank-density-and-template-record".to_string());
+            artifacts.insert("wire-temperature-tension-and-kerf-record".to_string());
+            artifacts.insert("fume-fire-watch-and-ppe-record".to_string());
+            artifacts.insert("foam-core-surface-taper-and-dimensional-record".to_string());
+        }
+        if is_sheet_forming_kind(&target.machine_kind)
+            || wants_sheet_forming(&target.output_format)
+            || wants_sheet_forming(&target.controller)
+        {
+            artifacts.insert("flat-pattern-and-bend-allowance-record".to_string());
+            artifacts.insert("press-brake-tooling-and-tonnage-record".to_string());
+            artifacts.insert("backgauge-bend-sequence-and-angle-inspection-record".to_string());
+            artifacts.insert("formed-part-dimensional-release-record".to_string());
+        }
+        if is_gear_cutting_kind(&target.machine_kind)
+            || wants_gear_cutting(&target.output_format)
+            || wants_gear_cutting(&target.controller)
+        {
+            artifacts.insert("gear-drawing-and-blank-datum-record".to_string());
+            artifacts.insert("gear-cutter-arbor-and-indexing-record".to_string());
+            artifacts.insert("gear-deburr-and-burr-control-record".to_string());
+            artifacts.insert("gear-inspection-over-pins-span-profile-record".to_string());
+        }
         if is_multi_material_fdm_printer_kind(&target.machine_kind)
             || wants_multi_material_fdm_printing(&target.output_format)
             || wants_multi_material_fdm_printing(&target.controller)
@@ -24028,6 +27096,15 @@ fn postprocess_required_artifacts(targets: &[PostprocessTarget]) -> Vec<String> 
             artifacts.insert("lathe-spindle-speed-limit-record".to_string());
             artifacts.insert("threading-pitch-sync-record".to_string());
             artifacts.insert("partoff-catcher-support-record".to_string());
+        }
+        if is_swiss_turning_kind(&target.machine_kind)
+            || wants_swiss_turning(&target.output_format)
+            || wants_swiss_turning(&target.controller)
+        {
+            artifacts.insert("swiss-guide-bushing-and-bar-feed-record".to_string());
+            artifacts.insert("swiss-gang-tool-and-live-tool-clearance-record".to_string());
+            artifacts.insert("swiss-pickoff-cutoff-and-ejection-record".to_string());
+            artifacts.insert("swiss-first-article-runout-and-remnant-record".to_string());
         }
         match machine_class(&target.machine_kind) {
             MachineClass::Additive => {
@@ -24360,7 +27437,9 @@ fn controller_dialect_family(
     let token = normalize_token(&format!(
         "{controller}-{language}-{machine_kind}-{output_format}"
     ));
-    if wants_mill_turning(&token) {
+    if wants_swiss_turning(&token) {
+        "swiss-turning-controller-dialect".to_string()
+    } else if wants_mill_turning(&token) {
         "mill-turn-controller-dialect".to_string()
     } else if wants_rotary_index_milling(&token)
         || token.contains("five-axis")
@@ -24380,6 +27459,14 @@ fn controller_dialect_family(
         "subtractive-gcode-controller-dialect".to_string()
     } else if token.contains("marlin") || token.contains("fdm") || token.contains("gcode") {
         "additive-firmware-gcode-dialect".to_string()
+    } else if wants_composite_layup(&token) {
+        "composite-layup-controller-dialect".to_string()
+    } else if wants_hot_wire_foam_cutting(&token) {
+        "hot-wire-foam-controller-dialect".to_string()
+    } else if wants_robotic_additive_printing(&token) {
+        "robotic-additive-controller-dialect".to_string()
+    } else if wants_sheet_lamination_printing(&token) {
+        "sheet-lamination-controller-dialect".to_string()
     } else if token.contains("sls")
         || token.contains("powder")
         || token.contains("binder")
@@ -24399,6 +27486,14 @@ fn controller_dialect_family(
         "thermal-postprocess-controller-dialect".to_string()
     } else if wants_surface_finishing(&token) {
         "surface-finishing-controller-dialect".to_string()
+    } else if wants_metal_joining(&token) {
+        "metal-joining-controller-dialect".to_string()
+    } else if wants_molding_casting(&token) {
+        "molding-casting-controller-dialect".to_string()
+    } else if wants_sheet_forming(&token) {
+        "press-brake-controller-dialect".to_string()
+    } else if wants_gear_cutting(&token) {
+        "gear-cutting-controller-dialect".to_string()
     } else if token.contains("laser") || token.contains("waterjet") || token.contains("plasma") {
         "sheet-cutting-controller-dialect".to_string()
     } else if wants_assembly_joining(&token) {
@@ -24419,6 +27514,27 @@ fn controller_required_checks(dialect_family: &str, machine_kind: &str) -> Vec<S
             "verify slicer start/end code, temperature waits, extrusion mode, bed mesh, and material profile"
                 .to_string(),
             "confirm pause/resume, filament-change, fan, chamber, and recovery behavior on the exact firmware"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("robotic-additive") {
+        checks.extend([
+            "verify robot base/workobject frame, TCP/nozzle calibration, reach, singularity margins, fixture, external-axis or positioner synchronization, interlocks, E-stop, lockout, and collision simulation"
+                .to_string(),
+            "retain feedstock lot and drying or mix state, nozzle/purge proof, bead coupon, extrusion-rate or volumetric-flow record, melt or extrusion pressure, cooling or cure plan, trim allowance, dimensional scan, and operator cell-release signoff"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("sheet-lamination") {
+        checks.extend([
+            "verify sheet or foil lot, thickness/gauge, stack order, grain or fiber direction, adhesive lot or ultrasonic energy profile, storage condition, surface prep, and cleaning evidence"
+                .to_string(),
+            "retain layer registration, fiducials or datum pins, vacuum or hold-down proof, cut/trim path, adhesive cure or press cycle, ultrasonic weld amplitude/force/speed when used, consolidation coupon, delamination inspection, peel or lap-shear result, dimensional release, and operator signoff"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("swiss-turning") {
+        checks.extend([
+            "verify guide bushing, bar feeder, collet pressure, remnant length, gang-tool station map, live-tool orientation, and controller-specific pickoff/cutoff macros"
+                .to_string(),
+            "retain stock straightness, bar-feed length, spindle sync, subspindle grip check, cutoff support, part ejection, and first-article runout evidence"
                 .to_string(),
         ]);
     } else if dialect_family.contains("subtractive")
@@ -24452,6 +27568,48 @@ fn controller_required_checks(dialect_family: &str, machine_kind: &str) -> Vec<S
             "retain dry/cure state, neutralization or media removal, thickness/adhesion/color or roughness inspection, dimensional impact, and release disposition"
                 .to_string(),
         ]);
+    } else if dialect_family.contains("metal-joining") {
+        checks.extend([
+            "verify WPS or joining procedure, welder/process qualification, material compatibility, filler/flux/gas lot, joint prep, fit-up, fixture/clamps, fume controls, and fire-watch readiness"
+                .to_string(),
+            "retain heat input, travel speed, preheat/interpass temperature, shielding or purge state, distortion control, visual inspection, NDE or leak test, repair disposition, and release signoff"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("molding-casting") {
+        checks.extend([
+            "verify master or tool revision, mold material, parting line, vents/sprues/runners/gates, release agent, fixture/support, PPE, and fill strategy"
+                .to_string(),
+            "retain mix ratio, pot life, batch, degas/vacuum/pressure, cure schedule, exotherm or temperature, demold method, flash/void/bubble inspection, shrinkage allowance, and dimensional release"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("composite-layup") {
+        checks.extend([
+            "verify mold or mandrel revision, release film or agent, ply kit, ply schedule, fiber orientation, orientation datum, resin/prepreg/core lot, out-time or pot-life, PPE, and tooling readiness"
+                .to_string(),
+            "retain vacuum bag stack, leak-down, debulk schedule, oven/autoclave cure profile, pressure and temperature trace, exotherm, demold, trim/drill, coupon, NDI/void/delamination, and dimensional release evidence"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("hot-wire-foam") {
+        checks.extend([
+            "verify foam lot/density, blank thickness, template or CNC profile, bow/wire tension, fixture/support, fume extraction, PPE, and fire-watch readiness"
+                .to_string(),
+            "retain wire temperature/current, feed, kerf coupon or offset, wire-lag/taper compensation, surface-melt review, airfoil/core thickness, and dimensional release evidence"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("press-brake") {
+        checks.extend([
+            "verify flat pattern revision, material thickness and grain direction, bend allowance or K-factor, punch/V-die tooling, tonnage, backgauge, guarding, and brake setup"
+                .to_string(),
+            "retain bend sequence, springback compensation, angle and flange inspection, formed envelope, and release disposition"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("gear-cutting") {
+        checks.extend([
+            "verify gear drawing, tooth count, module or diametral pitch, pressure angle, helix or lead angle, blank datum, arbor/fixture, cutter or hob/shaper/broach qualification, and material hardness"
+                .to_string(),
+            "retain index ratio, change gears or electronic gearbox, spindle/cutter synchronization, trial tooth, deburr and burr-control record, over-pins/span/profile/runout inspection, backlash, and release disposition"
+                .to_string(),
+        ]);
     } else if dialect_family.contains("edm") {
         checks.extend([
             "verify power table, wire/electrode setup, offsets, dielectric/flushing, slug retention, and skim/orbit strategy"
@@ -24476,8 +27634,14 @@ fn controller_required_checks(dialect_family: &str, machine_kind: &str) -> Vec<S
     if is_rotary_index_mill_kind(machine_kind) || wants_rotary_index_milling(machine_kind) {
         checks.push("verify rotary/index axis zero, clamp/brake state, pivot/centerline, clearance sweep, and datum re-probe".to_string());
     }
+    if is_swiss_turning_kind(machine_kind) {
+        checks.push("verify guide-bushing heat/clearance, bar feeder remnant, gang-tool interference, pickoff timing, cutoff support, and ejection/recovery state".to_string());
+    }
     if is_mill_turn_kind(machine_kind) {
         checks.push("verify live-tool orientation, C/Y/B-axis modes, spindle phase sync, subspindle transfer macros, and polar interpolation".to_string());
+    }
+    if is_robotic_additive_printer_kind(machine_kind) {
+        checks.push("verify robot cell access control, external-axis home state, path dry run, nozzle purge, bead-flow stability, and cooldown or cure hold before release".to_string());
     }
     checks.sort();
     checks.dedup();
@@ -24926,6 +28090,14 @@ fn canonical_policy_method(value: &str) -> Option<String> {
         Some("horizontal-milling".to_string())
     } else if token.contains("router") || token.contains("routing") || token.contains("rout") {
         Some("routing".to_string())
+    } else if wants_sheet_forming(&token) {
+        Some("sheet-forming".to_string())
+    } else if wants_molding_casting(&token) {
+        Some("molding-casting".to_string())
+    } else if wants_composite_layup(&token) {
+        Some("composite-layup".to_string())
+    } else if wants_hot_wire_foam_cutting(&token) {
+        Some("hot-wire-foam-cutting".to_string())
     } else if wants_sheet_cutting(&token) || token.contains("sheet-cutting") {
         Some("sheet-cutting".to_string())
     } else if token.contains("turn") || token.contains("lathe") {
@@ -24947,8 +28119,12 @@ fn method_rank(method: &str) -> u8 {
         "indexed-rotary-milling" => 3,
         "horizontal-milling" => 4,
         "routing" => 5,
-        "sheet-cutting" => 6,
-        "turning" => 7,
+        "molding-casting" => 6,
+        "composite-layup" => 7,
+        "hot-wire-foam-cutting" => 8,
+        "sheet-forming" => 9,
+        "sheet-cutting" => 10,
+        "turning" => 11,
         _ => 100,
     }
 }
@@ -25546,6 +28722,18 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
             "thermal-postprocess"
         } else if is_surface_finishing_kind(&machine.kind) {
             "surface-finishing"
+        } else if is_metal_joining_kind(&machine.kind) {
+            "metal-joining"
+        } else if is_molding_casting_kind(&machine.kind) {
+            "molding-casting"
+        } else if is_composite_layup_kind(&machine.kind) {
+            "composite-layup"
+        } else if is_hot_wire_foam_cutter_kind(&machine.kind) {
+            "hot-wire-foam-cutting"
+        } else if is_sheet_forming_kind(&machine.kind) {
+            "sheet-forming"
+        } else if is_gear_cutting_kind(&machine.kind) {
+            "gear-cutting"
         } else if is_rotary_index_mill_kind(&machine.kind) {
             "indexed-rotary-milling"
         } else {
@@ -26157,6 +29345,374 @@ fn analyze_instruction_request(
         improved_programs,
         learning,
         generated_at_ms,
+    })
+}
+
+fn instruction_improvement_review_response(response: &InstructionAnalysisResponse) -> Value {
+    let changed_program_count = response
+        .improved_programs
+        .iter()
+        .filter(|program| program.changed)
+        .count();
+    let machine_ready_count = response
+        .improved_programs
+        .iter()
+        .filter(|program| program.machine_ready)
+        .count();
+    let patch_operation_count = response
+        .improved_programs
+        .iter()
+        .map(|program| program.patch_manifest.operation_count)
+        .sum::<usize>();
+    let blocked_program_count = response
+        .improved_programs
+        .len()
+        .saturating_sub(machine_ready_count);
+
+    json!({
+        "ok": response.ok,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-improvement-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": &response.request_id,
+        "jobId": &response.job_id,
+        "routes": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
+        "analysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "catalogRoutes": ["GET /improvements/catalog", "GET /fabrication/improvements/catalog"],
+        "machineReady": !response.machine_release.machine_release_blocked && blocked_program_count == 0,
+        "machineReleaseBlocked": response.machine_release.machine_release_blocked,
+        "validationSeverity": &response.validation.severity,
+        "programCount": response.programs.len(),
+        "improvementCount": response.improvements.len(),
+        "improvedProgramCount": response.improved_programs.len(),
+        "changedProgramCount": changed_program_count,
+        "patchOperationCount": patch_operation_count,
+        "machineReadyProgramCount": machine_ready_count,
+        "blockedProgramCount": blocked_program_count,
+        "responseSurfaces": [
+            "validation.findings",
+            "validation.failureBoundaries",
+            "resolutionPlan.steps",
+            "interventionMap",
+            "machineRelease.blockers",
+            "executionPlan.programRuns",
+            "postprocessPlan.targets",
+            "simulation.programs",
+            "improvements",
+            "improvedPrograms",
+            "improvedPrograms.patchManifest"
+        ],
+        "artifactSurfaces": [
+            "analysis-improvements",
+            "improved-program-*",
+            "analysis-machine-release",
+            "analysis-execution-plan",
+            "analysis-postprocess-plan",
+            "analysis-mdp-request"
+        ],
+        "learningSurfaces": [
+            "instruction-patch:*",
+            "instruction-patch-action:*",
+            "patch-action:*",
+            "learning.interventionSignals",
+            "neuralTrainingCorpus.examples"
+        ],
+        "releasePolicy": [
+            "instruction improvement review returns conservative repair drafts, not executable-certified controller code",
+            "improved programs remain machineReady=false until validation, simulation, controller/postprocessor review, and operator or automation signoff clear",
+            "patch manifests and instruction-patch observations are retained so MDP/POMDP/neural workers can learn which repairs reduce machine-failure and human-intervention boundaries"
+        ],
+        "validation": &response.validation,
+        "boundarySummary": &response.boundary_summary,
+        "resolutionPlan": &response.resolution_plan,
+        "interventionMap": &response.intervention_map,
+        "machineRelease": &response.machine_release,
+        "executionPlan": &response.execution_plan,
+        "postprocessPlan": &response.postprocess_plan,
+        "simulation": &response.simulation,
+        "improvements": &response.improvements,
+        "improvedPrograms": &response.improved_programs
+    })
+}
+
+fn instruction_validation_response(response: &InstructionAnalysisResponse) -> Value {
+    let changed_program_count = response
+        .improved_programs
+        .iter()
+        .filter(|program| program.changed)
+        .count();
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.instruction-validation.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!([
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate"
+        ]),
+    );
+    object.insert(
+        "analysisRoutes".to_string(),
+        json!([
+            "POST /instructions/analyze",
+            "POST /fabrication/instructions/analyze"
+        ]),
+    );
+    object.insert(
+        "improvementRoutes".to_string(),
+        json!([
+            "POST /instructions/improve",
+            "POST /fabrication/instructions/improve"
+        ]),
+    );
+    object.insert(
+        "boundaryReviewRoutes".to_string(),
+        json!([
+            "POST /instructions/boundaries/review",
+            "POST /fabrication/instructions/boundaries/review"
+        ]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /instructions/languages",
+            "GET /fabrication/instructions/languages",
+            "GET /boundaries/catalog",
+            "GET /fabrication/boundaries/catalog",
+            "GET /improvements/catalog",
+            "GET /fabrication/improvements/catalog"
+        ]),
+    );
+    object.insert(
+        "machineReady".to_string(),
+        json!(!response.machine_release.machine_release_blocked),
+    );
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(response.machine_release.machine_release_blocked),
+    );
+    object.insert("validationOk".to_string(), json!(response.validation.ok));
+    object.insert(
+        "validationSeverity".to_string(),
+        json!(&response.validation.severity),
+    );
+    object.insert("programCount".to_string(), json!(response.programs.len()));
+    object.insert(
+        "findingCount".to_string(),
+        json!(response.validation.findings.len()),
+    );
+    object.insert(
+        "boundaryCount".to_string(),
+        json!(response.validation.failure_boundaries.len()),
+    );
+    object.insert(
+        "machineFailureRiskCount".to_string(),
+        json!(response.boundary_summary.machine_failure_risks),
+    );
+    object.insert(
+        "humanInterventionRequiredCount".to_string(),
+        json!(response.boundary_summary.human_intervention_required),
+    );
+    object.insert(
+        "splitRecommendedCount".to_string(),
+        json!(response.boundary_summary.split_recommended),
+    );
+    object.insert(
+        "combineRecommendedCount".to_string(),
+        json!(response.boundary_summary.combine_recommended),
+    );
+    object.insert(
+        "releaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "simulationFindingCount".to_string(),
+        json!(response.simulation.findings.len()),
+    );
+    object.insert(
+        "simulationBoundaryCount".to_string(),
+        json!(response.simulation.failure_boundaries.len()),
+    );
+    object.insert(
+        "improvementCount".to_string(),
+        json!(response.improvements.len()),
+    );
+    object.insert(
+        "changedProgramCount".to_string(),
+        json!(changed_program_count),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "programs",
+            "validation.findings",
+            "validation.failureBoundaries",
+            "boundarySummary",
+            "resolutionPlan.steps",
+            "interventionMap.humanInterventionPoints",
+            "interventionMap.splitCombineDecisions",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "machineRelease.blockers",
+            "executionPlan.programRuns",
+            "postprocessPlan.controllerTargets",
+            "simulation.programs",
+            "simulation.failureBoundaries",
+            "improvements",
+            "improvedPrograms.patchManifest",
+            "learning.desInstructionModel",
+            "learning.neuralTrainingCorpus"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "analysis-validation-report",
+            "analysis-boundary-summary",
+            "analysis-resolution-plan",
+            "analysis-intervention-map",
+            "analysis-machine-release",
+            "analysis-simulation-report",
+            "analysis-improvements",
+            "analysis-mdp-request"
+        ]),
+    );
+    object.insert(
+        "releasePolicy".to_string(),
+        json!([
+            "instruction validation accepts generated or imported machine-code, slicer, job-sheet, setup, and operator instruction streams as review evidence",
+            "validated programs remain machineReady=false while validation findings, simulation findings, machine-failure boundaries, human-intervention gates, split/combine reviews, or release blockers remain open",
+            "validation findings and boundary outcomes are retained for MDP/POMDP/neural workers so future plans can improve programs, regenerate machine code, choose alternate machines, or split/combine parts"
+        ]),
+    );
+    object.insert("programs".to_string(), json!(&response.programs));
+    object.insert("validation".to_string(), json!(&response.validation));
+    object.insert(
+        "boundarySummary".to_string(),
+        json!(&response.boundary_summary),
+    );
+    object.insert(
+        "resolutionPlan".to_string(),
+        json!(&response.resolution_plan),
+    );
+    object.insert(
+        "interventionMap".to_string(),
+        json!(&response.intervention_map),
+    );
+    object.insert(
+        "operatorInterventionPlan".to_string(),
+        json!(&response.operator_intervention_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert("executionPlan".to_string(), json!(&response.execution_plan));
+    object.insert(
+        "postprocessPlan".to_string(),
+        json!(&response.postprocess_plan),
+    );
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert("improvements".to_string(), json!(&response.improvements));
+    object.insert(
+        "improvedPrograms".to_string(),
+        json!(&response.improved_programs),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "desInstructionModel": &response.des_instruction_model,
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
+fn instruction_boundary_review_response(response: &InstructionAnalysisResponse) -> Value {
+    json!({
+        "ok": response.ok,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-boundary-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": &response.request_id,
+        "jobId": &response.job_id,
+        "routes": [
+            "POST /instructions/boundaries/review",
+            "POST /fabrication/instructions/boundaries/review"
+        ],
+        "analysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "improvementRoutes": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
+        "catalogRoutes": [
+            "GET /boundaries/catalog",
+            "GET /fabrication/boundaries/catalog",
+            "GET /interventions/catalog",
+            "GET /fabrication/interventions/catalog"
+        ],
+        "machineReady": !response.machine_release.machine_release_blocked,
+        "machineReleaseBlocked": response.machine_release.machine_release_blocked,
+        "validationSeverity": &response.validation.severity,
+        "programCount": response.programs.len(),
+        "findingCount": response.validation.findings.len(),
+        "boundaryCount": response.validation.failure_boundaries.len(),
+        "resolutionStepCount": response.resolution_plan.step_count,
+        "humanInterventionPointCount": response.intervention_map.human_intervention_points.len(),
+        "splitCombineDecisionCount": response.intervention_map.split_combine_decisions.len(),
+        "automationPathCount": response.intervention_map.automation_paths.len(),
+        "machineFailureRiskScore": response.intervention_map.machine_failure_risk_score,
+        "responseSurfaces": [
+            "validation.findings",
+            "validation.failureBoundaries",
+            "boundarySummary",
+            "resolutionPlan.steps",
+            "interventionMap.humanInterventionPoints",
+            "interventionMap.splitCombineDecisions",
+            "interventionMap.automationPaths",
+            "operatorInterventionPlan",
+            "machineRelease.blockers",
+            "executionPlan.programRuns",
+            "simulation.riskProfile"
+        ],
+        "artifactSurfaces": [
+            "analysis-validation-report",
+            "analysis-boundary-summary",
+            "analysis-resolution-plan",
+            "analysis-intervention-map",
+            "analysis-operator-intervention-plan",
+            "analysis-machine-release",
+            "analysis-execution-plan",
+            "analysis-simulation-report",
+            "analysis-mdp-request"
+        ],
+        "learningSurfaces": [
+            "boundary-kind:*",
+            "boundary-severity:*",
+            "resolution-action:*",
+            "interventionMap.learningObservations",
+            "releaseProbePlan.probes",
+            "neuralTrainingCorpus.examples"
+        ],
+        "releasePolicy": [
+            "instruction boundary review returns machine-failure, human-intervention, automation, and split/combine gates for submitted instruction streams",
+            "machine-ready release remains blocked while validation findings, unresolved boundaries, missing automation evidence, simulation risks, or operator signoff gaps remain",
+            "boundary and resolution observations are retained so MDP/POMDP/neural workers can learn which instruction patterns require split, combine, regenerate, or human-review actions"
+        ],
+        "validation": &response.validation,
+        "boundarySummary": &response.boundary_summary,
+        "resolutionPlan": &response.resolution_plan,
+        "interventionMap": &response.intervention_map,
+        "operatorInterventionPlan": &response.operator_intervention_plan,
+        "machineRelease": &response.machine_release,
+        "executionPlan": &response.execution_plan,
+        "simulation": &response.simulation
     })
 }
 
@@ -28047,6 +31603,10 @@ fn stock_strategy_for_part(part: &PartPlan) -> String {
             "powder-bed nesting envelope with thermal spacing, cooldown allowance, and depowder access"
                 .to_string()
         }
+        MachineClass::Additive if is_sheet_lamination_printer_kind(&part.machine_kind) => {
+            "sheet or foil stack with lot/thickness evidence, registration allowance, trim/cut path, bond/consolidation coupon, and delamination inspection margin"
+                .to_string()
+        }
         MachineClass::Additive => {
             "filament build envelope with material profile, support strategy, and bed adhesion margin"
                 .to_string()
@@ -28073,6 +31633,10 @@ fn stock_strategy_for_part(part: &PartPlan) -> String {
         MachineClass::SheetCut => {
             "sheet stock with kerf coupon, lead-ins, retained tabs, and part-catch allowance".to_string()
         }
+        MachineClass::Other if is_hot_wire_foam_cutter_kind(&part.machine_kind) => {
+            "foam blank or core stock with density, thickness, template/CNC profile, bow clearance, support, and fume/fire-watch allowance"
+                .to_string()
+        }
         MachineClass::Other => {
             "operator-defined stock and material certificate before special-process programming"
                 .to_string()
@@ -28091,6 +31655,12 @@ fn material_feedstock_kind(part: &PartPlan) -> &'static str {
         }
         MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => {
             "paste-or-clay-feedstock"
+        }
+        MachineClass::Additive if is_robotic_additive_printer_kind(&part.machine_kind) => {
+            "robotic-additive-feedstock"
+        }
+        MachineClass::Additive if is_sheet_lamination_printer_kind(&part.machine_kind) => {
+            "sheet-lamination-stock"
         }
         MachineClass::Additive if is_powder_bed_printer_kind(&part.machine_kind) => {
             "polymer-powder-lot"
@@ -28111,6 +31681,18 @@ fn material_feedstock_kind(part: &PartPlan) -> &'static str {
         MachineClass::Lathe => "round-bar-or-tube-stock",
         MachineClass::Mill | MachineClass::Router => "block-plate-or-sheet-blank",
         MachineClass::SheetCut => "sheet-plate-or-panel",
+        MachineClass::Other if is_molding_casting_kind(&part.machine_kind) => {
+            "resin-silicone-urethane-or-mold-material-kit"
+        }
+        MachineClass::Other if is_composite_layup_kind(&part.machine_kind) => {
+            "fiber-resin-prepreg-core-kit"
+        }
+        MachineClass::Other if is_hot_wire_foam_cutter_kind(&part.machine_kind) => {
+            "foam-blank-or-core-stock"
+        }
+        MachineClass::Other if is_gear_cutting_kind(&part.machine_kind) => {
+            "round-blank-or-gear-stock"
+        }
         MachineClass::Other => "operator-declared-material-kit",
     }
 }
@@ -28124,6 +31706,7 @@ fn material_requirement_unit(part: &PartPlan) -> &'static str {
         {
             "cm3"
         }
+        MachineClass::Additive if is_sheet_lamination_printer_kind(&part.machine_kind) => "sheets",
         MachineClass::Additive => "g",
         MachineClass::Lathe => "mm blank length",
         MachineClass::Mill | MachineClass::Router | MachineClass::SheetCut => "blank",
@@ -28141,6 +31724,8 @@ fn material_estimated_quantity(part: &PartPlan, quantity: u32) -> f64 {
         MachineClass::Additive if is_material_jetting_printer_kind(&part.machine_kind) => 40.0,
         MachineClass::Additive if is_multi_material_fdm_printer_kind(&part.machine_kind) => 140.0,
         MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => 600.0,
+        MachineClass::Additive if is_robotic_additive_printer_kind(&part.machine_kind) => 900.0,
+        MachineClass::Additive if is_sheet_lamination_printer_kind(&part.machine_kind) => 35.0,
         MachineClass::Additive if is_pellet_fgf_printer_kind(&part.machine_kind) => 450.0,
         MachineClass::Additive => 85.0,
         MachineClass::Lathe => 120.0,
@@ -28160,6 +31745,8 @@ fn material_scrap_allowance_pct(part: &PartPlan) -> f64 {
         MachineClass::Additive if wants_directed_energy_deposition(&part.machine_kind) => 30.0,
         MachineClass::Additive if is_multi_material_fdm_printer_kind(&part.machine_kind) => 22.0,
         MachineClass::Additive if is_paste_extrusion_printer_kind(&part.machine_kind) => 25.0,
+        MachineClass::Additive if is_robotic_additive_printer_kind(&part.machine_kind) => 28.0,
+        MachineClass::Additive if is_sheet_lamination_printer_kind(&part.machine_kind) => 18.0,
         MachineClass::Additive => 15.0,
         MachineClass::Lathe => 20.0,
         MachineClass::Mill | MachineClass::Router => 18.0,
@@ -28212,6 +31799,18 @@ fn material_conditioning(part: &PartPlan) -> Vec<String> {
             "dry pellet feedstock to material profile and verify hopper refill capacity"
                 .to_string(),
             "confirm screw purge, bead thermal window, and trim allowance".to_string(),
+        ],
+        MachineClass::Additive if is_robotic_additive_printer_kind(&part.machine_kind) => vec![
+            "verify robotic additive feedstock lot, drying or mix state, and nozzle/extruder purge before loading"
+                .to_string(),
+            "reserve robot frame/TCP proof, dry-run collision simulation, interlock check, bead coupon, cooldown or cure plan, and dimensional-scan evidence"
+                .to_string(),
+        ],
+        MachineClass::Additive if is_sheet_lamination_printer_kind(&part.machine_kind) => vec![
+            "verify sheet or foil stock lot, thickness/gauge, grain or fiber direction, stack order, adhesive lot or ultrasonic energy profile, storage, surface prep, and cleaning before loading"
+                .to_string(),
+            "reserve layer registration, fiducial/datum proof, hold-down, cut/trim path, bond or ultrasonic consolidation coupon, delamination inspection, and dimensional release evidence"
+                .to_string(),
         ],
         MachineClass::Additive => vec![
             "dry or condition filament to material profile".to_string(),
@@ -28277,6 +31876,10 @@ fn material_required_evidence(part: &PartPlan) -> Vec<String> {
             evidence.push(
                 "support, adhesion, purge/prime, or build-media readiness evidence".to_string(),
             );
+            if is_sheet_lamination_printer_kind(&part.machine_kind) {
+                evidence.push("sheet or foil lot, thickness/gauge, stack order, adhesive or ultrasonic energy profile, and storage evidence".to_string());
+                evidence.push("layer registration, fiducials, cut/trim path, bond/consolidation coupon, delamination inspection, and dimensional-release evidence".to_string());
+            }
         }
         MachineClass::Mill | MachineClass::Router => {
             evidence.push(
@@ -29692,6 +33295,12 @@ fn fixture_required_evidence(
                 .to_string(),
             "dry-run confirms clamps and finished features stay outside rapid and cutting motion".to_string(),
         ]),
+        MachineClass::Lathe if is_swiss_turning_kind(&part.machine_kind) => evidence.extend([
+            "guide bushing, bar feeder, stock straightness, collet pressure, remnant length, and coolant evidence"
+                .to_string(),
+            "gang-tool station map, live-tool clearance, subspindle pickoff, cutoff support, ejection, and first-article runout record"
+                .to_string(),
+        ]),
         MachineClass::Lathe if is_mill_turn_kind(&part.machine_kind) => evidence.extend([
             "main/sub-spindle chuck pressure, stick-out, C/Y-axis live-tool clearance, and transfer sync evidence"
                 .to_string(),
@@ -29711,6 +33320,12 @@ fn fixture_required_evidence(
             "slat/honeycomb/water-table support, pierce/kerf coupon, fire/fume controls, and retained-tab evidence"
                 .to_string(),
             "sheet origin, material thickness, slug retention, and drop/catch path reviewed before release"
+                .to_string(),
+        ]),
+        MachineClass::Other if is_gear_cutting_kind(&part.machine_kind) => evidence.extend([
+            "gear blank datum, arbor/fixture fit, blank and arbor runout, cutter/hob/shaper/broach qualification, and material hardness evidence"
+                .to_string(),
+            "index ratio, change gears or electronic gearbox, lead/helix synchronization, backlash, and trial-tooth inspection record"
                 .to_string(),
         ]),
         MachineClass::Other => evidence.extend([
@@ -29755,6 +33370,12 @@ fn fixture_clearance_checks(part: &PartPlan) -> Vec<String> {
             "rapid Z and XY moves clear clamps, vise jaws, tabs, stock, and tool length offsets".to_string(),
             "probe/dry-run path verifies G54/G43 state before cutting feeds".to_string(),
         ],
+        MachineClass::Lathe if is_swiss_turning_kind(&part.machine_kind) => vec![
+            "guide bushing, gang tools, live-tool spindle, cutoff blade, subspindle pickoff, and ejection path clear the bar stock"
+                .to_string(),
+            "bar-feed stroke, remnant length, collet/chuck pressure, and guide-bushing heat state are reviewed before cycle start"
+                .to_string(),
+        ],
         MachineClass::Lathe => vec![
             "tool, turret, jaw, tailstock, steady-rest, and part-off path clear rotating stock".to_string(),
             "spindle speed cap, stick-out, and workholding RPM limit reviewed before start".to_string(),
@@ -29766,6 +33387,10 @@ fn fixture_clearance_checks(part: &PartPlan) -> Vec<String> {
         MachineClass::SheetCut => vec![
             "pierce, kerf, slag/drop, fire/fume, slug-retention, and sheet support path reviewed".to_string(),
             "head/nozzle/wire clearance stays away from clamps, slats, and retained tabs".to_string(),
+        ],
+        MachineClass::Other if is_gear_cutting_kind(&part.machine_kind) => vec![
+            "hob, shaper, broach, arbor, tailstock/support, and blank rotation clear guards, fixtures, and adjacent features".to_string(),
+            "indexing trial tooth verifies change gears/electronic gearbox, backlash, lead/helix sync, and cutter engagement before production".to_string(),
         ],
         MachineClass::Other => vec![
             "fixture, robot/end-effector, operator, and recovery envelope dry-run is recorded".to_string(),
@@ -35063,12 +38688,18 @@ async fn root() -> impl IntoResponse {
             "GET /fabrication/materials/catalog",
             "GET /design/formats",
             "GET /fabrication/design/formats",
+            "GET /design/import/catalog",
+            "GET /fabrication/design/import/catalog",
             "GET /design/generation/catalog",
             "GET /fabrication/design/generation/catalog",
+            "POST /design/import/review",
+            "POST /fabrication/design/import/review",
             "GET /instructions/languages",
             "GET /fabrication/instructions/languages",
             "GET /instructions/generation/catalog",
             "GET /fabrication/instructions/generation/catalog",
+            "POST /instructions/generate",
+            "POST /fabrication/instructions/generate",
             "GET /improvements/catalog",
             "GET /fabrication/improvements/catalog",
             "GET /boundaries/catalog",
@@ -35077,8 +38708,12 @@ async fn root() -> impl IntoResponse {
             "GET /fabrication/decomposition/catalog",
             "GET /release/catalog",
             "GET /fabrication/release/catalog",
+            "POST /release/preview",
+            "POST /fabrication/release/preview",
             "GET /strategy/catalog",
             "GET /fabrication/strategy/catalog",
+            "POST /strategy/recommend",
+            "POST /fabrication/strategy/recommend",
             "GET /schedule/catalog",
             "GET /fabrication/schedule/catalog",
             "GET /simulation/catalog",
@@ -35091,8 +38726,14 @@ async fn root() -> impl IntoResponse {
             "GET /fabrication/interventions/catalog",
             "GET /setup/catalog",
             "GET /fabrication/setup/catalog",
+            "POST /setup/plan",
+            "POST /fabrication/setup/plan",
             "GET /postprocess/catalog",
             "GET /fabrication/postprocess/catalog",
+            "POST /monitoring/plan",
+            "POST /fabrication/monitoring/plan",
+            "POST /postprocess/plan",
+            "POST /fabrication/postprocess/plan",
             "GET /artifacts/catalog",
             "GET /fabrication/artifacts/catalog",
             "GET /learning/capabilities",
@@ -35105,14 +38746,23 @@ async fn root() -> impl IntoResponse {
             "GET /api/docs",
             "GET /api/docs.json",
             "GET /jobs",
+            "GET /fabrication/jobs",
             "GET /jobs/:job_id",
+            "GET /fabrication/jobs/:job_id",
             "GET /jobs/:job_id/artifacts/:artifact_id",
+            "GET /fabrication/jobs/:job_id/artifacts/:artifact_id",
             "GET /learning/policy",
             "GET /fabrication/learning/policy",
             "POST /plan",
             "POST /fabrication/plan",
             "POST /instructions/analyze",
             "POST /fabrication/instructions/analyze",
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate",
+            "POST /instructions/improve",
+            "POST /fabrication/instructions/improve",
+            "POST /instructions/boundaries/review",
+            "POST /fabrication/instructions/boundaries/review",
             "POST /learning/observe",
             "POST /fabrication/learning/observe",
             "GET /learning/outcomes",
@@ -35123,14 +38773,21 @@ async fn root() -> impl IntoResponse {
         "capabilities": [
             "hybrid additive/subtractive/turning process planning",
             "draft G-code and operator instruction generation",
+            "standalone generated machine-program and instruction package creation",
             "existing instruction validation and improvement hints",
+            "standalone instruction improvement review and patch-manifest generation",
+            "standalone instruction boundary review for machine-failure, human-intervention, automation, and split/combine gates",
             "simulation and dry-run catalog discovery for machine-envelope, clearance, collision, and remediation evidence",
             "CAD, organic-model, neutral mesh, and slicer project input review",
+            "CAD/model/slicer import worker-lane discovery and release blockers",
+            "standalone CAD/model/slicer import review and conversion-plan validation",
             "bounded machine profile evidence intake for calibration, tooling, fixtures, materials, support media, and blockers",
             "bounded job and artifact inspection",
             "fabrication outcome reward ingestion and policy snapshots",
             "machine-failure and human-intervention boundary detection",
+            "machine-release blocker and release-package preview for fabrication intents",
             "hybrid make strategy candidate, learned preference, and MDP/POMDP policy handoff discovery",
+            "learned hybrid strategy recommendation previews for open fabrication intents",
             "MDP/POMDP/DES/neural policy feature contract"
         ]
     }))
@@ -35747,8 +39404,573 @@ fn decomposition_catalog_response() -> Value {
     })
 }
 
+fn decomposition_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.decomposition-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!([
+            "POST /decomposition/plan",
+            "POST /fabrication/decomposition/plan"
+        ]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /decomposition/catalog",
+            "GET /fabrication/decomposition/catalog",
+            "GET /assembly/catalog",
+            "GET /fabrication/assembly/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog",
+            "GET /strategy/catalog",
+            "GET /fabrication/strategy/catalog"
+        ]),
+    );
+    object.insert(
+        "machineReady".to_string(),
+        json!(
+            !response.machine_release.machine_release_blocked
+                && !response.decomposition_plan.release_blocked
+                && !response.interface_control_plan.machine_release_blocked
+                && !response.release_package_plan.machine_release_blocked
+        ),
+    );
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(
+            response.machine_release.machine_release_blocked
+                || response.decomposition_plan.release_blocked
+                || response.interface_control_plan.machine_release_blocked
+                || response.release_package_plan.machine_release_blocked
+        ),
+    );
+    object.insert(
+        "splitTargetCount".to_string(),
+        json!(response.decomposition_plan.targets.len()),
+    );
+    object.insert(
+        "routeContractCount".to_string(),
+        json!(response.decomposition_plan.route_contracts.len()),
+    );
+    object.insert(
+        "recompositionInterfaceCount".to_string(),
+        json!(response.decomposition_plan.recomposition_interfaces.len()),
+    );
+    object.insert(
+        "interfaceControlCount".to_string(),
+        json!(response.interface_control_plan.controls.len()),
+    );
+    object.insert(
+        "joinOperationCount".to_string(),
+        json!(response.hybrid_make_plan.join_operations.len()),
+    );
+    object.insert(
+        "splitCombineDecisionCount".to_string(),
+        json!(response.hybrid_make_plan.split_combine_decisions.len()),
+    );
+    object.insert(
+        "releaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "packageCount".to_string(),
+        json!(response.release_package_plan.packages.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "decompositionPlan.targets",
+            "decompositionPlan.routeContracts",
+            "decompositionPlan.recompositionInterfaces",
+            "decompositionPlan.releaseGates",
+            "interfaceControlPlan.controls",
+            "interfaceControlPlan.decisionLinks",
+            "hybridMakePlan.partRoutes",
+            "hybridMakePlan.joinOperations",
+            "hybridMakePlan.splitCombineDecisions",
+            "assembly.assemblyGraph",
+            "releasePackagePlan.packages",
+            "machineRelease.blockers",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "decomposition-plan",
+            "interface-control-plan",
+            "hybrid-make-plan",
+            "assembly-plan",
+            "parametric-design",
+            "manufacturing-handoff",
+            "release-package-plan",
+            "mdp-request.artifacts.decompositionPlan",
+            "mdp-request.artifacts.interfaceControlPlan",
+            "mdp-request.artifacts.hybridMakePlan"
+        ]),
+    );
+    object.insert(
+        "learningSurfaces".to_string(),
+        json!([
+            "decompositionPlan.learningObservations",
+            "interfaceControlPlan.learningObservations",
+            "hybridMakePlan.learningObservations",
+            "releasePackagePlan.learningObservations",
+            "releaseProbePlan.probes",
+            "neuralTrainingCorpus.examples",
+            "learning.outcomes"
+        ]),
+    );
+    object.insert(
+        "releasePolicy".to_string(),
+        json!([
+            "decomposition planning returns draft split/combine and recomposition contracts, not certified CAD, CAM, slicer, assembly, or controller output",
+            "machine-ready release remains blocked until child geometry, per-route machine code, datum transfer, interface metrology, recomposition, release package, and operator or automation evidence are retained",
+            "split/combine, interface, and release observations are stored and published so MDP/POMDP/neural workers can compare single-piece, split-route, and recomposed outcomes"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "decompositionPlan".to_string(),
+        json!(&response.decomposition_plan),
+    );
+    object.insert(
+        "interfaceControlPlan".to_string(),
+        json!(&response.interface_control_plan),
+    );
+    object.insert(
+        "hybridMakePlan".to_string(),
+        json!(&response.hybrid_make_plan),
+    );
+    object.insert("assembly".to_string(), json!(&response.assembly));
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "manufacturingHandoff".to_string(),
+        json!(&response.manufacturing_handoff),
+    );
+    object.insert("processGraph".to_string(), json!(&response.process_graph));
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "strategyCandidates": &response.learning.strategy_candidates,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
 async fn decomposition_catalog_http() -> impl IntoResponse {
     Json(decomposition_catalog_response())
+}
+
+fn assembly_catalog_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "contract": "assembly-graph-and-sequence",
+            "family": "hybrid-assembly-planning",
+            "workerFamilies": ["assembly-planner", "decomposition-planner", "interface-control-reviewer", "operator-review"],
+            "responseSurfaces": [
+                "assembly.assemblyGraph",
+                "assembly.sequence",
+                "hybridMakePlan.joinOperations",
+                "hybridMakePlan.splitCombineDecisions",
+                "processGraph.dependencies"
+            ],
+            "artifactSurfaces": ["assembly-plan", "parametric-design.assemblyGraph", "hybrid-make-plan", "mdp-request.artifacts.hybridMakePlan"],
+            "requiredEvidence": [
+                "part identity and revision traceability",
+                "assembly interface graph with datum handoff",
+                "join sequence with inspection holds",
+                "single-piece fallback or split/combine rationale"
+            ],
+            "releaseGates": ["assembly-interface-review", "dry-fit-before-lock-in", "final-fit-metrology"],
+            "learningSignals": ["hybrid-join:*", "split-combine:*", "assembly-graph:*"]
+        }),
+        json!({
+            "contract": "interface-fit-and-datum-transfer",
+            "family": "interface-control",
+            "workerFamilies": ["interface-control-reviewer", "metrology-worker", "quality-inspector"],
+            "responseSurfaces": [
+                "interfaceControlPlan.controls",
+                "interfaceControlPlan.decisionLinks",
+                "interfaceControlPlan.releaseGates",
+                "qualityPlan.measurementTargets"
+            ],
+            "artifactSurfaces": ["interface-control-plan", "quality-plan", "final-fit-metrology-record"],
+            "requiredEvidence": [
+                "mating surface inspection",
+                "datum transfer or fixture repeatability proof",
+                "clearance, press, adhesive, torque, or weld fit criteria",
+                "post-join measured values and pass/fail disposition"
+            ],
+            "releaseGates": ["interface-control-fit-check", "assembly-lock-in-interface-fit-check"],
+            "learningSignals": ["interface-control:*", "assembly-quality-interfaces:*"]
+        }),
+        json!({
+            "contract": "robotic-assembly-cell-release",
+            "family": "automation-and-robotic-assembly",
+            "workerFamilies": ["robotic-cell-reviewer", "fixture-planner", "vision-calibration-worker", "monitoring-operator"],
+            "responseSurfaces": [
+                "generatedPrograms.instructions",
+                "controllerPlan.controllerTargets",
+                "fixturePlan.setups",
+                "monitoringPlan.monitorPoints",
+                "operatorInterventionPlan.requiredOperatorActions"
+            ],
+            "artifactSurfaces": ["program-assembly-cell-job", "fixture-plan", "monitoring-plan", "release-package-plan"],
+            "requiredEvidence": [
+                "robot reach, path, and collision simulation",
+                "gripper or end-effector qualification",
+                "fixture model and vision/fiducial calibration",
+                "interlock, pinch-point, and dry-run evidence"
+            ],
+            "releaseGates": ["automation-proof-before-unattended-run", "robot-path-dry-run", "operator-or-safety-signoff"],
+            "learningSignals": ["operator-automation:*", "monitoring:assembly-cell", "instruction-analysis:assembly-cell"]
+        }),
+        json!({
+            "contract": "join-recipe-and-lock-in",
+            "family": "joining-and-fastening",
+            "workerFamilies": ["assembly-planner", "metal-joining-reviewer", "quality-inspector", "operator-review"],
+            "responseSurfaces": [
+                "generatedPrograms.instructions",
+                "postprocessPlan.targets",
+                "qualityPlan.inspectionPoints",
+                "releasePackagePlan.packages"
+            ],
+            "artifactSurfaces": ["assembly-kit-and-join-traveler", "metal-joining-job-package", "postprocess-plan", "release-package-plan"],
+            "requiredEvidence": [
+                "press force, heat-set, torque, adhesive, weld, braze, solder, or clamp recipe",
+                "material and consumable lot traceability",
+                "cure, cooldown, interpass, or hold-time record when applicable",
+                "pull, torque, visual, NDE, leak, or final metrology result"
+            ],
+            "releaseGates": ["join-recipe-review", "lock-in-process-evidence", "post-join-inspection"],
+            "learningSignals": ["assembly-cell-join-process:*", "metal-joining:*", "quality-gate:assembly"]
+        }),
+        json!({
+            "contract": "assembly-release-package",
+            "family": "recomposition-release",
+            "workerFamilies": ["release-packager", "operator-review", "learning-outcome-worker"],
+            "responseSurfaces": [
+                "releasePackagePlan.packages",
+                "releasePackagePlan.releaseGates",
+                "machineRelease.blockers",
+                "learning.outcomes"
+            ],
+            "artifactSurfaces": ["release-package-plan", "assembly-recomposition-release", "reward-signal", "mdp-experience"],
+            "requiredEvidence": [
+                "child route package IDs",
+                "interface-control IDs and release gates",
+                "operator or automation signoff",
+                "outcome feedback with success, reward, and assembly strategy"
+            ],
+            "releaseGates": ["assembly-package-complete", "machine-release-blockers-cleared", "learning-feedback-retained"],
+            "learningSignals": ["release-package:*", "learning-outcome:assembly", "prefer-learned-assembly-*"]
+        }),
+    ]
+}
+
+fn assembly_catalog_response() -> Value {
+    let contracts = assembly_catalog_contracts();
+    let families = unique_sorted(contracts.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let worker_families = unique_sorted(contracts.iter().flat_map(|item| {
+        item.get("workerFamilies")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let response_surfaces = unique_sorted(contracts.iter().flat_map(|item| {
+        item.get("responseSurfaces")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.assembly-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /assembly/catalog", "GET /fabrication/assembly/catalog"],
+        "contractCount": contracts.len(),
+        "families": families,
+        "workerFamilies": worker_families,
+        "responseSurfaces": response_surfaces,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "relatedDiscoveryRoutes": [
+            "GET /handoff/catalog",
+            "GET /fabrication/handoff/catalog",
+            "GET /decomposition/catalog",
+            "GET /fabrication/decomposition/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog"
+        ],
+        "artifactSurfaces": [
+            "assembly-plan",
+            "hybrid-make-plan",
+            "interface-control-plan",
+            "quality-plan",
+            "assembly-kit-and-join-traveler",
+            "assembly-recomposition-release",
+            "release-package-plan",
+            "mdp-request"
+        ],
+        "learningSurfaces": [
+            "hybridMakePlan.learningObservations",
+            "interfaceControlPlan.learningObservations",
+            "qualityPlan.learningObservations",
+            "releasePackagePlan.learningObservations",
+            "learning.outcomes"
+        ],
+        "releasePolicy": [
+            "assembly catalog entries describe worker-lane evidence contracts, not certified assembly or robot-cell release",
+            "machine-ready release remains blocked until child route packages, interface controls, dry-fit or metrology, join recipe evidence, and operator or automation signoff are retained",
+            "assembly, interface, quality, release, and outcome observations feed MDP/POMDP/neural workers so future plans can learn when to split, combine, recompose, or keep a part single-piece"
+        ],
+        "contracts": contracts
+    })
+}
+
+fn assembly_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let interface_review_required = response
+        .assembly
+        .assembly_graph
+        .interfaces
+        .iter()
+        .any(|interface| interface.requires_human_intervention);
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.assembly-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /assembly/plan", "POST /fabrication/assembly/plan"]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /assembly/catalog",
+            "GET /fabrication/assembly/catalog",
+            "GET /decomposition/catalog",
+            "GET /fabrication/decomposition/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog"
+        ]),
+    );
+    object.insert(
+        "machineReady".to_string(),
+        json!(
+            !response.machine_release.machine_release_blocked
+                && !response.interface_control_plan.machine_release_blocked
+                && !response.release_package_plan.machine_release_blocked
+                && !interface_review_required
+        ),
+    );
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(
+            response.machine_release.machine_release_blocked
+                || response.interface_control_plan.machine_release_blocked
+                || response.release_package_plan.machine_release_blocked
+                || interface_review_required
+        ),
+    );
+    object.insert(
+        "assemblyNodeCount".to_string(),
+        json!(response.assembly.assembly_graph.nodes.len()),
+    );
+    object.insert(
+        "assemblyInterfaceCount".to_string(),
+        json!(response.assembly.assembly_graph.interfaces.len()),
+    );
+    object.insert(
+        "assemblySequenceStepCount".to_string(),
+        json!(response.assembly.assembly_graph.sequence.len()),
+    );
+    object.insert(
+        "joinOperationCount".to_string(),
+        json!(response.hybrid_make_plan.join_operations.len()),
+    );
+    object.insert(
+        "splitCombineDecisionCount".to_string(),
+        json!(response.hybrid_make_plan.split_combine_decisions.len()),
+    );
+    object.insert(
+        "interfaceControlCount".to_string(),
+        json!(response.interface_control_plan.controls.len()),
+    );
+    object.insert(
+        "qualityInspectionCount".to_string(),
+        json!(response.quality_plan.inspection_points.len()),
+    );
+    object.insert(
+        "releaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "packageCount".to_string(),
+        json!(response.release_package_plan.packages.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "assembly.assemblyGraph",
+            "assembly.assemblyGraph.interfaces",
+            "assembly.assemblyGraph.sequence",
+            "hybridMakePlan.joinOperations",
+            "hybridMakePlan.splitCombineDecisions",
+            "interfaceControlPlan.controls",
+            "interfaceControlPlan.decisionLinks",
+            "qualityPlan.inspectionPoints",
+            "releasePackagePlan.packages",
+            "releasePackagePlan.releaseGates",
+            "machineRelease.blockers",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "assembly-plan",
+            "hybrid-make-plan",
+            "interface-control-plan",
+            "quality-plan",
+            "manufacturing-handoff",
+            "release-package-plan",
+            "mdp-request.artifacts.assembly",
+            "mdp-request.artifacts.hybridMakePlan",
+            "mdp-request.artifacts.interfaceControlPlan"
+        ]),
+    );
+    object.insert(
+        "learningSurfaces".to_string(),
+        json!([
+            "hybridMakePlan.learningObservations",
+            "interfaceControlPlan.learningObservations",
+            "qualityPlan.learningObservations",
+            "releasePackagePlan.learningObservations",
+            "releaseProbePlan.probes",
+            "neuralTrainingCorpus.examples",
+            "learning.outcomes"
+        ]),
+    );
+    object.insert(
+        "releasePolicy".to_string(),
+        json!([
+            "assembly planning returns draft recomposition, join sequencing, and release-evidence contracts, not certified assembly, robot-cell, inspection, or controller output",
+            "machine-ready release remains blocked until child route packages, interface controls, dry-fit or metrology, join recipe, inspection, and operator or automation signoff are retained",
+            "assembly, interface, quality, release, and outcome observations are stored and published so MDP/POMDP/neural workers can learn when to split, combine, recompose, or keep a part single-piece"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert("assembly".to_string(), json!(&response.assembly));
+    object.insert(
+        "hybridMakePlan".to_string(),
+        json!(&response.hybrid_make_plan),
+    );
+    object.insert(
+        "interfaceControlPlan".to_string(),
+        json!(&response.interface_control_plan),
+    );
+    object.insert("qualityPlan".to_string(), json!(&response.quality_plan));
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "manufacturingHandoff".to_string(),
+        json!(&response.manufacturing_handoff),
+    );
+    object.insert("processGraph".to_string(), json!(&response.process_graph));
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "strategyCandidates": &response.learning.strategy_candidates,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
+async fn assembly_catalog_http() -> impl IntoResponse {
+    Json(assembly_catalog_response())
 }
 
 fn release_catalog_gate_contracts() -> Vec<Value> {
@@ -35998,6 +40220,435 @@ async fn release_catalog_http() -> impl IntoResponse {
     Json(release_catalog_response())
 }
 
+fn release_preview_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.release-preview.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /release/preview", "POST /fabrication/release/preview"]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!(["GET /release/catalog", "GET /fabrication/release/catalog"]),
+    );
+    object.insert(
+        "machineReady".to_string(),
+        json!(
+            !response.machine_release.machine_release_blocked
+                && response.release_package_plan.blocked_package_count == 0
+        ),
+    );
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(response.machine_release.machine_release_blocked),
+    );
+    object.insert(
+        "releaseStatus".to_string(),
+        json!(&response.machine_release.status),
+    );
+    object.insert(
+        "releasePackageStatus".to_string(),
+        json!(&response.release_package_plan.status),
+    );
+    object.insert(
+        "releaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "checklistItemCount".to_string(),
+        json!(response.machine_release.checklist.len()),
+    );
+    object.insert(
+        "packageCount".to_string(),
+        json!(response.release_package_plan.package_count),
+    );
+    object.insert(
+        "readyPackageCount".to_string(),
+        json!(response.release_package_plan.ready_package_count),
+    );
+    object.insert(
+        "blockedPackageCount".to_string(),
+        json!(response.release_package_plan.blocked_package_count),
+    );
+    object.insert(
+        "releaseGateCount".to_string(),
+        json!(response.release_package_plan.release_gates.len()),
+    );
+    object.insert(
+        "requiredArtifactCount".to_string(),
+        json!(response.release_package_plan.required_artifacts.len()),
+    );
+    object.insert(
+        "executionStopPointCount".to_string(),
+        json!(response.execution_plan.stop_points.len()),
+    );
+    object.insert(
+        "postprocessBlockerCount".to_string(),
+        json!(response.postprocess_plan.blockers.len()),
+    );
+    object.insert(
+        "controllerTargetCount".to_string(),
+        json!(response.controller_plan.target_count),
+    );
+    object.insert(
+        "simulationFindingCount".to_string(),
+        json!(response.simulation.findings.len()),
+    );
+    object.insert(
+        "humanInterventionCount".to_string(),
+        json!(response
+            .operator_intervention_plan
+            .required_operator_actions
+            .len()),
+    );
+    object.insert(
+        "splitCombineDecisionCount".to_string(),
+        json!(response.hybrid_make_plan.split_combine_decisions.len()),
+    );
+    object.insert(
+        "policySummary".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward,
+            "remediationRiskCount": policy.remediation_risks.len(),
+            "boundaryMemoryCount": policy.boundary_learning_examples.len()
+        }),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "machineRelease.status",
+            "machineRelease.blockers",
+            "machineRelease.checklist",
+            "releasePackagePlan.packages",
+            "releasePackagePlan.releaseGates",
+            "releasePackagePlan.requiredArtifacts",
+            "executionPlan.checkpoints",
+            "executionPlan.stopPoints",
+            "postprocessPlan.blockers",
+            "controllerPlan.compatibilityTargets",
+            "simulation.riskProfile",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "decompositionPlan.releaseGates",
+            "interfaceControlPlan.releaseGates",
+            "releaseProbePlan.probes"
+        ]),
+    );
+    object.insert(
+        "previewPolicy".to_string(),
+        json!([
+            "release preview is advisory and does not store, publish, or certify machine-ready artifacts",
+            "machineReady remains false while machine-release, controller, postprocess, simulation, setup, intervention, split/combine, or package gates are blocked",
+            "release-package and release-probe observations remain available for MDP/POMDP/neural learning workers"
+        ]),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert("executionPlan".to_string(), json!(&response.execution_plan));
+    object.insert(
+        "postprocessPlan".to_string(),
+        json!(&response.postprocess_plan),
+    );
+    object.insert(
+        "controllerPlan".to_string(),
+        json!(&response.controller_plan),
+    );
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert(
+        "boundarySummary".to_string(),
+        json!(&response.boundary_summary),
+    );
+    object.insert(
+        "resolutionPlan".to_string(),
+        json!(&response.resolution_plan),
+    );
+    object.insert(
+        "operatorInterventionPlan".to_string(),
+        json!(&response.operator_intervention_plan),
+    );
+    object.insert(
+        "interventionMap".to_string(),
+        json!(&response.intervention_map),
+    );
+    object.insert(
+        "decompositionPlan".to_string(),
+        json!(&response.decomposition_plan),
+    );
+    object.insert(
+        "interfaceControlPlan".to_string(),
+        json!(&response.interface_control_plan),
+    );
+    object.insert(
+        "manufacturingHandoff".to_string(),
+        json!(&response.manufacturing_handoff),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "pomdpBeliefState": &response.learning.pomdp_belief_state,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
+fn execution_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let execution_blocked = response.execution_plan.status != "execution-ready"
+        || !response.execution_plan.can_start
+        || !response.execution_plan.stop_points.is_empty()
+        || response.operator_intervention_plan.machine_release_blocked
+        || !response
+            .operator_intervention_plan
+            .required_operator_actions
+            .is_empty();
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.execution-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /execution/plan", "POST /fabrication/execution/plan"]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /interventions/catalog",
+            "GET /fabrication/interventions/catalog",
+            "GET /setup/catalog",
+            "GET /fabrication/setup/catalog",
+            "GET /monitoring/catalog",
+            "GET /fabrication/monitoring/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog",
+            "GET /simulation/catalog",
+            "GET /fabrication/simulation/catalog"
+        ]),
+    );
+    object.insert(
+        "machineReady".to_string(),
+        json!(!response.machine_release.machine_release_blocked && !execution_blocked),
+    );
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(response.machine_release.machine_release_blocked || execution_blocked),
+    );
+    object.insert(
+        "executionStatus".to_string(),
+        json!(&response.execution_plan.status),
+    );
+    object.insert(
+        "operatorInterventionStatus".to_string(),
+        json!(&response.operator_intervention_plan.status),
+    );
+    object.insert(
+        "scheduleReleaseState".to_string(),
+        json!(&response.machine_schedule.release_state),
+    );
+    object.insert(
+        "monitoringStatus".to_string(),
+        json!(&response.monitoring_plan.status),
+    );
+    object.insert(
+        "canStart".to_string(),
+        json!(response.execution_plan.can_start),
+    );
+    object.insert(
+        "canRunUnattended".to_string(),
+        json!(
+            response.execution_plan.can_run_unattended
+                && response.operator_intervention_plan.can_run_unattended
+                && response.monitoring_plan.unattended_run_allowed
+        ),
+    );
+    object.insert(
+        "programRunCount".to_string(),
+        json!(response.execution_plan.program_runs.len()),
+    );
+    object.insert(
+        "checkpointCount".to_string(),
+        json!(response.execution_plan.checkpoints.len()),
+    );
+    object.insert(
+        "stopPointCount".to_string(),
+        json!(response.execution_plan.stop_points.len()),
+    );
+    object.insert(
+        "requiredOperatorActionCount".to_string(),
+        json!(response
+            .operator_intervention_plan
+            .required_operator_actions
+            .len()),
+    );
+    object.insert(
+        "evidenceGateCount".to_string(),
+        json!(response.operator_intervention_plan.evidence_gates.len()),
+    );
+    object.insert(
+        "automationCandidateCount".to_string(),
+        json!(response
+            .operator_intervention_plan
+            .automation_candidates
+            .len()),
+    );
+    object.insert(
+        "splitCombineReviewCount".to_string(),
+        json!(response
+            .operator_intervention_plan
+            .split_combine_reviews
+            .len()),
+    );
+    object.insert(
+        "dependencyHoldCount".to_string(),
+        json!(response.machine_schedule.dependency_holds.len()),
+    );
+    object.insert(
+        "releaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "executionPlan.programRuns",
+            "executionPlan.checkpoints",
+            "executionPlan.stopPoints",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "operatorInterventionPlan.evidenceGates",
+            "operatorInterventionPlan.automationCandidates",
+            "operatorInterventionPlan.splitCombineReviews",
+            "interventionMap.humanInterventionPoints",
+            "interventionMap.automationPaths",
+            "machineSchedule.operations",
+            "machineSchedule.dependencyHolds",
+            "monitoringPlan.monitorPoints",
+            "monitoringPlan.recoveryActions",
+            "machineRelease.blockers",
+            "simulation.riskProfile",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "execution-plan",
+            "operator-intervention-plan",
+            "machine-schedule",
+            "monitoring-plan",
+            "machine-release",
+            "simulation-report",
+            "mdp-request.artifacts.executionPlan",
+            "mdp-request.artifacts.operatorInterventionPlan",
+            "mdp-request.artifacts.machineSchedule",
+            "mdp-request.artifacts.monitoringPlan"
+        ]),
+    );
+    object.insert(
+        "learningSurfaces".to_string(),
+        json!([
+            "executionPlan.learningObservations",
+            "operatorInterventionPlan.learningObservations",
+            "interventionMap.learningObservations",
+            "machineSchedule.learningObservations",
+            "monitoringPlan.learningObservations",
+            "learning.interventionSignals",
+            "neuralTrainingCorpus.examples",
+            "learning.outcomes"
+        ]),
+    );
+    object.insert(
+        "executionPolicy".to_string(),
+        json!([
+            "execution planning is a conservative preflight package, not certified controller safety or shop-floor authorization",
+            "machine-ready release remains blocked while stop points, required operator actions, unresolved evidence gates, dependency holds, monitoring recovery gaps, or release blockers remain open",
+            "execution and intervention observations are stored and published so MDP/POMDP/neural workers can learn when to add automation, split jobs, regenerate instructions, or keep human checkpoints"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert("executionPlan".to_string(), json!(&response.execution_plan));
+    object.insert(
+        "operatorInterventionPlan".to_string(),
+        json!(&response.operator_intervention_plan),
+    );
+    object.insert(
+        "interventionMap".to_string(),
+        json!(&response.intervention_map),
+    );
+    object.insert(
+        "machineSchedule".to_string(),
+        json!(&response.machine_schedule),
+    );
+    object.insert(
+        "monitoringPlan".to_string(),
+        json!(&response.monitoring_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
 fn strategy_catalog_contracts() -> Vec<Value> {
     vec![
         json!({
@@ -36222,6 +40873,7 @@ fn strategy_catalog_response() -> Value {
         "families": families,
         "schemas": schemas,
         "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "recommendationRoutes": ["POST /strategy/recommend", "POST /fabrication/strategy/recommend"],
         "learningRoutes": [
             "GET /learning/policy",
             "GET /fabrication/learning/policy",
@@ -36291,6 +40943,92 @@ fn strategy_catalog_response() -> Value {
 
 async fn strategy_catalog_http() -> impl IntoResponse {
     Json(strategy_catalog_response())
+}
+
+fn strategy_recommendation_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let top_candidate = response
+        .learning
+        .strategy_candidates
+        .iter()
+        .max_by(|left, right| {
+            left.score
+                .partial_cmp(&right.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+    json!({
+        "ok": response.ok,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.strategy-recommendation.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": &response.request_id,
+        "jobId": &response.job_id,
+        "routes": ["POST /strategy/recommend", "POST /fabrication/strategy/recommend"],
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "catalogRoutes": ["GET /strategy/catalog", "GET /fabrication/strategy/catalog"],
+        "machineReady": !response.machine_release.machine_release_blocked,
+        "machineReleaseBlocked": response.machine_release.machine_release_blocked,
+        "selectedStrategy": &response.hybrid_make_plan.selected_strategy,
+        "topStrategyCandidate": top_candidate,
+        "strategyCandidateCount": response.learning.strategy_candidates.len(),
+        "hybridRouteCount": response.hybrid_make_plan.route_count,
+        "hybridJoinCount": response.hybrid_make_plan.join_count,
+        "splitCombineDecisionCount": response.hybrid_make_plan.split_combine_decisions.len(),
+        "releaseBlockerCount": response.machine_release.blockers.len(),
+        "policySummary": {
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward,
+            "methodPreferenceCount": policy.method_preferences.len(),
+            "methodCombinationPreferenceCount": policy.method_combination_preferences.len(),
+            "assemblyPreferenceCount": policy.assembly_preferences.len(),
+            "operationSequencePreferenceCount": policy.operation_sequence_preferences.len(),
+            "remediationRiskCount": policy.remediation_risks.len()
+        },
+        "responseSurfaces": [
+            "strategyCandidates",
+            "strategyCandidates.score",
+            "hybridMakePlan.selectedStrategy",
+            "hybridMakePlan.partRoutes",
+            "hybridMakePlan.joinOperations",
+            "hybridMakePlan.splitCombineDecisions",
+            "learning.enginePolicy",
+            "pomdpBeliefState.hiddenStates",
+            "releaseProbePlan.probes",
+            "neuralPolicy.engineInference",
+            "interventionSignals",
+            "machineRelease.blockers"
+        ],
+        "recommendationPolicy": [
+            "strategy recommendation is advisory and does not store, publish, or certify generated machine code",
+            "learned policy memory can bias open-ended print/mill/turn/split/combine choices only when caller preferences leave room",
+            "machineReady remains false while validation, setup, simulation, quality, postprocess, intervention, schedule, or release blockers remain"
+        ],
+        "strategyCandidates": &response.learning.strategy_candidates,
+        "hybridMakePlan": &response.hybrid_make_plan,
+        "decompositionPlan": &response.decomposition_plan,
+        "interfaceControlPlan": &response.interface_control_plan,
+        "machineSelection": &response.machine_selection,
+        "machineSchedule": &response.machine_schedule,
+        "learning": {
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "actions": &response.learning.actions,
+            "rewardTerms": &response.learning.reward_terms,
+            "pomdpBeliefState": &response.learning.pomdp_belief_state,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralPolicy": &response.learning.neural_policy,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        },
+        "boundarySummary": &response.boundary_summary,
+        "resolutionPlan": &response.resolution_plan,
+        "machineRelease": &response.machine_release
+    })
 }
 
 fn schedule_catalog_contracts() -> Vec<Value> {
@@ -36726,6 +41464,171 @@ fn simulation_catalog_response() -> Value {
     })
 }
 
+fn simulation_run_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let simulation_blocked =
+        !response.simulation.ok || response.simulation.risk_profile.status != "simulation-risk-low";
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.simulation-run.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /simulation/run", "POST /fabrication/simulation/run"]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /simulation/catalog",
+            "GET /fabrication/simulation/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog",
+            "GET /postprocess/catalog",
+            "GET /fabrication/postprocess/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ]),
+    );
+    object.insert(
+        "machineReady".to_string(),
+        json!(!response.machine_release.machine_release_blocked && !simulation_blocked),
+    );
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(response.machine_release.machine_release_blocked || simulation_blocked),
+    );
+    object.insert("simulationOk".to_string(), json!(response.simulation.ok));
+    object.insert(
+        "simulationSeverity".to_string(),
+        json!(&response.simulation.severity),
+    );
+    object.insert(
+        "riskStatus".to_string(),
+        json!(&response.simulation.risk_profile.status),
+    );
+    object.insert(
+        "aggregateRiskScore".to_string(),
+        json!(response.simulation.risk_profile.aggregate_risk_score),
+    );
+    object.insert(
+        "programTraceCount".to_string(),
+        json!(response.simulation.programs.len()),
+    );
+    object.insert(
+        "findingCount".to_string(),
+        json!(response.simulation.findings.len()),
+    );
+    object.insert(
+        "failureBoundaryCount".to_string(),
+        json!(response.simulation.failure_boundaries.len()),
+    );
+    object.insert(
+        "highRiskProgramCount".to_string(),
+        json!(response.simulation.risk_profile.high_risk_program_count),
+    );
+    object.insert(
+        "releaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "simulation.programs",
+            "simulation.programs.axisExtents",
+            "simulation.programs.safeClearanceObserved",
+            "simulation.programs.spindleOrHeatupObserved",
+            "simulation.riskProfile",
+            "simulation.riskProfile.programRisks",
+            "simulation.riskProfile.recommendedActions",
+            "simulation.findings",
+            "simulation.failureBoundaries",
+            "machineRelease.blockers",
+            "executionPlan.stopPoints",
+            "postprocessPlan.targets",
+            "releasePackagePlan.packages",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "simulation-report",
+            "postprocess-plan",
+            "execution-plan",
+            "machine-release",
+            "release-package-plan",
+            "mdp-request.artifacts.simulation",
+            "mdp-request.artifacts.releaseProbePlan",
+            "dry-run-or-simulation-report"
+        ]),
+    );
+    object.insert(
+        "learningSurfaces".to_string(),
+        json!([
+            "simulation.riskProfile.learningObservations",
+            "simulation.riskProfile.programRisks.learningObservations",
+            "releaseProbePlan.probes",
+            "learning.interventionSignals",
+            "neuralTrainingCorpus.examples",
+            "learning.outcomes"
+        ]),
+    );
+    object.insert(
+        "releasePolicy".to_string(),
+        json!([
+            "simulation run returns draft dry-run and risk evidence, not certified machine safety or controller proof",
+            "machine-ready release remains blocked while simulation risk is blocked or review-required, envelope or clearance boundaries remain open, process-start proof is missing, or required dry-run artifacts are absent",
+            "simulation-risk observations are stored and published so MDP/POMDP/neural workers can learn when to reroute, split parts, add clearance, regenerate programs, or require operator review"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert("executionPlan".to_string(), json!(&response.execution_plan));
+    object.insert(
+        "postprocessPlan".to_string(),
+        json!(&response.postprocess_plan),
+    );
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
 async fn simulation_catalog_http() -> impl IntoResponse {
     Json(simulation_catalog_response())
 }
@@ -36908,6 +41811,196 @@ fn quality_catalog_response() -> Value {
     })
 }
 
+fn quality_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let quality_blocked = response.quality_plan.status != "quality-plan-ready"
+        || response.machine_release.machine_release_blocked
+        || !response.postprocess_plan.blockers.is_empty()
+        || response.release_package_plan.blocked_package_count > 0;
+    let human_quality_gate_count = response
+        .quality_plan
+        .inspection_points
+        .iter()
+        .filter(|point| point.requires_human_intervention)
+        .count();
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.quality-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /quality/plan", "POST /fabrication/quality/plan"]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog",
+            "GET /postprocess/catalog",
+            "GET /fabrication/postprocess/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog",
+            "GET /artifacts/catalog",
+            "GET /fabrication/artifacts/catalog"
+        ]),
+    );
+    object.insert(
+        "machineReady".to_string(),
+        json!(!response.machine_release.machine_release_blocked && !quality_blocked),
+    );
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(response.machine_release.machine_release_blocked || quality_blocked),
+    );
+    object.insert(
+        "qualityStatus".to_string(),
+        json!(&response.quality_plan.status),
+    );
+    object.insert(
+        "postprocessStatus".to_string(),
+        json!(&response.postprocess_plan.status),
+    );
+    object.insert(
+        "releasePackageStatus".to_string(),
+        json!(&response.release_package_plan.status),
+    );
+    object.insert(
+        "inspectionPointCount".to_string(),
+        json!(response.quality_plan.inspection_points.len()),
+    );
+    object.insert(
+        "measurementTargetCount".to_string(),
+        json!(response.quality_plan.measurement_targets.len()),
+    );
+    object.insert(
+        "humanQualityGateCount".to_string(),
+        json!(human_quality_gate_count),
+    );
+    object.insert(
+        "releaseGateCount".to_string(),
+        json!(response.quality_plan.release_gates.len()),
+    );
+    object.insert(
+        "postprocessBlockerCount".to_string(),
+        json!(response.postprocess_plan.blockers.len()),
+    );
+    object.insert(
+        "packageCount".to_string(),
+        json!(response.release_package_plan.package_count),
+    );
+    object.insert(
+        "blockedPackageCount".to_string(),
+        json!(response.release_package_plan.blocked_package_count),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "qualityPlan.status",
+            "qualityPlan.inspectionPoints",
+            "qualityPlan.inspectionPoints.recordsToCapture",
+            "qualityPlan.measurementTargets",
+            "qualityPlan.releaseGates",
+            "qualityPlan.learningObservations",
+            "postprocessPlan.requiredArtifacts",
+            "postprocessPlan.blockers",
+            "releasePackagePlan.packages",
+            "releasePackagePlan.releaseGates",
+            "interfaceControlPlan.controls",
+            "machineRelease.blockers",
+            "simulation.riskProfile",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "quality-plan",
+            "postprocess-plan",
+            "release-package-plan",
+            "machine-release",
+            "simulation-report",
+            "first-article-metrology-record",
+            "final-fit-metrology-record",
+            "surface-finish-inspection-record",
+            "material-process-coupon-record",
+            "mdp-request.artifacts.qualityPlan",
+            "mdp-request.artifacts.postprocessPlan",
+            "mdp-request.artifacts.releasePackagePlan"
+        ]),
+    );
+    object.insert(
+        "learningSurfaces".to_string(),
+        json!([
+            "qualityPlan.learningObservations",
+            "quality-gate:*",
+            "measurement-target:*",
+            "quality-boundary:*",
+            "assembly-quality-interfaces:*",
+            "learning.interventionSignals",
+            "neuralTrainingCorpus.examples",
+            "learning.outcomes"
+        ]),
+    );
+    object.insert(
+        "qualityPolicy".to_string(),
+        json!([
+            "quality planning returns draft inspection and metrology evidence, not certified acceptance or shop-floor release",
+            "machine-ready release remains blocked while required inspection, postprocess, traceability, interface-fit, release-package, or metrology evidence is absent",
+            "quality observations are stored and published so MDP/POMDP/neural workers can learn when to add inspection, split parts, adjust processes, regenerate instructions, or require human signoff"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert("qualityPlan".to_string(), json!(&response.quality_plan));
+    object.insert(
+        "postprocessPlan".to_string(),
+        json!(&response.postprocess_plan),
+    );
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "interfaceControlPlan".to_string(),
+        json!(&response.interface_control_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
 async fn quality_catalog_http() -> impl IntoResponse {
     Json(quality_catalog_response())
 }
@@ -36917,11 +42010,20 @@ fn calibration_catalog_contracts() -> Vec<Value> {
         json!({
             "contract": "additive-homing-bed-and-hotend-calibration",
             "family": "additive-coordinate-and-thermal-calibration",
-            "appliesTo": ["fdm-printer", "pellet-fgf-printer", "material-jetting-printer", "continuous-fiber-composite-printer"],
+            "appliesTo": ["fdm-printer", "pellet-fgf-printer", "robotic-additive-cell", "material-jetting-printer", "continuous-fiber-composite-printer"],
             "evidenceSurfaces": ["machineProfile.profileEvidence.calibration", "releaseProbePlan.probes", "validation.failureBoundaries", "improvedPrograms.patchManifest.operations"],
             "requiredEvidence": ["G28 or verified homing", "bed mesh or measured Z-offset proof", "M109/M190 or explicit nozzle/bed temperature verification", "extrusion reset or prime/purge after tool/material changes"],
             "blocks": ["positive extrusion", "machine-ready release", "unattended repeat run"],
             "learningSignals": ["calibration:additive-coordinate", "temperature-verification:*", "instruction-patch:add-coordinate-reference"]
+        }),
+        json!({
+            "contract": "sheet-lamination-registration-and-bond-calibration",
+            "family": "sheet-lamination-registration-and-bond-calibration",
+            "appliesTo": ["sheet-lamination-printer"],
+            "evidenceSurfaces": ["machineProfile.profileEvidence.calibration", "fixturePlan.setups", "postprocessPlan.requiredArtifacts", "validation.failureBoundaries"],
+            "requiredEvidence": ["layer registration and fiducial/datum calibration", "sheet or foil thickness/gauge proof", "vacuum or hold-down proof", "blade/laser trim offset or kerf proof", "adhesive press cycle or ultrasonic weld amplitude/force/speed qualification"],
+            "blocks": ["layer registration", "bond or consolidation release", "machine-ready release"],
+            "learningSignals": ["calibration:sheet-lamination-registration", "sheet-lamination-bond-boundary:*"]
         }),
         json!({
             "contract": "subtractive-work-offset-and-tool-length-proof",
@@ -37273,9 +42375,9 @@ fn setup_catalog_contracts() -> Vec<Value> {
             "contract": "additive-build-setup",
             "family": "additive-tooling-and-fixture",
             "contractType": "tooling+fixture+monitoring",
-            "appliesTo": ["fdm-printer", "pellet-fgf-printer", "sla-msla-resin-printer", "sls-mjf-powder-bed-printer", "metal-pbf-printer", "material-jetting-printer", "continuous-fiber-composite-printer", "binder-jet-printer"],
+            "appliesTo": ["fdm-printer", "pellet-fgf-printer", "robotic-additive-cell", "sheet-lamination-printer", "sla-msla-resin-printer", "sls-mjf-powder-bed-printer", "metal-pbf-printer", "material-jetting-printer", "continuous-fiber-composite-printer", "binder-jet-printer"],
             "responseSurfaces": ["toolingPlan.requirements", "fixturePlan.setups", "monitoringPlan.monitorPoints"],
-            "requiredEvidence": ["build plate, vat, bed, tray, recoater, or fixture setup proof", "material lot, drying, powder/resin/feedstock, or support-media evidence", "first-layer, first-slice, exposure, thermal, or packing preview", "operator or verified automation signoff"],
+            "requiredEvidence": ["build plate, vat, bed, tray, recoater, sheet stack, or fixture setup proof", "material lot, drying, powder/resin/feedstock, sheet/foil, or support-media evidence", "first-layer, first-slice, exposure, thermal, packing, or registration preview", "operator or verified automation signoff"],
             "releaseBlocks": ["machine-ready release", "unattended repeat run"],
             "learningSignals": ["tooling-requirement:*", "fixture-setup:*", "monitoring-point:*"]
         }),
@@ -37415,8 +42517,592 @@ fn setup_catalog_response() -> Value {
     })
 }
 
+fn setup_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let setup_blocked = response.tooling_plan.status != "tooling-plan-ready"
+        || response.fixture_plan.status != "fixture-plan-ready"
+        || response.monitoring_plan.status != "monitoring-plan-ready"
+        || response.machine_release.machine_release_blocked;
+    let tooling_blocker_count = response
+        .tooling_plan
+        .requirements
+        .iter()
+        .map(|requirement| requirement.release_blockers.len())
+        .sum::<usize>();
+    let fixture_blocker_count = response
+        .fixture_plan
+        .setups
+        .iter()
+        .map(|setup| setup.release_blockers.len())
+        .sum::<usize>();
+    let monitoring_blocker_count = response
+        .monitoring_plan
+        .monitor_points
+        .iter()
+        .map(|point| point.release_blockers.len())
+        .sum::<usize>();
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.setup-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /setup/plan", "POST /fabrication/setup/plan"]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /setup/catalog",
+            "GET /fabrication/setup/catalog",
+            "GET /monitoring/catalog",
+            "GET /fabrication/monitoring/catalog",
+            "GET /calibration/catalog",
+            "GET /fabrication/calibration/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog"
+        ]),
+    );
+    object.insert(
+        "machineReady".to_string(),
+        json!(!response.machine_release.machine_release_blocked && !setup_blocked),
+    );
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(response.machine_release.machine_release_blocked || setup_blocked),
+    );
+    object.insert(
+        "toolingStatus".to_string(),
+        json!(&response.tooling_plan.status),
+    );
+    object.insert(
+        "fixtureStatus".to_string(),
+        json!(&response.fixture_plan.status),
+    );
+    object.insert(
+        "monitoringStatus".to_string(),
+        json!(&response.monitoring_plan.status),
+    );
+    object.insert(
+        "unattendedRunAllowed".to_string(),
+        json!(response.monitoring_plan.unattended_run_allowed),
+    );
+    object.insert(
+        "toolingRequirementCount".to_string(),
+        json!(response.tooling_plan.requirements.len()),
+    );
+    object.insert(
+        "fixtureSetupCount".to_string(),
+        json!(response.fixture_plan.setups.len()),
+    );
+    object.insert(
+        "datumTransferCount".to_string(),
+        json!(response.fixture_plan.datum_transfers.len()),
+    );
+    object.insert(
+        "monitorPointCount".to_string(),
+        json!(response.monitoring_plan.monitor_points.len()),
+    );
+    object.insert(
+        "alertRuleCount".to_string(),
+        json!(response.monitoring_plan.alert_rules.len()),
+    );
+    object.insert(
+        "toolingBlockerCount".to_string(),
+        json!(tooling_blocker_count),
+    );
+    object.insert(
+        "fixtureBlockerCount".to_string(),
+        json!(fixture_blocker_count),
+    );
+    object.insert(
+        "monitoringBlockerCount".to_string(),
+        json!(monitoring_blocker_count),
+    );
+    object.insert(
+        "releaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "toolingPlan.status",
+            "toolingPlan.requirements",
+            "toolingPlan.requirements.requiredTools",
+            "toolingPlan.requirements.workholding",
+            "toolingPlan.requirements.setupChecks",
+            "toolingPlan.releaseGates",
+            "fixturePlan.status",
+            "fixturePlan.setups",
+            "fixturePlan.setups.datumScheme",
+            "fixturePlan.setups.requiredEvidence",
+            "fixturePlan.setups.clearanceChecks",
+            "fixturePlan.datumTransfers",
+            "monitoringPlan.status",
+            "monitoringPlan.monitorPoints",
+            "monitoringPlan.monitorPoints.channels",
+            "monitoringPlan.alertRules",
+            "monitoringPlan.recoveryActions",
+            "machineRelease.blockers",
+            "releasePackagePlan.requiredArtifacts",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "tooling-plan",
+            "fixture-plan",
+            "monitoring-plan",
+            "machine-release",
+            "release-package-plan",
+            "simulation-report",
+            "mdp-request.artifacts.toolingPlan",
+            "mdp-request.artifacts.fixturePlan",
+            "mdp-request.artifacts.monitoringPlan",
+            "parametric-design.toolingPlan",
+            "parametric-design.fixturePlan",
+            "parametric-design.monitoringPlan"
+        ]),
+    );
+    object.insert(
+        "learningSurfaces".to_string(),
+        json!([
+            "toolingPlan.learningObservations",
+            "fixturePlan.learningObservations",
+            "monitoringPlan.learningObservations",
+            "releaseProbePlan.probes",
+            "learning.interventionSignals",
+            "neuralTrainingCorpus.examples",
+            "learning.outcomes"
+        ]),
+    );
+    object.insert(
+        "setupPolicy".to_string(),
+        json!([
+            "setup planning returns draft tooling, fixture, datum, workholding, and monitoring evidence, not certified fixture design or machine safety approval",
+            "machine-ready release remains blocked while tooling blockers, fixture evidence gaps, datum transfer gates, monitoring channels, recovery actions, or signoff gates are unresolved",
+            "setup observations are stored and published so MDP/POMDP/neural workers can learn when to change workholding, split setups, add automation, regenerate instructions, or require human intervention"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert("toolingPlan".to_string(), json!(&response.tooling_plan));
+    object.insert("fixturePlan".to_string(), json!(&response.fixture_plan));
+    object.insert(
+        "monitoringPlan".to_string(),
+        json!(&response.monitoring_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
 async fn setup_catalog_http() -> impl IntoResponse {
     Json(setup_catalog_response())
+}
+
+fn monitoring_catalog_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "contract": "additive-runtime-telemetry-and-safe-stop",
+            "family": "additive-runtime-monitoring",
+            "appliesTo": ["fdm-printer", "multi-material-fdm-printer", "pellet-fgf-printer", "robotic-additive-cell", "sheet-lamination-printer", "paste-extrusion-printer", "bound-metal-fff-printer", "sla-msla-resin-printer", "sls-mjf-powder-bed-printer", "metal-pbf-printer", "material-jetting-printer", "continuous-fiber-composite-printer", "binder-jet-printer"],
+            "monitorChannels": ["nozzle or vat temperature", "bed, chamber, powder-bed, press, or ultrasonic energy state", "material remaining, sheet stack, or flow", "first-layer, first-slice, exposure, registration, bond, or recoater preview", "thermal runaway, smoke, oxygen, fume, or inert-gas state"],
+            "responseSurfaces": ["monitoringPlan.monitorPoints", "monitoringPlan.alertRules", "monitoringPlan.recoveryActions", "releaseProbePlan.probes"],
+            "requiredEvidence": ["configured material/process telemetry channel", "expected thermal, flow, exposure, layer, or powder signal band", "pause, cool-down, purge, depowder, or safe-stop response", "operator or automation restart authority"],
+            "blocks": ["machine-ready release", "unattended print release", "resume after pause or runout"],
+            "learningSignals": ["monitoring-route:*:additive", "monitoring-alert:*:thermal", "monitoring-blockers:*"]
+        }),
+        json!({
+            "contract": "subtractive-load-fixture-and-process-support-monitoring",
+            "family": "mill-router-runtime-monitoring",
+            "appliesTo": ["vertical-mill", "five-axis-mill", "rotary-indexer-mill", "horizontal-mill", "cnc-router"],
+            "monitorChannels": ["spindle load", "tool breakage", "coolant, chip, or dust evacuation", "probe, work-offset, or fixture state", "door, enclosure, or interlock"],
+            "responseSurfaces": ["monitoringPlan.monitorPoints", "fixturePlan.setups.clearanceChecks", "simulation.riskProfile.programRisks", "machineRelease.blockers"],
+            "requiredEvidence": ["tool-load and breakage thresholds", "fixture/workholding heartbeat or operator check", "coolant, chip, or dust process-support alarm", "feed hold, spindle stop, safe retract, and dry-run restart path"],
+            "blocks": ["cutting motion release", "tool-change restart", "unattended subtractive run"],
+            "learningSignals": ["monitoring-alert:*:spindle-load", "fixture-blocker:*", "machine-failure-boundary:*"]
+        }),
+        json!({
+            "contract": "turning-grip-support-and-partoff-monitoring",
+            "family": "lathe-runtime-monitoring",
+            "appliesTo": ["lathe", "mill-turn-center", "swiss-turning-center"],
+            "monitorChannels": ["spindle load", "chuck or collet pressure", "bar support, tailstock, guide bushing, or steady-rest state", "runout or vibration", "part catcher, subspindle, or pickoff state", "coolant flow"],
+            "responseSurfaces": ["monitoringPlan.alertRules", "toolingPlan.requirements.setupChecks", "fixturePlan.setups.requiredEvidence", "operatorInterventionPlan.requiredOperatorActions"],
+            "requiredEvidence": ["grip-pressure and support-state alarm thresholds", "part-off, threading, spindle-transfer, or Swiss guide-bushing restart review", "feed hold, spindle stop, part securement, and operator approval before restart"],
+            "blocks": ["turning release", "threading release", "part-off release", "spindle-transfer release"],
+            "learningSignals": ["monitoring-alert:*:chuck", "monitoring-alert:*:part-catcher", "tooling-automation-dependency:*"]
+        }),
+        json!({
+            "contract": "sheet-cut-process-media-and-fire-monitoring",
+            "family": "sheet-cut-runtime-monitoring",
+            "appliesTo": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter", "sinker-edm-cell", "hot-wire-foam-cutter"],
+            "monitorChannels": ["pierce height, focus, or standoff", "assist gas, abrasive, dielectric, flushing, or wire state", "fume, fire, smoke, or ventilation", "sheet origin, material support, slug drop, or tab retention", "kerf, cut quality, or wire lag"],
+            "responseSurfaces": ["monitoringPlan.monitorPoints", "monitoringPlan.recoveryActions", "validation.failureBoundaries", "improvedPrograms.patchManifest.operations"],
+            "requiredEvidence": ["process-media restart and alarm state", "fume/fire/wire-break/slug-drop detection", "pause, abort, safe energy stop, and inspection-before-restart action", "cut-chart, kerf, recipe, or process-support review before resume"],
+            "blocks": ["pierce or thread start", "profile cutting", "beam/jet/wire restart", "unattended sheet-cutting release"],
+            "learningSignals": ["monitoring-recovery:*", "process-media-restart:*", "sheet-cutting-boundary:*"]
+        }),
+        json!({
+            "contract": "assembly-cell-vision-force-and-fixture-monitoring",
+            "family": "assembly-runtime-monitoring",
+            "appliesTo": ["robotic-assembly-cell", "manual-or-special-process", "hybrid split/combine jobs"],
+            "monitorChannels": ["cell interlock", "fixture presence", "vision or fiducial state", "robot or axis load", "end-effector force", "operator check-in"],
+            "responseSurfaces": ["monitoringPlan.monitorPoints", "interfaceControlPlan.controls", "fixturePlan.datumTransfers", "decompositionPlan.splitTargets"],
+            "requiredEvidence": ["fixture, datum-transfer, gripper, end-effector, or operator-presence proof", "vision/force/interlock expected signal band", "safe stop and restart approval before combine, split, or recompose continuation"],
+            "blocks": ["assembly release", "combine/recomposition release", "unattended automation release"],
+            "learningSignals": ["monitoring-route:*:assembly", "interface-control:*", "combine-or-assembly-boundary:*"]
+        }),
+        json!({
+            "contract": "unattended-recovery-and-restart-authority",
+            "family": "safe-stop-and-restart-governance",
+            "appliesTo": ["all machine classes with unresolved monitoring blockers"],
+            "monitorChannels": ["alert destination", "operator check-in", "safe-stop state", "restart owner", "evidence capture heartbeat"],
+            "responseSurfaces": ["monitoringPlan.releaseGates", "monitoringPlan.learningObservations", "executionPlan.executionStopPoints", "machineRelease.blockers", "learning.interventionSignals"],
+            "requiredEvidence": ["alert routing and acknowledgement", "safe-stop behavior validated outside draft planning", "restart owner and recovery authority recorded", "machine-ready release remains blocked until recovery evidence is reviewed"],
+            "blocks": ["unattended release", "operator restart", "machine recovery"],
+            "learningSignals": ["verify-monitoring-plan-*", "clear-monitoring-blockers-*", "ack-monitoring-alert-*"]
+        }),
+    ]
+}
+
+fn monitoring_catalog_response() -> Value {
+    let contracts = monitoring_catalog_contracts();
+    let families = unique_sorted(contracts.iter().filter_map(|contract| {
+        contract
+            .get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.monitoring-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /monitoring/catalog", "GET /fabrication/monitoring/catalog"],
+        "monitoringContractCount": contracts.len(),
+        "families": families,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "responseSurfaces": [
+            "monitoringPlan",
+            "monitoringPlan.monitorPoints",
+            "monitoringPlan.monitorPoints.channels",
+            "monitoringPlan.monitorPoints.expectedSignals",
+            "monitoringPlan.monitorPoints.requiredEvidence",
+            "monitoringPlan.alertRules",
+            "monitoringPlan.recoveryActions",
+            "monitoringPlan.releaseGates",
+            "machineRelease.blockers",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "validation.failureBoundaries",
+            "releaseProbePlan.probes"
+        ],
+        "artifactSurfaces": [
+            "monitoring-plan",
+            "parametric-design.monitoringPlan",
+            "mdp-request.artifacts.monitoringPlan",
+            "analysis-mdp-request.artifacts.monitoringPlan"
+        ],
+        "learningSurfaces": [
+            "monitoringPlan.learningObservations",
+            "learning.interventionSignals",
+            "pomdpBeliefState.hiddenStates",
+            "neuralTrainingCorpus.examples",
+            "monitoring-route:*",
+            "monitoring-alert:*",
+            "monitoring-blockers:*",
+            "verify-monitoring-plan-*",
+            "clear-monitoring-blockers-*"
+        ],
+        "releasePolicy": [
+            "monitoring catalog entries describe runtime evidence contracts, not certified safety systems or controller restart procedures",
+            "machine-ready and unattended release remain blocked while monitor channels, alert rules, safe-stop behavior, recovery actions, or restart authority are unresolved",
+            "monitoring and recovery observations are retained for MDP/POMDP/neural workers so future planning can learn when to add sensors, split jobs, require operators, or improve generated instructions"
+        ],
+        "monitoringContracts": contracts
+    })
+}
+
+fn monitoring_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let monitoring_blocked = response.monitoring_plan.status != "monitoring-plan-ready"
+        || response.machine_release.machine_release_blocked;
+    let monitor_blocker_count = response
+        .monitoring_plan
+        .monitor_points
+        .iter()
+        .map(|point| point.release_blockers.len())
+        .sum::<usize>();
+    let human_monitor_point_count = response
+        .monitoring_plan
+        .monitor_points
+        .iter()
+        .filter(|point| point.requires_human_intervention)
+        .count();
+    let critical_alert_count = response
+        .monitoring_plan
+        .alert_rules
+        .iter()
+        .filter(|rule| rule.severity == "critical")
+        .count();
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.monitoring-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /monitoring/plan", "POST /fabrication/monitoring/plan"]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /monitoring/catalog",
+            "GET /fabrication/monitoring/catalog",
+            "GET /setup/catalog",
+            "GET /fabrication/setup/catalog",
+            "GET /interventions/catalog",
+            "GET /fabrication/interventions/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog"
+        ]),
+    );
+    object.insert(
+        "machineReady".to_string(),
+        json!(!response.machine_release.machine_release_blocked && !monitoring_blocked),
+    );
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(response.machine_release.machine_release_blocked || monitoring_blocked),
+    );
+    object.insert(
+        "monitoringStatus".to_string(),
+        json!(&response.monitoring_plan.status),
+    );
+    object.insert(
+        "humanReviewRequired".to_string(),
+        json!(response.monitoring_plan.human_review_required),
+    );
+    object.insert(
+        "unattendedRunAllowed".to_string(),
+        json!(response.monitoring_plan.unattended_run_allowed),
+    );
+    object.insert(
+        "monitorPointCount".to_string(),
+        json!(response.monitoring_plan.monitor_points.len()),
+    );
+    object.insert(
+        "alertRuleCount".to_string(),
+        json!(response.monitoring_plan.alert_rules.len()),
+    );
+    object.insert(
+        "criticalAlertCount".to_string(),
+        json!(critical_alert_count),
+    );
+    object.insert(
+        "recoveryActionCount".to_string(),
+        json!(response.monitoring_plan.recovery_actions.len()),
+    );
+    object.insert(
+        "releaseGateCount".to_string(),
+        json!(response.monitoring_plan.release_gates.len()),
+    );
+    object.insert(
+        "monitorBlockerCount".to_string(),
+        json!(monitor_blocker_count),
+    );
+    object.insert(
+        "humanMonitorPointCount".to_string(),
+        json!(human_monitor_point_count),
+    );
+    object.insert(
+        "releaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "monitoringPlan.status",
+            "monitoringPlan.monitorPoints",
+            "monitoringPlan.monitorPoints.channels",
+            "monitoringPlan.monitorPoints.expectedSignals",
+            "monitoringPlan.monitorPoints.requiredEvidence",
+            "monitoringPlan.monitorPoints.recoveryActions",
+            "monitoringPlan.alertRules",
+            "monitoringPlan.alertRules.automatedResponse",
+            "monitoringPlan.recoveryActions",
+            "monitoringPlan.releaseGates",
+            "executionPlan.stopPoints",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "machineRelease.blockers",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "monitoring-plan",
+            "operator-intervention-plan",
+            "execution-plan",
+            "machine-release",
+            "simulation-report",
+            "mdp-request.artifacts.monitoringPlan",
+            "parametric-design.monitoringPlan"
+        ]),
+    );
+    object.insert(
+        "learningSurfaces".to_string(),
+        json!([
+            "monitoringPlan.learningObservations",
+            "monitoring-route:*",
+            "monitoring-alert:*",
+            "monitoring-blockers:*",
+            "verify-monitoring-plan-*",
+            "clear-monitoring-blockers-*",
+            "ack-monitoring-alert-*",
+            "pomdpBeliefState.hiddenStates",
+            "neuralTrainingCorpus.examples"
+        ]),
+    );
+    object.insert(
+        "monitoringPolicy".to_string(),
+        json!([
+            "monitoring planning returns draft runtime channel, alert, safe-stop, recovery, and restart-authority evidence, not a certified safety system",
+            "machine-ready and unattended release remain blocked while monitor channels, alert rules, recovery actions, operator check-in, or restart authority are unresolved",
+            "monitoring observations are stored and published so MDP/POMDP/neural workers can learn when to add sensors, split jobs, require operators, add automation, or improve generated instructions"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "monitoringPlan".to_string(),
+        json!(&response.monitoring_plan),
+    );
+    object.insert(
+        "operatorInterventionPlan".to_string(),
+        json!(&response.operator_intervention_plan),
+    );
+    object.insert("executionPlan".to_string(), json!(&response.execution_plan));
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "pomdpBeliefState": &response.learning.pomdp_belief_state,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
+async fn monitoring_catalog_http() -> impl IntoResponse {
+    Json(monitoring_catalog_response())
+}
+
+async fn monitoring_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.monitoring.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(monitoring_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
 }
 
 fn postprocess_catalog_target_contracts() -> Vec<Value> {
@@ -37424,7 +43110,7 @@ fn postprocess_catalog_target_contracts() -> Vec<Value> {
         json!({
             "contract": "fdm-support-removal-and-surface-finish",
             "family": "additive-polymer-postprocess",
-            "appliesTo": ["fdm-printer", "pellet-fgf-printer", "composite-fiber-printer"],
+            "appliesTo": ["fdm-printer", "pellet-fgf-printer", "robotic-additive-cell", "composite-fiber-printer"],
             "requiredBefore": ["customer release", "assembly", "unattended repeat run"],
             "requiredEvidence": [
                 "support-removal or trim record",
@@ -37433,6 +43119,20 @@ fn postprocess_catalog_target_contracts() -> Vec<Value> {
                 "operator or automation signoff"
             ],
             "responseSurfaces": ["postprocessPlan.controllerTargets", "qualityPlan.releaseGates"],
+            "blocksMachineRelease": true
+        }),
+        json!({
+            "contract": "sheet-lamination-trim-bond-and-delamination-release",
+            "family": "sheet-lamination-postprocess",
+            "appliesTo": ["sheet-lamination-printer"],
+            "requiredBefore": ["customer release", "assembly", "unattended repeat run"],
+            "requiredEvidence": [
+                "sheet or foil stock and stack-order record",
+                "registration, fiducial, datum, hold-down, and trim/cut path record",
+                "adhesive cure, press cycle, or ultrasonic weld consolidation record",
+                "coupon, peel or lap-shear, delamination, void, and dimensional-release inspection"
+            ],
+            "responseSurfaces": ["postprocessPlan.requiredArtifacts", "qualityPlan.releaseGates", "materialPlan.conditioning"],
             "blocksMachineRelease": true
         }),
         json!({
@@ -37625,8 +43325,239 @@ fn postprocess_catalog_response() -> Value {
     })
 }
 
+fn postprocess_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let postprocess_blocked = response.postprocess_plan.status != "postprocess-ready"
+        || response.machine_release.machine_release_blocked
+        || response.release_package_plan.blocked_package_count > 0;
+    let dry_run_gate_count = response
+        .postprocess_plan
+        .controller_targets
+        .iter()
+        .filter(|target| {
+            target.requires_dry_run || target.gates.iter().any(|gate| gate.gate_type == "dry-run")
+        })
+        .count();
+    let human_signoff_target_count = response
+        .postprocess_plan
+        .controller_targets
+        .iter()
+        .filter(|target| target.requires_human_signoff)
+        .count();
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.postprocess-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!([
+            "POST /postprocess/plan",
+            "POST /fabrication/postprocess/plan"
+        ]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /postprocess/catalog",
+            "GET /fabrication/postprocess/catalog",
+            "GET /controllers/catalog",
+            "GET /fabrication/controllers/catalog",
+            "GET /instructions/generation/catalog",
+            "GET /fabrication/instructions/generation/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog",
+            "GET /artifacts/catalog",
+            "GET /fabrication/artifacts/catalog"
+        ]),
+    );
+    object.insert(
+        "machineReady".to_string(),
+        json!(!response.machine_release.machine_release_blocked && !postprocess_blocked),
+    );
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(response.machine_release.machine_release_blocked || postprocess_blocked),
+    );
+    object.insert(
+        "postprocessStatus".to_string(),
+        json!(&response.postprocess_plan.status),
+    );
+    object.insert(
+        "controllerPlanStatus".to_string(),
+        json!(&response.controller_plan.status),
+    );
+    object.insert(
+        "releasePackageStatus".to_string(),
+        json!(&response.release_package_plan.status),
+    );
+    object.insert(
+        "controllerTargetCount".to_string(),
+        json!(response.postprocess_plan.controller_targets.len()),
+    );
+    object.insert(
+        "requiredArtifactCount".to_string(),
+        json!(response.postprocess_plan.required_artifacts.len()),
+    );
+    object.insert("dryRunGateCount".to_string(), json!(dry_run_gate_count));
+    object.insert(
+        "humanSignoffTargetCount".to_string(),
+        json!(human_signoff_target_count),
+    );
+    object.insert(
+        "postprocessBlockerCount".to_string(),
+        json!(response.postprocess_plan.blockers.len()),
+    );
+    object.insert(
+        "releaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "postprocessPlan.status",
+            "postprocessPlan.controllerTargets",
+            "postprocessPlan.controllerTargets.gates",
+            "postprocessPlan.controllerTargets.outputFormat",
+            "postprocessPlan.controllerTargets.postprocessor",
+            "postprocessPlan.requiredArtifacts",
+            "postprocessPlan.blockers",
+            "postprocessPlan.learningObservations",
+            "controllerPlan.compatibilityTargets",
+            "controllerPlan.releaseGates",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.blockers",
+            "simulation.programs"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "postprocess-plan",
+            "controller-plan",
+            "release-package-plan",
+            "simulation-report",
+            "machine-release",
+            "generated-machine-program",
+            "improved-instruction-program",
+            "mdp-request.artifacts.postprocessPlan"
+        ]),
+    );
+    object.insert(
+        "learningSurfaces".to_string(),
+        json!([
+            "postprocessPlan.learningObservations",
+            "postprocess-status:*",
+            "postprocess-target:*",
+            "postprocess-blocker:*",
+            "controller-release:*",
+            "learning.releaseProbePlan",
+            "neuralTrainingCorpus.examples"
+        ]),
+    );
+    object.insert(
+        "postprocessPolicy".to_string(),
+        json!([
+            "postprocess planning returns draft controller-output, traveler, dry-run, and signoff evidence packages, not certified machine safety approval",
+            "machine-ready release remains blocked while controller targets, postprocessors, dry-run gates, required artifacts, release packages, or operator/automation signoff remain unresolved",
+            "postprocess observations are stored and published so MDP/POMDP/neural workers can learn when to change postprocessors, add finishing operations, split parts, combine assemblies, or require human intervention"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "postprocessPlan".to_string(),
+        json!(&response.postprocess_plan),
+    );
+    object.insert(
+        "controllerPlan".to_string(),
+        json!(&response.controller_plan),
+    );
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
 async fn postprocess_catalog_http() -> impl IntoResponse {
     Json(postprocess_catalog_response())
+}
+
+async fn postprocess_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.postprocess.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(postprocess_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
 }
 
 fn controller_catalog_dialect_counts(catalog: &[Value]) -> BTreeMap<String, usize> {
@@ -37847,11 +43778,28 @@ fn material_catalog_feedstock_kind(machine_kind: &str) -> &'static str {
         MachineClass::Additive if is_paste_extrusion_printer_kind(machine_kind) => {
             "paste-or-clay-feedstock"
         }
+        MachineClass::Additive if is_robotic_additive_printer_kind(machine_kind) => {
+            "robotic-additive-feedstock"
+        }
+        MachineClass::Additive if is_sheet_lamination_printer_kind(machine_kind) => {
+            "sheet-lamination-stock"
+        }
         MachineClass::Additive if is_pellet_fgf_printer_kind(machine_kind) => "pellet-feedstock",
         MachineClass::Additive => "filament-spool",
         MachineClass::Lathe => "round-bar-or-tube-stock",
         MachineClass::Mill | MachineClass::Router => "block-plate-or-sheet-blank",
         MachineClass::SheetCut => "sheet-plate-or-panel",
+        MachineClass::Other if is_molding_casting_kind(machine_kind) => {
+            "resin-silicone-urethane-or-mold-material-kit"
+        }
+        MachineClass::Other if is_composite_layup_kind(machine_kind) => {
+            "fiber-resin-prepreg-core-kit"
+        }
+        MachineClass::Other if is_hot_wire_foam_cutter_kind(machine_kind) => {
+            "foam-blank-or-core-stock"
+        }
+        MachineClass::Other if is_gear_cutting_kind(machine_kind) => "round-blank-or-gear-stock",
+        MachineClass::Other if is_sheet_forming_kind(machine_kind) => "sheet-metal-blank",
         MachineClass::Other if is_assembly_cell_kind(machine_kind) => "assembly-kit-materials",
         MachineClass::Other => "operator-declared-material-kit",
     }
@@ -38074,6 +44022,7 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "haas-gcode",
         "fanuc-gcode",
         "mill-turn-gcode",
+        "swiss-turning-gcode",
         "indexed-mill-gcode",
         "grbl-gcode",
         "iso-gcode",
@@ -38085,6 +44034,12 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "ams-mmu-job",
         "idex-toolchanger-job",
         "pellet-fgf-job",
+        "robotic-additive-job",
+        "robotic-pellet-job",
+        "robotic-extrusion-job",
+        "sheet-lamination-job",
+        "laminated-object-job",
+        "ultrasonic-additive-job",
         "paste-extrusion-job",
         "clay-print-job",
         "bound-metal-fff-job",
@@ -38119,7 +44074,37 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "media-blasting-job",
         "powder-coating-job",
         "deburr-polish-job",
+        "metal-joining-job",
+        "welding-job",
+        "brazing-job",
+        "soldering-job",
+        "molding-casting-job",
+        "mold-casting-job",
+        "casting-job",
+        "molding-job",
+        "urethane-casting-job",
+        "silicone-molding-job",
+        "vacuum-casting-job",
+        "injection-molding-job",
+        "composite-layup-job",
+        "wet-layup-job",
+        "prepreg-layup-job",
+        "vacuum-bag-job",
+        "autoclave-cure-job",
+        "resin-infusion-job",
+        "press-brake-job",
+        "sheet-forming-job",
+        "bend-job",
+        "hot-wire-foam-job",
+        "hot-wire-job",
+        "foam-cutting-job",
+        "foam-core-job",
+        "wing-core-job",
+        "gear-cutting-job",
+        "gear-hobbing-job",
+        "spline-broaching-job",
         "mill-turn-job",
+        "swiss-turning-job",
         "lathe-job",
         "turning-job",
         "assembly-cell-job",
@@ -38135,6 +44120,18 @@ fn instruction_language_family(language: &str) -> &'static str {
     let token = normalize_token(language);
     if token.contains("gcode") {
         "controller-gcode"
+    } else if wants_composite_layup(&token) {
+        "composite-layup-job-sheet"
+    } else if wants_hot_wire_foam_cutting(&token) {
+        "hot-wire-foam-job-sheet"
+    } else if wants_gear_cutting(&token) {
+        "gear-cutting-job-sheet"
+    } else if wants_molding_casting(&token) {
+        "molding-casting-job-sheet"
+    } else if wants_robotic_additive_printing(&token) {
+        "robotic-additive-job-sheet"
+    } else if wants_sheet_lamination_printing(&token) {
+        "sheet-lamination-job-sheet"
     } else if token.contains("slicer")
         || token.contains("printer")
         || token.contains("sla")
@@ -38160,6 +44157,8 @@ fn instruction_language_family(language: &str) -> &'static str {
         || token.contains("pbf")
     {
         "additive-job-sheet"
+    } else if wants_sheet_forming(&token) {
+        "sheet-forming-job-sheet"
     } else if token.contains("laser")
         || token.contains("waterjet")
         || token.contains("plasma")
@@ -38176,6 +44175,10 @@ fn instruction_language_family(language: &str) -> &'static str {
         "thermal-postprocess-job-sheet"
     } else if wants_surface_finishing(&token) {
         "surface-finishing-job-sheet"
+    } else if wants_metal_joining(&token) {
+        "metal-joining-job-sheet"
+    } else if wants_gear_cutting(&token) {
+        "gear-cutting-job-sheet"
     } else if token.contains("mill")
         || token.contains("turn")
         || token.contains("lathe")
@@ -38202,6 +44205,8 @@ fn instruction_language_machine_classes(language: &str) -> Vec<String> {
         vec!["vertical-mill", "horizontal-mill"]
     } else if token.contains("fanuc") {
         vec!["vertical-mill", "lathe"]
+    } else if wants_swiss_turning(&token) {
+        vec!["swiss-turning-center"]
     } else if token.contains("mill-turn") {
         vec!["mill-turn-center"]
     } else if token.contains("indexed-mill") {
@@ -38213,10 +44218,24 @@ fn instruction_language_machine_classes(language: &str) -> Vec<String> {
             "fdm-printer",
             "multi-material-fdm-printer",
             "pellet-fgf-printer",
+            "robotic-additive-cell",
+            "sheet-lamination-printer",
             "paste-extrusion-printer",
             "bound-metal-fff-printer",
             "sla-msla-resin-printer",
         ]
+    } else if wants_molding_casting(&token) {
+        vec!["molding-casting-cell", "manual-or-special-process"]
+    } else if wants_composite_layup(&token) {
+        vec!["composite-layup-cell", "manual-or-special-process"]
+    } else if wants_hot_wire_foam_cutting(&token) {
+        vec!["hot-wire-foam-cutter", "manual-or-special-process"]
+    } else if wants_gear_cutting(&token) {
+        vec!["gear-cutting-cell", "manual-or-special-process"]
+    } else if wants_robotic_additive_printing(&token) {
+        vec!["robotic-additive-cell"]
+    } else if wants_sheet_lamination_printing(&token) {
+        vec!["sheet-lamination-printer"]
     } else if token.contains("sla") || token.contains("resin") {
         vec!["sla-msla-resin-printer"]
     } else if wants_multi_material_fdm_printing(&token) {
@@ -38257,6 +44276,10 @@ fn instruction_language_machine_classes(language: &str) -> Vec<String> {
         vec!["cmm-inspection-cell"]
     } else if wants_surface_finishing(&token) {
         vec!["surface-finishing-cell", "manual-or-special-process"]
+    } else if wants_metal_joining(&token) {
+        vec!["metal-joining-cell", "manual-or-special-process"]
+    } else if wants_sheet_forming(&token) {
+        vec!["press-brake-forming-cell", "manual-or-special-process"]
     } else if token.contains("sheet") {
         vec![
             "laser-sheet-cutter",
@@ -38310,6 +44333,30 @@ fn instruction_language_analysis_focus(language: &str) -> Vec<String> {
         "surface-finishing-job-sheet" => focus.extend([
             "material compatibility, SDS or media data, masking/plugs, PPE, ventilation, waste route, dry/cure, thickness, adhesion, color or roughness, and dimensional-impact inspection".to_string(),
         ]),
+        "metal-joining-job-sheet" => focus.extend([
+            "WPS or joining procedure, qualification, material compatibility, filler/flux/gas lot, joint prep, fit-up, fixture/clamps, shielding or purge, fume controls, heat input, interpass temperature, distortion, NDE or leak test, repair disposition, and release inspection".to_string(),
+        ]),
+        "molding-casting-job-sheet" => focus.extend([
+            "master/tool revision, mold material, parting line, vent/sprue/runner/gate geometry, release agent, mix ratio, pot life, batch, degas/vacuum/pressure, cure/exotherm, demold, shrinkage, void/bubble/flash, and dimensional release evidence".to_string(),
+        ]),
+        "composite-layup-job-sheet" => focus.extend([
+            "mold/mandrel revision, release film or agent, ply kit and schedule, fiber orientation, resin/prepreg/core lot, out-time or pot life, vacuum bag stack, leak-down, debulk, cure profile, pressure/temperature trace, exotherm, demold, trim/drill, coupon, NDI/void/delamination, and dimensional release evidence".to_string(),
+        ]),
+        "hot-wire-foam-job-sheet" => focus.extend([
+            "foam density, blank thickness, template or CNC profile, bow/wire tension, fixture/support, fume extraction, PPE, fire watch, wire heat/current, kerf coupon, wire lag/taper, surface melt, and dimensional release evidence".to_string(),
+        ]),
+        "robotic-additive-job-sheet" => focus.extend([
+            "robot base/workobject frame, TCP/nozzle calibration, reach, singularity, collision simulation, fixture, external-axis or positioner synchronization, interlocks, E-stop, dry run, feedstock lot, nozzle purge, bead coupon, extrusion rate, flow pressure, cooling or cure, trim allowance, and dimensional scan evidence".to_string(),
+        ]),
+        "sheet-lamination-job-sheet" => focus.extend([
+            "sheet or foil lot, thickness/gauge, stack order, grain or fiber direction, adhesive lot or ultrasonic energy profile, storage, surface prep, layer registration, fiducials, datum pins, hold-down, cut/trim path, bond/consolidation coupon, delamination inspection, peel or lap-shear, and dimensional release evidence".to_string(),
+        ]),
+        "sheet-forming-job-sheet" => focus.extend([
+            "flat pattern revision, grain direction, material thickness, bend allowance/K-factor, punch/V-die tooling, tonnage, backgauge, bend sequence, springback, formed envelope, angle/flange inspection, and guarding".to_string(),
+        ]),
+        "gear-cutting-job-sheet" => focus.extend([
+            "gear drawing, tooth count, module or diametral pitch, pressure angle, helix/lead angle, blank datum, arbor/fixture and runout, cutter or hob/shaper/broach qualification, index ratio, change gears or electronic gearbox, deburr, over-pins/span/profile/runout inspection, and backlash evidence".to_string(),
+        ]),
         "subtractive-job-sheet" => focus.extend([
             "setup/datum/workholding, tool table, feed/speed, tool-life, chip/coolant, compensation, threading/part-off, and spindle/tool-change state".to_string(),
         ]),
@@ -38330,10 +44377,23 @@ fn instruction_language_release_gates(language: &str) -> Vec<String> {
         "block-machine-ready-release-until-controller/postprocess/operator-evidence-is-attached"
             .to_string(),
     ];
-    if instruction_language_family(language) == "operator-text-instruction" {
+    let family = instruction_language_family(language);
+    if family == "operator-text-instruction" {
         gates.push("attach-human-reviewed-shop-floor-traveler-or-checklist".to_string());
     } else {
         gates.push("attach-controller-specific-dry-run-or-equivalent-review".to_string());
+    }
+    if family == "robotic-additive-job-sheet" {
+        gates.push("attach-robot-frame-tcp-collision-and-cell-interlock-release".to_string());
+        gates.push(
+            "attach-robotic-feedstock-purge-bead-flow-and-cooldown-or-cure-evidence".to_string(),
+        );
+    } else if family == "sheet-lamination-job-sheet" {
+        gates.push("attach-sheet-or-foil-stock-stack-order-and-surface-prep-evidence".to_string());
+        gates.push(
+            "attach-registration-trim-bond-consolidation-delamination-and-dimensional-release"
+                .to_string(),
+        );
     }
     gates.sort();
     gates.dedup();
@@ -38430,12 +44490,12 @@ fn instruction_generation_catalog_program_contracts() -> Vec<Value> {
         }),
         json!({
             "family": "advanced-additive-process-sheets",
-            "generatedLanguages": ["multi-material-fdm-job", "pellet-fgf-job", "material-jetting-job", "directed-energy-deposition-job", "composite-fiber-job", "binder-jet-job"],
-            "machineClasses": ["multi-material-fdm-printer", "pellet-fgf-printer", "material-jetting-printer", "directed-energy-deposition-cell", "continuous-fiber-composite-printer", "binder-jet-printer"],
+            "generatedLanguages": ["multi-material-fdm-job", "pellet-fgf-job", "robotic-additive-job", "robotic-pellet-job", "robotic-extrusion-job", "sheet-lamination-job", "laminated-object-job", "ultrasonic-additive-job", "material-jetting-job", "directed-energy-deposition-job", "composite-fiber-job", "binder-jet-job"],
+            "machineClasses": ["multi-material-fdm-printer", "pellet-fgf-printer", "robotic-additive-cell", "sheet-lamination-printer", "material-jetting-printer", "directed-energy-deposition-cell", "continuous-fiber-composite-printer", "binder-jet-printer"],
             "generatorBranch": "generate_program::MachineClass::Additive special-process branches",
-            "generatedInstructionKinds": ["material conditioning", "process coupon or purge evidence", "material map, bead, jetting, fiber, binder, or melt-pool review", "postprocess transfer"],
-            "releaseGates": ["feedstock or material lot", "hardware calibration", "thermal/process profile", "coupon or NDE evidence", "operator signoff"],
-            "boundarySignals": ["multi-material-fdm-material-map-boundary", "multi-material-fdm-purge-resume-boundary", "pellet-fgf-material-boundary", "pellet-fgf-bead-thermal-boundary", "interpass-boundary"],
+            "generatedInstructionKinds": ["material conditioning", "process coupon or purge evidence", "robotic path frame and collision dry run", "sheet/foil stack registration and bond/consolidation review", "material map, bead, jetting, fiber, binder, or melt-pool review", "postprocess transfer"],
+            "releaseGates": ["feedstock or material lot", "hardware calibration", "robot/cell dry run", "sheet/foil stack and bond/consolidation proof", "thermal/process profile", "coupon or NDE evidence", "operator signoff"],
+            "boundarySignals": ["multi-material-fdm-material-map-boundary", "multi-material-fdm-purge-resume-boundary", "pellet-fgf-material-boundary", "pellet-fgf-bead-thermal-boundary", "robotic-additive-path-boundary", "robotic-additive-extrusion-boundary", "sheet-lamination-stock-boundary", "sheet-lamination-bond-boundary", "interpass-boundary"],
             "artifactKinds": ["generated-machine-program", "program-*"]
         }),
         json!({
@@ -38470,13 +44530,13 @@ fn instruction_generation_catalog_program_contracts() -> Vec<Value> {
         }),
         json!({
             "family": "lathe-and-mill-turn",
-            "generatedLanguages": ["fanuc-gcode", "lathe-job", "turning-job", "mill-turn-gcode", "mill-turn-job"],
-            "machineClasses": ["lathe", "mill-turn-center"],
+            "generatedLanguages": ["fanuc-gcode", "lathe-job", "turning-job", "mill-turn-gcode", "mill-turn-job", "swiss-turning-gcode", "swiss-turning-job"],
+            "machineClasses": ["lathe", "mill-turn-center", "swiss-turning-center"],
             "generatorBranch": "generate_program::MachineClass::Lathe",
-            "generatedInstructionKinds": ["turning modal setup", "threading and part-off checkpoints", "live-tooling review", "subspindle transfer review"],
-            "releaseGates": ["chuck or collet grip", "stick-out/runout", "tool nose and threading evidence", "part-off support", "spindle transfer proof"],
-            "boundarySignals": ["lathe-threading-boundary", "lathe-part-off-boundary", "mill-turn-live-tooling-boundary", "mill-turn-spindle-transfer-boundary"],
-            "artifactKinds": ["generated-machine-program", "program-*"]
+            "generatedInstructionKinds": ["turning modal setup", "threading and part-off checkpoints", "live-tooling review", "subspindle transfer review", "Swiss guide-bushing and bar-feed review", "gang-tool, pickoff, cutoff, and first-article runout review"],
+            "releaseGates": ["chuck or collet grip", "stick-out/runout", "tool nose and threading evidence", "part-off support", "spindle transfer proof", "guide bushing and bar-feed proof", "gang-tool/live-tool clearance", "pickoff/cutoff/ejection evidence"],
+            "boundarySignals": ["lathe-threading-boundary", "lathe-part-off-boundary", "mill-turn-live-tooling-boundary", "mill-turn-spindle-transfer-boundary", "swiss-guide-bushing-boundary", "swiss-live-tool-boundary", "swiss-pickoff-cutoff-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "swiss-guide-bushing-and-bar-feed-record", "swiss-gang-tool-and-live-tool-clearance-record", "swiss-pickoff-cutoff-and-ejection-record", "swiss-first-article-runout-and-remnant-record"]
         }),
         json!({
             "family": "edm-special-process",
@@ -38527,6 +44587,66 @@ fn instruction_generation_catalog_program_contracts() -> Vec<Value> {
             "releaseGates": ["material compatibility", "SDS or media data", "masking/plugs", "PPE/ventilation/waste", "dry or cure state", "finish inspection"],
             "boundarySignals": ["surface-finishing-setup-boundary", "surface-finishing-release-boundary", "surface-finishing-boundary"],
             "artifactKinds": ["generated-machine-program", "program-*", "surface-media-chemistry-and-sds-record", "masking-plugging-and-protected-feature-record", "ventilation-ppe-and-waste-record", "finish-thickness-adhesion-and-inspection-record"]
+        }),
+        json!({
+            "family": "metal-joining-release",
+            "generatedLanguages": ["metal-joining-job", "welding-job", "brazing-job", "soldering-job"],
+            "machineClasses": ["metal-joining-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other metal joining cell",
+            "generatedInstructionKinds": ["WPS or joining procedure review", "joint prep and fit-up", "filler/flux/gas and fume controls", "heat input and interpass control", "visual inspection, NDE or leak test, repair disposition, and release"],
+            "releaseGates": ["WPS/procedure", "qualification", "filler/flux/gas lot", "fit-up fixture", "heat input and interpass", "fume/fire-watch controls", "inspection or NDE"],
+            "boundarySignals": ["metal-joining-procedure-boundary", "metal-joining-inspection-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "welding-procedure-and-qualification-record", "joint-fitup-fixture-and-clamp-record", "filler-flux-gas-and-fume-control-record", "heat-input-interpass-and-distortion-record", "weld-inspection-nde-and-repair-record"]
+        }),
+        json!({
+            "family": "molding-casting-release",
+            "generatedLanguages": ["molding-casting-job", "mold-casting-job", "casting-job", "molding-job", "urethane-casting-job", "silicone-molding-job", "vacuum-casting-job", "injection-molding-job"],
+            "machineClasses": ["molding-casting-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other molding/casting cell",
+            "generatedInstructionKinds": ["master/tool and mold-material review", "parting line plus vent/sprue/runner/gate setup", "release-agent and fixture/support proof", "mix ratio, pot life, batch, and degas/vacuum/pressure review", "cure, demold, shrinkage, void/bubble/flash, and dimensional release"],
+            "releaseGates": ["master/tool revision", "mold material", "parting line and vents/sprues/runners/gates", "release agent", "mix ratio and pot life", "degas/vacuum/pressure", "cure and exotherm", "demold", "shrinkage and dimensional inspection"],
+            "boundarySignals": ["mold-tooling-boundary", "mold-cure-demold-boundary", "molding-casting-tooling-boundary", "molding-casting-process-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "mold-master-tooling-and-release-record", "mix-ratio-pot-life-and-batch-record", "degas-vacuum-pressure-and-cure-record", "demold-shrinkage-void-and-dimensional-record"]
+        }),
+        json!({
+            "family": "composite-layup-release",
+            "generatedLanguages": ["composite-layup-job", "wet-layup-job", "prepreg-layup-job", "vacuum-bag-job", "autoclave-cure-job", "resin-infusion-job"],
+            "machineClasses": ["composite-layup-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other composite layup cell",
+            "generatedInstructionKinds": ["mold/mandrel and release-system review", "ply kit, ply schedule, fiber orientation, resin/prepreg/core lot, and out-time review", "vacuum bag stack, leak-down, and debulk proof", "oven/autoclave cure profile with pressure and temperature trace", "demold, trim/drill, coupon, NDI/void/delamination, and dimensional release"],
+            "releaseGates": ["tooling revision", "release film or agent", "ply schedule and orientation", "material lot and out-time", "bag leak-down", "debulk and cure trace", "coupon and NDI/void inspection", "dimensional release"],
+            "boundarySignals": ["composite-layup-tooling-boundary", "composite-layup-bag-cure-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "composite-tooling-release-and-ply-kit-record", "fiber-resin-prepreg-core-lot-record", "vacuum-bag-leak-debulk-and-cure-record", "demold-trim-coupon-void-and-dimensional-record"]
+        }),
+        json!({
+            "family": "hot-wire-foam-cutting-release",
+            "generatedLanguages": ["hot-wire-foam-job", "hot-wire-job", "foam-cutting-job", "foam-core-job", "wing-core-job"],
+            "machineClasses": ["hot-wire-foam-cutter", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other hot-wire foam cutter",
+            "generatedInstructionKinds": ["foam blank and template setup", "wire heat and bow tension check", "kerf coupon", "hot-wire profile/core cut", "fume/fire and dimensional release record"],
+            "releaseGates": ["foam density and blank thickness", "template or CNC profile", "wire temperature/current and tension", "kerf coupon and wire-lag/taper review", "fume extraction, PPE, and fire watch", "surface/taper/dimensional release"],
+            "boundarySignals": ["hot-wire-foam-setup-boundary", "hot-wire-foam-process-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "foam-blank-density-and-template-record", "wire-temperature-tension-and-kerf-record"]
+        }),
+        json!({
+            "family": "press-brake-sheet-forming",
+            "generatedLanguages": ["press-brake-job", "sheet-forming-job", "bend-job"],
+            "machineClasses": ["press-brake-forming-cell"],
+            "generatorBranch": "generate_program::MachineClass::Other press brake forming cell",
+            "generatedInstructionKinds": ["flat pattern and material-thickness review", "punch/V-die tooling and tonnage setup", "backgauge and bend sequence", "springback compensation", "angle/flange and formed-part inspection"],
+            "releaseGates": ["flat pattern revision", "bend allowance or K-factor", "tooling and tonnage", "backgauge", "guarding", "bend sequence", "angle and dimensional inspection"],
+            "boundarySignals": ["press-brake-setup-boundary", "press-brake-release-boundary", "sheet-forming-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "flat-pattern-and-bend-allowance-record", "press-brake-tooling-and-tonnage-record", "backgauge-bend-sequence-and-angle-inspection-record", "formed-part-dimensional-release-record"]
+        }),
+        json!({
+            "family": "gear-spline-cutting",
+            "generatedLanguages": ["gear-cutting-job", "gear-hobbing-job", "spline-broaching-job"],
+            "machineClasses": ["gear-cutting-cell"],
+            "generatorBranch": "generate_program::MachineClass::Other gear cutting cell",
+            "generatedInstructionKinds": ["gear drawing and blank datum review", "hob/shaper/broach cutter and arbor setup", "index ratio, change-gear, electronic gearbox, lead, and helix synchronization", "deburr and burr control", "over-pins, span, profile, runout, backlash, and gear inspection"],
+            "releaseGates": ["gear drawing", "tooth count", "module or diametral pitch", "pressure angle and helix/lead", "cutter qualification", "arbor and blank runout", "indexing or electronic gearbox", "burr control", "gear inspection"],
+            "boundarySignals": ["gear-cutting-setup-boundary", "gear-indexing-boundary", "gear-inspection-boundary", "gear-cutting-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "gear-drawing-and-blank-datum-record", "gear-cutter-arbor-and-indexing-record", "gear-deburr-and-burr-control-record", "gear-inspection-over-pins-span-profile-record"]
         }),
         json!({
             "family": "assembly-and-part-separation",
@@ -38591,6 +44711,7 @@ fn instruction_generation_catalog_response() -> Value {
         "machineClasses": machine_classes,
         "machineClassCount": machine_classes.len(),
         "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "generationRoutes": ["POST /instructions/generate", "POST /fabrication/instructions/generate"],
         "relatedCatalogRoutes": [
             "GET /instructions/languages",
             "GET /fabrication/instructions/languages",
@@ -38652,6 +44773,299 @@ fn instruction_generation_catalog_response() -> Value {
 
 async fn instruction_generation_catalog_http() -> impl IntoResponse {
     Json(instruction_generation_catalog_response())
+}
+
+fn instruction_generation_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let machine_ready_count = response
+        .generated_programs
+        .iter()
+        .filter(|program| program.machine_ready)
+        .count();
+    let instruction_line_count = response
+        .generated_programs
+        .iter()
+        .map(|program| program.instructions.len())
+        .sum::<usize>();
+
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.instruction-generation.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!([
+            "POST /instructions/generate",
+            "POST /fabrication/instructions/generate"
+        ]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /instructions/generation/catalog",
+            "GET /fabrication/instructions/generation/catalog"
+        ]),
+    );
+    object.insert(
+        "machineReady".to_string(),
+        json!(
+            !response.machine_release.machine_release_blocked
+                && machine_ready_count == response.generated_programs.len()
+        ),
+    );
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(response.machine_release.machine_release_blocked),
+    );
+    object.insert(
+        "generatedProgramCount".to_string(),
+        json!(response.generated_programs.len()),
+    );
+    object.insert(
+        "machineReadyProgramCount".to_string(),
+        json!(machine_ready_count),
+    );
+    object.insert(
+        "draftProgramCount".to_string(),
+        json!(response
+            .generated_programs
+            .iter()
+            .filter(|program| program.draft)
+            .count()),
+    );
+    object.insert(
+        "instructionLineCount".to_string(),
+        json!(instruction_line_count),
+    );
+    object.insert(
+        "designExportCount".to_string(),
+        json!(
+            response.design_exports.part_exports.len()
+                + response.design_exports.assembly_exports.len()
+        ),
+    );
+    object.insert(
+        "controllerTargetCount".to_string(),
+        json!(response.controller_plan.target_count),
+    );
+    object.insert(
+        "postprocessTargetCount".to_string(),
+        json!(response.postprocess_plan.controller_targets.len()),
+    );
+    object.insert(
+        "executionRunCount".to_string(),
+        json!(response.execution_plan.program_runs.len()),
+    );
+    object.insert(
+        "releaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "policySummary".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward,
+            "methodPreferenceCount": policy.method_preferences.len(),
+            "methodCombinationPreferenceCount": policy.method_combination_preferences.len(),
+            "remediationRiskCount": policy.remediation_risks.len()
+        }),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "generatedPrograms",
+            "generatedPrograms.instructions",
+            "generatedPrograms.safetyNotes",
+            "designExports",
+            "manufacturingHandoff",
+            "controllerPlan.compatibilityTargets",
+            "postprocessPlan.controllerTargets",
+            "executionPlan.programRuns",
+            "simulation.programs",
+            "machineRelease.blockers",
+            "releasePackagePlan.packages",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "generated-machine-program",
+            "program-*",
+            "design-export-bundle",
+            "manufacturing-handoff",
+            "controller-plan",
+            "postprocess-plan",
+            "execution-plan",
+            "release-package-plan",
+            "mdp-request"
+        ]),
+    );
+    object.insert(
+        "generationPolicy".to_string(),
+        json!([
+            "instruction generation returns deterministic draft programs and retained plan artifacts",
+            "generated programs remain draft=true and machineReady=false until validation, simulation, controller/postprocessor, setup, quality, and signoff gates clear",
+            "generated-program, release, simulation, and intervention observations are retained for MDP/POMDP/neural learning workers"
+        ]),
+    );
+    object.insert(
+        "generatedPrograms".to_string(),
+        json!(&response.generated_programs),
+    );
+    object.insert("designExports".to_string(), json!(&response.design_exports));
+    object.insert(
+        "manufacturingHandoff".to_string(),
+        json!(&response.manufacturing_handoff),
+    );
+    object.insert(
+        "controllerPlan".to_string(),
+        json!(&response.controller_plan),
+    );
+    object.insert(
+        "postprocessPlan".to_string(),
+        json!(&response.postprocess_plan),
+    );
+    object.insert("executionPlan".to_string(), json!(&response.execution_plan));
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "boundarySummary".to_string(),
+        json!(&response.boundary_summary),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
+fn machine_code_generation_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let program_languages = unique_sorted(
+        response
+            .generated_programs
+            .iter()
+            .map(|program| program.language.clone()),
+    );
+    let machine_kinds = unique_sorted(
+        response
+            .generated_programs
+            .iter()
+            .map(|program| program.machine_kind.clone()),
+    );
+    let mut object = match instruction_generation_response(response, policy) {
+        Value::Object(object) => object,
+        _ => Map::new(),
+    };
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.machine-code-generation.v1"),
+    );
+    object.insert(
+        "routes".to_string(),
+        json!([
+            "POST /machine-code/generate",
+            "POST /fabrication/machine-code/generate"
+        ]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /instructions/generation/catalog",
+            "GET /fabrication/instructions/generation/catalog",
+            "GET /controllers/catalog",
+            "GET /fabrication/controllers/catalog"
+        ]),
+    );
+    object.insert(
+        "machineCodeProgramCount".to_string(),
+        json!(response.generated_programs.len()),
+    );
+    object.insert("programLanguages".to_string(), json!(program_languages));
+    object.insert("machineKinds".to_string(), json!(machine_kinds));
+    object.insert(
+        "controllerRelease".to_string(),
+        json!({
+            "status": &response.controller_plan.status,
+            "machineReleaseBlocked": response.controller_plan.machine_release_blocked,
+            "targetCount": response.controller_plan.target_count,
+            "dialectCount": response.controller_plan.dialect_count,
+            "releaseGateCount": response.controller_plan.release_gates.len(),
+            "requiredArtifacts": &response.controller_plan.required_artifacts
+        }),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "generatedPrograms",
+            "generatedPrograms.instructions",
+            "generatedPrograms.language",
+            "generatedPrograms.machineKind",
+            "generatedPrograms.machineReady",
+            "controllerPlan.compatibilityTargets",
+            "controllerPlan.dialectSummaries",
+            "controllerPlan.releaseGates",
+            "postprocessPlan.controllerTargets",
+            "executionPlan.programRuns",
+            "simulation.programs",
+            "validation.failureBoundaries",
+            "machineRelease.generatedProgramsBlocked",
+            "releasePackagePlan.packages",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "generated-machine-program",
+            "program-*",
+            "controller-plan",
+            "postprocess-plan",
+            "execution-plan",
+            "simulation-report",
+            "release-package-plan",
+            "mdp-request.artifacts.generatedPrograms"
+        ]),
+    );
+    object.insert(
+        "generationPolicy".to_string(),
+        json!([
+            "machine-code generation returns deterministic review drafts and retained plan artifacts",
+            "generated printer, mill, router, sheet-cutting, mill-turn, lathe, and special-process programs remain draft=true and machineReady=false until validation, simulation or dry-run evidence, controller/postprocessor compatibility, setup, quality, and signoff gates clear",
+            "machine-code/controller release observations are retained for MDP/POMDP/neural workers so future plans can regenerate programs, choose alternate machines, split parts, combine assemblies, or insert human checkpoints"
+        ]),
+    );
+    Value::Object(object)
 }
 
 fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
@@ -38717,6 +45131,10 @@ fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
                 "add-multi-material-fdm-purge-resume-evidence",
                 "add-pellet-fgf-material-evidence",
                 "add-pellet-fgf-bead-thermal-evidence",
+                "add-robotic-additive-path-evidence",
+                "add-robotic-additive-extrusion-evidence",
+                "add-sheet-lamination-stock-evidence",
+                "add-sheet-lamination-bond-evidence",
                 "add-ded-feedstock-path-evidence",
                 "add-ded-energy-thermal-inspection-evidence",
                 "add-composite-fiber-layup-evidence",
@@ -38724,7 +45142,7 @@ fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
                 "add-binder-jet-process-evidence",
                 "add-binder-jet-postprocess-shrinkage-evidence"
             ],
-            "appliesTo": ["multi-material-fdm-job", "material-jetting-job", "pellet-fgf-job", "directed-energy-deposition-job", "composite-fiber-job", "binder-jet-job"],
+            "appliesTo": ["multi-material-fdm-job", "material-jetting-job", "pellet-fgf-job", "robotic-additive-job", "robotic-pellet-job", "robotic-extrusion-job", "sheet-lamination-job", "laminated-object-job", "ultrasonic-additive-job", "directed-energy-deposition-job", "composite-fiber-job", "binder-jet-job"],
             "operationKinds": ["review-line", "insert-review-checkpoint"],
             "generatedContent": ["process recipe, postprocess, inspection, and material evidence review notes"],
             "sourceSurfaces": ["improvements", "improvedPrograms.notes", "releasePackagePlan.requiredArtifacts"],
@@ -38762,10 +45180,20 @@ fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
                 "add-unattended-monitoring-evidence",
                 "add-thermal-postprocess-evidence",
                 "add-surface-finishing-evidence",
+                "add-metal-joining-procedure-evidence",
+                "add-metal-joining-inspection-evidence",
+                "add-molding-casting-tooling-evidence",
+                "add-molding-casting-process-evidence",
+                "add-composite-layup-tooling-evidence",
+                "add-composite-layup-bag-cure-evidence",
+                "add-hot-wire-foam-setup-evidence",
+                "add-hot-wire-foam-process-evidence",
+                "add-sheet-forming-evidence",
+                "add-gear-cutting-evidence",
                 "add-indexed-setup-evidence",
                 "add-structured-text-checkpoints"
             ],
-            "appliesTo": ["operator-checklist", "assembly-cell-job", "part-separation-checklist", "thermal-postprocess", "surface-finishing", "indexed-setup"],
+            "appliesTo": ["operator-checklist", "assembly-cell-job", "part-separation-checklist", "thermal-postprocess", "surface-finishing", "metal-joining", "welding-job", "brazing-job", "soldering-job", "molding-casting", "molding-casting-job", "casting-job", "molding-job", "urethane-casting-job", "silicone-molding-job", "vacuum-casting-job", "composite-layup", "composite-layup-job", "wet-layup-job", "prepreg-layup-job", "vacuum-bag-job", "autoclave-cure-job", "resin-infusion-job", "hot-wire-foam", "hot-wire-foam-job", "hot-wire-job", "foam-cutting-job", "foam-core-job", "wing-core-job", "press-brake", "sheet-forming", "gear-cutting", "gear-cutting-job", "gear-hobbing-job", "spline-broaching-job", "indexed-setup"],
             "operationKinds": ["insert-review-checkpoint", "review-line"],
             "generatedContent": ["setup-boundary, process-boundary, and completion-boundary checkpoints"],
             "sourceSurfaces": ["improvements", "improvedPrograms.instructions", "operatorInterventionPlan.requiredOperatorActions"],
@@ -38852,6 +45280,7 @@ fn instruction_improvement_catalog_response() -> Value {
         "patchOperationKinds": operation_kinds,
         "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
         "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "instructionImprovementRoutes": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
         "responseSurfaces": [
             "improvements",
             "improvedPrograms",
@@ -38919,6 +45348,14 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
             } else if is_paste_extrusion_printer_kind(&machine.kind) {
                 languages.insert("paste-extrusion-job".to_string());
                 languages.insert("clay-print-job".to_string());
+            } else if is_robotic_additive_printer_kind(&machine.kind) {
+                languages.insert("robotic-additive-job".to_string());
+                languages.insert("robotic-pellet-job".to_string());
+                languages.insert("robotic-extrusion-job".to_string());
+            } else if is_sheet_lamination_printer_kind(&machine.kind) {
+                languages.insert("sheet-lamination-job".to_string());
+                languages.insert("laminated-object-job".to_string());
+                languages.insert("ultrasonic-additive-job".to_string());
             } else if is_pellet_fgf_printer_kind(&machine.kind) {
                 languages.insert("pellet-fgf-job".to_string());
             } else if is_composite_fiber_printer_kind(&machine.kind) {
@@ -38949,7 +45386,12 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
             }
         }
         MachineClass::Lathe => {
-            if is_mill_turn_kind(&machine.kind) {
+            if is_swiss_turning_kind(&machine.kind) {
+                languages.insert("swiss-turning-gcode".to_string());
+                languages.insert("swiss-turning-job".to_string());
+                languages.insert("mill-turn-gcode".to_string());
+                languages.insert("mill-turn-job".to_string());
+            } else if is_mill_turn_kind(&machine.kind) {
                 languages.insert("mill-turn-gcode".to_string());
                 languages.insert("mill-turn-job".to_string());
             } else {
@@ -39005,6 +45447,53 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
             languages.insert("deburr-polish-job".to_string());
             languages.insert("operator-checklist".to_string());
         }
+        MachineClass::Other if is_metal_joining_kind(&machine.kind) => {
+            languages.insert("metal-joining-job".to_string());
+            languages.insert("welding-job".to_string());
+            languages.insert("brazing-job".to_string());
+            languages.insert("soldering-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_molding_casting_kind(&machine.kind) => {
+            languages.insert("molding-casting-job".to_string());
+            languages.insert("mold-casting-job".to_string());
+            languages.insert("casting-job".to_string());
+            languages.insert("molding-job".to_string());
+            languages.insert("urethane-casting-job".to_string());
+            languages.insert("silicone-molding-job".to_string());
+            languages.insert("vacuum-casting-job".to_string());
+            languages.insert("injection-molding-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_composite_layup_kind(&machine.kind) => {
+            languages.insert("composite-layup-job".to_string());
+            languages.insert("wet-layup-job".to_string());
+            languages.insert("prepreg-layup-job".to_string());
+            languages.insert("vacuum-bag-job".to_string());
+            languages.insert("autoclave-cure-job".to_string());
+            languages.insert("resin-infusion-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_hot_wire_foam_cutter_kind(&machine.kind) => {
+            languages.insert("hot-wire-foam-job".to_string());
+            languages.insert("hot-wire-job".to_string());
+            languages.insert("foam-cutting-job".to_string());
+            languages.insert("foam-core-job".to_string());
+            languages.insert("wing-core-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_sheet_forming_kind(&machine.kind) => {
+            languages.insert("press-brake-job".to_string());
+            languages.insert("sheet-forming-job".to_string());
+            languages.insert("bend-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_gear_cutting_kind(&machine.kind) => {
+            languages.insert("gear-cutting-job".to_string());
+            languages.insert("gear-hobbing-job".to_string());
+            languages.insert("spline-broaching-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
         MachineClass::Other if is_assembly_cell_kind(&machine.kind) => {
             languages.insert("assembly-cell-job".to_string());
             languages.insert("assembly-checklist".to_string());
@@ -39023,12 +45512,24 @@ fn machine_catalog_release_gates(machine: &MachineProfile) -> Vec<String> {
         "block machine-ready release while profileEvidence.blockers, validation findings, or machine-failure boundaries remain unresolved".to_string(),
     ];
     match machine_class(&machine.kind) {
+        MachineClass::Additive if is_robotic_additive_printer_kind(&machine.kind) => gates.push(
+            "verify robot base/workobject frame, TCP/nozzle calibration, reach, singularity margin, collision simulation, external-axis or positioner sync, fixture/interlock/E-stop dry run, feedstock/nozzle purge, bead coupon, flow pressure, cooling or cure, trim allowance, and dimensional release evidence"
+                .to_string(),
+        ),
+        MachineClass::Additive if is_sheet_lamination_printer_kind(&machine.kind) => gates.push(
+            "verify sheet or foil lot, thickness/gauge, stack order, grain or fiber direction, adhesive or ultrasonic energy profile, layer registration, fiducials, hold-down, cut/trim path, bond/consolidation coupon, delamination inspection, and dimensional release evidence"
+                .to_string(),
+        ),
         MachineClass::Additive => gates.push(
             "verify material lot, heatup, homing, extrusion state, support/postprocess, and first-article evidence"
                 .to_string(),
         ),
         MachineClass::Mill => gates.push(
             "verify workholding, datum, tooling, tool length, feed/speed, spindle, coolant/chip control, and controller dry-run evidence"
+                .to_string(),
+        ),
+        MachineClass::Lathe if is_swiss_turning_kind(&machine.kind) => gates.push(
+            "verify guide bushing, bar feeder, collet pressure, stock straightness, remnant length, gang/live-tool clearance, subspindle pickoff, cutoff support, ejection path, and first-article runout evidence"
                 .to_string(),
         ),
         MachineClass::Lathe if is_mill_turn_kind(&machine.kind) => gates.push(
@@ -39065,6 +45566,30 @@ fn machine_catalog_release_gates(machine: &MachineProfile) -> Vec<String> {
         ),
         MachineClass::Other if is_surface_finishing_kind(&machine.kind) => gates.push(
             "verify material compatibility, SDS or media data, masking/plugs, protected threads and fit features, PPE, ventilation, waste route, dry/cure state, thickness/adhesion/color or roughness, dimensional impact, and finish inspection evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_metal_joining_kind(&machine.kind) => gates.push(
+            "verify WPS or joining procedure, qualification, material compatibility, filler/flux/gas lots, joint prep, fit-up, fixture/clamps, fume controls, heat input, interpass temperature, distortion control, visual inspection, NDE or leak test, repair disposition, and release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_molding_casting_kind(&machine.kind) => gates.push(
+            "verify master/tool revision, mold material, parting line, vents/sprues/runners/gates, release agent, fixture/support, mix ratio, pot life, batch, degas/vacuum/pressure, cure/exotherm, demold, shrinkage, void/bubble/flash, and dimensional release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_composite_layup_kind(&machine.kind) => gates.push(
+            "verify mold/mandrel revision, release film or agent, ply kit/schedule, fiber orientation, material lot and out-time, vacuum bag leak-down, debulk/cure trace, demold, trim/drill, coupon, NDI/void/delamination, and dimensional release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_hot_wire_foam_cutter_kind(&machine.kind) => gates.push(
+            "verify foam density and blank thickness, template or CNC profile, bow/wire tension, fixture/support, fume extraction, PPE, fire watch, wire heat/current, kerf coupon, wire lag/taper, surface melt, and dimensional release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_sheet_forming_kind(&machine.kind) => gates.push(
+            "verify flat pattern revision, material thickness and grain direction, bend allowance or K-factor, punch/V-die tooling, tonnage, backgauge, guarding, springback compensation, angle/flange inspection, and formed-part release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_gear_cutting_kind(&machine.kind) => gates.push(
+            "verify gear drawing, tooth count, module or diametral pitch, pressure angle, helix/lead angle, blank datum, arbor/runout, cutter/hob/shaper/broach qualification, index ratio, burr control, and over-pins/span/profile/backlash inspection evidence"
                 .to_string(),
         ),
         MachineClass::Other if is_assembly_cell_kind(&machine.kind) => gates.push(
@@ -39246,7 +45771,14 @@ fn artifact_catalog_response() -> Value {
         "routes": ["GET /artifacts/catalog", "GET /fabrication/artifacts/catalog"],
         "artifactContractCount": artifact_contracts.len(),
         "families": families,
-        "retrievalRoutes": ["GET /jobs", "GET /jobs/:job_id", "GET /jobs/:job_id/artifacts/:artifact_id"],
+        "retrievalRoutes": [
+            "GET /jobs",
+            "GET /fabrication/jobs",
+            "GET /jobs/:job_id",
+            "GET /fabrication/jobs/:job_id",
+            "GET /jobs/:job_id/artifacts/:artifact_id",
+            "GET /fabrication/jobs/:job_id/artifacts/:artifact_id"
+        ],
         "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
         "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
         "learningRoutes": [
@@ -39274,7 +45806,7 @@ fn artifact_catalog_response() -> Value {
         "storagePolicy": [
             "artifact catalog entries describe retained in-process evidence surfaces, not durable database storage or certified machine release",
             "generated design exports, machine programs, improved programs, release packages, DES/POMDP/neural artifacts, and learning outcomes remain draft evidence until validation, simulation, controller, setup, quality, and signoff gates clear",
-            "artifact IDs are stable within the bounded runtime ledger and are retrieved through GET /jobs/:job_id/artifacts/:artifact_id"
+            "artifact IDs are stable within the bounded runtime ledger and are retrieved through GET /jobs/:job_id/artifacts/:artifact_id or GET /fabrication/jobs/:job_id/artifacts/:artifact_id"
         ],
         "artifactContracts": artifact_contracts
     })
@@ -39409,18 +45941,32 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/materials/catalog",
                 "GET /design/formats",
                 "GET /fabrication/design/formats",
+                "GET /design/import/catalog",
+                "GET /fabrication/design/import/catalog",
                 "GET /design/generation/catalog",
                 "GET /fabrication/design/generation/catalog",
+                "POST /design/generate",
+                "POST /fabrication/design/generate",
+                "POST /design/import/review",
+                "POST /fabrication/design/import/review",
+                "GET /handoff/catalog",
+                "GET /fabrication/handoff/catalog",
                 "GET /instructions/languages",
                 "GET /fabrication/instructions/languages",
                 "GET /instructions/generation/catalog",
                 "GET /fabrication/instructions/generation/catalog",
+                "POST /instructions/generate",
+                "POST /fabrication/instructions/generate",
+                "POST /machine-code/generate",
+                "POST /fabrication/machine-code/generate",
                 "GET /improvements/catalog",
                 "GET /fabrication/improvements/catalog",
                 "GET /boundaries/catalog",
                 "GET /fabrication/boundaries/catalog",
                 "GET /decomposition/catalog",
                 "GET /fabrication/decomposition/catalog",
+                "GET /assembly/catalog",
+                "GET /fabrication/assembly/catalog",
                 "GET /release/catalog",
                 "GET /fabrication/release/catalog",
                 "GET /schedule/catalog",
@@ -39435,6 +45981,8 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/interventions/catalog",
                 "GET /setup/catalog",
                 "GET /fabrication/setup/catalog",
+                "GET /monitoring/catalog",
+                "GET /fabrication/monitoring/catalog",
                 "GET /postprocess/catalog",
                 "GET /fabrication/postprocess/catalog",
                 "GET /artifacts/catalog",
@@ -39446,8 +45994,22 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /examples",
                 "GET /fabrication/examples"
             ],
-            "planning": ["POST /plan", "POST /fabrication/plan"],
+            "planning": [
+                "POST /plan",
+                "POST /fabrication/plan",
+                "POST /release/preview",
+                "POST /fabrication/release/preview",
+                "POST /strategy/recommend",
+                "POST /fabrication/strategy/recommend"
+            ],
+            "instructionGeneration": ["POST /instructions/generate", "POST /fabrication/instructions/generate"],
             "instructionAnalysis": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+            "instructionValidation": ["POST /instructions/validate", "POST /fabrication/instructions/validate"],
+            "instructionImprovement": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
+            "instructionBoundaryReview": [
+                "POST /instructions/boundaries/review",
+                "POST /fabrication/instructions/boundaries/review"
+            ],
             "learning": [
                 "POST /learning/observe",
                 "POST /fabrication/learning/observe",
@@ -39460,12 +46022,21 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /learning/policy",
                 "GET /fabrication/learning/policy"
             ],
-            "inspection": ["GET /jobs", "GET /jobs/:job_id", "GET /jobs/:job_id/artifacts/:artifact_id"]
+            "inspection": [
+                "GET /jobs",
+                "GET /fabrication/jobs",
+                "GET /jobs/:job_id",
+                "GET /fabrication/jobs/:job_id",
+                "GET /jobs/:job_id/artifacts/:artifact_id",
+                "GET /fabrication/jobs/:job_id/artifacts/:artifact_id"
+            ]
         },
-        "machineClasses": [
-            "fdm-printer",
-            "pellet-fgf-printer",
-            "sla-msla-resin-printer",
+            "machineClasses": [
+                "fdm-printer",
+                "pellet-fgf-printer",
+                "robotic-additive-cell",
+                "sheet-lamination-printer",
+                "sla-msla-resin-printer",
             "material-jetting-printer",
             "directed-energy-deposition-cell",
             "continuous-fiber-composite-printer",
@@ -39487,7 +46058,13 @@ async fn capabilities() -> impl IntoResponse {
             "cmm-inspection-cell",
             "thermal-postprocess-furnace",
             "surface-finishing-cell",
+            "metal-joining-cell",
+            "molding-casting-cell",
+            "composite-layup-cell",
+            "hot-wire-foam-cutter",
+            "press-brake-forming-cell",
             "mill-turn-center",
+            "swiss-turning-center",
             "lathe",
             "robotic-assembly-cell",
             "manual-or-special-process"
@@ -39593,6 +46170,277 @@ fn design_format_catalog_response() -> Value {
 
 async fn design_formats() -> impl IntoResponse {
     Json(design_format_catalog_response())
+}
+
+fn design_import_worker_lane_for_category(category: &str) -> &'static str {
+    match category {
+        "native-cad" | "cloud-cad" => "professional-cad-converter",
+        "open-source-cad" | "code-cad" => "parametric-cad-converter",
+        "organic-model" => "mesh-repair-converter",
+        "neutral-cad" => "neutral-cad-inspector",
+        "neutral-lightweight-cad" => "lightweight-cad-pmi-inspector",
+        "neutral-kernel-cad" => "cad-kernel-inspector",
+        "neutral-2d-cad" => "sheet-profile-cad-inspector",
+        "neutral-color-mesh" => "color-mesh-package-inspector",
+        "neutral-print" => "mesh-package-inspector",
+        "slicer-project" => "slicer-profile-reviewer",
+        _ => "fabrication-design-converter",
+    }
+}
+
+fn design_import_required_evidence_for_category(category: &str) -> Vec<&'static str> {
+    match category {
+        "native-cad" => vec![
+            "licensed translator, vendor export log, or explicit neutral export provenance",
+            "source system, version, configuration, units, and assembly evidence",
+            "export artifact checksum plus topology and assembly inspection report",
+        ],
+        "cloud-cad" => vec![
+            "authenticated document/version/element export audit",
+            "export artifact checksum plus units and assembly metadata",
+            "operator confirmation that the exported version matches the requested release",
+        ],
+        "open-source-cad" => vec![
+            "reproducible CAD/exporter version and parameter set",
+            "neutral export checksum plus units/topology inspection",
+        ],
+        "code-cad" => vec![
+            "scripted CAD parameter values and evaluator version",
+            "generated mesh or solid manifold report plus export checksum",
+        ],
+        "organic-model" => vec![
+            "units, scale, wall-thickness, manifold, and normals repair report",
+            "decimation or surface-preservation review before slicing",
+        ],
+        "neutral-cad" => vec![
+            "B-rep or surface topology inspection with units and assembly metadata",
+            "healing or solidification report before slicer or CAM handoff",
+        ],
+        "neutral-lightweight-cad" => vec![
+            "JT units, assembly tree, occurrence transforms, and source revision evidence",
+            "B-rep or tessellation availability, level-of-detail, color, PMI, and measurement annotation review",
+        ],
+        "neutral-kernel-cad" => vec![
+            "CAD kernel provenance, kernel version, source system, and units evidence",
+            "body count, solid/surface topology, assembly occurrence, and healing/boolean report",
+        ],
+        "neutral-2d-cad" => vec![
+            "drawing units, scale, layer map, and revision/title-block evidence",
+            "closed-contour, duplicate-entity, kerf-offset, bend or etch, and nesting-readiness review",
+        ],
+        "neutral-color-mesh" => vec![
+            "mesh/package units, scale, manifoldness, normals, wall-thickness, and repair report",
+            "color, material, vertex-color, texture, transform, and scan-decimation preservation evidence",
+        ],
+        "neutral-print" => vec![
+            "mesh/package units, scale, manifoldness, normals, and wall-thickness report",
+            "material/profile metadata review before slicing",
+        ],
+        "slicer-project" => vec![
+            "printer, material, support, orientation, and first-layer profile evidence",
+            "generated machine-code provenance and profile checksum",
+        ],
+        _ => vec!["manual source-format identification before conversion worker dispatch"],
+    }
+}
+
+fn design_import_review_gates_for_category(category: &str) -> Vec<&'static str> {
+    match category {
+        "native-cad" | "cloud-cad" | "open-source-cad" | "code-cad" | "neutral-cad" => vec![
+            "attach-source-identity",
+            "verify-units-assembly-topology-and-export-checksums",
+            "regenerate-step-3mf-or-stl-before-instruction-generation",
+            "block-machine-release-until-cad-conversion-result",
+        ],
+        "neutral-lightweight-cad" => vec![
+            "attach-source-identity",
+            "verify-jt-units-assembly-pmi-brep-or-tessellation",
+            "regenerate-step-3mf-stl-or-cam-setup-from-jt",
+            "block-machine-release-until-cad-conversion-result",
+        ],
+        "neutral-kernel-cad" => vec![
+            "attach-source-identity",
+            "verify-kernel-version-units-solids-and-body-count",
+            "regenerate-step-3mf-stl-or-cam-setup-from-kernel",
+            "block-machine-release-until-cad-conversion-result",
+        ],
+        "neutral-2d-cad" => vec![
+            "attach-source-identity",
+            "verify-units-layers-closed-contours-kerf-and-revision",
+            "regenerate-reviewed-dxf-svg-or-cam-setup-before-cutting",
+            "block-machine-release-until-cad-conversion-result",
+        ],
+        "neutral-color-mesh" => vec![
+            "attach-source-identity",
+            "verify-color-material-texture-scale-and-manifoldness",
+            "regenerate-color-aware-3mf-or-reviewed-mesh-before-slicing",
+            "block-machine-release-until-cad-conversion-result",
+        ],
+        "organic-model" | "neutral-print" => vec![
+            "attach-source-identity",
+            "verify-mesh-scale-manifoldness-normals-and-wall-thickness",
+            "regenerate-slicer-ready-3mf-or-stl-before-machine-code",
+            "block-machine-release-until-cad-conversion-result",
+        ],
+        "slicer-project" => vec![
+            "attach-source-identity",
+            "verify-printer-material-support-and-first-layer-profile",
+            "regenerate-or-review-machine-code-before-release",
+            "block-machine-release-until-slicer-profile-result",
+        ],
+        _ => vec![
+            "attach-source-identity",
+            "route-to-human-format-review-before-export",
+            "block-machine-release-until-cad-conversion-result",
+        ],
+    }
+}
+
+fn design_import_release_blockers_for_category(category: &str) -> Vec<&'static str> {
+    match category {
+        "native-cad" | "cloud-cad" => vec![
+            "native-cad-translator-result-required",
+            "source-system-version-units-and-assembly-review-required",
+            "neutral-export-checksum-required",
+        ],
+        "open-source-cad" | "code-cad" => vec![
+            "parametric-source-replay-required",
+            "exporter-version-and-parameter-review-required",
+            "generated-geometry-topology-review-required",
+        ],
+        "organic-model" | "neutral-print" | "neutral-color-mesh" => vec![
+            "mesh-scale-manifold-wall-thickness-review-required",
+            "material-color-or-texture-preservation-review-required",
+            "slicer-profile-review-required",
+        ],
+        "neutral-lightweight-cad" => vec![
+            "jt-pmi-tessellation-or-brep-review-required",
+            "assembly-occurrence-transform-review-required",
+            "neutral-export-or-cam-setup-review-required",
+        ],
+        "neutral-kernel-cad" => vec![
+            "kernel-version-and-body-count-review-required",
+            "topology-healing-review-required",
+            "neutral-export-or-cam-setup-review-required",
+        ],
+        "neutral-2d-cad" => vec![
+            "drawing-units-layer-revision-review-required",
+            "closed-contour-kerf-and-nesting-review-required",
+            "sheet-process-cam-setup-review-required",
+        ],
+        "slicer-project" => vec![
+            "printer-material-profile-review-required",
+            "support-orientation-first-layer-review-required",
+            "generated-machine-code-review-required",
+        ],
+        _ => vec!["manual-format-review-required"],
+    }
+}
+
+fn design_import_catalog_contracts() -> Vec<Value> {
+    DESIGN_FORMAT_SPECS
+        .iter()
+        .map(|spec| {
+            json!({
+                "normalizedFormat": spec.normalized_format,
+                "sourceSystem": spec.source_system,
+                "ecosystem": spec.ecosystem,
+                "category": spec.category,
+                "acceptedExtensions": design_strings(spec.extensions),
+                "aliases": design_strings(spec.aliases),
+                "workerLane": design_import_worker_lane_for_category(spec.category),
+                "requestSubject": FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
+                "resultSubject": FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
+                "queueGroup": FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP,
+                "importStrategy": spec.import_strategy,
+                "preferredNeutralExports": design_strings(spec.preferred_neutral_exports),
+                "slicerTargets": design_strings(spec.slicer_targets),
+                "requiredEvidence": design_import_required_evidence_for_category(spec.category),
+                "reviewGates": design_import_review_gates_for_category(spec.category),
+                "releaseBlockers": design_import_release_blockers_for_category(spec.category),
+                "notes": [spec.note]
+            })
+        })
+        .collect()
+}
+
+fn design_import_catalog_response() -> Value {
+    let contracts = design_import_catalog_contracts();
+    let worker_lanes = unique_sorted(contracts.iter().filter_map(|contract| {
+        contract
+            .get("workerLane")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let categories = unique_sorted(contracts.iter().filter_map(|contract| {
+        contract
+            .get("category")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let source_systems = unique_sorted(contracts.iter().filter_map(|contract| {
+        contract
+            .get("sourceSystem")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.design-import-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /design/import/catalog", "GET /fabrication/design/import/catalog"],
+        "formatContractCount": contracts.len(),
+        "workerLanes": worker_lanes,
+        "categories": categories,
+        "sourceSystems": source_systems,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "relatedCatalogRoutes": [
+            "GET /design/formats",
+            "GET /fabrication/design/formats",
+            "GET /design/generation/catalog",
+            "GET /fabrication/design/generation/catalog",
+            "GET /handoff/catalog",
+            "GET /fabrication/handoff/catalog"
+        ],
+        "conversionSubjects": {
+            "requests": FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
+            "results": FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
+            "queueGroup": "dd-fabrication-design-conversion"
+        },
+        "responseSurfaces": [
+            "designInputReview.inputs",
+            "designInputReview.conversionPlan",
+            "designPackage.parts.exportTargets",
+            "designExports.partExports",
+            "manufacturingHandoff.parts",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "design-input-review",
+            "design-package",
+            "design-export-bundle",
+            "generated-design-export",
+            "parametric-design",
+            "mdp-request"
+        ],
+        "ambiguityPolicy": [
+            "source identity must include fileName, sourceUri, format, or sourceSystem; notes alone do not authorize import",
+            "sourceUri values are retained without userinfo, query strings, or fragments",
+            "ambiguous native extensions such as .prt or .asm stay release-blocked until sourceSystem, translator, or neutral-export evidence is attached"
+        ],
+        "releasePolicy": [
+            "CAD/model/slicer import contracts describe review and conversion worker lanes, not certified fabrication geometry",
+            "machine-ready release remains blocked until conversion results, topology/scale/profile review, neutral export checksums, simulation, and operator or automation signoff are retained",
+            "conversion outcomes feed designInputReview, machineRelease blockers, and MDP/POMDP/neural training surfaces so future plans can learn which import lanes unblock or fail"
+        ],
+        "formatContracts": contracts
+    })
+}
+
+async fn design_import_catalog_http() -> impl IntoResponse {
+    Json(design_import_catalog_response())
 }
 
 fn design_generation_catalog_export_contracts() -> Vec<Value> {
@@ -39741,12 +46589,18 @@ fn design_generation_catalog_response() -> Value {
         "schemaVersion": "dd.fabrication.design-generation-catalog.v1",
         "serviceSchemaVersion": SCHEMA_VERSION,
         "routes": ["GET /design/generation/catalog", "GET /fabrication/design/generation/catalog"],
+        "generationRoutes": ["POST /design/generate", "POST /fabrication/design/generate"],
         "exportContractCount": export_contracts.len(),
         "handoffContractCount": handoff_contracts.len(),
         "exportFormats": export_formats,
         "consumers": consumers,
         "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "designInputRoutes": ["GET /design/formats", "GET /fabrication/design/formats"],
+        "designInputRoutes": [
+            "GET /design/formats",
+            "GET /fabrication/design/formats",
+            "GET /design/import/catalog",
+            "GET /fabrication/design/import/catalog"
+        ],
         "responseSurfaces": [
             "designPackage",
             "designPackage.parts",
@@ -39812,6 +46666,331 @@ async fn design_generation_catalog_http() -> impl IntoResponse {
     Json(design_generation_catalog_response())
 }
 
+fn design_generation_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let design_export_count = response.design_exports.summary.export_count;
+    let machine_ready = !response.machine_release.machine_release_blocked
+        && response.design_package.blockers.is_empty()
+        && response.design_exports.summary.blocked_exports == 0
+        && response.manufacturing_handoff.machine_ready;
+
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.design-generation.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /design/generate", "POST /fabrication/design/generate"]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /design/generation/catalog",
+            "GET /fabrication/design/generation/catalog"
+        ]),
+    );
+    object.insert("machineReady".to_string(), json!(machine_ready));
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(response.machine_release.machine_release_blocked),
+    );
+    object.insert(
+        "designPartCount".to_string(),
+        json!(response.design_package.parts.len()),
+    );
+    object.insert("designExportCount".to_string(), json!(design_export_count));
+    object.insert(
+        "blockedDesignExportCount".to_string(),
+        json!(response.design_exports.summary.blocked_exports),
+    );
+    object.insert(
+        "draftReadyDesignExportCount".to_string(),
+        json!(response.design_exports.summary.draft_ready_exports),
+    );
+    object.insert(
+        "assemblyExportCount".to_string(),
+        json!(response.design_exports.summary.assembly_export_count),
+    );
+    object.insert(
+        "handoffPartCount".to_string(),
+        json!(response.manufacturing_handoff.parts.len()),
+    );
+    object.insert(
+        "generatedProgramCount".to_string(),
+        json!(response.generated_programs.len()),
+    );
+    object.insert(
+        "releaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "policySummary".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward,
+            "methodPreferenceCount": policy.method_preferences.len(),
+            "methodCombinationPreferenceCount": policy.method_combination_preferences.len(),
+            "machineKindPreferenceCount": policy.machine_kind_preferences.len(),
+            "assemblyPreferenceCount": policy.assembly_preferences.len(),
+            "remediationRiskCount": policy.remediation_risks.len()
+        }),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "design",
+            "designPackage",
+            "designPackage.parts.primitive",
+            "designPackage.parts.exportTargets",
+            "designExports",
+            "designExports.partExports",
+            "designExports.assemblyExports",
+            "designInputReview",
+            "manufacturingHandoff",
+            "manufacturingHandoff.parts",
+            "processGraph",
+            "hybridMakePlan",
+            "machineSelection",
+            "generatedPrograms",
+            "machineRelease.blockers",
+            "releasePackagePlan.packages",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "design-summary",
+            "parametric-design",
+            "design-package",
+            "design-export-bundle",
+            "design-input-review",
+            "generated-design-export",
+            "generated-assembly-design-export",
+            "manufacturing-handoff",
+            "process-graph",
+            "hybrid-make-plan",
+            "mdp-request"
+        ]),
+    );
+    object.insert(
+        "generationPolicy".to_string(),
+        json!([
+            "design generation returns deterministic draft design packages, CAD/mesh/CAM export payloads, and manufacturing handoff evidence retained as normal plan artifacts",
+            "generated design exports remain draft and machineReady=false until translation, topology, scale, slicer/CAM, simulation, setup, quality, and release-package gates clear",
+            "design/export/handoff/split-combine observations are retained for MDP/POMDP/neural workers so future plans can regenerate geometry, split parts, combine assemblies, or choose alternate machines"
+        ]),
+    );
+    object.insert("design".to_string(), json!(&response.design));
+    object.insert("designPackage".to_string(), json!(&response.design_package));
+    object.insert("designExports".to_string(), json!(&response.design_exports));
+    object.insert(
+        "designInputReview".to_string(),
+        json!(&response.design_input_review),
+    );
+    object.insert(
+        "manufacturingHandoff".to_string(),
+        json!(&response.manufacturing_handoff),
+    );
+    object.insert("processGraph".to_string(), json!(&response.process_graph));
+    object.insert(
+        "hybridMakePlan".to_string(),
+        json!(&response.hybrid_make_plan),
+    );
+    object.insert(
+        "machineSelection".to_string(),
+        json!(&response.machine_selection),
+    );
+    object.insert(
+        "generatedPrograms".to_string(),
+        json!(&response.generated_programs),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
+fn handoff_catalog_lanes() -> Vec<Value> {
+    vec![
+        json!({
+            "lane": "source-design-conversion",
+            "workerFamilies": ["native-cad-translator", "cloud-cad-exporter", "open-scripted-cad-evaluator", "lightweight-cad-pmi-inspector", "cad-kernel-inspector", "sheet-profile-cad-inspector", "slicer-profile-reviewer"],
+            "sourceSurfaces": ["designInputReview.inputs", "designInputReview.conversionPlan"],
+            "artifactSurfaces": ["design-input-review", "parametric-design.designInputReview", "mdp-request.artifacts.designInputReview"],
+            "natsSubjects": {
+                "requests": FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
+                "results": FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
+                "queueGroup": "dd-fabrication-design-conversion"
+            },
+            "requiredEvidence": ["source identity without secret URI parts", "translator or exporter version", "units/scale/topology/PMI review", "neutral export or manual review result"],
+            "blocks": ["machine-ready release", "generated design export certification"]
+        }),
+        json!({
+            "lane": "generated-design-and-cam-export",
+            "workerFamilies": ["design-agent", "slicer", "mesh-review", "cam", "sheet-cam", "cam-setup-agent", "nesting-agent", "assembly-planner"],
+            "sourceSurfaces": ["designPackage", "designExports", "processGraph", "manufacturingHandoff.parts"],
+            "artifactSurfaces": ["design-package", "design-export-bundle", "generated-design-export", "generated-assembly-design-export", "manufacturing-handoff"],
+            "requiredEvidence": ["generated export media type and source preview", "program/process-node links", "export blockers reviewed", "CAD/CAM/slicer regeneration result attached"],
+            "blocks": ["machine-code release", "slicer release", "assembly/recomposition release"]
+        }),
+        json!({
+            "lane": "machine-program-controller-release",
+            "workerFamilies": ["postprocessor", "controller-reviewer", "dry-run-simulator", "operator-review"],
+            "sourceSurfaces": ["generatedPrograms", "controllerPlan", "postprocessPlan", "releasePackagePlan.packages"],
+            "artifactSurfaces": ["program-*", "controller-plan", "postprocess-plan", "release-package-plan"],
+            "requiredEvidence": ["postprocessor identity and output format", "controller dialect checks", "dry-run or simulation evidence", "operator or automation signoff"],
+            "blocks": ["controller transfer", "machine start", "unattended repeat run"]
+        }),
+        json!({
+            "lane": "setup-quality-monitoring-release",
+            "workerFamilies": ["fixture-planner", "tooling-reviewer", "quality-inspector", "monitoring-operator", "safe-stop-reviewer"],
+            "sourceSurfaces": ["toolingPlan", "fixturePlan", "qualityPlan", "monitoringPlan", "machineRelease"],
+            "artifactSurfaces": ["tooling-plan", "fixture-plan", "quality-plan", "monitoring-plan", "machine-release"],
+            "requiredEvidence": ["tool/workholding/fixture proof", "inspection targets and records", "monitor channels and recovery actions", "machine-release blockers cleared"],
+            "blocks": ["machine-ready release", "unattended release", "restart after stop"]
+        }),
+        json!({
+            "lane": "hybrid-split-combine-assembly",
+            "workerFamilies": ["decomposition-planner", "interface-control-reviewer", "assembly-planner", "robotic-cell-reviewer", "operator-review"],
+            "sourceSurfaces": ["hybridMakePlan", "decompositionPlan", "interfaceControlPlan", "manufacturingHandoff.parts", "releasePackagePlan.packages"],
+            "artifactSurfaces": ["hybrid-make-plan", "decomposition-plan", "interface-control-plan", "manufacturing-handoff", "release-package-plan"],
+            "requiredEvidence": ["split target and recomposition route", "interface acceptance criteria", "datum transfer and mating-surface evidence", "assembly/recomposition release package"],
+            "blocks": ["combine/recomposition release", "assembly handoff", "single-piece fallback release"]
+        }),
+        json!({
+            "lane": "learning-policy-and-outcome-feedback",
+            "workerFamilies": ["des-scheduler", "mdp-optimizer", "pomdp-probe-planner", "neural-policy-trainer", "outcome-learning-worker"],
+            "sourceSurfaces": ["learning", "pomdpBeliefState", "releaseProbePlan", "neuralTrainingCorpus", "mdp-request", "learning.outcomes"],
+            "artifactSurfaces": ["learning-plan", "pomdp-belief-state", "release-probe-plan", "neural-training-corpus", "mdp-request", "reward-signal", "mdp-experience", "neural-example"],
+            "natsSubjects": {
+                "mdpOptimize": MDP_OPTIMIZE_SUBJECT,
+                "fabricationResults": FABRICATION_RESULTS_SUBJECT
+            },
+            "requiredEvidence": ["policy preview retained as advisory evidence", "probe requirements promoted into machineRelease", "outcome rewards and remediation risks recorded", "validation/simulation/operator gates still authoritative"],
+            "blocks": ["learned preference promotion", "unreviewed retry after failed outcome"]
+        }),
+    ]
+}
+
+fn handoff_catalog_response() -> Value {
+    let lanes = handoff_catalog_lanes();
+    let worker_families = unique_sorted(lanes.iter().flat_map(|lane| {
+        lane.get("workerFamilies")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let source_surfaces = unique_sorted(lanes.iter().flat_map(|lane| {
+        lane.get("sourceSurfaces")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.handoff-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /handoff/catalog", "GET /fabrication/handoff/catalog"],
+        "handoffLaneCount": lanes.len(),
+        "workerFamilies": worker_families,
+        "sourceSurfaces": source_surfaces,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "jobInspectionRoutes": [
+            "GET /jobs",
+            "GET /fabrication/jobs",
+            "GET /jobs/:job_id",
+            "GET /fabrication/jobs/:job_id",
+            "GET /jobs/:job_id/artifacts/:artifact_id",
+            "GET /fabrication/jobs/:job_id/artifacts/:artifact_id"
+        ],
+        "discoveryRoutes": [
+            "GET /design/formats",
+            "GET /fabrication/design/formats",
+            "GET /design/import/catalog",
+            "GET /fabrication/design/import/catalog",
+            "GET /design/generation/catalog",
+            "GET /fabrication/design/generation/catalog",
+            "GET /instructions/generation/catalog",
+            "GET /fabrication/instructions/generation/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog"
+        ],
+        "artifactSurfaces": [
+            "design-package",
+            "design-export-bundle",
+            "generated-design-export",
+            "manufacturing-handoff",
+            "program-*",
+            "controller-plan",
+            "postprocess-plan",
+            "release-package-plan",
+            "tooling-plan",
+            "fixture-plan",
+            "quality-plan",
+            "monitoring-plan",
+            "interface-control-plan",
+            "decomposition-plan",
+            "mdp-request"
+        ],
+        "learningSurfaces": [
+            "hybridMakePlan.learningObservations",
+            "interfaceControlPlan.learningObservations",
+            "decompositionPlan.learningObservations",
+            "releasePackagePlan.learningObservations",
+            "monitoringPlan.learningObservations",
+            "neuralTrainingCorpus.examples",
+            "learning.outcomes"
+        ],
+        "releasePolicy": [
+            "handoff catalog lanes describe downstream worker contracts, not certified CAD, CAM, controller, fixture, inspection, or safety-system output",
+            "machine-ready release remains blocked while conversion, export, controller, setup, monitoring, split/combine, release-package, or learned-remediation evidence is unresolved",
+            "handoff lanes preserve response and artifact surfaces so MDP/POMDP/neural workers can learn which design, machine-code, setup, monitoring, or assembly evidence cleared or blocked prior work"
+        ],
+        "handoffLanes": lanes
+    })
+}
+
+async fn handoff_catalog_http() -> impl IntoResponse {
+    Json(handoff_catalog_response())
+}
+
 async fn request_schema() -> impl IntoResponse {
     Json(json!({
         "ok": true,
@@ -39823,13 +47002,18 @@ async fn request_schema() -> impl IntoResponse {
             "controllerCatalog": ["GET /controllers/catalog", "GET /fabrication/controllers/catalog"],
             "materialCatalog": ["GET /materials/catalog", "GET /fabrication/materials/catalog"],
             "designFormats": ["GET /design/formats", "GET /fabrication/design/formats"],
+            "designImportCatalog": ["GET /design/import/catalog", "GET /fabrication/design/import/catalog"],
+            "designImportReview": ["POST /design/import/review", "POST /fabrication/design/import/review"],
             "designGenerationCatalog": ["GET /design/generation/catalog", "GET /fabrication/design/generation/catalog"],
+            "designGeneration": ["POST /design/generate", "POST /fabrication/design/generate"],
             "instructionLanguages": ["GET /instructions/languages", "GET /fabrication/instructions/languages"],
             "instructionGenerationCatalog": ["GET /instructions/generation/catalog", "GET /fabrication/instructions/generation/catalog"],
+            "instructionGeneration": ["POST /instructions/generate", "POST /fabrication/instructions/generate"],
             "instructionImprovementCatalog": ["GET /improvements/catalog", "GET /fabrication/improvements/catalog"],
             "boundaryCatalog": ["GET /boundaries/catalog", "GET /fabrication/boundaries/catalog"],
             "decompositionCatalog": ["GET /decomposition/catalog", "GET /fabrication/decomposition/catalog"],
             "releaseCatalog": ["GET /release/catalog", "GET /fabrication/release/catalog"],
+            "strategyCatalog": ["GET /strategy/catalog", "GET /fabrication/strategy/catalog"],
             "scheduleCatalog": ["GET /schedule/catalog", "GET /fabrication/schedule/catalog"],
             "simulationCatalog": ["GET /simulation/catalog", "GET /fabrication/simulation/catalog"],
             "qualityCatalog": ["GET /quality/catalog", "GET /fabrication/quality/catalog"],
@@ -39840,7 +47024,11 @@ async fn request_schema() -> impl IntoResponse {
             "artifactCatalog": ["GET /artifacts/catalog", "GET /fabrication/artifacts/catalog"],
             "learningCapabilities": ["GET /learning/capabilities", "GET /fabrication/learning/capabilities"],
             "plan": ["POST /plan", "POST /fabrication/plan"],
+            "releasePreview": ["POST /release/preview", "POST /fabrication/release/preview"],
+            "strategyRecommendation": ["POST /strategy/recommend", "POST /fabrication/strategy/recommend"],
             "instructionAnalysis": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+            "instructionImprovement": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
+            "instructionBoundaryReview": ["POST /instructions/boundaries/review", "POST /fabrication/instructions/boundaries/review"],
             "learningObserve": ["POST /learning/observe", "POST /fabrication/learning/observe"],
             "learningOutcomesMemory": ["GET /learning/outcomes", "GET /fabrication/learning/outcomes"],
             "learningOutcome": ["POST /learning/outcomes", "POST /fabrication/learning/outcomes"]
@@ -39867,10 +47055,11 @@ async fn request_schema() -> impl IntoResponse {
                 "generated programs and improved programs are review drafts until downstream release evidence is attached"
             ]
         },
-        "designInput": {
-            "optional": ["id", "fileName", "sourceUri", "format", "sourceSystem", "role", "notes"],
-            "supportedFormats": design_format_catalog(),
-            "reviewContract": [
+            "designInput": {
+                "optional": ["id", "fileName", "sourceUri", "format", "sourceSystem", "role", "notes"],
+            "reviewRoutes": ["POST /design/import/review", "POST /fabrication/design/import/review"],
+                "supportedFormats": design_format_catalog(),
+                "reviewContract": [
                 "native CAD sources are classified and retained as translator-required evidence",
                 "neutral STEP/3MF/STL/OBJ sources still require unit, topology, scale, and release review",
                 "slicer project sources require printer/material profile, support, orientation, and first-layer evidence"
@@ -39882,6 +47071,8 @@ async fn request_schema() -> impl IntoResponse {
             "supportedKinds": [
                 "fdm-printer",
                 "pellet-fgf-printer",
+                "robotic-additive-cell",
+                "sheet-lamination-printer",
                 "sla-printer",
                 "material-jetting-printer",
                 "directed-energy-deposition-cell",
@@ -39903,6 +47094,12 @@ async fn request_schema() -> impl IntoResponse {
                 "cmm-inspection-cell",
                 "thermal-postprocess-furnace",
                 "surface-finishing-cell",
+                "metal-joining-cell",
+                "molding-casting-cell",
+                "composite-layup-cell",
+                "hot-wire-foam-cutter",
+                "press-brake-forming-cell",
+                "gear-cutting-cell",
                 "mill-turn-center",
                 "robotic-assembly-cell",
                 "assembly-cell",
@@ -40436,6 +47633,503 @@ async fn plan_http(
     }
 }
 
+async fn design_import_review_http(Json(request): Json<DesignImportReviewRequest>) -> Response {
+    match design_import_review_response(request) {
+        Ok(response) => Json(response).into_response(),
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn design_generate_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.design.generated",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(design_generation_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn instruction_generate_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.instructions.generated",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(instruction_generation_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn machine_code_generate_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.machine_code.generated",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(machine_code_generation_response(
+                &response,
+                &policy_snapshot,
+            ))
+            .into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn release_preview_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            publish_event(
+                &state,
+                "fabrication.release.previewed",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(release_preview_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn execution_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.execution.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(execution_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn strategy_recommend_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            publish_event(
+                &state,
+                "fabrication.strategy.recommended",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(strategy_recommendation_response(
+                &response,
+                &policy_snapshot,
+            ))
+            .into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn decomposition_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.decomposition.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(decomposition_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn assembly_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.assembly.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(assembly_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn simulation_run_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.simulation.run",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(simulation_run_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn quality_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.quality.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(quality_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn setup_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.setup.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(setup_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
 async fn analyze_http(
     State(state): State<AppState>,
     Json(request): Json<InstructionAnalysisRequest>,
@@ -40457,6 +48151,105 @@ async fn analyze_http(
             )
             .await;
             Json(response).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn instruction_validate_http(
+    State(state): State<AppState>,
+    Json(request): Json<InstructionAnalysisRequest>,
+) -> Response {
+    state
+        .metrics
+        .analysis_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    match analyze_instruction_request(request) {
+        Ok(response) => {
+            record_analysis_metrics(&state, &response);
+            store_analysis_response(&state, &response);
+            publish_analysis_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.instructions.validated",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(instruction_validation_response(&response)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn instruction_improve_http(
+    State(state): State<AppState>,
+    Json(request): Json<InstructionAnalysisRequest>,
+) -> Response {
+    state
+        .metrics
+        .analysis_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    match analyze_instruction_request(request) {
+        Ok(response) => {
+            record_analysis_metrics(&state, &response);
+            store_analysis_response(&state, &response);
+            publish_analysis_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.instructions.improved",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(instruction_improvement_review_response(&response)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn instruction_boundary_review_http(
+    State(state): State<AppState>,
+    Json(request): Json<InstructionAnalysisRequest>,
+) -> Response {
+    state
+        .metrics
+        .analysis_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    match analyze_instruction_request(request) {
+        Ok(response) => {
+            record_analysis_metrics(&state, &response);
+            store_analysis_response(&state, &response);
+            publish_analysis_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.instructions.boundaries.reviewed",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(instruction_boundary_review_response(&response)).into_response()
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -40656,6 +48449,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/materials/catalog", get(material_catalog_http))
         .route("/design/formats", get(design_formats))
         .route("/fabrication/design/formats", get(design_formats))
+        .route("/design/import/catalog", get(design_import_catalog_http))
+        .route(
+            "/fabrication/design/import/catalog",
+            get(design_import_catalog_http),
+        )
+        .route("/design/import/review", post(design_import_review_http))
+        .route(
+            "/fabrication/design/import/review",
+            post(design_import_review_http),
+        )
         .route(
             "/design/generation/catalog",
             get(design_generation_catalog_http),
@@ -40664,6 +48467,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/design/generation/catalog",
             get(design_generation_catalog_http),
         )
+        .route("/design/generate", post(design_generate_http))
+        .route("/fabrication/design/generate", post(design_generate_http))
+        .route("/handoff/catalog", get(handoff_catalog_http))
+        .route("/fabrication/handoff/catalog", get(handoff_catalog_http))
         .route("/instructions/languages", get(instruction_languages))
         .route(
             "/fabrication/instructions/languages",
@@ -40676,6 +48483,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/instructions/generation/catalog",
             get(instruction_generation_catalog_http),
+        )
+        .route("/instructions/generate", post(instruction_generate_http))
+        .route(
+            "/fabrication/instructions/generate",
+            post(instruction_generate_http),
+        )
+        .route("/machine-code/generate", post(machine_code_generate_http))
+        .route(
+            "/fabrication/machine-code/generate",
+            post(machine_code_generate_http),
         )
         .route(
             "/improvements/catalog",
@@ -40695,6 +48512,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/decomposition/catalog",
             get(decomposition_catalog_http),
         )
+        .route("/decomposition/plan", post(decomposition_plan_http))
+        .route(
+            "/fabrication/decomposition/plan",
+            post(decomposition_plan_http),
+        )
+        .route("/assembly/catalog", get(assembly_catalog_http))
+        .route("/fabrication/assembly/catalog", get(assembly_catalog_http))
+        .route("/assembly/plan", post(assembly_plan_http))
+        .route("/fabrication/assembly/plan", post(assembly_plan_http))
         .route("/release/catalog", get(release_catalog_http))
         .route("/fabrication/release/catalog", get(release_catalog_http))
         .route("/strategy/catalog", get(strategy_catalog_http))
@@ -40706,8 +48532,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/simulation/catalog",
             get(simulation_catalog_http),
         )
+        .route("/simulation/run", post(simulation_run_http))
+        .route("/fabrication/simulation/run", post(simulation_run_http))
         .route("/quality/catalog", get(quality_catalog_http))
         .route("/fabrication/quality/catalog", get(quality_catalog_http))
+        .route("/quality/plan", post(quality_plan_http))
+        .route("/fabrication/quality/plan", post(quality_plan_http))
         .route("/calibration/catalog", get(calibration_catalog_http))
         .route(
             "/fabrication/calibration/catalog",
@@ -40720,11 +48550,22 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/setup/catalog", get(setup_catalog_http))
         .route("/fabrication/setup/catalog", get(setup_catalog_http))
+        .route("/setup/plan", post(setup_plan_http))
+        .route("/fabrication/setup/plan", post(setup_plan_http))
+        .route("/monitoring/catalog", get(monitoring_catalog_http))
+        .route(
+            "/fabrication/monitoring/catalog",
+            get(monitoring_catalog_http),
+        )
+        .route("/monitoring/plan", post(monitoring_plan_http))
+        .route("/fabrication/monitoring/plan", post(monitoring_plan_http))
         .route("/postprocess/catalog", get(postprocess_catalog_http))
         .route(
             "/fabrication/postprocess/catalog",
             get(postprocess_catalog_http),
         )
+        .route("/postprocess/plan", post(postprocess_plan_http))
+        .route("/fabrication/postprocess/plan", post(postprocess_plan_http))
         .route("/artifacts/catalog", get(artifact_catalog_http))
         .route("/fabrication/artifacts/catalog", get(artifact_catalog_http))
         .route("/learning/capabilities", get(learning_capabilities))
@@ -40741,14 +48582,47 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/api/docs.json", get(api_docs_json))
         .route("/metrics", get(metrics))
         .route("/jobs", get(list_jobs))
+        .route("/fabrication/jobs", get(list_jobs))
         .route("/jobs/:job_id", get(get_job))
+        .route("/fabrication/jobs/:job_id", get(get_job))
         .route("/jobs/:job_id/artifacts/:artifact_id", get(get_artifact))
+        .route(
+            "/fabrication/jobs/:job_id/artifacts/:artifact_id",
+            get(get_artifact),
+        )
         .route("/learning/policy", get(learning_policy_http))
         .route("/fabrication/learning/policy", get(learning_policy_http))
         .route("/plan", post(plan_http))
         .route("/fabrication/plan", post(plan_http))
+        .route("/release/preview", post(release_preview_http))
+        .route("/fabrication/release/preview", post(release_preview_http))
+        .route("/execution/plan", post(execution_plan_http))
+        .route("/fabrication/execution/plan", post(execution_plan_http))
+        .route("/strategy/recommend", post(strategy_recommend_http))
+        .route(
+            "/fabrication/strategy/recommend",
+            post(strategy_recommend_http),
+        )
         .route("/instructions/analyze", post(analyze_http))
         .route("/fabrication/instructions/analyze", post(analyze_http))
+        .route("/instructions/validate", post(instruction_validate_http))
+        .route(
+            "/fabrication/instructions/validate",
+            post(instruction_validate_http),
+        )
+        .route("/instructions/improve", post(instruction_improve_http))
+        .route(
+            "/fabrication/instructions/improve",
+            post(instruction_improve_http),
+        )
+        .route(
+            "/instructions/boundaries/review",
+            post(instruction_boundary_review_http),
+        )
+        .route(
+            "/fabrication/instructions/boundaries/review",
+            post(instruction_boundary_review_http),
+        )
         .route("/learning/observe", post(learning_observe_http))
         .route("/fabrication/learning/observe", post(learning_observe_http))
         .route(
@@ -41679,6 +49553,268 @@ mod tests {
     }
 
     #[test]
+    fn design_import_catalog_endpoint_exposes_native_cad_worker_lanes() {
+        let payload = design_import_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.design-import-catalog.v1")
+        );
+        assert_eq!(
+            payload.get("formatContractCount").and_then(Value::as_u64),
+            Some(DESIGN_FORMAT_SPECS.len() as u64)
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/design/import/catalog")
+            })));
+        assert_eq!(
+            payload
+                .get("conversionSubjects")
+                .and_then(|subjects| subjects.get("requests"))
+                .and_then(Value::as_str),
+            Some(FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT)
+        );
+        assert_eq!(
+            payload
+                .get("conversionSubjects")
+                .and_then(|subjects| subjects.get("queueGroup"))
+                .and_then(Value::as_str),
+            Some("dd-fabrication-design-conversion")
+        );
+
+        let source_systems = payload
+            .get("sourceSystems")
+            .and_then(Value::as_array)
+            .expect("source systems should be present");
+        for system in [
+            "PTC Creo / Pro/ENGINEER",
+            "SOLIDWORKS",
+            "Autodesk Fusion",
+            "Siemens NX",
+            "CATIA",
+            "Onshape",
+            "FreeCAD",
+            "OpenSCAD",
+            "Blender",
+            "ZBrush",
+            "JT",
+        ] {
+            assert!(
+                source_systems
+                    .iter()
+                    .any(|source_system| source_system.as_str() == Some(system)),
+                "missing import source system {system}"
+            );
+        }
+
+        let worker_lanes = payload
+            .get("workerLanes")
+            .and_then(Value::as_array)
+            .expect("worker lanes should be present");
+        for lane in [
+            "professional-cad-converter",
+            "parametric-cad-converter",
+            "lightweight-cad-pmi-inspector",
+            "cad-kernel-inspector",
+            "slicer-profile-reviewer",
+        ] {
+            assert!(
+                worker_lanes.iter().any(|item| item.as_str() == Some(lane)),
+                "missing design import worker lane {lane}"
+            );
+        }
+
+        let contracts = payload
+            .get("formatContracts")
+            .and_then(Value::as_array)
+            .expect("format contracts should be present");
+        let solidworks = contracts
+            .iter()
+            .find(|item| {
+                item.get("normalizedFormat").and_then(Value::as_str) == Some("solidworks-native")
+            })
+            .expect("SOLIDWORKS import contract should be present");
+        assert_eq!(
+            solidworks.get("workerLane").and_then(Value::as_str),
+            Some("professional-cad-converter")
+        );
+        assert!(solidworks
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                .as_str()
+                .is_some_and(|blocker| blocker.contains("native-cad-translator")))));
+
+        let jt = contracts
+            .iter()
+            .find(|item| {
+                item.get("normalizedFormat").and_then(Value::as_str) == Some("jt-lightweight-cad")
+            })
+            .expect("JT import contract should be present");
+        assert_eq!(
+            jt.get("workerLane").and_then(Value::as_str),
+            Some("lightweight-cad-pmi-inspector")
+        );
+        assert!(jt
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence
+                .iter()
+                .any(|item| item.as_str().is_some_and(|item| item.contains("PMI")))));
+        assert!(payload
+            .get("ambiguityPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy
+                .iter()
+                .any(|item| item.as_str().is_some_and(|item| item.contains(".prt")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+    }
+
+    #[test]
+    fn design_import_review_endpoint_reuses_cad_validation_and_redaction() {
+        let payload = design_import_review_response(DesignImportReviewRequest {
+            request_id: Some("unit-design-import-review".to_string()),
+            design_inputs: Some(vec![
+                DesignInputFile {
+                    id: Some("solidworks-part".to_string()),
+                    file_name: Some("mount.SLDPRT".to_string()),
+                    source_uri: None,
+                    format: Some("SLDPRT".to_string()),
+                    source_system: Some("SOLIDWORKS".to_string()),
+                    role: Some("source CAD".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("ambiguous-prt".to_string()),
+                    file_name: Some("bracket.prt".to_string()),
+                    source_uri: None,
+                    format: Some("part".to_string()),
+                    source_system: None,
+                    role: Some("source CAD".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("private-onshape".to_string()),
+                    file_name: None,
+                    source_uri: Some(
+                        "https://token:secret@cad.onshape.com/documents/demo?apiKey=hidden#tab"
+                            .to_string(),
+                    ),
+                    format: Some("Onshape document".to_string()),
+                    source_system: Some("Onshape".to_string()),
+                    role: Some("cloud CAD source".to_string()),
+                    notes: None,
+                },
+                DesignInputFile {
+                    id: Some("jt-pmi".to_string()),
+                    file_name: Some("assembly.jt".to_string()),
+                    source_uri: None,
+                    format: Some("JT".to_string()),
+                    source_system: Some("JT".to_string()),
+                    role: Some("lightweight CAD PMI exchange".to_string()),
+                    notes: None,
+                },
+            ]),
+        })
+        .expect("design import review should be generated");
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.design-import-review.v1")
+        );
+        assert_eq!(
+            payload.get("requestId").and_then(Value::as_str),
+            Some("unit-design-import-review")
+        );
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("status").and_then(Value::as_str),
+            Some("blocked-human-format-review")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/design/import/review")
+            })));
+        assert!(payload
+            .get("workerLanes")
+            .and_then(Value::as_array)
+            .is_some_and(|lanes| lanes
+                .iter()
+                .any(|lane| { lane.as_str() == Some("lightweight-cad-pmi-inspector") })));
+
+        let review = payload
+            .get("designInputReview")
+            .expect("design input review should be present");
+        assert_eq!(review.get("inputCount").and_then(Value::as_u64), Some(4));
+        assert!(review
+            .get("inputs")
+            .and_then(Value::as_array)
+            .is_some_and(|inputs| inputs.iter().any(|input| {
+                input.get("inputId").and_then(Value::as_str) == Some("private-onshape")
+                    && input.get("sourceUri").and_then(Value::as_str)
+                        == Some("https://redacted@cad.onshape.com/documents/demo")
+            })));
+
+        let conversions = review
+            .get("conversionPlan")
+            .and_then(Value::as_array)
+            .expect("conversion plan should be present");
+        let solidworks = conversions
+            .iter()
+            .find(|step| step.get("inputId").and_then(Value::as_str) == Some("solidworks-part"))
+            .expect("solidworks conversion should be present");
+        assert_eq!(
+            solidworks.get("workerLane").and_then(Value::as_str),
+            Some("professional-cad-converter")
+        );
+        let ambiguous = conversions
+            .iter()
+            .find(|step| step.get("inputId").and_then(Value::as_str) == Some("ambiguous-prt"))
+            .expect("ambiguous conversion should be present");
+        assert_eq!(
+            ambiguous.get("status").and_then(Value::as_str),
+            Some("blocked-human-format-review")
+        );
+        let jt = conversions
+            .iter()
+            .find(|step| step.get("inputId").and_then(Value::as_str) == Some("jt-pmi"))
+            .expect("JT conversion should be present");
+        assert!(jt
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence
+                .iter()
+                .any(|item| item.as_str().is_some_and(|item| item.contains("PMI")))));
+
+        let error = design_import_review_response(DesignImportReviewRequest {
+            request_id: Some("notes-only-import-review".to_string()),
+            design_inputs: Some(vec![DesignInputFile {
+                id: Some("notes-only".to_string()),
+                file_name: None,
+                source_uri: None,
+                format: None,
+                source_system: None,
+                role: Some("source CAD".to_string()),
+                notes: Some(vec!["looks like SOLIDWORKS".to_string()]),
+            }]),
+        })
+        .expect_err("notes-only design import review should be rejected");
+        assert!(error.contains("must include fileName, sourceUri, format, or sourceSystem"));
+    }
+
+    #[test]
     fn design_generation_catalog_endpoint_exposes_package_export_and_handoff_contract() {
         let payload = design_generation_catalog_response();
         assert_eq!(
@@ -41784,6 +49920,167 @@ mod tests {
                 .and_then(Value::as_str),
             Some("dd.fabrication.manufacturing-handoff.v1")
         );
+    }
+
+    #[test]
+    fn design_generation_endpoint_returns_design_package_and_exports() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-design-generate".to_string()),
+                objective: "PETG fixture with milled datum pads and a turned insert".to_string(),
+                material: Some(material("petg", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.08),
+                quantity: Some(1),
+                machines: None,
+                constraints: None,
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("design generation plan should succeed");
+
+        let payload = design_generation_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.design-generation.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/design/generate"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("designPartCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("designExportCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("handoffPartCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("designPackage")
+            .and_then(|package| package.get("parts"))
+            .and_then(Value::as_array)
+            .is_some_and(|parts| !parts.is_empty()));
+        assert!(payload
+            .get("designExports")
+            .and_then(|exports| exports.get("partExports"))
+            .and_then(Value::as_array)
+            .is_some_and(|exports| !exports.is_empty()));
+        assert!(payload
+            .get("manufacturingHandoff")
+            .and_then(|handoff| handoff.get("parts"))
+            .and_then(Value::as_array)
+            .is_some_and(|parts| !parts.is_empty()));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+
+        let job = stored_plan_job(&response);
+        assert!(job.artifacts.contains_key("parametric-design"));
+        assert!(job.artifacts.contains_key("design-package"));
+        assert!(job.artifacts.contains_key("design-export-bundle"));
+        assert!(job.artifacts.contains_key("manufacturing-handoff"));
+    }
+
+    #[test]
+    fn handoff_catalog_endpoint_exposes_worker_lane_contracts() {
+        let payload = handoff_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.handoff-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/handoff/catalog"))));
+        assert!(payload
+            .get("handoffLaneCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 6));
+        assert!(payload
+            .get("workerFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families
+                .iter()
+                .any(|family| family.as_str() == Some("cam-setup-agent"))));
+        assert!(payload
+            .get("sourceSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("manufacturingHandoff.parts"))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("release-package-plan"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("neuralTrainingCorpus.examples"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let lanes = payload
+            .get("handoffLanes")
+            .and_then(Value::as_array)
+            .expect("handoff lanes should be present");
+        for lane in [
+            "source-design-conversion",
+            "generated-design-and-cam-export",
+            "machine-program-controller-release",
+            "hybrid-split-combine-assembly",
+            "learning-policy-and-outcome-feedback",
+        ] {
+            assert!(
+                lanes
+                    .iter()
+                    .any(|item| item.get("lane").and_then(Value::as_str) == Some(lane)),
+                "missing handoff lane {lane}"
+            );
+        }
     }
 
     #[test]
@@ -41951,7 +50248,9 @@ mod tests {
             "waterjet-job",
             "wire-edm-job",
             "mill-turn-gcode",
+            "swiss-turning-gcode",
             "assembly-cell-job",
+            "metal-joining-job",
         ] {
             assert!(
                 generated_languages
@@ -41971,7 +50270,9 @@ mod tests {
             "five-axis-mill",
             "lathe",
             "mill-turn-center",
+            "swiss-turning-center",
             "robotic-assembly-cell",
+            "metal-joining-cell",
         ] {
             assert!(
                 machine_classes
@@ -42008,6 +50309,224 @@ mod tests {
             .is_some_and(|languages| languages
                 .iter()
                 .any(|language| language.as_str() == Some("mill-turn-gcode"))));
+        assert!(lathe
+            .get("generatedLanguages")
+            .and_then(Value::as_array)
+            .is_some_and(|languages| languages
+                .iter()
+                .any(|language| language.as_str() == Some("swiss-turning-gcode"))));
+        assert!(lathe
+            .get("machineClasses")
+            .and_then(Value::as_array)
+            .is_some_and(|classes| classes
+                .iter()
+                .any(|class| class.as_str() == Some("swiss-turning-center"))));
+        assert!(lathe
+            .get("boundarySignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals
+                .iter()
+                .any(|signal| signal.as_str() == Some("swiss-guide-bushing-boundary"))));
+        let metal_joining = contracts
+            .iter()
+            .find(|item| {
+                item.get("family").and_then(Value::as_str) == Some("metal-joining-release")
+            })
+            .expect("metal joining program contract should be present");
+        assert!(metal_joining
+            .get("boundarySignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals
+                .iter()
+                .any(|signal| { signal.as_str() == Some("metal-joining-procedure-boundary") })));
+    }
+
+    #[test]
+    fn instruction_generation_endpoint_returns_generated_program_package() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-instruction-generate".to_string()),
+                objective: "PETG bracket with milled datum pads and a turned brass insert"
+                    .to_string(),
+                material: Some(material("petg", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.08),
+                quantity: Some(1),
+                machines: None,
+                constraints: None,
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("instruction generation plan should succeed");
+
+        let payload = instruction_generation_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-generation.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/instructions/generate"))));
+        assert!(payload
+            .get("generatedProgramCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("instructionLineCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("generatedPrograms")
+            .and_then(Value::as_array)
+            .is_some_and(|programs| programs.iter().any(|program| program
+                .get("instructions")
+                .and_then(Value::as_array)
+                .is_some_and(|lines| !lines.is_empty()))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("generated-machine-program"))));
+        assert!(payload
+            .get("manufacturingHandoff")
+            .and_then(|handoff| handoff.get("parts"))
+            .and_then(Value::as_array)
+            .is_some_and(|parts| !parts.is_empty()));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+
+        let job = stored_plan_job(&response);
+        assert!(job.artifacts.contains_key("design-export-bundle"));
+        assert!(job.artifacts.contains_key("manufacturing-handoff"));
+        assert!(job
+            .artifacts
+            .values()
+            .any(|artifact| artifact.kind == "generated-machine-program"));
+    }
+
+    #[test]
+    fn machine_code_generation_endpoint_returns_controller_release_package() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-machine-code-generate".to_string()),
+                objective: "aluminum bracket with milled datum pocket and turned steel pin"
+                    .to_string(),
+                material: Some(material("aluminum", "metal")),
+                stock: None,
+                tolerance_mm: Some(0.05),
+                quantity: Some(1),
+                machines: None,
+                constraints: None,
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("machine-code generation plan should succeed");
+
+        let payload = machine_code_generation_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.machine-code-generation.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/machine-code/generate")
+            })));
+        assert!(payload
+            .get("machineCodeProgramCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("programLanguages")
+            .and_then(Value::as_array)
+            .is_some_and(|languages| !languages.is_empty()));
+        assert!(payload
+            .get("controllerRelease")
+            .and_then(|release| release.get("targetCount"))
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("controllerPlan")
+            .and_then(|plan| plan.get("compatibilityTargets"))
+            .and_then(Value::as_array)
+            .is_some_and(|targets| !targets.is_empty()));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("controllerPlan.releaseGates") })));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+
+        let job = stored_plan_job(&response);
+        assert!(job
+            .artifacts
+            .values()
+            .any(|artifact| artifact.kind == "generated-machine-program"));
+        assert!(job.artifacts.contains_key("controller-plan"));
+        assert!(job.artifacts.contains_key("release-package-plan"));
     }
 
     #[test]
@@ -42115,6 +50634,212 @@ mod tests {
             .is_some_and(|actions| actions
                 .iter()
                 .any(|action| action.as_str() == Some("add-slicer-profile-record"))));
+    }
+
+    #[test]
+    fn instruction_validation_endpoint_returns_release_blocking_evidence() {
+        let response = analyze_instruction_request(InstructionAnalysisRequest {
+            request_id: Some("unit-instruction-validate".to_string()),
+            programs: vec![program(
+                "unsafe-mill-program",
+                "vertical-mill",
+                &["G21", "G90", "G1 Z-2.0 F120", "M0 flip fixture", "M30"],
+            )],
+            machines: None,
+            material: Some(material("aluminum", "metal")),
+            learning: None,
+        })
+        .expect("instruction validation analysis should succeed");
+        let payload = instruction_validation_response(&response);
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-validation.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/instructions/validate"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("findingCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("boundaryCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("releaseBlockerCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("improvementCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("validation.failureBoundaries") })));
+        assert!(payload
+            .get("validation")
+            .and_then(|validation| validation.get("failureBoundaries"))
+            .and_then(Value::as_array)
+            .is_some_and(|boundaries| !boundaries.is_empty()));
+        assert!(payload
+            .get("machineRelease")
+            .and_then(|release| release.get("blockers"))
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| !blockers.is_empty()));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+    }
+
+    #[test]
+    fn instruction_improvement_review_endpoint_returns_patch_manifest_contract() {
+        let response = analyze_instruction_request(InstructionAnalysisRequest {
+            request_id: Some("unit-instruction-improve-review".to_string()),
+            programs: vec![program(
+                "legacy-print",
+                "fdm-printer",
+                &["G21", "G90", "G1 X10 Y10 E2.0 F900", "M30"],
+            )],
+            machines: None,
+            material: None,
+            learning: None,
+        })
+        .expect("instruction analysis should produce improvement review input");
+        let payload = instruction_improvement_review_response(&response);
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-improvement-review.v1")
+        );
+        assert_eq!(
+            payload.get("requestId").and_then(Value::as_str),
+            Some("unit-instruction-improve-review")
+        );
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/instructions/improve"))));
+        assert!(payload
+            .get("improvementCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("changedProgramCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("patchOperationCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("instruction-patch-action:*") })));
+        assert!(payload
+            .get("improvedPrograms")
+            .and_then(Value::as_array)
+            .is_some_and(|programs| programs.iter().any(|program| {
+                program
+                    .get("patchManifest")
+                    .and_then(|manifest| manifest.get("operations"))
+                    .and_then(Value::as_array)
+                    .is_some_and(|operations| !operations.is_empty())
+            })));
+    }
+
+    #[test]
+    fn instruction_boundary_review_endpoint_returns_resolution_and_intervention_contract() {
+        let response = analyze_instruction_request(InstructionAnalysisRequest {
+            request_id: Some("unit-instruction-boundary-review".to_string()),
+            programs: vec![program(
+                "legacy-mill-boundary",
+                "vertical-mill",
+                &["G21", "G90", "G1 Z-3.0 F120", "M0 flip fixture", "M30"],
+            )],
+            machines: None,
+            material: Some(material("aluminum", "metal")),
+            learning: None,
+        })
+        .expect("instruction analysis should produce boundary review input");
+        let payload = instruction_boundary_review_response(&response);
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-boundary-review.v1")
+        );
+        assert_eq!(
+            payload.get("requestId").and_then(Value::as_str),
+            Some("unit-instruction-boundary-review")
+        );
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/instructions/boundaries/review")
+            })));
+        assert!(payload
+            .get("boundaryCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("resolutionStepCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("humanInterventionPointCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("interventionMap.splitCombineDecisions")
+            })));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("boundary-kind:*"))));
+        assert!(payload
+            .get("boundarySummary")
+            .and_then(|summary| summary.get("machineFailureRisks"))
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("resolutionPlan")
+            .and_then(|plan| plan.get("machineReleaseBlocked"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false));
     }
 
     #[test]
@@ -42523,6 +51248,367 @@ mod tests {
     }
 
     #[test]
+    fn decomposition_planning_endpoint_returns_split_combine_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-decomposition-plan".to_string()),
+                objective:
+                    "aluminum gearbox housing with a round bearing shaft insert and tight datum bore"
+                        .to_string(),
+                material: Some(material("aluminum", "metal")),
+                stock: Some(StockSpec {
+                    form: "bar-and-plate".to_string(),
+                    dimensions_mm: Some(vec![150.0, 80.0, 40.0]),
+                }),
+                tolerance_mm: Some(0.03),
+                quantity: Some(1),
+                machines: None,
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(4),
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: None,
+                    preferred_assembly_strategy: None,
+                }),
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("decomposition planning should succeed");
+
+        let payload = decomposition_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.decomposition-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("POST /fabrication/decomposition/plan") })));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("routeContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= response.design.parts.len() as u64));
+        assert!(payload
+            .get("recompositionInterfaceCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("splitCombineDecisionCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("decompositionPlan")
+            .and_then(|plan| plan.get("recompositionInterfaces"))
+            .and_then(Value::as_array)
+            .is_some_and(|interfaces| !interfaces.is_empty()));
+        assert!(payload
+            .get("interfaceControlPlan")
+            .and_then(|plan| plan.get("controls"))
+            .and_then(Value::as_array)
+            .is_some_and(|controls| !controls.is_empty()));
+        assert!(payload
+            .get("hybridMakePlan")
+            .and_then(|plan| plan.get("partRoutes"))
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.len() >= response.design.parts.len()));
+        assert!(payload
+            .get("assembly")
+            .and_then(|assembly| assembly.get("assemblyGraph"))
+            .and_then(|graph| graph.get("interfaces"))
+            .and_then(Value::as_array)
+            .is_some_and(|interfaces| !interfaces.is_empty()));
+        assert!(payload
+            .get("releasePackagePlan")
+            .and_then(|plan| plan.get("packages"))
+            .and_then(Value::as_array)
+            .is_some_and(|packages| !packages.is_empty()));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("decomposition-plan"))));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+
+        let job = stored_plan_job(&response);
+        for artifact in [
+            "decomposition-plan",
+            "interface-control-plan",
+            "hybrid-make-plan",
+            "assembly-plan",
+            "release-package-plan",
+            "mdp-request",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact),
+                "missing decomposition planning artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn assembly_catalog_endpoint_exposes_recomposition_and_join_contracts() {
+        let payload = assembly_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.assembly-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/assembly/catalog"))));
+        assert!(payload
+            .get("contractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("assembly.assemblyGraph"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("interfaceControlPlan.controls") })));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("learning.outcomes"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let families = payload
+            .get("families")
+            .and_then(Value::as_array)
+            .expect("assembly catalog families should be present");
+        for family in [
+            "hybrid-assembly-planning",
+            "interface-control",
+            "automation-and-robotic-assembly",
+            "joining-and-fastening",
+            "recomposition-release",
+        ] {
+            assert!(
+                families.iter().any(|item| item.as_str() == Some(family)),
+                "missing assembly catalog family {family}"
+            );
+        }
+
+        let contracts = payload
+            .get("contracts")
+            .and_then(Value::as_array)
+            .expect("assembly contracts should be present");
+        let robotic = contracts
+            .iter()
+            .find(|item| {
+                item.get("contract").and_then(Value::as_str)
+                    == Some("robotic-assembly-cell-release")
+            })
+            .expect("robotic assembly contract should be present");
+        assert!(robotic
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("collision simulation")))));
+
+        let join_recipe = contracts
+            .iter()
+            .find(|item| {
+                item.get("contract").and_then(Value::as_str) == Some("join-recipe-and-lock-in")
+            })
+            .expect("join recipe contract should be present");
+        assert!(join_recipe
+            .get("releaseGates")
+            .and_then(Value::as_array)
+            .is_some_and(|gates| gates
+                .iter()
+                .any(|gate| gate.as_str() == Some("post-join-inspection"))));
+    }
+
+    #[test]
+    fn assembly_planning_endpoint_returns_recomposition_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-assembly-plan".to_string()),
+                objective:
+                    "aluminum gearbox housing with a round bearing shaft insert and tight datum bore"
+                        .to_string(),
+                material: Some(material("aluminum", "metal")),
+                stock: Some(StockSpec {
+                    form: "bar-and-plate".to_string(),
+                    dimensions_mm: Some(vec![150.0, 80.0, 40.0]),
+                }),
+                tolerance_mm: Some(0.03),
+                quantity: Some(1),
+                machines: None,
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(4),
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: None,
+                    preferred_assembly_strategy: None,
+                }),
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("assembly planning should succeed");
+
+        let payload = assembly_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.assembly-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("POST /fabrication/assembly/plan") })));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("assemblyNodeCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= response.design.parts.len() as u64));
+        assert!(payload
+            .get("assemblyInterfaceCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("assemblySequenceStepCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("joinOperationCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("interfaceControlCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("assembly")
+            .and_then(|assembly| assembly.get("assemblyGraph"))
+            .and_then(|graph| graph.get("sequence"))
+            .and_then(Value::as_array)
+            .is_some_and(|sequence| !sequence.is_empty()));
+        assert!(payload
+            .get("hybridMakePlan")
+            .and_then(|plan| plan.get("joinOperations"))
+            .and_then(Value::as_array)
+            .is_some_and(|joins| !joins.is_empty()));
+        assert!(payload
+            .get("interfaceControlPlan")
+            .and_then(|plan| plan.get("controls"))
+            .and_then(Value::as_array)
+            .is_some_and(|controls| !controls.is_empty()));
+        assert!(payload
+            .get("qualityPlan")
+            .and_then(|plan| plan.get("inspectionPoints"))
+            .and_then(Value::as_array)
+            .is_some_and(|points| !points.is_empty()));
+        assert!(payload
+            .get("releasePackagePlan")
+            .and_then(|plan| plan.get("packages"))
+            .and_then(Value::as_array)
+            .is_some_and(|packages| !packages.is_empty()));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("assembly-plan"))));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+
+        let job = stored_plan_job(&response);
+        for artifact in [
+            "assembly-plan",
+            "hybrid-make-plan",
+            "interface-control-plan",
+            "quality-plan",
+            "release-package-plan",
+            "mdp-request",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact),
+                "missing assembly planning artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
     fn release_catalog_endpoint_exposes_machine_ready_package_contract() {
         let payload = release_catalog_response();
         assert_eq!(
@@ -42628,6 +51714,256 @@ mod tests {
     }
 
     #[test]
+    fn release_preview_endpoint_exposes_machine_release_and_package_blockers() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-release-preview".to_string()),
+                objective: "PLA prototype cover with a machined datum face".to_string(),
+                material: Some(material("pla", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.1),
+                quantity: Some(1),
+                machines: None,
+                constraints: None,
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("release preview plan should succeed");
+
+        let payload = release_preview_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.release-preview.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/release/preview"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("releaseBlockerCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("requiredArtifactCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("releasePackagePlan")
+            .and_then(|plan| plan.get("packages"))
+            .and_then(Value::as_array)
+            .is_some_and(|packages| !packages.is_empty()));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("releasePackagePlan.requiredArtifacts")
+            })));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+        assert!(payload
+            .get("previewPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("does not store")))));
+    }
+
+    #[test]
+    fn execution_planning_endpoint_returns_stop_points_operator_actions_and_schedule_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-execution-plan".to_string()),
+                objective: "preflight an imported router profile before unattended execution"
+                    .to_string(),
+                material: Some(material("birch plywood", "wood")),
+                stock: Some(StockSpec {
+                    form: "sheet".to_string(),
+                    dimensions_mm: Some(vec![120.0, 90.0, 12.0]),
+                }),
+                tolerance_mm: Some(0.2),
+                quantity: Some(1),
+                machines: Some(vec![MachineProfile {
+                    id: "router-cell".to_string(),
+                    kind: "cnc-router".to_string(),
+                    controller: Some("grbl-gcode".to_string()),
+                    materials: Some(vec!["wood".to_string()]),
+                    work_envelope_mm: Some(vec![300.0, 200.0, 60.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["profile".to_string()]),
+                    profile_evidence: None,
+                }]),
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(2),
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(false),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec!["routing".to_string()]),
+                    preferred_assembly_strategy: None,
+                }),
+                parts: Some(vec![RequestedPart {
+                    id: "router-cover".to_string(),
+                    description: "routered cover with a required preflight stop point".to_string(),
+                    material: None,
+                    preferred_method: Some("routing".to_string()),
+                    tolerance_mm: Some(0.2),
+                }]),
+                design_inputs: None,
+                existing_instructions: Some(vec![InstructionProgram {
+                    id: Some("unsafe-router-run".to_string()),
+                    machine_id: Some("router-cell".to_string()),
+                    machine_kind: Some("cnc-router".to_string()),
+                    language: Some("grbl-gcode".to_string()),
+                    instructions: vec![
+                        "G21 G90 G54".to_string(),
+                        "G0 X0 Y0 Z4".to_string(),
+                        "G1 X40 Y20 Z-2 F600".to_string(),
+                        "M30".to_string(),
+                    ],
+                }]),
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("execution planning should succeed");
+
+        let payload = execution_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.execution-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/execution/plan"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("canStart").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("executionStatus").and_then(Value::as_str),
+            Some("execution-blocked")
+        );
+        assert!(payload
+            .get("programRunCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("stopPointCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("requiredOperatorActionCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("executionPlan")
+            .and_then(|plan| plan.get("stopPoints"))
+            .and_then(Value::as_array)
+            .is_some_and(|stops| stops.iter().any(|stop| {
+                stop.get("programId").and_then(Value::as_str) == Some("unsafe-router-run")
+                    && stop
+                        .get("requiredAction")
+                        .and_then(Value::as_str)
+                        .is_some_and(|action| !action.is_empty())
+            })));
+        assert!(payload
+            .get("operatorInterventionPlan")
+            .and_then(|plan| plan.get("requiredOperatorActions"))
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions.iter().any(|action| {
+                action.get("blocksMachineStart").and_then(Value::as_bool) == Some(true)
+                    && action
+                        .get("requiredEvidence")
+                        .and_then(Value::as_array)
+                        .is_some_and(|evidence| !evidence.is_empty())
+            })));
+        assert!(payload
+            .get("machineSchedule")
+            .and_then(|schedule| schedule.get("operations"))
+            .and_then(Value::as_array)
+            .is_some_and(|operations| !operations.is_empty()));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("machineSchedule.dependencyHolds") })));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+
+        let job = stored_plan_job(&response);
+        for artifact in [
+            "execution-plan",
+            "operator-intervention-plan",
+            "machine-schedule",
+            "monitoring-plan",
+            "machine-release",
+            "mdp-request",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact),
+                "missing execution planning artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
     fn strategy_catalog_endpoint_exposes_hybrid_learning_and_policy_contract() {
         let payload = strategy_catalog_response();
         assert_eq!(
@@ -42699,6 +52035,94 @@ mod tests {
             .is_some_and(|signals| signals
                 .iter()
                 .any(|signal| signal.as_str() == Some("hybrid-strategy-candidate:*"))));
+    }
+
+    #[test]
+    fn strategy_recommendation_endpoint_exposes_learned_hybrid_preview() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 2,
+            successes: 2,
+            failures: 0,
+            average_reward: 2.4,
+            method_preferences: Vec::new(),
+            method_combination_preferences: vec![LearningPreference {
+                key: "additive-print+milling".to_string(),
+                samples: 2,
+                successes: 2,
+                failures: 0,
+                average_reward: 2.4,
+                recommendation: "prefer".to_string(),
+            }],
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-strategy-recommend".to_string()),
+                objective: "PLA fixture body with milled datum pads".to_string(),
+                material: Some(material("pla", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.12),
+                quantity: Some(1),
+                machines: None,
+                constraints: None,
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("learned strategy recommendation plan should succeed");
+
+        let payload = strategy_recommendation_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.strategy-recommendation.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/strategy/recommend"))));
+        assert_eq!(
+            payload
+                .get("policySummary")
+                .and_then(|summary| summary.get("methodCombinationPreferenceCount"))
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert!(payload
+            .get("topStrategyCandidate")
+            .is_some_and(|candidate| candidate.get("score").and_then(Value::as_f64).is_some()));
+        assert!(payload
+            .get("hybridMakePlan")
+            .and_then(|plan| plan.get("partRoutes"))
+            .and_then(Value::as_array)
+            .is_some_and(|routes| !routes.is_empty()));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+        assert!(payload
+            .get("recommendationPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy
+                .iter()
+                .any(|item| item.as_str().is_some_and(|item| item.contains("advisory")))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
     }
 
     #[test]
@@ -42915,6 +52339,164 @@ mod tests {
     }
 
     #[test]
+    fn simulation_run_endpoint_returns_dry_run_boundaries_and_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-simulation-run".to_string()),
+                objective: "dry-run an imported router profile before machine release".to_string(),
+                material: Some(material("wood", "wood")),
+                stock: Some(StockSpec {
+                    form: "sheet".to_string(),
+                    dimensions_mm: Some(vec![180.0, 80.0, 12.0]),
+                }),
+                tolerance_mm: Some(0.2),
+                quantity: Some(1),
+                machines: Some(vec![MachineProfile {
+                    id: "tiny-router".to_string(),
+                    kind: "cnc-router".to_string(),
+                    controller: Some("grbl-gcode".to_string()),
+                    materials: Some(vec!["wood".to_string()]),
+                    work_envelope_mm: Some(vec![100.0, 80.0, 50.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["profile".to_string()]),
+                    profile_evidence: None,
+                }]),
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(2),
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(false),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec!["routing".to_string()]),
+                    preferred_assembly_strategy: None,
+                }),
+                parts: Some(vec![RequestedPart {
+                    id: "oversize-router-profile".to_string(),
+                    description: "router profile that needs dry-run envelope review".to_string(),
+                    material: None,
+                    preferred_method: Some("routing".to_string()),
+                    tolerance_mm: Some(0.2),
+                }]),
+                design_inputs: None,
+                existing_instructions: Some(vec![InstructionProgram {
+                    id: Some("oversize-router".to_string()),
+                    machine_id: Some("tiny-router".to_string()),
+                    machine_kind: Some("cnc-router".to_string()),
+                    language: Some("grbl-gcode".to_string()),
+                    instructions: vec![
+                        "G21 G90 G54".to_string(),
+                        "S18000 M3".to_string(),
+                        "G0 X0 Y0 Z8".to_string(),
+                        "G1 X150 Y20 Z-2 F800".to_string(),
+                        "M30".to_string(),
+                    ],
+                }]),
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("simulation run planning should succeed");
+
+        let payload = simulation_run_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.simulation-run.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("POST /fabrication/simulation/run") })));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("simulationOk").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("riskStatus").and_then(Value::as_str),
+            Some("simulation-risk-blocked")
+        );
+        assert!(payload
+            .get("programTraceCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("failureBoundaryCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("simulation")
+            .and_then(|simulation| simulation.get("programs"))
+            .and_then(Value::as_array)
+            .is_some_and(|programs| programs.iter().any(|program| {
+                program.get("programId").and_then(Value::as_str) == Some("oversize-router")
+                    && program
+                        .get("axisExtents")
+                        .and_then(Value::as_array)
+                        .is_some_and(|extents| {
+                            extents.iter().any(|extent| {
+                                extent.get("axis").and_then(Value::as_str) == Some("X")
+                                    && extent.get("exceedsLimit").and_then(Value::as_bool)
+                                        == Some(true)
+                            })
+                        })
+            })));
+        assert!(payload
+            .get("simulation")
+            .and_then(|simulation| simulation.get("failureBoundaries"))
+            .and_then(Value::as_array)
+            .is_some_and(|boundaries| boundaries.iter().any(|boundary| {
+                boundary.get("kind").and_then(Value::as_str) == Some("simulated-machine-envelope")
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("simulation-report"))));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+
+        let job = stored_plan_job(&response);
+        for artifact in [
+            "simulation-report",
+            "machine-release",
+            "execution-plan",
+            "postprocess-plan",
+            "release-package-plan",
+            "mdp-request",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact),
+                "missing simulation run artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
     fn quality_catalog_endpoint_exposes_inspection_metrology_and_release_contract() {
         let payload = quality_catalog_response();
         assert_eq!(
@@ -42983,6 +52565,144 @@ mod tests {
         assert!(measurement_contracts.iter().any(|item| {
             item.get("target").and_then(Value::as_str) == Some("interface-fit-and-assembly-lock")
         }));
+    }
+
+    #[test]
+    fn quality_planning_endpoint_returns_inspection_metrology_and_release_gates() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-quality-plan".to_string()),
+                objective: "quality-plan a printed bracket with milled datum faces".to_string(),
+                material: Some(material("petg", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.08),
+                quantity: Some(2),
+                machines: None,
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(3),
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec![
+                        "additive-print".to_string(),
+                        "milling".to_string(),
+                    ]),
+                    preferred_assembly_strategy: Some(
+                        "printed body plus milled datum inserts".to_string(),
+                    ),
+                }),
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("quality planning should succeed");
+
+        let payload = quality_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.quality-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/quality/plan"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("inspectionPointCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("measurementTargetCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("releaseGateCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("qualityPlan")
+            .and_then(|plan| plan.get("inspectionPoints"))
+            .and_then(Value::as_array)
+            .is_some_and(|points| points.iter().any(|point| {
+                point
+                    .get("recordsToCapture")
+                    .and_then(Value::as_array)
+                    .is_some_and(|records| !records.is_empty())
+                    && point
+                        .get("requiresHumanIntervention")
+                        .and_then(Value::as_bool)
+                        == Some(true)
+            })));
+        assert!(payload
+            .get("qualityPlan")
+            .and_then(|plan| plan.get("measurementTargets"))
+            .and_then(Value::as_array)
+            .is_some_and(|targets| targets.iter().any(|target| {
+                target
+                    .get("toleranceMm")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|tolerance| tolerance > 0.0)
+                    && target
+                        .get("instrument")
+                        .and_then(Value::as_str)
+                        .is_some_and(|instrument| !instrument.is_empty())
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("quality-plan"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("measurement-target:*"))));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+
+        let job = stored_plan_job(&response);
+        for artifact in [
+            "quality-plan",
+            "postprocess-plan",
+            "release-package-plan",
+            "machine-release",
+            "mdp-request",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact),
+                "missing quality planning artifact {artifact}"
+            );
+        }
     }
 
     #[test]
@@ -43287,6 +53007,408 @@ mod tests {
     }
 
     #[test]
+    fn setup_planning_endpoint_returns_tooling_fixture_monitoring_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-setup-plan".to_string()),
+                objective:
+                    "prepare setup evidence for a routed plywood fixture before unattended release"
+                        .to_string(),
+                material: Some(material("birch plywood", "wood")),
+                stock: Some(StockSpec {
+                    form: "sheet".to_string(),
+                    dimensions_mm: Some(vec![160.0, 90.0, 12.0]),
+                }),
+                tolerance_mm: Some(0.18),
+                quantity: Some(1),
+                machines: Some(vec![MachineProfile {
+                    id: "router-cell".to_string(),
+                    kind: "cnc-router".to_string(),
+                    controller: Some("grbl-gcode".to_string()),
+                    materials: Some(vec!["wood".to_string()]),
+                    work_envelope_mm: Some(vec![300.0, 200.0, 60.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["profile".to_string()]),
+                    profile_evidence: None,
+                }]),
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(2),
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(false),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec!["routing".to_string()]),
+                    preferred_assembly_strategy: None,
+                }),
+                parts: Some(vec![RequestedPart {
+                    id: "routed-fixture-panel".to_string(),
+                    description:
+                        "routed fixture panel that needs workholding and monitoring evidence"
+                            .to_string(),
+                    material: None,
+                    preferred_method: Some("routing".to_string()),
+                    tolerance_mm: Some(0.18),
+                }]),
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("setup planning should succeed");
+
+        let payload = setup_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.setup-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/setup/plan"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("toolingRequirementCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("fixtureSetupCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("monitorPointCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("alertRuleCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("toolingPlan")
+            .and_then(|plan| plan.get("requirements"))
+            .and_then(Value::as_array)
+            .is_some_and(|requirements| requirements.iter().any(|requirement| {
+                requirement
+                    .get("workholding")
+                    .and_then(Value::as_array)
+                    .is_some_and(|workholding| !workholding.is_empty())
+                    && requirement
+                        .get("setupChecks")
+                        .and_then(Value::as_array)
+                        .is_some_and(|checks| !checks.is_empty())
+            })));
+        assert!(payload
+            .get("fixturePlan")
+            .and_then(|plan| plan.get("setups"))
+            .and_then(Value::as_array)
+            .is_some_and(|setups| setups.iter().any(|setup| {
+                setup
+                    .get("requiredEvidence")
+                    .and_then(Value::as_array)
+                    .is_some_and(|evidence| !evidence.is_empty())
+                    && setup
+                        .get("clearanceChecks")
+                        .and_then(Value::as_array)
+                        .is_some_and(|checks| !checks.is_empty())
+            })));
+        assert!(payload
+            .get("monitoringPlan")
+            .and_then(|plan| plan.get("monitorPoints"))
+            .and_then(Value::as_array)
+            .is_some_and(|points| points.iter().any(|point| {
+                point
+                    .get("channels")
+                    .and_then(Value::as_array)
+                    .is_some_and(|channels| !channels.is_empty())
+            })));
+        assert!(payload
+            .get("monitoringPlan")
+            .and_then(|plan| plan.get("recoveryActions"))
+            .and_then(Value::as_array)
+            .is_some_and(|actions| !actions.is_empty()));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("fixturePlan.setups.requiredEvidence"))));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+
+        let job = stored_plan_job(&response);
+        for artifact in [
+            "tooling-plan",
+            "fixture-plan",
+            "monitoring-plan",
+            "machine-release",
+            "mdp-request",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact),
+                "missing setup planning artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn monitoring_catalog_endpoint_exposes_runtime_recovery_contract() {
+        let payload = monitoring_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.monitoring-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/monitoring/catalog"))));
+        assert!(payload
+            .get("monitoringContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 6));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("monitoringPlan.alertRules"))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("monitoring-plan"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("clear-monitoring-blockers-*"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready and unattended release")))));
+
+        let families = payload
+            .get("families")
+            .and_then(Value::as_array)
+            .expect("monitoring families should be present");
+        for family in [
+            "additive-runtime-monitoring",
+            "mill-router-runtime-monitoring",
+            "lathe-runtime-monitoring",
+            "sheet-cut-runtime-monitoring",
+            "safe-stop-and-restart-governance",
+        ] {
+            assert!(
+                families.iter().any(|item| item.as_str() == Some(family)),
+                "missing monitoring family {family}"
+            );
+        }
+
+        let contracts = payload
+            .get("monitoringContracts")
+            .and_then(Value::as_array)
+            .expect("monitoring contracts should be present");
+        let safe_stop = contracts
+            .iter()
+            .find(|item| {
+                item.get("contract").and_then(Value::as_str)
+                    == Some("unattended-recovery-and-restart-authority")
+            })
+            .expect("unattended recovery contract should be present");
+        assert!(safe_stop
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("restart owner")))));
+    }
+
+    #[test]
+    fn monitoring_planning_endpoint_returns_alert_recovery_and_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-monitoring-plan".to_string()),
+                objective:
+                    "prepare monitoring and safe-stop evidence for an unattended routed fixture"
+                        .to_string(),
+                material: Some(material("birch plywood", "wood")),
+                stock: Some(StockSpec {
+                    form: "sheet".to_string(),
+                    dimensions_mm: Some(vec![220.0, 120.0, 12.0]),
+                }),
+                tolerance_mm: Some(0.2),
+                quantity: Some(1),
+                machines: Some(vec![MachineProfile {
+                    id: "router-monitor-cell".to_string(),
+                    kind: "cnc-router".to_string(),
+                    controller: Some("grbl-gcode".to_string()),
+                    materials: Some(vec!["wood".to_string()]),
+                    work_envelope_mm: Some(vec![400.0, 300.0, 80.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["profile".to_string()]),
+                    profile_evidence: None,
+                }]),
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(1),
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(false),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec!["routing".to_string()]),
+                    preferred_assembly_strategy: None,
+                }),
+                parts: Some(vec![RequestedPart {
+                    id: "monitored-router-panel".to_string(),
+                    description:
+                        "router panel requiring spindle load, dust collection, and safe-stop monitoring"
+                            .to_string(),
+                    material: None,
+                    preferred_method: Some("routing".to_string()),
+                    tolerance_mm: Some(0.2),
+                }]),
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("monitoring planning should succeed");
+
+        let payload = monitoring_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.monitoring-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/monitoring/plan"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("monitorPointCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("alertRuleCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("recoveryActionCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("releaseGateCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("monitoringPlan")
+            .and_then(|plan| plan.get("monitorPoints"))
+            .and_then(Value::as_array)
+            .is_some_and(|points| points.iter().any(|point| {
+                point
+                    .get("channels")
+                    .and_then(Value::as_array)
+                    .is_some_and(|channels| !channels.is_empty())
+                    && point
+                        .get("expectedSignals")
+                        .and_then(Value::as_array)
+                        .is_some_and(|signals| !signals.is_empty())
+                    && point
+                        .get("requiredEvidence")
+                        .and_then(Value::as_array)
+                        .is_some_and(|evidence| !evidence.is_empty())
+            })));
+        assert!(payload
+            .get("monitoringPlan")
+            .and_then(|plan| plan.get("alertRules"))
+            .and_then(Value::as_array)
+            .is_some_and(|rules| rules.iter().any(|rule| {
+                rule.get("automatedResponse")
+                    .and_then(Value::as_str)
+                    .is_some_and(|response| response.contains("safe-stop"))
+                    || rule
+                        .get("requiresHumanIntervention")
+                        .and_then(Value::as_bool)
+                        == Some(true)
+            })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("monitoringPlan.monitorPoints.channels")
+            })));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+
+        let job = stored_plan_job(&response);
+        for artifact in [
+            "monitoring-plan",
+            "operator-intervention-plan",
+            "execution-plan",
+            "machine-release",
+            "mdp-request",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact),
+                "missing monitoring planning artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
     fn postprocess_catalog_endpoint_exposes_finishing_traveler_and_release_contract() {
         let payload = postprocess_catalog_response();
         assert_eq!(
@@ -43357,6 +53479,151 @@ mod tests {
         assert!(artifact_contracts.iter().any(|item| {
             item.get("artifact").and_then(Value::as_str) == Some("postprocess-traveler")
         }));
+    }
+
+    #[test]
+    fn postprocess_planning_endpoint_returns_controller_output_and_traveler_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-postprocess-plan".to_string()),
+                objective: "prepare postprocessed controller output and traveler for a printed nylon bracket".to_string(),
+                material: Some(material("pa12 nylon", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.16),
+                quantity: Some(1),
+                machines: Some(vec![MachineProfile {
+                    id: "mk4-cell".to_string(),
+                    kind: "fdm-printer".to_string(),
+                    controller: Some("marlin-gcode".to_string()),
+                    materials: Some(vec!["polymer".to_string(), "pa12".to_string()]),
+                    work_envelope_mm: Some(vec![250.0, 210.0, 220.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["additive-print".to_string()]),
+                    profile_evidence: None,
+                }]),
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(1),
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(false),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec!["additive-print".to_string()]),
+                    preferred_assembly_strategy: None,
+                }),
+                parts: Some(vec![RequestedPart {
+                    id: "nylon-bracket".to_string(),
+                    description:
+                        "printed nylon bracket requiring controller output and postprocess traveler"
+                            .to_string(),
+                    material: None,
+                    preferred_method: Some("additive-print".to_string()),
+                    tolerance_mm: Some(0.16),
+                }]),
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("postprocess planning should succeed");
+
+        let payload = postprocess_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.postprocess-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/postprocess/plan"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("controllerTargetCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("requiredArtifactCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("dryRunGateCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("humanSignoffTargetCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("postprocessPlan")
+            .and_then(|plan| plan.get("controllerTargets"))
+            .and_then(Value::as_array)
+            .is_some_and(|targets| targets.iter().any(|target| {
+                target
+                    .get("postprocessor")
+                    .and_then(Value::as_str)
+                    .is_some_and(|postprocessor| !postprocessor.is_empty())
+                    && target
+                        .get("outputFormat")
+                        .and_then(Value::as_str)
+                        .is_some_and(|output_format| !output_format.is_empty())
+                    && target
+                        .get("gates")
+                        .and_then(Value::as_array)
+                        .is_some_and(|gates| !gates.is_empty())
+            })));
+        assert!(payload
+            .get("postprocessPlan")
+            .and_then(|plan| plan.get("requiredArtifacts"))
+            .and_then(Value::as_array)
+            .is_some_and(|artifacts| artifacts
+                .iter()
+                .any(|artifact| artifact.as_str() == Some("postprocessed-program"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("postprocessPlan.controllerTargets.gates")
+            })));
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("engine"))
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str)
+                == Some("des_engine")
+        );
+
+        let job = stored_plan_job(&response);
+        for artifact in [
+            "postprocess-plan",
+            "controller-plan",
+            "release-package-plan",
+            "machine-release",
+            "mdp-request",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact),
+                "missing postprocess planning artifact {artifact}"
+            );
+        }
     }
 
     #[test]
@@ -44712,6 +54979,101 @@ mod tests {
     }
 
     #[test]
+    fn swiss_turning_plan_generates_guide_bushing_pickoff_program() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-swiss-turning".to_string()),
+            objective: "Swiss-type sliding-headstock stainless medical pin with guide bushing, bar feeder, gang tools, live cross-drill, subspindle pickoff, cutoff, ejection, and first-article runout report".to_string(),
+            material: Some(material("stainless-steel", "metal")),
+            stock: Some(StockSpec {
+                form: "bar".to_string(),
+                dimensions_mm: Some(vec![8.0, 180.0, 8.0]),
+            }),
+            tolerance_mm: Some(0.018),
+            quantity: Some(25),
+            machines: None,
+            constraints: Some(FabricationConstraints {
+                max_setups: Some(1),
+                allow_human_intervention: Some(true),
+                allow_multi_part_assembly: Some(false),
+                require_dry_run: Some(true),
+                preferred_methods: Some(vec!["swiss-turning".to_string()]),
+                preferred_assembly_strategy: None,
+            }),
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("swiss turning plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "turned-axisymmetric-insert"
+                && part.machine_kind == "swiss-turning-center"
+                && part.manufacturing_method == "turning"
+        }));
+        assert!(response
+            .machine_selection
+            .iter()
+            .any(|trace| trace.selected_machine_kind == "swiss-turning-center"));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "swiss-turning-center"
+                && step.operation.contains("guide bushing")
+                && step.operation.contains("subspindle pickoff")
+        }));
+
+        let swiss_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "swiss-turning-center")
+            .expect("swiss turning program should be generated");
+        assert_eq!(swiss_program.language, "swiss-turning-gcode");
+        for expected in [
+            "draft swiss turning program",
+            "swiss-guide-bushing-boundary",
+            "swiss-live-tool-boundary",
+            "swiss-pickoff-cutoff-boundary",
+            "guide-bushing support",
+        ] {
+            assert!(
+                swiss_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing swiss turning instruction {expected}"
+            );
+        }
+        assert!(swiss_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("guide-bushing clearance")));
+
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "swiss-turning-center"
+                    && target.postprocessor == "swiss-turning-gcode-postprocessor"
+                    && target.output_format == "swiss-turning-controller-gcode"
+            }));
+        for required_artifact in [
+            "swiss-guide-bushing-and-bar-feed-record",
+            "swiss-gang-tool-and-live-tool-clearance-record",
+            "swiss-pickoff-cutoff-and-ejection-record",
+            "swiss-first-article-runout-and-remnant-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .iter()
+                    .any(|artifact| artifact == required_artifact),
+                "missing swiss turning artifact {required_artifact}"
+            );
+        }
+    }
+
+    #[test]
     fn five_axis_mill_plan_generates_tcp_reviewed_program_and_artifacts() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-five-axis-mill".to_string()),
@@ -45507,6 +55869,509 @@ mod tests {
     }
 
     #[test]
+    fn default_special_process_fleet_generates_metal_joining_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-metal-joining".to_string()),
+            objective:
+                "TIG weld milled stainless bracket to printed metal PBF boss with WPS, filler rod lot, argon purge, fixture clamps, preheat, interpass temperature, distortion control, visual inspection, dye penetrant NDE, and repair disposition"
+                    .to_string(),
+            material: Some(material("stainless-steel", "metal")),
+            stock: Some(StockSpec {
+                form: "fabricated components".to_string(),
+                dimensions_mm: Some(vec![220.0, 160.0, 90.0]),
+            }),
+            tolerance_mm: Some(0.12),
+            quantity: Some(2),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("metal joining plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "metal-join-release"
+                && part.machine_kind == "metal-joining-cell"
+                && part.manufacturing_method == "metal-joining"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "metal-joining-cell" && step.operation.contains("WPS")
+        }));
+        let joining_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "metal-joining-cell")
+            .expect("metal joining program should be generated");
+        assert_eq!(joining_program.language, "metal-joining-job");
+        assert!(joining_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("draft metal joining job")));
+        assert!(joining_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("PREP_JOINTS")));
+        assert!(joining_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("RUN_METAL_JOIN")));
+        assert!(joining_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("INSPECT_JOIN")));
+        assert!(joining_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("metal-joining-procedure-boundary")));
+        assert!(joining_program
+            .instructions
+            .iter()
+            .any(|line| line.contains("metal-joining-inspection-boundary")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "metal-joining-cell"
+                    && target.postprocessor == "metal-joining-job-packager"
+                    && target.output_format == "metal-joining-job-package"
+            }));
+        for artifact in [
+            "welding-procedure-and-qualification-record",
+            "joint-fitup-fixture-and-clamp-record",
+            "filler-flux-gas-and-fume-control-record",
+            "heat-input-interpass-and-distortion-record",
+            "weld-inspection-nde-and-repair-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "metal joining required artifacts should include {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_molding_casting_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-molding-casting".to_string()),
+            objective:
+                "vacuum cast urethane enclosure gasket from printed master and silicone mold with release agent, vents, sprues, runners, gates, mix ratio, pot life, degassing, pressure pot cure, demold, shrinkage, void, bubble, flash, and dimensional inspection"
+                    .to_string(),
+            material: Some(material("urethane resin", "polymer")),
+            stock: Some(StockSpec {
+                form: "casting kit".to_string(),
+                dimensions_mm: Some(vec![180.0, 120.0, 40.0]),
+            }),
+            tolerance_mm: Some(0.20),
+            quantity: Some(10),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("molding/casting plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "molded-cast-part"
+                && part.machine_kind == "molding-casting-cell"
+                && part.manufacturing_method == "molding-casting"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "molding-casting-cell"
+                && step.operation.contains("mix/degas material")
+        }));
+        let casting_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "molding-casting-cell")
+            .expect("molding/casting program should be generated");
+        assert_eq!(casting_program.language, "molding-casting-job");
+        for expected in [
+            "draft molding/casting job",
+            "PREPARE_MOLD",
+            "MIX_CASTING_MATERIAL",
+            "DEGAS_AND_CAST",
+            "DEMOLD_AND_INSPECT",
+            "mold-tooling-boundary",
+            "mold-cure-demold-boundary",
+        ] {
+            assert!(
+                casting_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing molding/casting instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "molding-casting-cell"
+                    && target.postprocessor == "molding-casting-job-packager"
+                    && target.output_format == "molding-casting-job-package"
+            }));
+        for artifact in [
+            "mold-master-tooling-and-release-record",
+            "mix-ratio-pot-life-and-batch-record",
+            "degas-vacuum-pressure-and-cure-record",
+            "demold-shrinkage-void-and-dimensional-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing molding/casting artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_composite_layup_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-composite-layup".to_string()),
+            objective:
+                "prepreg carbon fiber composite fairing laid up on a mandrel with ply schedule, release film, vacuum bag leak test, debulk, autoclave cure profile, pressure, temperature trace, demold, trim, coupon, void and delamination inspection"
+                    .to_string(),
+            material: Some(material("carbon-fiber prepreg", "composite")),
+            stock: Some(StockSpec {
+                form: "prepreg kit".to_string(),
+                dimensions_mm: Some(vec![500.0, 300.0, 80.0]),
+            }),
+            tolerance_mm: Some(0.25),
+            quantity: Some(2),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("composite layup plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "composite-laminate-release"
+                && part.machine_kind == "composite-layup-cell"
+                && part.manufacturing_method == "composite-layup"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "composite-layup-cell" && step.operation.contains("vacuum bag")
+        }));
+        let layup_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "composite-layup-cell")
+            .expect("composite layup program should be generated");
+        assert_eq!(layup_program.language, "composite-layup-job");
+        for expected in [
+            "draft composite layup",
+            "PREPARE_LAYUP_TOOL",
+            "LAYUP_PLIES",
+            "VACUUM_BAG_AND_LEAK_TEST",
+            "CURE_LAMINATE",
+            "DEMOLD_TRIM_INSPECT",
+            "composite-layup-tooling-boundary",
+            "composite-layup-bag-cure-boundary",
+        ] {
+            assert!(
+                layup_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing composite layup instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "composite-layup-cell"
+                    && target.postprocessor == "composite-layup-job-packager"
+                    && target.output_format == "composite-layup-job-package"
+            }));
+        for artifact in [
+            "composite-tooling-release-and-ply-kit-record",
+            "fiber-resin-prepreg-core-lot-record",
+            "vacuum-bag-leak-debulk-and-cure-record",
+            "demold-trim-coupon-void-and-dimensional-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing composite layup artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_hot_wire_foam_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-hot-wire-foam".to_string()),
+            objective:
+                "hot-wire cut XPS foam wing core with airfoil template, bow tension, wire temperature, kerf coupon, synchronized axes, taper check, fume extraction, fire watch, surface melt inspection and dimensional release"
+                    .to_string(),
+            material: Some(material("XPS foam", "foam")),
+            stock: Some(StockSpec {
+                form: "foam blank".to_string(),
+                dimensions_mm: Some(vec![600.0, 180.0, 80.0]),
+            }),
+            tolerance_mm: Some(0.75),
+            quantity: Some(2),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("hot-wire foam plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "hot-wire-foam-core"
+                && part.machine_kind == "hot-wire-foam-cutter"
+                && part.manufacturing_method == "hot-wire-foam-cutting"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "hot-wire-foam-cutter" && step.operation.contains("kerf coupon")
+        }));
+        let foam_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "hot-wire-foam-cutter")
+            .expect("hot-wire foam program should be generated");
+        assert_eq!(foam_program.language, "hot-wire-foam-job");
+        for expected in [
+            "draft hot-wire foam cutting job",
+            "FOAM_BLANK_SETUP",
+            "WIRE_HEAT_TENSION_CHECK",
+            "KERF_COUPON",
+            "HOT_WIRE_CUT",
+            "hot-wire-foam-setup-boundary",
+            "hot-wire-foam-process-boundary",
+        ] {
+            assert!(
+                foam_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing generated hot-wire foam instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "hot-wire-foam-cutter"
+                    && target.postprocessor == "hot-wire-foam-job-packager"
+                    && target.output_format == "hot-wire-foam-job-package"
+            }));
+        for artifact in [
+            "foam-blank-density-and-template-record",
+            "wire-temperature-tension-and-kerf-record",
+            "fume-fire-watch-and-ppe-record",
+            "foam-core-surface-taper-and-dimensional-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing hot-wire foam artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_press_brake_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-press-brake".to_string()),
+            objective:
+                "press brake sheet-metal enclosure bracket with bend allowance K-factor, grain direction, punch V-die tooling, backgauge bend sequence, springback compensation, guarding, angle inspection and flange dimensional report"
+                    .to_string(),
+            material: Some(material("aluminum", "metal")),
+            stock: Some(StockSpec {
+                form: "sheet blank".to_string(),
+                dimensions_mm: Some(vec![400.0, 250.0, 2.0]),
+            }),
+            tolerance_mm: Some(0.15),
+            quantity: Some(6),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("press brake plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "sheet-formed-flange"
+                && part.machine_kind == "press-brake-forming-cell"
+                && part.manufacturing_method == "sheet-forming"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "press-brake-forming-cell"
+                && (step.operation.contains("backgauge") || step.operation.contains("bend"))
+        }));
+        let forming_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "press-brake-forming-cell")
+            .expect("press brake program should be generated");
+        assert_eq!(forming_program.language, "press-brake-job");
+        for expected in [
+            "draft press brake sheet-forming job",
+            "SET_BRAKE_TOOLING",
+            "RUN_BEND_SEQUENCE",
+            "INSPECT_FORMED_PART",
+            "press-brake-setup-boundary",
+            "press-brake-release-boundary",
+        ] {
+            assert!(
+                forming_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing generated press brake instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "press-brake-forming-cell"
+                    && target.postprocessor == "press-brake-job-packager"
+                    && target.output_format == "press-brake-job-package"
+            }));
+        for artifact in [
+            "flat-pattern-and-bend-allowance-record",
+            "press-brake-tooling-and-tonnage-record",
+            "backgauge-bend-sequence-and-angle-inspection-record",
+            "formed-part-dimensional-release-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing press brake artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_gear_cutting_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-gear-cutting".to_string()),
+            objective:
+                "steel spur gear shaft with 32 tooth module gear, pressure angle, gear hobbing, spline broaching, deburr, over pins inspection, span measurement, and backlash report"
+                    .to_string(),
+            material: Some(material("steel", "metal")),
+            stock: Some(StockSpec {
+                form: "round blank".to_string(),
+                dimensions_mm: Some(vec![80.0, 80.0, 120.0]),
+            }),
+            tolerance_mm: Some(0.025),
+            quantity: Some(2),
+            machines: None,
+            constraints: Some(FabricationConstraints {
+                max_setups: None,
+                allow_human_intervention: None,
+                allow_multi_part_assembly: None,
+                require_dry_run: None,
+                preferred_methods: Some(vec!["gear-cutting".to_string()]),
+                preferred_assembly_strategy: None,
+            }),
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("gear cutting plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "gear-tooth-profile"
+                && part.machine_kind == "gear-cutting-cell"
+                && part.manufacturing_method == "gear-cutting"
+        }));
+        assert!(response.machine_selection.iter().any(|selection| {
+            selection.selected_machine_kind == "gear-cutting-cell"
+                && selection
+                    .preferred_method
+                    .as_deref()
+                    .is_some_and(|method| method == "gear-cutting")
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "gear-cutting-cell"
+                && (step.operation.contains("hob") || step.operation.contains("gear"))
+        }));
+        let gear_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "gear-cutting-cell")
+            .expect("gear cutting program should be generated");
+        assert_eq!(gear_program.language, "gear-cutting-job");
+        for expected in [
+            "draft gear/spline cutting job",
+            "SET_GEAR_TOOL",
+            "CUT_GEAR_TEETH",
+            "DEBURR_PROFILE",
+            "gear-cutting-setup-boundary",
+            "gear-indexing-boundary",
+            "gear-inspection-boundary",
+        ] {
+            assert!(
+                gear_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing generated gear instruction {expected}"
+            );
+        }
+        assert!(gear_program
+            .safety_notes
+            .iter()
+            .any(|note| note.contains("index ratio") || note.contains("gear drawing")));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "gear-cutting-cell"
+                    && target.postprocessor == "gear-cutting-job-packager"
+                    && target.output_format == "gear-cutting-job-package"
+            }));
+        for artifact in [
+            "gear-drawing-and-blank-datum-record",
+            "gear-cutter-arbor-and-indexing-record",
+            "gear-deburr-and-burr-control-record",
+            "gear-inspection-over-pins-span-profile-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing gear artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
     fn default_additive_fleet_generates_resin_printer_job() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-resin-printer".to_string()),
@@ -45821,6 +56686,166 @@ mod tests {
                     && target.postprocessor == "pellet-fgf-job-packager"
                     && target.output_format == "pellet-fgf-job-package"
             }));
+    }
+
+    #[test]
+    fn default_additive_fleet_generates_robotic_additive_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-robotic-additive-cell".to_string()),
+            objective:
+                "robotic additive PETG tooling fixture printed on a six-axis robot with base frame, TCP, collision dry run, pellet feedstock purge, bead coupon, cooling, trim allowance, and dimensional scan"
+                    .to_string(),
+            material: Some(material("petg", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.30),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("robotic additive cell plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "robotic-additive-cell"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.operation.contains("robot/base/tool frames")
+                || step.operation.contains("robotic bead path")
+        }));
+        let robotic_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "robotic-additive-cell")
+            .expect("robotic additive program should be generated");
+        assert_eq!(robotic_program.language, "robotic-additive-job");
+        for expected in [
+            "draft robotic / gantry additive job",
+            "LOAD_ROBOT_PATH",
+            "DRY_RUN_ROBOT",
+            "PURGE_ROBOTIC_EXTRUDER",
+            "DEPOSIT_ROBOTIC_BEAD_PATH",
+            "robotic-additive-path-boundary",
+            "robotic-additive-extrusion-boundary",
+        ] {
+            assert!(
+                robotic_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "robotic program should contain {expected}"
+            );
+        }
+        assert!(response
+            .material_plan
+            .route_requirements
+            .iter()
+            .any(|requirement| {
+                requirement.machine_kind == "robotic-additive-cell"
+                    && requirement.feedstock_kind == "robotic-additive-feedstock"
+            }));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "robotic-additive-cell"
+                    && target.postprocessor == "robotic-additive-job-packager"
+                    && target.output_format == "robotic-additive-job-package"
+            }));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .iter()
+            .any(|artifact| artifact == "robot-frame-tcp-and-collision-record"));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .iter()
+            .any(|artifact| artifact == "robotic-bead-coupon-and-flow-record"));
+    }
+
+    #[test]
+    fn default_additive_fleet_generates_sheet_lamination_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-sheet-lamination-printer".to_string()),
+            objective:
+                "sheet lamination aluminum foil additive heat exchanger core with sheet lot, thickness, stack order, fiducial registration, ultrasonic consolidation, trim path, peel coupon, delamination inspection, and dimensional scan"
+                    .to_string(),
+            material: Some(material("aluminum foil", "metal")),
+            stock: None,
+            tolerance_mm: Some(0.20),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("sheet-lamination printer plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.machine_kind == "sheet-lamination-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.operation.contains("sheet or foil stack")
+                || step.operation.contains("ultrasonically consolidate")
+        }));
+        let sheet_lamination_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "sheet-lamination-printer")
+            .expect("sheet-lamination program should be generated");
+        assert_eq!(sheet_lamination_program.language, "sheet-lamination-job");
+        for expected in [
+            "draft sheet-lamination additive job",
+            "LOAD_SHEET_STACK",
+            "REGISTER_LAYER_STACK",
+            "CUT_OR_TRIM_LAYERS",
+            "BOND_OR_CONSOLIDATE_LAYERS",
+            "sheet-lamination-stock-boundary",
+            "sheet-lamination-bond-boundary",
+        ] {
+            assert!(
+                sheet_lamination_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "sheet-lamination program should contain {expected}"
+            );
+        }
+        assert!(response
+            .material_plan
+            .route_requirements
+            .iter()
+            .any(|requirement| {
+                requirement.machine_kind == "sheet-lamination-printer"
+                    && requirement.feedstock_kind == "sheet-lamination-stock"
+            }));
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "sheet-lamination-printer"
+                    && target.postprocessor == "sheet-lamination-job-packager"
+                    && target.output_format == "sheet-lamination-job-package"
+            }));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .iter()
+            .any(|artifact| artifact == "sheet-lamination-stock-and-stack-record"));
+        assert!(response
+            .postprocess_plan
+            .required_artifacts
+            .iter()
+            .any(|artifact| artifact == "sheet-lamination-delamination-and-dimensional-record"));
     }
 
     #[test]
@@ -52372,6 +63397,519 @@ mod tests {
     }
 
     #[test]
+    fn text_metal_joining_jobs_require_procedure_and_inspection_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("metal-joining-missing-evidence".to_string()),
+                machine_id: Some("metal-joining-cell-1".to_string()),
+                machine_kind: Some("metal-joining-cell".to_string()),
+                language: Some("welding-job".to_string()),
+                instructions: vec![
+                    "TIG weld aluminum bracket, braze copper tube, and solder wire lug".to_string(),
+                    "Release the welded assembly when complete".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("metal-joining-with-evidence".to_string()),
+                machine_id: Some("metal-joining-cell-1".to_string()),
+                machine_kind: Some("metal-joining-cell".to_string()),
+                language: Some("welding-job".to_string()),
+                instructions: vec![
+                    "TIG weld aluminum bracket, braze copper tube, and solder wire lug".to_string(),
+                    "WPS, PQR, welder qualification, filler lot, solder lot, flux, argon purge, backing gas, joint prep, bevel, root gap, fit-up, fixture, clamps, fume extraction, PPE, and fire watch recorded".to_string(),
+                    "Preheat, heat input, amperage, voltage, travel speed, interpass temperature, tack sequence, distortion control, visual inspection, bead profile, fillet size, penetration, dye penetrant NDE, leak test, repair disposition, and release signoff recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        let finding_codes = validation
+            .findings
+            .iter()
+            .map(|finding| {
+                format!(
+                    "{}:{}:{:?}",
+                    finding.program_id.as_deref().unwrap_or("none"),
+                    finding.code,
+                    finding.line
+                )
+            })
+            .collect::<Vec<_>>();
+        for code in [
+            "metal-joining-procedure-evidence-missing",
+            "metal-joining-inspection-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref() == Some("metal-joining-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing {code}; findings: {finding_codes:?}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("metal-joining-with-evidence")
+            }));
+        }
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "metal-joining-procedure-boundary"
+                && boundary.program_id.as_deref() == Some("metal-joining-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("WPS")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "metal-joining-inspection-boundary"
+                && boundary.program_id.as_deref() == Some("metal-joining-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("NDE")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-metal-joining-procedure-evidence"
+                && improvement.program_id.as_deref() == Some("metal-joining-missing-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-metal-joining-inspection-evidence"
+                && improvement.program_id.as_deref() == Some("metal-joining-missing-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [metal-joining-procedure-boundary]")));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [metal-joining-inspection-boundary]")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Metal-joining job needs WPS/procedure")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Metal-joining job needs heat input")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [metal-joining-")));
+    }
+
+    #[test]
+    fn text_molding_casting_jobs_require_tooling_and_process_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("molding-casting-missing-evidence".to_string()),
+                machine_id: Some("molding-casting-cell-1".to_string()),
+                machine_kind: Some("molding-casting-cell".to_string()),
+                language: Some("molding-casting-job".to_string()),
+                instructions: vec![
+                    "Vacuum cast urethane gasket in silicone mold from printed master".to_string(),
+                    "Release the cast gasket when complete".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("molding-casting-with-evidence".to_string()),
+                machine_id: Some("molding-casting-cell-1".to_string()),
+                machine_kind: Some("molding-casting-cell".to_string()),
+                language: Some("molding-casting-job".to_string()),
+                instructions: vec![
+                    "Vacuum cast urethane gasket in silicone mold from printed master".to_string(),
+                    "Master revision, tool revision, mold material, parting line, sprue, runner, gate, vent, release agent, mold support, fixture, clamp, draft angle, and undercut review recorded".to_string(),
+                    "Mix ratio, pot life, batch lot, degas, vacuum, pressure pot, cure schedule, temperature, exotherm, demold, shrinkage, void, bubble, flash, dimensional inspection, and first article recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "molding-casting-tooling-evidence-missing",
+            "molding-casting-process-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref() == Some("molding-casting-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing molding/casting finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("molding-casting-with-evidence")
+            }));
+        }
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "molding-casting-tooling-boundary"
+                && boundary.program_id.as_deref() == Some("molding-casting-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("release agent")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "molding-casting-process-boundary"
+                && boundary.program_id.as_deref() == Some("molding-casting-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("pot life")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-molding-casting-tooling-evidence"
+                && improvement.program_id.as_deref() == Some("molding-casting-missing-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-molding-casting-process-evidence"
+                && improvement.program_id.as_deref() == Some("molding-casting-missing-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [molding-casting-tooling-boundary]")));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [molding-casting-process-boundary]")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Molding/casting job needs master/tool revision")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Molding/casting job needs mix ratio")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [molding-casting-")));
+    }
+
+    #[test]
+    fn text_composite_layup_jobs_require_tooling_and_bag_cure_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("composite-layup-missing-evidence".to_string()),
+                machine_id: Some("composite-layup-cell-1".to_string()),
+                machine_kind: Some("composite-layup-cell".to_string()),
+                language: Some("composite-layup-job".to_string()),
+                instructions: vec![
+                    "Wet layup carbon fiber laminate on mold tool".to_string(),
+                    "Release the composite laminate when complete".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("composite-layup-with-evidence".to_string()),
+                machine_id: Some("composite-layup-cell-1".to_string()),
+                machine_kind: Some("composite-layup-cell".to_string()),
+                language: Some("composite-layup-job".to_string()),
+                instructions: vec![
+                    "Wet layup carbon fiber laminate on mold tool".to_string(),
+                    "Mold revision, mandrel revision, release film, release agent, ply kit, ply schedule, fiber orientation, orientation datum, fiber lot, resin lot, prepreg lot, core lot, material cert, out-time, and pot life recorded".to_string(),
+                    "Vacuum bag stack with peel ply, breather, bleeder, vacuum level, leak-down, debulk, autoclave oven cure profile, pressure, temperature trace, exotherm, demold, trim, drill, coupon, void, delamination, ultrasonic NDI, and dimensional inspection recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "composite-layup-tooling-evidence-missing",
+            "composite-layup-bag-cure-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref() == Some("composite-layup-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing composite layup finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("composite-layup-with-evidence")
+            }));
+        }
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "composite-layup-tooling-boundary"
+                && boundary.program_id.as_deref() == Some("composite-layup-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("ply schedule")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "composite-layup-bag-cure-boundary"
+                && boundary.program_id.as_deref() == Some("composite-layup-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("leak-down")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-composite-layup-tooling-evidence"
+                && improvement.program_id.as_deref() == Some("composite-layup-missing-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-composite-layup-bag-cure-evidence"
+                && improvement.program_id.as_deref() == Some("composite-layup-missing-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [composite-layup-tooling-boundary]")));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [composite-layup-bag-cure-boundary]")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Composite layup job needs mold/mandrel revision")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Composite layup job needs bag stack")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [composite-layup-")));
+    }
+
+    #[test]
+    fn text_hot_wire_foam_jobs_require_setup_and_process_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("hot-wire-foam-missing-evidence".to_string()),
+                machine_id: Some("hot-wire-foam-cutter-1".to_string()),
+                machine_kind: Some("hot-wire-foam-cutter".to_string()),
+                language: Some("hot-wire-foam-job".to_string()),
+                instructions: vec![
+                    "Hot-wire cut XPS wing core from blank".to_string(),
+                    "Release the foam core when complete".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("hot-wire-foam-with-evidence".to_string()),
+                machine_id: Some("hot-wire-foam-cutter-1".to_string()),
+                machine_kind: Some("hot-wire-foam-cutter".to_string()),
+                language: Some("hot-wire-foam-job".to_string()),
+                instructions: vec![
+                    "Hot-wire foam wing core from XPS blank".to_string(),
+                    "Foam density, foam lot, blank thickness, airfoil template, CNC profile, bow tension, wire tension, fixture, support, fume extraction, ventilation, PPE, and fire watch recorded".to_string(),
+                    "Wire temperature, wire current, feed rate, kerf coupon, kerf offset, wire lag, taper, synchronized axes, surface melt, airfoil thickness, core thickness, and dimensional inspection recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "hot-wire-foam-setup-evidence-missing",
+            "hot-wire-foam-process-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref() == Some("hot-wire-foam-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing hot-wire foam finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("hot-wire-foam-with-evidence")
+            }));
+        }
+        for boundary_kind in [
+            "hot-wire-foam-setup-boundary",
+            "hot-wire-foam-process-boundary",
+        ] {
+            assert!(
+                validation.failure_boundaries.iter().any(|boundary| {
+                    boundary.kind == boundary_kind
+                        && boundary.program_id.as_deref() == Some("hot-wire-foam-missing-evidence")
+                        && boundary.requires_human_intervention
+                }),
+                "missing hot-wire foam boundary {boundary_kind}"
+            );
+        }
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-hot-wire-foam-setup-evidence"
+                && improvement.program_id.as_deref() == Some("hot-wire-foam-missing-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-hot-wire-foam-process-evidence"
+                && improvement.program_id.as_deref() == Some("hot-wire-foam-missing-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [hot-wire-foam-setup-boundary]")));
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [hot-wire-foam-process-boundary]")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Hot-wire foam job needs foam density")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Hot-wire foam job needs wire heat")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [hot-wire-foam-")));
+    }
+
+    #[test]
+    fn text_sheet_forming_jobs_require_tooling_backgauge_and_inspection_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("sheet-forming-missing-evidence".to_string()),
+                machine_id: Some("press-brake-1".to_string()),
+                machine_kind: Some("press-brake-forming-cell".to_string()),
+                language: Some("press-brake-job".to_string()),
+                instructions: vec![
+                    "Press brake form the sheet metal enclosure bracket with two flanges and a hem"
+                        .to_string(),
+                    "Bend lines and formed bracket go to assembly when complete".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("sheet-forming-with-evidence".to_string()),
+                machine_id: Some("press-brake-1".to_string()),
+                machine_kind: Some("press-brake-forming-cell".to_string()),
+                language: Some("press-brake-job".to_string()),
+                instructions: vec![
+                    "Press brake form the sheet metal enclosure bracket with two flanges and a hem"
+                        .to_string(),
+                    "Flat pattern revision, grain direction, material thickness, bend allowance, K-factor, inside radius, punch, V-die, die opening, tonnage chart, backgauge, bend sequence, springback compensation, guarding light curtain, angle inspection, flange inspection, formed envelope, and first article recorded"
+                        .to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "sheet-forming-evidence-missing"
+                && finding.program_id.as_deref() == Some("sheet-forming-missing-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "sheet-forming-evidence-missing"
+                && finding.program_id.as_deref() == Some("sheet-forming-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "sheet-forming-boundary"
+                && boundary.program_id.as_deref() == Some("sheet-forming-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("bend allowance")
+                && boundary.suggested_resolution.contains("backgauge")
+                && boundary.suggested_resolution.contains("angle inspection")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-sheet-forming-evidence"
+                && improvement.program_id.as_deref() == Some("sheet-forming-missing-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [sheet-forming-boundary]")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Press-brake sheet-forming job needs flat pattern")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [sheet-forming-boundary]")));
+    }
+
+    #[test]
+    fn text_gear_cutting_jobs_require_tooling_indexing_and_inspection_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("gear-cutting-missing-evidence".to_string()),
+                machine_id: Some("gear-cutting-cell-1".to_string()),
+                machine_kind: Some("gear-cutting-cell".to_string()),
+                language: Some("gear-cutting-job".to_string()),
+                instructions: vec![
+                    "Gear hobbing the steel spur gear and spline broach the hub".to_string(),
+                    "Deburr and send to assembly when complete".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("gear-cutting-with-evidence".to_string()),
+                machine_id: Some("gear-cutting-cell-1".to_string()),
+                machine_kind: Some("gear-cutting-cell".to_string()),
+                language: Some("gear-cutting-job".to_string()),
+                instructions: vec![
+                    "Gear hobbing the steel spur gear and spline broach the hub".to_string(),
+                    "Gear drawing, tooth count, module, pressure angle, helix angle, hob arbor, cutter certificate, blank runout, index ratio, change gears, lead angle synchronization, tooth thickness, over pins, span measurement, backlash, burr control, and gear inspection recorded"
+                        .to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "gear-cutting-evidence-missing"
+                && finding.program_id.as_deref() == Some("gear-cutting-missing-evidence")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "gear-cutting-evidence-missing"
+                && finding.program_id.as_deref() == Some("gear-cutting-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "gear-cutting-boundary"
+                && boundary.program_id.as_deref() == Some("gear-cutting-missing-evidence")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("tooth count")
+                && boundary.suggested_resolution.contains("index ratio")
+                && boundary.suggested_resolution.contains("over-pins")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-gear-cutting-evidence"
+                && improvement.program_id.as_deref() == Some("gear-cutting-missing-evidence")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [gear-cutting-boundary]")));
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Gear/spline cutting job needs gear drawing")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [gear-cutting-boundary]")));
+    }
+
+    #[test]
     fn text_indexed_setup_jobs_require_clamp_clearance_and_datum_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -53711,6 +65249,186 @@ mod tests {
     }
 
     #[test]
+    fn text_robotic_additive_jobs_require_path_and_extrusion_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("robotic-additive-missing-path".to_string()),
+                machine_id: Some("robotic-additive-cell-1".to_string()),
+                machine_kind: Some("robotic-additive-cell".to_string()),
+                language: Some("robotic-additive-job".to_string()),
+                instructions: vec![
+                    "Robotic additive cell job with feedstock lot, nozzle purge, bead coupon, extrusion rate, flow pressure, cooling, trim allowance, and dimensional scan recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("robotic-additive-missing-extrusion".to_string()),
+                machine_id: Some("robotic-additive-cell-1".to_string()),
+                machine_kind: Some("robotic-additive-cell".to_string()),
+                language: Some("robotic-additive-job".to_string()),
+                instructions: vec![
+                    "Robotic additive cell job with base frame, workobject, TCP, reach, collision simulation, external axis positioner, fixture, interlock, E-stop, and dry-run recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("robotic-additive-with-evidence".to_string()),
+                machine_id: Some("robotic-additive-cell-1".to_string()),
+                machine_kind: Some("robotic-additive-cell".to_string()),
+                language: Some("robotic-additive-job".to_string()),
+                instructions: vec![
+                    "Robotic additive cell job with base frame, workobject, TCP, reach, collision simulation, external axis positioner, fixture, interlock, E-stop, and dry-run recorded".to_string(),
+                    "Robotic additive extrusion evidence includes feedstock lot, dryer moisture state, nozzle purge, bead coupon, extrusion rate, volumetric flow, melt pressure, cooling, trim allowance, and dimensional scan".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "robotic-additive-path-evidence-missing"
+                && finding.program_id.as_deref() == Some("robotic-additive-missing-path")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "robotic-additive-extrusion-evidence-missing"
+                && finding.program_id.as_deref() == Some("robotic-additive-missing-extrusion")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("robotic-additive-")
+                && finding.program_id.as_deref() == Some("robotic-additive-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "robotic-additive-path-boundary"
+                && boundary.program_id.as_deref() == Some("robotic-additive-missing-path")
+                && boundary.requires_human_intervention
+                && boundary
+                    .suggested_resolution
+                    .contains("collision simulation")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "robotic-additive-extrusion-boundary"
+                && boundary.program_id.as_deref() == Some("robotic-additive-missing-extrusion")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("bead coupon")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-robotic-additive-path-evidence"
+                && improvement.program_id.as_deref() == Some("robotic-additive-missing-path")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-robotic-additive-extrusion-evidence"
+                && improvement.program_id.as_deref() == Some("robotic-additive-missing-extrusion")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [robotic-additive-path-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [robotic-additive-extrusion-boundary]")));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [robotic-additive-")));
+    }
+
+    #[test]
+    fn text_sheet_lamination_jobs_require_stock_and_bond_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("sheet-lamination-missing-stock".to_string()),
+                machine_id: Some("sheet-lamination-printer-1".to_string()),
+                machine_kind: Some("sheet-lamination-printer".to_string()),
+                language: Some("sheet-lamination-job".to_string()),
+                instructions: vec![
+                    "Sheet lamination job with fiducial registration, datum pins, vacuum hold-down, trim path, ultrasonic amplitude, weld force, consolidation coupon, peel test, delamination inspection, and dimensional scan recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("sheet-lamination-missing-bond".to_string()),
+                machine_id: Some("sheet-lamination-printer-1".to_string()),
+                machine_kind: Some("sheet-lamination-printer".to_string()),
+                language: Some("sheet-lamination-job".to_string()),
+                instructions: vec![
+                    "Sheet lamination job with aluminum foil lot, sheet thickness, gauge, grain direction, stack order, adhesive lot, storage humidity, surface prep, and cleaning recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("sheet-lamination-with-evidence".to_string()),
+                machine_id: Some("sheet-lamination-printer-1".to_string()),
+                machine_kind: Some("sheet-lamination-printer".to_string()),
+                language: Some("sheet-lamination-job".to_string()),
+                instructions: vec![
+                    "Sheet lamination job with aluminum foil lot, sheet thickness, gauge, grain direction, stack order, adhesive lot, storage humidity, surface prep, and cleaning recorded".to_string(),
+                    "Sheet lamination job with fiducial registration, datum pins, vacuum hold-down, trim path, ultrasonic amplitude, weld force, consolidation coupon, peel test, delamination inspection, and dimensional scan recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "sheet-lamination-stock-evidence-missing"
+                && finding.program_id.as_deref() == Some("sheet-lamination-missing-stock")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "sheet-lamination-bond-evidence-missing"
+                && finding.program_id.as_deref() == Some("sheet-lamination-missing-bond")
+                && finding.line.is_none()
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("sheet-lamination-")
+                && finding.program_id.as_deref() == Some("sheet-lamination-with-evidence")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "sheet-lamination-stock-boundary"
+                && boundary.program_id.as_deref() == Some("sheet-lamination-missing-stock")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("stack order")
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "sheet-lamination-bond-boundary"
+                && boundary.program_id.as_deref() == Some("sheet-lamination-missing-bond")
+                && boundary.requires_human_intervention
+                && boundary
+                    .suggested_resolution
+                    .contains("delamination inspection")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-sheet-lamination-stock-evidence"
+                && improvement.program_id.as_deref() == Some("sheet-lamination-missing-stock")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-sheet-lamination-bond-evidence"
+                && improvement.program_id.as_deref() == Some("sheet-lamination-missing-bond")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [sheet-lamination-stock-boundary]")));
+        assert!(improved[1].changed);
+        assert!(improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [sheet-lamination-bond-boundary]")));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [sheet-lamination-")));
+    }
+
+    #[test]
     fn text_paste_extrusion_jobs_require_rheology_and_drying_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -54633,9 +66351,16 @@ mod tests {
             "grbl-gcode",
             "fanuc-gcode",
             "mill-turn-gcode",
+            "swiss-turning-gcode",
             "sla-job",
             "material-jetting-job",
             "pellet-fgf-job",
+            "robotic-additive-job",
+            "robotic-pellet-job",
+            "robotic-extrusion-job",
+            "sheet-lamination-job",
+            "laminated-object-job",
+            "ultrasonic-additive-job",
             "directed-energy-deposition-job",
             "composite-fiber-job",
             "sls-job",
@@ -54659,7 +66384,23 @@ mod tests {
             "media-blasting-job",
             "powder-coating-job",
             "deburr-polish-job",
+            "metal-joining-job",
+            "welding-job",
+            "brazing-job",
+            "soldering-job",
+            "press-brake-job",
+            "sheet-forming-job",
+            "bend-job",
+            "hot-wire-foam-job",
+            "hot-wire-job",
+            "foam-cutting-job",
+            "foam-core-job",
+            "wing-core-job",
+            "gear-cutting-job",
+            "gear-hobbing-job",
+            "spline-broaching-job",
             "mill-turn-job",
+            "swiss-turning-job",
             "assembly-cell-job",
             "assembly-checklist",
             "part-separation-checklist",
