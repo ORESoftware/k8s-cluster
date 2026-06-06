@@ -89,6 +89,19 @@ export const FABRICATION_DESIGN_SYNTHESIS_REQUESTS_QUEUE_GROUP = "dd-fabrication
 export const FABRICATION_DESIGN_SYNTHESIS_RESULTS_SUBJECT = "dd.remote.fabrication.design.synthesis.results";
 
 /**
+ * Fabrication execution telemetry requests for live printer, mill, lathe, router, sheet-cutting, assembly, inspection, and postprocess run result reviewers.
+ * Service: dd-fabrication-server
+ */
+export const FABRICATION_EXECUTION_TELEMETRY_REQUESTS_SUBJECT = "dd.remote.fabrication.execution.telemetry.requests";
+export const FABRICATION_EXECUTION_TELEMETRY_REQUESTS_QUEUE_GROUP = "dd-fabrication-execution-reviewers";
+
+/**
+ * Fabrication execution telemetry results carrying observed run state, machine stops, operator interventions, split/combine decisions, artifacts, and learning labels.
+ * Service: dd-fabrication-server
+ */
+export const FABRICATION_EXECUTION_TELEMETRY_RESULTS_SUBJECT = "dd.remote.fabrication.execution.telemetry.results";
+
+/**
  * Instruction generation requests for slicer, CAM, postprocess, setup-sheet, and machine-code workers.
  * Service: dd-fabrication-server
  */

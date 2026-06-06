@@ -29,6 +29,9 @@
     fabrication_design_synthesis_requests_subject/0,
     fabrication_design_synthesis_requests_queue_group/0,
     fabrication_design_synthesis_results_subject/0,
+    fabrication_execution_telemetry_requests_subject/0,
+    fabrication_execution_telemetry_requests_queue_group/0,
+    fabrication_execution_telemetry_results_subject/0,
     fabrication_instruction_generation_requests_subject/0,
     fabrication_instruction_generation_requests_queue_group/0,
     fabrication_instruction_generation_results_subject/0,
@@ -145,6 +148,9 @@ fabrication_design_conversion_results_subject() -> <<"dd.remote.fabrication.desi
 fabrication_design_synthesis_requests_subject() -> <<"dd.remote.fabrication.design.synthesis.requests"/utf8>>.
 fabrication_design_synthesis_requests_queue_group() -> <<"dd-fabrication-design-synthesizers"/utf8>>.
 fabrication_design_synthesis_results_subject() -> <<"dd.remote.fabrication.design.synthesis.results"/utf8>>.
+fabrication_execution_telemetry_requests_subject() -> <<"dd.remote.fabrication.execution.telemetry.requests"/utf8>>.
+fabrication_execution_telemetry_requests_queue_group() -> <<"dd-fabrication-execution-reviewers"/utf8>>.
+fabrication_execution_telemetry_results_subject() -> <<"dd.remote.fabrication.execution.telemetry.results"/utf8>>.
 fabrication_instruction_generation_requests_subject() -> <<"dd.remote.fabrication.instructions.generation.requests"/utf8>>.
 fabrication_instruction_generation_requests_queue_group() -> <<"dd-fabrication-instruction-generators"/utf8>>.
 fabrication_instruction_generation_results_subject() -> <<"dd.remote.fabrication.instructions.generation.results"/utf8>>.
