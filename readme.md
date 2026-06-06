@@ -222,6 +222,10 @@ is supplied.
 - A `toolingPlan` setup traveler with required tools, workholding, consumables,
   setup checks, automation dependencies, release blockers, and production-batch
   links for each generated part route.
+- A `fixturePlan` with per-part setup strategies, datum schemes, workholding,
+  required fixture evidence, clearance checks, datum-transfer records, release
+  blockers, automation candidates, and `fixture-*` learning observations for
+  MDP/POMDP workers.
 - `improvements` and `improvedPrograms` review drafts for generated and
   submitted instruction streams, with conservative gates inserted before
   machine-ready release and a `patchManifest` that records line-level repair
@@ -606,6 +610,12 @@ The response, retained `tooling-plan`, retained `parametric-design`, and
 operators and downstream agents can review required tools, workholding,
 consumables, setup checks, automation dependencies, production-batch links, and
 tooling release blockers before machine-ready release.
+The response, retained `fixture-plan`, retained `parametric-design`, and
+`mdp-request` artifacts include `fixturePlan` setup strategies, datum schemes,
+workholding, required evidence, clearance checks, datum-transfer records,
+automation candidates, release blockers, and `fixture-*` learning observations
+so CAM, fixture, operator, simulation, and policy workers can decide whether a
+route can run unattended or needs setup intervention before machine release.
 The response plus retained `machine-selection`, `parametric-design`, and
 `mdp-request` artifacts include `machineSelection` candidate scores and selected
 machine reasons so learning workers can compare alternate printers, mills,
@@ -723,11 +733,11 @@ reward adjustments. The optimizer-shaped `mdp-request` artifact includes
 `releaseProbePlan`, `neuralTrainingCorpus`,
 `designPackage`, `designExports`, `designInputReview`, `productionPlan`,
 `machineSchedule`, `desScheduleModel`, `machineSelection`, `manufacturingHandoff`,
-`materialPlan`, `qualityPlan`, `toolingPlan`, `processGraph`, `hybridMakePlan`, `interventionMap`, `executionPlan`, `postprocessPlan`, `simulation`,
+`materialPlan`, `qualityPlan`, `toolingPlan`, `fixturePlan`, `processGraph`, `hybridMakePlan`, `interventionMap`, `executionPlan`, `postprocessPlan`, `simulation`,
 `automationRequirements`, `resolutionPlan`, and `machineRelease` so external
 MDP/POMDP workers can reuse the same DES-backed policy preview, boundary evidence, design export state,
 CAD/model/slicer source assumptions, batch-planning state, machine-choice
-alternatives, machine-schedule state, DES queue-capacity model, material/stock/feedstock planning state, hybrid make/split decisions, simulation risk profiles, quality evidence targets, tooling/setup
+alternatives, machine-schedule state, DES queue-capacity model, material/stock/feedstock planning state, hybrid make/split decisions, simulation risk profiles, quality evidence targets, tooling/setup, fixture/setup
 requirements, intervention paths, postprocessor gates, and CAD/CAM handoff
 assumptions.
 
@@ -745,7 +755,7 @@ runtime inspection boundary while the database contract is still being designed.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
   such as `design-summary`, `parametric-design`, `process-plan`,
   `design-package`, `design-export-bundle`, `design-input-review`, `production-plan`, `machine-schedule`, `des-schedule-model`, `machine-selection`, `process-graph`, `hybrid-make-plan`,
-  `manufacturing-handoff`, `material-plan`, `quality-plan`, `tooling-plan`, `machine-release`,
+  `manufacturing-handoff`, `material-plan`, `quality-plan`, `tooling-plan`, `fixture-plan`, `machine-release`,
   `execution-plan`, `postprocess-plan`, `boundary-summary`, `intervention-map`, `simulation-report`, `learning-plan`,
   `pomdp-belief-state`, `release-probe-plan`, `neural-training-corpus`,
   `mdp-request`, a `generated-design-export`, a `program-*` generated machine program, or an
@@ -791,7 +801,11 @@ runtime inspection boundary while the database contract is still being designed.
   points, measurement targets, records to capture, release gates, and learning
   observations; `tooling-plan` and `mdp-request` include `toolingPlan` required
   tools, workholding, consumables, setup checks, automation dependencies,
-  production-batch links, and release blockers; `intervention-map`,
+  production-batch links, and release blockers; `fixture-plan`,
+  `parametric-design`, and `mdp-request` include `fixturePlan` setup strategies,
+  datum schemes, workholding, required evidence, clearance checks, datum-transfer
+  records, automation candidates, release blockers, and `fixture-*` learning
+  observations; `intervention-map`,
   `analysis-intervention-map`, and `mdp-request` include `interventionMap`
   human-intervention points, split/combine decisions with `interfacePlan`
   decomposition/recombination gates, automation paths, program boundary traces,
@@ -829,7 +843,8 @@ runtime inspection boundary while the database contract is still being designed.
   `designInputReview`, `executionPlan`, `postprocessPlan`, `pomdpBeliefState`,
   `releaseProbePlan`,
   `machineRelease`, `manufacturingHandoff`, `productionPlan`, `machineSchedule`,
-  `materialPlan`, `qualityPlan`, and `toolingPlan` for one-payload handoff review.
+  `materialPlan`, `qualityPlan`, `toolingPlan`, and `fixturePlan` for
+  one-payload handoff review.
 
 ## Local Build
 
