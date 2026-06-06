@@ -680,10 +680,10 @@ jobs:
           git stash push --include-untracked -m "$stash_name" -- remote .github || true
           echo "stashing submodule worktrees before merge"
           git submodule foreach --recursive 'git stash push --include-untracked -m remote-k8s-maintenance-pre-merge-submodule || true' || true
-          git submodule update --init --recursive remote/submodules/rust-network-mutex-rs || true
+          git submodule update --init --recursive || true
           git fetch origin {rev}
           git merge --ff-only origin/{rev}
-          git submodule update --init --recursive remote/submodules/rust-network-mutex-rs
+          git submodule update --init --recursive
           git rev-parse --short HEAD
           '''
           commands = [
