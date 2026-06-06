@@ -6,10 +6,15 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::time::Duration;
 
 use crate::error::{AppError, AppResult};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct WesternUnionCredential {
     pub client_id: String,
     #[serde(default = "default_env")]
@@ -17,6 +22,24 @@ pub struct WesternUnionCredential {
     pub client_certificate_pem: Option<String>,
     pub client_private_key_pem: Option<String>,
     pub notes: Option<String>,
+}
+
+impl fmt::Debug for WesternUnionCredential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WesternUnionCredential")
+            .field("client_id", &self.client_id)
+            .field("environment", &self.environment)
+            .field(
+                "client_certificate_pem",
+                &self.client_certificate_pem.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "client_private_key_pem",
+                &self.client_private_key_pem.as_ref().map(|_| "<redacted>"),
+            )
+            .field("notes", &self.notes)
+            .finish()
+    }
 }
 
 fn default_env() -> String {
@@ -112,7 +135,11 @@ impl WesternUnionApi {
     pub fn with_base_url_for_tests(cred: WesternUnionCredential, base_url: String) -> Self {
         Self {
             cred,
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .connect_timeout(CONNECT_TIMEOUT)
+                .timeout(HTTP_TIMEOUT)
+                .build()
+                .expect("build Western Union test HTTP client"),
             base_url: base_url.trim_end_matches('/').to_string(),
         }
     }
@@ -125,13 +152,11 @@ impl WesternUnionApi {
         &self,
         currency_code: &str,
     ) -> AppResult<WesternUnionHoldingBalanceResponse> {
-        let currency = currency_code.trim().to_ascii_uppercase();
-        let url = format!(
-            "{}/HoldingBalance/{}/{}",
+        let currency = normalize_currency_code(currency_code)?;
+        let url = url_with_segments(
             self.base_url(),
-            self.cred.client_id,
-            currency
-        );
+            &["HoldingBalance", self.cred.client_id.as_str(), currency.as_str()],
+        )?;
 
         let resp = self
             .http
@@ -146,12 +171,17 @@ impl WesternUnionApi {
     }
 
     pub async fn list_batch_payments(&self, batch_id: &str) -> AppResult<Vec<WesternUnionPayment>> {
-        let url = format!(
-            "{}/customers/{}/batches/{}/payments",
+        let batch_id = required_segment("western_union.batch_id", batch_id)?;
+        let url = url_with_segments(
             self.base_url(),
-            self.cred.client_id,
-            batch_id
-        );
+            &[
+                "customers",
+                self.cred.client_id.as_str(),
+                "batches",
+                batch_id.as_str(),
+                "payments",
+            ],
+        )?;
 
         let resp = self
             .http
@@ -169,17 +199,15 @@ impl WesternUnionApi {
 }
 
 fn http_client_with_optional_identity(cred: &WesternUnionCredential) -> AppResult<reqwest::Client> {
-    let mut builder = reqwest::Client::builder();
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(HTTP_TIMEOUT);
     match (
         cred.client_certificate_pem.as_deref(),
         cred.client_private_key_pem.as_deref(),
     ) {
         (Some(cert), Some(key)) => {
-            let bundle = format!("{}\n{}", cert.trim(), key.trim());
-            let identity = reqwest::Identity::from_pem(bundle.as_bytes()).map_err(|e| {
-                AppError::Crypto(format!("western_union client certificate/key PEM: {e}"))
-            })?;
-            builder = builder.identity(identity);
+            builder = builder.identity(client_identity_from_pem(cert, key)?);
         }
         (None, None) => {}
         _ => {
@@ -194,6 +222,57 @@ fn http_client_with_optional_identity(cred: &WesternUnionCredential) -> AppResul
         provider: "western_union".into(),
         message: format!("HTTP client build: {e}"),
     })
+}
+
+pub fn validate_client_identity_pem(cert: &str, key: &str) -> AppResult<()> {
+    client_identity_from_pem(cert, key).map(|_| ())
+}
+
+fn client_identity_from_pem(cert: &str, key: &str) -> AppResult<reqwest::Identity> {
+    let bundle = format!("{}\n{}", cert.trim(), key.trim());
+    reqwest::Identity::from_pem(bundle.as_bytes()).map_err(|e| {
+        AppError::BadRequest(format!(
+            "western_union client_certificate_pem/client_private_key_pem are not a valid PEM identity: {e}"
+        ))
+    })
+}
+
+fn normalize_currency_code(value: &str) -> AppResult<String> {
+    let code = value.trim().to_ascii_uppercase();
+    if code.len() != 3 || !code.bytes().all(|b| b.is_ascii_uppercase()) {
+        return Err(AppError::BadRequest(
+            "western_union.currency_code must be a 3-letter ISO currency code".into(),
+        ));
+    }
+    Ok(code)
+}
+
+fn required_segment(field: &str, value: &str) -> AppResult<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::BadRequest(format!("{field} must not be empty")));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err(AppError::BadRequest(format!(
+            "{field} must not contain control characters"
+        )));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn url_with_segments(base_url: &str, segments: &[&str]) -> AppResult<String> {
+    let mut url = url::Url::parse(base_url).map_err(|e| AppError::Provider {
+        provider: "western_union".into(),
+        message: format!("base URL parse: {e}"),
+    })?;
+    {
+        let mut path = url.path_segments_mut().map_err(|_| AppError::Provider {
+            provider: "western_union".into(),
+            message: "base URL cannot accept path segments".into(),
+        })?;
+        path.extend(segments.iter().copied());
+    }
+    Ok(url.to_string())
 }
 
 async fn decode_json_response<T: for<'de> Deserialize<'de>>(

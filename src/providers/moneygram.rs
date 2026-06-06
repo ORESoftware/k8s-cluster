@@ -10,11 +10,16 @@
 use base64::Engine as _;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::time::Duration;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MoneyGramCredential {
     pub client_id: String,
     pub client_secret: String,
@@ -24,6 +29,22 @@ pub struct MoneyGramCredential {
     #[serde(default = "default_env")]
     pub environment: String,
     pub webhook_secret: Option<String>,
+}
+
+impl fmt::Debug for MoneyGramCredential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MoneyGramCredential")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"<redacted>")
+            .field("agent_partner_id", &self.agent_partner_id)
+            .field("user_language", &self.user_language)
+            .field("environment", &self.environment)
+            .field(
+                "webhook_secret",
+                &self.webhook_secret.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 fn default_env() -> String {
@@ -101,20 +122,20 @@ pub struct MoneyGramApi {
 }
 
 impl MoneyGramApi {
-    pub fn new(cred: MoneyGramCredential) -> Self {
+    pub fn new(cred: MoneyGramCredential) -> AppResult<Self> {
         let base_url = cred.base_url().to_string();
-        Self {
+        Ok(Self {
             cred,
-            http: reqwest::Client::new(),
+            http: http_client()?,
             base_url,
-        }
+        })
     }
 
     #[cfg(test)]
     pub fn with_base_url_for_tests(cred: MoneyGramCredential, base_url: String) -> Self {
         Self {
             cred,
-            http: reqwest::Client::new(),
+            http: http_client().expect("build MoneyGram test HTTP client"),
             base_url: base_url.trim_end_matches('/').to_string(),
         }
     }
@@ -131,10 +152,14 @@ impl MoneyGramApi {
                 self.cred.client_id, self.cred.client_secret
             ))
         );
-        let url = format!(
-            "{}/oauth/accesstoken?grant_type=client_credentials",
-            self.base_url()
-        );
+        let qs =
+            serde_urlencoded::to_string(&[("grant_type", "client_credentials")]).map_err(|e| {
+                AppError::Provider {
+                    provider: "moneygram".into(),
+                    message: format!("access token query encode: {e}"),
+                }
+            })?;
+        let url = format!("{}/oauth/accesstoken?{qs}", self.base_url());
 
         let resp = self
             .http
@@ -201,14 +226,18 @@ impl MoneyGramApi {
         reference_number: &str,
         target_audience: Option<&str>,
     ) -> AppResult<MoneyGramTransactionStatus> {
+        let reference_number = required("moneygram.reference_number", reference_number)?;
         let token = self.get_access_token().await?;
         let mut params: Vec<(&str, String)> = vec![
             ("agentPartnerId", self.cred.agent_partner_id.clone()),
-            ("referenceNumber", reference_number.to_string()),
+            ("referenceNumber", reference_number),
             ("userLanguage", self.cred.user_language.clone()),
         ];
         if let Some(target_audience) = target_audience {
-            params.push(("targetAudience", target_audience.to_string()));
+            params.push((
+                "targetAudience",
+                required("moneygram.target_audience", target_audience)?,
+            ));
         }
         let qs = serde_urlencoded::to_string(&params).map_err(|e| AppError::Provider {
             provider: "moneygram".into(),
@@ -245,4 +274,23 @@ impl MoneyGramApi {
             message: format!("status decode: {e}"),
         })
     }
+}
+
+fn http_client() -> AppResult<reqwest::Client> {
+    reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(HTTP_TIMEOUT)
+        .build()
+        .map_err(|e| AppError::Provider {
+            provider: "moneygram".into(),
+            message: format!("HTTP client build: {e}"),
+        })
+}
+
+fn required(field: &str, value: &str) -> AppResult<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::BadRequest(format!("{field} must not be empty")));
+    }
+    Ok(trimmed.to_string())
 }

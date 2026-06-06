@@ -308,14 +308,23 @@ fn validate_api_key_credential(
             // Remitly is limited_fit and can remain intent-only. If the
             // tenant has partner/export credentials, validate the pieces that
             // would make typed API calls usable.
-            if let Some(api_key) = cred.api_key.as_deref() {
-                require_non_empty("remitly.api_key", api_key)?;
-            }
+            let api_key = optional_trimmed(cred.api_key.as_deref());
+            let api_base_url = optional_trimmed(cred.api_base_url.as_deref());
             if let Some(partner_id) = cred.partner_id.as_deref() {
                 require_non_empty("remitly.partner_id", partner_id)?;
             }
-            if let Some(api_base_url) = cred.api_base_url.as_deref() {
-                validate_url("remitly.api_base_url", api_base_url)?;
+            match (api_key, api_base_url) {
+                (Some(api_key), Some(api_base_url)) => {
+                    require_non_empty("remitly.api_key", api_key)?;
+                    crate::providers::remitly::validate_partner_base_url(api_base_url)?;
+                }
+                (None, None) => {}
+                _ => {
+                    return Err(AppError::BadRequest(
+                        "remitly.api_key and remitly.api_base_url must be provided together"
+                            .into(),
+                    ));
+                }
             }
             validate_environment("remitly.environment", &cred.environment)?;
             Ok(cred.partner_id.clone())
@@ -329,6 +338,7 @@ fn validate_api_key_credential(
             require_non_empty("moneygram.client_secret", &cred.client_secret)?;
             require_non_empty("moneygram.agent_partner_id", &cred.agent_partner_id)?;
             require_non_empty("moneygram.user_language", &cred.user_language)?;
+            validate_language_tag("moneygram.user_language", &cred.user_language)?;
             validate_environment("moneygram.environment", &cred.environment)?;
             Ok(Some(cred.agent_partner_id))
         }
@@ -346,6 +356,7 @@ fn validate_api_key_credential(
                 (Some(cert), Some(key)) => {
                     require_non_empty("western_union.client_certificate_pem", cert)?;
                     require_non_empty("western_union.client_private_key_pem", key)?;
+                    crate::providers::western_union::validate_client_identity_pem(cert, key)?;
                 }
                 (None, None) => {}
                 _ => {
@@ -400,6 +411,10 @@ fn validate_api_key_credential(
     }
 }
 
+fn optional_trimmed(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|v| !v.is_empty())
+}
+
 fn require_non_empty(field: &str, value: &str) -> AppResult<()> {
     if value.trim().is_empty() {
         return Err(AppError::BadRequest(format!("{field} must not be empty")));
@@ -423,12 +438,16 @@ fn validate_environment(field: &str, value: &str) -> AppResult<()> {
     }
 }
 
-fn validate_url(field: &str, value: &str) -> AppResult<()> {
-    let parsed = url::Url::parse(value.trim())
-        .map_err(|e| AppError::BadRequest(format!("{field} must be a valid URL: {e}")))?;
-    if !matches!(parsed.scheme(), "http" | "https") {
+fn validate_language_tag(field: &str, value: &str) -> AppResult<()> {
+    let value = value.trim();
+    if value.len() < 2
+        || value.len() > 20
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
         return Err(AppError::BadRequest(format!(
-            "{field} must use http or https"
+            "{field} must be a compact BCP-47-style language tag"
         )));
     }
     Ok(())
@@ -507,6 +526,62 @@ mod tests {
     }
 
     #[test]
+    fn rejects_bad_moneygram_language_tag() {
+        let credential = serde_json::json!({
+            "client_id": "mg_client",
+            "client_secret": "mg_secret",
+            "agent_partner_id": "agent_123",
+            "user_language": "en_US with spaces",
+            "environment": "sandbox"
+        });
+
+        let err = validate_api_key_credential(ProviderKind::MoneyGram, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn rejects_partial_remitly_partner_api_config() {
+        let key_only = serde_json::json!({
+            "api_key": "remitly_key",
+            "environment": "sandbox"
+        });
+        let url_only = serde_json::json!({
+            "api_base_url": "https://partner.remitly.example",
+            "environment": "sandbox"
+        });
+
+        assert!(matches!(
+            validate_api_key_credential(ProviderKind::Remitly, &key_only),
+            Err(AppError::BadRequest(_))
+        ));
+        assert!(matches!(
+            validate_api_key_credential(ProviderKind::Remitly, &url_only),
+            Err(AppError::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_remitly_partner_api_non_https_or_local_base_url() {
+        for api_base_url in [
+            "http://partner.remitly.example",
+            "https://localhost:8080",
+            "https://10.0.0.1",
+            "https://billing-service",
+        ] {
+            let credential = serde_json::json!({
+                "api_key": "remitly_key",
+                "api_base_url": api_base_url,
+                "environment": "sandbox"
+            });
+
+            let err = validate_api_key_credential(ProviderKind::Remitly, &credential).unwrap_err();
+
+            assert!(matches!(err, AppError::BadRequest(_)));
+        }
+    }
+
+    #[test]
     fn validates_western_union_and_derives_client_id() {
         let credential = serde_json::json!({
             "client_id": "wu_client",
@@ -524,6 +599,20 @@ mod tests {
             "client_id": "wu_client",
             "environment": "sandbox",
             "client_certificate_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+        });
+
+        let err = validate_api_key_credential(ProviderKind::WesternUnion, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn rejects_invalid_western_union_mtls_pair() {
+        let credential = serde_json::json!({
+            "client_id": "wu_client",
+            "environment": "sandbox",
+            "client_certificate_pem": "not a cert",
+            "client_private_key_pem": "not a key"
         });
 
         let err = validate_api_key_credential(ProviderKind::WesternUnion, &credential).unwrap_err();
