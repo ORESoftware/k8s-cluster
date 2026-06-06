@@ -124,3 +124,35 @@ test('websocket loadtest clients include container-pool smoke mode', async () =>
   assert.match(gleamClient, /echoKey/);
   assert.match(gleamReadme, /Container pool smoke mode/);
 });
+
+test('gcs loadtest background jobs do not inherit parent cleanup trap', async () => {
+  const workflow = await readRepoFile('.github/workflows/remote-k8s-maintenance.yml');
+
+  assert.match(
+    workflow,
+    /\(\s*\n\s+trap - EXIT\s*\n\s+set \+e\s*\n\s+while true;/,
+    'capacity guard background loop must not inherit the parent cleanup trap',
+  );
+  assert.match(
+    workflow,
+    /\( trap - EXIT; sleep "\$\{LOADTEST_PPROF_DELAY_SECONDS:-45\}"; collect_gcs_pprof "\$loader_name" \) &/,
+    'serial pprof collector must not inherit the parent cleanup trap',
+  );
+  assert.match(
+    workflow,
+    /\( trap - EXIT; sleep "\$\{LOADTEST_PPROF_DELAY_SECONDS:-45\}"; collect_gcs_pprof "parallel-rust-node-gleam" \) &/,
+    'parallel pprof collector must not inherit the parent cleanup trap',
+  );
+
+  for (const loader of [
+    'run_loader dd-ws-loadtest-rs-gcs "Rust ws-loadtest-rs"',
+    'run_loader dd-nodejs-ws-loadtest-gcs "Node.js ws-loadtest"',
+    'run_loader dd-gleamlang-ws-loadtest-gcs "Gleam ws-loadtest"',
+  ]) {
+    assert.match(
+      workflow,
+      new RegExp(`\\(\\s*\\n\\s+trap - EXIT\\s*\\n[\\s\\S]{0,160}${loader.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+      `${loader} background job must not inherit the parent cleanup trap`,
+    );
+  }
+});
