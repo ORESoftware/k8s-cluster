@@ -22,7 +22,8 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-06-des-rs-latest-3fd3178'
+        dd.dev/telemetry-revision: '2026-06-06-des-rs-live-b9e6103'
+        dd.dev/des-server-revision: 'b9e6103207d7512ac72f03c9f2880b342cd866a1'
         dd.dev/des-engine-revision: '3fd3178cedaa28fc578b1d354ccfd21be2fcd920'
       labels:
         app: dd-des-rs
