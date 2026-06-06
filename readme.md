@@ -96,6 +96,8 @@ It exposes:
 - `GET /fabrication/quality/catalog`
 - `POST /quality/plan`
 - `POST /fabrication/quality/plan`
+- `POST /quality/result`
+- `POST /fabrication/quality/result`
 - `GET /calibration/catalog`
 - `GET /fabrication/calibration/catalog`
 - `POST /calibration/plan`
@@ -1437,6 +1439,26 @@ artifacts include `quality-plan`, `postprocess-plan`, `release-package-plan`,
 `machine-release`, `simulation-report`, and `mdp-request` so
 MDP/POMDP/neural workers can learn when to add inspection, split parts, adjust
 processes, regenerate instructions, or require human signoff.
+
+## `POST /fabrication/quality/result`
+
+`POST /quality/result` and the gateway-prefixed
+`POST /fabrication/quality/result` accept inspection and metrology worker
+results, normalize them into
+`dd.fabrication.quality-result-review.v1`, and store a bounded review job with
+retained measurement, finding, gate, artifact, and learning-observation
+surfaces. The response reports blocker counts for out-of-tolerance
+measurements, nonconformance or human-intervention findings, unresolved
+inspection gates, and missing artifact evidence.
+
+Quality result reviews are retained release evidence, not certified acceptance
+or a machine-safety waiver. Machine-ready release remains blocked until
+measurements, findings, gates, artifacts, and any human dispositions clear.
+Stored artifacts include `quality-result`, `quality-measurements`,
+`quality-findings`, `quality-inspection-gates`, `quality-artifacts`, and
+`quality-learning-observations` so MDP/POMDP/neural workers can learn when to
+adjust processes, split or combine parts, add inspection, or require human
+signoff before release.
 
 ## `GET /fabrication/calibration/catalog`
 
