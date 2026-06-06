@@ -7,6 +7,8 @@ metadata:
     app.kubernetes.io/name: minio
 spec:
   replicas: 1
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 600
   strategy:
     type: Recreate
   selector:
@@ -18,7 +20,9 @@ spec:
         app.kubernetes.io/name: minio
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: false
       serviceAccountName: big-data-workload
+      terminationGracePeriodSeconds: 45
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
@@ -53,11 +57,13 @@ spec:
                 secretKeyRef:
                   name: minio-root
                   key: username
+                  optional: false
             - name: MINIO_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: minio-root
                   key: password
+                  optional: false
           ports:
             - name: api
               containerPort: 9000
@@ -72,9 +78,18 @@ spec:
             requests:
               cpu: 250m
               memory: 512Mi
+              ephemeral-storage: 512Mi
             limits:
               cpu: "1"
               memory: 1Gi
+              ephemeral-storage: 1Gi
+          startupProbe:
+            httpGet:
+              path: /minio/health/live
+              port: api
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18
           readinessProbe:
             httpGet:
               path: /minio/health/ready
@@ -96,7 +111,8 @@ spec:
           persistentVolumeClaim:
             claimName: minio-data
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 1Gi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -124,8 +140,10 @@ spec:
     app.kubernetes.io/name: minio
   ports:
     - name: api
+      appProtocol: http
       port: 9000
       targetPort: api
     - name: console
+      appProtocol: http
       port: 9001
       targetPort: console
