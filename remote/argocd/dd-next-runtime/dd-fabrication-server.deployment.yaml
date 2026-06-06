@@ -123,12 +123,20 @@ spec:
                 '"path": "/fabrication/machines/catalog"' \
                 '"path": "/fabrication/controllers/catalog"' \
                 '"path": "/fabrication/materials/catalog"' \
+                '"path": "/fabrication/design/generation/catalog"' \
+                '"path": "/fabrication/instructions/generation/catalog"' \
+                '"path": "/fabrication/improvements/catalog"' \
                 '"path": "/fabrication/decomposition/catalog"' \
                 '"path": "/fabrication/release/catalog"' \
+                '"path": "/fabrication/strategy/catalog"' \
+                '"path": "/fabrication/schedule/catalog"' \
                 '"path": "/fabrication/simulation/catalog"' \
                 '"path": "/fabrication/quality/catalog"' \
+                '"path": "/fabrication/calibration/catalog"' \
                 '"path": "/fabrication/interventions/catalog"' \
+                '"path": "/fabrication/setup/catalog"' \
                 '"path": "/fabrication/postprocess/catalog"' \
+                '"path": "/fabrication/artifacts/catalog"' \
                 '"path": "/fabrication/design/formats"' \
                 '"path": "/fabrication/instructions/languages"' \
                 '"path": "/fabrication/boundaries/catalog"' \

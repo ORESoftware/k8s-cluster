@@ -1703,6 +1703,18 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     source,
     /postprocess_catalog_endpoint_exposes_finishing_traveler_and_release_contract/,
   );
+  assert.match(source, /async fn artifact_catalog_http/);
+  assert.match(source, /fn artifact_catalog_response/);
+  assert.match(source, /fn artifact_catalog_contracts/);
+  assert.match(source, /dd\.fabrication\.artifact-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/artifacts\/catalog"/);
+  assert.match(source, /"generated-and-imported-instruction-work"/);
+  assert.match(source, /"release-and-execution-evidence"/);
+  assert.match(source, /"mdp-pomdp-neural-learning-evidence"/);
+  assert.match(
+    source,
+    /artifact_catalog_endpoint_exposes_generated_release_and_learning_artifacts/,
+  );
   assert.match(source, /async fn learning_capabilities/);
   assert.match(source, /fn learning_capability_catalog_response/);
   assert.match(source, /dd\.fabrication\.learning-capability-catalog\.v1/);
@@ -1853,6 +1865,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     source,
     /\.route\(\s*"\/fabrication\/postprocess\/catalog",\s*get\(postprocess_catalog_http\),\s*\)/,
   );
+  assert.match(source, /\.route\("\/artifacts\/catalog", get\(artifact_catalog_http\)\)/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/artifacts\/catalog",\s*get\(artifact_catalog_http\),\s*\)/,
+  );
   assert.match(source, /\.route\("\/learning\/capabilities", get\(learning_capabilities\)\)/);
   assert.match(
     source,
@@ -1972,6 +1989,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`qualityPlan\.inspectionPoints`/);
   assert.match(readme, /machine-ready release remains blocked while required quality\s+inspection/);
   assert.match(readme, /Quality observations are retained for MDP\/POMDP\/neural\s+workers/);
+  assert.match(readme, /`GET \/calibration\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/calibration\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.calibration-catalog\.v1/);
+  assert.match(readme, /homing, work-offset, tool-length,\s+probe, thermal/);
+  assert.match(readme, /`releaseProbePlan\.probes`/);
+  assert.match(readme, /`improvedPrograms\.patchManifest\.operations`/);
+  assert.match(readme, /machine-ready release remains blocked while homing/);
+  assert.match(readme, /Calibration observations are retained for MDP\/POMDP\/neural\s+workers/);
   assert.match(readme, /`GET \/interventions\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/interventions\/catalog`/);
   assert.match(readme, /dd\.fabrication\.intervention-catalog\.v1/);
@@ -1992,6 +2017,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`monitoringPlan\.alertRules`/);
   assert.match(readme, /machine-ready\s+release remains blocked while required tools/);
   assert.match(readme, /Setup, fixture, and\s+monitoring observations are retained/);
+  assert.match(readme, /`GET \/artifacts\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/artifacts\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.artifact-catalog\.v1/);
+  assert.match(readme, /generated or imported machine instruction work/);
+  assert.match(readme, /DES-backed MDP\/POMDP\/neural learning evidence/);
+  assert.match(readme, /`GET \/jobs\/:job_id\/artifacts\/:artifact_id`/);
+  assert.match(readme, /`releasePackagePlan`/);
+  assert.match(readme, /generated design exports, machine programs, improved\s+programs/);
   assert.match(readme, /`GET \/learning\/capabilities`/);
   assert.match(readme, /`GET \/fabrication\/learning\/capabilities`/);
   assert.match(readme, /dd\.fabrication\.learning-capability-catalog\.v1/);
@@ -2984,6 +3017,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/setup\/catalog"/);
   assert.match(docs, /"path": "\/postprocess\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/postprocess\/catalog"/);
+  assert.match(docs, /"path": "\/artifacts\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/artifacts\/catalog"/);
   assert.match(docs, /"path": "\/learning\/capabilities"/);
   assert.match(docs, /"path": "\/fabrication\/learning\/capabilities"/);
   assert.match(docs, /"path": "\/schema"/);
@@ -3055,10 +3090,18 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /startupProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
   assert.match(deployment, /readinessProbe:[\s\S]*path: \/readyz[\s\S]*port: http/);
   assert.match(deployment, /livenessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(deployment, /"path": "\/fabrication\/design\/generation\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/instructions\/generation\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/improvements\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/strategy\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/schedule\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/simulation\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/quality\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/calibration\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/interventions\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/setup\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/postprocess\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/artifacts\/catalog"/);
   assert.match(service, /name:\s*dd-fabrication-server/);
   assert.match(service, /appProtocol:\s*http/);
   assert.match(service, /port:\s*8113/);
@@ -3124,10 +3167,18 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/capabilities/);
   assert.match(runtimeReadme, /\/fabrication\/schema/);
   assert.match(runtimeReadme, /\/fabrication\/examples/);
+  assert.match(runtimeReadme, /\/fabrication\/design\/generation\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/instructions\/generation\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/improvements\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/strategy\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/schedule\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/simulation\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/quality\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/calibration\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/interventions\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/setup\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/postprocess\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/artifacts\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/jobs/);
   assert.match(runtimeReadme, /`POST \/fabrication\/plan`/);
   assert.match(runtimeReadme, /`POST \/fabrication\/instructions\/analyze`/);
