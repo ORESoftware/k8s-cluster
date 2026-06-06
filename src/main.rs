@@ -32859,6 +32859,7 @@ async fn root() -> impl IntoResponse {
         "schemaVersion": SCHEMA_VERSION,
         "routes": [
             "GET /healthz",
+            "GET /readyz",
             "GET /metrics",
             "GET /capabilities",
             "GET /fabrication/capabilities",
