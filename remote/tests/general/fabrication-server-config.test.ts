@@ -2574,6 +2574,27 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     source,
     /quality_planning_endpoint_returns_inspection_metrology_and_release_gates/,
   );
+  assert.match(source, /struct QualityResultReviewRequest/);
+  assert.match(source, /async fn quality_result_http/);
+  assert.match(source, /fn quality_result_review_response/);
+  assert.match(source, /fn stored_quality_result_job/);
+  assert.match(source, /fn store_quality_result_response/);
+  assert.match(source, /dd\.fabrication\.quality-result-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/quality\/result"/);
+  assert.match(source, /"qualityResultJobId"/);
+  assert.match(source, /"qualityResult"/);
+  assert.match(source, /"quality-measurements"/);
+  assert.match(source, /"quality-findings"/);
+  assert.match(source, /"quality-inspection-gates"/);
+  assert.match(source, /"quality-learning-observations"/);
+  assert.match(source, /quality-measurement-target:/);
+  assert.match(source, /quality-finding:/);
+  assert.match(source, /quality-gate:/);
+  assert.match(source, /quality-artifact:/);
+  assert.match(
+    source,
+    /quality_result_endpoint_reviews_metrology_findings_gates_and_learning/,
+  );
   assert.match(source, /async fn calibration_catalog_http/);
   assert.match(source, /fn calibration_catalog_response/);
   assert.match(source, /fn calibration_catalog_contracts/);
@@ -2981,6 +3002,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /\.route\("\/fabrication\/quality\/catalog", get\(quality_catalog_http\)\)/);
   assert.match(source, /\.route\("\/quality\/plan", post\(quality_plan_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/quality\/plan", post\(quality_plan_http\)\)/);
+  assert.match(source, /\.route\("\/quality\/result", post\(quality_result_http\)\)/);
+  assert.match(
+    source,
+    /\.route\("\/fabrication\/quality\/result", post\(quality_result_http\)\)/,
+  );
   assert.match(source, /\.route\("\/interventions\/catalog", get\(intervention_catalog_http\)\)/);
   assert.match(
     source,
@@ -3389,6 +3415,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     readme,
     /add inspection, split parts, adjust\s+processes, regenerate instructions, or require human signoff/,
   );
+  assert.match(readme, /`POST \/quality\/result`/);
+  assert.match(readme, /`POST \/fabrication\/quality\/result`/);
+  assert.match(readme, /dd\.fabrication\.quality-result-review\.v1/);
+  assert.match(readme, /out-of-tolerance\s+measurements/);
+  assert.match(readme, /nonconformance or human-intervention findings/);
+  assert.match(readme, /`quality-result`/);
+  assert.match(readme, /`quality-measurements`/);
+  assert.match(readme, /`quality-learning-observations`/);
   assert.match(readme, /`GET \/calibration\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/calibration\/catalog`/);
   assert.match(readme, /dd\.fabrication\.calibration-catalog\.v1/);
@@ -4841,6 +4875,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/quality\/catalog"/);
   assert.match(docs, /"path": "\/quality\/plan"/);
   assert.match(docs, /"path": "\/fabrication\/quality\/plan"/);
+  assert.match(docs, /"path": "\/quality\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/quality\/result"/);
   assert.match(docs, /"path": "\/calibration\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/calibration\/catalog"/);
   assert.match(docs, /"path": "\/calibration\/plan"/);
