@@ -226,7 +226,7 @@ to run in parallel should keep `replicas: 2`, `minReadySeconds: 5`, `progressDea
 rolling updates with `maxUnavailable: 1` / `maxSurge: 0`, readiness probes, and a
 `PodDisruptionBudget` with `minAvailable: 1`. HostPath source-build services that should not overlap
 use `Recreate` and the same PDB floor. This covers the public/auth/API surface where normal
-rollouts previously caused intermittent gateway `502`s` or single-node scheduling stalls: `dd-remote-web-home`, `dd-remote-auth`,
+rollouts previously caused intermittent gateway `502`s or single-node scheduling stalls: `dd-remote-web-home`, `dd-remote-auth`,
 `dd-remote-rest-api`, `dd-agent-worker-broker`, `dd-des-rs`, `dd-contract-service`,
 `dd-escrow-rs`, `dd-mdp-optimizer`, `dd-fabrication-server`, `dd-trading-server`, `dd-economics-server`, `dd-public-data-server`, `dd-web-scraper`, `dd-browser-test-server`,
 `dd-selenium-server`, and `dd-rust-vapi-phone`. `dd-des-rs` also has a small HPA with
