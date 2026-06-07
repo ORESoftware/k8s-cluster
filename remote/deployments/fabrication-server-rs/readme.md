@@ -98,6 +98,8 @@ outcomes.
 - `GET /fabrication/instructions/languages`
 - `GET /instructions/import/catalog`
 - `GET /fabrication/instructions/import/catalog`
+- `GET /instructions/import/preflight/catalog`
+- `GET /fabrication/instructions/import/preflight/catalog`
 - `GET /instructions/validation/catalog`
 - `GET /fabrication/instructions/validation/catalog`
 - `GET /instructions/generation/catalog`
@@ -152,6 +154,8 @@ outcomes.
 - `POST /fabrication/assembly/plan`
 - `POST /assembly/result`
 - `POST /fabrication/assembly/result`
+- `POST /interfaces/result`
+- `POST /fabrication/interfaces/result`
 - `GET /release/catalog`
 - `GET /fabrication/release/catalog`
 - `GET /release/preflight/catalog`
@@ -1570,6 +1574,26 @@ until provenance, checksum, dialect, machine profile, validation, simulation or
 dry-run, setup, quality, release-package, and operator or automation signoff
 evidence clear.
 
+## `GET /fabrication/instructions/import/preflight/catalog`
+
+`GET /instructions/import/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/instructions/import/preflight/catalog` return the live
+`dd.fabrication.instruction-import-preflight-catalog.v1` evidence checklist for
+existing CNC, slicer, printer, setup-sheet, postprocess, assembly, quality, and
+operator instruction streams before they are trusted as fabrication work. The
+catalog groups source provenance/language/artifact state,
+machine/controller/setup/process state, and
+analysis/validation/simulation/improvement/learning state so callers can see
+which evidence must be present before imported programs move toward release.
+
+Imported programs remain review inputs until checks for provenance, checksum,
+dialect, machine and controller profile, setup and process state, analysis,
+validation, simulation or dry-run, improvement deltas, release package, and
+operator or automation signoff all clear. `machineReady` remains false while any
+preflight gate is missing, and failed checks can feed DES, MDP/POMDP, and neural
+learning workers to improve future split/combine, machine-selection,
+postprocessor, and intervention planning.
+
 ## `GET /fabrication/instructions/validation/catalog`
 
 `GET /instructions/validation/catalog` and the gateway-prefixed
@@ -2223,6 +2247,36 @@ labels. Result observations include `assembly-part-route:*`,
 `assembly-join:*`, `assembly-split-combine:*`, `assembly-interface-check:*`,
 and `assembly-artifact:*` signals so MDP/POMDP/neural workers can learn which
 split/combine and join boundaries cleared or blocked recomposed hardware.
+
+## `POST /fabrication/interfaces/result`
+
+`POST /interfaces/result` and the gateway-prefixed
+`POST /fabrication/interfaces/result` normalize external interface-control
+worker evidence into `dd.fabrication.interface-result-review.v1`. The route
+accepts datum-transfer and fit checks, join evidence for adhesive, plastic weld,
+press-fit, fastener, seal, bearing, or metal-joining interfaces,
+split/combine decisions, retained artifacts, worker identity, warnings, and
+metadata after a decomposition or assembly worker tries to prove that printed,
+milled, turned, molded, or special-process parts can be recomposed safely.
+
+The response exposes `interfaceResult`, `interfaceResultJobId`, `generatedAtMs`,
+`releaseBlocked`, `interfaceBlockerCount`, `joinBlockerCount`,
+`splitCombineBlockerCount`, `humanInterventionRequired`, and
+`missingArtifactEvidenceCount`. It also includes a
+`dd.fabrication.interface-learning-outcome-draft.v1` payload with interface,
+join, split/combine, artifact, human-intervention, reward, and submit-route
+hints for `POST /fabrication/learning/outcomes`. Successful reviews are retained
+in the bounded job ledger under `interfaceResultJobId`; `/jobs/:job_id` and
+`/jobs/:job_id/artifacts/:artifact_id` can inspect `interface-result`,
+`interface-checks`, `interface-join-evidence`,
+`interface-split-combine-decisions`, `interface-artifacts`, and
+`interface-learning-observations`. Machine-ready release remains blocked until
+datum transfer, fit, join recipe, operator or automation proof, split/combine
+decision, and artifact evidence clear. Result observations include
+`interface-kind:*`, `interface-join:*`, `interface-split-combine:*`, and
+`interface-artifact:*` signals so MDP/POMDP/neural workers can learn which
+interface boundaries require redesign, rework, alternate joining, or human
+intervention before recomposition.
 
 ## `GET /fabrication/release/catalog`
 

@@ -17,8 +17,8 @@ GitOps-managed observability stack for the EC2 Kubernetes cluster.
   overview samples.
 - `dd-grafana`: serves dashboards at `/telemetry/` through the public gateway.
   Includes the `Observability Control Plane`, `Deployment Drilldown`,
-  `Kubernetes Workload Fleet`, `Fabrication Planner`, and `GCS WSS Load
-  Collapse` dashboards.
+  `Kubernetes Workload Fleet`, `Fabrication Planner`, `Economics Server`,
+  and `GCS WSS Load Collapse` dashboards.
 - `dd-loki` + `dd-promtail`: collect Kubernetes container stdout/stderr logs
   from `/var/log/containers/*.log`.
 - `dd-tempo` and `dd-jaeger`: trace backends for collector-exported spans.
@@ -30,6 +30,11 @@ The runtimes are instrumented explicitly:
 - Node worker/API emits direct OTLP/HTTP spans and Prometheus metrics.
 - Rust web-home emits Prometheus metrics.
 - Rust REST API emits Prometheus metrics for the RDS/Postgres data boundary.
+- Rust economics server emits Prometheus metrics for dashboard, forecast,
+  recommendation, pipeline, source-pull, auth, NATS, and error activity,
+  plus compact `dd.log.v1` stdout/stderr records for Loki. Its
+  OpenTelemetry posture is explicit-only service/resource metadata, not
+  runtime auto-instrumentation.
 - Gleam websocket server emits actor-backed Prometheus metrics.
 - Gleam MCP server emits HTTP and JSON-RPC method Prometheus metrics.
 - Akka/async.java websocket server emits Prometheus counters for both
@@ -183,7 +188,8 @@ Currently opted-in:
   `/fabrication/printers/catalog`, `/fabrication/subtractive/catalog`,
   `/fabrication/subtractive/preflight/catalog`,
   `/fabrication/cleanliness/preflight/catalog`,
-  `/fabrication/interfaces/preflight/catalog`, `/fabrication/cnc/catalog`,
+  `/fabrication/interfaces/preflight/catalog`, `/fabrication/interfaces/result`,
+  `/fabrication/cnc/catalog`,
   `/fabrication/hybrid/catalog`,
   `/fabrication/cells/catalog`,
   `/fabrication/machines/select`, `/fabrication/controllers/catalog`,
@@ -207,8 +213,9 @@ Currently opted-in:
   `/fabrication/calibration/plan`, `/fabrication/calibration/result`,
   `/fabrication/instructions/generation/catalog`,
   `/fabrication/instructions/generation/preflight/catalog`,
-  `/fabrication/instructions/languages`,
   `/fabrication/instructions/import/catalog`,
+  `/fabrication/instructions/import/preflight/catalog`,
+  `/fabrication/instructions/languages`,
   `/fabrication/instructions/validation/catalog`,
   `/fabrication/instructions/generate`,
   `/fabrication/instructions/generation/result`,
@@ -230,7 +237,8 @@ Currently opted-in:
   `/fabrication/schedule/catalog`,
   `/fabrication/schedule/result`,
   `/fabrication/execution/plan`, `/fabrication/execution/result`,
-  `/fabrication/simulation/catalog`, `/fabrication/simulation/preflight/catalog`, `/fabrication/simulation/run`,
+  `/fabrication/simulation/catalog`, `/fabrication/simulation/preflight/catalog`,
+  `/fabrication/simulation/run`,
   `/fabrication/simulation/result`, `/fabrication/quality/catalog`,
   `/fabrication/quality/preflight/catalog`,
   `/fabrication/dispositions/catalog`, `/fabrication/dispositions/result`,
@@ -333,6 +341,18 @@ Currently opted-in:
   fan-out, and MDP learning behavior.
   Promtail's own `/metrics` is scraped the same way so empty-Loki
   incidents can be diagnosed from Prometheus.
+- `dd-economics-server` is scraped explicitly by both `dd-prometheus` and
+  the OTel collector at `/metrics`, while the Deployment and Service also
+  carry Prometheus discovery annotations for future discovery-based scrapers.
+  The `Economics Server` Grafana dashboard (uid `dd-economics-server`)
+  groups service scrape health, firing economics alerts, source-pull success
+  freshness, stored observations, model/recommendation/sentiment/pipeline
+  request rates, external source bytes/points, auth failures, server errors,
+  NATS request/result activity, Kubernetes workload state, and Loki warning
+  or error logs. Prometheus alerts when the scrape target is down, source
+  pulls start failing, the latest successful source pull grows stale, auth
+  failures rise, or the service records forecast/ingest/source/pipeline
+  errors.
 - The `Kubernetes Workload Fleet` Grafana dashboard (uid
   `dd-kubernetes-workload-fleet`) is the generic dashboard for every
   checked-in workload in the exporter allowlist. It is driven by

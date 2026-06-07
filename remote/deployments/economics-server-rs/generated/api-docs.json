@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "economics-server-rs",
   "language": "rust",
-  "routeCount": 30,
+  "routeCount": 31,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 20,
+    "user-generated": 21,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -315,6 +315,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "equations"
+      ],
+      "sourceFiles": [
+        "remote/deployments/economics-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/observability",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "observability"
       ],
       "sourceFiles": [
         "remote/deployments/economics-server-rs/src/main.rs"

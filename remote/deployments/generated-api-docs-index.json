@@ -206,10 +206,10 @@
     {
       "service": "economics-server-rs",
       "language": "rust",
-      "routeCount": 30,
+      "routeCount": 31,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 20,
+        "user-generated": 21,
         "runtime-config": 3
       },
       "generated": [
@@ -220,10 +220,10 @@
     {
       "service": "fabrication-server-rs",
       "language": "rust",
-      "routeCount": 364,
+      "routeCount": 368,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 354,
+        "user-generated": 358,
         "runtime-config": 3
       },
       "generated": [

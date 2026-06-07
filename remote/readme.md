@@ -26,8 +26,8 @@ Today there are several key runtime services:
   AI/ML, market, and MDP/POMDP inputs into risk-gated NATS order intents. Broker metadata is seeded
   through [`databases/pg/seeds/trading-platform-app-config.sql`](./databases/pg/seeds/trading-platform-app-config.sql).
 - [`deployments/economics-server-rs/`](./deployments/economics-server-rs/) — Rust economics dashboard, projection,
-  recommendation, hardening-audit, public-source template, and big-data pipeline-intent service that blends
-  public/private market history, fiscal/labor/VC context, social/news sentiment placeholders, source quality
+  recommendation, hardening-audit, public-source template, big-data pipeline-intent, and observability service that
+  blends public/private market history, fiscal/labor/VC context, social/news sentiment placeholders, source quality
   reports, and transparent theory priors from accepted macro, asset-pricing, commodity, FX, bond, and
   stochastic-process equations.
 - [`deployments/runtime-config-rs/`](./deployments/runtime-config-rs/) — Rust runtime-config control plane. Redis-backed
@@ -433,14 +433,17 @@ Runtime telemetry is deliberately explicit:
 - Rust `remote/deployments/web-home-rs` uses Prometheus counters/gauges and exposes `/metrics`.
 - Rust `remote/deployments/rest-api-rs` uses Prometheus counters/gauges and exposes `/metrics`; the
   OpenTelemetry Collector scrapes it as `dd-remote-rest-api`.
+- Rust `remote/deployments/economics-server-rs` exposes `/metrics` and `/observability`, writes
+  `dd.log.v1` JSON stdout/stderr records for Loki, and is scraped by Prometheus and the collector as
+  `dd-economics-server` without runtime auto-instrumentation.
 - Gleam `remote/deployments/gleamlang-server` reports actor-backed WebSocket connection, tick, HTTP, and
   message counters at `/metrics`.
 - Gleam `remote/deployments/gleam-mcp-server` reports HTTP and JSON-RPC method counters at `/metrics`; the
   OpenTelemetry Collector scrapes it as `dd-gleam-mcp-server`.
 
-Grafana starts with the provisioned dashboard `Remote Dev Runtime Overview`, which tracks request
-rates, Node worker events, NATS connections/throughput/resources, the Gleam MCP runtime, and the
-10k WebSocket load-test connection count.
+Grafana starts with the provisioned dashboard `Remote Dev Runtime Overview`, plus dedicated
+service dashboards such as `Economics Server` for source-pull health, forecast/recommendation
+traffic, auth/errors, Kubernetes state, and Loki service logs.
 
 ## Messaging
 

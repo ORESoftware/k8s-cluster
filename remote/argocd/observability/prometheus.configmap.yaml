@@ -81,6 +81,11 @@ data:
         static_configs:
           - targets:
               - dd-fabrication-server.default.svc.cluster.local:8113
+      - job_name: dd-economics-server
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-economics-server.default.svc.cluster.local:8114
       - job_name: dd-des-simulator
         metrics_path: /metrics
         static_configs:
@@ -525,6 +530,51 @@ data:
             annotations:
               summary: Fabrication server in-memory ledgers are near capacity
               description: "dd-fabrication-server is close to evicting retained job, artifact, or learning-outcome evidence from its bounded in-process ledgers, or artifact evidence volume is approaching the expected high-watermark for retained jobs."
+          - alert: DDEconomicsServerTargetDown
+            expr: up{job="dd-economics-server"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-economics-server
+            annotations:
+              summary: Economics server scrape target is down
+              description: "Prometheus cannot scrape dd-economics-server /metrics; dashboard, forecast, source-pull, and recommendation telemetry may be unavailable."
+          - alert: DDEconomicsServerErrorsIncreasing
+            expr: sum(rate(dd_economics_server_errors_total[5m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-economics-server
+            annotations:
+              summary: Economics server errors are increasing
+              description: "dd-economics-server has recorded forecast, ingest, source, pipeline, or publish errors in the last five minutes."
+          - alert: DDEconomicsServerSourcePullFailuresIncreasing
+            expr: sum(rate(dd_economics_server_source_pull_failure_total[15m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-economics-server
+            annotations:
+              summary: Economics source pulls are failing
+              description: "Public/private economics source pulls are failing or being rejected; inspect Loki dd.log.v1 events for sourceId, URL host, parser, and sanitized error details."
+          - alert: DDEconomicsServerSourcePullSuccessStale
+            expr: max(dd_economics_server_source_pull_success_total) > 0 and (time() - max(dd_economics_server_source_pull_last_success_unix_seconds)) > 172800
+            for: 15m
+            labels:
+              severity: warning
+              service: dd-economics-server
+            annotations:
+              summary: Economics source pulls have not succeeded recently
+              description: "dd-economics-server has had at least one successful source pull, but the latest success timestamp is more than 48 hours old."
+          - alert: DDEconomicsServerAuthFailuresIncreasing
+            expr: sum(rate(dd_economics_server_auth_failures_total[5m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-economics-server
+            annotations:
+              summary: Economics server auth failures are increasing
+              description: "dd-economics-server is rejecting requests with missing or invalid auth; check gateway/client routing before treating downstream forecast failures as model errors."
           - alert: DDOtelCollectorRejectedTelemetry
             expr: sum(rate({__name__=~"otelcol_receiver_refused_(spans|metric_points|log_records)"}[5m])) > 0
             for: 2m

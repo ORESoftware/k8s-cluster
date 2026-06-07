@@ -3,6 +3,11 @@ kind: Service
 metadata:
   name: dd-economics-server
   namespace: default
+  annotations:
+    prometheus.io/path: /metrics
+    prometheus.io/port: '8114'
+    prometheus.io/scheme: http
+    prometheus.io/scrape: 'true'
   labels:
     app: dd-economics-server
 spec:

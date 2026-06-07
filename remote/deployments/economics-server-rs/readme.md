@@ -16,6 +16,7 @@ confidence intervals.
 - `GET /healthz` - liveness probe.
 - `GET /readyz` - readiness probe.
 - `GET /metrics` - Prometheus text metrics.
+- `GET /observability` - telemetry posture, Prometheus/Loki/Grafana hints, and runtime cardinality.
 - `GET /schema` - request/response contract summary for `economics.forecast.v1`.
 - `GET /example` - sample forecast request.
 - `GET /sources` - public/private source catalog.
@@ -81,6 +82,10 @@ The default Kubernetes deployment runs with:
 - `ECONOMICS_DATA_LAKE_URI=s3a://dd-economics/market-signals`
 - `ECONOMICS_ENABLE_PIPELINE_SUBMIT=false`
 - `ECONOMICS_ALLOW_EXTERNAL_PIPELINE_URLS=false`
+- `OTEL_SERVICE_NAME=dd-economics-server`
+- `OTEL_SERVICE_NAMESPACE=remote-dev`
+- `OTEL_RESOURCE_ATTRIBUTES=deployment.environment=stage,service.version=0.1.0,k8s.namespace.name=default`
+- `ECONOMICS_GRAFANA_DASHBOARD_UID=dd-economics-server`
 
 Optional sentiment-provider placeholders are mounted from `dd-agent-secrets` when present:
 
@@ -114,6 +119,20 @@ scores by source.
 `macroFiscalContext`, `ventureCapitalContext`, `sentimentContext`, and market `series` overrides,
 then returns model-signal rankings with component ledgers. Rankings are research signals, not
 financial advice or trade execution instructions.
+
+## Observability
+
+`GET /metrics` exposes Prometheus counters for HTTP requests, authenticated forecast/ingest/pipeline
+work, source pull success/failure, source pull response bytes, stored source points, and the last
+successful source pull unix timestamp. `GET /observability` returns the same telemetry contract as
+structured JSON for dashboards and operators.
+
+The service writes compact `dd.log.v1` JSON log envelopes to stdout/stderr so Promtail/Loki can
+collect startup, auth failure, NATS, pipeline, and source-pull events from container logs. OpenTelemetry
+metadata is explicit-only: use the `OTEL_*` env vars for service identity and resource attributes,
+but do not add runtime monkey-patching or auto-instrumentation. Grafana dashboards should start with
+the UID in `ECONOMICS_GRAFANA_DASHBOARD_UID` and chart request totals, source pull health, forecast
+latency/error logs, and `/readyz` availability.
 
 ## Public source templates
 
@@ -161,6 +180,7 @@ remain plan-only until their service auth and audit flows are explicitly designe
 ```sh
 cargo fmt
 cargo test
+curl -fsS http://127.0.0.1:8114/observability
 cargo test public_source_templates_fetch_live_external_data_when_available -- --ignored --nocapture
 ```
 

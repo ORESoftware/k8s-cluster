@@ -120,6 +120,7 @@ Gateway path map:
   `/fabrication/subjects/catalog`, `/fabrication/workers/catalog`,
   `/fabrication/results/catalog`,
   `/fabrication/instructions/languages`, `/fabrication/instructions/import/catalog`,
+  `/fabrication/instructions/import/preflight/catalog`,
   `/fabrication/instructions/validation/catalog`,
   `/fabrication/instructions/generation/catalog`,
   `/fabrication/instructions/generation/preflight/catalog`,
@@ -139,6 +140,7 @@ Gateway path map:
   `/fabrication/decomposition/catalog`,
   `POST /fabrication/decomposition/plan`, `POST /fabrication/decomposition/result`,
   `/fabrication/assembly/catalog`, `/fabrication/assembly/preflight/catalog`,
+  `POST /fabrication/interfaces/result`,
   `POST /fabrication/assembly/plan`,
   `POST /fabrication/assembly/result`,
   `/fabrication/release/catalog`, `/fabrication/release/preflight/catalog`,
@@ -221,7 +223,8 @@ Gateway path map:
   `dd-ai-ml-pipeline.ai-ml:8099` (internal auth required)
 - `/trading/`, `/trading/schema`, `/trading/example`, `POST /trading/decide` ->
   `dd-trading-server:8103` (internal auth required)
-- `/economics/`, `/economics/dashboard.json`, `/economics/model/equations`,
+- `/economics/`, `/economics/healthz`, `/economics/readyz`, `/economics/metrics`,
+  `/economics/observability`, `/economics/dashboard.json`, `/economics/model/equations`,
   `/economics/sources`, `/economics/sources/public`, `POST /economics/forecast`,
   `POST /economics/ingest`, `POST /economics/sources/pull`, `/economics/sentiment/sources`,
   `POST /economics/sentiment/analyze`, `/economics/macro/indicators`,
@@ -312,7 +315,7 @@ scrape still looks healthy. Operators can open `/grafana/fabrication` from the w
 directory to land on the dedicated `dd-fabrication-planner` dashboard for request intake,
 validation findings, machine-failure boundaries, required operator actions, fixture/setup
 blockers, split/combine reviews, capabilities/schema/example discovery, CAD/design format
-discovery, format-import catalog discovery, design-import review, design-import result review,
+discovery, format-import catalog and preflight discovery, design-import review, design-import result review,
 design-generation catalog discovery, strategy and calibration catalog discovery, validation-result and
 worker result-review route traffic, instruction-improvement review, instruction-boundary review,
 NATS/MDP fan-out, runtime-config delivery, HPA pressure, and logs.

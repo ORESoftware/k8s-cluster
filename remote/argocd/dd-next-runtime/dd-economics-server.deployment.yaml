@@ -20,7 +20,13 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-05-economics-server'
+        dd.dev/log-schema: dd.log.v1
+        dd.dev/otel-mode: explicit-only
+        dd.dev/telemetry-revision: '2026-06-07-economics-telemetry'
+        prometheus.io/path: /metrics
+        prometheus.io/port: '8114'
+        prometheus.io/scheme: http
+        prometheus.io/scrape: 'true'
       labels:
         app: dd-economics-server
     spec:
@@ -155,6 +161,14 @@ spec:
               value: /var/cache/dd-economics-server/target
             - name: RUST_LOG
               value: info
+            - name: OTEL_SERVICE_NAME
+              value: dd-economics-server
+            - name: OTEL_SERVICE_NAMESPACE
+              value: remote-dev
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=stage,service.version=0.1.0,k8s.namespace.name=default
+            - name: ECONOMICS_GRAFANA_DASHBOARD_UID
+              value: dd-economics-server
             - name: HOST
               value: 0.0.0.0
             - name: PORT

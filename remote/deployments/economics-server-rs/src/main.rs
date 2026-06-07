@@ -93,10 +93,16 @@ struct Metrics {
     forecasts_total: AtomicU64,
     ingest_requests_total: AtomicU64,
     source_pull_total: AtomicU64,
+    source_pull_success_total: AtomicU64,
+    source_pull_failure_total: AtomicU64,
+    source_pull_bytes_total: AtomicU64,
+    source_pull_stored_points_total: AtomicU64,
+    source_pull_last_success_unix_seconds: AtomicU64,
     sentiment_requests_total: AtomicU64,
     recommendation_requests_total: AtomicU64,
     pipeline_plan_requests_total: AtomicU64,
     pipeline_submit_requests_total: AtomicU64,
+    observability_requests_total: AtomicU64,
     auth_failures_total: AtomicU64,
     errors_total: AtomicU64,
     nats_messages_total: AtomicU64,
@@ -857,6 +863,69 @@ fn now_ms() -> u128 {
         .as_millis()
 }
 
+fn now_unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn now_unix_nano_string() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        .to_string()
+}
+
+fn severity_number(severity_text: &str) -> u8 {
+    match severity_text {
+        "TRACE" => 1,
+        "DEBUG" => 5,
+        "INFO" => 9,
+        "WARN" => 13,
+        "ERROR" => 17,
+        _ => 9,
+    }
+}
+
+fn telemetry_log_record(
+    severity_text: &str,
+    event_name: &str,
+    body: &str,
+    attributes: Value,
+) -> Value {
+    json!({
+        "schema": "dd.log.v1",
+        "time_unix_nano": now_unix_nano_string(),
+        "severity_text": severity_text,
+        "severity_number": severity_number(severity_text),
+        "body": body,
+        "resource_service_name": SERVICE_NAME,
+        "resource_service_namespace": env_value("OTEL_SERVICE_NAMESPACE", "remote-dev"),
+        "scope_name": "economics-server",
+        "event_name": event_name,
+        "attributes": attributes
+    })
+}
+
+fn emit_log(severity_text: &str, event_name: &str, body: &str, attributes: Value) {
+    let record = telemetry_log_record(severity_text, event_name, body, attributes).to_string();
+    if severity_number(severity_text) >= 17 {
+        eprintln!("{record}");
+    } else {
+        println!("{record}");
+    }
+}
+
+fn error_summary(error: &str) -> String {
+    error
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .take(256)
+        .collect()
+}
+
 fn clamp(value: f64, min: f64, max: f64) -> f64 {
     value.max(min).min(max)
 }
@@ -940,6 +1009,16 @@ fn auth_failure_response(state: &AppState, failure: AuthFailure) -> Response {
         AuthFailure::MissingSecret => "server auth secret is not configured",
         AuthFailure::Unauthorized => "unauthorized",
     };
+    emit_log(
+        "WARN",
+        "economics.auth.failure",
+        "economics request authentication failed",
+        json!({
+            "failure": message,
+            "authConfigured": state.config.server_auth_secret.is_some(),
+            "allowUnauthenticated": state.config.allow_unauthenticated
+        }),
+    );
     (
         StatusCode::UNAUTHORIZED,
         Json(json!({ "ok": false, "error": message })),
@@ -1037,6 +1116,12 @@ fn des_service_descriptor() -> Value {
             "GET",
             "/pipelines/catalog",
             "Spark, Airflow, Databricks, data lake, and NATS pipeline integration catalog.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/observability",
+            "Prometheus, Loki, Grafana, and explicit-only OTel telemetry posture.",
             EndpointKind::Service,
         )
         .endpoint(
@@ -1622,6 +1707,88 @@ fn public_source_catalog_payload(config: &Config) -> Value {
     })
 }
 
+fn observability_payload(state: &AppState) -> Value {
+    json!({
+        "ok": true,
+        "schemaVersion": SCHEMA_VERSION,
+        "service": SERVICE_NAME,
+        "prometheus": {
+            "metricsRoute": "GET /metrics",
+            "contentType": "text/plain; version=0.0.4",
+            "scrapePort": 8114,
+            "lowCardinalityMetrics": true,
+            "counters": [
+                "dd_economics_server_http_requests_total",
+                "dd_economics_server_forecasts_total",
+                "dd_economics_server_ingest_requests_total",
+                "dd_economics_server_source_pull_total",
+                "dd_economics_server_source_pull_success_total",
+                "dd_economics_server_source_pull_failure_total",
+                "dd_economics_server_source_pull_bytes_total",
+                "dd_economics_server_source_pull_stored_points_total",
+                "dd_economics_server_sentiment_requests_total",
+                "dd_economics_server_recommendation_requests_total",
+                "dd_economics_server_pipeline_plan_requests_total",
+                "dd_economics_server_pipeline_submit_requests_total",
+                "dd_economics_server_observability_requests_total",
+                "dd_economics_server_auth_failures_total",
+                "dd_economics_server_errors_total",
+                "dd_economics_server_nats_messages_total",
+                "dd_economics_server_nats_published_total"
+            ],
+            "gauges": [
+                "dd_economics_server_source_pull_last_success_unix_seconds"
+            ]
+        },
+        "loki": {
+            "collectionBoundary": "container stdout/stderr through Promtail",
+            "structuredLogSchema": "dd.log.v1",
+            "eventNames": [
+                "economics.server.start",
+                "economics.auth.failure",
+                "economics.source_pull.ok",
+                "economics.source_pull.error",
+                "economics.nats.loop.disabled",
+                "economics.nats.loop.start",
+                "economics.nats.subscribe.error",
+                "economics.nats.request.oversize",
+                "economics.nats.forecast.error",
+                "economics.nats.request.invalid",
+                "economics.pipeline.plan.encode.error"
+            ],
+            "labelGuidance": "Promtail should promote only low-cardinality fields such as schema, severity_text, service, namespace, and app labels."
+        },
+        "otel": {
+            "mode": "explicit-only",
+            "autoInstrumentation": false,
+            "runtimeMonkeyPatching": false,
+            "serviceName": env_value("OTEL_SERVICE_NAME", SERVICE_NAME),
+            "serviceNamespace": env_value("OTEL_SERVICE_NAMESPACE", "remote-dev"),
+            "resourceAttributesConfigured": optional_env("OTEL_RESOURCE_ATTRIBUTES").is_some(),
+            "otlpEndpointConfigured": optional_env("OTEL_EXPORTER_OTLP_ENDPOINT").is_some(),
+            "collector": "dd-otel-collector handles explicit OTLP and Prometheus scrape pipelines; this service exposes Prometheus metrics and dd.log.v1 logs without auto-instrumentation."
+        },
+        "grafana": {
+            "dashboardUid": env_value("ECONOMICS_GRAFANA_DASHBOARD_UID", "dd-economics-server"),
+            "suggestedPanels": [
+                "request, error, and auth-failure rates",
+                "source pull success/failure, bytes, stored points, and last success timestamp",
+                "forecast/recommendation/pipeline plan rates",
+                "Loki dd.log.v1 warning/error stream filtered by resource_service_name",
+                "pod readiness/restarts from k8s resource exporter"
+            ]
+        },
+        "runtime": {
+            "natsConfigured": state.nats.is_some(),
+            "publicSourceTemplateCount": public_source_templates().len(),
+            "knownPublicSourceHosts": public_source_hosts(),
+            "sourcePullAllowedHosts": state.config.allowed_source_hosts,
+            "storedSeries": state.series_store.read().map(|store| store.len()).unwrap_or(0)
+        },
+        "atMs": now_ms()
+    })
+}
+
 fn sentiment_source_catalog(credentials: &SentimentCredentialStatus) -> Value {
     json!({
         "ok": true,
@@ -1729,6 +1896,12 @@ fn schema_descriptor() -> Value {
             "plan": "POST /pipelines/plan creates redacted job intents for Spark pipeline server, Spark feature builds, Airflow DAG triggers, Databricks run-now payloads, and NATS public-data pipeline events.",
             "submit": "POST /pipelines/submit submits only spark-pipeline-server intents and only when ECONOMICS_ENABLE_PIPELINE_SUBMIT=true.",
             "audit": "GET /audit/hardening reports auth, request bounds, SSRF controls, secret handling, and residual risks."
+        },
+        "observability": {
+            "route": "GET /observability",
+            "prometheus": "GET /metrics exposes low-cardinality counters and gauges.",
+            "loki": "stdout/stderr emits compact dd.log.v1 JSON records for Promtail/Loki.",
+            "otel": "explicit-only posture; no auto-instrumentation or runtime monkey-patching."
         }
     })
 }
@@ -1794,6 +1967,7 @@ fn service_descriptor(state: &AppState) -> Value {
             "pipelineCatalog": "GET /pipelines/catalog",
             "pipelinePlan": "POST /pipelines/plan",
             "pipelineSubmit": "POST /pipelines/submit",
+            "observability": "GET /observability",
             "equations": "GET /model/equations",
             "schema": "GET /schema",
             "example": "GET /example",
@@ -1830,6 +2004,7 @@ fn service_descriptor(state: &AppState) -> Value {
             "submitRoute": "POST /pipelines/submit",
             "auditRoute": "GET /audit/hardening"
         },
+        "observability": observability_payload(state),
         "equationCount": equation_catalog().len(),
         "sourceCount": source_catalog().len(),
         "publicSourceTemplateCount": public_source_templates().len(),
@@ -3284,6 +3459,15 @@ fn hardening_audit_payload(state: &AppState) -> Value {
             "sparkPipelineAuthEnv": state.config.spark_pipeline_auth_env,
             "databricksTokenEnv": "ECONOMICS_DATABRICKS_TOKEN"
         },
+        "observability": {
+            "prometheusMetricsRoute": "GET /metrics",
+            "observabilityRoute": "GET /observability",
+            "structuredLogSchema": "dd.log.v1",
+            "lokiCollectionBoundary": "container stdout/stderr via Promtail",
+            "otelMode": "explicit-only",
+            "autoInstrumentation": false,
+            "runtimeMonkeyPatching": false
+        },
         "bigData": pipeline_integration_status(state),
         "deploymentPosture": {
             "expectedNoServiceAccountToken": true,
@@ -3682,7 +3866,15 @@ async fn publish_pipeline_plan(state: &AppState, plan: &PipelinePlanResponse) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            eprintln!("economics server failed to encode pipeline plan: {error}");
+            emit_log(
+                "ERROR",
+                "economics.pipeline.plan.encode.error",
+                "failed to encode economics pipeline plan",
+                json!({
+                    "error": error_summary(&error.to_string()),
+                    "requestId": &plan.request_id
+                }),
+            );
             return;
         }
     };
@@ -5903,7 +6095,15 @@ async fn publish_forecast(state: &AppState, response: &ForecastResponse) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            eprintln!("economics server failed to encode forecast result: {error}");
+            emit_log(
+                "ERROR",
+                "economics.forecast.result.encode.error",
+                "failed to encode economics forecast result",
+                json!({
+                    "error": error_summary(&error.to_string()),
+                    "requestId": &response.request_id
+                }),
+            );
             return;
         }
     };
@@ -5948,12 +6148,25 @@ async fn publish_market_event(state: &AppState, event: Value) {
 
 async fn run_nats_loop(state: AppState) {
     let Some(nats) = state.nats.clone() else {
-        println!("economics server nats loop disabled: NATS_URL is not configured");
+        emit_log(
+            "INFO",
+            "economics.nats.loop.disabled",
+            "economics NATS loop disabled",
+            json!({
+                "reason": "NATS_URL is not configured"
+            }),
+        );
         return;
     };
-    println!(
-        "economics server nats loop starting: subject={} queueGroup={} resultSubject={}",
-        state.config.request_subject, state.config.queue_group, state.config.result_subject
+    emit_log(
+        "INFO",
+        "economics.nats.loop.start",
+        "economics NATS loop starting",
+        json!({
+            "requestSubject": state.config.request_subject,
+            "queueGroup": state.config.queue_group,
+            "resultSubject": state.config.result_subject
+        }),
     );
     let mut subscription = match nats
         .queue_subscribe(
@@ -5964,7 +6177,16 @@ async fn run_nats_loop(state: AppState) {
     {
         Ok(subscription) => subscription,
         Err(error) => {
-            eprintln!("economics server nats subscribe failed: {error}");
+            emit_log(
+                "ERROR",
+                "economics.nats.subscribe.error",
+                "economics NATS subscribe failed",
+                json!({
+                    "error": error_summary(&error.to_string()),
+                    "requestSubject": state.config.request_subject,
+                    "queueGroup": state.config.queue_group
+                }),
+            );
             return;
         }
     };
@@ -5976,9 +6198,14 @@ async fn run_nats_loop(state: AppState) {
         let payload = message.payload.to_vec();
         if payload.len() > MAX_NATS_PAYLOAD_BYTES {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
-                "economics server rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
-                payload.len()
+            emit_log(
+                "WARN",
+                "economics.nats.request.oversize",
+                "economics NATS forecast request rejected because payload is too large",
+                json!({
+                    "bytes": payload.len(),
+                    "maxBytes": MAX_NATS_PAYLOAD_BYTES
+                }),
             );
             continue;
         }
@@ -5998,7 +6225,14 @@ async fn run_nats_loop(state: AppState) {
                             .metrics
                             .errors_total
                             .fetch_add(1, Ordering::Relaxed);
-                        eprintln!("economics server nats forecast failed: {error}");
+                        emit_log(
+                            "ERROR",
+                            "economics.nats.forecast.error",
+                            "economics NATS forecast failed",
+                            json!({
+                                "error": error_summary(&error)
+                            }),
+                        );
                     }
                 },
                 Err(error) => {
@@ -6006,7 +6240,14 @@ async fn run_nats_loop(state: AppState) {
                         .metrics
                         .errors_total
                         .fetch_add(1, Ordering::Relaxed);
-                    eprintln!("economics server invalid nats forecast request: {error}");
+                    emit_log(
+                        "WARN",
+                        "economics.nats.request.invalid",
+                        "economics NATS forecast request was invalid JSON",
+                        json!({
+                            "error": error_summary(&error.to_string())
+                        }),
+                    );
                 }
             }
         });
@@ -6142,6 +6383,18 @@ async fn pipeline_catalog(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn hardening_audit(State(state): State<AppState>) -> impl IntoResponse {
     Json(hardening_audit_payload(&state))
+}
+
+async fn observability(State(state): State<AppState>) -> impl IntoResponse {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .observability_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(observability_payload(&state))
 }
 
 async fn des_engine_descriptor() -> impl IntoResponse {
@@ -6426,6 +6679,18 @@ async fn pull_source_http(
         Ok(response) => Json(response).into_response(),
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .source_pull_failure_total
+                .fetch_add(1, Ordering::Relaxed);
+            emit_log(
+                "WARN",
+                "economics.source_pull.error",
+                "economics source pull failed",
+                json!({
+                    "error": error_summary(&error)
+                }),
+            );
             (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "ok": false, "error": error })),
@@ -6538,6 +6803,38 @@ async fn pull_source(state: &AppState, request: ApiPullRequest) -> Result<ApiPul
         warnings,
         fetched_at_ms: now_ms(),
     };
+    state
+        .metrics
+        .source_pull_success_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .source_pull_bytes_total
+        .fetch_add(bytes.len() as u64, Ordering::Relaxed);
+    state
+        .metrics
+        .source_pull_stored_points_total
+        .fetch_add(stored_points as u64, Ordering::Relaxed);
+    state
+        .metrics
+        .source_pull_last_success_unix_seconds
+        .store(now_unix_seconds(), Ordering::Relaxed);
+    emit_log(
+        "INFO",
+        "economics.source_pull.ok",
+        "economics source pull completed",
+        json!({
+            "requestId": &response.request_id,
+            "sourceId": &response.source_id,
+            "source": &response.source,
+            "urlHost": &response.url_host,
+            "httpStatus": response.http_status,
+            "bytes": response.bytes,
+            "storedPoints": response.stored_points,
+            "instrumentId": &response.instrument_id,
+            "parser": &response.parser
+        }),
+    );
     publish_market_event(
         state,
         json!({
@@ -7112,6 +7409,10 @@ fn number_from_text(value: &str) -> Option<f64> {
 }
 
 async fn metrics(State(state): State<AppState>) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
     let body = format!(
         "# HELP dd_economics_server_http_requests_total HTTP requests observed by the economics service.\n\
          # TYPE dd_economics_server_http_requests_total counter\n\
@@ -7125,6 +7426,21 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_economics_server_source_pull_total Source pull requests attempted.\n\
          # TYPE dd_economics_server_source_pull_total counter\n\
          dd_economics_server_source_pull_total {}\n\
+         # HELP dd_economics_server_source_pull_success_total Source pull requests that fetched and parsed/stored or fetched successfully.\n\
+         # TYPE dd_economics_server_source_pull_success_total counter\n\
+         dd_economics_server_source_pull_success_total {}\n\
+         # HELP dd_economics_server_source_pull_failure_total Source pull requests rejected or failed before a successful response.\n\
+         # TYPE dd_economics_server_source_pull_failure_total counter\n\
+         dd_economics_server_source_pull_failure_total {}\n\
+         # HELP dd_economics_server_source_pull_bytes_total Total response bytes fetched by successful source pulls.\n\
+         # TYPE dd_economics_server_source_pull_bytes_total counter\n\
+         dd_economics_server_source_pull_bytes_total {}\n\
+         # HELP dd_economics_server_source_pull_stored_points_total Total normalized observations stored by source pulls.\n\
+         # TYPE dd_economics_server_source_pull_stored_points_total counter\n\
+         dd_economics_server_source_pull_stored_points_total {}\n\
+         # HELP dd_economics_server_source_pull_last_success_unix_seconds Unix timestamp of the latest successful source pull.\n\
+         # TYPE dd_economics_server_source_pull_last_success_unix_seconds gauge\n\
+         dd_economics_server_source_pull_last_success_unix_seconds {}\n\
          # HELP dd_economics_server_sentiment_requests_total Sentiment analysis requests accepted.\n\
          # TYPE dd_economics_server_sentiment_requests_total counter\n\
          dd_economics_server_sentiment_requests_total {}\n\
@@ -7137,6 +7453,9 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_economics_server_pipeline_submit_requests_total Pipeline submit requests accepted.\n\
          # TYPE dd_economics_server_pipeline_submit_requests_total counter\n\
          dd_economics_server_pipeline_submit_requests_total {}\n\
+         # HELP dd_economics_server_observability_requests_total Observability descriptor requests served.\n\
+         # TYPE dd_economics_server_observability_requests_total counter\n\
+         dd_economics_server_observability_requests_total {}\n\
          # HELP dd_economics_server_auth_failures_total Rejected requests with missing or invalid auth.\n\
          # TYPE dd_economics_server_auth_failures_total counter\n\
          dd_economics_server_auth_failures_total {}\n\
@@ -7153,6 +7472,26 @@ async fn metrics(State(state): State<AppState>) -> Response {
         state.metrics.forecasts_total.load(Ordering::Relaxed),
         state.metrics.ingest_requests_total.load(Ordering::Relaxed),
         state.metrics.source_pull_total.load(Ordering::Relaxed),
+        state
+            .metrics
+            .source_pull_success_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .source_pull_failure_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .source_pull_bytes_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .source_pull_stored_points_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .source_pull_last_success_unix_seconds
+            .load(Ordering::Relaxed),
         state.metrics.sentiment_requests_total.load(Ordering::Relaxed),
         state
             .metrics
@@ -7165,6 +7504,10 @@ async fn metrics(State(state): State<AppState>) -> Response {
         state
             .metrics
             .pipeline_submit_requests_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .observability_requests_total
             .load(Ordering::Relaxed),
         state.metrics.auth_failures_total.load(Ordering::Relaxed),
         state.metrics.errors_total.load(Ordering::Relaxed),
@@ -7231,6 +7574,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/vc/investment", get(vc_investment))
         .route("/recommendations", post(recommendations_http))
         .route("/audit/hardening", get(hardening_audit))
+        .route("/observability", get(observability))
         .route("/pipelines/catalog", get(pipeline_catalog))
         .route("/pipelines/plan", post(pipeline_plan_http))
         .route("/pipelines/submit", post(pipeline_submit_http))
@@ -7248,7 +7592,17 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("{SERVICE_NAME} listening on http://{addr}");
+    emit_log(
+        "INFO",
+        "economics.server.start",
+        "dd-economics-server listening",
+        json!({
+            "address": addr.to_string(),
+            "metricsRoute": "GET /metrics",
+            "observabilityRoute": "GET /observability",
+            "otelMode": "explicit-only"
+        }),
+    );
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(async {
@@ -8133,6 +8487,52 @@ mod tests {
 
         let error = validate_series(&[series]).expect_err("duplicate date rejected");
         assert!(error.contains("duplicated"));
+    }
+
+    #[test]
+    fn observability_payload_advertises_explicit_otel_and_dd_log_schema() {
+        let state = test_state();
+        let payload = observability_payload(&state);
+
+        assert_eq!(payload["ok"], true);
+        assert_eq!(payload["loki"]["structuredLogSchema"], "dd.log.v1");
+        assert_eq!(payload["otel"]["mode"], "explicit-only");
+        assert_eq!(payload["otel"]["autoInstrumentation"], false);
+        assert_eq!(payload["otel"]["runtimeMonkeyPatching"], false);
+        assert_eq!(payload["prometheus"]["metricsRoute"], "GET /metrics");
+    }
+
+    #[test]
+    fn telemetry_log_record_uses_dd_log_v1_envelope() {
+        let record = telemetry_log_record(
+            "INFO",
+            "economics.unit.test",
+            "unit test log",
+            json!({ "requestId": "unit" }),
+        );
+
+        assert_eq!(record["schema"], "dd.log.v1");
+        assert_eq!(record["severity_text"], "INFO");
+        assert_eq!(record["severity_number"], 9);
+        assert_eq!(record["resource_service_name"], SERVICE_NAME);
+        assert_eq!(record["event_name"], "economics.unit.test");
+        assert_eq!(record["attributes"]["requestId"], "unit");
+    }
+
+    #[tokio::test]
+    async fn metrics_expose_source_and_observability_counters() {
+        let response = metrics(State(test_state())).await;
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("metrics body bytes");
+        let body = String::from_utf8(bytes.to_vec()).expect("metrics utf8");
+
+        assert!(body.contains("dd_economics_server_source_pull_success_total"));
+        assert!(body.contains("dd_economics_server_source_pull_failure_total"));
+        assert!(body.contains("dd_economics_server_source_pull_bytes_total"));
+        assert!(body.contains("dd_economics_server_source_pull_stored_points_total"));
+        assert!(body.contains("dd_economics_server_source_pull_last_success_unix_seconds"));
+        assert!(body.contains("dd_economics_server_observability_requests_total"));
     }
 
     #[tokio::test]

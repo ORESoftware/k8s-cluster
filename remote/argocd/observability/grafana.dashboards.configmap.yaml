@@ -1059,6 +1059,7 @@ data:
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/subtractive/preflight/catalog\" [$__interval]))", "legendFormat": "subtractive preflight catalog", "refId": "SPF" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/cleanliness/preflight/catalog\" [$__interval]))", "legendFormat": "cleanliness preflight catalog", "refId": "CLN" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/interfaces/preflight/catalog\" [$__interval]))", "legendFormat": "interface preflight catalog", "refId": "IFP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/interfaces/result\" [$__interval]))", "legendFormat": "interface result review", "refId": "IFR" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/cnc/catalog\" [$__interval]))", "legendFormat": "CNC intake catalog", "refId": "CNC" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/hybrid/catalog\" [$__interval]))", "legendFormat": "hybrid catalog", "refId": "HYB" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/cells/catalog\" [$__interval]))", "legendFormat": "cell catalog", "refId": "CELL" },
@@ -1095,6 +1096,7 @@ data:
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/generation/preflight/catalog\" [$__interval]))", "legendFormat": "instruction generation preflight catalog", "refId": "IGP" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/languages\" [$__interval]))", "legendFormat": "instruction language catalog", "refId": "AR" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/import/catalog\" [$__interval]))", "legendFormat": "instruction import catalog", "refId": "IIC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/import/preflight/catalog\" [$__interval]))", "legendFormat": "instruction import preflight catalog", "refId": "IIP" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/validation/catalog\" [$__interval]))", "legendFormat": "instruction validation catalog", "refId": "BX" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/generate\" [$__interval]))", "legendFormat": "instruction generation", "refId": "Y" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/generation/result\" [$__interval]))", "legendFormat": "instruction generation result review", "refId": "BJ" },
@@ -1231,6 +1233,157 @@ data:
       "timezone": "browser",
       "title": "Fabrication Planner",
       "uid": "dd-fabrication-planner",
+      "version": 1,
+      "weekStart": ""
+    }
+  economics-server.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [
+        { "title": "Economics Dashboard", "type": "link", "url": "/economics/" },
+        { "title": "Observability JSON", "type": "link", "url": "/economics/observability" },
+        { "title": "Deployment Drilldown", "type": "link", "url": "/grafana/depl/dd-economics-server" }
+      ],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "id": 1,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "up{job=\"dd-economics-server\"}", "refId": "A" } ],
+          "title": "Service Scrape Up",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "id": 2,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(ALERTS{alertstate=\"firing\",service=\"dd-economics-server\"}) or vector(0)", "refId": "A" } ],
+          "title": "Firing Economics Alerts",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "unit": "s", "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 86400 }, { "color": "red", "value": 172800 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "id": 3,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "time() - max(dd_economics_server_source_pull_last_success_unix_seconds)", "refId": "A" } ],
+          "title": "Seconds Since Source Success",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "unit": "short", "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "id": 4,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(dd_economics_server_source_pull_stored_points_total)", "refId": "A" } ],
+          "title": "Stored Source Points",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 4 },
+          "id": 5,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_economics_server_forecasts_total[5m]))", "legendFormat": "forecasts", "refId": "A" },
+            { "expr": "sum(rate(dd_economics_server_recommendation_requests_total[5m]))", "legendFormat": "recommendations", "refId": "B" },
+            { "expr": "sum(rate(dd_economics_server_sentiment_requests_total[5m]))", "legendFormat": "sentiment", "refId": "C" },
+            { "expr": "sum(rate(dd_economics_server_pipeline_plan_requests_total[5m]))", "legendFormat": "pipeline plans", "refId": "D" }
+          ],
+          "title": "Model and Decision Requests",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 4 },
+          "id": 6,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_economics_server_source_pull_success_total[10m]))", "legendFormat": "source pull success", "refId": "A" },
+            { "expr": "sum(rate(dd_economics_server_source_pull_failure_total[10m]))", "legendFormat": "source pull failure", "refId": "B" },
+            { "expr": "sum(rate(dd_economics_server_source_pull_bytes_total[10m]))", "legendFormat": "source bytes", "refId": "C" },
+            { "expr": "sum(rate(dd_economics_server_source_pull_stored_points_total[10m]))", "legendFormat": "stored points", "refId": "D" }
+          ],
+          "title": "External Source Pull Health",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 11 },
+          "id": 7,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_economics_server_errors_total[5m]))", "legendFormat": "errors", "refId": "A" },
+            { "expr": "sum(rate(dd_economics_server_auth_failures_total[5m]))", "legendFormat": "auth failures", "refId": "B" },
+            { "expr": "sum(rate(dd_economics_server_nats_messages_total[5m]))", "legendFormat": "nats requests", "refId": "C" },
+            { "expr": "sum(rate(dd_economics_server_nats_published_total[5m]))", "legendFormat": "nats published", "refId": "D" }
+          ],
+          "title": "Errors, Auth, and NATS",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 11 },
+          "id": 8,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_desired_replicas{workload=\"dd-economics-server\"})", "legendFormat": "desired {{namespace}}/{{kind}}/{{workload}}", "refId": "A" },
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_available_replicas{workload=\"dd-economics-server\"})", "legendFormat": "available {{namespace}}/{{kind}}/{{workload}}", "refId": "B" },
+            { "expr": "sum by (namespace, deployment, app) (dd_k8s_deployment_unavailable_replicas{namespace=\"default\",deployment=\"dd-economics-server\",app=\"dd-economics-server\"})", "legendFormat": "unavailable {{namespace}}/{{deployment}}", "refId": "C" }
+          ],
+          "title": "Kubernetes Workload State",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 18 },
+          "id": 9,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [ { "expr": "{deployment=\"dd-economics-server\"} |~ \"(?i)(warn|error|fatal|panic|failed|source_pull|auth|nats|pipeline)\"", "refId": "A" } ],
+          "title": "Recent Economics Logs",
+          "type": "logs"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 39,
+      "tags": [ "economics", "rust", "forecast", "markets", "observability" ],
+      "templating": { "list": [] },
+      "time": { "from": "now-6h", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Economics Server",
+      "uid": "dd-economics-server",
       "version": 1,
       "weekStart": ""
     }
