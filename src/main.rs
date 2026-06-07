@@ -57409,7 +57409,7 @@ async fn landing_page() -> axum::response::Html<&'static str> {
     <div class="grid">
       <section>
         <h2>What It Takes In</h2>
-        <p>Submit fabrication intents, CAD/model/slicer sources, machine profiles, existing G-code, CAM intermediate files such as APT/CLDATA, controller programs, or text job sheets.</p>
+        <p>Submit fabrication intents, native CAD, mesh/model/slicer sources, machine profiles, existing G-code, CAM intermediate files such as APT/CLDATA, controller programs, or text job sheets.</p>
       </section>
       <section>
         <h2>What It Builds</h2>
@@ -57436,6 +57436,11 @@ async fn landing_page() -> axum::response::Html<&'static str> {
         <div class="step"><strong>5. Learn</strong><br>Post outcomes and worker result reviews so future jobs can prefer safer strategies.</div>
         <div class="step"><strong>6. Inspect</strong><br>Fetch retained jobs, artifacts, and release bundles before downstream release review.</div>
       </div>
+    </section>
+
+    <section>
+      <h2>Design And Toolchain Intake</h2>
+      <p>Native and cloud CAD intake includes PTC Creo / Pro/ENGINEER, SOLIDWORKS, Autodesk Fusion, Siemens NX, CATIA, Onshape, FreeCAD, OpenSCAD, Blender, and ZBrush, plus neutral and print handoffs such as STEP, Parasolid, STL, 3MF, OBJ, AMF, and slicer projects from PrusaSlicer, OrcaSlicer, Cura, and Bambu Studio. Ambiguous extensions such as <code>.prt</code> and <code>.asm</code> require source-system or translator evidence before downstream release.</p>
     </section>
 
     <p class="note">Start with <a href="/docs/api">API docs</a>, <a href="/fabrication/capabilities">capabilities</a>, <a href="/fabrication/intake/catalog">intake guide</a>, <a href="/fabrication/templates/catalog">request templates</a>, <a href="/fabrication/schema">schema</a>, or <a href="/fabrication/examples">examples</a>. This service produces planning and evidence packets; machine-ready release stays gated until validation, simulation, controller/postprocessor review, setup, quality, and signoff evidence clear.</p>
@@ -106948,6 +106953,22 @@ mod tests {
             "submitted fabrication goal into evidence-backed choices",
             "decomposes or combines parts when a single process is risky",
             "records outcomes so later jobs can learn from the route",
+            "Design And Toolchain Intake",
+            "PTC Creo / Pro/ENGINEER",
+            "SOLIDWORKS",
+            "Autodesk Fusion",
+            "Siemens NX",
+            "CATIA",
+            "Onshape",
+            "FreeCAD",
+            "OpenSCAD",
+            "Blender",
+            "ZBrush",
+            "PrusaSlicer",
+            "OrcaSlicer",
+            "Cura",
+            "Bambu Studio",
+            "Ambiguous extensions such as",
             "3D printing",
             "CNC mills and routers",
             "CAM intermediate files such as APT/CLDATA",
