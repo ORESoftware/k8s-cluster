@@ -149,8 +149,6 @@
       ]
     },
     {
-<<<<<<< HEAD
-=======
       "service": "dd-escrow-rs",
       "language": "rust",
       "routeCount": 16,
@@ -165,7 +163,6 @@
       ]
     },
     {
->>>>>>> 8bbc54c412d8218d919057b6af5c2fb66fe267c1
       "service": "dd-music-rs",
       "language": "rust",
       "routeCount": 12,
