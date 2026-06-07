@@ -251,6 +251,375 @@ pub struct MusicSongVotesDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    sound_recorder_accounts (id) {
+        id -> Uuid,
+        status -> Varchar,
+        external_subject -> Nullable<Varchar>,
+        display_name -> Nullable<Varchar>,
+        legal_region -> Nullable<Varchar>,
+        retention_hours -> Int4,
+        retention_policy_version -> Varchar,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_accounts)]
+pub struct SoundRecorderAccountsDieselRow {
+    pub id: Uuid,
+    pub status: String,
+    pub external_subject: Option<String>,
+    pub display_name: Option<String>,
+    pub legal_region: Option<String>,
+    pub retention_hours: i32,
+    pub retention_policy_version: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_accounts)]
+pub struct SoundRecorderAccountsDieselInsert {
+    pub id: Option<Uuid>,
+    pub status: Option<String>,
+    pub external_subject: Option<String>,
+    pub display_name: Option<String>,
+    pub legal_region: Option<String>,
+    pub retention_hours: Option<i32>,
+    pub retention_policy_version: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    sound_recorder_devices (id) {
+        id -> Uuid,
+        account_id -> Uuid,
+        platform -> Varchar,
+        status -> Varchar,
+        install_id -> Varchar,
+        device_label -> Nullable<Varchar>,
+        app_version -> Nullable<Varchar>,
+        os_version -> Nullable<Varchar>,
+        token_hash -> Varchar,
+        token_last4 -> Varchar,
+        consent_version -> Varchar,
+        consent_accepted_at -> Timestamptz,
+        recording_indicator_acknowledged -> Bool,
+        last_seen_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_devices)]
+pub struct SoundRecorderDevicesDieselRow {
+    pub id: Uuid,
+    pub account_id: Uuid,
+    pub platform: String,
+    pub status: String,
+    pub install_id: String,
+    pub device_label: Option<String>,
+    pub app_version: Option<String>,
+    pub os_version: Option<String>,
+    pub token_hash: String,
+    pub token_last4: String,
+    pub consent_version: String,
+    pub consent_accepted_at: DateTime<Utc>,
+    pub recording_indicator_acknowledged: bool,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_devices)]
+pub struct SoundRecorderDevicesDieselInsert {
+    pub id: Option<Uuid>,
+    pub account_id: Option<Uuid>,
+    pub platform: Option<String>,
+    pub status: Option<String>,
+    pub install_id: Option<String>,
+    pub device_label: Option<String>,
+    pub app_version: Option<String>,
+    pub os_version: Option<String>,
+    pub token_hash: Option<String>,
+    pub token_last4: Option<String>,
+    pub consent_version: Option<String>,
+    pub consent_accepted_at: Option<DateTime<Utc>>,
+    pub recording_indicator_acknowledged: Option<bool>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    sound_recorder_upload_sessions (id) {
+        id -> Uuid,
+        account_id -> Uuid,
+        device_id -> Uuid,
+        status -> Varchar,
+        storage_provider -> Varchar,
+        storage_bucket -> Varchar,
+        storage_prefix -> Text,
+        content_type -> Varchar,
+        codec -> Nullable<Varchar>,
+        sample_rate -> Nullable<Int4>,
+        channel_count -> Int4,
+        segment_duration_seconds -> Int4,
+        max_segment_bytes -> Int4,
+        started_at -> Timestamptz,
+        last_heartbeat_at -> Nullable<Timestamptz>,
+        closed_at -> Nullable<Timestamptz>,
+        expires_at -> Nullable<Timestamptz>,
+        client_timezone -> Nullable<Varchar>,
+        legal_region -> Nullable<Varchar>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_upload_sessions)]
+pub struct SoundRecorderUploadSessionsDieselRow {
+    pub id: Uuid,
+    pub account_id: Uuid,
+    pub device_id: Uuid,
+    pub status: String,
+    pub storage_provider: String,
+    pub storage_bucket: String,
+    pub storage_prefix: String,
+    pub content_type: String,
+    pub codec: Option<String>,
+    pub sample_rate: Option<i32>,
+    pub channel_count: i32,
+    pub segment_duration_seconds: i32,
+    pub max_segment_bytes: i32,
+    pub started_at: DateTime<Utc>,
+    pub last_heartbeat_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub client_timezone: Option<String>,
+    pub legal_region: Option<String>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_upload_sessions)]
+pub struct SoundRecorderUploadSessionsDieselInsert {
+    pub id: Option<Uuid>,
+    pub account_id: Option<Uuid>,
+    pub device_id: Option<Uuid>,
+    pub status: Option<String>,
+    pub storage_provider: Option<String>,
+    pub storage_bucket: Option<String>,
+    pub storage_prefix: Option<String>,
+    pub content_type: Option<String>,
+    pub codec: Option<String>,
+    pub sample_rate: Option<i32>,
+    pub channel_count: Option<i32>,
+    pub segment_duration_seconds: Option<i32>,
+    pub max_segment_bytes: Option<i32>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub last_heartbeat_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub client_timezone: Option<String>,
+    pub legal_region: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    sound_recorder_segments (id) {
+        id -> Uuid,
+        account_id -> Uuid,
+        device_id -> Uuid,
+        session_id -> Uuid,
+        sequence_number -> Int4,
+        status -> Varchar,
+        storage_provider -> Varchar,
+        storage_bucket -> Varchar,
+        storage_key -> Text,
+        content_type -> Varchar,
+        codec -> Nullable<Varchar>,
+        captured_started_at -> Timestamptz,
+        captured_ended_at -> Nullable<Timestamptz>,
+        duration_millis -> Int4,
+        byte_count -> Nullable<Int4>,
+        sha256_hex -> Nullable<Varchar>,
+        upload_url_expires_at -> Nullable<Timestamptz>,
+        etag -> Nullable<Varchar>,
+        uploaded_at -> Nullable<Timestamptz>,
+        expires_at -> Timestamptz,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_segments)]
+pub struct SoundRecorderSegmentsDieselRow {
+    pub id: Uuid,
+    pub account_id: Uuid,
+    pub device_id: Uuid,
+    pub session_id: Uuid,
+    pub sequence_number: i32,
+    pub status: String,
+    pub storage_provider: String,
+    pub storage_bucket: String,
+    pub storage_key: String,
+    pub content_type: String,
+    pub codec: Option<String>,
+    pub captured_started_at: DateTime<Utc>,
+    pub captured_ended_at: Option<DateTime<Utc>>,
+    pub duration_millis: i32,
+    pub byte_count: Option<i32>,
+    pub sha256_hex: Option<String>,
+    pub upload_url_expires_at: Option<DateTime<Utc>>,
+    pub etag: Option<String>,
+    pub uploaded_at: Option<DateTime<Utc>>,
+    pub expires_at: DateTime<Utc>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_segments)]
+pub struct SoundRecorderSegmentsDieselInsert {
+    pub id: Option<Uuid>,
+    pub account_id: Option<Uuid>,
+    pub device_id: Option<Uuid>,
+    pub session_id: Option<Uuid>,
+    pub sequence_number: Option<i32>,
+    pub status: Option<String>,
+    pub storage_provider: Option<String>,
+    pub storage_bucket: Option<String>,
+    pub storage_key: Option<String>,
+    pub content_type: Option<String>,
+    pub codec: Option<String>,
+    pub captured_started_at: Option<DateTime<Utc>>,
+    pub captured_ended_at: Option<DateTime<Utc>>,
+    pub duration_millis: Option<i32>,
+    pub byte_count: Option<i32>,
+    pub sha256_hex: Option<String>,
+    pub upload_url_expires_at: Option<DateTime<Utc>>,
+    pub etag: Option<String>,
+    pub uploaded_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    sound_recorder_evidence_exports (id) {
+        id -> Uuid,
+        account_id -> Uuid,
+        device_id -> Nullable<Uuid>,
+        created_by_device_id -> Nullable<Uuid>,
+        status -> Varchar,
+        requested_from -> Timestamptz,
+        requested_to -> Timestamptz,
+        segment_count -> Int4,
+        manifest -> Jsonb,
+        download_url_expires_at -> Nullable<Timestamptz>,
+        requested_at -> Timestamptz,
+        ready_at -> Nullable<Timestamptz>,
+        expires_at -> Nullable<Timestamptz>,
+        meta_data -> Jsonb,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_evidence_exports)]
+pub struct SoundRecorderEvidenceExportsDieselRow {
+    pub id: Uuid,
+    pub account_id: Uuid,
+    pub device_id: Option<Uuid>,
+    pub created_by_device_id: Option<Uuid>,
+    pub status: String,
+    pub requested_from: DateTime<Utc>,
+    pub requested_to: DateTime<Utc>,
+    pub segment_count: i32,
+    pub manifest: Value,
+    pub download_url_expires_at: Option<DateTime<Utc>>,
+    pub requested_at: DateTime<Utc>,
+    pub ready_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub meta_data: Value,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_evidence_exports)]
+pub struct SoundRecorderEvidenceExportsDieselInsert {
+    pub id: Option<Uuid>,
+    pub account_id: Option<Uuid>,
+    pub device_id: Option<Uuid>,
+    pub created_by_device_id: Option<Uuid>,
+    pub status: Option<String>,
+    pub requested_from: Option<DateTime<Utc>>,
+    pub requested_to: Option<DateTime<Utc>>,
+    pub segment_count: Option<i32>,
+    pub manifest: Option<Value>,
+    pub download_url_expires_at: Option<DateTime<Utc>>,
+    pub requested_at: Option<DateTime<Utc>>,
+    pub ready_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub meta_data: Option<Value>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    sound_recorder_audit_events (id) {
+        id -> Uuid,
+        account_id -> Nullable<Uuid>,
+        device_id -> Nullable<Uuid>,
+        event_type -> Varchar,
+        event_hash -> Varchar,
+        payload -> Jsonb,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_audit_events)]
+pub struct SoundRecorderAuditEventsDieselRow {
+    pub id: Uuid,
+    pub account_id: Option<Uuid>,
+    pub device_id: Option<Uuid>,
+    pub event_type: String,
+    pub event_hash: String,
+    pub payload: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_audit_events)]
+pub struct SoundRecorderAuditEventsDieselInsert {
+    pub id: Option<Uuid>,
+    pub account_id: Option<Uuid>,
+    pub device_id: Option<Uuid>,
+    pub event_type: Option<String>,
+    pub event_hash: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     container_pool_configs (id) {
         id -> Uuid,
         slug -> Varchar,

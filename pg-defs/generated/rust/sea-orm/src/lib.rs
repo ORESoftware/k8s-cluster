@@ -181,6 +181,285 @@ impl ActiveModelBehavior for ActiveModel {}
 pub use music_song_votes::Entity as MusicSongVotesEntity;
 pub use music_song_votes::Model as MusicSongVotesModel;
 
+pub mod sound_recorder_accounts {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "sound_recorder_accounts")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub status: String,
+    #[sea_orm(column_name = "external_subject")]
+    pub external_subject: Option<String>,
+    #[sea_orm(column_name = "display_name")]
+    pub display_name: Option<String>,
+    #[sea_orm(column_name = "legal_region")]
+    pub legal_region: Option<String>,
+    #[sea_orm(column_name = "retention_hours")]
+    pub retention_hours: i32,
+    #[sea_orm(column_name = "retention_policy_version")]
+    pub retention_policy_version: String,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use sound_recorder_accounts::Entity as SoundRecorderAccountsEntity;
+pub use sound_recorder_accounts::Model as SoundRecorderAccountsModel;
+
+pub mod sound_recorder_devices {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "sound_recorder_devices")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "account_id")]
+    pub account_id: Uuid,
+    pub platform: String,
+    pub status: String,
+    #[sea_orm(column_name = "install_id")]
+    pub install_id: String,
+    #[sea_orm(column_name = "device_label")]
+    pub device_label: Option<String>,
+    #[sea_orm(column_name = "app_version")]
+    pub app_version: Option<String>,
+    #[sea_orm(column_name = "os_version")]
+    pub os_version: Option<String>,
+    #[sea_orm(column_name = "token_hash")]
+    pub token_hash: String,
+    #[sea_orm(column_name = "token_last4")]
+    pub token_last4: String,
+    #[sea_orm(column_name = "consent_version")]
+    pub consent_version: String,
+    #[sea_orm(column_name = "consent_accepted_at")]
+    pub consent_accepted_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "recording_indicator_acknowledged")]
+    pub recording_indicator_acknowledged: bool,
+    #[sea_orm(column_name = "last_seen_at")]
+    pub last_seen_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use sound_recorder_devices::Entity as SoundRecorderDevicesEntity;
+pub use sound_recorder_devices::Model as SoundRecorderDevicesModel;
+
+pub mod sound_recorder_upload_sessions {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "sound_recorder_upload_sessions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "account_id")]
+    pub account_id: Uuid,
+    #[sea_orm(column_name = "device_id")]
+    pub device_id: Uuid,
+    pub status: String,
+    #[sea_orm(column_name = "storage_provider")]
+    pub storage_provider: String,
+    #[sea_orm(column_name = "storage_bucket")]
+    pub storage_bucket: String,
+    #[sea_orm(column_name = "storage_prefix")]
+    pub storage_prefix: String,
+    #[sea_orm(column_name = "content_type")]
+    pub content_type: String,
+    pub codec: Option<String>,
+    #[sea_orm(column_name = "sample_rate")]
+    pub sample_rate: Option<i32>,
+    #[sea_orm(column_name = "channel_count")]
+    pub channel_count: i32,
+    #[sea_orm(column_name = "segment_duration_seconds")]
+    pub segment_duration_seconds: i32,
+    #[sea_orm(column_name = "max_segment_bytes")]
+    pub max_segment_bytes: i32,
+    #[sea_orm(column_name = "started_at")]
+    pub started_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "last_heartbeat_at")]
+    pub last_heartbeat_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "closed_at")]
+    pub closed_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "expires_at")]
+    pub expires_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "client_timezone")]
+    pub client_timezone: Option<String>,
+    #[sea_orm(column_name = "legal_region")]
+    pub legal_region: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use sound_recorder_upload_sessions::Entity as SoundRecorderUploadSessionsEntity;
+pub use sound_recorder_upload_sessions::Model as SoundRecorderUploadSessionsModel;
+
+pub mod sound_recorder_segments {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "sound_recorder_segments")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "account_id")]
+    pub account_id: Uuid,
+    #[sea_orm(column_name = "device_id")]
+    pub device_id: Uuid,
+    #[sea_orm(column_name = "session_id")]
+    pub session_id: Uuid,
+    #[sea_orm(column_name = "sequence_number")]
+    pub sequence_number: i32,
+    pub status: String,
+    #[sea_orm(column_name = "storage_provider")]
+    pub storage_provider: String,
+    #[sea_orm(column_name = "storage_bucket")]
+    pub storage_bucket: String,
+    #[sea_orm(column_name = "storage_key")]
+    pub storage_key: String,
+    #[sea_orm(column_name = "content_type")]
+    pub content_type: String,
+    pub codec: Option<String>,
+    #[sea_orm(column_name = "captured_started_at")]
+    pub captured_started_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "captured_ended_at")]
+    pub captured_ended_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "duration_millis")]
+    pub duration_millis: i32,
+    #[sea_orm(column_name = "byte_count")]
+    pub byte_count: Option<i32>,
+    #[sea_orm(column_name = "sha256_hex")]
+    pub sha256_hex: Option<String>,
+    #[sea_orm(column_name = "upload_url_expires_at")]
+    pub upload_url_expires_at: Option<DateTimeWithTimeZone>,
+    pub etag: Option<String>,
+    #[sea_orm(column_name = "uploaded_at")]
+    pub uploaded_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "expires_at")]
+    pub expires_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use sound_recorder_segments::Entity as SoundRecorderSegmentsEntity;
+pub use sound_recorder_segments::Model as SoundRecorderSegmentsModel;
+
+pub mod sound_recorder_evidence_exports {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "sound_recorder_evidence_exports")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "account_id")]
+    pub account_id: Uuid,
+    #[sea_orm(column_name = "device_id")]
+    pub device_id: Option<Uuid>,
+    #[sea_orm(column_name = "created_by_device_id")]
+    pub created_by_device_id: Option<Uuid>,
+    pub status: String,
+    #[sea_orm(column_name = "requested_from")]
+    pub requested_from: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "requested_to")]
+    pub requested_to: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "segment_count")]
+    pub segment_count: i32,
+    pub manifest: Json,
+    #[sea_orm(column_name = "download_url_expires_at")]
+    pub download_url_expires_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "requested_at")]
+    pub requested_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "ready_at")]
+    pub ready_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "expires_at")]
+    pub expires_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use sound_recorder_evidence_exports::Entity as SoundRecorderEvidenceExportsEntity;
+pub use sound_recorder_evidence_exports::Model as SoundRecorderEvidenceExportsModel;
+
+pub mod sound_recorder_audit_events {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "sound_recorder_audit_events")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "account_id")]
+    pub account_id: Option<Uuid>,
+    #[sea_orm(column_name = "device_id")]
+    pub device_id: Option<Uuid>,
+    #[sea_orm(column_name = "event_type")]
+    pub event_type: String,
+    #[sea_orm(column_name = "event_hash")]
+    pub event_hash: String,
+    pub payload: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use sound_recorder_audit_events::Entity as SoundRecorderAuditEventsEntity;
+pub use sound_recorder_audit_events::Model as SoundRecorderAuditEventsModel;
+
 pub mod container_pool_configs {
     use super::*;
 

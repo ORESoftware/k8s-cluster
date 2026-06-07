@@ -416,6 +416,666 @@ class MusicSongVotesInsert(BaseModel):
     createdAt: datetime | None = None
     updatedAt: datetime | None = None
 
+SoundRecorderAccountsStatus = Literal["active", "paused", "locked", "deleted"]
+
+class SoundRecorderAccounts(Base):
+    __tablename__ = "sound_recorder_accounts"
+    __table_args__ = (
+        CheckConstraint("status in ('active', 'paused', 'locked', 'deleted')", name="sound_recorder_accounts_status_chk"),
+        CheckConstraint("external_subject is null or octet_length(external_subject) between 1 and 240", name="sound_recorder_accounts_external_subject_size_chk"),
+        CheckConstraint("display_name is null or octet_length(display_name) between 1 and 160", name="sound_recorder_accounts_display_name_size_chk"),
+        CheckConstraint("legal_region is null or legal_region ~ '^[A-Za-z0-9._:/-]{1,64}$'", name="sound_recorder_accounts_legal_region_format_chk"),
+        CheckConstraint("retention_hours between 1 and 500", name="sound_recorder_accounts_retention_hours_chk"),
+        CheckConstraint("retention_policy_version ~ '^[A-Za-z0-9._:/-]{1,80}$'", name="sound_recorder_accounts_retention_policy_version_chk"),
+        Index("sound_recorder_accounts_external_subject_uq", "external_subject", unique=True, postgresql_where=text("external_subject is not null")),
+        Index("sound_recorder_accounts_status_updated_at_idx", "status", text("updated_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    external_subject: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    legal_region: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    retention_hours: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("500"))
+    retention_policy_version: Mapped[str] = mapped_column(String(80), nullable=False, server_default=text("'sound-recorder-retention-v1'"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class SoundRecorderAccountsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    status: SoundRecorderAccountsStatus
+    externalSubject: str | None = Field(None, max_length=240)
+    displayName: str | None = Field(None, max_length=160)
+    legalRegion: str | None = Field(None, max_length=64, pattern="^[A-Za-z0-9._:/-]{1,64}$")
+    retentionHours: int = Field(..., ge=1, le=500)
+    retentionPolicyVersion: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("externalSubject")
+    @classmethod
+    def validate_external_subject(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("sound_recorder_accounts.external_subject exceeds 240 bytes")
+        return value
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("sound_recorder_accounts.display_name exceeds 160 bytes")
+        return value
+
+class SoundRecorderAccountsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    status: SoundRecorderAccountsStatus | None = "active"
+    externalSubject: str | None = Field(None, max_length=240)
+    displayName: str | None = Field(None, max_length=160)
+    legalRegion: str | None = Field(None, max_length=64, pattern="^[A-Za-z0-9._:/-]{1,64}$")
+    retentionHours: int | None = Field(500, ge=1, le=500)
+    retentionPolicyVersion: str | None = Field("sound-recorder-retention-v1", max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("externalSubject")
+    @classmethod
+    def validate_external_subject(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("sound_recorder_accounts.external_subject exceeds 240 bytes")
+        return value
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("sound_recorder_accounts.display_name exceeds 160 bytes")
+        return value
+
+SoundRecorderDevicesPlatform = Literal["ios", "android"]
+SoundRecorderDevicesStatus = Literal["active", "revoked", "lost", "replaced", "deleted"]
+
+class SoundRecorderDevices(Base):
+    __tablename__ = "sound_recorder_devices"
+    __table_args__ = (
+        CheckConstraint("platform in ('ios', 'android')", name="sound_recorder_devices_platform_chk"),
+        CheckConstraint("status in ('active', 'revoked', 'lost', 'replaced', 'deleted')", name="sound_recorder_devices_status_chk"),
+        CheckConstraint("octet_length(install_id) between 1 and 160", name="sound_recorder_devices_install_id_size_chk"),
+        CheckConstraint("device_label is null or octet_length(device_label) between 1 and 160", name="sound_recorder_devices_device_label_size_chk"),
+        CheckConstraint("app_version is null or octet_length(app_version) between 1 and 80", name="sound_recorder_devices_app_version_size_chk"),
+        CheckConstraint("os_version is null or octet_length(os_version) between 1 and 80", name="sound_recorder_devices_os_version_size_chk"),
+        CheckConstraint("token_hash ~ '^[a-f0-9]{64}$'", name="sound_recorder_devices_token_hash_chk"),
+        CheckConstraint("token_last4 ~ '^[A-Za-z0-9_-]{4}$'", name="sound_recorder_devices_token_last4_chk"),
+        CheckConstraint("consent_version ~ '^[A-Za-z0-9._:/-]{1,80}$'", name="sound_recorder_devices_consent_version_chk"),
+        Index("sound_recorder_devices_token_hash_uq", "token_hash", unique=True),
+        Index("sound_recorder_devices_account_install_uq", "account_id", "install_id", unique=True),
+        Index("sound_recorder_devices_account_status_idx", "account_id", "status", text("updated_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    account_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    platform: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    install_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    device_label: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    app_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    os_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    token_last4: Mapped[str] = mapped_column(String(4), nullable=False)
+    consent_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    consent_accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    recording_indicator_acknowledged: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class SoundRecorderDevicesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    accountId: UUID
+    platform: SoundRecorderDevicesPlatform
+    status: SoundRecorderDevicesStatus
+    installId: str = Field(..., max_length=160)
+    deviceLabel: str | None = Field(None, max_length=160)
+    appVersion: str | None = Field(None, max_length=80)
+    osVersion: str | None = Field(None, max_length=80)
+    tokenHash: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    tokenLast4: str = Field(..., max_length=4, pattern="^[A-Za-z0-9_-]{4}$")
+    consentVersion: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    consentAcceptedAt: datetime
+    recordingIndicatorAcknowledged: bool
+    lastSeenAt: datetime | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("installId")
+    @classmethod
+    def validate_install_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("sound_recorder_devices.install_id exceeds 160 bytes")
+        return value
+
+    @field_validator("deviceLabel")
+    @classmethod
+    def validate_device_label(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("sound_recorder_devices.device_label exceeds 160 bytes")
+        return value
+
+    @field_validator("appVersion")
+    @classmethod
+    def validate_app_version(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("sound_recorder_devices.app_version exceeds 80 bytes")
+        return value
+
+    @field_validator("osVersion")
+    @classmethod
+    def validate_os_version(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("sound_recorder_devices.os_version exceeds 80 bytes")
+        return value
+
+class SoundRecorderDevicesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    accountId: UUID
+    platform: SoundRecorderDevicesPlatform
+    status: SoundRecorderDevicesStatus | None = "active"
+    installId: str = Field(..., max_length=160)
+    deviceLabel: str | None = Field(None, max_length=160)
+    appVersion: str | None = Field(None, max_length=80)
+    osVersion: str | None = Field(None, max_length=80)
+    tokenHash: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    tokenLast4: str = Field(..., max_length=4, pattern="^[A-Za-z0-9_-]{4}$")
+    consentVersion: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    consentAcceptedAt: datetime
+    recordingIndicatorAcknowledged: bool | None = False
+    lastSeenAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("installId")
+    @classmethod
+    def validate_install_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("sound_recorder_devices.install_id exceeds 160 bytes")
+        return value
+
+    @field_validator("deviceLabel")
+    @classmethod
+    def validate_device_label(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("sound_recorder_devices.device_label exceeds 160 bytes")
+        return value
+
+    @field_validator("appVersion")
+    @classmethod
+    def validate_app_version(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("sound_recorder_devices.app_version exceeds 80 bytes")
+        return value
+
+    @field_validator("osVersion")
+    @classmethod
+    def validate_os_version(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("sound_recorder_devices.os_version exceeds 80 bytes")
+        return value
+
+SoundRecorderUploadSessionsStatus = Literal["active", "closed", "revoked", "expired"]
+SoundRecorderUploadSessionsStorageProvider = Literal["s3"]
+
+class SoundRecorderUploadSessions(Base):
+    __tablename__ = "sound_recorder_upload_sessions"
+    __table_args__ = (
+        CheckConstraint("status in ('active', 'closed', 'revoked', 'expired')", name="sound_recorder_upload_sessions_status_chk"),
+        CheckConstraint("storage_provider in ('s3')", name="sound_recorder_upload_sessions_storage_provider_chk"),
+        CheckConstraint("octet_length(storage_bucket) between 1 and 200", name="sound_recorder_upload_sessions_storage_bucket_size_chk"),
+        CheckConstraint("octet_length(storage_prefix) between 1 and 2048", name="sound_recorder_upload_sessions_storage_prefix_size_chk"),
+        CheckConstraint("octet_length(content_type) between 1 and 120", name="sound_recorder_upload_sessions_content_type_size_chk"),
+        CheckConstraint("codec is null or octet_length(codec) between 1 and 80", name="sound_recorder_upload_sessions_codec_size_chk"),
+        CheckConstraint("sample_rate is null or sample_rate between 8000 and 192000", name="sound_recorder_upload_sessions_sample_rate_chk"),
+        CheckConstraint("channel_count between 1 and 8", name="sound_recorder_upload_sessions_channel_count_chk"),
+        CheckConstraint("segment_duration_seconds between 1 and 600", name="sound_recorder_upload_sessions_segment_duration_chk"),
+        CheckConstraint("max_segment_bytes between 1 and 209715200", name="sound_recorder_upload_sessions_max_segment_bytes_chk"),
+        CheckConstraint("client_timezone is null or octet_length(client_timezone) between 1 and 80", name="sound_recorder_upload_sessions_client_timezone_size_chk"),
+        CheckConstraint("legal_region is null or legal_region ~ '^[A-Za-z0-9._:/-]{1,64}$'", name="sound_recorder_upload_sessions_legal_region_format_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="sound_recorder_upload_sessions_meta_object_chk"),
+        Index("sound_recorder_upload_sessions_storage_prefix_uq", "storage_prefix", unique=True),
+        Index("sound_recorder_upload_sessions_account_started_idx", "account_id", text("started_at desc")),
+        Index("sound_recorder_upload_sessions_device_status_idx", "device_id", "status", text("started_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    account_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    device_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    storage_provider: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'s3'"))
+    storage_bucket: Mapped[str] = mapped_column(String(200), nullable=False)
+    storage_prefix: Mapped[str] = mapped_column(Text(), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False, server_default=text("'audio/mp4'"))
+    codec: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    sample_rate: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    channel_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("1"))
+    segment_duration_seconds: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("60"))
+    max_segment_bytes: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("10485760"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    client_timezone: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    legal_region: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class SoundRecorderUploadSessionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    accountId: UUID
+    deviceId: UUID
+    status: SoundRecorderUploadSessionsStatus
+    storageProvider: SoundRecorderUploadSessionsStorageProvider
+    storageBucket: str = Field(..., max_length=200)
+    storagePrefix: str
+    contentType: str = Field(..., max_length=120)
+    codec: str | None = Field(None, max_length=80)
+    sampleRate: int | None = Field(None, ge=8000, le=192000)
+    channelCount: int = Field(..., ge=1, le=8)
+    segmentDurationSeconds: int = Field(..., ge=1, le=600)
+    maxSegmentBytes: int = Field(..., ge=1, le=209715200)
+    startedAt: datetime
+    lastHeartbeatAt: datetime | None = None
+    closedAt: datetime | None = None
+    expiresAt: datetime | None = None
+    clientTimezone: str | None = Field(None, max_length=80)
+    legalRegion: str | None = Field(None, max_length=64, pattern="^[A-Za-z0-9._:/-]{1,64}$")
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("storageBucket")
+    @classmethod
+    def validate_storage_bucket(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes")
+        return value
+
+    @field_validator("storagePrefix")
+    @classmethod
+    def validate_storage_prefix(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes")
+        return value
+
+    @field_validator("contentType")
+    @classmethod
+    def validate_content_type(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("sound_recorder_upload_sessions.content_type exceeds 120 bytes")
+        return value
+
+    @field_validator("codec")
+    @classmethod
+    def validate_codec(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("sound_recorder_upload_sessions.codec exceeds 80 bytes")
+        return value
+
+    @field_validator("clientTimezone")
+    @classmethod
+    def validate_client_timezone(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("sound_recorder_upload_sessions.client_timezone exceeds 80 bytes")
+        return value
+
+class SoundRecorderUploadSessionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    accountId: UUID
+    deviceId: UUID
+    status: SoundRecorderUploadSessionsStatus | None = "active"
+    storageProvider: SoundRecorderUploadSessionsStorageProvider | None = "s3"
+    storageBucket: str = Field(..., max_length=200)
+    storagePrefix: str
+    contentType: str | None = Field("audio/mp4", max_length=120)
+    codec: str | None = Field(None, max_length=80)
+    sampleRate: int | None = Field(None, ge=8000, le=192000)
+    channelCount: int | None = Field(1, ge=1, le=8)
+    segmentDurationSeconds: int | None = Field(60, ge=1, le=600)
+    maxSegmentBytes: int | None = Field(10485760, ge=1, le=209715200)
+    startedAt: datetime | None = None
+    lastHeartbeatAt: datetime | None = None
+    closedAt: datetime | None = None
+    expiresAt: datetime | None = None
+    clientTimezone: str | None = Field(None, max_length=80)
+    legalRegion: str | None = Field(None, max_length=64, pattern="^[A-Za-z0-9._:/-]{1,64}$")
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("storageBucket")
+    @classmethod
+    def validate_storage_bucket(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes")
+        return value
+
+    @field_validator("storagePrefix")
+    @classmethod
+    def validate_storage_prefix(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes")
+        return value
+
+    @field_validator("contentType")
+    @classmethod
+    def validate_content_type(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("sound_recorder_upload_sessions.content_type exceeds 120 bytes")
+        return value
+
+    @field_validator("codec")
+    @classmethod
+    def validate_codec(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("sound_recorder_upload_sessions.codec exceeds 80 bytes")
+        return value
+
+    @field_validator("clientTimezone")
+    @classmethod
+    def validate_client_timezone(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("sound_recorder_upload_sessions.client_timezone exceeds 80 bytes")
+        return value
+
+SoundRecorderSegmentsStatus = Literal["pending", "uploaded", "failed", "expired", "deleted"]
+SoundRecorderSegmentsStorageProvider = Literal["s3"]
+
+class SoundRecorderSegments(Base):
+    __tablename__ = "sound_recorder_segments"
+    __table_args__ = (
+        CheckConstraint("sequence_number >= 0", name="sound_recorder_segments_sequence_chk"),
+        CheckConstraint("status in ('pending', 'uploaded', 'failed', 'expired', 'deleted')", name="sound_recorder_segments_status_chk"),
+        CheckConstraint("storage_provider in ('s3')", name="sound_recorder_segments_storage_provider_chk"),
+        CheckConstraint("octet_length(storage_bucket) between 1 and 200", name="sound_recorder_segments_storage_bucket_size_chk"),
+        CheckConstraint("octet_length(storage_key) between 1 and 2048", name="sound_recorder_segments_storage_key_size_chk"),
+        CheckConstraint("octet_length(content_type) between 1 and 120", name="sound_recorder_segments_content_type_size_chk"),
+        CheckConstraint("codec is null or octet_length(codec) between 1 and 80", name="sound_recorder_segments_codec_size_chk"),
+        CheckConstraint("duration_millis between 1 and 600000", name="sound_recorder_segments_duration_chk"),
+        CheckConstraint("byte_count is null or byte_count between 0 and 209715200", name="sound_recorder_segments_byte_count_chk"),
+        CheckConstraint("sha256_hex is null or sha256_hex ~ '^[a-f0-9]{64}$'", name="sound_recorder_segments_sha256_chk"),
+        CheckConstraint("etag is null or octet_length(etag) between 1 and 160", name="sound_recorder_segments_etag_size_chk"),
+        CheckConstraint("captured_ended_at is null or captured_ended_at >= captured_started_at", name="sound_recorder_segments_capture_window_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="sound_recorder_segments_meta_object_chk"),
+        Index("sound_recorder_segments_session_sequence_uq", "session_id", "sequence_number", unique=True),
+        Index("sound_recorder_segments_storage_key_uq", "storage_key", unique=True),
+        Index("sound_recorder_segments_account_capture_idx", "account_id", text("captured_started_at desc"), postgresql_where=text("status = 'uploaded'")),
+        Index("sound_recorder_segments_expiry_idx", text("expires_at asc"), postgresql_where=text("status in ('pending', 'uploaded')")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    account_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    device_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    session_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer(), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'pending'"))
+    storage_provider: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'s3'"))
+    storage_bucket: Mapped[str] = mapped_column(String(200), nullable=False)
+    storage_key: Mapped[str] = mapped_column(Text(), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False, server_default=text("'audio/mp4'"))
+    codec: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    captured_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    captured_ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_millis: Mapped[int] = mapped_column(Integer(), nullable=False)
+    byte_count: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    sha256_hex: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    upload_url_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    etag: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class SoundRecorderSegmentsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    accountId: UUID
+    deviceId: UUID
+    sessionId: UUID
+    sequenceNumber: int = Field(..., ge=0)
+    status: SoundRecorderSegmentsStatus
+    storageProvider: SoundRecorderSegmentsStorageProvider
+    storageBucket: str = Field(..., max_length=200)
+    storageKey: str
+    contentType: str = Field(..., max_length=120)
+    codec: str | None = Field(None, max_length=80)
+    capturedStartedAt: datetime
+    capturedEndedAt: datetime | None = None
+    durationMillis: int = Field(..., ge=1, le=600000)
+    byteCount: int | None = Field(None, ge=0, le=209715200)
+    sha256Hex: str | None = Field(None, max_length=64, pattern="^[a-f0-9]{64}$")
+    uploadUrlExpiresAt: datetime | None = None
+    etag: str | None = Field(None, max_length=160)
+    uploadedAt: datetime | None = None
+    expiresAt: datetime
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("storageBucket")
+    @classmethod
+    def validate_storage_bucket(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("sound_recorder_segments.storage_bucket exceeds 200 bytes")
+        return value
+
+    @field_validator("storageKey")
+    @classmethod
+    def validate_storage_key(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("sound_recorder_segments.storage_key exceeds 2048 bytes")
+        return value
+
+    @field_validator("contentType")
+    @classmethod
+    def validate_content_type(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("sound_recorder_segments.content_type exceeds 120 bytes")
+        return value
+
+    @field_validator("codec")
+    @classmethod
+    def validate_codec(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("sound_recorder_segments.codec exceeds 80 bytes")
+        return value
+
+    @field_validator("etag")
+    @classmethod
+    def validate_etag(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("sound_recorder_segments.etag exceeds 160 bytes")
+        return value
+
+class SoundRecorderSegmentsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    accountId: UUID
+    deviceId: UUID
+    sessionId: UUID
+    sequenceNumber: int = Field(..., ge=0)
+    status: SoundRecorderSegmentsStatus | None = "pending"
+    storageProvider: SoundRecorderSegmentsStorageProvider | None = "s3"
+    storageBucket: str = Field(..., max_length=200)
+    storageKey: str
+    contentType: str | None = Field("audio/mp4", max_length=120)
+    codec: str | None = Field(None, max_length=80)
+    capturedStartedAt: datetime
+    capturedEndedAt: datetime | None = None
+    durationMillis: int = Field(..., ge=1, le=600000)
+    byteCount: int | None = Field(None, ge=0, le=209715200)
+    sha256Hex: str | None = Field(None, max_length=64, pattern="^[a-f0-9]{64}$")
+    uploadUrlExpiresAt: datetime | None = None
+    etag: str | None = Field(None, max_length=160)
+    uploadedAt: datetime | None = None
+    expiresAt: datetime
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("storageBucket")
+    @classmethod
+    def validate_storage_bucket(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("sound_recorder_segments.storage_bucket exceeds 200 bytes")
+        return value
+
+    @field_validator("storageKey")
+    @classmethod
+    def validate_storage_key(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("sound_recorder_segments.storage_key exceeds 2048 bytes")
+        return value
+
+    @field_validator("contentType")
+    @classmethod
+    def validate_content_type(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("sound_recorder_segments.content_type exceeds 120 bytes")
+        return value
+
+    @field_validator("codec")
+    @classmethod
+    def validate_codec(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("sound_recorder_segments.codec exceeds 80 bytes")
+        return value
+
+    @field_validator("etag")
+    @classmethod
+    def validate_etag(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("sound_recorder_segments.etag exceeds 160 bytes")
+        return value
+
+SoundRecorderEvidenceExportsStatus = Literal["requested", "ready", "expired", "revoked"]
+
+class SoundRecorderEvidenceExports(Base):
+    __tablename__ = "sound_recorder_evidence_exports"
+    __table_args__ = (
+        CheckConstraint("status in ('requested', 'ready', 'expired', 'revoked')", name="sound_recorder_evidence_exports_status_chk"),
+        CheckConstraint("requested_to > requested_from", name="sound_recorder_evidence_exports_window_chk"),
+        CheckConstraint("segment_count >= 0", name="sound_recorder_evidence_exports_segment_count_chk"),
+        CheckConstraint("jsonb_typeof(manifest) = 'object'", name="sound_recorder_evidence_exports_manifest_object_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="sound_recorder_evidence_exports_meta_object_chk"),
+        Index("sound_recorder_evidence_exports_account_requested_idx", "account_id", text("requested_at desc")),
+        Index("sound_recorder_evidence_exports_status_idx", "status", text("requested_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    account_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    device_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    created_by_device_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'requested'"))
+    requested_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    requested_to: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    segment_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    manifest: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    download_url_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    ready_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+
+class SoundRecorderEvidenceExportsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    accountId: UUID
+    deviceId: UUID | None = None
+    createdByDeviceId: UUID | None = None
+    status: SoundRecorderEvidenceExportsStatus
+    requestedFrom: datetime
+    requestedTo: datetime
+    segmentCount: int = Field(..., ge=0)
+    manifest: dict[str, Any]
+    downloadUrlExpiresAt: datetime | None = None
+    requestedAt: datetime
+    readyAt: datetime | None = None
+    expiresAt: datetime | None = None
+    metaData: dict[str, Any]
+
+class SoundRecorderEvidenceExportsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    accountId: UUID
+    deviceId: UUID | None = None
+    createdByDeviceId: UUID | None = None
+    status: SoundRecorderEvidenceExportsStatus | None = "requested"
+    requestedFrom: datetime
+    requestedTo: datetime
+    segmentCount: int | None = Field(0, ge=0)
+    manifest: dict[str, Any] | None = Field(default_factory=dict)
+    downloadUrlExpiresAt: datetime | None = None
+    requestedAt: datetime | None = None
+    readyAt: datetime | None = None
+    expiresAt: datetime | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+
+class SoundRecorderAuditEvents(Base):
+    __tablename__ = "sound_recorder_audit_events"
+    __table_args__ = (
+        CheckConstraint("event_type ~ '^[A-Za-z0-9._:/-]{1,80}$'", name="sound_recorder_audit_events_event_type_format_chk"),
+        CheckConstraint("event_hash ~ '^[a-f0-9]{64}$'", name="sound_recorder_audit_events_event_hash_chk"),
+        CheckConstraint("jsonb_typeof(payload) = 'object'", name="sound_recorder_audit_events_payload_object_chk"),
+        Index("sound_recorder_audit_events_event_hash_uq", "event_hash", unique=True),
+        Index("sound_recorder_audit_events_account_created_idx", "account_id", text("created_at desc"), postgresql_where=text("account_id is not null")),
+        Index("sound_recorder_audit_events_type_created_idx", "event_type", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    account_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    device_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class SoundRecorderAuditEventsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    accountId: UUID | None = None
+    deviceId: UUID | None = None
+    eventType: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    eventHash: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    payload: dict[str, Any]
+    createdAt: datetime
+
+class SoundRecorderAuditEventsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    accountId: UUID | None = None
+    deviceId: UUID | None = None
+    eventType: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    eventHash: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    payload: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+
 ContainerPoolConfigsStatus = Literal["active", "paused", "archived"]
 
 class ContainerPoolConfigs(Base):

@@ -24,6 +24,15 @@ var musicSongsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,218}[a-z0-9
 var musicSongsGenerationDatePattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 var musicSongVotesVisitorHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var musicSongVotesUserAgentHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var soundRecorderAccountsLegalRegionPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,64}$`)
+var soundRecorderAccountsRetentionPolicyVersionPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var soundRecorderDevicesTokenHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var soundRecorderDevicesTokenLast4Pattern = regexp.MustCompile(`^[A-Za-z0-9_-]{4}$`)
+var soundRecorderDevicesConsentVersionPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var soundRecorderUploadSessionsLegalRegionPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,64}$`)
+var soundRecorderSegmentsSha256HexPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var soundRecorderAuditEventsEventTypePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var soundRecorderAuditEventsEventHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var containerPoolConfigsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var containerPoolConfigsRequestPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
 var containerPoolConfigsHealthPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
@@ -286,6 +295,371 @@ func (value MusicSongVotesBun) Validate() error {
 	}
 	if value.VoteValue < -1 { return errors.New("music_song_votes.vote_value is below the minimum") }
 	if value.VoteValue > 1 { return errors.New("music_song_votes.vote_value is above the maximum") }
+	return nil
+}
+
+const SoundRecorderAccountsTable = "sound_recorder_accounts"
+const SoundRecorderAccountsSelectSQL = `select
+      id::text as id,
+      status,
+      external_subject,
+      display_name,
+      legal_region,
+      retention_hours,
+      retention_policy_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_accounts`
+
+var SoundRecorderAccountsStatusValues = []string{"active", "paused", "locked", "deleted"}
+
+type SoundRecorderAccountsBun struct {
+	bun.BaseModel `bun:"table:sound_recorder_accounts"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	ExternalSubject *string `bun:"external_subject,type:varchar(240),nullzero" json:"externalSubject,omitempty"`
+	DisplayName *string `bun:"display_name,type:varchar(160),nullzero" json:"displayName,omitempty"`
+	LegalRegion *string `bun:"legal_region,type:varchar(64),nullzero" json:"legalRegion,omitempty"`
+	RetentionHours int32 `bun:"retention_hours,type:integer,default:500" json:"retentionHours"`
+	RetentionPolicyVersion string `bun:"retention_policy_version,type:varchar(80),default:'sound-recorder-retention-v1'" json:"retentionPolicyVersion"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value SoundRecorderAccountsBun) Validate() error {
+	if !containsString(SoundRecorderAccountsStatusValues, value.Status) { return errors.New("unsupported sound_recorder_accounts.status") }
+	if value.ExternalSubject != nil {
+		if len([]byte(*value.ExternalSubject)) > 240 { return errors.New("sound_recorder_accounts.external_subject exceeds 240 bytes") }
+		if len([]byte(*value.ExternalSubject)) < 1 { return errors.New("sound_recorder_accounts.external_subject is below 1 bytes") }
+	}
+	if value.DisplayName != nil {
+		if len([]byte(*value.DisplayName)) > 160 { return errors.New("sound_recorder_accounts.display_name exceeds 160 bytes") }
+		if len([]byte(*value.DisplayName)) < 1 { return errors.New("sound_recorder_accounts.display_name is below 1 bytes") }
+	}
+	if value.LegalRegion != nil {
+		if !soundRecorderAccountsLegalRegionPattern.MatchString(*value.LegalRegion) { return errors.New("sound_recorder_accounts.legal_region does not match the required pattern") }
+	}
+	if value.RetentionHours < 1 { return errors.New("sound_recorder_accounts.retention_hours is below the minimum") }
+	if value.RetentionHours > 500 { return errors.New("sound_recorder_accounts.retention_hours is above the maximum") }
+	if !soundRecorderAccountsRetentionPolicyVersionPattern.MatchString(value.RetentionPolicyVersion) { return errors.New("sound_recorder_accounts.retention_policy_version does not match the required pattern") }
+	return nil
+}
+
+const SoundRecorderDevicesTable = "sound_recorder_devices"
+const SoundRecorderDevicesSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      platform,
+      status,
+      install_id,
+      device_label,
+      app_version,
+      os_version,
+      token_hash,
+      token_last4,
+      consent_version,
+      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consent_accepted_at,
+      recording_indicator_acknowledged,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_devices`
+
+var SoundRecorderDevicesPlatformValues = []string{"ios", "android"}
+var SoundRecorderDevicesStatusValues = []string{"active", "revoked", "lost", "replaced", "deleted"}
+
+type SoundRecorderDevicesBun struct {
+	bun.BaseModel `bun:"table:sound_recorder_devices"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	AccountId uuid.UUID `bun:"account_id,type:uuid" json:"accountId"`
+	Platform string `bun:"platform,type:varchar(24)" json:"platform"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	InstallId string `bun:"install_id,type:varchar(160)" json:"installId"`
+	DeviceLabel *string `bun:"device_label,type:varchar(160),nullzero" json:"deviceLabel,omitempty"`
+	AppVersion *string `bun:"app_version,type:varchar(80),nullzero" json:"appVersion,omitempty"`
+	OsVersion *string `bun:"os_version,type:varchar(80),nullzero" json:"osVersion,omitempty"`
+	TokenHash string `bun:"token_hash,type:varchar(64)" json:"tokenHash"`
+	TokenLast4 string `bun:"token_last4,type:varchar(4)" json:"tokenLast4"`
+	ConsentVersion string `bun:"consent_version,type:varchar(80)" json:"consentVersion"`
+	ConsentAcceptedAt time.Time `bun:"consent_accepted_at,type:timestamptz" json:"consentAcceptedAt"`
+	RecordingIndicatorAcknowledged bool `bun:"recording_indicator_acknowledged,type:boolean,default:false" json:"recordingIndicatorAcknowledged"`
+	LastSeenAt *time.Time `bun:"last_seen_at,type:timestamptz,nullzero" json:"lastSeenAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value SoundRecorderDevicesBun) Validate() error {
+	if !containsString(SoundRecorderDevicesPlatformValues, value.Platform) { return errors.New("unsupported sound_recorder_devices.platform") }
+	if !containsString(SoundRecorderDevicesStatusValues, value.Status) { return errors.New("unsupported sound_recorder_devices.status") }
+	if len([]byte(value.InstallId)) > 160 { return errors.New("sound_recorder_devices.install_id exceeds 160 bytes") }
+	if len([]byte(value.InstallId)) < 1 { return errors.New("sound_recorder_devices.install_id is below 1 bytes") }
+	if value.DeviceLabel != nil {
+		if len([]byte(*value.DeviceLabel)) > 160 { return errors.New("sound_recorder_devices.device_label exceeds 160 bytes") }
+		if len([]byte(*value.DeviceLabel)) < 1 { return errors.New("sound_recorder_devices.device_label is below 1 bytes") }
+	}
+	if value.AppVersion != nil {
+		if len([]byte(*value.AppVersion)) > 80 { return errors.New("sound_recorder_devices.app_version exceeds 80 bytes") }
+		if len([]byte(*value.AppVersion)) < 1 { return errors.New("sound_recorder_devices.app_version is below 1 bytes") }
+	}
+	if value.OsVersion != nil {
+		if len([]byte(*value.OsVersion)) > 80 { return errors.New("sound_recorder_devices.os_version exceeds 80 bytes") }
+		if len([]byte(*value.OsVersion)) < 1 { return errors.New("sound_recorder_devices.os_version is below 1 bytes") }
+	}
+	if !soundRecorderDevicesTokenHashPattern.MatchString(value.TokenHash) { return errors.New("sound_recorder_devices.token_hash does not match the required pattern") }
+	if !soundRecorderDevicesTokenLast4Pattern.MatchString(value.TokenLast4) { return errors.New("sound_recorder_devices.token_last4 does not match the required pattern") }
+	if !soundRecorderDevicesConsentVersionPattern.MatchString(value.ConsentVersion) { return errors.New("sound_recorder_devices.consent_version does not match the required pattern") }
+	return nil
+}
+
+const SoundRecorderUploadSessionsTable = "sound_recorder_upload_sessions"
+const SoundRecorderUploadSessionsSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      status,
+      storage_provider,
+      storage_bucket,
+      storage_prefix,
+      content_type,
+      codec,
+      sample_rate,
+      channel_count,
+      segment_duration_seconds,
+      max_segment_bytes,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(last_heartbeat_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_heartbeat_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closed_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      client_timezone,
+      legal_region,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_upload_sessions`
+
+var SoundRecorderUploadSessionsStatusValues = []string{"active", "closed", "revoked", "expired"}
+var SoundRecorderUploadSessionsStorageProviderValues = []string{"s3"}
+
+type SoundRecorderUploadSessionsBun struct {
+	bun.BaseModel `bun:"table:sound_recorder_upload_sessions"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	AccountId uuid.UUID `bun:"account_id,type:uuid" json:"accountId"`
+	DeviceId uuid.UUID `bun:"device_id,type:uuid" json:"deviceId"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	StorageProvider string `bun:"storage_provider,type:varchar(32),default:'s3'" json:"storageProvider"`
+	StorageBucket string `bun:"storage_bucket,type:varchar(200)" json:"storageBucket"`
+	StoragePrefix string `bun:"storage_prefix,type:text" json:"storagePrefix"`
+	ContentType string `bun:"content_type,type:varchar(120),default:'audio/mp4'" json:"contentType"`
+	Codec *string `bun:"codec,type:varchar(80),nullzero" json:"codec,omitempty"`
+	SampleRate *int32 `bun:"sample_rate,type:integer,nullzero" json:"sampleRate,omitempty"`
+	ChannelCount int32 `bun:"channel_count,type:integer,default:1" json:"channelCount"`
+	SegmentDurationSeconds int32 `bun:"segment_duration_seconds,type:integer,default:60" json:"segmentDurationSeconds"`
+	MaxSegmentBytes int32 `bun:"max_segment_bytes,type:integer,default:10485760" json:"maxSegmentBytes"`
+	StartedAt time.Time `bun:"started_at,type:timestamptz,default:now()" json:"startedAt"`
+	LastHeartbeatAt *time.Time `bun:"last_heartbeat_at,type:timestamptz,nullzero" json:"lastHeartbeatAt,omitempty"`
+	ClosedAt *time.Time `bun:"closed_at,type:timestamptz,nullzero" json:"closedAt,omitempty"`
+	ExpiresAt *time.Time `bun:"expires_at,type:timestamptz,nullzero" json:"expiresAt,omitempty"`
+	ClientTimezone *string `bun:"client_timezone,type:varchar(80),nullzero" json:"clientTimezone,omitempty"`
+	LegalRegion *string `bun:"legal_region,type:varchar(64),nullzero" json:"legalRegion,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value SoundRecorderUploadSessionsBun) Validate() error {
+	if !containsString(SoundRecorderUploadSessionsStatusValues, value.Status) { return errors.New("unsupported sound_recorder_upload_sessions.status") }
+	if !containsString(SoundRecorderUploadSessionsStorageProviderValues, value.StorageProvider) { return errors.New("unsupported sound_recorder_upload_sessions.storage_provider") }
+	if len([]byte(value.StorageBucket)) > 200 { return errors.New("sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes") }
+	if len([]byte(value.StorageBucket)) < 1 { return errors.New("sound_recorder_upload_sessions.storage_bucket is below 1 bytes") }
+	if len([]byte(value.StoragePrefix)) > 2048 { return errors.New("sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes") }
+	if len([]byte(value.StoragePrefix)) < 1 { return errors.New("sound_recorder_upload_sessions.storage_prefix is below 1 bytes") }
+	if len([]byte(value.ContentType)) > 120 { return errors.New("sound_recorder_upload_sessions.content_type exceeds 120 bytes") }
+	if len([]byte(value.ContentType)) < 1 { return errors.New("sound_recorder_upload_sessions.content_type is below 1 bytes") }
+	if value.Codec != nil {
+		if len([]byte(*value.Codec)) > 80 { return errors.New("sound_recorder_upload_sessions.codec exceeds 80 bytes") }
+		if len([]byte(*value.Codec)) < 1 { return errors.New("sound_recorder_upload_sessions.codec is below 1 bytes") }
+	}
+	if value.SampleRate != nil {
+		if *value.SampleRate < 8000 { return errors.New("sound_recorder_upload_sessions.sample_rate is below the minimum") }
+		if *value.SampleRate > 192000 { return errors.New("sound_recorder_upload_sessions.sample_rate is above the maximum") }
+	}
+	if value.ChannelCount < 1 { return errors.New("sound_recorder_upload_sessions.channel_count is below the minimum") }
+	if value.ChannelCount > 8 { return errors.New("sound_recorder_upload_sessions.channel_count is above the maximum") }
+	if value.SegmentDurationSeconds < 1 { return errors.New("sound_recorder_upload_sessions.segment_duration_seconds is below the minimum") }
+	if value.SegmentDurationSeconds > 600 { return errors.New("sound_recorder_upload_sessions.segment_duration_seconds is above the maximum") }
+	if value.MaxSegmentBytes < 1 { return errors.New("sound_recorder_upload_sessions.max_segment_bytes is below the minimum") }
+	if value.MaxSegmentBytes > 209715200 { return errors.New("sound_recorder_upload_sessions.max_segment_bytes is above the maximum") }
+	if value.ClientTimezone != nil {
+		if len([]byte(*value.ClientTimezone)) > 80 { return errors.New("sound_recorder_upload_sessions.client_timezone exceeds 80 bytes") }
+		if len([]byte(*value.ClientTimezone)) < 1 { return errors.New("sound_recorder_upload_sessions.client_timezone is below 1 bytes") }
+	}
+	if value.LegalRegion != nil {
+		if !soundRecorderUploadSessionsLegalRegionPattern.MatchString(*value.LegalRegion) { return errors.New("sound_recorder_upload_sessions.legal_region does not match the required pattern") }
+	}
+	if !validateRawJSON(value.MetaData) { return errors.New("sound_recorder_upload_sessions.meta_data must be valid JSON") }
+	return nil
+}
+
+const SoundRecorderSegmentsTable = "sound_recorder_segments"
+const SoundRecorderSegmentsSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      session_id::text as session_id,
+      sequence_number,
+      status,
+      storage_provider,
+      storage_bucket,
+      storage_key,
+      content_type,
+      codec,
+      to_char(captured_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as captured_started_at,
+      to_char(captured_ended_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as captured_ended_at,
+      duration_millis,
+      byte_count,
+      sha256_hex,
+      to_char(upload_url_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as upload_url_expires_at,
+      etag,
+      to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as uploaded_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_segments`
+
+var SoundRecorderSegmentsStatusValues = []string{"pending", "uploaded", "failed", "expired", "deleted"}
+var SoundRecorderSegmentsStorageProviderValues = []string{"s3"}
+
+type SoundRecorderSegmentsBun struct {
+	bun.BaseModel `bun:"table:sound_recorder_segments"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	AccountId uuid.UUID `bun:"account_id,type:uuid" json:"accountId"`
+	DeviceId uuid.UUID `bun:"device_id,type:uuid" json:"deviceId"`
+	SessionId uuid.UUID `bun:"session_id,type:uuid" json:"sessionId"`
+	SequenceNumber int32 `bun:"sequence_number,type:integer" json:"sequenceNumber"`
+	Status string `bun:"status,type:varchar(32),default:'pending'" json:"status"`
+	StorageProvider string `bun:"storage_provider,type:varchar(32),default:'s3'" json:"storageProvider"`
+	StorageBucket string `bun:"storage_bucket,type:varchar(200)" json:"storageBucket"`
+	StorageKey string `bun:"storage_key,type:text" json:"storageKey"`
+	ContentType string `bun:"content_type,type:varchar(120),default:'audio/mp4'" json:"contentType"`
+	Codec *string `bun:"codec,type:varchar(80),nullzero" json:"codec,omitempty"`
+	CapturedStartedAt time.Time `bun:"captured_started_at,type:timestamptz" json:"capturedStartedAt"`
+	CapturedEndedAt *time.Time `bun:"captured_ended_at,type:timestamptz,nullzero" json:"capturedEndedAt,omitempty"`
+	DurationMillis int32 `bun:"duration_millis,type:integer" json:"durationMillis"`
+	ByteCount *int32 `bun:"byte_count,type:integer,nullzero" json:"byteCount,omitempty"`
+	Sha256Hex *string `bun:"sha256_hex,type:varchar(64),nullzero" json:"sha256Hex,omitempty"`
+	UploadUrlExpiresAt *time.Time `bun:"upload_url_expires_at,type:timestamptz,nullzero" json:"uploadUrlExpiresAt,omitempty"`
+	Etag *string `bun:"etag,type:varchar(160),nullzero" json:"etag,omitempty"`
+	UploadedAt *time.Time `bun:"uploaded_at,type:timestamptz,nullzero" json:"uploadedAt,omitempty"`
+	ExpiresAt time.Time `bun:"expires_at,type:timestamptz" json:"expiresAt"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value SoundRecorderSegmentsBun) Validate() error {
+	if value.SequenceNumber < 0 { return errors.New("sound_recorder_segments.sequence_number is below the minimum") }
+	if !containsString(SoundRecorderSegmentsStatusValues, value.Status) { return errors.New("unsupported sound_recorder_segments.status") }
+	if !containsString(SoundRecorderSegmentsStorageProviderValues, value.StorageProvider) { return errors.New("unsupported sound_recorder_segments.storage_provider") }
+	if len([]byte(value.StorageBucket)) > 200 { return errors.New("sound_recorder_segments.storage_bucket exceeds 200 bytes") }
+	if len([]byte(value.StorageBucket)) < 1 { return errors.New("sound_recorder_segments.storage_bucket is below 1 bytes") }
+	if len([]byte(value.StorageKey)) > 2048 { return errors.New("sound_recorder_segments.storage_key exceeds 2048 bytes") }
+	if len([]byte(value.StorageKey)) < 1 { return errors.New("sound_recorder_segments.storage_key is below 1 bytes") }
+	if len([]byte(value.ContentType)) > 120 { return errors.New("sound_recorder_segments.content_type exceeds 120 bytes") }
+	if len([]byte(value.ContentType)) < 1 { return errors.New("sound_recorder_segments.content_type is below 1 bytes") }
+	if value.Codec != nil {
+		if len([]byte(*value.Codec)) > 80 { return errors.New("sound_recorder_segments.codec exceeds 80 bytes") }
+		if len([]byte(*value.Codec)) < 1 { return errors.New("sound_recorder_segments.codec is below 1 bytes") }
+	}
+	if value.DurationMillis < 1 { return errors.New("sound_recorder_segments.duration_millis is below the minimum") }
+	if value.DurationMillis > 600000 { return errors.New("sound_recorder_segments.duration_millis is above the maximum") }
+	if value.ByteCount != nil {
+		if *value.ByteCount < 0 { return errors.New("sound_recorder_segments.byte_count is below the minimum") }
+		if *value.ByteCount > 209715200 { return errors.New("sound_recorder_segments.byte_count is above the maximum") }
+	}
+	if value.Sha256Hex != nil {
+		if !soundRecorderSegmentsSha256HexPattern.MatchString(*value.Sha256Hex) { return errors.New("sound_recorder_segments.sha256_hex does not match the required pattern") }
+	}
+	if value.Etag != nil {
+		if len([]byte(*value.Etag)) > 160 { return errors.New("sound_recorder_segments.etag exceeds 160 bytes") }
+		if len([]byte(*value.Etag)) < 1 { return errors.New("sound_recorder_segments.etag is below 1 bytes") }
+	}
+	if !validateRawJSON(value.MetaData) { return errors.New("sound_recorder_segments.meta_data must be valid JSON") }
+	return nil
+}
+
+const SoundRecorderEvidenceExportsTable = "sound_recorder_evidence_exports"
+const SoundRecorderEvidenceExportsSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      created_by_device_id::text as created_by_device_id,
+      status,
+      to_char(requested_from at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as requested_from,
+      to_char(requested_to at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as requested_to,
+      segment_count,
+      manifest,
+      to_char(download_url_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as download_url_expires_at,
+      to_char(requested_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as requested_at,
+      to_char(ready_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ready_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      meta_data
+    from sound_recorder_evidence_exports`
+
+var SoundRecorderEvidenceExportsStatusValues = []string{"requested", "ready", "expired", "revoked"}
+
+type SoundRecorderEvidenceExportsBun struct {
+	bun.BaseModel `bun:"table:sound_recorder_evidence_exports"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	AccountId uuid.UUID `bun:"account_id,type:uuid" json:"accountId"`
+	DeviceId *uuid.UUID `bun:"device_id,type:uuid,nullzero" json:"deviceId,omitempty"`
+	CreatedByDeviceId *uuid.UUID `bun:"created_by_device_id,type:uuid,nullzero" json:"createdByDeviceId,omitempty"`
+	Status string `bun:"status,type:varchar(32),default:'requested'" json:"status"`
+	RequestedFrom time.Time `bun:"requested_from,type:timestamptz" json:"requestedFrom"`
+	RequestedTo time.Time `bun:"requested_to,type:timestamptz" json:"requestedTo"`
+	SegmentCount int32 `bun:"segment_count,type:integer,default:0" json:"segmentCount"`
+	Manifest json.RawMessage `bun:"manifest,type:jsonb,default:'{}'::jsonb" json:"manifest"`
+	DownloadUrlExpiresAt *time.Time `bun:"download_url_expires_at,type:timestamptz,nullzero" json:"downloadUrlExpiresAt,omitempty"`
+	RequestedAt time.Time `bun:"requested_at,type:timestamptz,default:now()" json:"requestedAt"`
+	ReadyAt *time.Time `bun:"ready_at,type:timestamptz,nullzero" json:"readyAt,omitempty"`
+	ExpiresAt *time.Time `bun:"expires_at,type:timestamptz,nullzero" json:"expiresAt,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+}
+
+func (value SoundRecorderEvidenceExportsBun) Validate() error {
+	if !containsString(SoundRecorderEvidenceExportsStatusValues, value.Status) { return errors.New("unsupported sound_recorder_evidence_exports.status") }
+	if value.SegmentCount < 0 { return errors.New("sound_recorder_evidence_exports.segment_count is below the minimum") }
+	if !validateRawJSON(value.Manifest) { return errors.New("sound_recorder_evidence_exports.manifest must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("sound_recorder_evidence_exports.meta_data must be valid JSON") }
+	return nil
+}
+
+const SoundRecorderAuditEventsTable = "sound_recorder_audit_events"
+const SoundRecorderAuditEventsSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      event_type,
+      event_hash,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from sound_recorder_audit_events`
+
+type SoundRecorderAuditEventsBun struct {
+	bun.BaseModel `bun:"table:sound_recorder_audit_events"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	AccountId *uuid.UUID `bun:"account_id,type:uuid,nullzero" json:"accountId,omitempty"`
+	DeviceId *uuid.UUID `bun:"device_id,type:uuid,nullzero" json:"deviceId,omitempty"`
+	EventType string `bun:"event_type,type:varchar(80)" json:"eventType"`
+	EventHash string `bun:"event_hash,type:varchar(64)" json:"eventHash"`
+	Payload json.RawMessage `bun:"payload,type:jsonb,default:'{}'::jsonb" json:"payload"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value SoundRecorderAuditEventsBun) Validate() error {
+	if !soundRecorderAuditEventsEventTypePattern.MatchString(value.EventType) { return errors.New("sound_recorder_audit_events.event_type does not match the required pattern") }
+	if !soundRecorderAuditEventsEventHashPattern.MatchString(value.EventHash) { return errors.New("sound_recorder_audit_events.event_hash does not match the required pattern") }
+	if !validateRawJSON(value.Payload) { return errors.New("sound_recorder_audit_events.payload must be valid JSON") }
 	return nil
 }
 

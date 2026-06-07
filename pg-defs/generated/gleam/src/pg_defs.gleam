@@ -231,6 +231,439 @@ pub fn validate_music_song_votes_slug(value: String) -> Result(String, String) {
   }
 }
 
+pub const sound_recorder_accounts_table = "sound_recorder_accounts"
+pub const sound_recorder_accounts_select_sql = "select\n      id::text as id,\n      status,\n      external_subject,\n      display_name,\n      legal_region,\n      retention_hours,\n      retention_policy_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_accounts"
+
+pub type SoundRecorderAccountsStatus {
+  SoundRecorderAccountsStatusActive
+  SoundRecorderAccountsStatusPaused
+  SoundRecorderAccountsStatusLocked
+  SoundRecorderAccountsStatusDeleted
+}
+
+pub fn sound_recorder_accounts_status_to_string(value: SoundRecorderAccountsStatus) -> String {
+  case value {
+    SoundRecorderAccountsStatusActive -> "active"
+    SoundRecorderAccountsStatusPaused -> "paused"
+    SoundRecorderAccountsStatusLocked -> "locked"
+    SoundRecorderAccountsStatusDeleted -> "deleted"
+  }
+}
+
+pub fn parse_sound_recorder_accounts_status(value: String) -> Result(SoundRecorderAccountsStatus, String) {
+  case value {
+    "active" -> Ok(SoundRecorderAccountsStatusActive)
+    "paused" -> Ok(SoundRecorderAccountsStatusPaused)
+    "locked" -> Ok(SoundRecorderAccountsStatusLocked)
+    "deleted" -> Ok(SoundRecorderAccountsStatusDeleted)
+    _ -> Error("unsupported sound_recorder_accounts.status: " <> value)
+  }
+}
+
+pub type SoundRecorderAccountsRow {
+  SoundRecorderAccountsRow(
+    id: String,
+    status: String,
+    external_subject: Option(String),
+    display_name: Option(String),
+    legal_region: Option(String),
+    retention_hours: Int,
+    retention_policy_version: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_sound_recorder_accounts_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sound_recorder_accounts.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_sound_recorder_accounts_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "paused", "locked", "deleted"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_accounts.status: " <> value)
+  }
+}
+
+pub const sound_recorder_devices_table = "sound_recorder_devices"
+pub const sound_recorder_devices_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      platform,\n      status,\n      install_id,\n      device_label,\n      app_version,\n      os_version,\n      token_hash,\n      token_last4,\n      consent_version,\n      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consent_accepted_at,\n      recording_indicator_acknowledged,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_devices"
+
+pub type SoundRecorderDevicesPlatform {
+  SoundRecorderDevicesPlatformIos
+  SoundRecorderDevicesPlatformAndroid
+}
+
+pub fn sound_recorder_devices_platform_to_string(value: SoundRecorderDevicesPlatform) -> String {
+  case value {
+    SoundRecorderDevicesPlatformIos -> "ios"
+    SoundRecorderDevicesPlatformAndroid -> "android"
+  }
+}
+
+pub fn parse_sound_recorder_devices_platform(value: String) -> Result(SoundRecorderDevicesPlatform, String) {
+  case value {
+    "ios" -> Ok(SoundRecorderDevicesPlatformIos)
+    "android" -> Ok(SoundRecorderDevicesPlatformAndroid)
+    _ -> Error("unsupported sound_recorder_devices.platform: " <> value)
+  }
+}
+
+pub type SoundRecorderDevicesStatus {
+  SoundRecorderDevicesStatusActive
+  SoundRecorderDevicesStatusRevoked
+  SoundRecorderDevicesStatusLost
+  SoundRecorderDevicesStatusReplaced
+  SoundRecorderDevicesStatusDeleted
+}
+
+pub fn sound_recorder_devices_status_to_string(value: SoundRecorderDevicesStatus) -> String {
+  case value {
+    SoundRecorderDevicesStatusActive -> "active"
+    SoundRecorderDevicesStatusRevoked -> "revoked"
+    SoundRecorderDevicesStatusLost -> "lost"
+    SoundRecorderDevicesStatusReplaced -> "replaced"
+    SoundRecorderDevicesStatusDeleted -> "deleted"
+  }
+}
+
+pub fn parse_sound_recorder_devices_status(value: String) -> Result(SoundRecorderDevicesStatus, String) {
+  case value {
+    "active" -> Ok(SoundRecorderDevicesStatusActive)
+    "revoked" -> Ok(SoundRecorderDevicesStatusRevoked)
+    "lost" -> Ok(SoundRecorderDevicesStatusLost)
+    "replaced" -> Ok(SoundRecorderDevicesStatusReplaced)
+    "deleted" -> Ok(SoundRecorderDevicesStatusDeleted)
+    _ -> Error("unsupported sound_recorder_devices.status: " <> value)
+  }
+}
+
+pub type SoundRecorderDevicesRow {
+  SoundRecorderDevicesRow(
+    id: String,
+    account_id: String,
+    platform: String,
+    status: String,
+    install_id: String,
+    device_label: Option(String),
+    app_version: Option(String),
+    os_version: Option(String),
+    token_hash: String,
+    token_last4: String,
+    consent_version: String,
+    consent_accepted_at: String,
+    recording_indicator_acknowledged: Bool,
+    last_seen_at: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_sound_recorder_devices_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sound_recorder_devices.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_sound_recorder_devices_platform(value: String) -> Result(String, String) {
+  case list.contains(["ios", "android"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_devices.platform: " <> value)
+  }
+}
+
+pub fn validate_sound_recorder_devices_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "revoked", "lost", "replaced", "deleted"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_devices.status: " <> value)
+  }
+}
+
+pub const sound_recorder_upload_sessions_table = "sound_recorder_upload_sessions"
+pub const sound_recorder_upload_sessions_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      status,\n      storage_provider,\n      storage_bucket,\n      storage_prefix,\n      content_type,\n      codec,\n      sample_rate,\n      channel_count,\n      segment_duration_seconds,\n      max_segment_bytes,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(last_heartbeat_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_heartbeat_at,\n      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closed_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      client_timezone,\n      legal_region,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_upload_sessions"
+
+pub type SoundRecorderUploadSessionsStatus {
+  SoundRecorderUploadSessionsStatusActive
+  SoundRecorderUploadSessionsStatusClosed
+  SoundRecorderUploadSessionsStatusRevoked
+  SoundRecorderUploadSessionsStatusExpired
+}
+
+pub fn sound_recorder_upload_sessions_status_to_string(value: SoundRecorderUploadSessionsStatus) -> String {
+  case value {
+    SoundRecorderUploadSessionsStatusActive -> "active"
+    SoundRecorderUploadSessionsStatusClosed -> "closed"
+    SoundRecorderUploadSessionsStatusRevoked -> "revoked"
+    SoundRecorderUploadSessionsStatusExpired -> "expired"
+  }
+}
+
+pub fn parse_sound_recorder_upload_sessions_status(value: String) -> Result(SoundRecorderUploadSessionsStatus, String) {
+  case value {
+    "active" -> Ok(SoundRecorderUploadSessionsStatusActive)
+    "closed" -> Ok(SoundRecorderUploadSessionsStatusClosed)
+    "revoked" -> Ok(SoundRecorderUploadSessionsStatusRevoked)
+    "expired" -> Ok(SoundRecorderUploadSessionsStatusExpired)
+    _ -> Error("unsupported sound_recorder_upload_sessions.status: " <> value)
+  }
+}
+
+pub type SoundRecorderUploadSessionsStorageProvider {
+  SoundRecorderUploadSessionsStorageProviderS3
+}
+
+pub fn sound_recorder_upload_sessions_storage_provider_to_string(value: SoundRecorderUploadSessionsStorageProvider) -> String {
+  case value {
+    SoundRecorderUploadSessionsStorageProviderS3 -> "s3"
+  }
+}
+
+pub fn parse_sound_recorder_upload_sessions_storage_provider(value: String) -> Result(SoundRecorderUploadSessionsStorageProvider, String) {
+  case value {
+    "s3" -> Ok(SoundRecorderUploadSessionsStorageProviderS3)
+    _ -> Error("unsupported sound_recorder_upload_sessions.storage_provider: " <> value)
+  }
+}
+
+pub type SoundRecorderUploadSessionsRow {
+  SoundRecorderUploadSessionsRow(
+    id: String,
+    account_id: String,
+    device_id: String,
+    status: String,
+    storage_provider: String,
+    storage_bucket: String,
+    storage_prefix: String,
+    content_type: String,
+    codec: Option(String),
+    sample_rate: Option(Int),
+    channel_count: Int,
+    segment_duration_seconds: Int,
+    max_segment_bytes: Int,
+    started_at: String,
+    last_heartbeat_at: Option(String),
+    closed_at: Option(String),
+    expires_at: Option(String),
+    client_timezone: Option(String),
+    legal_region: Option(String),
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_sound_recorder_upload_sessions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sound_recorder_upload_sessions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_sound_recorder_upload_sessions_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "closed", "revoked", "expired"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_upload_sessions.status: " <> value)
+  }
+}
+
+pub fn validate_sound_recorder_upload_sessions_storage_provider(value: String) -> Result(String, String) {
+  case list.contains(["s3"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_upload_sessions.storage_provider: " <> value)
+  }
+}
+
+pub const sound_recorder_segments_table = "sound_recorder_segments"
+pub const sound_recorder_segments_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      session_id::text as session_id,\n      sequence_number,\n      status,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      content_type,\n      codec,\n      to_char(captured_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_started_at,\n      to_char(captured_ended_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_ended_at,\n      duration_millis,\n      byte_count,\n      sha256_hex,\n      to_char(upload_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as upload_url_expires_at,\n      etag,\n      to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as uploaded_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_segments"
+
+pub type SoundRecorderSegmentsStatus {
+  SoundRecorderSegmentsStatusPending
+  SoundRecorderSegmentsStatusUploaded
+  SoundRecorderSegmentsStatusFailed
+  SoundRecorderSegmentsStatusExpired
+  SoundRecorderSegmentsStatusDeleted
+}
+
+pub fn sound_recorder_segments_status_to_string(value: SoundRecorderSegmentsStatus) -> String {
+  case value {
+    SoundRecorderSegmentsStatusPending -> "pending"
+    SoundRecorderSegmentsStatusUploaded -> "uploaded"
+    SoundRecorderSegmentsStatusFailed -> "failed"
+    SoundRecorderSegmentsStatusExpired -> "expired"
+    SoundRecorderSegmentsStatusDeleted -> "deleted"
+  }
+}
+
+pub fn parse_sound_recorder_segments_status(value: String) -> Result(SoundRecorderSegmentsStatus, String) {
+  case value {
+    "pending" -> Ok(SoundRecorderSegmentsStatusPending)
+    "uploaded" -> Ok(SoundRecorderSegmentsStatusUploaded)
+    "failed" -> Ok(SoundRecorderSegmentsStatusFailed)
+    "expired" -> Ok(SoundRecorderSegmentsStatusExpired)
+    "deleted" -> Ok(SoundRecorderSegmentsStatusDeleted)
+    _ -> Error("unsupported sound_recorder_segments.status: " <> value)
+  }
+}
+
+pub type SoundRecorderSegmentsStorageProvider {
+  SoundRecorderSegmentsStorageProviderS3
+}
+
+pub fn sound_recorder_segments_storage_provider_to_string(value: SoundRecorderSegmentsStorageProvider) -> String {
+  case value {
+    SoundRecorderSegmentsStorageProviderS3 -> "s3"
+  }
+}
+
+pub fn parse_sound_recorder_segments_storage_provider(value: String) -> Result(SoundRecorderSegmentsStorageProvider, String) {
+  case value {
+    "s3" -> Ok(SoundRecorderSegmentsStorageProviderS3)
+    _ -> Error("unsupported sound_recorder_segments.storage_provider: " <> value)
+  }
+}
+
+pub type SoundRecorderSegmentsRow {
+  SoundRecorderSegmentsRow(
+    id: String,
+    account_id: String,
+    device_id: String,
+    session_id: String,
+    sequence_number: Int,
+    status: String,
+    storage_provider: String,
+    storage_bucket: String,
+    storage_key: String,
+    content_type: String,
+    codec: Option(String),
+    captured_started_at: String,
+    captured_ended_at: Option(String),
+    duration_millis: Int,
+    byte_count: Option(Int),
+    sha256_hex: Option(String),
+    upload_url_expires_at: Option(String),
+    etag: Option(String),
+    uploaded_at: Option(String),
+    expires_at: String,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_sound_recorder_segments_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sound_recorder_segments.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_sound_recorder_segments_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "uploaded", "failed", "expired", "deleted"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_segments.status: " <> value)
+  }
+}
+
+pub fn validate_sound_recorder_segments_storage_provider(value: String) -> Result(String, String) {
+  case list.contains(["s3"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_segments.storage_provider: " <> value)
+  }
+}
+
+pub const sound_recorder_evidence_exports_table = "sound_recorder_evidence_exports"
+pub const sound_recorder_evidence_exports_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      created_by_device_id::text as created_by_device_id,\n      status,\n      to_char(requested_from at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as requested_from,\n      to_char(requested_to at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as requested_to,\n      segment_count,\n      manifest::text as manifest_json,\n      to_char(download_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as download_url_expires_at,\n      to_char(requested_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as requested_at,\n      to_char(ready_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as ready_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      meta_data::text as meta_data_json\n    from sound_recorder_evidence_exports"
+
+pub type SoundRecorderEvidenceExportsStatus {
+  SoundRecorderEvidenceExportsStatusRequested
+  SoundRecorderEvidenceExportsStatusReady
+  SoundRecorderEvidenceExportsStatusExpired
+  SoundRecorderEvidenceExportsStatusRevoked
+}
+
+pub fn sound_recorder_evidence_exports_status_to_string(value: SoundRecorderEvidenceExportsStatus) -> String {
+  case value {
+    SoundRecorderEvidenceExportsStatusRequested -> "requested"
+    SoundRecorderEvidenceExportsStatusReady -> "ready"
+    SoundRecorderEvidenceExportsStatusExpired -> "expired"
+    SoundRecorderEvidenceExportsStatusRevoked -> "revoked"
+  }
+}
+
+pub fn parse_sound_recorder_evidence_exports_status(value: String) -> Result(SoundRecorderEvidenceExportsStatus, String) {
+  case value {
+    "requested" -> Ok(SoundRecorderEvidenceExportsStatusRequested)
+    "ready" -> Ok(SoundRecorderEvidenceExportsStatusReady)
+    "expired" -> Ok(SoundRecorderEvidenceExportsStatusExpired)
+    "revoked" -> Ok(SoundRecorderEvidenceExportsStatusRevoked)
+    _ -> Error("unsupported sound_recorder_evidence_exports.status: " <> value)
+  }
+}
+
+pub type SoundRecorderEvidenceExportsRow {
+  SoundRecorderEvidenceExportsRow(
+    id: String,
+    account_id: String,
+    device_id: Option(String),
+    created_by_device_id: Option(String),
+    status: String,
+    requested_from: String,
+    requested_to: String,
+    segment_count: Int,
+    manifest_json: String,
+    download_url_expires_at: Option(String),
+    requested_at: String,
+    ready_at: Option(String),
+    expires_at: Option(String),
+    meta_data_json: String,
+  )
+}
+
+pub fn validate_sound_recorder_evidence_exports_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sound_recorder_evidence_exports.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_sound_recorder_evidence_exports_status(value: String) -> Result(String, String) {
+  case list.contains(["requested", "ready", "expired", "revoked"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_evidence_exports.status: " <> value)
+  }
+}
+
+pub const sound_recorder_audit_events_table = "sound_recorder_audit_events"
+pub const sound_recorder_audit_events_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      event_type,\n      event_hash,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from sound_recorder_audit_events"
+
+pub type SoundRecorderAuditEventsRow {
+  SoundRecorderAuditEventsRow(
+    id: String,
+    account_id: Option(String),
+    device_id: Option(String),
+    event_type: String,
+    event_hash: String,
+    payload_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_sound_recorder_audit_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sound_recorder_audit_events.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const container_pool_configs_table = "container_pool_configs"
 pub const container_pool_configs_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      image,\n      command::text as command_json,\n      env::text as env_json,\n      request_path,\n      health_path,\n      container_port,\n      min_warm,\n      max_warm,\n      max_concurrency_per_container,\n      request_timeout_ms,\n      idle_ttl_seconds,\n      nats_subject,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_configs"
 

@@ -116,6 +116,175 @@ class MusicSongVotesTable extends Table {
   };
 }
 
+@DataClassName("SoundRecorderAccountsData")
+class SoundRecorderAccountsTable extends Table {
+  @override String get tableName => "sound_recorder_accounts";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get externalSubject => text().named("external_subject").withLength(max: 240).nullable()();
+  TextColumn get displayName => text().named("display_name").withLength(max: 160).nullable()();
+  TextColumn get legalRegion => text().named("legal_region").withLength(max: 64).nullable()();
+  IntColumn get retentionHours => integer().named("retention_hours").clientDefault(() => 500)();
+  TextColumn get retentionPolicyVersion => text().named("retention_policy_version").withLength(max: 80).clientDefault(() => 'sound-recorder-retention-v1')();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("SoundRecorderDevicesData")
+class SoundRecorderDevicesTable extends Table {
+  @override String get tableName => "sound_recorder_devices";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get accountId => text().named("account_id").customConstraint("UUID REFERENCES sound_recorder_accounts (id)")();
+  TextColumn get platform => text().named("platform")();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get installId => text().named("install_id").withLength(max: 160)();
+  TextColumn get deviceLabel => text().named("device_label").withLength(max: 160).nullable()();
+  TextColumn get appVersion => text().named("app_version").withLength(max: 80).nullable()();
+  TextColumn get osVersion => text().named("os_version").withLength(max: 80).nullable()();
+  TextColumn get tokenHash => text().named("token_hash").withLength(max: 64)();
+  TextColumn get tokenLast4 => text().named("token_last4").withLength(max: 4)();
+  TextColumn get consentVersion => text().named("consent_version").withLength(max: 80)();
+  DateTimeColumn get consentAcceptedAt => dateTime().named("consent_accepted_at").customConstraint("TIMESTAMPTZ")();
+  BoolColumn get recordingIndicatorAcknowledged => boolean().named("recording_indicator_acknowledged").clientDefault(() => false)();
+  DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("SoundRecorderUploadSessionsData")
+class SoundRecorderUploadSessionsTable extends Table {
+  @override String get tableName => "sound_recorder_upload_sessions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get accountId => text().named("account_id").customConstraint("UUID REFERENCES sound_recorder_accounts (id)")();
+  TextColumn get deviceId => text().named("device_id").customConstraint("UUID REFERENCES sound_recorder_devices (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get storageProvider => text().named("storage_provider").clientDefault(() => 's3')();
+  TextColumn get storageBucket => text().named("storage_bucket").withLength(max: 200)();
+  TextColumn get storagePrefix => text().named("storage_prefix")();
+  TextColumn get contentType => text().named("content_type").withLength(max: 120).clientDefault(() => 'audio/mp4')();
+  TextColumn get codec => text().named("codec").withLength(max: 80).nullable()();
+  IntColumn get sampleRate => integer().named("sample_rate").nullable()();
+  IntColumn get channelCount => integer().named("channel_count").clientDefault(() => 1)();
+  IntColumn get segmentDurationSeconds => integer().named("segment_duration_seconds").clientDefault(() => 60)();
+  IntColumn get maxSegmentBytes => integer().named("max_segment_bytes").clientDefault(() => 10485760)();
+  DateTimeColumn get startedAt => dateTime().named("started_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastHeartbeatAt => dateTime().named("last_heartbeat_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get closedAt => dateTime().named("closed_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get expiresAt => dateTime().named("expires_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get clientTimezone => text().named("client_timezone").withLength(max: 80).nullable()();
+  TextColumn get legalRegion => text().named("legal_region").withLength(max: 64).nullable()();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("SoundRecorderSegmentsData")
+class SoundRecorderSegmentsTable extends Table {
+  @override String get tableName => "sound_recorder_segments";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get accountId => text().named("account_id").customConstraint("UUID REFERENCES sound_recorder_accounts (id)")();
+  TextColumn get deviceId => text().named("device_id").customConstraint("UUID REFERENCES sound_recorder_devices (id)")();
+  TextColumn get sessionId => text().named("session_id").customConstraint("UUID REFERENCES sound_recorder_upload_sessions (id)")();
+  IntColumn get sequenceNumber => integer().named("sequence_number")();
+  TextColumn get status => text().named("status").clientDefault(() => 'pending')();
+  TextColumn get storageProvider => text().named("storage_provider").clientDefault(() => 's3')();
+  TextColumn get storageBucket => text().named("storage_bucket").withLength(max: 200)();
+  TextColumn get storageKey => text().named("storage_key")();
+  TextColumn get contentType => text().named("content_type").withLength(max: 120).clientDefault(() => 'audio/mp4')();
+  TextColumn get codec => text().named("codec").withLength(max: 80).nullable()();
+  DateTimeColumn get capturedStartedAt => dateTime().named("captured_started_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get capturedEndedAt => dateTime().named("captured_ended_at").nullable().customConstraint("TIMESTAMPTZ")();
+  IntColumn get durationMillis => integer().named("duration_millis")();
+  IntColumn get byteCount => integer().named("byte_count").nullable()();
+  TextColumn get sha256Hex => text().named("sha256_hex").withLength(max: 64).nullable()();
+  DateTimeColumn get uploadUrlExpiresAt => dateTime().named("upload_url_expires_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get etag => text().named("etag").withLength(max: 160).nullable()();
+  DateTimeColumn get uploadedAt => dateTime().named("uploaded_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get expiresAt => dateTime().named("expires_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("SoundRecorderEvidenceExportsData")
+class SoundRecorderEvidenceExportsTable extends Table {
+  @override String get tableName => "sound_recorder_evidence_exports";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get accountId => text().named("account_id").customConstraint("UUID REFERENCES sound_recorder_accounts (id)")();
+  TextColumn get deviceId => text().named("device_id").nullable().customConstraint("UUID REFERENCES sound_recorder_devices (id)")();
+  TextColumn get createdByDeviceId => text().named("created_by_device_id").nullable().customConstraint("UUID REFERENCES sound_recorder_devices (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'requested')();
+  DateTimeColumn get requestedFrom => dateTime().named("requested_from").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get requestedTo => dateTime().named("requested_to").customConstraint("TIMESTAMPTZ")();
+  IntColumn get segmentCount => integer().named("segment_count").clientDefault(() => 0)();
+  TextColumn get manifest => text().named("manifest").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get downloadUrlExpiresAt => dateTime().named("download_url_expires_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get requestedAt => dateTime().named("requested_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get readyAt => dateTime().named("ready_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get expiresAt => dateTime().named("expires_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("SoundRecorderAuditEventsData")
+class SoundRecorderAuditEventsTable extends Table {
+  @override String get tableName => "sound_recorder_audit_events";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get accountId => text().named("account_id").nullable().customConstraint("UUID REFERENCES sound_recorder_accounts (id)")();
+  TextColumn get deviceId => text().named("device_id").nullable().customConstraint("UUID REFERENCES sound_recorder_devices (id)")();
+  TextColumn get eventType => text().named("event_type").withLength(max: 80)();
+  TextColumn get eventHash => text().named("event_hash").withLength(max: 64)();
+  TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("ContainerPoolConfigsData")
 class ContainerPoolConfigsTable extends Table {
   @override String get tableName => "container_pool_configs";
@@ -1001,6 +1170,12 @@ const List<Type> registeredDriftTables = <Type>[
   VapiPhoneCallEventsTable,
   MusicSongsTable,
   MusicSongVotesTable,
+  SoundRecorderAccountsTable,
+  SoundRecorderDevicesTable,
+  SoundRecorderUploadSessionsTable,
+  SoundRecorderSegmentsTable,
+  SoundRecorderEvidenceExportsTable,
+  SoundRecorderAuditEventsTable,
   ContainerPoolConfigsTable,
   KnownGitRepoTable,
   AgentContextBlobsTable,

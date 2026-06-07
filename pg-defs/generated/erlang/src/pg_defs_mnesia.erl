@@ -3,12 +3,18 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs_mnesia).
--export([app_config_attributes/0, app_config_table_def/0, app_config_record_info/0, vapi_phone_call_events_attributes/0, vapi_phone_call_events_table_def/0, vapi_phone_call_events_record_info/0, music_songs_attributes/0, music_songs_table_def/0, music_songs_record_info/0, music_song_votes_attributes/0, music_song_votes_table_def/0, music_song_votes_record_info/0, container_pool_configs_attributes/0, container_pool_configs_table_def/0, container_pool_configs_record_info/0, known_git_repos_attributes/0, known_git_repos_table_def/0, known_git_repos_record_info/0, agent_context_blobs_attributes/0, agent_context_blobs_table_def/0, agent_context_blobs_record_info/0, agent_context_embeddings_attributes/0, agent_context_embeddings_table_def/0, agent_context_embeddings_record_info/0, agent_remote_dev_threads_attributes/0, agent_remote_dev_threads_table_def/0, agent_remote_dev_threads_record_info/0, agent_remote_dev_tasks_attributes/0, agent_remote_dev_tasks_table_def/0, agent_remote_dev_tasks_record_info/0, agent_remote_dev_events_attributes/0, agent_remote_dev_events_table_def/0, agent_remote_dev_events_record_info/0, agent_remote_dev_breadcrumbs_attributes/0, agent_remote_dev_breadcrumbs_table_def/0, agent_remote_dev_breadcrumbs_record_info/0, agent_remote_dev_artifacts_attributes/0, agent_remote_dev_artifacts_table_def/0, agent_remote_dev_artifacts_record_info/0, agent_remote_dev_runtime_locks_attributes/0, agent_remote_dev_runtime_locks_table_def/0, agent_remote_dev_runtime_locks_record_info/0, mip_solver_sessions_attributes/0, mip_solver_sessions_table_def/0, mip_solver_sessions_record_info/0, mip_solver_solves_attributes/0, mip_solver_solves_table_def/0, mip_solver_solves_record_info/0, mip_solver_jobs_attributes/0, mip_solver_jobs_table_def/0, mip_solver_jobs_record_info/0, mip_solver_events_attributes/0, mip_solver_events_table_def/0, mip_solver_events_record_info/0, lambda_functions_attributes/0, lambda_functions_table_def/0, lambda_functions_record_info/0, container_pool_image_revisions_attributes/0, container_pool_image_revisions_table_def/0, container_pool_image_revisions_record_info/0, container_pool_build_runs_attributes/0, container_pool_build_runs_table_def/0, container_pool_build_runs_record_info/0, presence_convs_attributes/0, presence_convs_table_def/0, presence_convs_record_info/0, presence_conv_members_attributes/0, presence_conv_members_table_def/0, presence_conv_members_record_info/0, presence_users_attributes/0, presence_users_table_def/0, presence_users_record_info/0, presence_events_attributes/0, presence_events_table_def/0, presence_events_record_info/0, presence_consumer_checkpoints_attributes/0, presence_consumer_checkpoints_table_def/0, presence_consumer_checkpoints_record_info/0, des_soccer_learning_experiments_attributes/0, des_soccer_learning_experiments_table_def/0, des_soccer_learning_experiments_record_info/0, des_soccer_learning_policy_versions_attributes/0, des_soccer_learning_policy_versions_table_def/0, des_soccer_learning_policy_versions_record_info/0, des_soccer_learning_policy_entries_attributes/0, des_soccer_learning_policy_entries_table_def/0, des_soccer_learning_policy_entries_record_info/0, des_soccer_learning_jobs_attributes/0, des_soccer_learning_jobs_table_def/0, des_soccer_learning_jobs_record_info/0, des_soccer_learning_runs_attributes/0, des_soccer_learning_runs_table_def/0, des_soccer_learning_runs_record_info/0, des_soccer_learning_run_deltas_attributes/0, des_soccer_learning_run_deltas_table_def/0, des_soccer_learning_run_deltas_record_info/0, des_soccer_learning_merge_events_attributes/0, des_soccer_learning_merge_events_table_def/0, des_soccer_learning_merge_events_record_info/0, des_fel_elevator_learning_runs_attributes/0, des_fel_elevator_learning_runs_table_def/0, des_fel_elevator_learning_runs_record_info/0, des_fel_elevator_policy_states_attributes/0, des_fel_elevator_policy_states_table_def/0, des_fel_elevator_policy_states_record_info/0, des_fel_elevator_dispatch_decisions_attributes/0, des_fel_elevator_dispatch_decisions_table_def/0, des_fel_elevator_dispatch_decisions_record_info/0, des_fel_elevator_pomdp_beliefs_attributes/0, des_fel_elevator_pomdp_beliefs_table_def/0, des_fel_elevator_pomdp_beliefs_record_info/0, all_table_defs/0]).
+-export([app_config_attributes/0, app_config_table_def/0, app_config_record_info/0, vapi_phone_call_events_attributes/0, vapi_phone_call_events_table_def/0, vapi_phone_call_events_record_info/0, music_songs_attributes/0, music_songs_table_def/0, music_songs_record_info/0, music_song_votes_attributes/0, music_song_votes_table_def/0, music_song_votes_record_info/0, sound_recorder_accounts_attributes/0, sound_recorder_accounts_table_def/0, sound_recorder_accounts_record_info/0, sound_recorder_devices_attributes/0, sound_recorder_devices_table_def/0, sound_recorder_devices_record_info/0, sound_recorder_upload_sessions_attributes/0, sound_recorder_upload_sessions_table_def/0, sound_recorder_upload_sessions_record_info/0, sound_recorder_segments_attributes/0, sound_recorder_segments_table_def/0, sound_recorder_segments_record_info/0, sound_recorder_evidence_exports_attributes/0, sound_recorder_evidence_exports_table_def/0, sound_recorder_evidence_exports_record_info/0, sound_recorder_audit_events_attributes/0, sound_recorder_audit_events_table_def/0, sound_recorder_audit_events_record_info/0, container_pool_configs_attributes/0, container_pool_configs_table_def/0, container_pool_configs_record_info/0, known_git_repos_attributes/0, known_git_repos_table_def/0, known_git_repos_record_info/0, agent_context_blobs_attributes/0, agent_context_blobs_table_def/0, agent_context_blobs_record_info/0, agent_context_embeddings_attributes/0, agent_context_embeddings_table_def/0, agent_context_embeddings_record_info/0, agent_remote_dev_threads_attributes/0, agent_remote_dev_threads_table_def/0, agent_remote_dev_threads_record_info/0, agent_remote_dev_tasks_attributes/0, agent_remote_dev_tasks_table_def/0, agent_remote_dev_tasks_record_info/0, agent_remote_dev_events_attributes/0, agent_remote_dev_events_table_def/0, agent_remote_dev_events_record_info/0, agent_remote_dev_breadcrumbs_attributes/0, agent_remote_dev_breadcrumbs_table_def/0, agent_remote_dev_breadcrumbs_record_info/0, agent_remote_dev_artifacts_attributes/0, agent_remote_dev_artifacts_table_def/0, agent_remote_dev_artifacts_record_info/0, agent_remote_dev_runtime_locks_attributes/0, agent_remote_dev_runtime_locks_table_def/0, agent_remote_dev_runtime_locks_record_info/0, mip_solver_sessions_attributes/0, mip_solver_sessions_table_def/0, mip_solver_sessions_record_info/0, mip_solver_solves_attributes/0, mip_solver_solves_table_def/0, mip_solver_solves_record_info/0, mip_solver_jobs_attributes/0, mip_solver_jobs_table_def/0, mip_solver_jobs_record_info/0, mip_solver_events_attributes/0, mip_solver_events_table_def/0, mip_solver_events_record_info/0, lambda_functions_attributes/0, lambda_functions_table_def/0, lambda_functions_record_info/0, container_pool_image_revisions_attributes/0, container_pool_image_revisions_table_def/0, container_pool_image_revisions_record_info/0, container_pool_build_runs_attributes/0, container_pool_build_runs_table_def/0, container_pool_build_runs_record_info/0, presence_convs_attributes/0, presence_convs_table_def/0, presence_convs_record_info/0, presence_conv_members_attributes/0, presence_conv_members_table_def/0, presence_conv_members_record_info/0, presence_users_attributes/0, presence_users_table_def/0, presence_users_record_info/0, presence_events_attributes/0, presence_events_table_def/0, presence_events_record_info/0, presence_consumer_checkpoints_attributes/0, presence_consumer_checkpoints_table_def/0, presence_consumer_checkpoints_record_info/0, des_soccer_learning_experiments_attributes/0, des_soccer_learning_experiments_table_def/0, des_soccer_learning_experiments_record_info/0, des_soccer_learning_policy_versions_attributes/0, des_soccer_learning_policy_versions_table_def/0, des_soccer_learning_policy_versions_record_info/0, des_soccer_learning_policy_entries_attributes/0, des_soccer_learning_policy_entries_table_def/0, des_soccer_learning_policy_entries_record_info/0, des_soccer_learning_jobs_attributes/0, des_soccer_learning_jobs_table_def/0, des_soccer_learning_jobs_record_info/0, des_soccer_learning_runs_attributes/0, des_soccer_learning_runs_table_def/0, des_soccer_learning_runs_record_info/0, des_soccer_learning_run_deltas_attributes/0, des_soccer_learning_run_deltas_table_def/0, des_soccer_learning_run_deltas_record_info/0, des_soccer_learning_merge_events_attributes/0, des_soccer_learning_merge_events_table_def/0, des_soccer_learning_merge_events_record_info/0, des_fel_elevator_learning_runs_attributes/0, des_fel_elevator_learning_runs_table_def/0, des_fel_elevator_learning_runs_record_info/0, des_fel_elevator_policy_states_attributes/0, des_fel_elevator_policy_states_table_def/0, des_fel_elevator_policy_states_record_info/0, des_fel_elevator_dispatch_decisions_attributes/0, des_fel_elevator_dispatch_decisions_table_def/0, des_fel_elevator_dispatch_decisions_record_info/0, des_fel_elevator_pomdp_beliefs_attributes/0, des_fel_elevator_pomdp_beliefs_table_def/0, des_fel_elevator_pomdp_beliefs_record_info/0, all_table_defs/0]).
 
 -record(app_config, {id, scope, key, value, version, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
 -record(vapi_phone_call_events, {id, call_id, event_type, payload_hash, caller_hash, called_number_hash, ended_reason, duration_seconds, summary, payload, created_at}).
 -record(music_songs, {id, title, slug, status, seed, generation_date, storage_provider, storage_bucket, storage_key, audio_url, content_type, duration_millis, sample_rate, bpm_millis, genre, peak_micros, rms_micros, spectral_centroid_millihz, listenability_score_micros, vote_score, up_votes, down_votes, play_count, summary, meta_data, published_at, created_at, updated_at}).
 -record(music_song_votes, {id, song_id, visitor_hash, user_agent_hash, vote_value, created_at, updated_at}).
+-record(sound_recorder_accounts, {id, status, external_subject, display_name, legal_region, retention_hours, retention_policy_version, created_at, updated_at}).
+-record(sound_recorder_devices, {id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, created_at, updated_at}).
+-record(sound_recorder_upload_sessions, {id, account_id, device_id, status, storage_provider, storage_bucket, storage_prefix, content_type, codec, sample_rate, channel_count, segment_duration_seconds, max_segment_bytes, started_at, last_heartbeat_at, closed_at, expires_at, client_timezone, legal_region, meta_data, created_at, updated_at}).
+-record(sound_recorder_segments, {id, account_id, device_id, session_id, sequence_number, status, storage_provider, storage_bucket, storage_key, content_type, codec, captured_started_at, captured_ended_at, duration_millis, byte_count, sha256_hex, upload_url_expires_at, etag, uploaded_at, expires_at, meta_data, created_at, updated_at}).
+-record(sound_recorder_evidence_exports, {id, account_id, device_id, created_by_device_id, status, requested_from, requested_to, segment_count, manifest, download_url_expires_at, requested_at, ready_at, expires_at, meta_data}).
+-record(sound_recorder_audit_events, {id, account_id, device_id, event_type, event_hash, payload, created_at}).
 -record(container_pool_configs, {id, slug, display_name, image, command, env, request_path, health_path, container_port, min_warm, max_warm, max_concurrency_per_container, request_timeout_ms, idle_ttl_seconds, nats_subject, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
 -record(known_git_repos, {id, repo_url, display_name, provider, default_branch, status, last_verified_at, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
 -record(agent_context_blobs, {id, project_id, repo_id, context_id, context_title, context_blob, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
@@ -92,6 +98,84 @@ music_song_votes_table_def() ->
         {attributes, music_song_votes_attributes()},
         {type, set},
         {record_name, music_song_votes},
+        {disc_copies, [node()]}
+    ].
+
+sound_recorder_accounts_attributes() -> ['id', 'status', 'external_subject', 'display_name', 'legal_region', 'retention_hours', 'retention_policy_version', 'created_at', 'updated_at'].
+
+sound_recorder_accounts_record_info() ->
+    {sound_recorder_accounts, 9, sound_recorder_accounts_attributes()}.
+
+sound_recorder_accounts_table_def() ->
+    [
+        {attributes, sound_recorder_accounts_attributes()},
+        {type, set},
+        {record_name, sound_recorder_accounts},
+        {disc_copies, [node()]}
+    ].
+
+sound_recorder_devices_attributes() -> ['id', 'account_id', 'platform', 'status', 'install_id', 'device_label', 'app_version', 'os_version', 'token_hash', 'token_last4', 'consent_version', 'consent_accepted_at', 'recording_indicator_acknowledged', 'last_seen_at', 'created_at', 'updated_at'].
+
+sound_recorder_devices_record_info() ->
+    {sound_recorder_devices, 16, sound_recorder_devices_attributes()}.
+
+sound_recorder_devices_table_def() ->
+    [
+        {attributes, sound_recorder_devices_attributes()},
+        {type, set},
+        {record_name, sound_recorder_devices},
+        {disc_copies, [node()]}
+    ].
+
+sound_recorder_upload_sessions_attributes() -> ['id', 'account_id', 'device_id', 'status', 'storage_provider', 'storage_bucket', 'storage_prefix', 'content_type', 'codec', 'sample_rate', 'channel_count', 'segment_duration_seconds', 'max_segment_bytes', 'started_at', 'last_heartbeat_at', 'closed_at', 'expires_at', 'client_timezone', 'legal_region', 'meta_data', 'created_at', 'updated_at'].
+
+sound_recorder_upload_sessions_record_info() ->
+    {sound_recorder_upload_sessions, 22, sound_recorder_upload_sessions_attributes()}.
+
+sound_recorder_upload_sessions_table_def() ->
+    [
+        {attributes, sound_recorder_upload_sessions_attributes()},
+        {type, set},
+        {record_name, sound_recorder_upload_sessions},
+        {disc_copies, [node()]}
+    ].
+
+sound_recorder_segments_attributes() -> ['id', 'account_id', 'device_id', 'session_id', 'sequence_number', 'status', 'storage_provider', 'storage_bucket', 'storage_key', 'content_type', 'codec', 'captured_started_at', 'captured_ended_at', 'duration_millis', 'byte_count', 'sha256_hex', 'upload_url_expires_at', 'etag', 'uploaded_at', 'expires_at', 'meta_data', 'created_at', 'updated_at'].
+
+sound_recorder_segments_record_info() ->
+    {sound_recorder_segments, 23, sound_recorder_segments_attributes()}.
+
+sound_recorder_segments_table_def() ->
+    [
+        {attributes, sound_recorder_segments_attributes()},
+        {type, set},
+        {record_name, sound_recorder_segments},
+        {disc_copies, [node()]}
+    ].
+
+sound_recorder_evidence_exports_attributes() -> ['id', 'account_id', 'device_id', 'created_by_device_id', 'status', 'requested_from', 'requested_to', 'segment_count', 'manifest', 'download_url_expires_at', 'requested_at', 'ready_at', 'expires_at', 'meta_data'].
+
+sound_recorder_evidence_exports_record_info() ->
+    {sound_recorder_evidence_exports, 14, sound_recorder_evidence_exports_attributes()}.
+
+sound_recorder_evidence_exports_table_def() ->
+    [
+        {attributes, sound_recorder_evidence_exports_attributes()},
+        {type, set},
+        {record_name, sound_recorder_evidence_exports},
+        {disc_copies, [node()]}
+    ].
+
+sound_recorder_audit_events_attributes() -> ['id', 'account_id', 'device_id', 'event_type', 'event_hash', 'payload', 'created_at'].
+
+sound_recorder_audit_events_record_info() ->
+    {sound_recorder_audit_events, 7, sound_recorder_audit_events_attributes()}.
+
+sound_recorder_audit_events_table_def() ->
+    [
+        {attributes, sound_recorder_audit_events_attributes()},
+        {type, set},
+        {record_name, sound_recorder_audit_events},
         {disc_copies, [node()]}
     ].
 
@@ -525,4 +609,4 @@ des_fel_elevator_pomdp_beliefs_table_def() ->
     ].
 
 all_table_defs() ->
-    [{app_config, app_config_table_def()}, {vapi_phone_call_events, vapi_phone_call_events_table_def()}, {music_songs, music_songs_table_def()}, {music_song_votes, music_song_votes_table_def()}, {container_pool_configs, container_pool_configs_table_def()}, {known_git_repos, known_git_repos_table_def()}, {agent_context_blobs, agent_context_blobs_table_def()}, {agent_context_embeddings, agent_context_embeddings_table_def()}, {agent_remote_dev_threads, agent_remote_dev_threads_table_def()}, {agent_remote_dev_tasks, agent_remote_dev_tasks_table_def()}, {agent_remote_dev_events, agent_remote_dev_events_table_def()}, {agent_remote_dev_breadcrumbs, agent_remote_dev_breadcrumbs_table_def()}, {agent_remote_dev_artifacts, agent_remote_dev_artifacts_table_def()}, {agent_remote_dev_runtime_locks, agent_remote_dev_runtime_locks_table_def()}, {mip_solver_sessions, mip_solver_sessions_table_def()}, {mip_solver_solves, mip_solver_solves_table_def()}, {mip_solver_jobs, mip_solver_jobs_table_def()}, {mip_solver_events, mip_solver_events_table_def()}, {lambda_functions, lambda_functions_table_def()}, {container_pool_image_revisions, container_pool_image_revisions_table_def()}, {container_pool_build_runs, container_pool_build_runs_table_def()}, {presence_convs, presence_convs_table_def()}, {presence_conv_members, presence_conv_members_table_def()}, {presence_users, presence_users_table_def()}, {presence_events, presence_events_table_def()}, {presence_consumer_checkpoints, presence_consumer_checkpoints_table_def()}, {des_soccer_learning_experiments, des_soccer_learning_experiments_table_def()}, {des_soccer_learning_policy_versions, des_soccer_learning_policy_versions_table_def()}, {des_soccer_learning_policy_entries, des_soccer_learning_policy_entries_table_def()}, {des_soccer_learning_jobs, des_soccer_learning_jobs_table_def()}, {des_soccer_learning_runs, des_soccer_learning_runs_table_def()}, {des_soccer_learning_run_deltas, des_soccer_learning_run_deltas_table_def()}, {des_soccer_learning_merge_events, des_soccer_learning_merge_events_table_def()}, {des_fel_elevator_learning_runs, des_fel_elevator_learning_runs_table_def()}, {des_fel_elevator_policy_states, des_fel_elevator_policy_states_table_def()}, {des_fel_elevator_dispatch_decisions, des_fel_elevator_dispatch_decisions_table_def()}, {des_fel_elevator_pomdp_beliefs, des_fel_elevator_pomdp_beliefs_table_def()}].
+    [{app_config, app_config_table_def()}, {vapi_phone_call_events, vapi_phone_call_events_table_def()}, {music_songs, music_songs_table_def()}, {music_song_votes, music_song_votes_table_def()}, {sound_recorder_accounts, sound_recorder_accounts_table_def()}, {sound_recorder_devices, sound_recorder_devices_table_def()}, {sound_recorder_upload_sessions, sound_recorder_upload_sessions_table_def()}, {sound_recorder_segments, sound_recorder_segments_table_def()}, {sound_recorder_evidence_exports, sound_recorder_evidence_exports_table_def()}, {sound_recorder_audit_events, sound_recorder_audit_events_table_def()}, {container_pool_configs, container_pool_configs_table_def()}, {known_git_repos, known_git_repos_table_def()}, {agent_context_blobs, agent_context_blobs_table_def()}, {agent_context_embeddings, agent_context_embeddings_table_def()}, {agent_remote_dev_threads, agent_remote_dev_threads_table_def()}, {agent_remote_dev_tasks, agent_remote_dev_tasks_table_def()}, {agent_remote_dev_events, agent_remote_dev_events_table_def()}, {agent_remote_dev_breadcrumbs, agent_remote_dev_breadcrumbs_table_def()}, {agent_remote_dev_artifacts, agent_remote_dev_artifacts_table_def()}, {agent_remote_dev_runtime_locks, agent_remote_dev_runtime_locks_table_def()}, {mip_solver_sessions, mip_solver_sessions_table_def()}, {mip_solver_solves, mip_solver_solves_table_def()}, {mip_solver_jobs, mip_solver_jobs_table_def()}, {mip_solver_events, mip_solver_events_table_def()}, {lambda_functions, lambda_functions_table_def()}, {container_pool_image_revisions, container_pool_image_revisions_table_def()}, {container_pool_build_runs, container_pool_build_runs_table_def()}, {presence_convs, presence_convs_table_def()}, {presence_conv_members, presence_conv_members_table_def()}, {presence_users, presence_users_table_def()}, {presence_events, presence_events_table_def()}, {presence_consumer_checkpoints, presence_consumer_checkpoints_table_def()}, {des_soccer_learning_experiments, des_soccer_learning_experiments_table_def()}, {des_soccer_learning_policy_versions, des_soccer_learning_policy_versions_table_def()}, {des_soccer_learning_policy_entries, des_soccer_learning_policy_entries_table_def()}, {des_soccer_learning_jobs, des_soccer_learning_jobs_table_def()}, {des_soccer_learning_runs, des_soccer_learning_runs_table_def()}, {des_soccer_learning_run_deltas, des_soccer_learning_run_deltas_table_def()}, {des_soccer_learning_merge_events, des_soccer_learning_merge_events_table_def()}, {des_fel_elevator_learning_runs, des_fel_elevator_learning_runs_table_def()}, {des_fel_elevator_policy_states, des_fel_elevator_policy_states_table_def()}, {des_fel_elevator_dispatch_decisions, des_fel_elevator_dispatch_decisions_table_def()}, {des_fel_elevator_pomdp_beliefs, des_fel_elevator_pomdp_beliefs_table_def()}].

@@ -61,6 +61,96 @@ update music_song_votes set song_id = $2, visitor_hash = $3, user_agent_hash = $
 -- name: DeleteMusicSongVotes :exec
 delete from music_song_votes where id = $1;
 
+-- name: ListSoundRecorderAccounts :many
+select id, status, external_subject, display_name, legal_region, retention_hours, retention_policy_version, created_at, updated_at from sound_recorder_accounts;
+
+-- name: GetSoundRecorderAccounts :one
+select id, status, external_subject, display_name, legal_region, retention_hours, retention_policy_version, created_at, updated_at from sound_recorder_accounts where id = $1 limit 1;
+
+-- name: CreateSoundRecorderAccounts :one
+insert into sound_recorder_accounts (id, status, external_subject, display_name, legal_region, retention_hours, retention_policy_version, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, status, external_subject, display_name, legal_region, retention_hours, retention_policy_version, created_at, updated_at;
+
+-- name: UpdateSoundRecorderAccounts :one
+update sound_recorder_accounts set status = $2, external_subject = $3, display_name = $4, legal_region = $5, retention_hours = $6, retention_policy_version = $7, updated_at = $8 where id = $1 returning id, status, external_subject, display_name, legal_region, retention_hours, retention_policy_version, created_at, updated_at;
+
+-- name: DeleteSoundRecorderAccounts :exec
+delete from sound_recorder_accounts where id = $1;
+
+-- name: ListSoundRecorderDevices :many
+select id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, created_at, updated_at from sound_recorder_devices;
+
+-- name: GetSoundRecorderDevices :one
+select id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, created_at, updated_at from sound_recorder_devices where id = $1 limit 1;
+
+-- name: CreateSoundRecorderDevices :one
+insert into sound_recorder_devices (id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, created_at, updated_at;
+
+-- name: UpdateSoundRecorderDevices :one
+update sound_recorder_devices set account_id = $2, platform = $3, status = $4, install_id = $5, device_label = $6, app_version = $7, os_version = $8, token_hash = $9, token_last4 = $10, consent_version = $11, consent_accepted_at = $12, recording_indicator_acknowledged = $13, last_seen_at = $14, updated_at = $15 where id = $1 returning id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, created_at, updated_at;
+
+-- name: DeleteSoundRecorderDevices :exec
+delete from sound_recorder_devices where id = $1;
+
+-- name: ListSoundRecorderUploadSessions :many
+select id, account_id, device_id, status, storage_provider, storage_bucket, storage_prefix, content_type, codec, sample_rate, channel_count, segment_duration_seconds, max_segment_bytes, started_at, last_heartbeat_at, closed_at, expires_at, client_timezone, legal_region, meta_data, created_at, updated_at from sound_recorder_upload_sessions;
+
+-- name: GetSoundRecorderUploadSessions :one
+select id, account_id, device_id, status, storage_provider, storage_bucket, storage_prefix, content_type, codec, sample_rate, channel_count, segment_duration_seconds, max_segment_bytes, started_at, last_heartbeat_at, closed_at, expires_at, client_timezone, legal_region, meta_data, created_at, updated_at from sound_recorder_upload_sessions where id = $1 limit 1;
+
+-- name: CreateSoundRecorderUploadSessions :one
+insert into sound_recorder_upload_sessions (id, account_id, device_id, status, storage_provider, storage_bucket, storage_prefix, content_type, codec, sample_rate, channel_count, segment_duration_seconds, max_segment_bytes, started_at, last_heartbeat_at, closed_at, expires_at, client_timezone, legal_region, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) returning id, account_id, device_id, status, storage_provider, storage_bucket, storage_prefix, content_type, codec, sample_rate, channel_count, segment_duration_seconds, max_segment_bytes, started_at, last_heartbeat_at, closed_at, expires_at, client_timezone, legal_region, meta_data, created_at, updated_at;
+
+-- name: UpdateSoundRecorderUploadSessions :one
+update sound_recorder_upload_sessions set account_id = $2, device_id = $3, status = $4, storage_provider = $5, storage_bucket = $6, storage_prefix = $7, content_type = $8, codec = $9, sample_rate = $10, channel_count = $11, segment_duration_seconds = $12, max_segment_bytes = $13, started_at = $14, last_heartbeat_at = $15, closed_at = $16, expires_at = $17, client_timezone = $18, legal_region = $19, meta_data = $20, updated_at = $21 where id = $1 returning id, account_id, device_id, status, storage_provider, storage_bucket, storage_prefix, content_type, codec, sample_rate, channel_count, segment_duration_seconds, max_segment_bytes, started_at, last_heartbeat_at, closed_at, expires_at, client_timezone, legal_region, meta_data, created_at, updated_at;
+
+-- name: DeleteSoundRecorderUploadSessions :exec
+delete from sound_recorder_upload_sessions where id = $1;
+
+-- name: ListSoundRecorderSegments :many
+select id, account_id, device_id, session_id, sequence_number, status, storage_provider, storage_bucket, storage_key, content_type, codec, captured_started_at, captured_ended_at, duration_millis, byte_count, sha256_hex, upload_url_expires_at, etag, uploaded_at, expires_at, meta_data, created_at, updated_at from sound_recorder_segments;
+
+-- name: GetSoundRecorderSegments :one
+select id, account_id, device_id, session_id, sequence_number, status, storage_provider, storage_bucket, storage_key, content_type, codec, captured_started_at, captured_ended_at, duration_millis, byte_count, sha256_hex, upload_url_expires_at, etag, uploaded_at, expires_at, meta_data, created_at, updated_at from sound_recorder_segments where id = $1 limit 1;
+
+-- name: CreateSoundRecorderSegments :one
+insert into sound_recorder_segments (id, account_id, device_id, session_id, sequence_number, status, storage_provider, storage_bucket, storage_key, content_type, codec, captured_started_at, captured_ended_at, duration_millis, byte_count, sha256_hex, upload_url_expires_at, etag, uploaded_at, expires_at, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) returning id, account_id, device_id, session_id, sequence_number, status, storage_provider, storage_bucket, storage_key, content_type, codec, captured_started_at, captured_ended_at, duration_millis, byte_count, sha256_hex, upload_url_expires_at, etag, uploaded_at, expires_at, meta_data, created_at, updated_at;
+
+-- name: UpdateSoundRecorderSegments :one
+update sound_recorder_segments set account_id = $2, device_id = $3, session_id = $4, sequence_number = $5, status = $6, storage_provider = $7, storage_bucket = $8, storage_key = $9, content_type = $10, codec = $11, captured_started_at = $12, captured_ended_at = $13, duration_millis = $14, byte_count = $15, sha256_hex = $16, upload_url_expires_at = $17, etag = $18, uploaded_at = $19, expires_at = $20, meta_data = $21, updated_at = $22 where id = $1 returning id, account_id, device_id, session_id, sequence_number, status, storage_provider, storage_bucket, storage_key, content_type, codec, captured_started_at, captured_ended_at, duration_millis, byte_count, sha256_hex, upload_url_expires_at, etag, uploaded_at, expires_at, meta_data, created_at, updated_at;
+
+-- name: DeleteSoundRecorderSegments :exec
+delete from sound_recorder_segments where id = $1;
+
+-- name: ListSoundRecorderEvidenceExports :many
+select id, account_id, device_id, created_by_device_id, status, requested_from, requested_to, segment_count, manifest, download_url_expires_at, requested_at, ready_at, expires_at, meta_data from sound_recorder_evidence_exports;
+
+-- name: GetSoundRecorderEvidenceExports :one
+select id, account_id, device_id, created_by_device_id, status, requested_from, requested_to, segment_count, manifest, download_url_expires_at, requested_at, ready_at, expires_at, meta_data from sound_recorder_evidence_exports where id = $1 limit 1;
+
+-- name: CreateSoundRecorderEvidenceExports :one
+insert into sound_recorder_evidence_exports (id, account_id, device_id, created_by_device_id, status, requested_from, requested_to, segment_count, manifest, download_url_expires_at, requested_at, ready_at, expires_at, meta_data) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning id, account_id, device_id, created_by_device_id, status, requested_from, requested_to, segment_count, manifest, download_url_expires_at, requested_at, ready_at, expires_at, meta_data;
+
+-- name: UpdateSoundRecorderEvidenceExports :one
+update sound_recorder_evidence_exports set account_id = $2, device_id = $3, created_by_device_id = $4, status = $5, requested_from = $6, requested_to = $7, segment_count = $8, manifest = $9, download_url_expires_at = $10, requested_at = $11, ready_at = $12, expires_at = $13, meta_data = $14 where id = $1 returning id, account_id, device_id, created_by_device_id, status, requested_from, requested_to, segment_count, manifest, download_url_expires_at, requested_at, ready_at, expires_at, meta_data;
+
+-- name: DeleteSoundRecorderEvidenceExports :exec
+delete from sound_recorder_evidence_exports where id = $1;
+
+-- name: ListSoundRecorderAuditEvents :many
+select id, account_id, device_id, event_type, event_hash, payload, created_at from sound_recorder_audit_events;
+
+-- name: GetSoundRecorderAuditEvents :one
+select id, account_id, device_id, event_type, event_hash, payload, created_at from sound_recorder_audit_events where id = $1 limit 1;
+
+-- name: CreateSoundRecorderAuditEvents :one
+insert into sound_recorder_audit_events (id, account_id, device_id, event_type, event_hash, payload, created_at) values ($1, $2, $3, $4, $5, $6, $7) returning id, account_id, device_id, event_type, event_hash, payload, created_at;
+
+-- name: UpdateSoundRecorderAuditEvents :one
+update sound_recorder_audit_events set account_id = $2, device_id = $3, event_type = $4, event_hash = $5, payload = $6 where id = $1 returning id, account_id, device_id, event_type, event_hash, payload, created_at;
+
+-- name: DeleteSoundRecorderAuditEvents :exec
+delete from sound_recorder_audit_events where id = $1;
+
 -- name: ListContainerPoolConfigs :many
 select id, slug, display_name, image, command, env, request_path, health_path, container_port, min_warm, max_warm, max_concurrency_per_container, request_timeout_ms, idle_ttl_seconds, nats_subject, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from container_pool_configs;
 

@@ -24,6 +24,15 @@ var musicSongsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,218}[a-z0-9
 var musicSongsGenerationDatePattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 var musicSongVotesVisitorHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var musicSongVotesUserAgentHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var soundRecorderAccountsLegalRegionPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,64}$`)
+var soundRecorderAccountsRetentionPolicyVersionPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var soundRecorderDevicesTokenHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var soundRecorderDevicesTokenLast4Pattern = regexp.MustCompile(`^[A-Za-z0-9_-]{4}$`)
+var soundRecorderDevicesConsentVersionPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var soundRecorderUploadSessionsLegalRegionPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,64}$`)
+var soundRecorderSegmentsSha256HexPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var soundRecorderAuditEventsEventTypePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var soundRecorderAuditEventsEventHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var containerPoolConfigsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var containerPoolConfigsRequestPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
 var containerPoolConfigsHealthPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
@@ -290,6 +299,377 @@ func (value MusicSongVotesGorm) Validate() error {
 	}
 	if value.VoteValue < -1 { return errors.New("music_song_votes.vote_value is below the minimum") }
 	if value.VoteValue > 1 { return errors.New("music_song_votes.vote_value is above the maximum") }
+	return nil
+}
+
+const SoundRecorderAccountsTable = "sound_recorder_accounts"
+const SoundRecorderAccountsSelectSQL = `select
+      id::text as id,
+      status,
+      external_subject,
+      display_name,
+      legal_region,
+      retention_hours,
+      retention_policy_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_accounts`
+
+var SoundRecorderAccountsStatusValues = []string{"active", "paused", "locked", "deleted"}
+
+type SoundRecorderAccountsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	ExternalSubject *string `gorm:"column:external_subject;type:varchar(240)" json:"externalSubject,omitempty"`
+	DisplayName *string `gorm:"column:display_name;type:varchar(160)" json:"displayName,omitempty"`
+	LegalRegion *string `gorm:"column:legal_region;type:varchar(64)" json:"legalRegion,omitempty"`
+	RetentionHours int32 `gorm:"column:retention_hours;type:integer;default:500;not null" json:"retentionHours"`
+	RetentionPolicyVersion string `gorm:"column:retention_policy_version;type:varchar(80);default:'sound-recorder-retention-v1';not null" json:"retentionPolicyVersion"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (SoundRecorderAccountsGorm) TableName() string { return SoundRecorderAccountsTable }
+
+func (value SoundRecorderAccountsGorm) Validate() error {
+	if !containsString(SoundRecorderAccountsStatusValues, value.Status) { return errors.New("unsupported sound_recorder_accounts.status") }
+	if value.ExternalSubject != nil {
+		if len([]byte(*value.ExternalSubject)) > 240 { return errors.New("sound_recorder_accounts.external_subject exceeds 240 bytes") }
+		if len([]byte(*value.ExternalSubject)) < 1 { return errors.New("sound_recorder_accounts.external_subject is below 1 bytes") }
+	}
+	if value.DisplayName != nil {
+		if len([]byte(*value.DisplayName)) > 160 { return errors.New("sound_recorder_accounts.display_name exceeds 160 bytes") }
+		if len([]byte(*value.DisplayName)) < 1 { return errors.New("sound_recorder_accounts.display_name is below 1 bytes") }
+	}
+	if value.LegalRegion != nil {
+		if !soundRecorderAccountsLegalRegionPattern.MatchString(*value.LegalRegion) { return errors.New("sound_recorder_accounts.legal_region does not match the required pattern") }
+	}
+	if value.RetentionHours < 1 { return errors.New("sound_recorder_accounts.retention_hours is below the minimum") }
+	if value.RetentionHours > 500 { return errors.New("sound_recorder_accounts.retention_hours is above the maximum") }
+	if !soundRecorderAccountsRetentionPolicyVersionPattern.MatchString(value.RetentionPolicyVersion) { return errors.New("sound_recorder_accounts.retention_policy_version does not match the required pattern") }
+	return nil
+}
+
+const SoundRecorderDevicesTable = "sound_recorder_devices"
+const SoundRecorderDevicesSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      platform,
+      status,
+      install_id,
+      device_label,
+      app_version,
+      os_version,
+      token_hash,
+      token_last4,
+      consent_version,
+      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consent_accepted_at,
+      recording_indicator_acknowledged,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_devices`
+
+var SoundRecorderDevicesPlatformValues = []string{"ios", "android"}
+var SoundRecorderDevicesStatusValues = []string{"active", "revoked", "lost", "replaced", "deleted"}
+
+type SoundRecorderDevicesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	AccountId uuid.UUID `gorm:"column:account_id;type:uuid;not null" json:"accountId"`
+	Platform string `gorm:"column:platform;type:varchar(24);not null" json:"platform"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	InstallId string `gorm:"column:install_id;type:varchar(160);not null" json:"installId"`
+	DeviceLabel *string `gorm:"column:device_label;type:varchar(160)" json:"deviceLabel,omitempty"`
+	AppVersion *string `gorm:"column:app_version;type:varchar(80)" json:"appVersion,omitempty"`
+	OsVersion *string `gorm:"column:os_version;type:varchar(80)" json:"osVersion,omitempty"`
+	TokenHash string `gorm:"column:token_hash;type:varchar(64);not null" json:"tokenHash"`
+	TokenLast4 string `gorm:"column:token_last4;type:varchar(4);not null" json:"tokenLast4"`
+	ConsentVersion string `gorm:"column:consent_version;type:varchar(80);not null" json:"consentVersion"`
+	ConsentAcceptedAt time.Time `gorm:"column:consent_accepted_at;type:timestamptz;not null" json:"consentAcceptedAt"`
+	RecordingIndicatorAcknowledged bool `gorm:"column:recording_indicator_acknowledged;type:boolean;default:false;not null" json:"recordingIndicatorAcknowledged"`
+	LastSeenAt *time.Time `gorm:"column:last_seen_at;type:timestamptz" json:"lastSeenAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (SoundRecorderDevicesGorm) TableName() string { return SoundRecorderDevicesTable }
+
+func (value SoundRecorderDevicesGorm) Validate() error {
+	if !containsString(SoundRecorderDevicesPlatformValues, value.Platform) { return errors.New("unsupported sound_recorder_devices.platform") }
+	if !containsString(SoundRecorderDevicesStatusValues, value.Status) { return errors.New("unsupported sound_recorder_devices.status") }
+	if len([]byte(value.InstallId)) > 160 { return errors.New("sound_recorder_devices.install_id exceeds 160 bytes") }
+	if len([]byte(value.InstallId)) < 1 { return errors.New("sound_recorder_devices.install_id is below 1 bytes") }
+	if value.DeviceLabel != nil {
+		if len([]byte(*value.DeviceLabel)) > 160 { return errors.New("sound_recorder_devices.device_label exceeds 160 bytes") }
+		if len([]byte(*value.DeviceLabel)) < 1 { return errors.New("sound_recorder_devices.device_label is below 1 bytes") }
+	}
+	if value.AppVersion != nil {
+		if len([]byte(*value.AppVersion)) > 80 { return errors.New("sound_recorder_devices.app_version exceeds 80 bytes") }
+		if len([]byte(*value.AppVersion)) < 1 { return errors.New("sound_recorder_devices.app_version is below 1 bytes") }
+	}
+	if value.OsVersion != nil {
+		if len([]byte(*value.OsVersion)) > 80 { return errors.New("sound_recorder_devices.os_version exceeds 80 bytes") }
+		if len([]byte(*value.OsVersion)) < 1 { return errors.New("sound_recorder_devices.os_version is below 1 bytes") }
+	}
+	if !soundRecorderDevicesTokenHashPattern.MatchString(value.TokenHash) { return errors.New("sound_recorder_devices.token_hash does not match the required pattern") }
+	if !soundRecorderDevicesTokenLast4Pattern.MatchString(value.TokenLast4) { return errors.New("sound_recorder_devices.token_last4 does not match the required pattern") }
+	if !soundRecorderDevicesConsentVersionPattern.MatchString(value.ConsentVersion) { return errors.New("sound_recorder_devices.consent_version does not match the required pattern") }
+	return nil
+}
+
+const SoundRecorderUploadSessionsTable = "sound_recorder_upload_sessions"
+const SoundRecorderUploadSessionsSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      status,
+      storage_provider,
+      storage_bucket,
+      storage_prefix,
+      content_type,
+      codec,
+      sample_rate,
+      channel_count,
+      segment_duration_seconds,
+      max_segment_bytes,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(last_heartbeat_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_heartbeat_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closed_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      client_timezone,
+      legal_region,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_upload_sessions`
+
+var SoundRecorderUploadSessionsStatusValues = []string{"active", "closed", "revoked", "expired"}
+var SoundRecorderUploadSessionsStorageProviderValues = []string{"s3"}
+
+type SoundRecorderUploadSessionsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	AccountId uuid.UUID `gorm:"column:account_id;type:uuid;not null" json:"accountId"`
+	DeviceId uuid.UUID `gorm:"column:device_id;type:uuid;not null" json:"deviceId"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	StorageProvider string `gorm:"column:storage_provider;type:varchar(32);default:'s3';not null" json:"storageProvider"`
+	StorageBucket string `gorm:"column:storage_bucket;type:varchar(200);not null" json:"storageBucket"`
+	StoragePrefix string `gorm:"column:storage_prefix;type:text;not null" json:"storagePrefix"`
+	ContentType string `gorm:"column:content_type;type:varchar(120);default:'audio/mp4';not null" json:"contentType"`
+	Codec *string `gorm:"column:codec;type:varchar(80)" json:"codec,omitempty"`
+	SampleRate *int32 `gorm:"column:sample_rate;type:integer" json:"sampleRate,omitempty"`
+	ChannelCount int32 `gorm:"column:channel_count;type:integer;default:1;not null" json:"channelCount"`
+	SegmentDurationSeconds int32 `gorm:"column:segment_duration_seconds;type:integer;default:60;not null" json:"segmentDurationSeconds"`
+	MaxSegmentBytes int32 `gorm:"column:max_segment_bytes;type:integer;default:10485760;not null" json:"maxSegmentBytes"`
+	StartedAt time.Time `gorm:"column:started_at;type:timestamptz;default:now();not null" json:"startedAt"`
+	LastHeartbeatAt *time.Time `gorm:"column:last_heartbeat_at;type:timestamptz" json:"lastHeartbeatAt,omitempty"`
+	ClosedAt *time.Time `gorm:"column:closed_at;type:timestamptz" json:"closedAt,omitempty"`
+	ExpiresAt *time.Time `gorm:"column:expires_at;type:timestamptz" json:"expiresAt,omitempty"`
+	ClientTimezone *string `gorm:"column:client_timezone;type:varchar(80)" json:"clientTimezone,omitempty"`
+	LegalRegion *string `gorm:"column:legal_region;type:varchar(64)" json:"legalRegion,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (SoundRecorderUploadSessionsGorm) TableName() string { return SoundRecorderUploadSessionsTable }
+
+func (value SoundRecorderUploadSessionsGorm) Validate() error {
+	if !containsString(SoundRecorderUploadSessionsStatusValues, value.Status) { return errors.New("unsupported sound_recorder_upload_sessions.status") }
+	if !containsString(SoundRecorderUploadSessionsStorageProviderValues, value.StorageProvider) { return errors.New("unsupported sound_recorder_upload_sessions.storage_provider") }
+	if len([]byte(value.StorageBucket)) > 200 { return errors.New("sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes") }
+	if len([]byte(value.StorageBucket)) < 1 { return errors.New("sound_recorder_upload_sessions.storage_bucket is below 1 bytes") }
+	if len([]byte(value.StoragePrefix)) > 2048 { return errors.New("sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes") }
+	if len([]byte(value.StoragePrefix)) < 1 { return errors.New("sound_recorder_upload_sessions.storage_prefix is below 1 bytes") }
+	if len([]byte(value.ContentType)) > 120 { return errors.New("sound_recorder_upload_sessions.content_type exceeds 120 bytes") }
+	if len([]byte(value.ContentType)) < 1 { return errors.New("sound_recorder_upload_sessions.content_type is below 1 bytes") }
+	if value.Codec != nil {
+		if len([]byte(*value.Codec)) > 80 { return errors.New("sound_recorder_upload_sessions.codec exceeds 80 bytes") }
+		if len([]byte(*value.Codec)) < 1 { return errors.New("sound_recorder_upload_sessions.codec is below 1 bytes") }
+	}
+	if value.SampleRate != nil {
+		if *value.SampleRate < 8000 { return errors.New("sound_recorder_upload_sessions.sample_rate is below the minimum") }
+		if *value.SampleRate > 192000 { return errors.New("sound_recorder_upload_sessions.sample_rate is above the maximum") }
+	}
+	if value.ChannelCount < 1 { return errors.New("sound_recorder_upload_sessions.channel_count is below the minimum") }
+	if value.ChannelCount > 8 { return errors.New("sound_recorder_upload_sessions.channel_count is above the maximum") }
+	if value.SegmentDurationSeconds < 1 { return errors.New("sound_recorder_upload_sessions.segment_duration_seconds is below the minimum") }
+	if value.SegmentDurationSeconds > 600 { return errors.New("sound_recorder_upload_sessions.segment_duration_seconds is above the maximum") }
+	if value.MaxSegmentBytes < 1 { return errors.New("sound_recorder_upload_sessions.max_segment_bytes is below the minimum") }
+	if value.MaxSegmentBytes > 209715200 { return errors.New("sound_recorder_upload_sessions.max_segment_bytes is above the maximum") }
+	if value.ClientTimezone != nil {
+		if len([]byte(*value.ClientTimezone)) > 80 { return errors.New("sound_recorder_upload_sessions.client_timezone exceeds 80 bytes") }
+		if len([]byte(*value.ClientTimezone)) < 1 { return errors.New("sound_recorder_upload_sessions.client_timezone is below 1 bytes") }
+	}
+	if value.LegalRegion != nil {
+		if !soundRecorderUploadSessionsLegalRegionPattern.MatchString(*value.LegalRegion) { return errors.New("sound_recorder_upload_sessions.legal_region does not match the required pattern") }
+	}
+	if !validateJSONString(value.MetaData) { return errors.New("sound_recorder_upload_sessions.meta_data must be valid JSON") }
+	return nil
+}
+
+const SoundRecorderSegmentsTable = "sound_recorder_segments"
+const SoundRecorderSegmentsSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      session_id::text as session_id,
+      sequence_number,
+      status,
+      storage_provider,
+      storage_bucket,
+      storage_key,
+      content_type,
+      codec,
+      to_char(captured_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as captured_started_at,
+      to_char(captured_ended_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as captured_ended_at,
+      duration_millis,
+      byte_count,
+      sha256_hex,
+      to_char(upload_url_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as upload_url_expires_at,
+      etag,
+      to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as uploaded_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_segments`
+
+var SoundRecorderSegmentsStatusValues = []string{"pending", "uploaded", "failed", "expired", "deleted"}
+var SoundRecorderSegmentsStorageProviderValues = []string{"s3"}
+
+type SoundRecorderSegmentsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	AccountId uuid.UUID `gorm:"column:account_id;type:uuid;not null" json:"accountId"`
+	DeviceId uuid.UUID `gorm:"column:device_id;type:uuid;not null" json:"deviceId"`
+	SessionId uuid.UUID `gorm:"column:session_id;type:uuid;not null" json:"sessionId"`
+	SequenceNumber int32 `gorm:"column:sequence_number;type:integer;not null" json:"sequenceNumber"`
+	Status string `gorm:"column:status;type:varchar(32);default:'pending';not null" json:"status"`
+	StorageProvider string `gorm:"column:storage_provider;type:varchar(32);default:'s3';not null" json:"storageProvider"`
+	StorageBucket string `gorm:"column:storage_bucket;type:varchar(200);not null" json:"storageBucket"`
+	StorageKey string `gorm:"column:storage_key;type:text;not null" json:"storageKey"`
+	ContentType string `gorm:"column:content_type;type:varchar(120);default:'audio/mp4';not null" json:"contentType"`
+	Codec *string `gorm:"column:codec;type:varchar(80)" json:"codec,omitempty"`
+	CapturedStartedAt time.Time `gorm:"column:captured_started_at;type:timestamptz;not null" json:"capturedStartedAt"`
+	CapturedEndedAt *time.Time `gorm:"column:captured_ended_at;type:timestamptz" json:"capturedEndedAt,omitempty"`
+	DurationMillis int32 `gorm:"column:duration_millis;type:integer;not null" json:"durationMillis"`
+	ByteCount *int32 `gorm:"column:byte_count;type:integer" json:"byteCount,omitempty"`
+	Sha256Hex *string `gorm:"column:sha256_hex;type:varchar(64)" json:"sha256Hex,omitempty"`
+	UploadUrlExpiresAt *time.Time `gorm:"column:upload_url_expires_at;type:timestamptz" json:"uploadUrlExpiresAt,omitempty"`
+	Etag *string `gorm:"column:etag;type:varchar(160)" json:"etag,omitempty"`
+	UploadedAt *time.Time `gorm:"column:uploaded_at;type:timestamptz" json:"uploadedAt,omitempty"`
+	ExpiresAt time.Time `gorm:"column:expires_at;type:timestamptz;not null" json:"expiresAt"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (SoundRecorderSegmentsGorm) TableName() string { return SoundRecorderSegmentsTable }
+
+func (value SoundRecorderSegmentsGorm) Validate() error {
+	if value.SequenceNumber < 0 { return errors.New("sound_recorder_segments.sequence_number is below the minimum") }
+	if !containsString(SoundRecorderSegmentsStatusValues, value.Status) { return errors.New("unsupported sound_recorder_segments.status") }
+	if !containsString(SoundRecorderSegmentsStorageProviderValues, value.StorageProvider) { return errors.New("unsupported sound_recorder_segments.storage_provider") }
+	if len([]byte(value.StorageBucket)) > 200 { return errors.New("sound_recorder_segments.storage_bucket exceeds 200 bytes") }
+	if len([]byte(value.StorageBucket)) < 1 { return errors.New("sound_recorder_segments.storage_bucket is below 1 bytes") }
+	if len([]byte(value.StorageKey)) > 2048 { return errors.New("sound_recorder_segments.storage_key exceeds 2048 bytes") }
+	if len([]byte(value.StorageKey)) < 1 { return errors.New("sound_recorder_segments.storage_key is below 1 bytes") }
+	if len([]byte(value.ContentType)) > 120 { return errors.New("sound_recorder_segments.content_type exceeds 120 bytes") }
+	if len([]byte(value.ContentType)) < 1 { return errors.New("sound_recorder_segments.content_type is below 1 bytes") }
+	if value.Codec != nil {
+		if len([]byte(*value.Codec)) > 80 { return errors.New("sound_recorder_segments.codec exceeds 80 bytes") }
+		if len([]byte(*value.Codec)) < 1 { return errors.New("sound_recorder_segments.codec is below 1 bytes") }
+	}
+	if value.DurationMillis < 1 { return errors.New("sound_recorder_segments.duration_millis is below the minimum") }
+	if value.DurationMillis > 600000 { return errors.New("sound_recorder_segments.duration_millis is above the maximum") }
+	if value.ByteCount != nil {
+		if *value.ByteCount < 0 { return errors.New("sound_recorder_segments.byte_count is below the minimum") }
+		if *value.ByteCount > 209715200 { return errors.New("sound_recorder_segments.byte_count is above the maximum") }
+	}
+	if value.Sha256Hex != nil {
+		if !soundRecorderSegmentsSha256HexPattern.MatchString(*value.Sha256Hex) { return errors.New("sound_recorder_segments.sha256_hex does not match the required pattern") }
+	}
+	if value.Etag != nil {
+		if len([]byte(*value.Etag)) > 160 { return errors.New("sound_recorder_segments.etag exceeds 160 bytes") }
+		if len([]byte(*value.Etag)) < 1 { return errors.New("sound_recorder_segments.etag is below 1 bytes") }
+	}
+	if !validateJSONString(value.MetaData) { return errors.New("sound_recorder_segments.meta_data must be valid JSON") }
+	return nil
+}
+
+const SoundRecorderEvidenceExportsTable = "sound_recorder_evidence_exports"
+const SoundRecorderEvidenceExportsSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      created_by_device_id::text as created_by_device_id,
+      status,
+      to_char(requested_from at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as requested_from,
+      to_char(requested_to at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as requested_to,
+      segment_count,
+      manifest,
+      to_char(download_url_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as download_url_expires_at,
+      to_char(requested_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as requested_at,
+      to_char(ready_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ready_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      meta_data
+    from sound_recorder_evidence_exports`
+
+var SoundRecorderEvidenceExportsStatusValues = []string{"requested", "ready", "expired", "revoked"}
+
+type SoundRecorderEvidenceExportsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	AccountId uuid.UUID `gorm:"column:account_id;type:uuid;not null" json:"accountId"`
+	DeviceId *uuid.UUID `gorm:"column:device_id;type:uuid" json:"deviceId,omitempty"`
+	CreatedByDeviceId *uuid.UUID `gorm:"column:created_by_device_id;type:uuid" json:"createdByDeviceId,omitempty"`
+	Status string `gorm:"column:status;type:varchar(32);default:'requested';not null" json:"status"`
+	RequestedFrom time.Time `gorm:"column:requested_from;type:timestamptz;not null" json:"requestedFrom"`
+	RequestedTo time.Time `gorm:"column:requested_to;type:timestamptz;not null" json:"requestedTo"`
+	SegmentCount int32 `gorm:"column:segment_count;type:integer;default:0;not null" json:"segmentCount"`
+	Manifest datatypes.JSON `gorm:"column:manifest;type:jsonb;default:'{}'::jsonb;not null" json:"manifest"`
+	DownloadUrlExpiresAt *time.Time `gorm:"column:download_url_expires_at;type:timestamptz" json:"downloadUrlExpiresAt,omitempty"`
+	RequestedAt time.Time `gorm:"column:requested_at;type:timestamptz;default:now();not null" json:"requestedAt"`
+	ReadyAt *time.Time `gorm:"column:ready_at;type:timestamptz" json:"readyAt,omitempty"`
+	ExpiresAt *time.Time `gorm:"column:expires_at;type:timestamptz" json:"expiresAt,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+}
+
+func (SoundRecorderEvidenceExportsGorm) TableName() string { return SoundRecorderEvidenceExportsTable }
+
+func (value SoundRecorderEvidenceExportsGorm) Validate() error {
+	if !containsString(SoundRecorderEvidenceExportsStatusValues, value.Status) { return errors.New("unsupported sound_recorder_evidence_exports.status") }
+	if value.SegmentCount < 0 { return errors.New("sound_recorder_evidence_exports.segment_count is below the minimum") }
+	if !validateJSONString(value.Manifest) { return errors.New("sound_recorder_evidence_exports.manifest must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("sound_recorder_evidence_exports.meta_data must be valid JSON") }
+	return nil
+}
+
+const SoundRecorderAuditEventsTable = "sound_recorder_audit_events"
+const SoundRecorderAuditEventsSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      event_type,
+      event_hash,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from sound_recorder_audit_events`
+
+type SoundRecorderAuditEventsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	AccountId *uuid.UUID `gorm:"column:account_id;type:uuid" json:"accountId,omitempty"`
+	DeviceId *uuid.UUID `gorm:"column:device_id;type:uuid" json:"deviceId,omitempty"`
+	EventType string `gorm:"column:event_type;type:varchar(80);not null" json:"eventType"`
+	EventHash string `gorm:"column:event_hash;type:varchar(64);not null" json:"eventHash"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (SoundRecorderAuditEventsGorm) TableName() string { return SoundRecorderAuditEventsTable }
+
+func (value SoundRecorderAuditEventsGorm) Validate() error {
+	if !soundRecorderAuditEventsEventTypePattern.MatchString(value.EventType) { return errors.New("sound_recorder_audit_events.event_type does not match the required pattern") }
+	if !soundRecorderAuditEventsEventHashPattern.MatchString(value.EventHash) { return errors.New("sound_recorder_audit_events.event_hash does not match the required pattern") }
+	if !validateJSONString(value.Payload) { return errors.New("sound_recorder_audit_events.payload must be valid JSON") }
 	return nil
 }
 
