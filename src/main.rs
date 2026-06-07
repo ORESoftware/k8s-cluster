@@ -56924,6 +56924,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/subtractive/preflight/catalog",
         "GET /cleanliness/preflight/catalog",
         "GET /fabrication/cleanliness/preflight/catalog",
+        "GET /interfaces/preflight/catalog",
+        "GET /fabrication/interfaces/preflight/catalog",
         "GET /cnc/catalog",
         "GET /fabrication/cnc/catalog",
         "GET /cells/catalog",
@@ -57060,6 +57062,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/simulation/result",
         "GET /quality/catalog",
         "GET /fabrication/quality/catalog",
+        "GET /quality/preflight/catalog",
+        "GET /fabrication/quality/preflight/catalog",
         "GET /dispositions/catalog",
         "GET /fabrication/dispositions/catalog",
         "POST /dispositions/result",
@@ -63602,6 +63606,97 @@ fn quality_catalog_response() -> Value {
             "quality catalog entries describe inspection and measurement evidence contracts, not certified acceptance results",
             "machine-ready release remains blocked while required quality inspection, postprocess, material traceability, interface fit, or metrology evidence is absent",
             "quality observations are retained for MDP/POMDP/neural workers so future planning can learn when to add inspection, split parts, adjust processes, or require human signoff"
+        ],
+        "inspectionContracts": inspection_contracts,
+        "measurementContracts": measurement_contracts
+    })
+}
+
+fn quality_preflight_catalog_response() -> Value {
+    let inspection_contracts = quality_catalog_inspection_contracts();
+    let measurement_contracts = quality_catalog_measurement_contracts();
+    let families = unique_sorted(inspection_contracts.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.quality-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/quality/catalog",
+            "GET /fabrication/cleanliness/preflight/catalog",
+            "GET /fabrication/release/catalog",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/dispositions/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "inspectionContractCount": inspection_contracts.len(),
+        "measurementContractCount": measurement_contracts.len(),
+        "families": families,
+        "preflightGroups": [
+            {
+                "group": "metrology-instrument-and-datum-state",
+                "requiredEvidence": [
+                    "calibrated instrument, probe, gauge, fixture, vision scale, CMM program, or scan setup evidence",
+                    "datum scheme, coordinate frame, temperature soak, uncertainty, measurement units, and acceptance-band evidence",
+                    "measurement artifact URI, checksum, feature map, revision, and operator or automation owner"
+                ],
+                "releaseBlockers": [
+                    "measurement taken with expired calibration, missing datum reference, or implicit acceptance criteria",
+                    "metrology artifact missing checksum, feature ID, tolerance source, or retained raw/result data",
+                    "hidden interface, internal channel, lattice, or assembled feature not inspectable by the proposed method"
+                ]
+            },
+            {
+                "group": "first-article-final-fit-and-surface-state",
+                "requiredEvidence": [
+                    "first-article, in-process, final-fit, surface-finish, edge-quality, cleanliness, and material-process witness evidence",
+                    "interface fit, hole/thread gauge, bearing/seal land, bondline, torque, leak, pull, functional, or visual acceptance evidence",
+                    "sampling plan, critical-to-quality features, disposition owner, and reinspection trigger evidence"
+                ],
+                "releaseBlockers": [
+                    "machine-ready release requested before first-article or final-fit evidence",
+                    "surface finish, support scar, burr, FOD, residue, edge quality, or process witness evidence missing",
+                    "assembly, packaging, coating, or human handoff before required quality gates clear"
+                ]
+            },
+            {
+                "group": "nonconformance-disposition-and-learning-state",
+                "requiredEvidence": [
+                    "nonconformance finding with measured deviation, affected feature, root cause, and disposition authority",
+                    "rework, reinspect, scrap/remake, waiver, split/combine redesign, or human-intervention plan",
+                    "learning observation for quality gate, measurement target, route risk, split/combine outcome, and recovered release"
+                ],
+                "releaseBlockers": [
+                    "failed quality gate without disposition, reinspection, or release-owner evidence",
+                    "rework route would violate material allowance, interface, strength, thermal, or surface requirements",
+                    "split/combine or human-fit recovery expected but not planned as an intervention"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "qualityPlan.inspectionPoints",
+            "qualityPlan.measurementTargets",
+            "qualityResult.measurements",
+            "qualityResult.findings",
+            "dispositionResult.decisions",
+            "releasePackagePlan.releaseGates",
+            "machineRelease.releaseBlockers",
+            "learningOutcome.observations"
+        ],
+        "releasePolicy": [
+            "quality preflight entries describe evidence required before machine-ready release, assembly, packaging, or human handoff; they are not certified acceptance results",
+            "quality preflight evidence cannot bypass retained measurements, calibrated instruments, cleanliness checks, disposition authority, release packages, or operator/automation signoff",
+            "failed quality preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can add inspection, split parts, reroute manufacturing, or require human intervention earlier"
         ],
         "inspectionContracts": inspection_contracts,
         "measurementContracts": measurement_contracts
@@ -72267,6 +72362,10 @@ fn store_monitoring_result_response(state: &AppState, response: &Value) {
 
 async fn quality_catalog_http() -> impl IntoResponse {
     Json(quality_catalog_response())
+}
+
+async fn quality_preflight_catalog_http() -> impl IntoResponse {
+    Json(quality_preflight_catalog_response())
 }
 
 fn calibration_catalog_contracts() -> Vec<Value> {
@@ -96055,6 +96154,92 @@ async fn cleanliness_preflight_catalog_http() -> impl IntoResponse {
     Json(cleanliness_preflight_catalog_response())
 }
 
+fn interface_preflight_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.interface-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /interfaces/preflight/catalog",
+            "GET /fabrication/interfaces/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/decomposition/catalog",
+            "GET /fabrication/assembly/catalog",
+            "GET /fabrication/tolerances/catalog",
+            "GET /fabrication/workholding/catalog",
+            "POST /fabrication/decomposition/plan",
+            "POST /fabrication/assembly/plan",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "preflightGroups": [
+            {
+                "group": "datum-and-locating-interface-state",
+                "requiredEvidence": [
+                    "primary/secondary/tertiary datum map, locating pins, slots, bosses, tabs, witness marks, and datum-transfer evidence",
+                    "printed shrink/warp compensation, machined datum cleanup, fixture touch-off, probe, scan, or CMM alignment evidence",
+                    "left/right, orientation, keying, clocking, anti-rotation, and assembly-order mistake-proofing evidence"
+                ],
+                "releaseBlockers": [
+                    "joining split printed and milled parts before datum transfer or orientation evidence is retained",
+                    "locating features made by different processes without fit, clocking, or anti-rotation proof",
+                    "interface depends on sacrificial supports, tabs, stock allowance, or unremoved fixture features"
+                ]
+            },
+            {
+                "group": "fit-tolerance-and-stackup-state",
+                "requiredEvidence": [
+                    "critical-to-function dimensions, tolerance stack, clearance/interference fit, thread, bore, shaft, and gauge evidence",
+                    "thermal, moisture, creep, anisotropy, surface-finish, plating/coating, adhesive bondline, weld-collapse, or seal-compression allowance evidence",
+                    "go/no-go, torque, pull, leak, movement, runout, preload, backlash, optical/electrical, or functional fit proof"
+                ],
+                "releaseBlockers": [
+                    "assembly release before stackup or first-article fit proof for mixed printed, milled, turned, or molded parts",
+                    "postprocess thickness, coating, plating, polish, heat treatment, or moisture state changes the fit envelope",
+                    "interface needs manual scraping, shimming, reaming, tapping, sanding, or rework not captured as an intervention boundary"
+                ]
+            },
+            {
+                "group": "joining-hardware-and-service-interface-state",
+                "requiredEvidence": [
+                    "fastener, insert, rivet, seal, gasket, adhesive, plastic weld, metal weld, bearing, bushing, connector, and cable-clearance evidence",
+                    "access path, tool clearance, torque sequence, cure/weld/stake recipe, service/removal path, and replacement-part evidence",
+                    "serialized kit map, interface revision, mating-part genealogy, traveler, nonconformance, and release-owner evidence"
+                ],
+                "releaseBlockers": [
+                    "hardware or joining method conflicts with printed wall thickness, machined edge distance, heat input, solvent exposure, or load path",
+                    "operator cannot access fasteners, weld horns, stakes, clamps, probes, leak-test ports, or service features after recomposition",
+                    "mating halves, inserts, seals, bearings, or serialized kits can be mixed without genealogy or interface revision proof"
+                ]
+            }
+        ],
+        "boundarySignals": [
+            "interface-datum-transfer-boundary",
+            "interface-fit-stackup-boundary",
+            "interface-joining-service-boundary"
+        ],
+        "responseSurfaces": [
+            "decompositionPlan.interfaceContracts",
+            "assemblyPlan.joinSteps",
+            "qualityResult.metrologyChecks",
+            "releaseReadiness.releaseBlockers",
+            "learningOutcome.observations"
+        ],
+        "releasePolicy": [
+            "interface preflight entries describe split/combine and recomposition evidence before machine-ready release; they are not a substitute for released drawings, inspection plans, or assembly work instructions",
+            "interface evidence must stay attached to decomposition, assembly, quality, release, and learning artifacts so generated and imported programs preserve recomposition intent",
+            "failed interface checks should feed DES, MDP/POMDP, and neural workers so future plans can split differently, add datums, change joining methods, route rework, or require human intervention before parts are combined"
+        ]
+    })
+}
+
+async fn interface_preflight_catalog_http() -> impl IntoResponse {
+    Json(interface_preflight_catalog_response())
+}
+
 fn cnc_catalog_response() -> Value {
     let machines = default_machines();
     let cnc_machines = machines
@@ -106016,6 +106201,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/cleanliness/preflight/catalog",
             get(cleanliness_preflight_catalog_http),
         )
+        .route(
+            "/interfaces/preflight/catalog",
+            get(interface_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/interfaces/preflight/catalog",
+            get(interface_preflight_catalog_http),
+        )
         .route("/machines/select", post(machine_select_http))
         .route("/fabrication/machines/select", post(machine_select_http))
         .route("/controllers/catalog", get(controller_catalog_http))
@@ -106304,6 +106497,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/quality/catalog", get(quality_catalog_http))
         .route("/fabrication/quality/catalog", get(quality_catalog_http))
+        .route(
+            "/quality/preflight/catalog",
+            get(quality_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/quality/preflight/catalog",
+            get(quality_preflight_catalog_http),
+        )
         .route("/dispositions/catalog", get(disposition_catalog_http))
         .route(
             "/fabrication/dispositions/catalog",
@@ -118195,6 +118396,70 @@ mod tests {
     }
 
     #[test]
+    fn quality_preflight_catalog_endpoint_exposes_metrology_fit_and_disposition_gates() {
+        let payload = quality_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.quality-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/quality/preflight/catalog")
+            })));
+        assert!(payload
+            .get("inspectionContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 6));
+        assert!(payload
+            .get("measurementContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 4));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("quality preflight groups should be present");
+        for group in [
+            "metrology-instrument-and-datum-state",
+            "first-article-final-fit-and-surface-state",
+            "nonconformance-disposition-and-learning-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing quality preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("calibrated instrument"))))));
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("first-article or final-fit"))))));
+        assert!(groups.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("split/combine redesign"))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+    }
+
+    #[test]
     fn disposition_catalog_endpoint_exposes_rework_scrap_and_split_learning_contract() {
         let payload = disposition_catalog_response();
         assert_eq!(
@@ -127078,6 +127343,62 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("split, combine, clean, reroute")))));
+    }
+
+    #[test]
+    fn interface_preflight_catalog_endpoint_exposes_datum_stackup_and_join_gates() {
+        let payload = interface_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.interface-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/interfaces/preflight/catalog")
+            })));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("interface preflight groups should be present");
+        for group in [
+            "datum-and-locating-interface-state",
+            "fit-tolerance-and-stackup-state",
+            "joining-hardware-and-service-interface-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing interface preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("primary/secondary/tertiary datum"))))));
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("manual scraping, shimming"))))));
+        assert!(payload
+            .get("boundarySignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals
+                .iter()
+                .any(|signal| { signal.as_str() == Some("interface-fit-stackup-boundary") })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("split differently, add datums")))));
     }
 
     #[test]
