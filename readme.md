@@ -273,6 +273,8 @@ It exposes:
 - `GET /fabrication/jobs/:job_id/artifacts/:artifact_id`
 - `GET /learning/policy`
 - `GET /fabrication/learning/policy`
+- `GET /learning/corpus`
+- `GET /fabrication/learning/corpus`
 - `GET /workflow/catalog`
 - `GET /fabrication/workflow/catalog`
 - `POST /plan`
@@ -1226,8 +1228,10 @@ warnings, worker id, generator, and review metadata.
 
 The response exposes `instructionGenerationResult`, `generationResultJobId`,
 `generatedAtMs`, `releaseUpdate`, `releaseBlocked`, `missingReleaseEvidence`,
-and the request/queue/result subjects for the instruction-generation worker
-lane. Successful reviews are retained in the bounded job ledger under
+the request/queue/result subjects for the instruction-generation worker lane,
+and a `dd.fabrication.instruction-generation-learning-outcome-draft.v1` payload
+with generator, artifact format, target, blocker, evidence, reward, and
+submit-route hints for `POST /fabrication/learning/outcomes`. Successful reviews are retained in the bounded job ledger under
 `generationResultJobId`; `/jobs/:job_id` and
 `/jobs/:job_id/artifacts/:artifact_id` can inspect
 `instruction-generation-result`, `instruction-generation-artifacts`,
@@ -1256,7 +1260,10 @@ The response exposes `instructionReviewResult`, `reviewResultJobId`,
 `generatedAtMs`, `releaseUpdate`, `releaseBlocked`, `findingCount`,
 `failureBoundaryCount`, `humanInterventionBoundaryCount`,
 `improvementDraftCount`, `humanApprovalDraftCount`, and the
-request/queue/result subjects for the instruction-review worker lane. Successful
+request/queue/result subjects for the instruction-review worker lane. It also
+includes a `dd.fabrication.instruction-review-learning-outcome-draft.v1` payload
+with reviewer, finding, boundary, improvement, human-approval, recommended-action,
+reward, and submit-route hints for `POST /fabrication/learning/outcomes`. Successful
 reviews are retained in the bounded job ledger under `reviewResultJobId`;
 `/jobs/:job_id` and `/jobs/:job_id/artifacts/:artifact_id` can inspect
 `instruction-review-result`, `instruction-review-findings`,
@@ -1330,7 +1337,11 @@ the selected machine.
 The response exposes `machineCodeResult`, `machineCodeResultJobId`,
 `releaseBlocked`, controller-check, boundary, human-intervention, program, and
 missing-evidence counts plus follow-up toolpath, simulation, release, and
-learning routes. Review jobs retain `machine-code-result`,
+learning routes. It also includes a
+`dd.fabrication.machine-code-learning-outcome-draft.v1` payload with controller,
+postprocessor, language, boundary, blocker, and recommended-action hints that
+callers can submit to `POST /fabrication/learning/outcomes`. Review jobs retain
+`machine-code-result`,
 `machine-code-programs`, `machine-code-controller-checks`,
 `machine-code-failure-boundaries`, `machine-code-artifacts`, and
 `machine-code-learning-observations` artifacts for `/jobs/:job_id` inspection.
@@ -1487,7 +1498,11 @@ results after a boundary remediation plan has been attempted. The
 `dd.fabrication.boundary-remediation-result-review.v1` response retains
 `boundaryRemediationResult.actions`, retained remediation artifacts, validation
 evidence, simulation or dry-run evidence, release blockers, and learning
-observations for downstream MDP/POMDP/neural outcome memory.
+observations for downstream MDP/POMDP/neural outcome memory. It also includes a
+`dd.fabrication.boundary-remediation-learning-outcome-draft.v1` payload with
+remediator, action, boundary, blocker, artifact, validation/simulation evidence,
+human-signoff, reward, and submit-route hints for
+`POST /fabrication/learning/outcomes`.
 
 The result route is still a review gate, not a machine certification. Even when a
 worker reports success, `machineReady=false` and `releaseBlocked=true` remain in
@@ -1751,7 +1766,10 @@ The response exposes `executionResult`, `executionResultJobId`, `generatedAtMs`,
 `executionBlocked`, `blockingMachineStopCount`,
 `restartBlockingOperatorInterventionCount`, `splitCombineBlockerCount`,
 `missingArtifactEvidenceCount`, and the execution-telemetry
-request/queue/result subjects. Successful reviews are retained in the bounded
+request/queue/result subjects. It also includes a
+`dd.fabrication.execution-learning-outcome-draft.v1` payload with run, machine,
+state, stop, operator-action, split/combine, artifact, reward, and submit-route
+hints for `POST /fabrication/learning/outcomes`. Successful reviews are retained in the bounded
 job ledger under `executionResultJobId`; `/jobs/:job_id` and
 `/jobs/:job_id/artifacts/:artifact_id` can inspect `execution-result`,
 `execution-run-segments`, `execution-machine-stops`,
@@ -1960,6 +1978,10 @@ The response exposes `instructionSimulationResult`, `releaseUpdate`,
 `blockedEnvelopeCheckCount`, `blockingFindingCount`, `failureBoundaryCount`,
 `humanInterventionBoundaryCount`, `missingArtifactEvidenceCount`, and the
 request/queue/result subjects for the instruction-simulation worker lane.
+It also includes a
+`dd.fabrication.instruction-simulation-learning-outcome-draft.v1` payload with
+simulator, check, finding, boundary, recommended-action, artifact, reward, and
+submit-route hints for `POST /fabrication/learning/outcomes`.
 Successful result reviews are also retained in the bounded job ledger under
 `simulationResultJobId`, where `/jobs/:job_id` and
 `/jobs/:job_id/artifacts/:artifact_id` can inspect `instruction-simulation-result`,
@@ -2054,7 +2076,9 @@ from quality, simulation, failure, release, or remediation reviewers. The
 response uses `dd.fabrication.disposition-result-review.v1` and captures
 pass/rework/scrap/waiver/split-combine decisions, remediation and reinspection
 actions, authority/signoff reviews, retained artifacts, release blockers, and
-MDP/POMDP/neural learning observations.
+MDP/POMDP/neural learning observations, plus a
+`dd.fabrication.disposition-learning-outcome-draft.v1` payload that callers can
+send to `POST /fabrication/learning/outcomes`.
 
 Machine-ready and release-ready status remains blocked while a disposition
 decision is missing, unaccepted, pending rework/remake/reinspection, waiting on
@@ -2095,8 +2119,10 @@ planners can choose cheaper, safer, or more reliable fabrication routes.
 cycle-time, rework, and split/combine route outcome reviews from generated,
 imported, simulated, or completed fabrication work. The response uses
 `dd.fabrication.costing-result-review.v1` and captures estimate families,
-material-yield reviews, route comparisons, artifacts, release blockers, and
-MDP/POMDP/neural learning observations.
+material-yield reviews, route comparisons, artifacts, release blockers,
+MDP/POMDP/neural learning observations, and a
+`dd.fabrication.costing-learning-outcome-draft.v1` payload that callers can send
+to `POST /fabrication/learning/outcomes`.
 
 Machine-ready and customer-ready release remain blocked while setup, material
 yield, scrap, quality, review, human-intervention, or split/combine route
@@ -2141,7 +2167,9 @@ sheet-cut support media, additive thermal/material utilities, hybrid-cell
 services, power, network, environment, and operator recovery reviewers. The
 response uses `dd.fabrication.utilities-result-review.v1` and captures utility
 checks, recovery actions, outage events, retained artifacts, release blockers,
-warning counts, and MDP/POMDP/neural learning observations.
+warning counts, and MDP/POMDP/neural learning observations plus a
+`dd.fabrication.utilities-learning-outcome-draft.v1` payload that callers can
+send to `POST /fabrication/learning/outcomes`.
 
 Machine-ready and release-ready status remains blocked when process support
 utilities are unavailable, outside limits, unrecovered, restart-unverified,
@@ -2185,7 +2213,9 @@ facility energy outcome reviews from generated, imported, simulated, scheduled,
 or completed fabrication work. The response uses
 `dd.fabrication.energy-result-review.v1` and captures power checks, thermal-load
 checks, recovery actions, artifacts, release blockers, and MDP/POMDP/neural
-learning observations.
+learning observations plus a
+`dd.fabrication.energy-learning-outcome-draft.v1` payload that callers can send
+to `POST /fabrication/learning/outcomes`.
 
 Machine-ready and release-ready status remains blocked while selected routes
 lack verified heater, spindle, axis, beam, jet, pump, compressor, chiller, UPS,
@@ -2256,7 +2286,9 @@ split/combine capacity, queue-delay risk, and reliable unattended windows.
 outcomes for machine windows, queue/capacity state, material/fixture/tooling and
 utility readiness, operator/automation coverage, fallback machines, and
 split/combine capacity. The response uses
-`dd.fabrication.availability-result-review.v1`.
+`dd.fabrication.availability-result-review.v1` and includes a
+`dd.fabrication.availability-learning-outcome-draft.v1` payload that callers can
+send to `POST /fabrication/learning/outcomes`.
 
 Machine-ready and unattended release remain blocked while selected machines lack
 current online/queue/setup/downtime evidence, resources are unavailable,
@@ -2298,7 +2330,9 @@ work across healthier equipment, or schedule service before release.
 `POST /fabrication/maintenance/result` accept retained maintenance worker
 outcomes for service items, lockout clearances, post-service verification
 checks, residual restrictions, retained artifacts, and release warnings. The
-response uses `dd.fabrication.maintenance-result-review.v1`.
+response uses `dd.fabrication.maintenance-result-review.v1` and includes a
+`dd.fabrication.maintenance-learning-outcome-draft.v1` payload that callers can
+send to `POST /fabrication/learning/outcomes`.
 
 Machine-ready and unattended release remain blocked while service state is
 overdue, lockout/tagout clearance lacks authorization, post-service dry-run,
@@ -2319,7 +2353,9 @@ from additive, subtractive, sheet-cutting, hybrid-cell, and simulation-boundary
 workers. The response uses `dd.fabrication.telemetry-result-review.v1` and
 captures sensor windows, machine stops, boundary correlations, operator
 interventions, retained artifacts, release blockers, warning counts, and
-MDP/POMDP/neural learning observations.
+MDP/POMDP/neural learning observations plus a
+`dd.fabrication.telemetry-learning-outcome-draft.v1` payload that callers can
+send to `POST /fabrication/learning/outcomes`.
 
 Machine-ready and learning-ready status remains blocked when telemetry samples
 are not retained, sensor windows drift outside the reviewed envelope, machine
@@ -2340,7 +2376,9 @@ runtime failures.
 results, normalize them into
 `dd.fabrication.quality-result-review.v1`, and store a bounded review job with
 retained measurement, finding, gate, artifact, and learning-observation
-surfaces. The response reports blocker counts for out-of-tolerance
+surfaces plus a `dd.fabrication.quality-learning-outcome-draft.v1` payload that
+callers can send to `POST /fabrication/learning/outcomes`. The response reports
+blocker counts for out-of-tolerance
 measurements, nonconformance or human-intervention findings, unresolved
 inspection gates, and missing artifact evidence.
 
@@ -2406,7 +2444,9 @@ profiles, split jobs, add operator checkpoints, or regenerate instructions.
 `POST /fabrication/calibration/result` accept calibration worker results,
 normalize them into `dd.fabrication.calibration-result-review.v1`, and store a
 bounded review job with retained check, offset, probe, artifact, and
-learning-observation surfaces. The response reports blocker counts for failed or
+learning-observation surfaces plus a
+`dd.fabrication.calibration-learning-outcome-draft.v1` payload that callers can
+send to `POST /fabrication/learning/outcomes`. The response reports blocker counts for failed or
 human-intervention checks, out-of-tolerance offsets, unresolved release probes,
 and missing calibration artifact evidence.
 
@@ -3076,7 +3116,9 @@ scan-to-design, CMM, probing, additive layer-inspection, subtractive feature
 inspection, and split/combine interface-fit reviewers. The response uses
 `dd.fabrication.as-built-result-review.v1` and captures measurement checks,
 deviation maps, interface checks, retained artifacts, release blockers, warning
-counts, and MDP/POMDP/neural learning observations.
+counts, MDP/POMDP/neural learning observations, and a
+`dd.fabrication.as-built-learning-outcome-draft.v1` payload that callers can send
+to `POST /fabrication/learning/outcomes`.
 
 Machine-ready and release-ready status remains blocked when measured actual
 geometry is missing, deviation maps are unaligned or out of tolerance,
@@ -3667,7 +3709,10 @@ The response normalizes those results into
 `validationResultJobId`, `instructionValidationResult`, `releaseBlocked`,
 `machineReady`, `releaseReady`, finding/boundary/improvement blocker counts,
 human-intervention and split/combine flags, artifact evidence gaps, follow-up
-validation/simulation/release routes, and learning observations.
+validation/simulation/release routes, learning observations, and a
+`dd.fabrication.instruction-validation-learning-outcome-draft.v1` payload with
+language, controller, finding, boundary, improvement, blocker, split/combine,
+and recommended-action hints for `POST /fabrication/learning/outcomes`.
 Review jobs retain `instruction-validation-result`,
 `instruction-validation-findings`, `instruction-validation-boundaries`,
 `instruction-validation-improvements`, `instruction-validation-artifacts`, and
@@ -3686,7 +3731,11 @@ pipeline, persist the same analysis artifacts, and return the compact
 payload focuses on changed program counts, patch operation counts,
 `improvedPrograms.patchManifest`, release blockers, `machineReady=false` review
 state, and `instruction-patch:*`/`instruction-patch-action:*` learning surfaces
-for downstream MDP/POMDP/neural workers.
+for downstream MDP/POMDP/neural workers. It also includes a
+`dd.fabrication.instruction-improvement-learning-outcome-draft.v1` payload with
+changed-program, patch-operation, human-review, improvement-action, boundary,
+patch-action, reward, and submit-route hints for
+`POST /fabrication/learning/outcomes`.
 
 ## `POST /instructions/boundaries/review`
 
@@ -3702,7 +3751,11 @@ intervention, verified automation, regeneration, split/combine work, or release
 evidence. The full analysis artifacts are still stored and published, and
 boundary observations such as `boundary-kind:*`, `resolution-action:*`, and
 `interventionMap.learningObservations` remain available to MDP/POMDP/neural
-workers.
+workers. It also includes a
+`dd.fabrication.instruction-boundary-learning-outcome-draft.v1` payload with
+boundary, resolution-action, human-intervention, split/combine, automation
+fallback, risk-score, reward, and submit-route hints for
+`POST /fabrication/learning/outcomes`.
 
 The analyzer is intentionally conservative. It checks common `G`, `M`, and `T`
 words, missing units or positioning modes, late or mid-program `G20`/`G21` unit-mode changes after motion without conversion review, CNC program end while still in `G91` incremental positioning without `G90` reset, CNC inverse-time `G93` feed motion without timing review or program end before `G94` cancel, `G43.4`/`G234` tool-center-point mode before rotary/linear motion or program end without TCP kinematic review and `G49` cancellation, `G92` work-coordinate offsets before motion or program end without temporary-offset review and `G92.1`/`G92.2` cancellation, `G10 L2`/`G10 L20` fixture/work-offset table writes without controller offset-table backup or review evidence, CNC subprogram calls, macro variables, conditionals, or jumps before controller dependency review evidence, printer extrusion before heat-up,
@@ -3946,7 +3999,13 @@ Learning outcomes are also recorded as job artifacts: `outcome-learning-event`,
 route aliases, local `des_engine`/`remote/submodules/discrete-event-system.rs`
 provenance, MDP/POMDP/DES Studio schema names, neural primitive identity,
 summary counts, detailed learned preference surfaces, and advisory
-`promotionPolicy` notes. `GET /learning/outcomes` and
+`promotionPolicy` notes. `GET /fabrication/learning/corpus` and
+`GET /learning/corpus` return the `dd.fabrication.learning-corpus.v1`
+self-describing training corpus: route aliases, MDP/POMDP schema names,
+`FeedForwardNetwork` provenance, neural training examples, boundary learning
+examples, remediation risks, and release-policy notes that validation,
+simulation, controller, setup, quality, and signoff gates remain authoritative.
+`GET /learning/outcomes` and
 `GET /fabrication/learning/outcomes` return the
 `dd.fabrication.learning-outcome-memory.v1` bounded outcome memory, including
 retained compact/rich learning records, `maxOutcomes`, the derived policy

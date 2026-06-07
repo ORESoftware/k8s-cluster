@@ -10988,8 +10988,7 @@ fn design_import_result_review_response(
         },
         "learning": {
             "observations": learning_observations,
-            "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "engineTargets": ["MDP", "POMDP", "neural"]
         },
         "artifactSurfaces": [
             "design-import-result",
@@ -11900,7 +11899,35 @@ fn instruction_generation_result_review_response(
         },
         "learning": {
             "observations": learning_observations,
-            "engineTargets": ["MDP", "POMDP", "neural"]
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.instruction-generation-learning-outcome-draft.v1",
+                "sourceKind": "instruction-generation-result",
+                "sourceJobId": generation_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.55 } else { 0.5 },
+                "generator": generator,
+                "formatHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("format").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "targetHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("targetId").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "blockerHints": blockers
+                    .iter()
+                    .filter_map(|blocker| blocker.get("code").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("artifact-count:{}", artifacts.len()),
+                    format!("blocker-count:{}", blockers.len()),
+                    format!("missing-release-evidence:{missing_release_evidence}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "instruction-generation-result",
@@ -12630,7 +12657,38 @@ fn machine_code_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.machine-code-learning-outcome-draft.v1",
+                "sourceKind": "machine-code-result",
+                "sourceJobId": machine_code_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.8 } else { 0.6 },
+                "machineKind": machine_kind,
+                "controller": controller,
+                "postprocessor": postprocessor,
+                "methodHints": programs
+                    .iter()
+                    .filter_map(|program| program.get("language").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "boundaryHints": failure_boundaries
+                    .iter()
+                    .filter_map(|boundary| boundary.get("boundaryKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("program-blockers:{program_blocker_count}"),
+                    format!("controller-check-blockers:{controller_check_blocker_count}"),
+                    format!("boundary-blockers:{boundary_blocker_count}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedActions": failure_boundaries
+                    .iter()
+                    .filter_map(|boundary| boundary.get("recommendedAction").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "machine-code-result",
@@ -13100,7 +13158,40 @@ fn instruction_review_result_review_response(
         },
         "learning": {
             "observations": learning_observations,
-            "engineTargets": ["MDP", "POMDP", "neural"]
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.instruction-review-learning-outcome-draft.v1",
+                "sourceKind": "instruction-review-result",
+                "sourceJobId": review_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.7 } else { 0.55 },
+                "reviewer": reviewer,
+                "findingHints": findings
+                    .iter()
+                    .filter_map(|finding| finding.get("code").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "boundaryHints": failure_boundaries
+                    .iter()
+                    .filter_map(|boundary| boundary.get("boundaryKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "improvementHints": improvement_drafts
+                    .iter()
+                    .filter_map(|draft| draft.get("draftKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "recommendedActions": failure_boundaries
+                    .iter()
+                    .filter_map(|boundary| boundary.get("recommendedAction").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("blocking-findings:{blocking_finding_count}"),
+                    format!("failure-boundaries:{}", failure_boundaries.len()),
+                    format!("human-intervention-boundaries:{human_intervention_boundary_count}"),
+                    format!("human-approval-drafts:{human_approval_draft_count}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "instruction-review-result",
@@ -13797,7 +13888,44 @@ fn instruction_validation_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.instruction-validation-learning-outcome-draft.v1",
+                "sourceKind": "instruction-validation-result",
+                "sourceJobId": validation_result_job_id,
+                "sourceRequestId": request_id,
+                "instructionId": instruction_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.85 } else { 0.65 },
+                "language": language,
+                "machineKind": machine_kind,
+                "controller": controller,
+                "findingHints": findings
+                    .iter()
+                    .filter_map(|finding| finding.get("code").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "boundaryHints": failure_boundaries
+                    .iter()
+                    .filter_map(|boundary| boundary.get("boundaryKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "improvementHints": improvement_suggestions
+                    .iter()
+                    .filter_map(|improvement| improvement.get("improvementKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("blocking-findings:{blocking_finding_count}"),
+                    format!("boundary-blockers:{boundary_blocker_count}"),
+                    format!("improvement-blockers:{improvement_blocker_count}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("split-or-combine-required:{split_or_combine_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedActions": failure_boundaries
+                    .iter()
+                    .filter_map(|boundary| boundary.get("recommendedAction").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "instruction-validation-result",
@@ -14381,7 +14509,48 @@ fn boundary_remediation_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.boundary-remediation-learning-outcome-draft.v1",
+                "sourceKind": "boundary-remediation-result",
+                "sourceJobId": remediation_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.72 } else { 0.58 },
+                "remediator": remediator,
+                "completedActionCount": completed_action_count,
+                "blockedActionCount": action_blocker_count,
+                "missingActionEvidenceCount": missing_action_evidence_count,
+                "humanSignoffRequiredCount": human_signoff_required_count,
+                "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+                "validationEvidenceMissing": validation_evidence_missing,
+                "simulationEvidenceMissing": simulation_evidence_missing,
+                "actionHints": actions
+                    .iter()
+                    .filter_map(|action| action.get("actionId").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "boundaryHints": actions
+                    .iter()
+                    .filter_map(|action| action.get("boundaryKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "blockerHints": release_blockers
+                    .iter()
+                    .filter_map(|blocker| blocker.get("blockerKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("completed-actions:{completed_action_count}"),
+                    format!("blocked-actions:{action_blocker_count}"),
+                    format!("missing-action-evidence:{missing_action_evidence_count}"),
+                    format!("human-signoff-required:{human_signoff_required_count}"),
+                    format!("validation-evidence-missing:{validation_evidence_missing}"),
+                    format!("simulation-evidence-missing:{simulation_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "boundary-remediation-result",
@@ -14947,7 +15116,46 @@ fn instruction_simulation_result_review_response(
         },
         "learning": {
             "observations": learning_observations,
-            "engineTargets": ["MDP", "POMDP", "neural"]
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.instruction-simulation-learning-outcome-draft.v1",
+                "sourceKind": "instruction-simulation-result",
+                "sourceJobId": simulation_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.9 } else { 0.7 },
+                "simulator": simulator,
+                "checkHints": envelope_checks
+                    .iter()
+                    .filter_map(|check| check.get("checkKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "findingHints": findings
+                    .iter()
+                    .filter_map(|finding| finding.get("code").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "boundaryHints": failure_boundaries
+                    .iter()
+                    .filter_map(|boundary| boundary.get("boundaryKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "recommendedActions": failure_boundaries
+                    .iter()
+                    .filter_map(|boundary| boundary.get("recommendedAction").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("blocked-envelope-checks:{blocked_envelope_check_count}"),
+                    format!("human-review-checks:{human_review_check_count}"),
+                    format!("blocking-findings:{blocking_finding_count}"),
+                    format!("failure-boundaries:{}", failure_boundaries.len()),
+                    format!("human-intervention-boundaries:{human_intervention_boundary_count}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "instruction-simulation-result",
@@ -16768,7 +16976,58 @@ fn execution_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.execution-learning-outcome-draft.v1",
+                "sourceKind": "execution-result",
+                "sourceJobId": execution_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !execution_blocked,
+                "rewardHint": if execution_blocked { -0.95 } else { 0.8 },
+                "runId": &run_id,
+                "machineKind": machine_kind.as_deref(),
+                "controller": controller.as_deref(),
+                "outcome": &outcome,
+                "observedState": &observed_state,
+                "unattended": unattended,
+                "segmentStatusHints": run_segments
+                    .iter()
+                    .filter_map(|segment| segment.get("status").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "stopHints": machine_stops
+                    .iter()
+                    .filter_map(|stop| stop.get("code").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "stopKindHints": machine_stops
+                    .iter()
+                    .filter_map(|stop| stop.get("stopKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "recommendedActions": machine_stops
+                    .iter()
+                    .filter_map(|stop| stop.get("recommendedAction").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "operatorActionHints": operator_interventions
+                    .iter()
+                    .filter_map(|intervention| intervention.get("actionKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "splitCombineHints": split_combine_decisions
+                    .iter()
+                    .filter_map(|decision| decision.get("decisionKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("incomplete-segments:{incomplete_segment_count}"),
+                    format!("blocking-machine-stops:{blocking_machine_stop_count}"),
+                    format!("human-intervention-stops:{human_intervention_stop_count}"),
+                    format!("restart-blocking-operator-interventions:{restart_blocking_operator_intervention_count}"),
+                    format!("split-combine-blockers:{split_combine_blocker_count}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "releaseUpdate": {
             "machineReleaseBlocked": execution_blocked,
@@ -39314,10 +39573,23 @@ fn instruction_improvement_review_response(response: &InstructionAnalysisRespons
         .iter()
         .map(|program| program.patch_manifest.operation_count)
         .sum::<usize>();
+    let human_review_patch_count = response
+        .improved_programs
+        .iter()
+        .flat_map(|program| program.patch_manifest.operations.iter())
+        .filter(|operation| operation.requires_human_review)
+        .count();
     let blocked_program_count = response
         .improved_programs
         .len()
         .saturating_sub(machine_ready_count);
+    let mut patch_observations = response
+        .improved_programs
+        .iter()
+        .flat_map(|program| program.patch_manifest.learning_observations.iter().cloned())
+        .collect::<Vec<_>>();
+    patch_observations.sort();
+    patch_observations.dedup();
 
     json!({
         "ok": response.ok,
@@ -39337,6 +39609,7 @@ fn instruction_improvement_review_response(response: &InstructionAnalysisRespons
         "improvedProgramCount": response.improved_programs.len(),
         "changedProgramCount": changed_program_count,
         "patchOperationCount": patch_operation_count,
+        "humanReviewPatchCount": human_review_patch_count,
         "machineReadyProgramCount": machine_ready_count,
         "blockedProgramCount": blocked_program_count,
         "responseSurfaces": [
@@ -39367,6 +39640,47 @@ fn instruction_improvement_review_response(response: &InstructionAnalysisRespons
             "learning.interventionSignals",
             "neuralTrainingCorpus.examples"
         ],
+        "learning": {
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "observations": patch_observations,
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.instruction-improvement-learning-outcome-draft.v1",
+                "sourceKind": "instruction-improvement-review",
+                "sourceJobId": &response.job_id,
+                "sourceRequestId": &response.request_id,
+                "success": !response.machine_release.machine_release_blocked && blocked_program_count == 0,
+                "rewardHint": if response.machine_release.machine_release_blocked || blocked_program_count > 0 { -0.45 } else { 0.45 },
+                "changedProgramCount": changed_program_count,
+                "patchOperationCount": patch_operation_count,
+                "humanReviewPatchCount": human_review_patch_count,
+                "blockedProgramCount": blocked_program_count,
+                "improvementActions": response
+                    .improvements
+                    .iter()
+                    .map(|improvement| improvement.action.as_str())
+                    .collect::<Vec<_>>(),
+                "boundaryHints": response
+                    .validation
+                    .failure_boundaries
+                    .iter()
+                    .map(|boundary| boundary.kind.as_str())
+                    .collect::<Vec<_>>(),
+                "patchActionHints": response
+                    .improved_programs
+                    .iter()
+                    .flat_map(|program| program.patch_manifest.operations.iter())
+                    .map(|operation| operation.action.as_str())
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("changed-programs:{changed_program_count}"),
+                    format!("patch-operations:{patch_operation_count}"),
+                    format!("human-review-patches:{human_review_patch_count}"),
+                    format!("blocked-programs:{blocked_program_count}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
+        },
         "releasePolicy": [
             "instruction improvement review returns conservative repair drafts, not executable-certified controller code",
             "improved programs remain machineReady=false until validation, simulation, controller/postprocessor review, and operator or automation signoff clear",
@@ -39595,6 +39909,15 @@ fn instruction_validation_response(response: &InstructionAnalysisResponse) -> Va
 }
 
 fn instruction_boundary_review_response(response: &InstructionAnalysisResponse) -> Value {
+    let mut boundary_observations = response.intervention_map.learning_observations.clone();
+    boundary_observations.sort();
+    boundary_observations.dedup();
+    let boundary_count = response.validation.failure_boundaries.len();
+    let human_intervention_point_count = response.intervention_map.human_intervention_points.len();
+    let split_combine_decision_count = response.intervention_map.split_combine_decisions.len();
+    let automation_path_count = response.intervention_map.automation_paths.len();
+    let release_blocked = response.machine_release.machine_release_blocked;
+
     json!({
         "ok": response.ok,
         "service": SERVICE_NAME,
@@ -39614,16 +39937,16 @@ fn instruction_boundary_review_response(response: &InstructionAnalysisResponse) 
             "GET /interventions/catalog",
             "GET /fabrication/interventions/catalog"
         ],
-        "machineReady": !response.machine_release.machine_release_blocked,
-        "machineReleaseBlocked": response.machine_release.machine_release_blocked,
+        "machineReady": !release_blocked,
+        "machineReleaseBlocked": release_blocked,
         "validationSeverity": &response.validation.severity,
         "programCount": response.programs.len(),
         "findingCount": response.validation.findings.len(),
-        "boundaryCount": response.validation.failure_boundaries.len(),
+        "boundaryCount": boundary_count,
         "resolutionStepCount": response.resolution_plan.step_count,
-        "humanInterventionPointCount": response.intervention_map.human_intervention_points.len(),
-        "splitCombineDecisionCount": response.intervention_map.split_combine_decisions.len(),
-        "automationPathCount": response.intervention_map.automation_paths.len(),
+        "humanInterventionPointCount": human_intervention_point_count,
+        "splitCombineDecisionCount": split_combine_decision_count,
+        "automationPathCount": automation_path_count,
         "machineFailureRiskScore": response.intervention_map.machine_failure_risk_score,
         "responseSurfaces": [
             "validation.findings",
@@ -39657,6 +39980,61 @@ fn instruction_boundary_review_response(response: &InstructionAnalysisResponse) 
             "releaseProbePlan.probes",
             "neuralTrainingCorpus.examples"
         ],
+        "learning": {
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "observations": boundary_observations,
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.instruction-boundary-learning-outcome-draft.v1",
+                "sourceKind": "instruction-boundary-review",
+                "sourceJobId": &response.job_id,
+                "sourceRequestId": &response.request_id,
+                "success": !release_blocked && boundary_count == 0,
+                "rewardHint": if release_blocked || boundary_count > 0 { -0.6 } else { 0.5 },
+                "boundaryCount": boundary_count,
+                "humanInterventionPointCount": human_intervention_point_count,
+                "splitCombineDecisionCount": split_combine_decision_count,
+                "automationPathCount": automation_path_count,
+                "machineFailureRiskScore": response.intervention_map.machine_failure_risk_score,
+                "boundaryHints": response
+                    .validation
+                    .failure_boundaries
+                    .iter()
+                    .map(|boundary| boundary.kind.as_str())
+                    .collect::<Vec<_>>(),
+                "resolutionActions": response
+                    .resolution_plan
+                    .steps
+                    .iter()
+                    .map(|step| step.action.as_str())
+                    .collect::<Vec<_>>(),
+                "humanInterventionActions": response
+                    .intervention_map
+                    .human_intervention_points
+                    .iter()
+                    .map(|point| point.required_action.as_str())
+                    .collect::<Vec<_>>(),
+                "splitCombineActions": response
+                    .intervention_map
+                    .split_combine_decisions
+                    .iter()
+                    .map(|decision| decision.action.as_str())
+                    .collect::<Vec<_>>(),
+                "automationFallbacks": response
+                    .intervention_map
+                    .automation_paths
+                    .iter()
+                    .map(|path| path.fallback.as_str())
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("boundaries:{boundary_count}"),
+                    format!("human-intervention-points:{human_intervention_point_count}"),
+                    format!("split-combine-decisions:{split_combine_decision_count}"),
+                    format!("automation-paths:{automation_path_count}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
+        },
         "releasePolicy": [
             "instruction boundary review returns machine-failure, human-intervention, automation, and split/combine gates for submitted instruction streams",
             "machine-ready release remains blocked while validation findings, unresolved boundaries, missing automation evidence, simulation risks, or operator signoff gaps remain",
@@ -49473,6 +49851,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/jobs/:job_id/artifacts/:artifact_id",
         "GET /learning/policy",
         "GET /fabrication/learning/policy",
+        "GET /learning/corpus",
+        "GET /fabrication/learning/corpus",
         "GET /workflow/catalog",
         "GET /fabrication/workflow/catalog",
         "POST /plan",
@@ -52605,6 +52985,8 @@ fn strategy_catalog_response() -> Value {
         "learningRoutes": [
             "GET /learning/policy",
             "GET /fabrication/learning/policy",
+            "GET /learning/corpus",
+            "GET /fabrication/learning/corpus",
             "GET /learning/outcomes",
             "GET /fabrication/learning/outcomes",
             "POST /learning/observe",
@@ -56056,7 +56438,37 @@ fn disposition_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.disposition-learning-outcome-draft.v1",
+                "sourceKind": "disposition-result",
+                "sourceJobId": disposition_result_job_id,
+                "sourceRequestId": request_id,
+                "sourcePartId": source_part_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.8 } else { 0.5 },
+                "machineKind": machine_kind,
+                "methodHints": disposition_decisions
+                    .iter()
+                    .filter_map(|decision| decision.get("decisionKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "actionHints": remediation_actions
+                    .iter()
+                    .filter_map(|action| action.get("actionKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("decision-blockers:{decision_blocker_count}"),
+                    format!("action-blockers:{action_blocker_count}"),
+                    format!("authority-blockers:{authority_blocker_count}"),
+                    format!("rework-required:{rework_required}"),
+                    format!("remake-required:{remake_required}"),
+                    format!("split-combine-required:{split_combine_required}"),
+                    format!("reinspection-required:{reinspection_required}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("human-signoff-required:{human_signoff_required}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "disposition-result",
@@ -56837,7 +57249,34 @@ fn costing_result_review_response(request: CostingResultReviewRequest) -> Result
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.costing-learning-outcome-draft.v1",
+                "sourceKind": "costing-result",
+                "sourceJobId": costing_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.65 } else { 0.45 },
+                "machineKind": machine_kind,
+                "materialHints": yield_reviews
+                    .iter()
+                    .filter_map(|review| review.get("materialKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "methodHints": route_comparisons
+                    .iter()
+                    .filter_map(|comparison| comparison.get("routeKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("cost-blockers:{cost_blocker_count}"),
+                    format!("yield-blockers:{yield_blocker_count}"),
+                    format!("route-blockers:{route_blocker_count}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("split-combine-required:{split_combine_required}"),
+                    format!("cost-overrun-detected:{cost_overrun_detected}"),
+                    format!("scrap-overrun-detected:{scrap_overrun_detected}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "costing-result",
@@ -57697,7 +58136,47 @@ fn energy_result_review_response(request: EnergyResultReviewRequest) -> Result<V
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.energy-learning-outcome-draft.v1",
+                "sourceKind": "energy-result",
+                "sourceJobId": energy_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.61 } else { 0.47 },
+                "machineKind": machine_kind,
+                "runId": run_id,
+                "energyFamilyHints": power_checks
+                    .iter()
+                    .filter_map(|check| check.get("energyFamily").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "loadKindHints": power_checks
+                    .iter()
+                    .filter_map(|check| check.get("loadKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "thermalScopeHints": thermal_checks
+                    .iter()
+                    .filter_map(|check| check.get("thermalScope").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "recoveryActionHints": recovery_actions
+                    .iter()
+                    .filter_map(|action| action.get("actionKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("power-blockers:{power_blocker_count}"),
+                    format!("thermal-blockers:{thermal_blocker_count}"),
+                    format!("recovery-blockers:{recovery_blocker_count}"),
+                    format!("replan-required:{replan_required}"),
+                    format!("cooldown-required:{cooldown_required}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "energy-result",
@@ -58292,7 +58771,47 @@ fn utilities_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.utilities-learning-outcome-draft.v1",
+                "sourceKind": "utilities-result",
+                "sourceJobId": utilities_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.64 } else { 0.49 },
+                "machineKind": machine_kind,
+                "runId": run_id,
+                "utilityFamilyHints": utility_checks
+                    .iter()
+                    .filter_map(|check| check.get("utilityFamily").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "utilityKindHints": utility_checks
+                    .iter()
+                    .filter_map(|check| check.get("utilityKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "recoveryActionHints": recovery_actions
+                    .iter()
+                    .filter_map(|action| action.get("actionKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "outageHints": outage_events
+                    .iter()
+                    .filter_map(|event| event.get("eventKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("utility-blockers:{utility_blocker_count}"),
+                    format!("recovery-blockers:{recovery_blocker_count}"),
+                    format!("outage-blockers:{outage_blocker_count}"),
+                    format!("recovery-required:{recovery_required}"),
+                    format!("replan-required:{replan_required}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "utilities-result",
@@ -59154,7 +59673,48 @@ fn availability_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["DES", "MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.availability-learning-outcome-draft.v1",
+                "sourceKind": "availability-result",
+                "sourceJobId": availability_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.6 } else { 0.48 },
+                "routeId": route_id,
+                "machineWindowHints": machine_windows
+                    .iter()
+                    .filter_map(|window| window.get("machineKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "availabilityFamilyHints": machine_windows
+                    .iter()
+                    .filter_map(|window| {
+                        window.get("availabilityFamily").and_then(Value::as_str)
+                    })
+                    .collect::<Vec<_>>(),
+                "resourceHints": resource_checks
+                    .iter()
+                    .filter_map(|check| check.get("resourceKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "fallbackHints": fallback_options
+                    .iter()
+                    .filter_map(|option| option.get("optionKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("machine-window-blockers:{machine_window_blocker_count}"),
+                    format!("resource-blockers:{resource_blocker_count}"),
+                    format!("fallback-blockers:{fallback_blocker_count}"),
+                    format!("selected-fallbacks:{selected_fallback_count}"),
+                    format!("split-combine-required:{split_combine_required}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "availability-result",
@@ -59940,7 +60500,52 @@ fn maintenance_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.maintenance-learning-outcome-draft.v1",
+                "sourceKind": "maintenance-result",
+                "sourceJobId": maintenance_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.66 } else { 0.5 },
+                "machineKind": machine_kind,
+                "routeId": route_id,
+                "serviceHints": service_items
+                    .iter()
+                    .filter_map(|item| item.get("maintenanceFamily").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "componentHints": service_items
+                    .iter()
+                    .filter_map(|item| item.get("componentKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "lockoutHints": lockout_clearances
+                    .iter()
+                    .filter_map(|clearance| clearance.get("lockoutKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "verificationHints": verification_checks
+                    .iter()
+                    .filter_map(|check| check.get("checkKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "restrictionHints": residual_restrictions
+                    .iter()
+                    .filter_map(|restriction| {
+                        restriction.get("restrictionKind").and_then(Value::as_str)
+                    })
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("service-blockers:{service_blocker_count}"),
+                    format!("lockout-blockers:{lockout_blocker_count}"),
+                    format!("verification-blockers:{verification_blocker_count}"),
+                    format!("residual-restriction-blockers:{residual_restriction_blocker_count}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "maintenance-result",
@@ -60630,7 +61235,51 @@ fn telemetry_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.telemetry-learning-outcome-draft.v1",
+                "sourceKind": "telemetry-result",
+                "sourceJobId": telemetry_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked && !learning_blocked,
+                "rewardHint": if release_blocked || learning_blocked { -0.62 } else { 0.5 },
+                "machineKind": machine_kind,
+                "programId": program_id,
+                "runId": run_id,
+                "sensorWindowHints": sensor_windows
+                    .iter()
+                    .filter_map(|window| window.get("telemetryFamily").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "machineStopHints": machine_stops
+                    .iter()
+                    .filter_map(|stop| stop.get("stopKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "boundaryStatusHints": boundary_correlations
+                    .iter()
+                    .filter_map(|correlation| correlation.get("status").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "operatorInterventionHints": operator_interventions
+                    .iter()
+                    .filter_map(|intervention| {
+                        intervention.get("interventionKind").and_then(Value::as_str)
+                    })
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("sensor-window-blockers:{sensor_window_blocker_count}"),
+                    format!("machine-stop-blockers:{machine_stop_blocker_count}"),
+                    format!("boundary-correlation-blockers:{boundary_correlation_blocker_count}"),
+                    format!("operator-intervention-blockers:{operator_intervention_blocker_count}"),
+                    format!("false-positives:{false_positive_count}"),
+                    format!("false-negatives:{false_negative_count}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "telemetry-result",
@@ -61442,7 +62091,40 @@ fn quality_result_review_response(request: QualityResultReviewRequest) -> Result
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.quality-learning-outcome-draft.v1",
+                "sourceKind": "quality-result",
+                "sourceJobId": quality_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.7 } else { 0.5 },
+                "methodHints": findings
+                    .iter()
+                    .filter_map(|finding| {
+                        finding
+                            .get("recommendedAction")
+                            .and_then(Value::as_str)
+                            .or_else(|| finding.get("code").and_then(Value::as_str))
+                    })
+                    .collect::<Vec<_>>(),
+                "measurementHints": measurements
+                    .iter()
+                    .filter_map(|measurement| measurement.get("targetId").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "gateHints": inspection_gates
+                    .iter()
+                    .filter_map(|gate| gate.get("gateKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("measurement-blockers:{measurement_blocker_count}"),
+                    format!("finding-blockers:{finding_blocker_count}"),
+                    format!("gate-blockers:{gate_blocker_count}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "quality-result",
@@ -62066,7 +62748,36 @@ fn calibration_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.calibration-learning-outcome-draft.v1",
+                "sourceKind": "calibration-result",
+                "sourceJobId": calibration_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.68 } else { 0.5 },
+                "machineKind": machine_kind,
+                "checkHints": checks
+                    .iter()
+                    .filter_map(|check| check.get("checkKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "offsetHints": offsets
+                    .iter()
+                    .filter_map(|offset| offset.get("offsetKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "probeHints": probes
+                    .iter()
+                    .filter_map(|probe| probe.get("probeKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("check-blockers:{check_blocker_count}"),
+                    format!("offset-blockers:{offset_blocker_count}"),
+                    format!("probe-blockers:{probe_blocker_count}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "calibration-result",
@@ -74280,7 +74991,34 @@ fn as_built_result_review_response(request: AsBuiltResultReviewRequest) -> Resul
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.as-built-learning-outcome-draft.v1",
+                "sourceKind": "as-built-result",
+                "sourceJobId": as_built_result_job_id,
+                "sourceRequestId": request_id,
+                "sourcePartId": source_part_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.75 } else { 0.55 },
+                "machineKind": machine_kind,
+                "methodHints": interface_checks
+                    .iter()
+                    .filter_map(|check| check.get("interfaceKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "boundaryHints": deviation_maps
+                    .iter()
+                    .filter_map(|map| map.get("status").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("measurement-blockers:{measurement_blocker_count}"),
+                    format!("deviation-blockers:{deviation_blocker_count}"),
+                    format!("interface-blockers:{interface_blocker_count}"),
+                    format!("remeasure-required:{remeasure_required}"),
+                    format!("rework-required:{rework_required}"),
+                    format!("human-intervention-required:{human_intervention_required}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "as-built-result",
@@ -93024,6 +93762,47 @@ mod tests {
             .is_some_and(|observations| observations.iter().any(|observation| {
                 observation.as_str() == Some("instruction-generation-generator:orca-slicer")
             })));
+        let outcome_draft = payload
+            .pointer("/learning/outcomeDraft")
+            .expect("instruction generation learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-generation-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(0.5)
+        );
+        assert_eq!(
+            outcome_draft.get("generator").and_then(Value::as_str),
+            Some("orca-slicer")
+        );
+        assert!(outcome_draft
+            .get("formatHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint.as_str() == Some("3MF"))));
+        assert!(outcome_draft
+            .get("targetHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("target-bracket"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("blocker-count:0"))));
         let job = stored_instruction_generation_result_job(&payload);
         assert_eq!(job.record.kind, "instruction-generation-result");
         assert!(job.artifacts.contains_key("instruction-generation-result"));
@@ -93173,6 +93952,61 @@ mod tests {
         assert!(observations.iter().any(|observation| {
             observation.as_str() == Some("instruction-review-improvement:add-modal-reset")
         }));
+        let outcome_draft = payload
+            .pointer("/learning/outcomeDraft")
+            .expect("instruction review learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-review-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.7)
+        );
+        assert_eq!(
+            outcome_draft.get("reviewer").and_then(Value::as_str),
+            Some("modal-boundary-reviewer")
+        );
+        assert!(outcome_draft
+            .get("findingHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("arc-plane-missing"))));
+        assert!(outcome_draft
+            .get("boundaryHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("human-intervention"))));
+        assert!(outcome_draft
+            .get("improvementHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("add-modal-reset"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("human-approval-drafts:1"))));
+        assert!(outcome_draft
+            .get("recommendedActions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions
+                .iter()
+                .any(|action| action.as_str() == Some("request-human-review"))));
         let job = stored_instruction_review_result_job(&payload);
         assert_eq!(job.record.kind, "instruction-review-result");
         assert!(job.artifacts.contains_key("instruction-review-result"));
@@ -93370,6 +94204,65 @@ mod tests {
                 "missing instruction validation result observation {expected}"
             );
         }
+        let outcome_draft = payload
+            .pointer("/learning/outcomeDraft")
+            .expect("instruction validation learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-validation-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.85)
+        );
+        assert_eq!(
+            outcome_draft.get("language").and_then(Value::as_str),
+            Some("haas-gcode")
+        );
+        assert_eq!(
+            outcome_draft.get("controller").and_then(Value::as_str),
+            Some("haas-ngc")
+        );
+        assert!(outcome_draft
+            .get("findingHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("controller-dependency-not-verified"))));
+        assert!(outcome_draft
+            .get("boundaryHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("controller-dependency-boundary"))));
+        assert!(outcome_draft
+            .get("improvementHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("insert-controller-macro-checkpoint"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("split-or-combine-required:true"))));
+        assert!(outcome_draft
+            .get("recommendedActions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions
+                .iter()
+                .any(|action| action.as_str() == Some("attach-macro-library-and-rerun-dry-run"))));
 
         let validation_result_job_id = payload
             .get("validationResultJobId")
@@ -93555,6 +94448,67 @@ mod tests {
         assert!(observations.iter().any(|observation| {
             observation.as_str() == Some("instruction-simulation-artifact:dry-run-log")
         }));
+        let outcome_draft = payload
+            .pointer("/learning/outcomeDraft")
+            .expect("instruction simulation learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-simulation-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.9)
+        );
+        assert_eq!(
+            outcome_draft.get("simulator").and_then(Value::as_str),
+            Some("nc-sim-envelope")
+        );
+        assert!(outcome_draft
+            .get("checkHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("machine-envelope"))));
+        assert!(outcome_draft
+            .get("findingHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("fixture-clearance-violated"))));
+        assert!(outcome_draft
+            .get("boundaryHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("split-boundary"))));
+        assert!(outcome_draft
+            .get("recommendedActions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions
+                .iter()
+                .any(|action| action.as_str() == Some("split-part-or-reroute-machine"))));
+        assert!(outcome_draft
+            .get("artifactHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("dry-run-log"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("artifact-evidence-missing:false"))));
     }
 
     #[test]
@@ -93902,6 +94856,57 @@ mod tests {
                 "missing machine-code learning observation {expected}"
             );
         }
+        let outcome_draft = payload
+            .pointer("/learning/outcomeDraft")
+            .expect("machine-code learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.machine-code-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.8)
+        );
+        assert_eq!(
+            outcome_draft.get("controller").and_then(Value::as_str),
+            Some("haas-ngc")
+        );
+        assert_eq!(
+            outcome_draft.get("postprocessor").and_then(Value::as_str),
+            Some("haas-mill-gcode-postprocessor")
+        );
+        assert!(outcome_draft
+            .get("methodHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint.as_str() == Some("haas-gcode"))));
+        assert!(outcome_draft
+            .get("boundaryHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("controller-dependency-boundary"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("controller-check-blockers:1"))));
+        assert!(outcome_draft
+            .get("recommendedActions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions
+                .iter()
+                .any(|action| action.as_str() == Some("attach-macro-library-and-rerun-dry-run"))));
 
         let machine_code_result_job_id = payload
             .get("machineCodeResultJobId")
@@ -94459,6 +95464,10 @@ mod tests {
             .and_then(Value::as_u64)
             .is_some_and(|count| count > 0));
         assert!(payload
+            .get("humanReviewPatchCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
             .get("learningSurfaces")
             .and_then(Value::as_array)
             .is_some_and(|surfaces| surfaces
@@ -94474,6 +95483,41 @@ mod tests {
                     .and_then(Value::as_array)
                     .is_some_and(|operations| !operations.is_empty())
             })));
+        let outcome_draft = payload
+            .pointer("/learning/outcomeDraft")
+            .expect("instruction improvement learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-improvement-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.45)
+        );
+        assert!(outcome_draft
+            .get("improvementActions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| !actions.is_empty()));
+        assert!(outcome_draft
+            .get("patchActionHints")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| !actions.is_empty()));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint.starts_with("patch-operations:")))));
     }
 
     #[test]
@@ -94544,6 +95588,41 @@ mod tests {
             .and_then(|plan| plan.get("machineReleaseBlocked"))
             .and_then(Value::as_bool)
             .unwrap_or(false));
+        let outcome_draft = payload
+            .pointer("/learning/outcomeDraft")
+            .expect("instruction boundary learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-boundary-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.6)
+        );
+        assert!(outcome_draft
+            .get("boundaryHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| !hints.is_empty()));
+        assert!(outcome_draft
+            .get("humanInterventionActions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| !actions.is_empty()));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint.starts_with("human-intervention-points:")))));
     }
 
     #[test]
@@ -95668,6 +96747,45 @@ mod tests {
             .is_some_and(|surfaces| surfaces.iter().any(|surface| {
                 surface.as_str() == Some("mdp-request.artifacts.boundaryRemediationResult")
             })));
+        let outcome_draft = payload
+            .pointer("/learning/outcomeDraft")
+            .expect("boundary remediation learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.boundary-remediation-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.72)
+        );
+        assert!(outcome_draft
+            .get("actionHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("rerun-dry-run-after-patch"))));
+        assert!(outcome_draft
+            .get("blockerHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("simulation-evidence-missing"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("simulation-evidence-missing:true"))));
 
         let job = stored_boundary_remediation_result_job(&payload);
         assert_eq!(job.record.kind, "boundary-remediation-result");
@@ -97535,6 +98653,55 @@ mod tests {
         assert!(observations.iter().any(|observation| {
             observation.as_str() == Some("execution-artifact:machine-telemetry-log")
         }));
+        let outcome_draft = payload
+            .pointer("/learning/outcomeDraft")
+            .expect("execution learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.execution-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.95)
+        );
+        assert_eq!(
+            outcome_draft.get("runId").and_then(Value::as_str),
+            Some("execution-run-mill-pin")
+        );
+        assert!(outcome_draft
+            .get("stopHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| {
+                hint.as_str() == Some("spindle-stall-before-mill-finish")
+            })));
+        assert!(outcome_draft
+            .get("operatorActionHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| {
+                hint.as_str() == Some("clear-workholding-and-inspect")
+            })));
+        assert!(outcome_draft
+            .get("splitCombineHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| {
+                hint.as_str() == Some("separate-and-remake-pin")
+            })));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| {
+                hint.as_str() == Some("split-combine-blockers:1")
+            })));
 
         let execution_result_job_id = payload
             .get("executionResultJobId")
@@ -99030,6 +100197,45 @@ mod tests {
                 "missing learning observation {observation}"
             );
         }
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("disposition learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.disposition-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.8)
+        );
+        assert!(outcome_draft
+            .get("methodHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "split-combine-rework"))));
+        assert!(outcome_draft
+            .get("actionHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "print-split-then-mill-interface"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "split-combine-required:true"))));
 
         let job = stored_disposition_result_job(&response);
         assert_eq!(job.record.kind, "disposition-result");
@@ -99229,6 +100435,39 @@ mod tests {
                 "missing learning observation {expected}"
             );
         }
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("costing learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.costing-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.65)
+        );
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "split-combine-required:true"))));
+        assert!(outcome_draft
+            .get("methodHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "split-combine-hybrid-route"))));
 
         let job = stored_costing_result_job(&response);
         assert_eq!(job.record.kind, "costing-result");
@@ -99490,6 +100729,46 @@ mod tests {
         assert!(observations.iter().any(|observation| observation.as_str()
             == Some("energy-family:sheet-cut-beam-jet-plasma-and-edm-energy")));
 
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("energy learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.energy-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.61)
+        );
+        assert!(outcome_draft
+            .get("energyFamilyHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("sheet-cut-beam-jet-plasma-and-edm-energy"))));
+        assert!(outcome_draft
+            .get("loadKindHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("laser-power-supply-and-chiller"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("replan-required:true"))));
+
         let job = stored_energy_result_job(&response);
         assert_eq!(job.record.kind, "energy-result");
         assert_eq!(job.record.status, "energy-result-power-release-blocked");
@@ -99650,6 +100929,45 @@ mod tests {
                 "missing learning observation {observation}"
             );
         }
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("utilities learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.utilities-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.64)
+        );
+        assert!(outcome_draft
+            .get("utilityKindHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("vacuum-hold-down"))));
+        assert!(outcome_draft
+            .get("recoveryActionHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("vacuum-restart-and-fixture-recheck"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("replan-required:true"))));
 
         let job = stored_utilities_result_job(&response);
         assert_eq!(job.record.kind, "utilities-result");
@@ -99940,6 +101258,45 @@ mod tests {
             .is_some_and(|surfaces| surfaces
                 .iter()
                 .any(|surface| surface.as_str() == Some("maintenance-learning-observations"))));
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("maintenance learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.maintenance-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.66)
+        );
+        assert!(outcome_draft
+            .get("serviceHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("spindle-tooling-and-wear-state"))));
+        assert!(outcome_draft
+            .get("verificationHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("post-service-dry-run-and-safe-stop"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("service-blockers:1"))));
 
         let stored = stored_maintenance_result_job(&response);
         assert_eq!(stored.record.kind, "maintenance-result");
@@ -100154,6 +101511,45 @@ mod tests {
                 "missing learning observation {observation}"
             );
         }
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("availability learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.availability-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.6)
+        );
+        assert!(outcome_draft
+            .get("machineWindowHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("vertical-mill"))));
+        assert!(outcome_draft
+            .get("fallbackHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("split-print-then-lathe-fallback"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("split-combine-required:true"))));
 
         let job = stored_availability_result_job(&response);
         assert_eq!(job.record.kind, "availability-result");
@@ -100312,6 +101708,39 @@ mod tests {
                 "missing learning observation {observation}"
             );
         }
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("telemetry learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.telemetry-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.62)
+        );
+        assert!(outcome_draft
+            .get("boundaryStatusHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("false-negative"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("false-negatives:1"))));
 
         let job = stored_telemetry_result_job(&response);
         assert_eq!(job.record.kind, "telemetry-result");
@@ -100603,6 +102032,45 @@ mod tests {
                 "missing quality observation {observation}"
             );
         }
+        let outcome_draft = payload
+            .pointer("/learning/outcomeDraft")
+            .expect("quality learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.quality-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.7)
+        );
+        assert!(outcome_draft
+            .get("methodHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "rework-or-split-insert"))));
+        assert!(outcome_draft
+            .get("measurementHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "critical-datum-bore"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "human-intervention-required:true"))));
 
         let job = stored_quality_result_job(&payload);
         assert!(job
@@ -100973,6 +102441,45 @@ mod tests {
                 "missing calibration observation {observation}"
             );
         }
+        let outcome_draft = payload
+            .pointer("/learning/outcomeDraft")
+            .expect("calibration learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.calibration-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.68)
+        );
+        assert!(outcome_draft
+            .get("checkHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "work-offset-verification"))));
+        assert!(outcome_draft
+            .get("offsetHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "g54-z-work-offset"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str().is_some_and(|hint| hint == "probe-blockers:1"))));
 
         let job = stored_calibration_result_job(&payload);
         assert!(job
@@ -103225,6 +104732,45 @@ mod tests {
                     .is_some_and(|observation| observation
                         == "as-built-family:hybrid-split-combine-as-built-interface-evidence"))
             ));
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("as-built learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.as-built-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.75)
+        );
+        assert!(outcome_draft
+            .get("methodHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "split-combine-datum-fit"))));
+        assert!(outcome_draft
+            .get("boundaryHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "aligned-out-of-tolerance"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint
+                .as_str()
+                .is_some_and(|hint| hint == "rework-required:true"))));
         assert!(response
             .get("artifactSurfaces")
             .and_then(Value::as_array)
@@ -119854,6 +121400,101 @@ mod tests {
             .and_then(|policy| policy.get("boundaryLearningExamples"))
             .and_then(Value::as_array)
             .is_some_and(|examples| !examples.is_empty()));
+    }
+
+    #[test]
+    fn learning_corpus_endpoint_exposes_neural_training_examples() {
+        let successful_hybrid = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("corpus-success-1".to_string()),
+            job_id: Some("plan-corpus-1".to_string()),
+            objective: Some("printed jig body with milled locating pads".to_string()),
+            material: Some(material("petg", "polymer")),
+            manufacturing_methods: Some(vec!["additive-print".to_string(), "milling".to_string()]),
+            machine_kind: Some("vertical-mill".to_string()),
+            operation_sequence: Some(vec!["additive-print".to_string(), "milling".to_string()]),
+            assembly_strategy: Some("printed body plus milled datum pads".to_string()),
+            success: true,
+            reward: Some(3.1),
+            observations: Some(vec!["boundary-kind:split-combine-cleared".to_string()]),
+            notes: Some(vec!["retain hybrid route for corpus".to_string()]),
+        })
+        .expect("successful hybrid outcome should be valid");
+        let failed_single_route = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("corpus-failure-1".to_string()),
+            job_id: Some("plan-corpus-2".to_string()),
+            objective: Some("single-piece milled PETG jig body".to_string()),
+            material: Some(material("petg", "polymer")),
+            manufacturing_methods: Some(vec!["milling".to_string()]),
+            machine_kind: Some("vertical-mill".to_string()),
+            operation_sequence: Some(vec!["milling".to_string()]),
+            assembly_strategy: Some("single-piece machining".to_string()),
+            success: false,
+            reward: Some(-2.6),
+            observations: Some(vec![
+                "machine-failure:thin-wall-chatter".to_string(),
+                "boundary-kind:machine-envelope".to_string(),
+                "resolution-action:split-job-or-part".to_string(),
+            ]),
+            notes: Some(vec!["split before retry".to_string()]),
+        })
+        .expect("failed single-route outcome should be valid");
+
+        let mut memory = LearningMemory::new(8);
+        memory.insert(successful_hybrid);
+        memory.insert(failed_single_route);
+        let snapshot = memory.snapshot();
+        let payload = learning_corpus_response(&snapshot);
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.learning-corpus.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/learning/corpus"))));
+        assert!(payload
+            .get("engine")
+            .and_then(|engine| engine.get("neuralPrimitive"))
+            .and_then(Value::as_str)
+            .is_some_and(|primitive| primitive.contains("FeedForwardNetwork")));
+        assert_eq!(
+            payload
+                .get("corpusSummary")
+                .and_then(|summary| summary.get("outcomeCount"))
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert!(payload
+            .get("corpusSummary")
+            .and_then(|summary| summary.get("neuralTrainingExampleCount"))
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 2));
+        assert!(payload
+            .get("corpusSummary")
+            .and_then(|summary| summary.get("boundaryLearningExampleCount"))
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+        assert!(payload
+            .get("trainingSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("mdp-request.artifacts.neuralTrainingCorpus")
+            })));
+        assert!(payload
+            .get("neuralTrainingExamples")
+            .and_then(Value::as_array)
+            .is_some_and(|examples| examples.iter().any(|example| example
+                .as_str()
+                .is_some_and(|example| example.contains("methods=additive-print+milling")))));
+        assert!(payload
+            .get("boundaryLearningExamples")
+            .and_then(Value::as_array)
+            .is_some_and(|examples| examples.iter().any(|example| example
+                .as_str()
+                .is_some_and(|example| example.contains("boundary-kind:machine-envelope")))));
     }
 
     #[test]
