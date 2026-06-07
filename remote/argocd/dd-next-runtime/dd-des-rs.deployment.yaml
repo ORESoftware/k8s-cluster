@@ -15,16 +15,16 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-des-rs
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-06-des-rs-live-landing-f715fcc'
-        dd.dev/des-server-revision: 'f715fcc254be9b1ea88e5274ffdad10d64043d8d'
-        dd.dev/des-engine-revision: 'f7172d09487cf148acc4bea32025bf84d1c5359a'
+        dd.dev/telemetry-revision: '2026-06-07-des-rs-streamed-artifacts-2b1b9f0'
+        dd.dev/des-server-revision: 'streamed-out-artifacts'
+        dd.dev/des-engine-revision: '2b1b9f0a29d1135f303bf1db27eeb37b4091deda'
       labels:
         app: dd-des-rs
     spec:
@@ -150,7 +150,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: f7172d09487cf148acc4bea32025bf84d1c5359a
+              value: 2b1b9f0a29d1135f303bf1db27eeb37b4091deda
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
@@ -188,13 +188,13 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 2Gi
+              memory: 4Gi
             limits:
               cpu: '2'
               # Headroom for the cold release build: the pod recompiles the full
               # des_engine crate (plus axum/tokio) from an empty /tmp on every
               # (re)start, which peaks higher than des-simulator's smaller build.
-              memory: 8Gi
+              memory: 12Gi
           startupProbe:
             httpGet:
               path: /healthz
