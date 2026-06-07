@@ -104,6 +104,8 @@ outcomes.
 - `GET /fabrication/instructions/import/preflight/catalog`
 - `GET /instructions/validation/catalog`
 - `GET /fabrication/instructions/validation/catalog`
+- `GET /instructions/validation/preflight/catalog`
+- `GET /fabrication/instructions/validation/preflight/catalog`
 - `GET /instructions/generation/catalog`
 - `GET /fabrication/instructions/generation/catalog`
 - `GET /instructions/generation/preflight/catalog`
@@ -986,6 +988,13 @@ evidence, postprocessor version, and operator or automation signoff are retained
 unknown controller/postprocessor combinations stay routed to manual controller
 review.
 
+The catalog also publishes a `dialectAssumptionChecklist` for modal defaults and
+reset state, offset tables and compensation, macro/subprogram dependencies, and
+postprocessed-output dry-run proof. Each item names the controller surfaces it
+blocks, including `instructionValidation.boundaries`, `controllerPlan.releaseGates`,
+and `machineRelease.blockers`, plus learning signals such as
+`controller-modal-defaults:*`, `macro-dependency:*`, and `dry-run-proof:*`.
+
 `GET /controllers/preflight/catalog` and the gateway-prefixed
 `GET /fabrication/controllers/preflight/catalog` return the live
 `dd.fabrication.controller-preflight-catalog.v1` checklist for controller
@@ -1637,6 +1646,17 @@ imported CNC, printer, slicer, setup-sheet, postprocess, assembly, and operator
 instruction streams before a caller submits validation work. The payload exposes
 accepted language families, boundary families, validation check contracts,
 response surfaces, artifact surfaces, and learning surfaces.
+
+`GET /instructions/validation/preflight/catalog` and
+`GET /fabrication/instructions/validation/preflight/catalog` expose the
+`dd.fabrication.instruction-validation-preflight-catalog.v1` checklist for the
+same streams before they are trusted as validation inputs. The preflight payload
+groups source provenance/language/dialect state, machine/process/simulation
+setup state, and boundary/improvement/release/learning state. It names the
+`validation.failureBoundaries`, `operatorInterventionPlan`,
+`improvedPrograms.patchManifest`, `instruction-validation-result`, and
+learning-signal surfaces that keep machine-ready release blocked while evidence
+is missing.
 
 Catalog contracts cover controller modal state, additive printer
 heat/extrusion/material state, subtractive spindle/feed/tool/workholding state,

@@ -58467,6 +58467,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/instructions/import/preflight/catalog",
         "GET /instructions/validation/catalog",
         "GET /fabrication/instructions/validation/catalog",
+        "GET /instructions/validation/preflight/catalog",
+        "GET /fabrication/instructions/validation/preflight/catalog",
         "GET /instructions/generation/catalog",
         "GET /fabrication/instructions/generation/catalog",
         "GET /instructions/generation/preflight/catalog",
@@ -91576,6 +91578,55 @@ fn controller_catalog_dialect_counts(catalog: &[Value]) -> BTreeMap<String, usiz
     counts
 }
 
+fn controller_dialect_assumption_checklist() -> Vec<Value> {
+    vec![
+        json!({
+            "checkId": "modal-defaults-and-reset-state",
+            "appliesTo": ["subtractive-gcode-controller-dialect", "multi-axis-milling-controller-dialect", "turning-controller-dialect", "additive-firmware-gcode-dialect"],
+            "requiredEvidence": [
+                "unit mode, positioning mode, feed mode, active plane, and work offset defaults",
+                "program-end reset state for G90/G91, G17/G18/G19, G40/G49/G80, and controller equivalents",
+                "printer homing, extrusion mode, hotend, bed, and stepper state before positive extrusion"
+            ],
+            "blocks": ["controllerPlan.releaseGates", "machineRelease.blockers", "instructionValidation.boundaries"],
+            "learningSignals": ["controller-modal-defaults:*", "program-end-reset:*", "printer-state:*"]
+        }),
+        json!({
+            "checkId": "offset-table-and-compensation-state",
+            "appliesTo": ["subtractive-gcode-controller-dialect", "multi-axis-milling-controller-dialect", "turning-controller-dialect", "swiss-turning-controller-dialect"],
+            "requiredEvidence": [
+                "work-offset table backup or setup-sheet proof",
+                "tool length, cutter radius, tool-nose, wear, and geometry offset review",
+                "compensation activation and cancellation evidence around tool changes and program end"
+            ],
+            "blocks": ["controllerPlan.compatibilityTargets", "toolingPlan.requirements", "fixturePlan.setups", "machineRelease.blockers"],
+            "learningSignals": ["offset-table:*", "tool-compensation:*", "tool-change-offset-risk:*"]
+        }),
+        json!({
+            "checkId": "macro-subprogram-and-controller-state",
+            "appliesTo": ["Fanuc/Haas-style G-code", "LinuxCNC", "Siemens Sinumerik", "Heidenhain conversational", "Mazatrol", "Okuma OSP"],
+            "requiredEvidence": [
+                "macro variable, conditional, jump, and subprogram dependency review",
+                "controller option package or custom M-code availability",
+                "external file, parameter table, and operator prompt dependency retention"
+            ],
+            "blocks": ["instructionValidation.boundaries", "controllerPlan.releaseGates", "executionPlan.stopPoints"],
+            "learningSignals": ["macro-dependency:*", "subprogram-review:*", "controller-option:*"]
+        }),
+        json!({
+            "checkId": "postprocessed-output-and-dry-run-proof",
+            "appliesTo": ["generated machine code", "improved instructions", "submitted controller programs"],
+            "requiredEvidence": [
+                "postprocessor identity, version, input revision, output checksum, and controller target",
+                "exact posted program retained for review",
+                "controller simulation, backplot, dry-run, or equivalent machine-specific validation result"
+            ],
+            "blocks": ["postprocessPlan.controllerTargets", "releasePackagePlan.packages", "machineSchedule.dependencyHolds"],
+            "learningSignals": ["postprocessor-version:*", "dry-run-proof:*", "controller-target:*"]
+        }),
+    ]
+}
+
 fn controller_catalog_targets() -> Vec<Value> {
     default_machines()
         .into_iter()
@@ -91694,6 +91745,7 @@ fn controller_postprocessor_catalog_response() -> Value {
             "controllerPlan.releaseGates",
             "releasePackagePlan.packages"
         ],
+        "dialectAssumptionChecklist": controller_dialect_assumption_checklist(),
         "releasePolicy": [
             "controller catalog entries describe current postprocessor selection and review gates, not certified machine release",
             "machine-ready release remains blocked until the exact postprocessed output, controller setup sheet, dry-run or simulation evidence, and operator or automation signoff are retained",
@@ -95095,6 +95147,118 @@ fn instruction_validation_catalog_response() -> Value {
 
 async fn instruction_validation_catalog_http() -> impl IntoResponse {
     Json(instruction_validation_catalog_response())
+}
+
+fn instruction_validation_preflight_catalog_response() -> Value {
+    let check_contracts = instruction_validation_catalog_check_contracts();
+    let check_families = unique_sorted(check_contracts.iter().filter_map(|contract| {
+        contract
+            .get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-validation-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /instructions/validation/preflight/catalog",
+            "GET /fabrication/instructions/validation/preflight/catalog"
+        ],
+        "validationCatalogRoutes": [
+            "GET /instructions/validation/catalog",
+            "GET /fabrication/instructions/validation/catalog"
+        ],
+        "validationRoutes": ["POST /instructions/validate", "POST /fabrication/instructions/validate"],
+        "resultRoutes": ["POST /instructions/validation/result", "POST /fabrication/instructions/validation/result"],
+        "relatedRoutes": [
+            "GET /fabrication/instructions/import/preflight/catalog",
+            "GET /fabrication/machine-code/preflight/catalog",
+            "GET /fabrication/simulation/preflight/catalog",
+            "GET /fabrication/boundaries/preflight/catalog",
+            "GET /fabrication/execution/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog",
+            "GET /fabrication/learning/preflight/catalog"
+        ],
+        "checkFamilyCount": check_families.len(),
+        "checkFamilies": check_families,
+        "preflightGroups": [
+            {
+                "group": "source-provenance-language-and-dialect-state",
+                "requiredEvidence": [
+                    "source instruction artifact, checksum, revision, generated/imported lineage, and accepted language family are retained",
+                    "controller dialect, slicer profile, CAM intermediate, job-sheet template, or operator instruction schema is declared",
+                    "macro, subprogram, include file, material profile, or external dependency references have attached evidence before validation"
+                ],
+                "blocks": ["instructionValidation.request", "validation.findings", "machineRelease.blockers"]
+            },
+            {
+                "group": "machine-process-simulation-and-setup-state",
+                "requiredEvidence": [
+                    "target printer, mill, router, lathe, EDM, sheet cutter, assembly cell, or special-process machine profile is selected",
+                    "workholding, datum, material/feedstock, tool/nozzle/spindle/process recipe, environmental, and safety assumptions are reviewable",
+                    "simulation, dry-run, parser, or equivalent controller review route is available for motion, thermal, extrusion, support-media, coolant, and process-state checks"
+                ],
+                "blocks": ["simulation.failureBoundaries", "executionPlan.programRuns", "operatorInterventionPlan.requiredOperatorActions"]
+            },
+            {
+                "group": "boundary-improvement-release-and-learning-state",
+                "requiredEvidence": [
+                    "validation check contracts cover modal state, additive state, subtractive state, sheet/EDM process state, text job evidence, and split/combine release review",
+                    "machine-failure, human-intervention, split/combine, recomposition, and release-blocking boundaries map to remediation or improvement routes",
+                    "validation result and learning outcome routes are linked so findings can train DES, MDP/POMDP, reward, and neural workers"
+                ],
+                "blocks": ["validation.failureBoundaries", "improvedPrograms.patchManifest", "learning.outcomes"]
+            }
+        ],
+        "responseSurfaces": [
+            "programs",
+            "validation.findings",
+            "validation.failureBoundaries",
+            "boundarySummary",
+            "resolutionPlan.steps",
+            "interventionMap",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "simulation.failureBoundaries",
+            "improvements",
+            "improvedPrograms.patchManifest",
+            "machineRelease.blockers",
+            "learning.neuralTrainingCorpus"
+        ],
+        "artifactSurfaces": [
+            "analysis-validation-report",
+            "analysis-boundary-summary",
+            "analysis-resolution-plan",
+            "analysis-intervention-map",
+            "analysis-machine-release",
+            "analysis-improvements",
+            "instruction-validation-result",
+            "instruction-validation-learning-observations"
+        ],
+        "learningSurfaces": [
+            "validation-finding:*",
+            "boundary-kind:*",
+            "instruction-validation:*",
+            "instruction-validation-finding:*",
+            "instruction-validation-boundary:*",
+            "instruction-validation-improvement:*",
+            "desInstructionModel",
+            "neuralTrainingCorpus.examples",
+            "learning.outcomes"
+        ],
+        "validationPolicy": [
+            "instruction validation preflight entries describe evidence required before generated or imported programs are trusted as validation inputs, not certified controller approval",
+            "machine-ready release remains blocked while provenance, dialect, dependency, machine/process, simulation, failure-boundary, human-intervention, split/combine, improvement, release, or learning feedback evidence is missing",
+            "failed validation preflight checks should feed DES, MDP/POMDP, reward, and neural workers so future plans can regenerate instructions, choose safer machines, split parts, or request human intervention earlier"
+        ],
+        "checkContracts": check_contracts
+    })
+}
+
+async fn instruction_validation_preflight_catalog_http() -> impl IntoResponse {
+    Json(instruction_validation_preflight_catalog_response())
 }
 
 fn instruction_generation_catalog_program_contracts() -> Vec<Value> {
@@ -106733,6 +106897,8 @@ async fn request_schema() -> impl IntoResponse {
             "instructionLanguages": ["GET /instructions/languages", "GET /fabrication/instructions/languages"],
             "instructionImportCatalog": ["GET /instructions/import/catalog", "GET /fabrication/instructions/import/catalog"],
             "instructionImportPreflightCatalog": ["GET /instructions/import/preflight/catalog", "GET /fabrication/instructions/import/preflight/catalog"],
+            "instructionValidationCatalog": ["GET /instructions/validation/catalog", "GET /fabrication/instructions/validation/catalog"],
+            "instructionValidationPreflightCatalog": ["GET /instructions/validation/preflight/catalog", "GET /fabrication/instructions/validation/preflight/catalog"],
             "instructionGenerationCatalog": ["GET /instructions/generation/catalog", "GET /fabrication/instructions/generation/catalog"],
             "instructionGenerationPreflightCatalog": ["GET /instructions/generation/preflight/catalog", "GET /fabrication/instructions/generation/preflight/catalog"],
             "instructionGeneration": ["POST /instructions/generate", "POST /fabrication/instructions/generate"],
@@ -109540,6 +109706,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/instructions/validation/catalog",
             get(instruction_validation_catalog_http),
+        )
+        .route(
+            "/instructions/validation/preflight/catalog",
+            get(instruction_validation_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/instructions/validation/preflight/catalog",
+            get(instruction_validation_preflight_catalog_http),
         )
         .route(
             "/instructions/generation/catalog",
@@ -114605,6 +114779,68 @@ mod tests {
     }
 
     #[test]
+    fn instruction_validation_preflight_catalog_endpoint_exposes_release_blocking_gates() {
+        let payload = instruction_validation_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-validation-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/instructions/validation/preflight/catalog")
+            })));
+        assert!(payload
+            .get("checkFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families
+                .iter()
+                .any(|family| family.as_str() == Some("controller-modal-state"))));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("validation preflight groups should be present");
+        for group in [
+            "source-provenance-language-and-dialect-state",
+            "machine-process-simulation-and-setup-state",
+            "boundary-improvement-release-and-learning-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing validation preflight group {group}"
+            );
+        }
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("validation.failureBoundaries") })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("instruction-validation-result") })));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("instruction-validation-finding:*") })));
+        assert!(payload
+            .get("validationPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified controller approval")))));
+    }
+
+    #[test]
     fn instruction_generation_catalog_endpoint_exposes_generated_program_contract() {
         let payload = instruction_generation_catalog_response();
         assert_eq!(
@@ -117095,6 +117331,35 @@ mod tests {
             .is_some_and(|surfaces| surfaces.iter().any(|surface| surface
                 .as_str()
                 .is_some_and(|surface| surface == "controllerPlan.compatibilityTargets"))));
+        let checklist = payload
+            .get("dialectAssumptionChecklist")
+            .and_then(Value::as_array)
+            .expect("dialect assumption checklist should be present");
+        for check_id in [
+            "modal-defaults-and-reset-state",
+            "offset-table-and-compensation-state",
+            "macro-subprogram-and-controller-state",
+            "postprocessed-output-and-dry-run-proof",
+        ] {
+            assert!(
+                checklist
+                    .iter()
+                    .any(|item| item.get("checkId").and_then(Value::as_str) == Some(check_id)),
+                "missing controller dialect assumption check {check_id}"
+            );
+        }
+        assert!(checklist.iter().any(|item| item
+            .get("blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| blocks
+                .iter()
+                .any(|entry| entry.as_str() == Some("instructionValidation.boundaries")))));
+        assert!(checklist.iter().any(|item| item
+            .get("learningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("macro-dependency"))))));
 
         let targets = payload
             .get("targets")
