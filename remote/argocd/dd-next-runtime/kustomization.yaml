@@ -37,6 +37,9 @@ resources:
   - dd-des-rs.hpa.yaml
   - dd-des-rs.networkpolicy.yaml
   - dd-des-rs.service.yaml
+  - dd-music-rs.deployment.yaml
+  - dd-music-rs.networkpolicy.yaml
+  - dd-music-rs.service.yaml
   - dd-contract-service.deployment.yaml
   - dd-contract-service.networkpolicy.yaml
   - dd-contract-service.service.yaml
@@ -50,6 +53,8 @@ resources:
   - dd-trading-server.service.yaml
   - dd-economics-server.deployment.yaml
   - dd-economics-server.service.yaml
+  - dd-public-data-server.deployment.yaml
+  - dd-public-data-server.service.yaml
   - dd-live-mutex.deployment.yaml
   - dd-live-mutex.service.yaml
   - dd-live-mutex-submodule.deployment.yaml

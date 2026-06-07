@@ -187,7 +187,7 @@ struct SongsQuery {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct VoteRequest {
-    value: i16,
+    value: i32,
 }
 
 #[derive(Deserialize)]
@@ -274,7 +274,12 @@ fn first_env(keys: &[&str]) -> Option<String> {
 fn env_bool(name: &str, default: bool) -> bool {
     env::var(name)
         .ok()
-        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(default)
 }
 
@@ -327,8 +332,8 @@ fn config_from_env() -> Config {
     };
 
     let daily_target_min = env_i64("MUSIC_DAILY_TARGET_MIN", DEFAULT_DAILY_TARGET_MIN);
-    let daily_target_max = env_i64("MUSIC_DAILY_TARGET_MAX", DEFAULT_DAILY_TARGET_MAX)
-        .max(daily_target_min);
+    let daily_target_max =
+        env_i64("MUSIC_DAILY_TARGET_MAX", DEFAULT_DAILY_TARGET_MAX).max(daily_target_min);
     let vote_hash_salt = first_env(&["MUSIC_VOTE_HASH_SALT", "SERVER_AUTH_SECRET"])
         .unwrap_or_else(|| "dd-music-rs-local-anonymous-votes".to_string());
 
@@ -347,7 +352,10 @@ fn config_from_env() -> Config {
             "MUSIC_GENERATOR_INTERVAL_SECONDS",
             DEFAULT_GENERATOR_INTERVAL_SECONDS,
         )),
-        generator_initial_delay: Duration::from_secs(env_u64("MUSIC_GENERATOR_INITIAL_DELAY_SECONDS", 20)),
+        generator_initial_delay: Duration::from_secs(env_u64(
+            "MUSIC_GENERATOR_INITIAL_DELAY_SECONDS",
+            20,
+        )),
         generator_max_per_sweep: env_i64(
             "MUSIC_GENERATOR_MAX_PER_SWEEP",
             DEFAULT_GENERATOR_MAX_PER_SWEEP,
@@ -358,7 +366,10 @@ fn config_from_env() -> Config {
         ),
         daily_target_min,
         daily_target_max,
-        song_duration_seconds: env_f64("MUSIC_SONG_DURATION_SECONDS", DEFAULT_SONG_DURATION_SECONDS),
+        song_duration_seconds: env_f64(
+            "MUSIC_SONG_DURATION_SECONDS",
+            DEFAULT_SONG_DURATION_SECONDS,
+        ),
         min_listenability_score: env_f64(
             "MUSIC_MIN_LISTENABILITY_SCORE",
             DEFAULT_MIN_LISTENABILITY_SCORE,
@@ -383,11 +394,19 @@ async fn state_from_config(config: Config) -> Result<AppState, String> {
 
     let s3 = match &config.storage {
         StorageConfig::S3(s3_config) if !s3_config.bucket.is_empty() => {
-            let region = first_env(&["MUSIC_S3_REGION", "S3_REGION", "AWS_REGION", "AWS_DEFAULT_REGION"]);
+            let region = first_env(&[
+                "MUSIC_S3_REGION",
+                "S3_REGION",
+                "AWS_REGION",
+                "AWS_DEFAULT_REGION",
+            ]);
             let region_provider = RegionProviderChain::first_try(region.map(Region::new))
                 .or_default_provider()
                 .or_else("us-east-1");
-            let shared_config = aws_config::from_env().region(region_provider).load().await;
+            let shared_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                .region(region_provider)
+                .load()
+                .await;
             let mut builder = aws_sdk_s3::config::Builder::from(&shared_config);
             if let Some(endpoint) = first_env(&["MUSIC_S3_ENDPOINT", "S3_ENDPOINT"]) {
                 builder = builder.endpoint_url(endpoint);
@@ -408,7 +427,9 @@ async fn state_from_config(config: Config) -> Result<AppState, String> {
 impl AppState {
     async fn redis_connection(&self) -> Result<redis::aio::MultiplexedConnection, ServiceError> {
         let Some(client) = &self.redis else {
-            return Err(ServiceError::Unavailable("redis is not configured".to_string()));
+            return Err(ServiceError::Unavailable(
+                "redis is not configured".to_string(),
+            ));
         };
         let mut guard = self.redis_connection.lock().await;
         if let Some(connection) = guard.as_ref() {
@@ -417,7 +438,9 @@ impl AppState {
         let connection = client
             .get_multiplexed_async_connection()
             .await
-            .map_err(|error| ServiceError::Unavailable(format!("redis connection failed: {error}")))?;
+            .map_err(|error| {
+                ServiceError::Unavailable(format!("redis connection failed: {error}"))
+            })?;
         *guard = Some(connection.clone());
         Ok(connection)
     }
@@ -437,10 +460,9 @@ fn now_ms() -> u128 {
 }
 
 async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, ServiceError> {
-    let database_url = config
-        .database_url
-        .as_deref()
-        .ok_or_else(|| ServiceError::Unavailable("postgres database URL is not configured".to_string()))?;
+    let database_url = config.database_url.as_deref().ok_or_else(|| {
+        ServiceError::Unavailable("postgres database URL is not configured".to_string())
+    })?;
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let tls_config = rustls::ClientConfig::builder()
@@ -496,10 +518,16 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
         StorageConfig::S3(config) => {
             !config.bucket.is_empty() && !config.public_base_url.is_empty() && state.s3.is_some()
         }
-        StorageConfig::Local(config) => !config.root.is_empty() && !config.public_base_url.is_empty(),
+        StorageConfig::Local(config) => {
+            !config.root.is_empty() && !config.public_base_url.is_empty()
+        }
     };
     let ok = state.config.database_url.is_some() && storage_ready;
-    let status = if ok { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+    let status = if ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
     record_request("GET", "/readyz", status);
     (
         status,
@@ -602,7 +630,9 @@ async fn vote_song(
     Json(request): Json<VoteRequest>,
 ) -> Result<Json<VoteResponse>, ServiceError> {
     if !matches!(request.value, -1 | 1) {
-        return Err(ServiceError::BadRequest("vote value must be 1 or -1".to_string()));
+        return Err(ServiceError::BadRequest(
+            "vote value must be 1 or -1".to_string(),
+        ));
     }
     let visitor_hash = visitor_hash(&headers, &state.config.vote_hash_salt);
     throttle_vote(&state, &song_id, &visitor_hash).await?;
@@ -672,7 +702,10 @@ async fn fetch_published_songs(
     Ok(rows.iter().map(song_from_row).collect())
 }
 
-async fn fetch_song(client: &tokio_postgres::Client, song_id: &str) -> Result<SongRow, ServiceError> {
+async fn fetch_song(
+    client: &tokio_postgres::Client,
+    song_id: &str,
+) -> Result<SongRow, ServiceError> {
     let sql = format!(
         "select
             id::text as id,
@@ -709,7 +742,7 @@ async fn upsert_vote(
     song_id: &str,
     visitor_hash: &str,
     user_agent_hash: Option<&str>,
-    vote_value: i16,
+    vote_value: i32,
 ) -> Result<SongRow, ServiceError> {
     let sql = format!(
         "with upserted as (
@@ -809,7 +842,8 @@ fn generate_candidate(seed: u32, duration_seconds: f64) -> GeneratedSong {
     let title = title_for_seed(seed);
     let slug = slug_for_title(&title, &id);
     let bpm = (genre.default_bpm() + ((seed >> 5) % 17) as f64 - 8.0).clamp(62.0, 190.0);
-    let structure_plan = generate_track_structure_plan(title.clone(), genre, duration_seconds, seed);
+    let structure_plan =
+        generate_track_structure_plan(title.clone(), genre, duration_seconds, seed);
     let render = generate_microtonal_song(SongSpec {
         title: title.clone(),
         genre,
@@ -850,7 +884,9 @@ async fn store_audio(state: &AppState, song: &GeneratedSong) -> Result<StoredObj
                 ));
             }
             let Some(client) = &state.s3 else {
-                return Err(ServiceError::Unavailable("S3 client is not configured".to_string()));
+                return Err(ServiceError::Unavailable(
+                    "S3 client is not configured".to_string(),
+                ));
             };
             let key = format!(
                 "{}/{}/{}.wav",
@@ -879,13 +915,15 @@ async fn store_audio(state: &AppState, song: &GeneratedSong) -> Result<StoredObj
             let key = format!("{date}/{}.wav", song.slug);
             let path = std::path::Path::new(&config.root).join(&key);
             if let Some(parent) = path.parent() {
-                tokio::fs::create_dir_all(parent)
-                    .await
-                    .map_err(|error| ServiceError::Unavailable(format!("local storage mkdir failed: {error}")))?;
+                tokio::fs::create_dir_all(parent).await.map_err(|error| {
+                    ServiceError::Unavailable(format!("local storage mkdir failed: {error}"))
+                })?;
             }
             tokio::fs::write(&path, &song.audio_bytes)
                 .await
-                .map_err(|error| ServiceError::Unavailable(format!("local storage write failed: {error}")))?;
+                .map_err(|error| {
+                    ServiceError::Unavailable(format!("local storage write failed: {error}"))
+                })?;
             Ok(StoredObject {
                 provider: "local".to_string(),
                 bucket: None,
@@ -927,7 +965,7 @@ async fn insert_published_song(
             published_at
           )
           values (
-            $1::uuid, $2, $3, 'published', $4, current_date, $5, $6, $7, $8, 'audio/wav',
+            $1::uuid, $2, $3, 'published', $4, to_char(current_date, 'YYYY-MM-DD'), $5, $6, $7, $8, 'audio/wav',
             $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, now()
           )
           returning
@@ -982,10 +1020,7 @@ async fn insert_published_song(
         &song.summary_json,
         &meta,
     ];
-    let row = client
-        .query_one(&sql, params)
-        .await
-        .map_err(db_error)?;
+    let row = client.query_one(&sql, params).await.map_err(db_error)?;
     Ok(song_from_row(&row))
 }
 
@@ -1015,7 +1050,7 @@ async fn insert_discarded_song(
             meta_data
           )
           values (
-            $1::uuid, $2, $3, 'discarded', $4, current_date, 'audio/wav',
+            $1::uuid, $2, $3, 'discarded', $4, to_char(current_date, 'YYYY-MM-DD'), 'audio/wav',
             $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
           )",
         songs = pg_contract::MUSIC_SONGS_TABLE
@@ -1076,7 +1111,9 @@ async fn throttle_vote(
         .arg(state.config.vote_throttle_seconds)
         .query_async(&mut connection)
         .await
-        .map_err(|error| ServiceError::Unavailable(format!("redis vote throttle failed: {error}")))?;
+        .map_err(|error| {
+            ServiceError::Unavailable(format!("redis vote throttle failed: {error}"))
+        })?;
     if response.is_none() {
         return Err(ServiceError::TooManyRequests(
             "vote accepted too recently; wait a moment before changing it".to_string(),
@@ -1127,7 +1164,9 @@ async fn acquire_generation_lock(state: &AppState, token: &str) -> Result<bool, 
         .arg(state.config.generator_interval.as_secs().max(60))
         .query_async(&mut connection)
         .await
-        .map_err(|error| ServiceError::Unavailable(format!("redis generation lock failed: {error}")))?;
+        .map_err(|error| {
+            ServiceError::Unavailable(format!("redis generation lock failed: {error}"))
+        })?;
     Ok(response.is_some())
 }
 
@@ -1141,9 +1180,15 @@ async fn daily_target(state: &AppState) -> Result<i64, ServiceError> {
         if let Ok(mut connection) = state.redis_connection().await {
             let existing: Option<i64> = connection.get(&key).await.unwrap_or(None);
             if let Some(existing) = existing {
-                return Ok(existing.clamp(state.config.daily_target_min, state.config.daily_target_max));
+                return Ok(
+                    existing.clamp(state.config.daily_target_min, state.config.daily_target_max)
+                );
             }
-            let target = deterministic_daily_target(&today, state.config.daily_target_min, state.config.daily_target_max);
+            let target = deterministic_daily_target(
+                &today,
+                state.config.daily_target_min,
+                state.config.daily_target_max,
+            );
             let _: Result<(), _> = redis::cmd("SET")
                 .arg(&key)
                 .arg(target)
@@ -1166,7 +1211,7 @@ async fn published_today_count(client: &tokio_postgres::Client) -> Result<i64, S
         "select count(*)::bigint as count
            from {songs}
           where status = 'published'
-            and generation_date = current_date",
+            and generation_date = to_char(current_date, 'YYYY-MM-DD')",
         songs = pg_contract::MUSIC_SONGS_TABLE
     );
     let row = client.query_one(&sql, &[]).await.map_err(db_error)?;
@@ -1186,7 +1231,7 @@ fn song_from_row(row: &tokio_postgres::Row) -> SongRow {
     SongRow {
         audio_url: row
             .get::<_, Option<String>>("audio_url")
-            .map(|_| format!("/songs/{id}/audio")),
+            .map(|_| format!("songs/{id}/audio")),
         id,
         title: row.get("title"),
         slug: row.get("slug"),
@@ -1227,7 +1272,11 @@ fn optional_header_hash(headers: &HeaderMap, name: &str) -> Option<String> {
 }
 
 fn seed_for_attempt(attempt: u64) -> u32 {
-    let material = format!("dd-music-rs:{}:{attempt}:{}", Utc::now().to_rfc3339(), Uuid::new_v4());
+    let material = format!(
+        "dd-music-rs:{}:{attempt}:{}",
+        Utc::now().to_rfc3339(),
+        Uuid::new_v4()
+    );
     hash32(material.as_bytes())
 }
 
@@ -1251,12 +1300,12 @@ fn genre_for_seed(seed: u32) -> MusicGenre {
 
 fn title_for_seed(seed: u32) -> String {
     const LEFT: &[&str] = &[
-        "Signal", "Violet", "Glass", "Metro", "Lattice", "Drift", "Amber", "Night",
-        "Circuit", "River", "Static", "Pulse",
+        "Signal", "Violet", "Glass", "Metro", "Lattice", "Drift", "Amber", "Night", "Circuit",
+        "River", "Static", "Pulse",
     ];
     const RIGHT: &[&str] = &[
-        "Index", "Bloom", "Run", "Sketch", "Engine", "Room", "Field", "Trace", "Arc",
-        "Thread", "Map", "Window",
+        "Index", "Bloom", "Run", "Sketch", "Engine", "Room", "Field", "Trace", "Arc", "Thread",
+        "Map", "Window",
     ];
     let left = LEFT[(seed as usize) % LEFT.len()];
     let right = RIGHT[((seed >> 8) as usize) % RIGHT.len()];
@@ -1291,7 +1340,9 @@ fn listenability_score(summary: &ArrangementSummary) -> f64 {
     if summary.rendered_events as f64 >= summary.duration_seconds.max(1.0) * 0.75 {
         score += 0.15;
     }
-    if summary.drum_variation.variation_ratio() >= summary.drum_variation.repetition_reduction_target * 0.5 {
+    if summary.drum_variation.variation_ratio()
+        >= summary.drum_variation.repetition_reduction_target * 0.5
+    {
         score += 0.15;
     }
     score.min(1.0)
@@ -1371,11 +1422,17 @@ fn hex_sha256(bytes: &[u8]) -> String {
 }
 
 fn join_url(base: &str, key: &str) -> String {
-    format!("{}/{}", base.trim_end_matches('/'), key.trim_start_matches('/'))
+    format!(
+        "{}/{}",
+        base.trim_end_matches('/'),
+        key.trim_start_matches('/')
+    )
 }
 
 fn millis_i32(value: f64) -> i32 {
-    (value.max(0.0) * 1000.0).round().clamp(0.0, i32::MAX as f64) as i32
+    (value.max(0.0) * 1000.0)
+        .round()
+        .clamp(0.0, i32::MAX as f64) as i32
 }
 
 fn micros_i32(value: f64) -> i32 {
@@ -1573,8 +1630,11 @@ const HOME_HTML: &str = r#"<!doctype html>
       vote(button.dataset.song, Number(button.dataset.vote)).catch(showError);
     });
     function showError(error) {
-      statusText.innerHTML = `<span class="error">${esc(error.message || error)}</span>`;
+      const message = error.message || error;
+      statusText.innerHTML = `<span class="error">${esc(message)}</span>`;
       statusDot.className = "dot";
+      countEl.textContent = "Songs unavailable";
+      songsEl.innerHTML = `<div class="empty error">${esc(message)}</div>`;
     }
     loadSongs().catch(showError);
   </script>

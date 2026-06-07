@@ -161,6 +161,7 @@ spec:
                 '"path": "/fabrication/design/generate"' \
                 '"path": "/fabrication/design/synthesis/result"' \
                 '"path": "/fabrication/handoff/catalog"' \
+                '"path": "/fabrication/handoff/result"' \
                 '"path": "/fabrication/subjects/catalog"' \
                 '"path": "/fabrication/instructions/validation/catalog"' \
                 '"path": "/fabrication/instructions/generation/catalog"' \

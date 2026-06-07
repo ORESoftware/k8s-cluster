@@ -95,7 +95,7 @@ create table if not exists music_songs (
   slug varchar(220) not null,
   status varchar(32) default 'generated' not null,
   seed bigint not null,
-  generation_date date default current_date not null,
+  generation_date varchar(10) default to_char(current_date, 'YYYY-MM-DD') not null,
   storage_provider varchar(32),
   storage_bucket varchar(200),
   storage_key text,
@@ -124,6 +124,8 @@ create table if not exists music_songs (
     check (slug ~ '^[a-z0-9][a-z0-9-]{0,218}[a-z0-9]$'),
   constraint music_songs_status_chk
     check (status in ('generated', 'published', 'discarded', 'failed', 'archived')),
+  constraint music_songs_generation_date_chk
+    check (generation_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
   constraint music_songs_storage_provider_chk
     check (storage_provider is null or storage_provider in ('s3', 'r2', 'gcs', 'drive', 'local')),
   constraint music_songs_storage_bucket_size_chk
@@ -179,7 +181,7 @@ create table if not exists music_song_votes (
   song_id uuid not null,
   visitor_hash varchar(64) not null,
   user_agent_hash varchar(64),
-  vote_value smallint not null,
+  vote_value integer not null,
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null,
   constraint music_song_votes_visitor_hash_chk
@@ -187,7 +189,7 @@ create table if not exists music_song_votes (
   constraint music_song_votes_user_agent_hash_chk
     check (user_agent_hash is null or user_agent_hash ~ '^[a-f0-9]{64}$'),
   constraint music_song_votes_value_chk
-    check (vote_value in (-1, 1))
+    check (vote_value >= -1 and vote_value <= 1 and vote_value <> 0)
 );
 
 create unique index if not exists music_song_votes_song_visitor_uq

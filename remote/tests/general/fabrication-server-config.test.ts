@@ -2281,6 +2281,17 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"machine-program-controller-release"/);
   assert.match(source, /"hybrid-split-combine-assembly"/);
   assert.match(source, /handoff_catalog_endpoint_exposes_worker_lane_contracts/);
+  assert.match(source, /struct HandoffResultReviewRequest/);
+  assert.match(source, /async fn handoff_result_http/);
+  assert.match(source, /fn handoff_result_review_response/);
+  assert.match(source, /fn store_handoff_result_response/);
+  assert.match(source, /dd\.fabrication\.handoff-result-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/handoff\/result"/);
+  assert.match(source, /handoff-result-segment-release-blocked/);
+  assert.match(source, /handoff-datum-transfers/);
+  assert.match(source, /handoff-transport-holds/);
+  assert.match(source, /handoff-learning-observations/);
+  assert.match(source, /handoff_result_endpoint_reviews_datum_transport_and_learning/);
   assert.match(source, /async fn machine_catalog/);
   assert.match(source, /fn machine_catalog_response/);
   assert.match(source, /fn machine_catalog_instruction_languages/);
@@ -3785,6 +3796,16 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     source,
     /\.route\("\/fabrication\/design\/generate", post\(design_generate_http\)\)/,
   );
+  assert.match(source, /\.route\("\/handoff\/catalog", get\(handoff_catalog_http\)\)/);
+  assert.match(
+    source,
+    /\.route\("\/fabrication\/handoff\/catalog", get\(handoff_catalog_http\)\)/,
+  );
+  assert.match(source, /\.route\("\/handoff\/result", post\(handoff_result_http\)\)/);
+  assert.match(
+    source,
+    /\.route\("\/fabrication\/handoff\/result", post\(handoff_result_http\)\)/,
+  );
   assert.match(source, /\.route\("\/instructions\/languages", get\(instruction_languages\)\)/);
   assert.match(
     source,
@@ -4415,6 +4436,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /source CAD\/model\/slicer\s+conversion/);
   assert.match(readme, /`releasePackagePlan\.packages`/);
   assert.match(readme, /machine-ready release remains blocked while conversion/);
+  assert.match(readme, /`POST \/handoff\/result`/);
+  assert.match(readme, /`POST \/fabrication\/handoff\/result`/);
+  assert.match(readme, /dd\.fabrication\.handoff-result-review\.v1/);
+  assert.match(readme, /handoff-datum-transfers/);
+  assert.match(readme, /handoff-transport-holds/);
+  assert.match(readme, /handoff-learning-observations/);
   assert.match(readme, /`GET \/instructions\/languages`/);
   assert.match(readme, /`GET \/fabrication\/instructions\/languages`/);
   assert.match(readme, /`dd\.fabrication\.instruction-language-catalog\.v1` intake catalog/);
@@ -6295,6 +6322,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/design\/generate"/);
   assert.match(docs, /"path": "\/handoff\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/handoff\/catalog"/);
+  assert.match(docs, /"path": "\/handoff\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/handoff\/result"/);
   assert.match(docs, /"path": "\/instructions\/languages"/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/languages"/);
   assert.match(docs, /"path": "\/instructions\/validation\/catalog"/);
@@ -6574,6 +6603,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/design\/generate"/);
   assert.match(deployment, /"path": "\/fabrication\/design\/synthesis\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/handoff\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/handoff\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/subjects\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/validation\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/generation\/catalog"/);
@@ -6801,6 +6831,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/learning\/outcomes/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/analyze/);
   assert.match(grafanaDashboards, /\/fabrication\/handoff\/catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/handoff\/result/);
+  assert.match(grafanaDashboards, /handoff result review/);
   assert.match(grafanaDashboards, /\/fabrication\/subjects\/catalog/);
   assert.match(grafanaDashboards, /subject catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/assembly\/catalog/);
@@ -6938,6 +6970,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /POST \/fabrication\/design\/generate/);
   assert.match(runtimeReadme, /POST \/fabrication\/design\/synthesis\/result/);
   assert.match(runtimeReadme, /\/fabrication\/handoff\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/handoff\/result/);
   assert.match(runtimeReadme, /\/fabrication\/subjects\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/instructions\/validation\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/instructions\/generation\/catalog/);
@@ -7137,6 +7170,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/learning\/outcomes/);
   assert.match(observabilityReadme, /\/fabrication\/instructions\/analyze/);
   assert.match(observabilityReadme, /\/fabrication\/handoff\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/handoff\/result/);
   assert.match(observabilityReadme, /\/fabrication\/assembly\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/calibration\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/calibration\/result/);

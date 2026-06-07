@@ -220,10 +220,10 @@
     {
       "service": "fabrication-server-rs",
       "language": "rust",
-      "routeCount": 280,
+      "routeCount": 282,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 270,
+        "user-generated": 272,
         "runtime-config": 3
       },
       "generated": [
@@ -367,6 +367,19 @@
       "generated": [
         "remote/deployments/mdp-optimizer-rs/generated/api-docs.json",
         "remote/deployments/mdp-optimizer-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "public-data-server-rs",
+      "language": "rust",
+      "routeCount": 21,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 14
+      },
+      "generated": [
+        "remote/deployments/public-data-server-rs/generated/api-docs.json",
+        "remote/deployments/public-data-server-rs/generated/api-docs.html"
       ]
     },
     {

@@ -53,6 +53,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'formal-methods-server-rs',
   'fabrication-server-rs',
   'mdp-optimizer-rs',
+  'public-data-server-rs',
   'rest-api-rs',
   'runtime-config-rs',
   'rust-vapi-phone-rs',
