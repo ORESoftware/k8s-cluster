@@ -200,6 +200,9 @@ spec:
                 '"path": "/fabrication/setup/catalog"' \
                 '"path": "/fabrication/tooling/catalog"' \
                 '"path": "/fabrication/process-recipes/catalog"' \
+                '"path": "/fabrication/kinematics/catalog"' \
+                '"path": "/fabrication/tolerances/catalog"' \
+                '"path": "/fabrication/safety/catalog"' \
                 '"path": "/fabrication/setup/plan"' \
                 '"path": "/fabrication/setup/result"' \
                 '"path": "/fabrication/monitoring/catalog"' \

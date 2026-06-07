@@ -2913,6 +2913,27 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"GET \/fabrication\/process-recipes\/catalog"/);
   assert.match(source, /"processRecipeCatalog"/);
   assert.match(source, /process_recipe_catalog_endpoint_exposes_parameter_release_contract/);
+  assert.match(source, /async fn kinematics_catalog_http/);
+  assert.match(source, /fn kinematics_catalog_response/);
+  assert.match(source, /fn kinematics_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.kinematics-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/kinematics\/catalog"/);
+  assert.match(source, /"kinematicsCatalog"/);
+  assert.match(source, /kinematics_catalog_endpoint_exposes_axis_release_contract/);
+  assert.match(source, /async fn tolerance_catalog_http/);
+  assert.match(source, /fn tolerance_catalog_response/);
+  assert.match(source, /fn tolerance_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.tolerance-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/tolerances\/catalog"/);
+  assert.match(source, /"toleranceCatalog"/);
+  assert.match(source, /tolerance_catalog_endpoint_exposes_fit_stackup_release_contract/);
+  assert.match(source, /async fn safety_catalog_http/);
+  assert.match(source, /fn safety_catalog_response/);
+  assert.match(source, /fn safety_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.safety-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/safety\/catalog"/);
+  assert.match(source, /"safetyCatalog"/);
+  assert.match(source, /safety_catalog_endpoint_exposes_interlock_release_contract/);
   assert.match(
     source,
     /setup_catalog_endpoint_exposes_tooling_fixture_and_monitoring_contract/,
@@ -3461,6 +3482,21 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     source,
     /\.route\(\s*"\/fabrication\/process-recipes\/catalog",\s*get\(process_recipe_catalog_http\),\s*\)/,
   );
+  assert.match(source, /\.route\("\/kinematics\/catalog", get\(kinematics_catalog_http\)\)/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/kinematics\/catalog",\s*get\(kinematics_catalog_http\),\s*\)/,
+  );
+  assert.match(source, /\.route\("\/tolerances\/catalog", get\(tolerance_catalog_http\)\)/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/tolerances\/catalog",\s*get\(tolerance_catalog_http\),\s*\)/,
+  );
+  assert.match(source, /\.route\("\/safety\/catalog", get\(safety_catalog_http\)\)/);
+  assert.match(
+    source,
+    /\.route\("\/fabrication\/safety\/catalog", get\(safety_catalog_http\)\)/,
+  );
   assert.match(source, /\.route\("\/setup\/plan", post\(setup_plan_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/setup\/plan", post\(setup_plan_http\)\)/);
   assert.match(source, /\.route\("\/setup\/result", post\(setup_result_http\)\)/);
@@ -3664,6 +3700,18 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /dd\.fabrication\.process-recipe-catalog\.v1/);
   assert.match(readme, /subtractive feeds\/speeds and cutter engagement/);
   assert.match(readme, /not certified production recipes/);
+  assert.match(readme, /`GET \/fabrication\/kinematics\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.kinematics-catalog\.v1/);
+  assert.match(readme, /rotary\/five-axis milling/);
+  assert.match(readme, /not certified kinematic\s+calibration records/);
+  assert.match(readme, /`GET \/fabrication\/tolerances\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.tolerance-catalog\.v1/);
+  assert.match(readme, /hybrid assembly interface stackups/);
+  assert.match(readme, /not certified inspection plans/);
+  assert.match(readme, /`GET \/fabrication\/safety\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.safety-catalog\.v1/);
+  assert.match(readme, /robotic-cell and\s+external-axis interlocks/);
+  assert.match(readme, /not certified machine-safety approvals/);
   assert.match(readme, /`designPackage`/);
   assert.match(readme, /`designExports`/);
   assert.match(readme, /`manufacturingHandoff\.parts`/);
@@ -5550,6 +5598,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/tooling\/catalog"/);
   assert.match(docs, /"path": "\/process-recipes\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/process-recipes\/catalog"/);
+  assert.match(docs, /"path": "\/kinematics\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/kinematics\/catalog"/);
+  assert.match(docs, /"path": "\/tolerances\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/tolerances\/catalog"/);
+  assert.match(docs, /"path": "\/safety\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/safety\/catalog"/);
   assert.match(docs, /"path": "\/setup\/plan"/);
   assert.match(docs, /"path": "\/fabrication\/setup\/plan"/);
   assert.match(docs, /"path": "\/setup\/result"/);
@@ -5719,6 +5773,9 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/setup\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/tooling\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/process-recipes\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/kinematics\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/tolerances\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/safety\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/setup\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/setup\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/monitoring\/catalog"/);
@@ -5891,6 +5948,12 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /tooling catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/process-recipes\/catalog/);
   assert.match(grafanaDashboards, /process recipe catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/kinematics\/catalog/);
+  assert.match(grafanaDashboards, /kinematics catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/tolerances\/catalog/);
+  assert.match(grafanaDashboards, /tolerance catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/safety\/catalog/);
+  assert.match(grafanaDashboards, /safety catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/monitoring\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/postprocess\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/improve/);
@@ -5962,6 +6025,9 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/interventions\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/setup\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/process-recipes\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/kinematics\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/tolerances\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/safety\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/setup\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/setup\/result/);
   assert.match(runtimeReadme, /\/fabrication\/monitoring\/catalog/);
@@ -6094,6 +6160,9 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/setup\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/tooling\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/process-recipes\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/kinematics\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/tolerances\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/safety\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/monitoring\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/postprocess\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/instructions\/improve/);

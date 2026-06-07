@@ -46908,6 +46908,12 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/process-recipes/catalog",
         "GET /kinematics/catalog",
         "GET /fabrication/kinematics/catalog",
+        "GET /tolerances/catalog",
+        "GET /fabrication/tolerances/catalog",
+        "GET /safety/catalog",
+        "GET /fabrication/safety/catalog",
+        "GET /environment/catalog",
+        "GET /fabrication/environment/catalog",
         "POST /setup/plan",
         "POST /fabrication/setup/plan",
         "POST /setup/result",
@@ -56149,6 +56155,23 @@ fn kinematics_catalog_entries() -> Vec<Value> {
             "responseSurfaces": ["postprocessPlan.requiredArtifacts", "monitoringPlan.monitorPoints", "simulation.riskProfile.programRisks", "machineRelease.blockers"],
             "learningSignals": ["kinematics:robotic", "tcp-frame:*", "external-axis-sync:*", "singularity-risk:*"]
         }),
+        json!({
+            "kinematicFamily": "inspection-probing-and-coordinate-state",
+            "machineKinds": ["coordinate-measuring-machine", "probe-equipped-mill", "probe-equipped-lathe", "additive-printer", "sheet-cutter"],
+            "axes": ["probe-vector", "work-offset", "G90/G91", "G17/G18/G19", "G54-G59"],
+            "requiredEvidence": [
+                "probe calibration, stylus/nozzle/tool offset, and datum measurement evidence",
+                "active work offset, absolute/incremental mode, arc plane, units, and coordinate transform review",
+                "recovery, re-home, re-probe, or operator acknowledgement after pause, stop, or controller-state change"
+            ],
+            "releaseBlockers": [
+                "motion or extrusion resumes after relative positioning without coordinate-state verification",
+                "work-offset, fixture offset, or tool offset changes are unreviewed before machine release",
+                "probe or inspection cycle lacks calibration, recovery, or datum-restoration evidence"
+            ],
+            "responseSurfaces": ["releaseProbePlan.probes", "controllerPlan.requiredControllerChecks", "simulation.axisExtents", "machineRelease.blockers"],
+            "learningSignals": ["kinematics:coordinate-state", "probe-calibration:*", "work-offset:*", "modal-state:*"]
+        }),
     ]
 }
 
@@ -56209,7 +56232,7 @@ fn kinematics_catalog_response() -> Value {
             "machineRelease.blockers"
         ],
         "releasePolicy": [
-            "kinematics catalog entries describe required axis, coordinate-mode, TCP/frame, envelope, fixture-clearance, and synchronization evidence, not certified machine motion approvals",
+            "kinematics catalog entries describe required axis, coordinate-mode, TCP/frame, envelope, fixture-clearance, synchronization, and probe evidence, not certified kinematic calibration records",
             "machine-ready release remains blocked until homing, units, coordinate state, axis envelope, rotary/robot frame, fixture clearance, simulation, and operator or automation signoff evidence clear",
             "axis-envelope, coordinate-mode, TCP/frame, external-axis, spindle-sync, and clearance observations are retained as MDP/POMDP/neural learning signals for future program generation and validation"
         ],
@@ -56219,6 +56242,530 @@ fn kinematics_catalog_response() -> Value {
 
 async fn kinematics_catalog_http() -> impl IntoResponse {
     Json(kinematics_catalog_response())
+}
+
+fn tolerance_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "toleranceFamily": "additive-dimensional-and-fit-controls",
+            "machineKinds": ["fdm-printer", "resin-printer", "powder-bed-printer", "multi-material-fdm-printer"],
+            "geometryScopes": ["holes", "bosses", "snap-fits", "thin-walls", "first-layer-critical-faces"],
+            "requiredEvidence": [
+                "material shrinkage, bead/nozzle width, exposure profile, layer height, and slicer compensation evidence",
+                "coupon, first-article, or calibrated test-feature measurements for press/slip fits",
+                "orientation, support-removal, elephant-foot, resin cure, or powder shrink compensation review"
+            ],
+            "releaseBlockers": [
+                "printed mating feature lacks clearance/interference allowance evidence",
+                "critical hole, snap-fit, thread, or insert feature is released without coupon or first-article metrology",
+                "scale/shrink compensation is unknown for material and process combination"
+            ],
+            "responseSurfaces": ["qualityPlan.measurementTargets", "materialPlan.routeRequirements", "slicerPlan.profileEvidence", "machineRelease.blockers"],
+            "learningSignals": ["tolerance:additive-fit", "coupon-measurement:*", "shrink-compensation:*", "first-article:*"]
+        }),
+        json!({
+            "toleranceFamily": "subtractive-gd-and-t-feature-controls",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "cnc-router"],
+            "geometryScopes": ["datums", "true-position", "flatness", "parallelism", "bore-size", "surface-finish"],
+            "requiredEvidence": [
+                "datum scheme, workholding distortion, tool deflection, thermal growth, and finish-pass evidence",
+                "GD&T/PMI extraction or operator-reviewed drawing tolerance evidence",
+                "probe/CMM/inspection plan with gauge, sampling, and acceptance criteria"
+            ],
+            "releaseBlockers": [
+                "tight position, bore, flatness, or surface finish requirement lacks inspection and finishing evidence",
+                "datum transfer or refixture step lacks tolerance-stack review",
+                "tool wear, deflection, or thermal drift risk is unresolved for tolerance-critical features"
+            ],
+            "responseSurfaces": ["designInputReview.pmi", "fixturePlan.datumTransfers", "qualityPlan.measurementTargets", "simulation.riskProfile.programRisks", "machineRelease.blockers"],
+            "learningSignals": ["tolerance:gdt", "datum-transfer:*", "tool-deflection:*", "inspection-result:*"]
+        }),
+        json!({
+            "toleranceFamily": "turning-and-threading-fit-controls",
+            "machineKinds": ["lathe", "mill-turn-center", "swiss-turning-center"],
+            "geometryScopes": ["diameters", "threads", "concentricity", "runout", "part-off-face", "bearing-fits"],
+            "requiredEvidence": [
+                "tool-nose radius, wear offset, chuck/collet runout, stickout, and thermal growth evidence",
+                "thread pitch, class, gauge, feed-per-rev, and spring-pass or finish-pass review",
+                "in-process probing, micrometer/gauge, or CMM plan for critical turned features"
+            ],
+            "releaseBlockers": [
+                "bearing, shaft, thread, or sealing diameter lacks tolerance and gauge evidence",
+                "part transfer or cutoff changes datum/runout state without reinspection plan",
+                "tool-nose wear or compensation state is unresolved before tolerance-critical finishing"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements", "controllerPlan.requiredControllerChecks", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["tolerance:turning-fit", "thread-gauge:*", "runout:*", "wear-offset:*"]
+        }),
+        json!({
+            "toleranceFamily": "sheet-cut-kerf-and-edge-quality-controls",
+            "machineKinds": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter"],
+            "geometryScopes": ["kerf", "lead-ins", "tabs", "edge-taper", "heat-affected-zone", "slug-retention"],
+            "requiredEvidence": [
+                "material thickness, kerf, taper, cut chart, pierce, lead-in/out, and support-media evidence",
+                "tab/slug retention, nest spacing, datum, and edge-quality inspection requirements",
+                "finish allowance or secondary-operation plan when cut edge is tolerance-critical"
+            ],
+            "releaseBlockers": [
+                "slot, profile, or mating edge lacks kerf/taper allowance evidence",
+                "heat-affected or abrasive edge quality is unresolved for tolerance-critical interfaces",
+                "part retention or slug movement risk can shift cut geometry before completion"
+            ],
+            "responseSurfaces": ["processRecipe.cutChart", "toolpathPlan.kerfCompensation", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["tolerance:sheet-cut", "kerf:*", "edge-quality:*", "slug-retention:*"]
+        }),
+        json!({
+            "toleranceFamily": "hybrid-assembly-interface-stackups",
+            "machineKinds": ["hybrid-cell", "robotic-assembly-cell", "manual-assembly", "mixed-additive-subtractive-job"],
+            "geometryScopes": ["interfaces", "alignment-pins", "bond-lines", "fasteners", "post-machined-printed-faces", "split-combine-joints"],
+            "requiredEvidence": [
+                "interface control plan, datum relationship, tolerance stack, bond-line or fastener allowance, and inspection evidence",
+                "split/combine decision rationale with make/buy/print/mill fit targets and rework plan",
+                "assembly fixture, dry-fit, gauge, or metrology evidence before release"
+            ],
+            "releaseBlockers": [
+                "printed/milled interface lacks tolerance-stack or interface-control evidence",
+                "assembly operation depends on human fit-up or rework without captured intervention plan",
+                "post-machining or finishing sequence can invalidate prior datum or fit evidence"
+            ],
+            "responseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.interfaces", "assemblyPlan.requiredEvidence", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["tolerance:hybrid-stackup", "interface-control:*", "assembly-fit:*", "split-combine:*"]
+        }),
+    ]
+}
+
+fn tolerance_catalog_response() -> Value {
+    let entries = tolerance_catalog_entries();
+    let tolerance_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("toleranceFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let geometry_scopes = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("geometryScopes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.tolerance-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /tolerances/catalog", "GET /fabrication/tolerances/catalog"],
+        "toleranceFamilyCount": entries.len(),
+        "toleranceFamilies": tolerance_families,
+        "machineKinds": machine_kinds,
+        "geometryScopes": geometry_scopes,
+        "planningRoutes": [
+            "POST /quality/plan",
+            "POST /fabrication/quality/plan",
+            "POST /decomposition/plan",
+            "POST /fabrication/decomposition/plan",
+            "POST /assembly/plan",
+            "POST /fabrication/assembly/plan"
+        ],
+        "reviewRoutes": [
+            "POST /quality/result",
+            "POST /fabrication/quality/result",
+            "POST /release/preview",
+            "POST /fabrication/release/preview",
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate"
+        ],
+        "responseSurfaces": [
+            "designInputReview.pmi",
+            "materialPlan.routeRequirements",
+            "slicerPlan.profileEvidence",
+            "fixturePlan.datumTransfers",
+            "decompositionPlan.parts",
+            "interfaceControlPlan.interfaces",
+            "assemblyPlan.requiredEvidence",
+            "qualityPlan.measurementTargets",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "quality-plan",
+            "interface-control-plan",
+            "assembly-plan",
+            "inspection-report",
+            "release-package-plan",
+            "mdp-request.artifacts.toleranceEvidence"
+        ],
+        "releasePolicy": [
+            "tolerance catalog entries describe dimensional, GD&T/PMI, fit, kerf, datum-transfer, and interface-control evidence, not certified inspection plans",
+            "machine-ready release remains blocked until tolerance-critical features have material/process allowance, datum, metrology, inspection, and operator or automation signoff evidence",
+            "coupon measurements, first-article results, gauge outcomes, kerf offsets, fit-up interventions, and split/combine stackups are retained as MDP/POMDP/neural learning signals"
+        ],
+        "toleranceContracts": entries
+    })
+}
+
+async fn tolerance_catalog_http() -> impl IntoResponse {
+    Json(tolerance_catalog_response())
+}
+
+fn safety_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "safetyFamily": "additive-printer-enclosure-and-thermal-safety",
+            "machineKinds": ["fdm-printer", "pellet-fgf-printer", "resin-printer", "metal-powder-bed-printer"],
+            "hazards": ["hotend", "heated-bed", "resin-exposure", "powder-handling", "fire-watch", "fume-extraction"],
+            "requiredEvidence": [
+                "enclosure/door, thermal runaway, smoke/fire watch, fume extraction, and ventilation state evidence",
+                "resin, powder, solvent, or high-temperature material handling PPE and cleanup plan",
+                "operator acknowledgement or automation interlock evidence before unattended printing"
+            ],
+            "releaseBlockers": [
+                "unattended print lacks enclosure, thermal, fire-watch, or fume extraction evidence",
+                "resin, powder, or solvent workflow lacks PPE, containment, and postprocess safety evidence",
+                "printer restart or recovery bypasses thermal/interlock verification"
+            ],
+            "responseSurfaces": ["monitoringPlan.monitorPoints", "postprocessPlan.requiredArtifacts", "machineRelease.blockers"],
+            "learningSignals": ["safety:additive-thermal", "enclosure-state:*", "fume-extraction:*", "operator-ack:*"]
+        }),
+        json!({
+            "safetyFamily": "cnc-machine-guarding-and-chip-control",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "cnc-router", "lathe", "mill-turn-center"],
+            "hazards": ["spindle", "chuck", "tool-breakage", "chip-evacuation", "coolant", "guard-door"],
+            "requiredEvidence": [
+                "guard door, chuck/fixture enclosure, coolant/chip evacuation, and spindle/tooling state evidence",
+                "tool-breakage, overspeed, long-stock/bar-feed, and chip load monitoring plan",
+                "operator intervention plan for tool change, probe recovery, manual deburr, or chip clearing"
+            ],
+            "releaseBlockers": [
+                "cutting or spindle operation lacks guard, coolant/chip, or tool-breakage monitoring evidence",
+                "lathe bar, chuck, part-off, or transfer operation lacks enclosure/support safety evidence",
+                "manual chip clearing or tool intervention is needed without an explicit stop and operator plan"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements", "monitoringPlan.recoveryActions", "executionPlan.stopPoints", "machineRelease.blockers"],
+            "learningSignals": ["safety:cnc-guarding", "chip-control:*", "tool-breakage:*", "manual-intervention:*"]
+        }),
+        json!({
+            "safetyFamily": "sheet-cutting-energy-and-extraction-safety",
+            "machineKinds": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter"],
+            "hazards": ["beam", "arc", "high-pressure-water", "abrasive", "fume-extraction", "slug-drop", "dielectric"],
+            "requiredEvidence": [
+                "beam/arc/jet enable, pressure, assist gas, abrasive, fume extraction, water table, and support media evidence",
+                "slug retention, fire watch, dielectric/flushing, and piercing safety review",
+                "material compatibility and toxic-fume or reflective-material review before release"
+            ],
+            "releaseBlockers": [
+                "cutting feed lacks active extraction, assist gas, abrasive/pressure, or water-table support evidence",
+                "sheet material can produce toxic fumes, reflection, fire, or slug movement without mitigation",
+                "energy source restarts after stop without support-media and interlock reverification"
+            ],
+            "responseSurfaces": ["processRecipe.cutChart", "toolpathPlan.kerfCompensation", "monitoringPlan.monitorPoints", "machineRelease.blockers"],
+            "learningSignals": ["safety:sheet-energy", "extraction-state:*", "support-media:*", "slug-risk:*"]
+        }),
+        json!({
+            "safetyFamily": "robotic-cell-and-external-axis-interlocks",
+            "machineKinds": ["robotic-additive-cell", "robotic-assembly-cell", "directed-energy-deposition-cell", "hybrid-cell"],
+            "hazards": ["robot-reach", "external-axis", "positioner", "cell-door", "light-curtain", "collaborative-mode"],
+            "requiredEvidence": [
+                "cell access, light curtain, fence/door, safe zone, teach/collaborative mode, and E-stop evidence",
+                "robot TCP/frame, reach, collision, singularity, external-axis synchronization, and fixture interlock review",
+                "operator load/unload, purge, fixture change, or manual join intervention handoff"
+            ],
+            "releaseBlockers": [
+                "robot or external-axis motion lacks cell interlock, safe-zone, or collision evidence",
+                "operator entry/load/unload is needed without a locked stop point and restart plan",
+                "collaborative or teach mode is active without explicit speed/force and interlock review"
+            ],
+            "responseSurfaces": ["kinematics.axisExtents", "executionPlan.stopPoints", "monitoringPlan.alertRules", "machineRelease.blockers"],
+            "learningSignals": ["safety:robot-cell", "interlock-state:*", "operator-entry:*", "external-axis-sync:*"]
+        }),
+        json!({
+            "safetyFamily": "release-lockout-and-emergency-response",
+            "machineKinds": ["all-fabrication-machines"],
+            "hazards": ["lockout-tagout", "emergency-stop", "fire-response", "spill-response", "manual-restart", "unattended-release"],
+            "requiredEvidence": [
+                "E-stop, lockout/tagout, restart authorization, emergency response, and escalation contact evidence",
+                "safe power/process shutdown and human intervention plan for boundary conditions",
+                "monitoring, critical event publication, and release-package signoff before unattended execution"
+            ],
+            "releaseBlockers": [
+                "machine-ready release lacks emergency-stop, lockout, restart, or escalation evidence",
+                "known failure boundary requires human intervention but has no operator action plan",
+                "unattended execution lacks monitoring, alerting, and critical event handoff evidence"
+            ],
+            "responseSurfaces": ["executionPlan.operatorActions", "interventionMap.requiredInterventions", "monitoringPlan.alertRules", "releasePackagePlan.requiredArtifacts", "machineRelease.blockers"],
+            "learningSignals": ["safety:release-lockout", "emergency-stop:*", "critical-event:*", "human-intervention:*"]
+        }),
+    ]
+}
+
+fn safety_catalog_response() -> Value {
+    let entries = safety_catalog_entries();
+    let safety_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("safetyFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let hazards = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("hazards")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.safety-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /safety/catalog", "GET /fabrication/safety/catalog"],
+        "safetyFamilyCount": entries.len(),
+        "safetyFamilies": safety_families,
+        "machineKinds": machine_kinds,
+        "hazards": hazards,
+        "planningRoutes": [
+            "POST /monitoring/plan",
+            "POST /fabrication/monitoring/plan",
+            "POST /execution/plan",
+            "POST /fabrication/execution/plan",
+            "POST /release/preview",
+            "POST /fabrication/release/preview"
+        ],
+        "reviewRoutes": [
+            "POST /monitoring/result",
+            "POST /fabrication/monitoring/result",
+            "POST /execution/result",
+            "POST /fabrication/execution/result",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ],
+        "responseSurfaces": [
+            "executionPlan.stopPoints",
+            "executionPlan.operatorActions",
+            "interventionMap.requiredInterventions",
+            "monitoringPlan.monitorPoints",
+            "monitoringPlan.alertRules",
+            "monitoringPlan.recoveryActions",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "monitoring-plan",
+            "execution-plan",
+            "operator-intervention-plan",
+            "release-package-plan",
+            "machine-release",
+            "mdp-request.artifacts.safetyEvidence"
+        ],
+        "releasePolicy": [
+            "safety catalog entries describe guarding, interlock, extraction, emergency-stop, lockout, and human-intervention evidence, not certified machine-safety approvals",
+            "machine-ready release remains blocked until machine guarding, process support, operator intervention, emergency response, monitoring, alerting, and release signoff evidence clear",
+            "interlock states, operator stops, extraction failures, E-stop events, recovery actions, and unattended-release outcomes are retained as MDP/POMDP/neural learning signals"
+        ],
+        "safetyContracts": entries
+    })
+}
+
+async fn safety_catalog_http() -> impl IntoResponse {
+    Json(safety_catalog_response())
+}
+
+fn environment_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "environmentFamily": "additive-material-storage-and-printroom-state",
+            "machineKinds": ["fdm-printer", "multi-material-fdm-printer", "pellet-fgf-printer", "resin-printer", "powder-bed-printer"],
+            "conditionScopes": ["filament-humidity", "pellet-drying", "resin-temperature", "powder-lot-condition", "printroom-temperature"],
+            "requiredEvidence": [
+                "material lot, dry-box or dryer profile, humidity, moisture exposure window, and storage history evidence",
+                "resin, powder, pellet, or filament temperature and conditioning evidence before print start",
+                "printroom or chamber temperature stability evidence for warp-prone or high-temperature materials"
+            ],
+            "releaseBlockers": [
+                "moisture-sensitive material lacks drying, humidity, or exposure-window evidence",
+                "resin, powder, pellet, or filament conditioning is stale before machine-ready release",
+                "ambient/chamber state is outside material or process envelope without mitigation"
+            ],
+            "responseSurfaces": ["materialPlan.routeRequirements", "processRecipe.materialConditioning", "monitoringPlan.monitorPoints", "machineRelease.blockers"],
+            "learningSignals": ["environment:additive-material", "humidity:*", "drying-profile:*", "ambient-temperature:*"]
+        }),
+        json!({
+            "environmentFamily": "subtractive-coolant-chip-and-thermal-stability",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "cnc-router", "lathe", "mill-turn-center"],
+            "conditionScopes": ["coolant-state", "chip-evacuation", "machine-warmup", "thermal-growth", "shop-temperature"],
+            "requiredEvidence": [
+                "coolant concentration/flow, chip evacuation, mist collection, and sump/filtration state evidence",
+                "machine warmup, spindle/chuck thermal growth, shop temperature, and compensation review",
+                "chip load, evacuation restart, and operator chip-clearing intervention plan"
+            ],
+            "releaseBlockers": [
+                "cutting run lacks coolant, chip evacuation, mist collection, or restart evidence",
+                "tight-tolerance operation lacks thermal warmup and drift compensation evidence",
+                "manual chip clearing is expected without a stop point and recovery plan"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements", "processRecipe.coolant", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["environment:subtractive-coolant", "thermal-drift:*", "chip-evacuation:*", "coolant-state:*"]
+        }),
+        json!({
+            "environmentFamily": "sheet-cutting-extraction-and-utility-state",
+            "machineKinds": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter"],
+            "conditionScopes": ["fume-extraction", "assist-gas", "abrasive-flow", "water-quality", "dielectric", "compressed-air"],
+            "requiredEvidence": [
+                "assist gas, extraction, abrasive feed, water pressure/quality, dielectric/flushing, and compressed-air evidence",
+                "material fume, reflectivity, HAZ, and waste/slug handling review",
+                "utility restart and support-media reverification after any process stop"
+            ],
+            "releaseBlockers": [
+                "sheet cutting feed lacks active extraction, gas, abrasive, dielectric, water, or compressed-air evidence",
+                "material produces fume, reflection, or waste hazards without environmental mitigation",
+                "support utility is stopped and cutting continues without restart/reverification"
+            ],
+            "responseSurfaces": ["processRecipe.cutChart", "safetyContracts.releaseBlockers", "monitoringPlan.alertRules", "machineRelease.blockers"],
+            "learningSignals": ["environment:sheet-utility", "fume-extraction:*", "assist-gas:*", "abrasive-flow:*"]
+        }),
+        json!({
+            "environmentFamily": "robotic-cell-space-and-utility-readiness",
+            "machineKinds": ["robotic-additive-cell", "robotic-assembly-cell", "directed-energy-deposition-cell", "hybrid-cell"],
+            "conditionScopes": ["cell-air", "shield-gas", "power-quality", "floor-clearance", "vibration", "external-axis-utility"],
+            "requiredEvidence": [
+                "cell air, shield gas, extraction, floor clearance, power quality, and vibration evidence",
+                "external-axis utility, cable/hose sweep, fixture access, and robot reach environment review",
+                "operator load/unload and restart environment checks before unattended release"
+            ],
+            "releaseBlockers": [
+                "robotic path lacks cell utility, floor-clearance, cable/hose sweep, or extraction evidence",
+                "DED/WAAM/robotic process lacks shield gas, power, or ventilation readiness evidence",
+                "operator entry or restart can alter cell environment without recovery verification"
+            ],
+            "responseSurfaces": ["kinematics.axisExtents", "safetyContracts.releaseBlockers", "executionPlan.stopPoints", "machineRelease.blockers"],
+            "learningSignals": ["environment:robotic-cell", "shield-gas:*", "vibration:*", "power-quality:*"]
+        }),
+        json!({
+            "environmentFamily": "inspection-metrology-and-release-environment",
+            "machineKinds": ["coordinate-measuring-machine", "probe-equipped-mill", "probe-equipped-lathe", "all-fabrication-machines"],
+            "conditionScopes": ["metrology-temperature", "cleanliness", "calibration-environment", "part-stabilization", "measurement-uncertainty"],
+            "requiredEvidence": [
+                "inspection temperature, cleanliness, gauge/CMM calibration environment, and part stabilization evidence",
+                "measurement uncertainty and material thermal expansion review for critical fits",
+                "environmental acceptance evidence before final release package signoff"
+            ],
+            "releaseBlockers": [
+                "critical inspection lacks temperature, cleanliness, calibration, or stabilization evidence",
+                "part or gauge has not equilibrated before tolerance-critical measurement",
+                "release package lacks environmental evidence for metrology-dependent acceptance"
+            ],
+            "responseSurfaces": ["calibrationPlan.requiredEvidence", "qualityPlan.measurementTargets", "releasePackagePlan.requiredArtifacts", "machineRelease.blockers"],
+            "learningSignals": ["environment:metrology", "temperature-stability:*", "cleanliness:*", "measurement-uncertainty:*"]
+        }),
+    ]
+}
+
+fn environment_catalog_response() -> Value {
+    let entries = environment_catalog_entries();
+    let environment_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("environmentFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let condition_scopes = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("conditionScopes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.environment-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /environment/catalog", "GET /fabrication/environment/catalog"],
+        "environmentFamilyCount": entries.len(),
+        "environmentFamilies": environment_families,
+        "machineKinds": machine_kinds,
+        "conditionScopes": condition_scopes,
+        "planningRoutes": [
+            "POST /materials/plan",
+            "POST /fabrication/materials/plan",
+            "POST /monitoring/plan",
+            "POST /fabrication/monitoring/plan",
+            "POST /quality/plan",
+            "POST /fabrication/quality/plan"
+        ],
+        "reviewRoutes": [
+            "POST /materials/result",
+            "POST /fabrication/materials/result",
+            "POST /monitoring/result",
+            "POST /fabrication/monitoring/result",
+            "POST /quality/result",
+            "POST /fabrication/quality/result"
+        ],
+        "responseSurfaces": [
+            "materialPlan.routeRequirements",
+            "processRecipe.materialConditioning",
+            "processRecipe.coolant",
+            "monitoringPlan.monitorPoints",
+            "monitoringPlan.alertRules",
+            "qualityPlan.measurementTargets",
+            "calibrationPlan.requiredEvidence",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "material-plan",
+            "monitoring-plan",
+            "quality-plan",
+            "calibration-plan",
+            "environment-evidence",
+            "mdp-request.artifacts.environmentEvidence"
+        ],
+        "releasePolicy": [
+            "environment catalog entries describe humidity, thermal, coolant, chip, utility, extraction, vibration, and metrology-environment evidence, not certified facility qualifications",
+            "machine-ready release remains blocked until material conditioning, ambient/process utilities, extraction, thermal stability, monitoring, inspection environment, and signoff evidence clear",
+            "humidity, drying, coolant, extraction, utility, vibration, temperature, and metrology outcomes are retained as MDP/POMDP/neural learning signals"
+        ],
+        "environmentContracts": entries
+    })
+}
+
+async fn environment_catalog_http() -> impl IntoResponse {
+    Json(environment_catalog_response())
 }
 
 fn setup_planning_response(
@@ -64089,6 +64636,12 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/process-recipes/catalog",
                 "GET /kinematics/catalog",
                 "GET /fabrication/kinematics/catalog",
+                "GET /tolerances/catalog",
+                "GET /fabrication/tolerances/catalog",
+                "GET /safety/catalog",
+                "GET /fabrication/safety/catalog",
+                "GET /environment/catalog",
+                "GET /fabrication/environment/catalog",
                 "POST /setup/plan",
                 "POST /fabrication/setup/plan",
                 "POST /setup/result",
@@ -65779,6 +66332,9 @@ async fn request_schema() -> impl IntoResponse {
             "toolingCatalog": ["GET /tooling/catalog", "GET /fabrication/tooling/catalog"],
             "processRecipeCatalog": ["GET /process-recipes/catalog", "GET /fabrication/process-recipes/catalog"],
             "kinematicsCatalog": ["GET /kinematics/catalog", "GET /fabrication/kinematics/catalog"],
+            "toleranceCatalog": ["GET /tolerances/catalog", "GET /fabrication/tolerances/catalog"],
+            "safetyCatalog": ["GET /safety/catalog", "GET /fabrication/safety/catalog"],
+            "environmentCatalog": ["GET /environment/catalog", "GET /fabrication/environment/catalog"],
             "setupPlan": ["POST /setup/plan", "POST /fabrication/setup/plan"],
             "setupResult": ["POST /setup/result", "POST /fabrication/setup/result"],
             "monitoringCatalog": ["GET /monitoring/catalog", "GET /fabrication/monitoring/catalog"],
@@ -68009,6 +68565,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/kinematics/catalog",
             get(kinematics_catalog_http),
+        )
+        .route("/tolerances/catalog", get(tolerance_catalog_http))
+        .route(
+            "/fabrication/tolerances/catalog",
+            get(tolerance_catalog_http),
+        )
+        .route("/safety/catalog", get(safety_catalog_http))
+        .route("/fabrication/safety/catalog", get(safety_catalog_http))
+        .route("/environment/catalog", get(environment_catalog_http))
+        .route(
+            "/fabrication/environment/catalog",
+            get(environment_catalog_http),
         )
         .route("/setup/plan", post(setup_plan_http))
         .route("/fabrication/setup/plan", post(setup_plan_http))
@@ -77037,6 +77605,164 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified production recipes")))));
+    }
+
+    #[test]
+    fn kinematics_catalog_endpoint_exposes_axis_release_contract() {
+        let payload = kinematics_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.kinematics-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/kinematics/catalog") })));
+        assert_eq!(
+            payload.get("kinematicFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("kinematicFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families
+                .iter()
+                .any(|family| { family.as_str() == Some("rotary-index-and-five-axis-milling") })));
+        assert!(payload
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|machine_kinds| machine_kinds
+                .iter()
+                .any(|machine_kind| machine_kind.as_str() == Some("swiss-turning-center"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("simulation.axisExtents"))));
+        assert!(payload
+            .get("kinematics")
+            .and_then(Value::as_array)
+            .is_some_and(|kinematics| kinematics.iter().any(|family| family
+                .get("releaseBlockers")
+                .and_then(Value::as_array)
+                .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                    .as_str()
+                    .is_some_and(|blocker| blocker.contains("external-axis")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| {
+                item.as_str().is_some_and(|item| {
+                    item.contains("not certified kinematic calibration records")
+                })
+            })));
+    }
+
+    #[test]
+    fn tolerance_catalog_endpoint_exposes_fit_stackup_release_contract() {
+        let payload = tolerance_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.tolerance-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/tolerances/catalog") })));
+        assert_eq!(
+            payload.get("toleranceFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("toleranceFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families
+                .iter()
+                .any(|family| { family.as_str() == Some("hybrid-assembly-interface-stackups") })));
+        assert!(payload
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|machine_kinds| machine_kinds
+                .iter()
+                .any(|machine_kind| machine_kind.as_str() == Some("swiss-turning-center"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("interfaceControlPlan.interfaces"))));
+        assert!(payload
+            .get("toleranceContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("releaseBlockers")
+                .and_then(Value::as_array)
+                .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                    .as_str()
+                    .is_some_and(|blocker| blocker.contains("tolerance-stack")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified inspection plans")))));
+    }
+
+    #[test]
+    fn safety_catalog_endpoint_exposes_interlock_release_contract() {
+        let payload = safety_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.safety-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/safety/catalog") })));
+        assert_eq!(
+            payload.get("safetyFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("safetyFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("robotic-cell-and-external-axis-interlocks")
+            })));
+        assert!(payload
+            .get("hazards")
+            .and_then(Value::as_array)
+            .is_some_and(|hazards| hazards
+                .iter()
+                .any(|hazard| hazard.as_str() == Some("emergency-stop"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("interventionMap.requiredInterventions"))));
+        assert!(payload
+            .get("safetyContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("releaseBlockers")
+                .and_then(Value::as_array)
+                .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                    .as_str()
+                    .is_some_and(|blocker| blocker.contains("human intervention")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified machine-safety approvals")))));
     }
 
     #[test]
