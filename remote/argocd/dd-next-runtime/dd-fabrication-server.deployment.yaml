@@ -195,9 +195,11 @@ spec:
                 '"path": "/fabrication/simulation/result"' \
                 '"path": "/fabrication/quality/catalog"' \
                 '"path": "/fabrication/dispositions/catalog"' \
+                '"path": "/fabrication/dispositions/result"' \
                 '"path": "/fabrication/costing/catalog"' \
                 '"path": "/fabrication/utilities/catalog"' \
                 '"path": "/fabrication/telemetry/catalog"' \
+                '"path": "/fabrication/telemetry/result"' \
                 '"path": "/fabrication/quality/plan"' \
                 '"path": "/fabrication/quality/result"' \
                 '"path": "/fabrication/manufacturability/result"' \
@@ -217,12 +219,16 @@ spec:
                 '"path": "/fabrication/tolerances/catalog"' \
                 '"path": "/fabrication/tolerances/result"' \
                 '"path": "/fabrication/process-capabilities/catalog"' \
+                '"path": "/fabrication/process-capabilities/result"' \
                 '"path": "/fabrication/manufacturability/catalog"' \
                 '"path": "/fabrication/failure-modes/catalog"' \
                 '"path": "/fabrication/failure-modes/result"' \
                 '"path": "/fabrication/safety/catalog"' \
+                '"path": "/fabrication/safety/result"' \
                 '"path": "/fabrication/environment/catalog"' \
+                '"path": "/fabrication/environment/result"' \
                 '"path": "/fabrication/provenance/catalog"' \
+                '"path": "/fabrication/provenance/result"' \
                 '"path": "/fabrication/setup/plan"' \
                 '"path": "/fabrication/setup/result"' \
                 '"path": "/fabrication/monitoring/catalog"' \
