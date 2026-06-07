@@ -1,5 +1,6 @@
 use std::{
     env,
+    path::PathBuf,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -51,6 +52,37 @@ fn git_dirty() -> String {
         )
 }
 
+fn flags2env_vendor_dir() -> PathBuf {
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."));
+    let direct = manifest_dir.join("third_party/flags2env");
+    if direct.join("src/parser.c").is_file() {
+        return direct;
+    }
+
+    manifest_dir
+        .parent()
+        .map(|parent| parent.join("third_party/flags2env"))
+        .unwrap_or(direct)
+}
+
+fn compile_flags2env_parser() {
+    let vendor_dir = flags2env_vendor_dir();
+    let source_dir = vendor_dir.join("src");
+    let parser = source_dir.join("parser.c");
+    let header = source_dir.join("parser.h");
+
+    println!("cargo:rerun-if-changed={}", parser.display());
+    println!("cargo:rerun-if-changed={}", header.display());
+
+    cc::Build::new()
+        .file(parser)
+        .include(source_dir)
+        .flag_if_supported("-std=c99")
+        .compile("flags2env_parser");
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=.git/HEAD");
@@ -59,6 +91,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=DD_GIT_REF");
     println!("cargo:rerun-if-env-changed=DD_GIT_DIRTY");
     println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
+
+    compile_flags2env_parser();
 
     let commit = env_or_git("DD_GIT_COMMIT", &["rev-parse", "HEAD"], "unknown");
     let short = env_or_git(

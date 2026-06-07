@@ -516,6 +516,7 @@ version = "0.1.0"
 dependencies = [
  "async-nats",
  "axum",
+ "cc",
  "dd-nats-subject-defs",
  "dd-pg-defs",
  "dd-redis-interfaces",

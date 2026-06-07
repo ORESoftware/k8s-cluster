@@ -1,6 +1,7 @@
+mod runtime_config;
+
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    env,
     error::Error,
     ffi::{c_int, c_void},
     net::SocketAddr,
@@ -784,57 +785,31 @@ fn is_false(value: &bool) -> bool {
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
-    env::var(key)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| fallback.to_string())
+    runtime_config::value(key, fallback)
 }
 
 fn optional_env_value(key: &str) -> Option<String> {
-    env::var(key)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    runtime_config::optional_value(key)
 }
 
 fn env_u64(key: &str, fallback: u64) -> u64 {
-    env::var(key)
-        .ok()
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(fallback)
+    runtime_config::u64_value(key, fallback)
 }
 
 fn env_usize(key: &str, fallback: usize) -> usize {
-    env_u64(key, fallback as u64) as usize
+    runtime_config::usize_value(key, fallback)
 }
 
 fn env_usize_allow_zero(key: &str, fallback: usize) -> usize {
-    env::var(key)
-        .ok()
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .unwrap_or(fallback)
+    runtime_config::usize_value_allow_zero(key, fallback)
 }
 
 fn env_f64(key: &str, fallback: f64) -> f64 {
-    env::var(key)
-        .ok()
-        .and_then(|value| value.trim().parse::<f64>().ok())
-        .filter(|value| value.is_finite() && *value > 0.0)
-        .unwrap_or(fallback)
+    runtime_config::f64_value(key, fallback)
 }
 
 fn env_bool(key: &str, fallback: bool) -> bool {
-    env::var(key)
-        .ok()
-        .map(|value| value.trim().to_ascii_lowercase())
-        .and_then(|value| match value.as_str() {
-            "1" | "true" | "yes" | "on" => Some(true),
-            "0" | "false" | "no" | "off" => Some(false),
-            _ => None,
-        })
-        .unwrap_or(fallback)
+    runtime_config::bool_value(key, fallback)
 }
 
 fn now_ms() -> u128 {
@@ -883,9 +858,7 @@ fn gpu_mode() -> String {
 }
 
 fn gpu_available() -> bool {
-    let visible = env::var("NVIDIA_VISIBLE_DEVICES")
-        .ok()
-        .map(|value| value.trim().to_string())
+    let visible = optional_env_value("NVIDIA_VISIBLE_DEVICES")
         .filter(|value| !value.is_empty() && value != "void" && value != "none");
     let device = FsPath::new("/dev/nvidia0").exists();
     visible.is_some() || device
@@ -896,20 +869,11 @@ fn gpu_status() -> GpuStatus {
 }
 
 fn first_configured_env(keys: &[&str]) -> Option<String> {
-    keys.iter()
-        .find(|key| {
-            env::var(key)
-                .ok()
-                .is_some_and(|value| !value.trim().is_empty())
-        })
-        .map(|key| (*key).to_string())
+    runtime_config::first_configured_key(keys)
 }
 
 fn first_configured_env_value(keys: &[&str]) -> Option<String> {
-    first_configured_env(keys)
-        .and_then(|key| env::var(key).ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    runtime_config::first_configured_value(keys)
 }
 
 fn parse_coordination_backends(
@@ -8100,7 +8064,7 @@ async fn run_master_control_listener(state: AppState) -> Result<(), Box<dyn Erro
 }
 
 async fn connect_nats() -> Option<async_nats::Client> {
-    let url = env::var("NATS_URL").ok()?;
+    let url = optional_env_value("NATS_URL")?;
     let attempts = env_u64("MIP_SOLVER_NATS_CONNECT_ATTEMPTS", 60).clamp(1, 360);
     let retry_delay =
         Duration::from_secs(env_u64("MIP_SOLVER_NATS_CONNECT_RETRY_SECONDS", 2).clamp(1, 60));
@@ -8129,7 +8093,7 @@ async fn connect_nats() -> Option<async_nats::Client> {
 
 fn connect_redis() -> Option<redis::Client> {
     let env_key = first_configured_env(&["MIP_SOLVER_REDIS_URL", "REDIS_URL"])?;
-    let url = env::var(&env_key).ok()?;
+    let url = optional_env_value(&env_key)?;
     match redis::Client::open(url.clone()) {
         Ok(client) => Some(client),
         Err(error) => {
@@ -8147,7 +8111,7 @@ async fn connect_postgres() -> Option<PgPool> {
         "DATABASE_URL",
         "PG_DATABASE_URL",
     ])?;
-    let url = env::var(&env_key).ok()?;
+    let url = optional_env_value(&env_key)?;
     let max_connections = env_usize("MIP_SOLVER_PG_POOL_SIZE", 4).clamp(1, 32) as u32;
     match PgPoolOptions::new()
         .max_connections(max_connections)
@@ -8246,10 +8210,27 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let runtime_config = runtime_config::initialize();
+    for warning in runtime_config.warnings() {
+        eprintln!("runtime config warning: {warning}");
+    }
+    if !runtime_config.cli_values().is_empty() {
+        let config_path = runtime_config
+            .config_path()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| ".cli-flags.toml".to_string());
+        eprintln!(
+            "runtime config applied {} CLI override(s) via {:?} from {config_path}",
+            runtime_config.cli_values().len(),
+            runtime_config.cli_flag_source()
+        );
+    }
+
     let role = NodeRole::from_env();
-    let node_id = env::var("POD_NAME")
-        .or_else(|_| env::var("HOSTNAME"))
-        .unwrap_or_else(|_| format!("{}-{}", SERVICE_NAME, Uuid::new_v4()));
+    let node_id = optional_env_value("MIP_SOLVER_NODE_ID")
+        .or_else(|| optional_env_value("POD_NAME"))
+        .or_else(|| optional_env_value("HOSTNAME"))
+        .unwrap_or_else(|| format!("{}-{}", SERVICE_NAME, Uuid::new_v4()));
     let nats = connect_nats().await;
     let redis = connect_redis();
     let pg = connect_postgres().await;

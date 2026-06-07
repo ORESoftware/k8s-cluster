@@ -32,5 +32,8 @@ sqlx = { version = "0.8", default-features = false, features = ["postgres", "run
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 uuid = { version = "1", features = ["v4"] }
 
+[build-dependencies]
+cc = "1"
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

@@ -1,0 +1,374 @@
+[help]
+url = "https://github.com/ORESoftware/flags-2-env"
+columns = ["options", "env", "type", "description"]
+
+[parse]
+unknown_options_env = "MIP_SOLVER_UNKNOWN_CLI_FLAGS"
+errors_env = "MIP_SOLVER_CLI_PARSE_ERRORS"
+allow_unknown = false
+
+[flags.host]
+env = "HOST"
+aliases = ["host", "http-host", "listen-host"]
+type = "string"
+help = "HTTP listener host."
+
+[flags.port]
+env = "PORT"
+aliases = ["port", "http-port", "listen-port"]
+short = "p"
+type = "integer"
+help = "HTTP listener port."
+
+[flags.node_role]
+env = "MIP_SOLVER_NODE_ROLE"
+aliases = ["role", "node-role", "solver-role"]
+short = "r"
+type = "string"
+help = "Node role: master or slave."
+
+[flags.node_id]
+env = "MIP_SOLVER_NODE_ID"
+aliases = ["node-id", "solver-node-id"]
+type = "string"
+help = "Stable solver node identifier."
+
+[flags.nats_url]
+env = "NATS_URL"
+aliases = ["nats-url"]
+type = "string"
+help = "NATS server URL."
+
+[flags.nats_connect_attempts]
+env = "MIP_SOLVER_NATS_CONNECT_ATTEMPTS"
+aliases = ["nats-connect-attempts"]
+type = "integer"
+help = "Maximum NATS connection attempts."
+
+[flags.nats_connect_retry_seconds]
+env = "MIP_SOLVER_NATS_CONNECT_RETRY_SECONDS"
+aliases = ["nats-connect-retry-seconds"]
+type = "integer"
+help = "Delay between NATS connection attempts."
+
+[flags.nats_consumer]
+env = "MIP_SOLVER_NATS_CONSUMER"
+aliases = ["nats-consumer", "worker-consumer"]
+type = "string"
+help = "JetStream worker consumer name."
+
+[flags.jobs_subject]
+env = "MIP_SOLVER_JOBS_SUBJECT"
+aliases = ["jobs-subject", "mip-jobs-subject"]
+type = "string"
+help = "NATS subject used for distributed MIP jobs."
+
+[flags.results_subject]
+env = "MIP_SOLVER_RESULTS_SUBJECT"
+aliases = ["results-subject", "mip-results-subject"]
+type = "string"
+help = "NATS subject used for distributed MIP results."
+
+[flags.control_subject]
+env = "MIP_SOLVER_CONTROL_SUBJECT"
+aliases = ["control-subject", "mip-control-subject"]
+type = "string"
+help = "NATS subject used for solver control messages."
+
+[flags.events_subject]
+env = "MIP_SOLVER_EVENTS_SUBJECT"
+aliases = ["events-subject", "mip-events-subject"]
+type = "string"
+help = "NATS subject used for solver event messages."
+
+[flags.redis_url]
+env = "MIP_SOLVER_REDIS_URL"
+aliases = ["redis-url", "mip-redis-url"]
+type = "string"
+help = "Redis URL for solver persistence and coordination."
+
+[flags.fallback_redis_url]
+env = "REDIS_URL"
+aliases = ["fallback-redis-url"]
+type = "string"
+help = "Fallback Redis URL."
+
+[flags.redis_key_prefix]
+env = "MIP_SOLVER_REDIS_KEY_PREFIX"
+aliases = ["redis-key-prefix"]
+type = "string"
+help = "Redis key prefix for solver data."
+
+[flags.redis_lock_prefix]
+env = "MIP_SOLVER_REDIS_LOCK_PREFIX"
+aliases = ["redis-lock-prefix"]
+type = "string"
+help = "Redis key prefix for coordination locks."
+
+[flags.redis_ttl_seconds]
+env = "MIP_SOLVER_REDIS_TTL_SECONDS"
+aliases = ["redis-ttl-seconds"]
+type = "integer"
+help = "Redis TTL for cached solver state."
+
+[flags.database_url]
+env = "MIP_SOLVER_DATABASE_URL"
+aliases = ["database-url", "pg-url", "postgres-url", "mip-database-url"]
+type = "string"
+help = "Primary Postgres URL for solver persistence."
+
+[flags.agent_tasks_database_url]
+env = "AGENT_TASKS_RDS_DATABASE_URL"
+aliases = ["agent-tasks-rds-database-url"]
+type = "string"
+help = "Agent tasks Postgres URL fallback."
+
+[flags.rds_database_url]
+env = "RDS_DATABASE_URL"
+aliases = ["rds-database-url"]
+type = "string"
+help = "RDS Postgres URL fallback."
+
+[flags.fallback_database_url]
+env = "DATABASE_URL"
+aliases = ["fallback-database-url"]
+type = "string"
+help = "Generic database URL fallback."
+
+[flags.pg_database_url]
+env = "PG_DATABASE_URL"
+aliases = ["pg-database-url"]
+type = "string"
+help = "Postgres database URL fallback."
+
+[flags.pg_pool_size]
+env = "MIP_SOLVER_PG_POOL_SIZE"
+aliases = ["pg-pool-size"]
+type = "integer"
+help = "Postgres pool size."
+
+[flags.coordination_backends]
+env = "MIP_SOLVER_COORDINATION_BACKENDS"
+aliases = ["coordination-backends", "coordination"]
+type = "string"
+help = "Coordination backend selection."
+
+[flags.coordination_lock_ttl_ms]
+env = "MIP_SOLVER_COORDINATION_LOCK_TTL_MS"
+aliases = ["coordination-lock-ttl-ms"]
+type = "integer"
+help = "Coordination lock TTL in milliseconds."
+
+[flags.coordination_wait_ms]
+env = "MIP_SOLVER_COORDINATION_WAIT_MS"
+aliases = ["coordination-wait-ms"]
+type = "integer"
+help = "Coordination lock wait time in milliseconds."
+
+[flags.coordination_solve_lock_margin_ms]
+env = "MIP_SOLVER_COORDINATION_SOLVE_LOCK_MARGIN_MS"
+aliases = ["coordination-solve-lock-margin-ms"]
+type = "integer"
+help = "Extra lock margin for coordinated solves."
+
+[flags.live_mutex_url]
+env = "MIP_SOLVER_LIVE_MUTEX_URL"
+aliases = ["live-mutex-url", "lmx-url"]
+type = "string"
+help = "Live Mutex service URL."
+
+[flags.fallback_live_mutex_url]
+env = "LIVE_MUTEX_URL"
+aliases = ["fallback-live-mutex-url"]
+type = "string"
+help = "Fallback Live Mutex service URL."
+
+[flags.lmx_http_url]
+env = "LMX_HTTP_URL"
+aliases = ["lmx-http-url"]
+type = "string"
+help = "Fallback LMX HTTP URL."
+
+[flags.live_mutex_auth_token]
+env = "MIP_SOLVER_LIVE_MUTEX_AUTH_TOKEN"
+aliases = ["live-mutex-auth-token", "lmx-auth-token"]
+type = "string"
+help = "Live Mutex auth token."
+
+[flags.fallback_live_mutex_auth_token]
+env = "LIVE_MUTEX_AUTH_TOKEN"
+aliases = ["fallback-live-mutex-auth-token"]
+type = "string"
+help = "Fallback Live Mutex auth token."
+
+[flags.lmx_auth_token]
+env = "LMX_AUTH_TOKEN"
+aliases = ["lmx-token"]
+type = "string"
+help = "Fallback LMX auth token."
+
+[flags.live_mutex_request_timeout_ms]
+env = "MIP_SOLVER_LIVE_MUTEX_REQUEST_TIMEOUT_MS"
+aliases = ["live-mutex-request-timeout-ms"]
+type = "integer"
+help = "Live Mutex request timeout in milliseconds."
+
+[flags.live_mutex_max_response_bytes]
+env = "MIP_SOLVER_LIVE_MUTEX_MAX_RESPONSE_BYTES"
+aliases = ["live-mutex-max-response-bytes"]
+type = "integer"
+help = "Live Mutex max response size."
+
+[flags.cancel_poll_seconds]
+env = "MIP_SOLVER_CANCEL_POLL_SECONDS"
+aliases = ["cancel-poll-seconds"]
+type = "integer"
+help = "Cancel polling interval."
+
+[flags.worker_stale_seconds]
+env = "MIP_SOLVER_WORKER_STALE_SECONDS"
+aliases = ["worker-stale-seconds"]
+type = "integer"
+help = "Worker stale threshold."
+
+[flags.task_retention_seconds]
+env = "MIP_SOLVER_TASK_RETENTION_SECONDS"
+aliases = ["task-retention-seconds"]
+type = "integer"
+help = "Runtime task retention window."
+
+[flags.worker_heartbeat_seconds]
+env = "MIP_SOLVER_WORKER_HEARTBEAT_SECONDS"
+aliases = ["worker-heartbeat-seconds"]
+type = "integer"
+help = "Worker heartbeat interval."
+
+[flags.worker_max_in_flight]
+env = "MIP_SOLVER_WORKER_MAX_IN_FLIGHT"
+aliases = ["worker-max-in-flight"]
+type = "integer"
+help = "Maximum worker jobs in flight."
+
+[flags.worker_saturation_retry_seconds]
+env = "MIP_SOLVER_WORKER_SATURATION_RETRY_SECONDS"
+aliases = ["worker-saturation-retry-seconds"]
+type = "integer"
+help = "Worker saturation retry interval."
+
+[flags.ack_wait_seconds]
+env = "MIP_SOLVER_ACK_WAIT_SECONDS"
+aliases = ["ack-wait-seconds"]
+type = "integer"
+help = "JetStream ack wait in seconds."
+
+[flags.max_ack_pending]
+env = "MIP_SOLVER_MAX_ACK_PENDING"
+aliases = ["max-ack-pending"]
+type = "integer"
+help = "Maximum pending JetStream acknowledgements."
+
+[flags.max_deliver]
+env = "MIP_SOLVER_MAX_DELIVER"
+aliases = ["max-deliver"]
+type = "integer"
+help = "Maximum JetStream delivery attempts."
+
+[flags.gpu_mode]
+env = "MIP_SOLVER_GPU_MODE"
+aliases = ["gpu-mode"]
+type = "string"
+help = "GPU mode: auto, gpu, cpu, or off."
+
+[flags.nvidia_visible_devices]
+env = "NVIDIA_VISIBLE_DEVICES"
+aliases = ["nvidia-visible-devices"]
+type = "string"
+help = "Visible NVIDIA devices."
+
+[flags.max_nodes]
+env = "MIP_SOLVER_MAX_NODES"
+aliases = ["max-nodes"]
+type = "integer"
+help = "Default maximum branch-and-bound nodes."
+
+[flags.max_ticks]
+env = "MIP_SOLVER_MAX_TICKS"
+aliases = ["max-ticks"]
+type = "integer"
+help = "Default maximum DES ticks."
+
+[flags.lp_max_iters]
+env = "MIP_SOLVER_LP_MAX_ITERS"
+aliases = ["lp-max-iters"]
+type = "integer"
+help = "Default maximum LP iterations."
+
+[flags.int_tol]
+env = "MIP_SOLVER_INT_TOL"
+aliases = ["int-tol", "integer-tolerance"]
+type = "string"
+help = "Default integrality tolerance."
+
+[flags.split_depth]
+env = "MIP_SOLVER_SPLIT_DEPTH"
+aliases = ["split-depth"]
+type = "integer"
+help = "Default distributed split depth."
+
+[flags.max_subproblems]
+env = "MIP_SOLVER_MAX_SUBPROBLEMS"
+aliases = ["max-subproblems"]
+type = "integer"
+help = "Default maximum distributed subproblems."
+
+[flags.max_job_retries]
+env = "MIP_SOLVER_MAX_JOB_RETRIES"
+aliases = ["max-job-retries"]
+type = "integer"
+help = "Default maximum subproblem retries."
+
+[flags.timeout_ms]
+env = "MIP_SOLVER_TIMEOUT_MS"
+aliases = ["timeout-ms", "solve-timeout-ms"]
+type = "integer"
+help = "Default solve timeout in milliseconds."
+
+[flags.emit_trace]
+env = "MIP_SOLVER_EMIT_TRACE"
+aliases = ["emit-trace"]
+type = "bool"
+true_aliases = ["t", "1", "yes", "on"]
+false_aliases = ["f", "0", "no", "off"]
+help = "Emit solver trace data by default."
+
+[flags.verify_external]
+env = "MIP_SOLVER_VERIFY_EXTERNAL"
+aliases = ["verify-external"]
+type = "bool"
+true_aliases = ["t", "1", "yes", "on"]
+false_aliases = ["f", "0", "no", "off"]
+help = "Enable external solver verification by default."
+
+[flags.external_verification_method]
+env = "MIP_SOLVER_EXTERNAL_VERIFICATION_METHOD"
+aliases = ["external-verification-method"]
+type = "string"
+help = "External verification method."
+
+[flags.external_verification_tolerance]
+env = "MIP_SOLVER_EXTERNAL_VERIFICATION_TOLERANCE"
+aliases = ["external-verification-tolerance"]
+type = "string"
+help = "External verification tolerance."
+
+[flags.cluster_git_url]
+env = "MIP_SOLVER_CLUSTER_GIT_URL"
+aliases = ["cluster-git-url"]
+type = "string"
+help = "Cluster Git repository URL reported by metadata routes."
+
+[flags.cluster_git_ref]
+env = "MIP_SOLVER_CLUSTER_GIT_REF"
+aliases = ["cluster-git-ref"]
+type = "string"
+help = "Cluster Git ref reported by metadata routes."
