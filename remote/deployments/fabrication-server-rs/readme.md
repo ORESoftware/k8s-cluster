@@ -314,6 +314,8 @@ outcomes.
 - `GET /fabrication/learning/capabilities`
 - `GET /learning/engines/catalog`
 - `GET /fabrication/learning/engines/catalog`
+- `GET /learning/preflight/catalog`
+- `GET /fabrication/learning/preflight/catalog`
 - `GET /learning/rewards/catalog`
 - `GET /fabrication/learning/rewards/catalog`
 - `GET /learning/models/catalog`
@@ -4233,6 +4235,26 @@ discover how compact outcome memory feeds future strategy review. These outputs
 remain planning and learning evidence only: machine-ready release stays blocked while validation
 findings, unresolved failure boundaries, missing probe evidence, or
 human-intervention gates remain open.
+
+## `GET /fabrication/learning/preflight/catalog`
+
+`GET /learning/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/learning/preflight/catalog` return the live
+`dd.fabrication.learning-preflight-catalog.v1` evidence checklist for promoting
+DES, MDP, POMDP, and neural learning outputs into planning previews. The catalog
+groups learning outcome artifacts and reward terms, MDP/POMDP belief and policy
+state, and neural corpus quality and promotion state. It names response surfaces
+such as `learning.outcomes`, `reward_terms`, `mdp-request.desMdpSpec`,
+`pomdpBeliefState.hiddenStates`, `releaseProbePlan.probes`,
+`neuralTrainingCorpus.examples`, `learningModelResult.promotionBlockers`,
+`learningOptimizerResult.candidates`, and `releasePackagePlan.releaseGates`.
+Learning preflight does not certify controller output or machine execution:
+machine-ready release remains blocked while artifact provenance, reward terms,
+belief probes, neural quality evidence, validation, simulation, setup, quality,
+operator, or release-package gates are unresolved. Failed checks feed
+MDP/POMDP/neural workers so future plans can add evidence, split or combine
+work, choose safer machines, regenerate instructions, or require human
+intervention earlier.
 
 ## `GET /fabrication/learning/rewards/catalog`
 

@@ -4636,6 +4636,22 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /des_engine::des::studio::StudioModelSpec/);
   assert.match(source, /des_engine::des::general::neural_network::FeedForwardNetwork/);
   assert.match(source, /machine-ready release stays blocked/);
+  assert.match(source, /async fn learning_preflight_catalog_http/);
+  assert.match(source, /fn learning_preflight_catalog_response/);
+  assert.match(source, /dd\.fabrication\.learning-preflight-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/learning\/preflight\/catalog"/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/learning\/preflight\/catalog",\s*get\(learning_preflight_catalog_http\),\s*\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/learning\/preflight\/catalog",\s*get\(learning_preflight_catalog_http\),\s*\)/,
+  );
+  assert.match(source, /learning-outcome-artifact-and-reward-state/);
+  assert.match(source, /mdp-pomdp-belief-and-policy-state/);
+  assert.match(source, /neural-corpus-quality-and-promotion-state/);
+  assert.match(source, /learning_preflight_catalog_endpoint_exposes_policy_promotion_gates/);
   assert.match(source, /async fn learning_reward_catalog_http/);
   assert.match(source, /fn learning_reward_catalog_response/);
   assert.match(source, /fn learning_reward_catalog_entries/);
@@ -6859,6 +6875,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
     readme,
     /`strategyRecommendation\.learningOutcomeQuality\.releasePolicy`/,
   );
+  assert.match(readme, /`GET \/learning\/preflight\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/learning\/preflight\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.learning-preflight-catalog\.v1/);
+  assert.match(readme, /`pomdpBeliefState\.hiddenStates`/);
+  assert.match(readme, /`neuralTrainingCorpus\.examples`/);
+  assert.match(readme, /machine-ready release remains blocked while artifact provenance/);
   assert.match(readme, /`GET \/learning\/rewards\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/learning\/rewards\/catalog`/);
   assert.match(readme, /dd\.fabrication\.learning-reward-catalog\.v1/);
@@ -8612,6 +8634,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/results\/catalog"/);
   assert.match(docs, /"path": "\/learning\/capabilities"/);
   assert.match(docs, /"path": "\/fabrication\/learning\/capabilities"/);
+  assert.match(docs, /"path": "\/learning\/preflight\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/learning\/preflight\/catalog"/);
   assert.match(docs, /"path": "\/schema"/);
   assert.match(docs, /"path": "\/fabrication\/schema"/);
   assert.match(docs, /"path": "\/examples"/);
@@ -8757,6 +8781,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/learning\/models\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/learning\/beliefs\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/learning\/optimizers\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/learning\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/learning\/models\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/learning\/optimizers\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/decomposition\/plan"/);
@@ -9173,6 +9198,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/postprocess\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/learning\/engines\/catalog/);
   assert.match(grafanaDashboards, /learning engine catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/learning\/preflight\/catalog/);
+  assert.match(grafanaDashboards, /learning preflight catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/learning\/rewards\/catalog/);
   assert.match(grafanaDashboards, /learning reward catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/learning\/models\/catalog/);
@@ -9336,6 +9363,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/artifacts\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/jobs/);
   assert.match(runtimeReadme, /\/fabrication\/learning\/engines\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/learning\/preflight\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/learning\/rewards\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/learning\/models\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/learning\/optimizers\/catalog/);
@@ -9467,6 +9495,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
     /\/fabrication\/jobs\/<jobId>\/artifacts\/<artifactId>/,
   );
   assert.match(observabilityReadme, /\/fabrication\/learning\/capabilities/);
+  assert.match(observabilityReadme, /\/fabrication\/learning\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/policy/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/observe/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/outcomes/);
@@ -9542,6 +9571,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/monitoring\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/postprocess\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/engines\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/learning\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/rewards\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/models\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/optimizers\/catalog/);
