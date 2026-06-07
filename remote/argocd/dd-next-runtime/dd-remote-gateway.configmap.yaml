@@ -147,6 +147,24 @@ data:
         proxy_pass http://dd-remote-auth.default.svc.cluster.local:8083;
       }
 
+      location = /jello {
+        default_type text/html;
+        return 200 '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Athlet-O performance gelatin</title></head><body style="font:16px/1.5 system-ui,sans-serif;margin:32px;max-width:760px"><h1>Athlet-O performance gelatin</h1><p>Protein gelatin cups with fiber, vitamin C, electrolytes, probiotics, and stevia. The full storefront is rolling with the web-home image; this gateway fallback keeps the public route available.</p><p><a href="/jello/sample?product=athlet">Sample Athlet-O pack</a> · <a href="/home">Service directory</a></p></body></html>';
+      }
+
+      location = /jello/ {
+        return 302 /jello;
+      }
+
+      location = /jello/sample {
+        default_type text/html;
+        return 200 '<section><h2>Athlet-O sample pack</h2><p>Includes protein gelatin, inulin fiber, vitamin C, electrolytes, probiotics, and stevia. Full htmx fragments are served by the web-home storefront once its image is rolled.</p></section>';
+      }
+
+      location = /jello/sample/ {
+        return 302 /jello/sample$is_args$args;
+      }
+
       location = / {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

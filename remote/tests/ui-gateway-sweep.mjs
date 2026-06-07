@@ -1,10 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
+const execFileAsync = promisify(execFile);
 const defaultBaseUrl = "https://54.91.17.58";
 const baseUrl = (process.env.REMOTE_DEV_BASE_URL ?? process.env.DD_GATEWAY_BASE_URL ?? defaultBaseUrl).replace(
   /\/+$/,
@@ -23,6 +26,10 @@ const runId =
 const outputDir = path.join(outputRoot, runId);
 const settleMs = Number.parseInt(process.env.REMOTE_DEV_UI_SETTLE_MS ?? "500", 10);
 const connectTimeoutMs = Number.parseInt(process.env.REMOTE_DEV_UI_CONNECT_TIMEOUT_MS ?? "10000", 10);
+const sourceRef =
+  process.argv.find((arg) => arg.startsWith("--source-ref="))?.slice("--source-ref=".length) ??
+  process.env.REMOTE_DEV_UI_SOURCE_REF ??
+  "";
 
 const publicUi = "public-ui";
 const protectedUi = "protected-ui";
@@ -130,7 +137,15 @@ function isStatusTarget(pathname) {
 }
 
 function isAuthPage(url, text) {
-  return /\/auth(?:[/?#]|$)/.test(url) || /missing required dd header|passphrase|dd remote auth/i.test(text);
+  const authFormUrl = (() => {
+    try {
+      const pathname = new URL(url).pathname.replace(/\/+$/, "");
+      return pathname === "/auth";
+    } catch {
+      return /\/auth(?:[?#]|\/(?:[?#]|$)|$)/.test(url);
+    }
+  })();
+  return authFormUrl || /missing required dd header|passphrase|dd remote auth/i.test(text);
 }
 
 function summarizeText(text) {
@@ -166,8 +181,12 @@ function kindFor(access, href) {
 }
 
 async function sourceDerivedTargets() {
-  const sourcePath = path.join(repoRoot, "remote/deployments/web-home-rs/src/main.rs");
-  const source = await fs.readFile(sourcePath, "utf8");
+  const sourceRepoPath = "remote/deployments/web-home-rs/src/main.rs";
+  const sourcePath = path.join(repoRoot, sourceRepoPath);
+  const source = sourceRef
+    ? (await execFileAsync("git", ["show", `${sourceRef}:${sourceRepoPath}`], { cwd: repoRoot, maxBuffer: 5 * 1024 * 1024 }))
+        .stdout
+    : await fs.readFile(sourcePath, "utf8");
   const rowPattern = /PathRow\s*\{\s*paths:\s*&\[(?<paths>[\s\S]*?)\],\s*target:\s*"(?<target>[^"]+)",\s*access:\s*(?<access>[A-Z_]+)/g;
   const entryPattern = /PathEntry\s*\{\s*label:\s*(?:"(?<label>[^"]+)"|[A-Z_]+),\s*href:\s*Some\("(?<href>[^"]+)"\)\s*\}/g;
   const targets = [];
