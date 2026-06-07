@@ -89,6 +89,117 @@ create index if not exists vapi_phone_call_events_caller_hash_created_at_idx
 create index if not exists vapi_phone_call_events_event_type_created_at_idx
   on vapi_phone_call_events (event_type, created_at desc);
 
+create table if not exists music_songs (
+  id uuid primary key default gen_random_uuid(),
+  title varchar(200) not null,
+  slug varchar(220) not null,
+  status varchar(32) default 'generated' not null,
+  seed bigint not null,
+  generation_date date default current_date not null,
+  storage_provider varchar(32),
+  storage_bucket varchar(200),
+  storage_key text,
+  audio_url text,
+  content_type varchar(120),
+  duration_millis integer default 180000 not null,
+  sample_rate integer default 44100 not null,
+  bpm_millis integer default 128000 not null,
+  genre varchar(80) default 'electronica' not null,
+  peak_micros integer default 0 not null,
+  rms_micros integer default 0 not null,
+  spectral_centroid_millihz bigint default 0 not null,
+  listenability_score_micros integer default 0 not null,
+  vote_score integer default 0 not null,
+  up_votes integer default 0 not null,
+  down_votes integer default 0 not null,
+  play_count integer default 0 not null,
+  summary jsonb default '{}'::jsonb not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  published_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint music_songs_title_size_chk
+    check (octet_length(title) between 1 and 200),
+  constraint music_songs_slug_format_chk
+    check (slug ~ '^[a-z0-9][a-z0-9-]{0,218}[a-z0-9]$'),
+  constraint music_songs_status_chk
+    check (status in ('generated', 'published', 'discarded', 'failed', 'archived')),
+  constraint music_songs_storage_provider_chk
+    check (storage_provider is null or storage_provider in ('s3', 'r2', 'gcs', 'drive', 'local')),
+  constraint music_songs_storage_bucket_size_chk
+    check (storage_bucket is null or octet_length(storage_bucket) <= 200),
+  constraint music_songs_storage_key_size_chk
+    check (storage_key is null or octet_length(storage_key) <= 2048),
+  constraint music_songs_audio_url_size_chk
+    check (audio_url is null or octet_length(audio_url) <= 4096),
+  constraint music_songs_content_type_size_chk
+    check (content_type is null or octet_length(content_type) <= 120),
+  constraint music_songs_duration_chk
+    check (duration_millis between 1 and 1800000),
+  constraint music_songs_sample_rate_chk
+    check (sample_rate between 8000 and 192000),
+  constraint music_songs_bpm_chk
+    check (bpm_millis between 1 and 300000),
+  constraint music_songs_genre_size_chk
+    check (octet_length(genre) between 1 and 80),
+  constraint music_songs_metric_nonnegative_chk
+    check (
+      peak_micros >= 0
+      and rms_micros >= 0
+      and spectral_centroid_millihz >= 0
+      and listenability_score_micros between 0 and 1000000
+      and up_votes >= 0
+      and down_votes >= 0
+      and play_count >= 0
+    ),
+  constraint music_songs_summary_object_chk
+    check (jsonb_typeof(summary) = 'object'),
+  constraint music_songs_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object'),
+  constraint music_songs_published_audio_chk
+    check (status <> 'published' or audio_url is not null)
+);
+
+create unique index if not exists music_songs_slug_uq
+  on music_songs (slug);
+
+create index if not exists music_songs_published_at_idx
+  on music_songs (published_at desc)
+  where status = 'published';
+
+create index if not exists music_songs_generation_date_status_idx
+  on music_songs (generation_date desc, status);
+
+create index if not exists music_songs_vote_score_idx
+  on music_songs (vote_score desc, published_at desc)
+  where status = 'published';
+
+create table if not exists music_song_votes (
+  id uuid primary key default gen_random_uuid(),
+  song_id uuid not null,
+  visitor_hash varchar(64) not null,
+  user_agent_hash varchar(64),
+  vote_value smallint not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint music_song_votes_visitor_hash_chk
+    check (visitor_hash ~ '^[a-f0-9]{64}$'),
+  constraint music_song_votes_user_agent_hash_chk
+    check (user_agent_hash is null or user_agent_hash ~ '^[a-f0-9]{64}$'),
+  constraint music_song_votes_value_chk
+    check (vote_value in (-1, 1))
+);
+
+create unique index if not exists music_song_votes_song_visitor_uq
+  on music_song_votes (song_id, visitor_hash);
+
+create index if not exists music_song_votes_song_created_at_idx
+  on music_song_votes (song_id, created_at desc);
+
+alter table if exists music_song_votes
+  add constraint music_song_votes_song_fk
+  foreign key (song_id) references music_songs(id);
+
 create table if not exists container_pool_configs (
   id uuid primary key default gen_random_uuid(),
   slug varchar(120) not null,
