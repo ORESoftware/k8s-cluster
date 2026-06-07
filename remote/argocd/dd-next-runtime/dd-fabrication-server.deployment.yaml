@@ -144,6 +144,7 @@ spec:
                 '"path": "/fabrication/machines/catalog"' \
                 '"path": "/fabrication/machines/select"' \
                 '"path": "/fabrication/controllers/catalog"' \
+                '"path": "/fabrication/controllers/result"' \
                 '"path": "/fabrication/materials/catalog"' \
                 '"path": "/fabrication/materials/plan"' \
                 '"path": "/fabrication/materials/result"' \

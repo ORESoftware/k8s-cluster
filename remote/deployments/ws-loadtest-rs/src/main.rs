@@ -35,9 +35,7 @@ impl MessageEncoding {
         match value.trim().to_ascii_lowercase().as_str() {
             "json" => Some(Self::Json),
             "msgpack" | "messagepack" | "message-pack" => Some(Self::MessagePack),
-            "protobuf" | "proto" | "protocol-buffers" | "protocol_buffers" => {
-                Some(Self::Protobuf)
-            }
+            "protobuf" | "proto" | "protocol-buffers" | "protocol_buffers" => Some(Self::Protobuf),
             "flatbuffers" | "flatbuffer" | "flat-buffers" | "flat_buffers" => {
                 Some(Self::FlatBuffers)
             }
@@ -330,6 +328,7 @@ async fn run_pipeline_client(
                 let send_pending = Arc::clone(&pending);
                 let send_stats = Arc::clone(&stats);
                 let send_payload = payload.clone();
+                let send_encodings = encodings.clone();
                 let sender = tokio::spawn(async move {
                     let mut seq: u64 = 0;
                     let mut ticker = tokio::time::interval(send_interval);
@@ -339,13 +338,13 @@ async fn run_pipeline_client(
                         ticker.tick().await;
                         seq = seq.wrapping_add(1);
                         let id = format!("c{client_id}-{seq}");
-                        let encoding = encodings[(seq as usize - 1) % encodings.len()];
+                        let encoding = send_encodings[(seq as usize - 1) % send_encodings.len()];
                         let frame = encode_pipeline_message(&id, &send_payload, encoding);
                         if let Ok(mut map) = send_pending.lock() {
                             map.insert(id.clone(), Instant::now());
                             send_stats.in_flight.store(map.len(), Ordering::Relaxed);
                         }
-                        if writer.send(Message::Text(frame)).await.is_err() {
+                        if writer.send(frame).await.is_err() {
                             break;
                         }
                         send_stats.sent.fetch_add(1, Ordering::Relaxed);
@@ -417,6 +416,304 @@ fn extract_id(frame: &str) -> Option<String> {
 
 fn json_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn encode_pipeline_message(id: &str, payload: &str, encoding: MessageEncoding) -> Message {
+    match encoding {
+        MessageEncoding::Json => Message::Text(format!(
+            r#"{{"id":"{}","payload":"{}"}}"#,
+            json_escape(id),
+            json_escape(payload)
+        )),
+        MessageEncoding::MessagePack => {
+            Message::Binary(encode_msgpack_pipeline_message(id, payload))
+        }
+        MessageEncoding::Protobuf => Message::Binary(encode_protobuf_pipeline_message(id, payload)),
+        MessageEncoding::FlatBuffers => {
+            Message::Binary(encode_flatbuffers_pipeline_message(id, payload))
+        }
+    }
+}
+
+fn extract_id_from_message(message: &Message) -> Option<String> {
+    match message {
+        Message::Text(text) => extract_id(text),
+        Message::Binary(bytes) => extract_id_from_binary(bytes)
+            .or_else(|| std::str::from_utf8(bytes).ok().and_then(extract_id)),
+        _ => None,
+    }
+}
+
+fn extract_id_from_binary(bytes: &[u8]) -> Option<String> {
+    extract_id_msgpack(bytes)
+        .or_else(|| extract_id_protobuf(bytes))
+        .or_else(|| extract_id_flatbuffers(bytes))
+}
+
+fn encode_msgpack_pipeline_message(id: &str, payload: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(id.len() + payload.len() + 16);
+    out.push(0x82);
+    push_msgpack_str(&mut out, "id");
+    push_msgpack_str(&mut out, id);
+    push_msgpack_str(&mut out, "payload");
+    push_msgpack_str(&mut out, payload);
+    out
+}
+
+fn push_msgpack_str(out: &mut Vec<u8>, value: &str) {
+    let len = value.len();
+    if len <= 31 {
+        out.push(0xa0 | len as u8);
+    } else if len <= u8::MAX as usize {
+        out.extend_from_slice(&[0xd9, len as u8]);
+    } else if len <= u16::MAX as usize {
+        out.push(0xda);
+        out.extend_from_slice(&(len as u16).to_be_bytes());
+    } else {
+        out.push(0xdb);
+        out.extend_from_slice(&(len as u32).to_be_bytes());
+    }
+    out.extend_from_slice(value.as_bytes());
+}
+
+fn read_msgpack_str(bytes: &[u8], index: &mut usize) -> Option<String> {
+    let tag = *bytes.get(*index)?;
+    *index += 1;
+    let len = match tag {
+        0xa0..=0xbf => (tag & 0x1f) as usize,
+        0xd9 => {
+            let len = *bytes.get(*index)? as usize;
+            *index += 1;
+            len
+        }
+        0xda => {
+            let len = u16::from_be_bytes([*bytes.get(*index)?, *bytes.get(*index + 1)?]) as usize;
+            *index += 2;
+            len
+        }
+        0xdb => {
+            let len = u32::from_be_bytes([
+                *bytes.get(*index)?,
+                *bytes.get(*index + 1)?,
+                *bytes.get(*index + 2)?,
+                *bytes.get(*index + 3)?,
+            ]) as usize;
+            *index += 4;
+            len
+        }
+        _ => return None,
+    };
+    let end = index.checked_add(len)?;
+    let value = std::str::from_utf8(bytes.get(*index..end)?)
+        .ok()?
+        .to_string();
+    *index = end;
+    Some(value)
+}
+
+fn extract_id_msgpack(bytes: &[u8]) -> Option<String> {
+    let mut index = 0usize;
+    let tag = *bytes.get(index)?;
+    index += 1;
+    let pairs = match tag {
+        0x80..=0x8f => (tag & 0x0f) as usize,
+        0xde => {
+            let len = u16::from_be_bytes([*bytes.get(index)?, *bytes.get(index + 1)?]) as usize;
+            index += 2;
+            len
+        }
+        0xdf => {
+            let len = u32::from_be_bytes([
+                *bytes.get(index)?,
+                *bytes.get(index + 1)?,
+                *bytes.get(index + 2)?,
+                *bytes.get(index + 3)?,
+            ]) as usize;
+            index += 4;
+            len
+        }
+        _ => return None,
+    };
+
+    for _ in 0..pairs {
+        let key = read_msgpack_str(bytes, &mut index)?;
+        let value = read_msgpack_str(bytes, &mut index)?;
+        if key == "id" {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn encode_protobuf_pipeline_message(id: &str, payload: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(id.len() + payload.len() + 8);
+    push_protobuf_string_field(&mut out, 1, id);
+    push_protobuf_string_field(&mut out, 2, payload);
+    out
+}
+
+fn push_protobuf_string_field(out: &mut Vec<u8>, field_number: u64, value: &str) {
+    push_varint(out, (field_number << 3) | 2);
+    push_varint(out, value.len() as u64);
+    out.extend_from_slice(value.as_bytes());
+}
+
+fn push_varint(out: &mut Vec<u8>, mut value: u64) {
+    while value >= 0x80 {
+        out.push((value as u8) | 0x80);
+        value >>= 7;
+    }
+    out.push(value as u8);
+}
+
+fn read_varint(bytes: &[u8], index: &mut usize) -> Option<u64> {
+    let mut value = 0u64;
+    let mut shift = 0u32;
+    loop {
+        let byte = *bytes.get(*index)?;
+        *index += 1;
+        value |= ((byte & 0x7f) as u64) << shift;
+        if byte & 0x80 == 0 {
+            return Some(value);
+        }
+        shift += 7;
+        if shift > 63 {
+            return None;
+        }
+    }
+}
+
+fn extract_id_protobuf(bytes: &[u8]) -> Option<String> {
+    let mut index = 0usize;
+    while index < bytes.len() {
+        let key = read_varint(bytes, &mut index)?;
+        let field_number = key >> 3;
+        let wire_type = key & 0x07;
+        match wire_type {
+            0 => {
+                let _ = read_varint(bytes, &mut index)?;
+            }
+            1 => {
+                index = index.checked_add(8)?;
+            }
+            2 => {
+                let len = read_varint(bytes, &mut index)? as usize;
+                let end = index.checked_add(len)?;
+                let value = bytes.get(index..end)?;
+                if field_number == 1 {
+                    return Some(std::str::from_utf8(value).ok()?.to_string());
+                }
+                index = end;
+            }
+            5 => {
+                index = index.checked_add(4)?;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+fn encode_flatbuffers_pipeline_message(id: &str, payload: &str) -> Vec<u8> {
+    let mut out = vec![0u8; 24];
+    write_u32_le(&mut out, 0, 12);
+    write_u16_le(&mut out, 4, 8);
+    write_u16_le(&mut out, 6, 12);
+    write_u16_le(&mut out, 8, 4);
+    write_u16_le(&mut out, 10, 8);
+    write_i32_le(&mut out, 12, 8);
+
+    let id_start = append_flatbuffers_string(&mut out, id);
+    write_u32_le(&mut out, 16, (id_start - 16) as u32);
+    let payload_start = append_flatbuffers_string(&mut out, payload);
+    write_u32_le(&mut out, 20, (payload_start - 20) as u32);
+    out
+}
+
+fn append_flatbuffers_string(out: &mut Vec<u8>, value: &str) -> usize {
+    let start = out.len();
+    out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+    out.extend_from_slice(value.as_bytes());
+    out.push(0);
+    while out.len() % 4 != 0 {
+        out.push(0);
+    }
+    start
+}
+
+fn write_u16_le(out: &mut [u8], offset: usize, value: u16) {
+    out[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_u32_le(out: &mut [u8], offset: usize, value: u32) {
+    out[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_i32_le(out: &mut [u8], offset: usize, value: i32) {
+    out[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn read_u16_le(bytes: &[u8], offset: usize) -> Option<u16> {
+    Some(u16::from_le_bytes([
+        *bytes.get(offset)?,
+        *bytes.get(offset + 1)?,
+    ]))
+}
+
+fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32> {
+    Some(u32::from_le_bytes([
+        *bytes.get(offset)?,
+        *bytes.get(offset + 1)?,
+        *bytes.get(offset + 2)?,
+        *bytes.get(offset + 3)?,
+    ]))
+}
+
+fn read_i32_le(bytes: &[u8], offset: usize) -> Option<i32> {
+    Some(i32::from_le_bytes([
+        *bytes.get(offset)?,
+        *bytes.get(offset + 1)?,
+        *bytes.get(offset + 2)?,
+        *bytes.get(offset + 3)?,
+    ]))
+}
+
+fn read_flatbuffers_string(
+    bytes: &[u8],
+    table: usize,
+    vtable: usize,
+    field: usize,
+) -> Option<String> {
+    let vtable_len = read_u16_le(bytes, vtable)? as usize;
+    let field_offset_pos = vtable.checked_add(4 + field * 2)?;
+    if field_offset_pos + 2 > vtable + vtable_len {
+        return None;
+    }
+    let field_offset = read_u16_le(bytes, field_offset_pos)? as usize;
+    if field_offset == 0 {
+        return None;
+    }
+    let slot = table.checked_add(field_offset)?;
+    let string_start = slot.checked_add(read_u32_le(bytes, slot)? as usize)?;
+    let len = read_u32_le(bytes, string_start)? as usize;
+    let data_start = string_start.checked_add(4)?;
+    let data_end = data_start.checked_add(len)?;
+    Some(
+        std::str::from_utf8(bytes.get(data_start..data_end)?)
+            .ok()?
+            .to_string(),
+    )
+}
+
+fn extract_id_flatbuffers(bytes: &[u8]) -> Option<String> {
+    let table = read_u32_le(bytes, 0)? as usize;
+    let vtable_offset = read_i32_le(bytes, table)?;
+    let vtable = if vtable_offset >= 0 {
+        table.checked_sub(vtable_offset as usize)?
+    } else {
+        table.checked_add((-vtable_offset) as usize)?
+    };
+    read_flatbuffers_string(bytes, table, vtable, 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -854,7 +1151,8 @@ async fn main() {
         "ws-loadtest-rs starting target_ws_url={} client_count={} load_mode={} hold_seconds={} \
          connect_timeout_seconds={} receive_timeout_seconds={} reconnect_delay_ms={} \
          ramp_delay_ms={} report_interval_seconds={} messages_per_second_per_client={} \
-         message_payload={:?} correlation_timeout_seconds={}",
+         message_payload={:?} message_encodings={} loadtest_transports={} \
+         correlation_timeout_seconds={}",
         config.target_ws_url,
         config.client_count,
         config.load_mode,
@@ -866,6 +1164,8 @@ async fn main() {
         config.report_interval_seconds,
         config.messages_per_second_per_client,
         config.message_payload,
+        format_message_encodings(&config.message_encodings),
+        config.loadtest_transports,
         config.correlation_timeout_seconds
     );
 

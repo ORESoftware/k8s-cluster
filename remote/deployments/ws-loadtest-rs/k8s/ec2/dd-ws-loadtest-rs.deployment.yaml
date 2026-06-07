@@ -51,6 +51,10 @@ spec:
               value: "1.0"
             - name: MESSAGE_PAYLOAD
               value: "gleam-bench-payload"
+            - name: MESSAGE_ENCODINGS
+              value: "json,msgpack,protobuf,flatbuffers"
+            - name: LOADTEST_TRANSPORTS
+              value: "http,tcp,websocket"
             - name: HOLD_SECONDS
               value: "600"
             - name: CONNECT_TIMEOUT_SECONDS

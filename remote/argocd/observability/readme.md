@@ -180,6 +180,7 @@ Currently opted-in:
   and worker result review panel for
   `/fabrication/design/formats`, `/fabrication/machines/catalog`,
   `/fabrication/machines/select`, `/fabrication/controllers/catalog`,
+  `/fabrication/controllers/result`,
   `/fabrication/materials/catalog`, `/fabrication/materials/plan`,
   `/fabrication/materials/result`,
   `/fabrication/slicers/catalog`, `/fabrication/slicers/result`,

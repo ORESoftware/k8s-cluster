@@ -98,7 +98,7 @@ Gateway path map:
 - `/fabrication/`, `/fabrication/healthz`, `/fabrication/metrics`, `/fabrication/docs/api`,
   `/fabrication/capabilities`, `/fabrication/schema`, `/fabrication/examples`,
   `/fabrication/machines/catalog`, `POST /fabrication/machines/select`,
-  `/fabrication/controllers/catalog`,
+  `/fabrication/controllers/catalog`, `POST /fabrication/controllers/result`,
   `/fabrication/materials/catalog`, `POST /fabrication/materials/plan`,
   `POST /fabrication/materials/result`,
   `/fabrication/design/formats`, `/fabrication/slicers/catalog`,

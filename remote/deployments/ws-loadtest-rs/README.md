@@ -25,6 +25,10 @@ Default behavior:
   round-trip latency. Designed for driving
   [`dd-akka-ws-server`](../akka-ws-server/readme.md)'s `/ws/asyncjava`
   and `/ws/akkastreams` endpoints for the side-by-side comparison.
+- `LOADTEST_TRANSPORTS` (default `http,tcp,websocket`) — advertised
+  transport matrix for deployment/runbook automation. This binary's active
+  generator is WebSocket; HTTP/TCP coverage for the suite comes from the lock
+  load testers and trigger APIs.
 
 ### Pipeline mode (`LOAD_MODE=pipeline`) extras
 
@@ -32,8 +36,15 @@ Default behavior:
   rate. With `CLIENT_COUNT=50` and this at `10`, offered load is 500
   msg/s.
 - `MESSAGE_PAYLOAD` (default `"a benchmark message body"`) — string
-  inserted into the JSON payload field. The frame shape is
-  `{"id":"c{client}-{seq}","payload":"{payload}"}`.
+  inserted into the payload field. The logical message shape is
+  `{id: "c{client}-{seq}", payload: "{payload}"}`.
+- `MESSAGE_ENCODINGS` (default `json`; aliases: `MESSAGE_ENCODING` for
+  a single value) — comma-separated encoding list to round-robin over.
+  Supported values are `json`, `msgpack`, `protobuf`, and `flatbuffers`.
+  JSON is sent as a text WebSocket frame; the other encodings are sent as
+  binary frames using the same two-field message model. Protobuf uses field
+  `1 = id`, `2 = payload`; FlatBuffers uses a table with `id` then
+  `payload`.
 - `CORRELATION_TIMEOUT_SECONDS` (default `10`) — pending-request entries
   older than this are swept from the in-memory map so a slow server
   can't OOM the loadtest. Responses that arrive after the sweep are
@@ -42,6 +53,12 @@ Default behavior:
 The pipeline report line replaces `messages` with the latency histogram
 (`p50_us / p95_us / p99_us / max_us`) plus
 `sent / received / in_flight / correlation_misses / receive_errors`.
+
+`LOAD_MODE=gcs` always sends the chat.vibe JSON envelope expected by the
+GCS WebSocket service. The encoding list is still logged on startup so the
+GCS deployments share the same operator-visible matrix, but binary encoding
+experiments should use `LOAD_MODE=pipeline` against an endpoint that can echo
+or decode those frames.
 
 ## Container pool smoke mode
 

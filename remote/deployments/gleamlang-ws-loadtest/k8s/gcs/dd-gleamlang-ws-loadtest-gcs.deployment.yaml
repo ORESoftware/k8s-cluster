@@ -58,6 +58,10 @@ spec:
               value: "0"
             - name: MESSAGES_PER_SECOND_PER_CLIENT
               value: "1.0"
+            - name: MESSAGE_ENCODINGS
+              value: "json,msgpack,protobuf,flatbuffers"
+            - name: LOADTEST_TRANSPORTS
+              value: "http,tcp,websocket"
             - name: CONNECT_TIMEOUT_MS
               value: "30000"
             - name: RECONNECT_DELAY_MS
