@@ -206,6 +206,12 @@ spec:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
                   optional: true
+            - name: MUSIC_VOTE_HASH_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: MUSIC_VOTE_HASH_SALT
+                  optional: true
           ports:
             - name: http
               containerPort: 8115
