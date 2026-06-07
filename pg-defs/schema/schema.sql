@@ -202,6 +202,312 @@ alter table if exists music_song_votes
   add constraint music_song_votes_song_fk
   foreign key (song_id) references music_songs(id);
 
+create table if not exists sound_recorder_accounts (
+  id uuid primary key default gen_random_uuid(),
+  status varchar(32) default 'active' not null,
+  external_subject varchar(240),
+  display_name varchar(160),
+  legal_region varchar(64),
+  retention_hours integer default 500 not null,
+  retention_policy_version varchar(80) default 'sound-recorder-retention-v1' not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint sound_recorder_accounts_status_chk
+    check (status in ('active', 'paused', 'locked', 'deleted')),
+  constraint sound_recorder_accounts_external_subject_size_chk
+    check (external_subject is null or octet_length(external_subject) between 1 and 240),
+  constraint sound_recorder_accounts_display_name_size_chk
+    check (display_name is null or octet_length(display_name) between 1 and 160),
+  constraint sound_recorder_accounts_legal_region_format_chk
+    check (legal_region is null or legal_region ~ '^[A-Za-z0-9._:/-]{1,64}$'),
+  constraint sound_recorder_accounts_retention_hours_chk
+    check (retention_hours between 1 and 500),
+  constraint sound_recorder_accounts_retention_policy_version_chk
+    check (retention_policy_version ~ '^[A-Za-z0-9._:/-]{1,80}$')
+);
+
+create unique index if not exists sound_recorder_accounts_external_subject_uq
+  on sound_recorder_accounts (external_subject)
+  where external_subject is not null;
+
+create index if not exists sound_recorder_accounts_status_updated_at_idx
+  on sound_recorder_accounts (status, updated_at desc);
+
+create table if not exists sound_recorder_devices (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null,
+  platform varchar(24) not null,
+  status varchar(32) default 'active' not null,
+  install_id varchar(160) not null,
+  device_label varchar(160),
+  app_version varchar(80),
+  os_version varchar(80),
+  token_hash varchar(64) not null,
+  token_last4 varchar(4) not null,
+  consent_version varchar(80) not null,
+  consent_accepted_at timestamptz not null,
+  recording_indicator_acknowledged boolean default false not null,
+  last_seen_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint sound_recorder_devices_platform_chk
+    check (platform in ('ios', 'android')),
+  constraint sound_recorder_devices_status_chk
+    check (status in ('active', 'revoked', 'lost', 'replaced', 'deleted')),
+  constraint sound_recorder_devices_install_id_size_chk
+    check (octet_length(install_id) between 1 and 160),
+  constraint sound_recorder_devices_device_label_size_chk
+    check (device_label is null or octet_length(device_label) between 1 and 160),
+  constraint sound_recorder_devices_app_version_size_chk
+    check (app_version is null or octet_length(app_version) between 1 and 80),
+  constraint sound_recorder_devices_os_version_size_chk
+    check (os_version is null or octet_length(os_version) between 1 and 80),
+  constraint sound_recorder_devices_token_hash_chk
+    check (token_hash ~ '^[a-f0-9]{64}$'),
+  constraint sound_recorder_devices_token_last4_chk
+    check (token_last4 ~ '^[A-Za-z0-9_-]{4}$'),
+  constraint sound_recorder_devices_consent_version_chk
+    check (consent_version ~ '^[A-Za-z0-9._:/-]{1,80}$')
+);
+
+create unique index if not exists sound_recorder_devices_token_hash_uq
+  on sound_recorder_devices (token_hash);
+
+create unique index if not exists sound_recorder_devices_account_install_uq
+  on sound_recorder_devices (account_id, install_id);
+
+create index if not exists sound_recorder_devices_account_status_idx
+  on sound_recorder_devices (account_id, status, updated_at desc);
+
+alter table if exists sound_recorder_devices
+  add constraint sound_recorder_devices_account_fk
+  foreign key (account_id) references sound_recorder_accounts(id);
+
+create table if not exists sound_recorder_upload_sessions (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null,
+  device_id uuid not null,
+  status varchar(32) default 'active' not null,
+  storage_provider varchar(32) default 's3' not null,
+  storage_bucket varchar(200) not null,
+  storage_prefix text not null,
+  content_type varchar(120) default 'audio/mp4' not null,
+  codec varchar(80),
+  sample_rate integer,
+  channel_count integer default 1 not null,
+  segment_duration_seconds integer default 60 not null,
+  max_segment_bytes integer default 10485760 not null,
+  started_at timestamptz default now() not null,
+  last_heartbeat_at timestamptz,
+  closed_at timestamptz,
+  expires_at timestamptz,
+  client_timezone varchar(80),
+  legal_region varchar(64),
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint sound_recorder_upload_sessions_status_chk
+    check (status in ('active', 'closed', 'revoked', 'expired')),
+  constraint sound_recorder_upload_sessions_storage_provider_chk
+    check (storage_provider in ('s3')),
+  constraint sound_recorder_upload_sessions_storage_bucket_size_chk
+    check (octet_length(storage_bucket) between 1 and 200),
+  constraint sound_recorder_upload_sessions_storage_prefix_size_chk
+    check (octet_length(storage_prefix) between 1 and 2048),
+  constraint sound_recorder_upload_sessions_content_type_size_chk
+    check (octet_length(content_type) between 1 and 120),
+  constraint sound_recorder_upload_sessions_codec_size_chk
+    check (codec is null or octet_length(codec) between 1 and 80),
+  constraint sound_recorder_upload_sessions_sample_rate_chk
+    check (sample_rate is null or sample_rate between 8000 and 192000),
+  constraint sound_recorder_upload_sessions_channel_count_chk
+    check (channel_count between 1 and 8),
+  constraint sound_recorder_upload_sessions_segment_duration_chk
+    check (segment_duration_seconds between 1 and 600),
+  constraint sound_recorder_upload_sessions_max_segment_bytes_chk
+    check (max_segment_bytes between 1 and 209715200),
+  constraint sound_recorder_upload_sessions_client_timezone_size_chk
+    check (client_timezone is null or octet_length(client_timezone) between 1 and 80),
+  constraint sound_recorder_upload_sessions_legal_region_format_chk
+    check (legal_region is null or legal_region ~ '^[A-Za-z0-9._:/-]{1,64}$'),
+  constraint sound_recorder_upload_sessions_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists sound_recorder_upload_sessions_storage_prefix_uq
+  on sound_recorder_upload_sessions (storage_prefix);
+
+create index if not exists sound_recorder_upload_sessions_account_started_idx
+  on sound_recorder_upload_sessions (account_id, started_at desc);
+
+create index if not exists sound_recorder_upload_sessions_device_status_idx
+  on sound_recorder_upload_sessions (device_id, status, started_at desc);
+
+alter table if exists sound_recorder_upload_sessions
+  add constraint sound_recorder_upload_sessions_account_fk
+  foreign key (account_id) references sound_recorder_accounts(id);
+
+alter table if exists sound_recorder_upload_sessions
+  add constraint sound_recorder_upload_sessions_device_fk
+  foreign key (device_id) references sound_recorder_devices(id);
+
+create table if not exists sound_recorder_segments (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null,
+  device_id uuid not null,
+  session_id uuid not null,
+  sequence_number integer not null,
+  status varchar(32) default 'pending' not null,
+  storage_provider varchar(32) default 's3' not null,
+  storage_bucket varchar(200) not null,
+  storage_key text not null,
+  content_type varchar(120) default 'audio/mp4' not null,
+  codec varchar(80),
+  captured_started_at timestamptz not null,
+  captured_ended_at timestamptz,
+  duration_millis integer not null,
+  byte_count integer,
+  sha256_hex varchar(64),
+  upload_url_expires_at timestamptz,
+  etag varchar(160),
+  uploaded_at timestamptz,
+  expires_at timestamptz not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint sound_recorder_segments_sequence_chk
+    check (sequence_number >= 0),
+  constraint sound_recorder_segments_status_chk
+    check (status in ('pending', 'uploaded', 'failed', 'expired', 'deleted')),
+  constraint sound_recorder_segments_storage_provider_chk
+    check (storage_provider in ('s3')),
+  constraint sound_recorder_segments_storage_bucket_size_chk
+    check (octet_length(storage_bucket) between 1 and 200),
+  constraint sound_recorder_segments_storage_key_size_chk
+    check (octet_length(storage_key) between 1 and 2048),
+  constraint sound_recorder_segments_content_type_size_chk
+    check (octet_length(content_type) between 1 and 120),
+  constraint sound_recorder_segments_codec_size_chk
+    check (codec is null or octet_length(codec) between 1 and 80),
+  constraint sound_recorder_segments_duration_chk
+    check (duration_millis between 1 and 600000),
+  constraint sound_recorder_segments_byte_count_chk
+    check (byte_count is null or byte_count between 0 and 209715200),
+  constraint sound_recorder_segments_sha256_chk
+    check (sha256_hex is null or sha256_hex ~ '^[a-f0-9]{64}$'),
+  constraint sound_recorder_segments_etag_size_chk
+    check (etag is null or octet_length(etag) between 1 and 160),
+  constraint sound_recorder_segments_capture_window_chk
+    check (captured_ended_at is null or captured_ended_at >= captured_started_at),
+  constraint sound_recorder_segments_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists sound_recorder_segments_session_sequence_uq
+  on sound_recorder_segments (session_id, sequence_number);
+
+create unique index if not exists sound_recorder_segments_storage_key_uq
+  on sound_recorder_segments (storage_key);
+
+create index if not exists sound_recorder_segments_account_capture_idx
+  on sound_recorder_segments (account_id, captured_started_at desc)
+  where status = 'uploaded';
+
+create index if not exists sound_recorder_segments_expiry_idx
+  on sound_recorder_segments (expires_at asc)
+  where status in ('pending', 'uploaded');
+
+alter table if exists sound_recorder_segments
+  add constraint sound_recorder_segments_account_fk
+  foreign key (account_id) references sound_recorder_accounts(id);
+
+alter table if exists sound_recorder_segments
+  add constraint sound_recorder_segments_device_fk
+  foreign key (device_id) references sound_recorder_devices(id);
+
+alter table if exists sound_recorder_segments
+  add constraint sound_recorder_segments_session_fk
+  foreign key (session_id) references sound_recorder_upload_sessions(id);
+
+create table if not exists sound_recorder_evidence_exports (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null,
+  device_id uuid,
+  created_by_device_id uuid,
+  status varchar(32) default 'requested' not null,
+  requested_from timestamptz not null,
+  requested_to timestamptz not null,
+  segment_count integer default 0 not null,
+  manifest jsonb default '{}'::jsonb not null,
+  download_url_expires_at timestamptz,
+  requested_at timestamptz default now() not null,
+  ready_at timestamptz,
+  expires_at timestamptz,
+  meta_data jsonb default '{}'::jsonb not null,
+  constraint sound_recorder_evidence_exports_status_chk
+    check (status in ('requested', 'ready', 'expired', 'revoked')),
+  constraint sound_recorder_evidence_exports_window_chk
+    check (requested_to > requested_from),
+  constraint sound_recorder_evidence_exports_segment_count_chk
+    check (segment_count >= 0),
+  constraint sound_recorder_evidence_exports_manifest_object_chk
+    check (jsonb_typeof(manifest) = 'object'),
+  constraint sound_recorder_evidence_exports_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists sound_recorder_evidence_exports_account_requested_idx
+  on sound_recorder_evidence_exports (account_id, requested_at desc);
+
+create index if not exists sound_recorder_evidence_exports_status_idx
+  on sound_recorder_evidence_exports (status, requested_at desc);
+
+alter table if exists sound_recorder_evidence_exports
+  add constraint sound_recorder_evidence_exports_account_fk
+  foreign key (account_id) references sound_recorder_accounts(id);
+
+alter table if exists sound_recorder_evidence_exports
+  add constraint sound_recorder_evidence_exports_device_fk
+  foreign key (device_id) references sound_recorder_devices(id);
+
+alter table if exists sound_recorder_evidence_exports
+  add constraint sound_recorder_evidence_exports_created_by_device_fk
+  foreign key (created_by_device_id) references sound_recorder_devices(id);
+
+create table if not exists sound_recorder_audit_events (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid,
+  device_id uuid,
+  event_type varchar(80) not null,
+  event_hash varchar(64) not null,
+  payload jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint sound_recorder_audit_events_event_type_format_chk
+    check (event_type ~ '^[A-Za-z0-9._:/-]{1,80}$'),
+  constraint sound_recorder_audit_events_event_hash_chk
+    check (event_hash ~ '^[a-f0-9]{64}$'),
+  constraint sound_recorder_audit_events_payload_object_chk
+    check (jsonb_typeof(payload) = 'object')
+);
+
+create unique index if not exists sound_recorder_audit_events_event_hash_uq
+  on sound_recorder_audit_events (event_hash);
+
+create index if not exists sound_recorder_audit_events_account_created_idx
+  on sound_recorder_audit_events (account_id, created_at desc)
+  where account_id is not null;
+
+create index if not exists sound_recorder_audit_events_type_created_idx
+  on sound_recorder_audit_events (event_type, created_at desc);
+
+alter table if exists sound_recorder_audit_events
+  add constraint sound_recorder_audit_events_account_fk
+  foreign key (account_id) references sound_recorder_accounts(id);
+
+alter table if exists sound_recorder_audit_events
+  add constraint sound_recorder_audit_events_device_fk
+  foreign key (device_id) references sound_recorder_devices(id);
+
 create table if not exists container_pool_configs (
   id uuid primary key default gen_random_uuid(),
   slug varchar(120) not null,
