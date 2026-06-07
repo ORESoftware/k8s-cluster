@@ -6416,6 +6416,24 @@ struct TextInstructionSignals {
     has_text_pcb_assembly_context: bool,
     has_text_pcb_assembly_setup_evidence: bool,
     has_text_pcb_assembly_reflow_inspection_evidence: bool,
+    has_text_fixture_tooling_context: bool,
+    has_text_fixture_tooling_design_evidence: bool,
+    has_text_fixture_tooling_proof_evidence: bool,
+    has_text_adaptive_compensation_context: bool,
+    has_text_adaptive_compensation_measurement_evidence: bool,
+    has_text_adaptive_compensation_release_evidence: bool,
+    has_text_insert_installation_context: bool,
+    has_text_insert_installation_setup_evidence: bool,
+    has_text_insert_installation_release_evidence: bool,
+    has_text_adhesive_bonding_context: bool,
+    has_text_adhesive_bonding_prep_evidence: bool,
+    has_text_adhesive_bonding_cure_release_evidence: bool,
+    has_text_fastener_installation_context: bool,
+    has_text_fastener_installation_setup_evidence: bool,
+    has_text_fastener_installation_release_evidence: bool,
+    has_text_rivet_installation_context: bool,
+    has_text_rivet_installation_setup_evidence: bool,
+    has_text_rivet_installation_release_evidence: bool,
     has_text_part_marking_context: bool,
     has_text_part_marking_setup_evidence: bool,
     has_text_part_marking_readability_evidence: bool,
@@ -7907,6 +7925,140 @@ fn wants_fixture_tooling(value: &str) -> bool {
         || token.contains("fixture-release")
 }
 
+fn wants_adaptive_compensation(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("adaptive-compensation-cell")
+        || token.contains("adaptive-compensation")
+        || token.contains("adaptive-compensation-job")
+        || token.contains("closed-loop-machining")
+        || token.contains("closed-loop-compensation")
+        || token.contains("in-process-probing")
+        || token.contains("in-process-measurement")
+        || token.contains("inspection-feedback")
+        || token.contains("measurement-feedback")
+        || token.contains("first-article-compensation")
+        || token.contains("probe-compensation")
+        || token.contains("probing-compensation")
+        || token.contains("offset-compensation")
+        || token.contains("offset-update")
+        || token.contains("work-offset-update")
+        || token.contains("tool-wear-update")
+        || token.contains("wear-offset-update")
+        || token.contains("cutter-wear-update")
+        || token.contains("spring-pass-compensation")
+        || token.contains("compensated-rerun")
+        || token.contains("adaptive-machining-release")
+}
+
+fn wants_insert_installation(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("insert-installation-cell")
+        || token.contains("insert-installation")
+        || token.contains("insert-installation-job")
+        || token.contains("hardware-insertion")
+        || token.contains("hardware-install")
+        || token.contains("threaded-insert")
+        || token.contains("threaded-inserts")
+        || token.contains("heat-set-insert")
+        || token.contains("heat-stake-insert")
+        || token.contains("ultrasonic-insert")
+        || token.contains("press-fit-insert")
+        || token.contains("pressfit-insert")
+        || token.contains("helicoil")
+        || token.contains("heli-coil")
+        || token.contains("keensert")
+        || token.contains("pem-nut")
+        || token.contains("rivet-nut")
+        || token.contains("rivnut")
+        || token.contains("captive-nut")
+        || token.contains("dowel-pin")
+        || token.contains("alignment-pin")
+        || token.contains("locator-pin")
+        || token.contains("bushing-install")
+        || token.contains("bearing-insert")
+        || token.contains("insert-pullout")
+        || token.contains("insert-torque")
+        || token.contains("insert-release")
+}
+
+fn wants_adhesive_bonding(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("adhesive-bonding-cell")
+        || token.contains("adhesive-bonding")
+        || token.contains("adhesive-bonding-job")
+        || token.contains("adhesive")
+        || token.contains("bonding")
+        || token.contains("bonded")
+        || token.contains("bonded-assembly")
+        || token.contains("structural-adhesive")
+        || token.contains("epoxy-bond")
+        || token.contains("urethane-adhesive")
+        || token.contains("cyanoacrylate")
+        || token.contains("anaerobic-adhesive")
+        || token.contains("film-adhesive")
+        || token.contains("bondline")
+        || token.contains("bond-line")
+        || token.contains("lap-shear")
+        || token.contains("peel-test")
+        || token.contains("surface-activation")
+        || token.contains("plasma-activation")
+        || token.contains("primer-application")
+        || token.contains("adhesive-cure")
+        || token.contains("cure-fixture")
+        || token.contains("bond-release")
+}
+
+fn wants_fastener_installation(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("fastener-installation-cell")
+        || token.contains("fastener-installation")
+        || token.contains("fastener-installation-job")
+        || token.contains("mechanical-fastening")
+        || token.contains("screw-install")
+        || token.contains("bolt-install")
+        || token.contains("bolted-assembly")
+        || token.contains("screwed-assembly")
+        || token.contains("torque-sequence")
+        || token.contains("torque-pattern")
+        || token.contains("torque-spec")
+        || token.contains("threadlocker")
+        || token.contains("thread-locker")
+        || token.contains("washer-stack")
+        || token.contains("spacer-stack")
+        || token.contains("witness-mark")
+        || token.contains("torque-stripe")
+        || token.contains("prevailing-torque")
+        || token.contains("retorque")
+        || token.contains("fastener-release")
+}
+
+fn wants_rivet_installation(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("rivet-installation-cell")
+        || token.contains("rivet-installation")
+        || token.contains("rivet-installation-job")
+        || token.contains("rivet-setting")
+        || token.contains("rivet-set")
+        || token.contains("blind-rivet")
+        || token.contains("pop-rivet")
+        || token.contains("solid-rivet")
+        || token.contains("semi-tubular-rivet")
+        || token.contains("tubular-rivet")
+        || token.contains("rivet-squeeze")
+        || token.contains("rivet-buck")
+        || token.contains("buck-bar")
+        || token.contains("mandrel-break")
+        || token.contains("rivet-tail")
+        || token.contains("shop-head")
+        || token.contains("clinch")
+        || token.contains("clinching")
+        || token.contains("clinched-joint")
+        || token.contains("staking")
+        || token.contains("swaging")
+        || token.contains("peening")
+        || token.contains("rivet-release")
+}
+
 fn wants_sheet_forming(value: &str) -> bool {
     let token = normalize_token(value);
     let has_press_brake_cell = token.contains("press-brake")
@@ -8555,6 +8707,26 @@ fn is_fixture_tooling_kind(kind: &str) -> bool {
     wants_fixture_tooling(kind)
 }
 
+fn is_adaptive_compensation_kind(kind: &str) -> bool {
+    wants_adaptive_compensation(kind)
+}
+
+fn is_insert_installation_kind(kind: &str) -> bool {
+    wants_insert_installation(kind)
+}
+
+fn is_adhesive_bonding_kind(kind: &str) -> bool {
+    wants_adhesive_bonding(kind)
+}
+
+fn is_fastener_installation_kind(kind: &str) -> bool {
+    wants_fastener_installation(kind)
+}
+
+fn is_rivet_installation_kind(kind: &str) -> bool {
+    wants_rivet_installation(kind)
+}
+
 fn is_composite_layup_kind(kind: &str) -> bool {
     wants_composite_layup(kind)
 }
@@ -8809,6 +8981,11 @@ fn machine_class(kind: &str) -> MachineClass {
         || is_hot_wire_foam_cutter_kind(&token)
         || is_gear_cutting_kind(&token)
         || is_fixture_tooling_kind(&token)
+        || is_adaptive_compensation_kind(&token)
+        || is_insert_installation_kind(&token)
+        || is_adhesive_bonding_kind(&token)
+        || is_fastener_installation_kind(&token)
+        || is_rivet_installation_kind(&token)
         || is_part_marking_kind(&token)
         || is_packaging_labeling_kind(&token)
     {
@@ -9870,12 +10047,15 @@ fn default_machines() -> Vec<MachineProfile> {
             kind: "fixture-tooling-cell".to_string(),
             controller: Some("fixture-tooling-job".to_string()),
             materials: Some(vec![
+                "metal".to_string(),
                 "aluminum".to_string(),
+                "aluminum-6061".to_string(),
                 "steel".to_string(),
                 "tooling-board".to_string(),
                 "polymer".to_string(),
                 "resin".to_string(),
                 "fixture-plate".to_string(),
+                "soft-jaw".to_string(),
                 "hardware".to_string(),
             ]),
             work_envelope_mm: Some(vec![700.0, 450.0, 250.0]),
@@ -9891,6 +10071,162 @@ fn default_machines() -> Vec<MachineProfile> {
                 "datum-transfer".to_string(),
                 "clamp-clearance-proof".to_string(),
                 "fixture-release".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "adaptive-compensation-cell-1".to_string(),
+            kind: "adaptive-compensation-cell".to_string(),
+            controller: Some("adaptive-compensation-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "polymer".to_string(),
+                "resin".to_string(),
+                "composite".to_string(),
+                "aluminum".to_string(),
+                "steel".to_string(),
+                "titanium".to_string(),
+                "inspection-artifact".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![700.0, 450.0, 250.0]),
+            axes: Some(5),
+            operations: Some(vec![
+                "adaptive-compensation".to_string(),
+                "closed-loop-machining".to_string(),
+                "in-process-probing".to_string(),
+                "first-article-compensation".to_string(),
+                "work-offset-update".to_string(),
+                "tool-wear-update".to_string(),
+                "spring-pass-compensation".to_string(),
+                "compensated-rerun".to_string(),
+                "measurement-feedback-release".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "insert-installation-cell-1".to_string(),
+            kind: "insert-installation-cell".to_string(),
+            controller: Some("insert-installation-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "resin".to_string(),
+                "composite".to_string(),
+                "metal".to_string(),
+                "aluminum".to_string(),
+                "printed-part".to_string(),
+                "machined-part".to_string(),
+                "threaded-insert".to_string(),
+                "hardware".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![650.0, 420.0, 220.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "insert-installation".to_string(),
+                "heat-set-insert".to_string(),
+                "press-fit-insert".to_string(),
+                "helicoil-installation".to_string(),
+                "dowel-pin-installation".to_string(),
+                "bushing-installation".to_string(),
+                "hardware-lot-trace".to_string(),
+                "insert-height-inspection".to_string(),
+                "torque-pullout-verification".to_string(),
+                "insert-release".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "adhesive-bonding-cell-1".to_string(),
+            kind: "adhesive-bonding-cell".to_string(),
+            controller: Some("adhesive-bonding-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "resin".to_string(),
+                "composite".to_string(),
+                "metal".to_string(),
+                "aluminum".to_string(),
+                "printed-part".to_string(),
+                "machined-part".to_string(),
+                "adhesive".to_string(),
+                "epoxy".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![900.0, 600.0, 300.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "adhesive-bonding".to_string(),
+                "surface-preparation".to_string(),
+                "plasma-activation".to_string(),
+                "primer-application".to_string(),
+                "adhesive-mix-dispense".to_string(),
+                "bondline-control".to_string(),
+                "fixture-clamp-cure".to_string(),
+                "cure-verification".to_string(),
+                "lap-shear-peel-inspection".to_string(),
+                "bond-release".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "fastener-installation-cell-1".to_string(),
+            kind: "fastener-installation-cell".to_string(),
+            controller: Some("fastener-installation-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "resin".to_string(),
+                "composite".to_string(),
+                "metal".to_string(),
+                "aluminum".to_string(),
+                "steel".to_string(),
+                "printed-part".to_string(),
+                "machined-part".to_string(),
+                "fastener".to_string(),
+                "hardware".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![850.0, 550.0, 260.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "fastener-installation".to_string(),
+                "mechanical-fastening".to_string(),
+                "screw-installation".to_string(),
+                "bolt-installation".to_string(),
+                "washer-spacer-stack".to_string(),
+                "threadlocker-application".to_string(),
+                "torque-sequence".to_string(),
+                "witness-mark".to_string(),
+                "retorque-verification".to_string(),
+                "fastener-release".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "rivet-installation-cell-1".to_string(),
+            kind: "rivet-installation-cell".to_string(),
+            controller: Some("rivet-installation-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "composite".to_string(),
+                "metal".to_string(),
+                "aluminum".to_string(),
+                "steel".to_string(),
+                "sheet-metal".to_string(),
+                "printed-part".to_string(),
+                "machined-part".to_string(),
+                "rivet".to_string(),
+                "hardware".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![900.0, 600.0, 280.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "rivet-installation".to_string(),
+                "rivet-setting".to_string(),
+                "blind-rivet-installation".to_string(),
+                "solid-rivet-bucking".to_string(),
+                "clinching".to_string(),
+                "staking".to_string(),
+                "swaging".to_string(),
+                "hole-stack-verification".to_string(),
+                "mandrel-break-verification".to_string(),
+                "shop-head-inspection".to_string(),
+                "rivet-release".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -18304,17 +18640,32 @@ fn infer_requested_parts(
     let needs_pcb_fabrication_part = wants_pcb_fabrication(&objective_token);
     let needs_pcb_assembly_part = wants_pcb_assembly(&objective_token);
     let needs_fixture_tooling_part = wants_fixture_tooling(&objective_token);
+    let needs_adaptive_compensation_part = wants_adaptive_compensation(&objective_token);
+    let needs_insert_installation_part = wants_insert_installation(&objective_token);
+    let needs_adhesive_bonding_part = wants_adhesive_bonding(&objective_token);
+    let needs_fastener_installation_part = wants_fastener_installation(&objective_token);
+    let needs_rivet_installation_part = wants_rivet_installation(&objective_token);
     let needs_part_marking_part = wants_part_marking(&objective_token);
     let needs_packaging_labeling_part = wants_packaging_labeling(&objective_token);
     let needs_assembly_join_part = !needs_pcb_fabrication_part
         && !needs_pcb_assembly_part
         && !needs_fixture_tooling_part
+        && !needs_adaptive_compensation_part
+        && !needs_insert_installation_part
+        && !needs_adhesive_bonding_part
+        && !needs_fastener_installation_part
+        && !needs_rivet_installation_part
         && !needs_part_marking_part
         && !needs_packaging_labeling_part
         && wants_assembly_joining(&objective_token);
     let needs_metal_joining_part = !needs_pcb_fabrication_part
         && !needs_pcb_assembly_part
         && !needs_fixture_tooling_part
+        && !needs_adaptive_compensation_part
+        && !needs_insert_installation_part
+        && !needs_adhesive_bonding_part
+        && !needs_fastener_installation_part
+        && !needs_rivet_installation_part
         && !needs_part_marking_part
         && !needs_packaging_labeling_part
         && wants_metal_joining(&objective_token);
@@ -18329,6 +18680,11 @@ fn infer_requested_parts(
         && !needs_pcb_fabrication_part
         && !needs_pcb_assembly_part
         && !needs_fixture_tooling_part
+        && !needs_adaptive_compensation_part
+        && !needs_insert_installation_part
+        && !needs_adhesive_bonding_part
+        && !needs_fastener_installation_part
+        && !needs_rivet_installation_part
         && !needs_part_marking_part
         && !needs_packaging_labeling_part
         && !needs_composite_layup_part
@@ -18366,6 +18722,12 @@ fn infer_requested_parts(
         && !needs_molding_casting_part
         && !needs_pcb_fabrication_part
         && !needs_pcb_assembly_part
+        && !needs_fixture_tooling_part
+        && !needs_adaptive_compensation_part
+        && !needs_insert_installation_part
+        && !needs_adhesive_bonding_part
+        && !needs_fastener_installation_part
+        && !needs_rivet_installation_part
         && !needs_part_marking_part
         && !needs_packaging_labeling_part
         && !needs_sheet_forming_part
@@ -18404,6 +18766,12 @@ fn infer_requested_parts(
             && !needs_molding_casting_part
             && !needs_pcb_fabrication_part
             && !needs_pcb_assembly_part
+            && !needs_fixture_tooling_part
+            && !needs_adaptive_compensation_part
+            && !needs_insert_installation_part
+            && !needs_adhesive_bonding_part
+            && !needs_fastener_installation_part
+            && !needs_rivet_installation_part
             && !needs_part_marking_part
             && !needs_packaging_labeling_part
             && !needs_gear_cutting_part)
@@ -18416,6 +18784,12 @@ fn infer_requested_parts(
             && !needs_molding_casting_part
             && !needs_pcb_fabrication_part
             && !needs_pcb_assembly_part
+            && !needs_fixture_tooling_part
+            && !needs_adaptive_compensation_part
+            && !needs_insert_installation_part
+            && !needs_adhesive_bonding_part
+            && !needs_fastener_installation_part
+            && !needs_rivet_installation_part
             && !needs_part_marking_part
             && !needs_packaging_labeling_part
             && !needs_sheet_forming_part
@@ -18618,6 +18992,72 @@ fn infer_requested_parts(
             material: Some(material.clone()),
             preferred_method: Some("pcb-assembly".to_string()),
             tolerance_mm: Some(tolerance_mm.max(0.10)),
+        });
+    }
+    if needs_fixture_tooling_part {
+        parts.push(RequestedPart {
+            id: "fixture-tooling-release".to_string(),
+            description:
+                "custom workholding fixture, soft jaws, drill jig, inspection nest, vacuum fixture, pallet, locator, clamp, datum-transfer, dry-run proof, and release inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("fixture-tooling".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.05)),
+        });
+    }
+    if needs_adaptive_compensation_part {
+        parts.push(RequestedPart {
+            id: "adaptive-compensation-release".to_string(),
+            description:
+                "closed-loop machining, in-process probing, inspection feedback, offset update, tool-wear update, compensated rerun, first-article verification, and release inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("adaptive-compensation".to_string()),
+            tolerance_mm: Some(tolerance_mm),
+        });
+    }
+    if needs_insert_installation_part {
+        parts.push(RequestedPart {
+            id: "insert-installation-release".to_string(),
+            description:
+                "threaded insert, heat-set insert, press-fit bushing, helicoil, dowel pin, alignment hardware, hole-prep verification, torque/pullout check, and insert release inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("insert-installation".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.05)),
+        });
+    }
+    if needs_adhesive_bonding_part {
+        parts.push(RequestedPart {
+            id: "adhesive-bonding-release".to_string(),
+            description:
+                "adhesive bonded assembly, surface preparation, adhesive lot/mix, bondline control, fixture clamp cure, cure verification, lap-shear or peel inspection, and release inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("adhesive-bonding".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.10)),
+        });
+    }
+    if needs_fastener_installation_part {
+        parts.push(RequestedPart {
+            id: "fastener-installation-release".to_string(),
+            description:
+                "mechanical fastener installation, screw or bolt kit trace, washer/spacer stack, threadlocker, torque sequence, witness marks, retorque, inspection, and release inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("fastener-installation".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.10)),
+        });
+    }
+    if needs_rivet_installation_part {
+        parts.push(RequestedPart {
+            id: "rivet-installation-release".to_string(),
+            description:
+                "rivet, blind-rivet, clinched, staked, swaged, or peened joint release with hole stack, access, tool, mandrel, shop-head, deformation, inspection, and release evidence inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("rivet-installation".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.12)),
         });
     }
     if needs_part_marking_part {
@@ -18978,6 +19418,35 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_pcb_assembly(value));
+    let wants_fixture_tooling_cell = preferred.as_deref().is_some_and(wants_fixture_tooling)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_fixture_tooling(value));
+    let wants_adaptive_compensation_cell = preferred
+        .as_deref()
+        .is_some_and(wants_adaptive_compensation)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_adaptive_compensation(value));
+    let wants_insert_installation_cell =
+        preferred.as_deref().is_some_and(wants_insert_installation)
+            || preferred_methods
+                .iter()
+                .any(|value| wants_insert_installation(value));
+    let wants_adhesive_bonding_cell = preferred.as_deref().is_some_and(wants_adhesive_bonding)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_adhesive_bonding(value));
+    let wants_fastener_installation_cell = preferred
+        .as_deref()
+        .is_some_and(wants_fastener_installation)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_fastener_installation(value));
+    let wants_rivet_installation_cell = preferred.as_deref().is_some_and(wants_rivet_installation)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_rivet_installation(value));
     let wants_packaging_labeling_cell = preferred.as_deref().is_some_and(wants_packaging_labeling)
         || preferred_methods
             .iter()
@@ -19200,6 +19669,13 @@ fn choose_machine<'a>(
             return machine;
         }
     }
+    if wants_adhesive_bonding_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_adhesive_bonding_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
     if wants_surface_finishing_cell {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_surface_finishing_kind(&machine.kind)
@@ -19217,6 +19693,48 @@ fn choose_machine<'a>(
     if wants_pcb_assembly_cell {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_pcb_assembly_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_fixture_tooling_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_fixture_tooling_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_adaptive_compensation_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_adaptive_compensation_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_insert_installation_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_insert_installation_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_adhesive_bonding_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_adhesive_bonding_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_fastener_installation_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_fastener_installation_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_rivet_installation_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_rivet_installation_kind(&machine.kind)
         }) {
             return machine;
         }
@@ -19521,6 +20039,16 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         !wants_composite_layup && tokens.iter().any(|token| wants_molding_casting(token));
     let wants_pcb_fabrication = tokens.iter().any(|token| wants_pcb_fabrication(token));
     let wants_pcb_assembly = tokens.iter().any(|token| wants_pcb_assembly(token));
+    let wants_fixture_tooling = tokens.iter().any(|token| wants_fixture_tooling(token));
+    let wants_adaptive_compensation = tokens
+        .iter()
+        .any(|token| wants_adaptive_compensation(token));
+    let wants_insert_installation = tokens.iter().any(|token| wants_insert_installation(token));
+    let wants_adhesive_bonding = tokens.iter().any(|token| wants_adhesive_bonding(token));
+    let wants_fastener_installation = tokens
+        .iter()
+        .any(|token| wants_fastener_installation(token));
+    let wants_rivet_installation = tokens.iter().any(|token| wants_rivet_installation(token));
     let wants_part_marking = tokens.iter().any(|token| wants_part_marking(token));
     let wants_packaging_labeling = tokens.iter().any(|token| wants_packaging_labeling(token));
     let wants_sheet_forming = tokens.iter().any(|token| wants_sheet_forming(token));
@@ -19557,6 +20085,12 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         || wants_molding_casting
         || wants_pcb_fabrication
         || wants_pcb_assembly
+        || wants_fixture_tooling
+        || wants_adaptive_compensation
+        || wants_insert_installation
+        || wants_adhesive_bonding
+        || wants_fastener_installation
+        || wants_rivet_installation
         || wants_part_marking
         || wants_packaging_labeling
         || wants_sheet_forming
@@ -19596,6 +20130,12 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_molding_casting || is_molding_casting_kind(&machine.kind))
         && (!wants_pcb_fabrication || is_pcb_fabrication_kind(&machine.kind))
         && (!wants_pcb_assembly || is_pcb_assembly_kind(&machine.kind))
+        && (!wants_fixture_tooling || is_fixture_tooling_kind(&machine.kind))
+        && (!wants_adaptive_compensation || is_adaptive_compensation_kind(&machine.kind))
+        && (!wants_insert_installation || is_insert_installation_kind(&machine.kind))
+        && (!wants_adhesive_bonding || is_adhesive_bonding_kind(&machine.kind))
+        && (!wants_fastener_installation || is_fastener_installation_kind(&machine.kind))
+        && (!wants_rivet_installation || is_rivet_installation_kind(&machine.kind))
         && (!wants_part_marking || is_part_marking_kind(&machine.kind))
         && (!wants_packaging_labeling || is_packaging_labeling_kind(&machine.kind))
         && (!wants_sheet_forming || is_sheet_forming_kind(&machine.kind))
@@ -19841,6 +20381,76 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
                 || operation.contains("udi")
                 || operation.contains("readability")
                 || operation.contains("vision-verify")))
+        || (wants_fixture_tooling(preference)
+            && (operation.contains("fixture-tooling")
+                || operation.contains("soft-jaw")
+                || operation.contains("fixture-plate")
+                || operation.contains("drill-jig")
+                || operation.contains("inspection-fixture")
+                || operation.contains("assembly-fixture")
+                || operation.contains("vacuum-fixture")
+                || operation.contains("datum-transfer")
+                || operation.contains("clamp-clearance")
+                || operation.contains("fixture-release")))
+        || (wants_adaptive_compensation(preference)
+            && (operation.contains("adaptive-compensation")
+                || operation.contains("closed-loop")
+                || operation.contains("in-process-probing")
+                || operation.contains("first-article-compensation")
+                || operation.contains("work-offset-update")
+                || operation.contains("tool-wear-update")
+                || operation.contains("spring-pass-compensation")
+                || operation.contains("compensated-rerun")
+                || operation.contains("measurement-feedback")))
+        || (wants_insert_installation(preference)
+            && (operation.contains("insert-installation")
+                || operation.contains("heat-set-insert")
+                || operation.contains("press-fit-insert")
+                || operation.contains("helicoil")
+                || operation.contains("dowel-pin")
+                || operation.contains("alignment-pin")
+                || operation.contains("bushing-installation")
+                || operation.contains("hardware-lot-trace")
+                || operation.contains("insert-height")
+                || operation.contains("torque-pullout")))
+        || (wants_adhesive_bonding(preference)
+            && (operation.contains("adhesive-bonding")
+                || operation.contains("surface-preparation")
+                || operation.contains("plasma-activation")
+                || operation.contains("primer-application")
+                || operation.contains("adhesive-mix")
+                || operation.contains("bondline")
+                || operation.contains("fixture-clamp-cure")
+                || operation.contains("cure-verification")
+                || operation.contains("lap-shear")
+                || operation.contains("peel-inspection")
+                || operation.contains("bond-release")))
+        || (wants_fastener_installation(preference)
+            && (operation.contains("fastener-installation")
+                || operation.contains("mechanical-fastening")
+                || operation.contains("screw-installation")
+                || operation.contains("bolt-installation")
+                || operation.contains("washer-spacer")
+                || operation.contains("threadlocker")
+                || operation.contains("torque-sequence")
+                || operation.contains("witness-mark")
+                || operation.contains("retorque")
+                || operation.contains("fastener-release")))
+        || (wants_rivet_installation(preference)
+            && (operation.contains("rivet-installation")
+                || operation.contains("rivet-setting")
+                || operation.contains("blind-rivet")
+                || operation.contains("solid-rivet")
+                || operation.contains("rivet-squeeze")
+                || operation.contains("rivet-buck")
+                || operation.contains("buck-bar")
+                || operation.contains("mandrel-break")
+                || operation.contains("shop-head")
+                || operation.contains("clinch")
+                || operation.contains("staking")
+                || operation.contains("swaging")
+                || operation.contains("peening")
+                || operation.contains("rivet-release")))
         || (wants_sheet_forming(preference)
             && (operation.contains("press-brake")
                 || operation.contains("sheet-forming")
@@ -20169,6 +20779,24 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         }
         MachineClass::Other if is_pcb_assembly_kind(&part.machine_kind) => {
             "load board data, verify BOM/centroid/stencil, print solder paste, set feeders/nozzles/fiducials, pick-and-place components, run reviewed reflow, inspect AOI/X-ray, test, rework, and record release"
+        }
+        MachineClass::Other if is_fixture_tooling_kind(&part.machine_kind) => {
+            "verify part and operation revision, design fixture datums, machine or print fixture body, install locators/clamps/vacuum hardware, prove clearance and datum transfer, and record fixture release"
+        }
+        MachineClass::Other if is_adaptive_compensation_kind(&part.machine_kind) => {
+            "capture baseline measurement, compute reviewed offset or wear compensation, apply controlled update, rerun compensated path, verify first article, and lock the compensation release record"
+        }
+        MachineClass::Other if is_insert_installation_kind(&part.machine_kind) => {
+            "verify insert specification and prepared hole, install threaded or press-fit hardware with reviewed heat/force/depth controls, inspect height/orientation, prove torque or pullout, and record insert release"
+        }
+        MachineClass::Other if is_adhesive_bonding_kind(&part.machine_kind) => {
+            "verify substrate surface prep and adhesive lot, mix or dispense adhesive, control bondline and fixture clamp, cure under reviewed limits, inspect bond quality, and record bonded assembly release"
+        }
+        MachineClass::Other if is_fastener_installation_kind(&part.machine_kind) => {
+            "verify fastener kit and joint stack, install washers or spacers, apply threadlocker when required, torque in reviewed sequence, mark fasteners, retorque or inspect witness marks, and record fastener release"
+        }
+        MachineClass::Other if is_rivet_installation_kind(&part.machine_kind) => {
+            "verify rivet specification, hole stack, grip length, access, and tool setup, set or buck rivets, inspect mandrel break or shop head, verify clinch/stake/swage deformation, and record rivet release"
         }
         MachineClass::Other if is_part_marking_kind(&part.machine_kind) => {
             "verify mark artwork, serial/UDI/data-matrix content, datum and fixture, run reviewed laser/dot-peen/inkjet/pad-print mark, vision-verify readability and permanence, and record traceability release"
@@ -22056,6 +22684,179 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                     .to_string(),
             ],
         ),
+        MachineClass::Other if is_fixture_tooling_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "fixture-tooling-job".to_string()),
+            vec![
+                "; draft fixture/tooling job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [fixture-tooling-design-boundary]: verify part revision, target operation, stock state, datum scheme, locator strategy, clamp/vacuum plan, soft-jaw or nest profile, material, hardware, and release owner"
+                    .to_string(),
+                "VERIFY_FIXTURE_REQUIREMENTS part_revision=operator-reviewed target_operation=operator-reviewed stock_state=operator-reviewed datum_scheme=operator-reviewed clearance_model=operator-reviewed"
+                    .to_string(),
+                "MAKE_FIXTURE_BODY process=operator-reviewed material=operator-reviewed soft_jaw_or_plate_profile=operator-reviewed machine_allowance=operator-reviewed serial_or_tool_id=recorded"
+                    .to_string(),
+                "INSTALL_LOCATORS_AND_CLAMPS locators=operator-reviewed clamps=operator-reviewed hardware_torque=operator-reviewed vacuum_ports=operator-reviewed clamp_force=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [fixture-tooling-proof-boundary]: verify dry run, clamp clearance, tool reach, part loading/unloading, vacuum leak or clamp force, datum transfer, gage repeatability, first article, and maintenance/release record"
+                    .to_string(),
+                "PROVE_FIXTURE_CLEARANCE dry_run=required tool_clearance=verified load_unload=verified crash_risk=operator-reviewed human_intervention=operator-reviewed"
+                    .to_string(),
+                "VERIFY_DATUM_TRANSFER probe_or_gage=required repeatability=operator-reviewed clamp_force_or_vacuum=recorded first_article=required"
+                    .to_string(),
+                "COMPLETE record part/stock revision, fixture datum design, locators, clamps, hardware, soft-jaw or nest profile, vacuum/leak state, clamp force, dry-run proof, datum transfer, gage repeatability, maintenance needs, and fixture release"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final fixture-tooling parameters must come from the released part revision, target machine operation, stock and datum plan, locator/clamp/vacuum design, soft-jaw or nest profile, hardware specification, clearance model, and proof/runout criteria."
+                    .to_string(),
+                "Human signoff is required for fixture datum ownership, target operation fit, stock variation, locator/clamp access, clamp force or vacuum leak proof, tool clearance, load/unload ergonomics, dry run, datum-transfer repeatability, first article, maintenance limits, and release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_adaptive_compensation_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "adaptive-compensation-job".to_string()),
+            vec![
+                "; draft adaptive compensation job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [adaptive-compensation-measurement-boundary]: verify baseline program revision, machine warmup, probe or inspection device calibration, datum alignment, feature list, nominal values, tolerance band, and measurement uncertainty"
+                    .to_string(),
+                "CAPTURE_BASELINE_MEASUREMENT program_revision=operator-reviewed datum=verified probe_calibration=recorded feature_set=operator-reviewed nominal_values=verified uncertainty=recorded"
+                    .to_string(),
+                "COMPUTE_COMPENSATION method=operator-reviewed source_measurements=recorded offset_delta=operator-reviewed wear_delta=operator-reviewed max_delta_limit=verified"
+                    .to_string(),
+                "APPLY_OFFSET_UPDATE controller=operator-reviewed work_offset=operator-reviewed tool_wear=operator-reviewed change_control=required rollback_snapshot=recorded"
+                    .to_string(),
+                "CHECKPOINT [adaptive-compensation-release-boundary]: verify compensated dry run, spring/pass or rerun path, first-article measurement, residual error, drift trend, rollback plan, and release owner"
+                    .to_string(),
+                "RUN_COMPENSATED_RERUN dry_run=required path=operator-reviewed spring_pass=operator-reviewed process_limits=verified human_intervention=operator-reviewed"
+                    .to_string(),
+                "VERIFY_COMPENSATED_RESULT first_article=required residual_error=recorded drift_trend=operator-reviewed rollback_plan=recorded release_owner=operator-reviewed"
+                    .to_string(),
+                "COMPLETE record baseline measurement, feature list, nominal/tolerance/uncertainty, compensation computation, offset or wear update, rollback snapshot, compensated dry run, first article, residual error, drift trend, and release"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final adaptive compensation parameters must come from released program revision, calibrated probe or inspection data, datum alignment, feature list, nominal/tolerance data, measurement uncertainty, controller offset/wear tables, and approved compensation limits."
+                    .to_string(),
+                "Human signoff is required for compensation direction and magnitude, work-offset or tool-wear update, rollback snapshot, dry run, first-article result, residual error, drift trend, process limit impact, and machine-ready release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_insert_installation_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "insert-installation-job".to_string()),
+            vec![
+                "; draft insert installation job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [insert-installation-setup-boundary]: verify part revision, insert specification, hardware lot, parent material, boss wall, prepared hole diameter/depth, chamfer, fixture, tool tip, heat or force profile, and operator owner"
+                    .to_string(),
+                "VERIFY_INSERT_SETUP part_revision=operator-reviewed insert_spec=operator-reviewed hardware_lot=recorded parent_material=verified hole_diameter=verified hole_depth=verified fixture=operator-reviewed"
+                    .to_string(),
+                "INSTALL_INSERT method=operator-reviewed heat_or_force_profile=operator-reviewed tool_tip=verified depth_stop=verified orientation=operator-reviewed dwell_or_press_time=recorded"
+                    .to_string(),
+                "CHECKPOINT [insert-installation-release-boundary]: verify installed height, perpendicularity or orientation, surrounding boss condition, thread engagement, torque test or pullout coupon, first article, rework limit, and insert release"
+                    .to_string(),
+                "VERIFY_INSERT_RELEASE installed_height=recorded orientation=verified boss_condition=inspected thread_go_nogo=required torque_or_pullout=operator-reviewed first_article=required"
+                    .to_string(),
+                "COMPLETE record insert spec, lot trace, hole prep, tool/heat/force setup, installed height, orientation, thread gage, torque or pullout result, first article, rework limit, and release owner"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final insert-installation parameters must come from released part revision, insert datasheet, parent material, prepared-hole specification, fixture plan, heat/force/depth controls, and inspection criteria."
+                    .to_string(),
+                "Human signoff is required for insert spec, hardware lot, parent material, boss geometry, hole prep, heat-set or press-fit profile, tool tip, depth stop, installed height, thread engagement, torque/pullout result, first article, rework limits, and release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_adhesive_bonding_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "adhesive-bonding-job".to_string()),
+            vec![
+                "; draft adhesive bonding job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [adhesive-bonding-prep-boundary]: verify part revisions, substrate materials, adhesive specification, adhesive lot, shelf life, mix ratio, surface cleaning, abrasion, plasma or primer activation, bondline target, fixture, and release owner"
+                    .to_string(),
+                "VERIFY_BOND_PREP part_revisions=operator-reviewed substrates=verified adhesive_spec=operator-reviewed adhesive_lot=recorded shelf_life=verified surface_prep=operator-reviewed bondline=verified"
+                    .to_string(),
+                "APPLY_ADHESIVE mix_ratio=operator-reviewed open_time=tracked dispense_pattern=operator-reviewed bondline_spacers=verified fixture_clamp=operator-reviewed squeeze_out=inspected"
+                    .to_string(),
+                "CHECKPOINT [adhesive-bonding-cure-release-boundary]: verify clamp pressure, cure time, temperature/humidity, handling strength, void/squeeze-out inspection, lap-shear or peel coupon, dimensional fit, first article, and bonded-assembly release"
+                    .to_string(),
+                "VERIFY_BOND_CURE cure_time=recorded temperature_humidity=recorded clamp_pressure=operator-reviewed handling_strength=verified coupon=operator-reviewed"
+                    .to_string(),
+                "VERIFY_BOND_RELEASE visual_voids=inspected squeeze_out=inspected dimensional_fit=verified lap_shear_or_peel=operator-reviewed first_article=required release_owner=operator-reviewed"
+                    .to_string(),
+                "COMPLETE record substrate prep, adhesive lot/shelf life, mix ratio, open time, bondline, fixture/clamp cure, environment, coupon or proof test, dimensional fit, first article, rework limit, and release owner"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final adhesive-bonding parameters must come from released part revisions, substrate compatibility data, adhesive datasheet, lot/shelf-life evidence, surface-prep plan, bondline and fixture model, cure profile, and inspection criteria."
+                    .to_string(),
+                "Human signoff is required for surface cleaning/abrasion/activation, adhesive lot and mix ratio, open time, bondline thickness, fixture clamp pressure, cure time/environment, void or squeeze-out inspection, coupon proof, dimensional fit, first article, rework limits, and release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_fastener_installation_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "fastener-installation-job".to_string()),
+            vec![
+                "; draft fastener installation job generated by dd-fabrication-server".to_string(),
+                "CHECKPOINT [fastener-installation-setup-boundary]: verify part revisions, fastener specification, hardware lot, washer/spacer stack, joint stack thickness, prepared threads or inserts, access, torque tool calibration, threadlocker, and torque sequence"
+                    .to_string(),
+                "VERIFY_FASTENER_SETUP part_revisions=operator-reviewed fastener_spec=operator-reviewed hardware_lot=recorded washer_spacer_stack=verified joint_stack=verified torque_tool_calibration=recorded"
+                    .to_string(),
+                "INSTALL_FASTENERS pattern=operator-reviewed threadlocker=operator-reviewed run_down=controlled torque_sequence=operator-reviewed cross_thread_check=required clamp_gap=verified"
+                    .to_string(),
+                "CHECKPOINT [fastener-installation-release-boundary]: verify final torque, torque angle or prevailing torque, witness mark, clamp gap, thread engagement, retorque requirement, first article, and fastener release"
+                    .to_string(),
+                "VERIFY_FASTENER_RELEASE final_torque=recorded torque_angle=operator-reviewed witness_mark=applied thread_engagement=verified retorque=operator-reviewed first_article=required"
+                    .to_string(),
+                "COMPLETE record fastener kit, hardware lot, washer/spacer stack, joint stack, threadlocker, torque tool calibration, torque pattern, final torque, witness marks, retorque requirement, first article, and release owner"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final fastener-installation parameters must come from released part revisions, fastener specification, hardware lot, joint stack, washer/spacer plan, insert or thread evidence, threadlocker datasheet, torque tool calibration, and torque sequence."
+                    .to_string(),
+                "Human signoff is required for hardware lot trace, washer/spacer orientation, thread engagement, torque pattern, final torque or angle, threadlocker cure, witness marks, clamp gap, retorque requirement, first article, and release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_rivet_installation_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "rivet-installation-job".to_string()),
+            vec![
+                "; draft rivet / clinch / stake installation job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [rivet-installation-setup-boundary]: verify part revisions, rivet specification, hardware lot, material stack, hole diameter, hole alignment, grip length, access, backing support, buck bar or nosepiece, tool calibration, and squeeze/pull/press force"
+                    .to_string(),
+                "VERIFY_RIVET_SETUP part_revisions=operator-reviewed rivet_spec=operator-reviewed hardware_lot=recorded material_stack=verified hole_diameter=verified grip_length=verified tool_calibration=recorded"
+                    .to_string(),
+                "SET_RIVETS method=operator-reviewed access=verified backing_support=verified nosepiece_or_buck_bar=verified pull_or_squeeze_force=operator-reviewed deformation=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [rivet-installation-release-boundary]: verify mandrel break or shop head, head height, clinch/stake/swage deformation, clamp-up, cracks, looseness, pull or shear proof, first article, and rivet release"
+                    .to_string(),
+                "VERIFY_RIVET_RELEASE mandrel_break_or_shop_head=verified head_height=recorded deformation=verified clamp_up=verified cracks=inspected looseness=inspected proof_test=operator-reviewed first_article=required"
+                    .to_string(),
+                "COMPLETE record rivet specification, hardware lot, material stack, hole quality, tool calibration, pull/squeeze/press force, mandrel or shop-head inspection, deformation proof, first article, and release owner"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final rivet-installation parameters must come from released part revisions, rivet specification, material stack, hole-prep evidence, grip-length calculation, tool calibration, backing support, and pull/squeeze/press force limits."
+                    .to_string(),
+                "Human signoff is required for hole alignment, access, buck bar or nosepiece fit, rivet lot, mandrel break or shop head, clamp-up, clinch/stake/swage deformation, cracks, looseness, proof test, first article, and release."
+                    .to_string(),
+            ],
+        ),
         MachineClass::Other if is_part_marking_kind(&machine.kind) => (
             machine
                 .controller
@@ -23711,8 +24512,11 @@ fn is_machine_code_language(language: &str) -> bool {
                 | "klipper"
                 | "prusa"
                 | "shopbot"
+                | "sinumerik"
                 | "heidenhain"
                 | "mazatrol"
+                | "okuma-osp"
+                | "linuxcnc"
         )
 }
 
@@ -28259,6 +29063,504 @@ fn has_text_packaging_packout_release_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_fixture_tooling_context(language: &str, line: &str) -> bool {
+    if wants_fixture_tooling(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "fixture tooling",
+            "fixture-tooling",
+            "workholding fixture",
+            "workholding tooling",
+            "soft jaw",
+            "soft-jaw",
+            "vise jaw",
+            "custom jaw",
+            "fixture plate",
+            "tooling plate",
+            "drill jig",
+            "assembly jig",
+            "inspection jig",
+            "inspection fixture",
+            "assembly fixture",
+            "weld fixture",
+            "welding fixture",
+            "nest fixture",
+            "holding nest",
+            "vacuum fixture",
+            "vacuum hold-down",
+            "machining pallet",
+            "pallet fixture",
+            "datum transfer fixture",
+        ],
+    )
+}
+
+fn has_text_fixture_tooling_design_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "part revision",
+            "target operation",
+            "stock state",
+            "datum scheme",
+            "locator strategy",
+            "clamp plan",
+            "vacuum plan",
+            "soft-jaw profile",
+            "soft jaw profile",
+            "nest profile",
+            "hardware",
+            "clearance model",
+            "verify_fixture_requirements",
+            "make_fixture_body",
+            "install_locators_and_clamps",
+            "datum_scheme",
+            "stock_state",
+            "soft_jaw_or_plate_profile",
+        ],
+    )
+}
+
+fn has_text_fixture_tooling_proof_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "dry run",
+            "dry-run",
+            "clamp clearance",
+            "tool clearance",
+            "tool reach",
+            "load unload",
+            "load/unload",
+            "vacuum leak",
+            "leak check",
+            "clamp force",
+            "datum transfer",
+            "gage repeatability",
+            "gauge repeatability",
+            "first article",
+            "maintenance",
+            "fixture release",
+            "prove_fixture_clearance",
+            "verify_datum_transfer",
+            "tool_clearance",
+            "clamp_force_or_vacuum",
+            "repeatability",
+        ],
+    )
+}
+
+fn has_text_adaptive_compensation_context(language: &str, line: &str) -> bool {
+    if wants_adaptive_compensation(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "adaptive compensation",
+            "adaptive-compensation",
+            "closed-loop machining",
+            "closed loop machining",
+            "closed-loop compensation",
+            "in-process probing",
+            "in process probing",
+            "in-process measurement",
+            "inspection feedback",
+            "measurement feedback",
+            "first-article compensation",
+            "probe compensation",
+            "offset update",
+            "work offset update",
+            "tool wear update",
+            "wear offset update",
+            "cutter wear update",
+            "spring pass compensation",
+            "compensated rerun",
+        ],
+    )
+}
+
+fn has_text_adaptive_compensation_measurement_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "baseline measurement",
+            "program revision",
+            "machine warmup",
+            "probe calibration",
+            "inspection device calibration",
+            "datum alignment",
+            "feature list",
+            "nominal values",
+            "tolerance band",
+            "measurement uncertainty",
+            "capture_baseline_measurement",
+            "compute_compensation",
+            "source_measurements",
+            "max_delta_limit",
+            "uncertainty=",
+        ],
+    )
+}
+
+fn has_text_adaptive_compensation_release_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "offset update",
+            "work offset",
+            "tool wear",
+            "wear delta",
+            "rollback snapshot",
+            "compensated dry run",
+            "compensated rerun",
+            "spring pass",
+            "first article",
+            "residual error",
+            "drift trend",
+            "release owner",
+            "apply_offset_update",
+            "run_compensated_rerun",
+            "verify_compensated_result",
+            "rollback_plan",
+            "residual_error",
+        ],
+    )
+}
+
+fn has_text_insert_installation_context(language: &str, line: &str) -> bool {
+    if wants_insert_installation(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "insert installation",
+            "insert-installation",
+            "hardware insertion",
+            "threaded insert",
+            "heat set insert",
+            "heat-set insert",
+            "heat stake insert",
+            "press fit insert",
+            "press-fit insert",
+            "helicoil",
+            "heli-coil",
+            "keensert",
+            "pem nut",
+            "rivet nut",
+            "rivnut",
+            "captive nut",
+            "dowel pin",
+            "alignment pin",
+            "locator pin",
+            "bushing install",
+            "bearing insert",
+        ],
+    )
+}
+
+fn has_text_insert_installation_setup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "insert specification",
+            "insert spec",
+            "hardware lot",
+            "parent material",
+            "boss wall",
+            "boss geometry",
+            "prepared hole",
+            "hole diameter",
+            "hole depth",
+            "chamfer",
+            "fixture",
+            "tool tip",
+            "heat profile",
+            "force profile",
+            "depth stop",
+            "verify_insert_setup",
+            "install_insert",
+            "heat_or_force_profile",
+            "hardware_lot",
+        ],
+    )
+}
+
+fn has_text_insert_installation_release_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "installed height",
+            "insert height",
+            "perpendicularity",
+            "orientation",
+            "boss condition",
+            "thread engagement",
+            "thread gage",
+            "thread gauge",
+            "go nogo",
+            "go/no-go",
+            "torque test",
+            "pullout",
+            "pull-out",
+            "first article",
+            "rework limit",
+            "insert release",
+            "verify_insert_release",
+            "torque_or_pullout",
+            "thread_go_nogo",
+        ],
+    )
+}
+
+fn has_text_adhesive_bonding_context(language: &str, line: &str) -> bool {
+    if wants_adhesive_bonding(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "adhesive bonding",
+            "adhesive-bonding",
+            "bonded assembly",
+            "structural adhesive",
+            "epoxy bond",
+            "urethane adhesive",
+            "cyanoacrylate",
+            "anaerobic adhesive",
+            "film adhesive",
+            "bondline",
+            "bond line",
+            "surface activation",
+            "plasma activation",
+            "primer application",
+            "adhesive cure",
+            "lap shear",
+            "peel test",
+        ],
+    )
+}
+
+fn has_text_adhesive_bonding_prep_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "part revisions",
+            "substrate materials",
+            "substrate compatibility",
+            "adhesive specification",
+            "adhesive spec",
+            "adhesive lot",
+            "shelf life",
+            "mix ratio",
+            "surface cleaning",
+            "abrasion",
+            "plasma activation",
+            "primer",
+            "bondline target",
+            "bondline thickness",
+            "verify_bond_prep",
+            "apply_adhesive",
+            "surface_prep",
+            "adhesive_lot",
+        ],
+    )
+}
+
+fn has_text_adhesive_bonding_cure_release_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "clamp pressure",
+            "cure time",
+            "temperature humidity",
+            "temperature/humidity",
+            "handling strength",
+            "void",
+            "squeeze out",
+            "squeeze-out",
+            "lap shear",
+            "lap-shear",
+            "peel coupon",
+            "peel test",
+            "dimensional fit",
+            "first article",
+            "bond release",
+            "bonded assembly release",
+            "verify_bond_cure",
+            "verify_bond_release",
+            "lap_shear_or_peel",
+        ],
+    )
+}
+
+fn has_text_fastener_installation_context(language: &str, line: &str) -> bool {
+    if wants_fastener_installation(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "fastener installation",
+            "fastener-installation",
+            "mechanical fastening",
+            "screw installation",
+            "bolt installation",
+            "bolted assembly",
+            "torque sequence",
+            "torque pattern",
+            "threadlocker",
+            "thread locker",
+            "washer stack",
+            "spacer stack",
+            "witness mark",
+            "torque stripe",
+            "retorque",
+        ],
+    )
+}
+
+fn has_text_fastener_installation_setup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "part revisions",
+            "fastener specification",
+            "fastener spec",
+            "hardware lot",
+            "washer stack",
+            "spacer stack",
+            "washer/spacer",
+            "joint stack",
+            "stack thickness",
+            "prepared threads",
+            "thread inserts",
+            "torque tool calibration",
+            "threadlocker",
+            "torque sequence",
+            "verify_fastener_setup",
+            "install_fasteners",
+            "washer_spacer_stack",
+            "hardware_lot",
+        ],
+    )
+}
+
+fn has_text_fastener_installation_release_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "final torque",
+            "torque angle",
+            "prevailing torque",
+            "witness mark",
+            "torque stripe",
+            "clamp gap",
+            "thread engagement",
+            "cross thread",
+            "retorque",
+            "threadlocker cure",
+            "first article",
+            "fastener release",
+            "verify_fastener_release",
+            "final_torque",
+            "thread_engagement",
+        ],
+    )
+}
+
+fn has_text_rivet_installation_context(language: &str, line: &str) -> bool {
+    if wants_rivet_installation(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "rivet installation",
+            "rivet-installation",
+            "rivet setting",
+            "blind rivet",
+            "pop rivet",
+            "solid rivet",
+            "tubular rivet",
+            "rivet squeeze",
+            "rivet buck",
+            "buck bar",
+            "mandrel break",
+            "shop head",
+            "clinching",
+            "clinched joint",
+            "staking",
+            "swaging",
+            "peening",
+        ],
+    )
+}
+
+fn has_text_rivet_installation_setup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "part revisions",
+            "rivet specification",
+            "rivet spec",
+            "hardware lot",
+            "material stack",
+            "hole diameter",
+            "hole alignment",
+            "grip length",
+            "backing support",
+            "buck bar",
+            "nosepiece",
+            "tool calibration",
+            "squeeze force",
+            "pull force",
+            "press force",
+            "verify_rivet_setup",
+            "set_rivets",
+            "rivet_spec",
+            "material_stack",
+        ],
+    )
+}
+
+fn has_text_rivet_installation_release_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "mandrel break",
+            "shop head",
+            "head height",
+            "clinch deformation",
+            "stake deformation",
+            "swage deformation",
+            "peen deformation",
+            "deformation",
+            "clamp up",
+            "clamp-up",
+            "cracks",
+            "looseness",
+            "pull proof",
+            "shear proof",
+            "proof test",
+            "first article",
+            "rivet release",
+            "verify_rivet_release",
+            "mandrel_break_or_shop_head",
+        ],
+    )
+}
+
 fn has_text_pcb_assembly_setup_evidence(line: &str) -> bool {
     text_has_any(
         line,
@@ -29352,6 +30654,92 @@ fn inspect_text_instruction_line(
         signals.has_text_pcb_assembly_reflow_inspection_evidence = true;
         signals.has_process_preparation = true;
     }
+    let fixture_tooling_context = has_text_fixture_tooling_context(language, raw_line);
+    if fixture_tooling_context {
+        signals.has_text_fixture_tooling_context = true;
+        signals.has_process_preparation = true;
+    }
+    if fixture_tooling_context && has_text_fixture_tooling_design_evidence(raw_line) {
+        signals.has_text_fixture_tooling_design_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if fixture_tooling_context && has_text_fixture_tooling_proof_evidence(raw_line) {
+        signals.has_text_fixture_tooling_proof_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let adaptive_compensation_context = has_text_adaptive_compensation_context(language, raw_line);
+    if adaptive_compensation_context {
+        signals.has_text_adaptive_compensation_context = true;
+        signals.has_process_preparation = true;
+    }
+    if adaptive_compensation_context
+        && has_text_adaptive_compensation_measurement_evidence(raw_line)
+    {
+        signals.has_text_adaptive_compensation_measurement_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if adaptive_compensation_context && has_text_adaptive_compensation_release_evidence(raw_line) {
+        signals.has_text_adaptive_compensation_release_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let insert_installation_context = has_text_insert_installation_context(language, raw_line);
+    if insert_installation_context {
+        signals.has_text_insert_installation_context = true;
+        signals.has_process_preparation = true;
+    }
+    if insert_installation_context && has_text_insert_installation_setup_evidence(raw_line) {
+        signals.has_text_insert_installation_setup_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if insert_installation_context && has_text_insert_installation_release_evidence(raw_line) {
+        signals.has_text_insert_installation_release_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let adhesive_bonding_context = has_text_adhesive_bonding_context(language, raw_line);
+    if adhesive_bonding_context {
+        signals.has_text_adhesive_bonding_context = true;
+        signals.has_process_preparation = true;
+    }
+    if adhesive_bonding_context && has_text_adhesive_bonding_prep_evidence(raw_line) {
+        signals.has_text_adhesive_bonding_prep_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if adhesive_bonding_context && has_text_adhesive_bonding_cure_release_evidence(raw_line) {
+        signals.has_text_adhesive_bonding_cure_release_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let fastener_installation_context = has_text_fastener_installation_context(language, raw_line);
+    if fastener_installation_context {
+        signals.has_text_fastener_installation_context = true;
+        signals.has_process_preparation = true;
+    }
+    if fastener_installation_context && has_text_fastener_installation_setup_evidence(raw_line) {
+        signals.has_text_fastener_installation_setup_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if fastener_installation_context && has_text_fastener_installation_release_evidence(raw_line) {
+        signals.has_text_fastener_installation_release_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let rivet_installation_context = has_text_rivet_installation_context(language, raw_line);
+    if rivet_installation_context {
+        signals.has_text_rivet_installation_context = true;
+        signals.has_process_preparation = true;
+    }
+    if rivet_installation_context && has_text_rivet_installation_setup_evidence(raw_line) {
+        signals.has_text_rivet_installation_setup_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if rivet_installation_context && has_text_rivet_installation_release_evidence(raw_line) {
+        signals.has_text_rivet_installation_release_evidence = true;
+        signals.has_process_preparation = true;
+    }
     let part_marking_context = has_text_part_marking_context(language, raw_line);
     if part_marking_context {
         signals.has_text_part_marking_context = true;
@@ -29846,6 +31234,24 @@ fn analyze_instruction_programs(
         let mut has_text_pcb_assembly_context = false;
         let mut has_text_pcb_assembly_setup_evidence = false;
         let mut has_text_pcb_assembly_reflow_inspection_evidence = false;
+        let mut has_text_fixture_tooling_context = false;
+        let mut has_text_fixture_tooling_design_evidence = false;
+        let mut has_text_fixture_tooling_proof_evidence = false;
+        let mut has_text_adaptive_compensation_context = false;
+        let mut has_text_adaptive_compensation_measurement_evidence = false;
+        let mut has_text_adaptive_compensation_release_evidence = false;
+        let mut has_text_insert_installation_context = false;
+        let mut has_text_insert_installation_setup_evidence = false;
+        let mut has_text_insert_installation_release_evidence = false;
+        let mut has_text_adhesive_bonding_context = false;
+        let mut has_text_adhesive_bonding_prep_evidence = false;
+        let mut has_text_adhesive_bonding_cure_release_evidence = false;
+        let mut has_text_fastener_installation_context = false;
+        let mut has_text_fastener_installation_setup_evidence = false;
+        let mut has_text_fastener_installation_release_evidence = false;
+        let mut has_text_rivet_installation_context = false;
+        let mut has_text_rivet_installation_setup_evidence = false;
+        let mut has_text_rivet_installation_release_evidence = false;
         let mut has_text_part_marking_context = false;
         let mut has_text_part_marking_setup_evidence = false;
         let mut has_text_part_marking_readability_evidence = false;
@@ -30053,6 +31459,39 @@ fn analyze_instruction_programs(
                     signals.has_text_pcb_assembly_setup_evidence;
                 has_text_pcb_assembly_reflow_inspection_evidence |=
                     signals.has_text_pcb_assembly_reflow_inspection_evidence;
+                has_text_fixture_tooling_context |= signals.has_text_fixture_tooling_context;
+                has_text_fixture_tooling_design_evidence |=
+                    signals.has_text_fixture_tooling_design_evidence;
+                has_text_fixture_tooling_proof_evidence |=
+                    signals.has_text_fixture_tooling_proof_evidence;
+                has_text_adaptive_compensation_context |=
+                    signals.has_text_adaptive_compensation_context;
+                has_text_adaptive_compensation_measurement_evidence |=
+                    signals.has_text_adaptive_compensation_measurement_evidence;
+                has_text_adaptive_compensation_release_evidence |=
+                    signals.has_text_adaptive_compensation_release_evidence;
+                has_text_insert_installation_context |=
+                    signals.has_text_insert_installation_context;
+                has_text_insert_installation_setup_evidence |=
+                    signals.has_text_insert_installation_setup_evidence;
+                has_text_insert_installation_release_evidence |=
+                    signals.has_text_insert_installation_release_evidence;
+                has_text_adhesive_bonding_context |= signals.has_text_adhesive_bonding_context;
+                has_text_adhesive_bonding_prep_evidence |=
+                    signals.has_text_adhesive_bonding_prep_evidence;
+                has_text_adhesive_bonding_cure_release_evidence |=
+                    signals.has_text_adhesive_bonding_cure_release_evidence;
+                has_text_fastener_installation_context |=
+                    signals.has_text_fastener_installation_context;
+                has_text_fastener_installation_setup_evidence |=
+                    signals.has_text_fastener_installation_setup_evidence;
+                has_text_fastener_installation_release_evidence |=
+                    signals.has_text_fastener_installation_release_evidence;
+                has_text_rivet_installation_context |= signals.has_text_rivet_installation_context;
+                has_text_rivet_installation_setup_evidence |=
+                    signals.has_text_rivet_installation_setup_evidence;
+                has_text_rivet_installation_release_evidence |=
+                    signals.has_text_rivet_installation_release_evidence;
                 has_text_part_marking_context |= signals.has_text_part_marking_context;
                 has_text_part_marking_setup_evidence |=
                     signals.has_text_part_marking_setup_evidence;
@@ -35821,6 +37260,403 @@ fn analyze_instruction_programs(
                             .to_string(),
                 });
             }
+            if has_text_fixture_tooling_context && !has_text_fixture_tooling_design_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "fixture-tooling-design-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "fixture-tooling text job lacks part revision, target operation, stock state, datum scheme, locator, clamp/vacuum, soft-jaw or nest profile, hardware, clearance model, or release-owner evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "fixture-tooling-design-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Fixtures can mislocate parts, block tools, damage stock, or require operator redesign when part revision, target operation, stock state, datum scheme, locator strategy, clamp/vacuum plan, hardware, soft-jaw or nest profile, and clearance model are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record released part revision, target machine operation, stock state, datum scheme, locator strategy, clamp or vacuum plan, soft-jaw/nest/plate profile, hardware specification, clearance model, and release owner before building tooling"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-fixture-tooling-design-evidence".to_string(),
+                    reason:
+                        "fixture-tooling instructions should retain revision, operation, datum, locator, clamp/vacuum, hardware, profile, and clearance design evidence before build"
+                            .to_string(),
+                });
+            }
+            if has_text_fixture_tooling_context && !has_text_fixture_tooling_proof_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "fixture-tooling-proof-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "fixture-tooling text job lacks dry-run, clamp clearance, tool reach, load/unload, vacuum leak or clamp force, datum-transfer, gage repeatability, first-article, maintenance, or fixture-release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "fixture-tooling-proof-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Fixtures can crash, slip, leak vacuum, hide datum error, fail repeatability, or require human intervention mid-job when dry run, tool clearance, load/unload proof, clamp force or vacuum leak check, datum transfer, gage repeatability, first article, maintenance, and release evidence are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record dry-run proof, clamp/tool clearance, reach, load/unload method, vacuum leak or clamp force, datum-transfer measurement, gage repeatability, first-article result, maintenance limits, and fixture release signoff"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-fixture-tooling-proof-evidence".to_string(),
+                    reason:
+                        "fixture-tooling instructions should retain dry-run, clearance, clamp/vacuum, datum-transfer, repeatability, first-article, maintenance, and release evidence"
+                            .to_string(),
+                });
+            }
+            if has_text_adaptive_compensation_context
+                && !has_text_adaptive_compensation_measurement_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "adaptive-compensation-measurement-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "adaptive-compensation text job lacks baseline measurement, program revision, warmup, probe/inspection calibration, datum alignment, feature list, nominal values, tolerance band, uncertainty, or compensation-limit evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "adaptive-compensation-measurement-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Closed-loop compensation can chase noise, shift the wrong datum, or update offsets in the wrong direction when baseline measurement, program revision, machine warmup, probe or inspection calibration, datum alignment, feature list, nominal values, tolerance band, uncertainty, and compensation limits are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record released program revision, warmup state, probe or inspection-device calibration, datum alignment, feature list, nominal/tolerance values, measurement uncertainty, source measurements, computed delta, and maximum allowed compensation before applying updates"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-adaptive-compensation-measurement-evidence".to_string(),
+                    reason:
+                        "adaptive-compensation instructions should retain baseline measurement, datum, feature, tolerance, uncertainty, and compensation-limit evidence before updates"
+                            .to_string(),
+                });
+            }
+            if has_text_adaptive_compensation_context
+                && !has_text_adaptive_compensation_release_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "adaptive-compensation-release-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "adaptive-compensation text job lacks offset/tool-wear update, rollback snapshot, compensated dry run, spring pass or rerun path, first article, residual error, drift trend, rollback plan, or release-owner evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "adaptive-compensation-release-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Compensated reruns can scrap parts, accumulate drift, corrupt controller offsets, or require operator recovery when work-offset/tool-wear updates, rollback snapshot, compensated dry run, rerun path, first article, residual error, drift trend, rollback plan, and release ownership are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record work-offset or tool-wear update, change-control approval, rollback snapshot, compensated dry run, spring pass or rerun path, first-article result, residual error, drift trend, rollback plan, process-limit impact, and release owner"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-adaptive-compensation-release-evidence".to_string(),
+                    reason:
+                        "adaptive-compensation instructions should retain update, rollback, compensated dry-run, first-article, residual-error, drift, and release evidence"
+                            .to_string(),
+                });
+            }
+            if has_text_insert_installation_context && !has_text_insert_installation_setup_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "insert-installation-setup-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "insert-installation text job lacks insert specification, hardware lot, parent material, boss geometry, prepared-hole diameter/depth, chamfer, fixture, tool tip, heat/force profile, or depth-stop evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "insert-installation-setup-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Insert installation can crack printed bosses, strip machined features, mis-seat hardware, or require rework when insert specification, lot trace, parent material, hole prep, fixture, tool tip, heat/force profile, and depth controls are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record part revision, insert datasheet/specification, hardware lot, parent material, boss wall or geometry, prepared-hole diameter/depth/chamfer, fixture, tool tip, heat or press-force profile, depth stop, and owner before installation"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-insert-installation-setup-evidence".to_string(),
+                    reason:
+                        "insert-installation instructions should retain insert spec, lot, parent material, hole-prep, fixture, tool, heat/force, and depth-stop evidence before installation"
+                            .to_string(),
+                });
+            }
+            if has_text_insert_installation_context
+                && !has_text_insert_installation_release_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "insert-installation-release-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "insert-installation text job lacks installed height, orientation, boss condition, thread engagement, go/no-go gage, torque/pullout, first-article, rework-limit, or release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "insert-installation-release-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Installed hardware can pull out, sit proud, cross-thread, loosen, or block assembly when installed height, orientation, boss condition, thread engagement, torque/pullout proof, first article, rework limits, and release ownership are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record installed height, perpendicularity or orientation, surrounding boss condition, thread go/no-go gage, thread engagement, torque or pullout result, first article, rework limit, and release owner"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-insert-installation-release-evidence".to_string(),
+                    reason:
+                        "insert-installation instructions should retain installed-height, orientation, boss-condition, thread-gage, torque/pullout, first-article, rework-limit, and release evidence"
+                            .to_string(),
+                });
+            }
+            if has_text_adhesive_bonding_context && !has_text_adhesive_bonding_prep_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "adhesive-bonding-prep-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "adhesive-bonding text job lacks part revision, substrate, adhesive specification, lot, shelf-life, mix-ratio, surface-prep, activation/primer, bondline, fixture, or owner evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "adhesive-bonding-prep-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Bonded assemblies can delaminate, creep, misalign, or fail fit-up when substrate compatibility, adhesive lot/shelf life, mix ratio, surface cleaning/abrasion/activation, bondline, fixture, and ownership are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record part revisions, substrate materials, adhesive datasheet/specification, adhesive lot and shelf life, mix ratio, surface cleaning/abrasion/plasma or primer activation, bondline target, fixture, and release owner before bonding"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-adhesive-bonding-prep-evidence".to_string(),
+                    reason:
+                        "adhesive-bonding instructions should retain substrate, adhesive, lot, shelf-life, mix, surface-prep, activation, bondline, and fixture evidence before bonding"
+                            .to_string(),
+                });
+            }
+            if has_text_adhesive_bonding_context && !has_text_adhesive_bonding_cure_release_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "adhesive-bonding-cure-release-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "adhesive-bonding text job lacks clamp pressure, cure time/environment, handling strength, void/squeeze-out inspection, lap-shear or peel coupon, dimensional fit, first article, rework-limit, or release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "adhesive-bonding-cure-release-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Bonded assemblies may require human recovery or scrap when clamp pressure, cure time/environment, handling strength, void/squeeze-out inspection, coupon proof, dimensional fit, first article, rework limits, and release ownership are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record fixture clamp pressure, cure time, temperature/humidity, handling strength, void and squeeze-out inspection, lap-shear or peel coupon, dimensional fit, first article, rework limit, and release owner"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-adhesive-bonding-cure-release-evidence".to_string(),
+                    reason:
+                        "adhesive-bonding instructions should retain cure, clamp, environment, inspection, coupon, fit, first-article, rework-limit, and release evidence"
+                            .to_string(),
+                });
+            }
+            if has_text_fastener_installation_context
+                && !has_text_fastener_installation_setup_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "fastener-installation-setup-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "fastener-installation text job lacks fastener specification, hardware lot, washer/spacer stack, joint stack, prepared thread/insert, torque-tool calibration, threadlocker, or torque-sequence evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "fastener-installation-setup-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Fastened assemblies can loosen, crack printed bosses, strip inserts, or clamp unevenly when fastener spec, hardware lot, washer/spacer stack, joint stack, thread evidence, torque tool calibration, threadlocker, and torque sequence are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record part revisions, fastener specification, hardware lot, washer/spacer stack, joint stack thickness, prepared threads or inserts, access, torque tool calibration, threadlocker, and torque sequence before installation"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-fastener-installation-setup-evidence".to_string(),
+                    reason:
+                        "fastener-installation instructions should retain fastener, lot, stack, thread, tool-calibration, threadlocker, and torque-sequence evidence before installation"
+                            .to_string(),
+                });
+            }
+            if has_text_fastener_installation_context
+                && !has_text_fastener_installation_release_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "fastener-installation-release-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "fastener-installation text job lacks final torque, torque angle, witness mark, clamp gap, thread engagement, threadlocker cure, retorque, first-article, or release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "fastener-installation-release-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Fastened assemblies may loosen, cross-thread, distort, or need operator recovery when final torque, torque angle, witness marks, clamp gap, thread engagement, threadlocker cure, retorque, first article, and release ownership are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record final torque, torque angle or prevailing torque, witness mark or torque stripe, clamp gap, thread engagement, threadlocker cure, retorque requirement, first article, and release owner"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-fastener-installation-release-evidence".to_string(),
+                    reason:
+                        "fastener-installation instructions should retain final torque, witness mark, clamp-gap, thread-engagement, retorque, first-article, and release evidence"
+                            .to_string(),
+                });
+            }
+            if has_text_rivet_installation_context && !has_text_rivet_installation_setup_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "rivet-installation-setup-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "rivet-installation text job lacks rivet specification, hardware lot, material stack, hole diameter/alignment, grip length, backing support, tool calibration, nosepiece/buck-bar, or pull/squeeze/press-force evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "rivet-installation-setup-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Riveted, clinched, staked, or swaged joints can crack printed parts, distort machined sheets, miss grip length, or need rework when rivet spec, lot trace, material stack, hole prep, access, backing support, tool calibration, and force controls are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record part revisions, rivet specification, hardware lot, material stack, hole diameter/alignment, grip length, access, backing support, buck bar or nosepiece, tool calibration, and pull/squeeze/press-force limits before setting"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-rivet-installation-setup-evidence".to_string(),
+                    reason:
+                        "rivet-installation instructions should retain rivet spec, lot, stack, hole, grip, backing, tool, and force evidence before setting"
+                            .to_string(),
+                });
+            }
+            if has_text_rivet_installation_context && !has_text_rivet_installation_release_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "rivet-installation-release-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "rivet-installation text job lacks mandrel-break or shop-head, head height, clinch/stake/swage deformation, clamp-up, crack/looseness, proof-test, first-article, or release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "rivet-installation-release-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Permanent mechanical joints can pull through, loosen, crack, under-clamp, or hide bad deformation when mandrel break or shop-head shape, head height, clinch/stake/swage evidence, clamp-up, crack/looseness inspection, proof test, first article, and release ownership are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record mandrel break or shop-head inspection, head height, clinch/stake/swage deformation, clamp-up, cracks, looseness, pull or shear proof, first article, and release owner"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-rivet-installation-release-evidence".to_string(),
+                    reason:
+                        "rivet-installation instructions should retain mandrel/shop-head, deformation, clamp-up, crack/looseness, proof-test, first-article, and release evidence"
+                            .to_string(),
+                });
+            }
             if has_text_part_marking_context && !has_text_part_marking_setup_evidence {
                 findings.push(ValidationFinding {
                     severity: "warning".to_string(),
@@ -36349,6 +38185,66 @@ fn instruction_patch_content_for_improvement(
             "CHECKPOINT [pcb-fabrication-finish-test-boundary]: record copper finish, soldermask and silkscreen alignment, AOI, dimensional inspection, continuity, shorts, impedance or coupon evidence when required, and release signoff"
                 .to_string(),
         ]
+    } else if action == "add-fixture-tooling-design-evidence" {
+        vec![
+            "CHECKPOINT [fixture-tooling-design-boundary]: record released part revision, target operation, stock state, datum scheme, locator strategy, clamp/vacuum plan, soft-jaw or nest profile, hardware specification, clearance model, and release owner before building tooling"
+                .to_string(),
+        ]
+    } else if action == "add-fixture-tooling-proof-evidence" {
+        vec![
+            "CHECKPOINT [fixture-tooling-proof-boundary]: record dry-run proof, clamp and tool clearance, tool reach, load/unload method, vacuum leak or clamp force, datum-transfer measurement, gage repeatability, first article, maintenance limits, and fixture release signoff"
+                .to_string(),
+        ]
+    } else if action == "add-adaptive-compensation-measurement-evidence" {
+        vec![
+            "CHECKPOINT [adaptive-compensation-measurement-boundary]: record released program revision, machine warmup, probe or inspection calibration, datum alignment, feature list, nominal values, tolerance band, measurement uncertainty, source measurements, computed delta, and maximum compensation limit before updates"
+                .to_string(),
+        ]
+    } else if action == "add-adaptive-compensation-release-evidence" {
+        vec![
+            "CHECKPOINT [adaptive-compensation-release-boundary]: record work-offset or tool-wear update, rollback snapshot, compensated dry run, spring pass or rerun path, first-article result, residual error, drift trend, rollback plan, process-limit impact, and release owner"
+                .to_string(),
+        ]
+    } else if action == "add-insert-installation-setup-evidence" {
+        vec![
+            "CHECKPOINT [insert-installation-setup-boundary]: record released part revision, insert specification, hardware lot, parent material, boss wall or geometry, prepared-hole diameter, hole depth, chamfer, fixture, tool tip, heat or press-force profile, depth stop, and owner before installation"
+                .to_string(),
+        ]
+    } else if action == "add-insert-installation-release-evidence" {
+        vec![
+            "CHECKPOINT [insert-installation-release-boundary]: record installed height, perpendicularity or orientation, surrounding boss condition, thread go/no-go gage, thread engagement, torque or pullout result, first article, rework limit, and insert release owner"
+                .to_string(),
+        ]
+    } else if action == "add-adhesive-bonding-prep-evidence" {
+        vec![
+            "CHECKPOINT [adhesive-bonding-prep-boundary]: record part revisions, substrate materials, adhesive specification, adhesive lot, shelf life, mix ratio, surface cleaning, abrasion or activation, primer when required, bondline target, fixture, and release owner before bonding"
+                .to_string(),
+        ]
+    } else if action == "add-adhesive-bonding-cure-release-evidence" {
+        vec![
+            "CHECKPOINT [adhesive-bonding-cure-release-boundary]: record clamp pressure, cure time, temperature/humidity, handling strength, void and squeeze-out inspection, lap-shear or peel coupon, dimensional fit, first article, rework limit, and bonded-assembly release owner"
+                .to_string(),
+        ]
+    } else if action == "add-fastener-installation-setup-evidence" {
+        vec![
+            "CHECKPOINT [fastener-installation-setup-boundary]: record part revisions, fastener specification, hardware lot, washer/spacer stack, joint stack thickness, prepared threads or inserts, access, torque tool calibration, threadlocker, and torque sequence before installation"
+                .to_string(),
+        ]
+    } else if action == "add-fastener-installation-release-evidence" {
+        vec![
+            "CHECKPOINT [fastener-installation-release-boundary]: record final torque, torque angle or prevailing torque, witness mark or torque stripe, clamp gap, thread engagement, threadlocker cure, retorque requirement, first article, and fastener release owner"
+                .to_string(),
+        ]
+    } else if action == "add-rivet-installation-setup-evidence" {
+        vec![
+            "CHECKPOINT [rivet-installation-setup-boundary]: record part revisions, rivet specification, hardware lot, material stack, hole diameter/alignment, grip length, access, backing support, buck bar or nosepiece, tool calibration, and pull/squeeze/press-force limits before setting"
+                .to_string(),
+        ]
+    } else if action == "add-rivet-installation-release-evidence" {
+        vec![
+            "CHECKPOINT [rivet-installation-release-boundary]: record mandrel break or shop-head inspection, head height, clinch/stake/swage deformation, clamp-up, cracks, looseness, pull or shear proof, first article, and rivet release owner"
+                .to_string(),
+        ]
     } else if action == "add-part-marking-setup-evidence" {
         vec![
             "CHECKPOINT [part-marking-setup-boundary]: record released artwork/text, part revision, serial or UDI/data-matrix payload, duplicate-serial check, datum and fixture, mark location, material finish, contrast zone, and marking recipe before marking"
@@ -36815,6 +38711,126 @@ fn improve_instruction_programs(
                 ) {
                     notes.push(
                         "PCB assembly job needs reflow profile, soak/peak/cooling limits, AOI/X-ray, ICT or flying-probe, functional test, rework disposition, and release inspection evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-fixture-tooling-design-evidence",
+                ) {
+                    notes.push(
+                        "Fixture-tooling job needs part revision, target operation, stock state, datum scheme, locator strategy, clamp/vacuum plan, soft-jaw or nest profile, hardware, clearance model, and release-owner evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-fixture-tooling-proof-evidence",
+                ) {
+                    notes.push(
+                        "Fixture-tooling job needs dry-run proof, clamp and tool clearance, load/unload method, vacuum leak or clamp force, datum transfer, gage repeatability, first article, maintenance, and fixture-release evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-adaptive-compensation-measurement-evidence",
+                ) {
+                    notes.push(
+                        "Adaptive-compensation job needs baseline measurement, program revision, warmup, probe or inspection calibration, datum alignment, feature list, nominal/tolerance values, uncertainty, source measurements, and compensation-limit evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-adaptive-compensation-release-evidence",
+                ) {
+                    notes.push(
+                        "Adaptive-compensation job needs offset or tool-wear update, rollback snapshot, compensated dry run, spring pass or rerun path, first article, residual error, drift trend, rollback plan, and release-owner evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-insert-installation-setup-evidence",
+                ) {
+                    notes.push(
+                        "Insert-installation job needs insert specification, hardware lot, parent material, prepared-hole, fixture, tool-tip, heat/force, and depth-stop evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-insert-installation-release-evidence",
+                ) {
+                    notes.push(
+                        "Insert-installation job needs installed height, orientation, boss condition, thread gage, torque or pullout result, first article, rework limit, and release-owner evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-adhesive-bonding-prep-evidence",
+                ) {
+                    notes.push(
+                        "Adhesive-bonding job needs substrate, adhesive specification, lot, shelf-life, mix-ratio, surface-prep, activation, bondline, and fixture evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-adhesive-bonding-cure-release-evidence",
+                ) {
+                    notes.push(
+                        "Adhesive-bonding job needs clamp pressure, cure time/environment, void or squeeze-out inspection, coupon proof, dimensional fit, first article, rework limit, and release-owner evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-fastener-installation-setup-evidence",
+                ) {
+                    notes.push(
+                        "Fastener-installation job needs fastener specification, hardware lot, washer/spacer stack, joint stack, thread evidence, torque-tool calibration, threadlocker, and torque-sequence evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-fastener-installation-release-evidence",
+                ) {
+                    notes.push(
+                        "Fastener-installation job needs final torque, torque angle, witness marks, clamp gap, thread engagement, retorque, first article, and release-owner evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-rivet-installation-setup-evidence",
+                ) {
+                    notes.push(
+                        "Rivet-installation job needs rivet specification, hardware lot, material stack, hole diameter/alignment, grip length, backing support, tool calibration, and force evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-rivet-installation-release-evidence",
+                ) {
+                    notes.push(
+                        "Rivet-installation job needs mandrel-break or shop-head, head height, deformation, clamp-up, crack/looseness, proof-test, first article, and release-owner evidence"
                             .to_string(),
                     );
                 }
@@ -40119,6 +42135,18 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "pcb-fabrication-job-packager"
     } else if wants_pcb_assembly(&token) {
         "pcb-assembly-job-packager"
+    } else if wants_fixture_tooling(&token) {
+        "fixture-tooling-job-packager"
+    } else if wants_adaptive_compensation(&token) {
+        "adaptive-compensation-job-packager"
+    } else if wants_insert_installation(&token) {
+        "insert-installation-job-packager"
+    } else if wants_adhesive_bonding(&token) {
+        "adhesive-bonding-job-packager"
+    } else if wants_fastener_installation(&token) {
+        "fastener-installation-job-packager"
+    } else if wants_rivet_installation(&token) {
+        "rivet-installation-job-packager"
     } else if wants_part_marking(&token) {
         "part-marking-job-packager"
     } else if wants_packaging_labeling(&token) {
@@ -40135,6 +42163,16 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "marlin-additive-gcode-postprocessor"
     } else if token.contains("grbl") {
         "grbl-router-postprocessor"
+    } else if token.contains("sinumerik") {
+        "siemens-sinumerik-postprocessor"
+    } else if token.contains("heidenhain") {
+        "heidenhain-conversational-postprocessor"
+    } else if token.contains("mazatrol") || token.contains("mazak") {
+        "mazatrol-conversational-postprocessor"
+    } else if token.contains("okuma-osp") || token.contains("okuma") {
+        "okuma-osp-postprocessor"
+    } else if token.contains("linuxcnc") {
+        "linuxcnc-gcode-postprocessor"
     } else if wants_rotary_index_milling(&token) {
         "rotary-index-mill-postprocessor"
     } else if token.contains("five-axis")
@@ -40203,6 +42241,18 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "pcb-fabrication-job-packager"
     } else if wants_pcb_assembly(&token) {
         "pcb-assembly-job-packager"
+    } else if wants_fixture_tooling(&token) {
+        "fixture-tooling-job-packager"
+    } else if wants_adaptive_compensation(&token) {
+        "adaptive-compensation-job-packager"
+    } else if wants_insert_installation(&token) {
+        "insert-installation-job-packager"
+    } else if wants_adhesive_bonding(&token) {
+        "adhesive-bonding-job-packager"
+    } else if wants_fastener_installation(&token) {
+        "fastener-installation-job-packager"
+    } else if wants_rivet_installation(&token) {
+        "rivet-installation-job-packager"
     } else if wants_part_marking(&token) {
         "part-marking-job-packager"
     } else if wants_packaging_labeling(&token) {
@@ -40243,6 +42293,18 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "pcb-fabrication-job-package".to_string()
     } else if wants_pcb_assembly(&token) {
         "pcb-assembly-job-package".to_string()
+    } else if wants_fixture_tooling(&token) {
+        "fixture-tooling-job-package".to_string()
+    } else if wants_adaptive_compensation(&token) {
+        "adaptive-compensation-job-package".to_string()
+    } else if wants_insert_installation(&token) {
+        "insert-installation-job-package".to_string()
+    } else if wants_adhesive_bonding(&token) {
+        "adhesive-bonding-job-package".to_string()
+    } else if wants_fastener_installation(&token) {
+        "fastener-installation-job-package".to_string()
+    } else if wants_rivet_installation(&token) {
+        "rivet-installation-job-package".to_string()
     } else if wants_part_marking(&token) {
         "part-marking-job-package".to_string()
     } else if wants_packaging_labeling(&token) {
@@ -40321,6 +42383,18 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "pcb-fabrication-job-package".to_string()
     } else if wants_pcb_assembly(&token) {
         "pcb-assembly-job-package".to_string()
+    } else if wants_fixture_tooling(&token) {
+        "fixture-tooling-job-package".to_string()
+    } else if wants_adaptive_compensation(&token) {
+        "adaptive-compensation-job-package".to_string()
+    } else if wants_insert_installation(&token) {
+        "insert-installation-job-package".to_string()
+    } else if wants_adhesive_bonding(&token) {
+        "adhesive-bonding-job-package".to_string()
+    } else if wants_fastener_installation(&token) {
+        "fastener-installation-job-package".to_string()
+    } else if wants_rivet_installation(&token) {
+        "rivet-installation-job-package".to_string()
     } else if wants_part_marking(&token) {
         "part-marking-job-package".to_string()
     } else if wants_packaging_labeling(&token) {
@@ -40370,6 +42444,67 @@ fn postprocess_required_artifacts(targets: &[PostprocessTarget]) -> Vec<String> 
             artifacts.insert("stencil-paste-feeder-and-nozzle-record".to_string());
             artifacts.insert("reflow-profile-and-first-article-record".to_string());
             artifacts.insert("aoi-xray-test-and-rework-record".to_string());
+            continue;
+        }
+        if is_fixture_tooling_kind(&target.machine_kind)
+            || wants_fixture_tooling(&target.output_format)
+            || wants_fixture_tooling(&target.controller)
+        {
+            artifacts.insert("fixture-design-datum-and-target-operation-record".to_string());
+            artifacts.insert("fixture-locator-clamp-and-clearance-record".to_string());
+            artifacts.insert("fixture-proof-dry-run-and-gage-record".to_string());
+            artifacts.insert("fixture-release-and-maintenance-record".to_string());
+            continue;
+        }
+        if is_adaptive_compensation_kind(&target.machine_kind)
+            || wants_adaptive_compensation(&target.output_format)
+            || wants_adaptive_compensation(&target.controller)
+        {
+            artifacts.insert("adaptive-baseline-measurement-and-datum-record".to_string());
+            artifacts.insert("adaptive-compensation-computation-and-limit-record".to_string());
+            artifacts.insert("adaptive-offset-update-and-rollback-record".to_string());
+            artifacts
+                .insert("adaptive-first-article-residual-error-and-release-record".to_string());
+            continue;
+        }
+        if is_insert_installation_kind(&target.machine_kind)
+            || wants_insert_installation(&target.output_format)
+            || wants_insert_installation(&target.controller)
+        {
+            artifacts.insert("insert-spec-hole-prep-and-fixture-record".to_string());
+            artifacts.insert("insert-tool-heat-force-and-depth-record".to_string());
+            artifacts.insert("insert-height-thread-gage-and-boss-inspection-record".to_string());
+            artifacts.insert("insert-torque-pullout-first-article-and-release-record".to_string());
+            continue;
+        }
+        if is_adhesive_bonding_kind(&target.machine_kind)
+            || wants_adhesive_bonding(&target.output_format)
+            || wants_adhesive_bonding(&target.controller)
+        {
+            artifacts.insert("adhesive-substrate-prep-and-compatibility-record".to_string());
+            artifacts.insert("adhesive-lot-mix-open-time-and-bondline-record".to_string());
+            artifacts.insert("adhesive-fixture-clamp-cure-and-environment-record".to_string());
+            artifacts.insert("adhesive-coupon-fit-first-article-and-release-record".to_string());
+            continue;
+        }
+        if is_fastener_installation_kind(&target.machine_kind)
+            || wants_fastener_installation(&target.output_format)
+            || wants_fastener_installation(&target.controller)
+        {
+            artifacts.insert("fastener-spec-lot-and-joint-stack-record".to_string());
+            artifacts.insert("washer-spacer-threadlocker-and-torque-sequence-record".to_string());
+            artifacts.insert("torque-tool-final-torque-and-witness-mark-record".to_string());
+            artifacts.insert("fastener-retorque-first-article-and-release-record".to_string());
+            continue;
+        }
+        if is_rivet_installation_kind(&target.machine_kind)
+            || wants_rivet_installation(&target.output_format)
+            || wants_rivet_installation(&target.controller)
+        {
+            artifacts.insert("rivet-spec-lot-and-hole-stack-record".to_string());
+            artifacts.insert("rivet-tool-access-and-force-record".to_string());
+            artifacts.insert("mandrel-shop-head-and-deformation-record".to_string());
+            artifacts.insert("rivet-proof-first-article-and-release-record".to_string());
             continue;
         }
         if is_part_marking_kind(&target.machine_kind)
@@ -40936,6 +43071,18 @@ fn controller_dialect_family(
         "pcb-fabrication-controller-dialect".to_string()
     } else if wants_pcb_assembly(&token) {
         "pcb-assembly-controller-dialect".to_string()
+    } else if wants_fixture_tooling(&token) {
+        "fixture-tooling-controller-dialect".to_string()
+    } else if wants_adaptive_compensation(&token) {
+        "adaptive-compensation-controller-dialect".to_string()
+    } else if wants_insert_installation(&token) {
+        "insert-installation-controller-dialect".to_string()
+    } else if wants_adhesive_bonding(&token) {
+        "adhesive-bonding-controller-dialect".to_string()
+    } else if wants_fastener_installation(&token) {
+        "fastener-installation-controller-dialect".to_string()
+    } else if wants_rivet_installation(&token) {
+        "rivet-installation-controller-dialect".to_string()
     } else if wants_part_marking(&token) {
         "part-marking-controller-dialect".to_string()
     } else if wants_packaging_labeling(&token) {
@@ -41044,6 +43191,48 @@ fn controller_required_checks(dialect_family: &str, machine_kind: &str) -> Vec<S
             "verify board revision, fabrication package, BOM/AVL, centroid, stencil revision, solder-paste lot and expiry, feeder/nozzle map, fiducials, polarity, and ESD controls"
                 .to_string(),
             "retain first-article placement review, reflow soak/peak/cooling profile, conveyor speed, AOI/X-ray, ICT or flying-probe, functional test, rework disposition, and release signoff"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("fixture-tooling") {
+        checks.extend([
+            "verify released part revision, target operation, stock state, datum scheme, locator strategy, clamp or vacuum plan, soft-jaw/nest/plate profile, hardware specification, clearance model, and release owner"
+                .to_string(),
+            "retain dry-run proof, clamp/tool clearance, tool reach, load/unload method, vacuum leak or clamp force, datum transfer, gage repeatability, first article, maintenance limits, and fixture-release signoff"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("adaptive-compensation") {
+        checks.extend([
+            "verify released program revision, warmup state, probe or inspection-device calibration, datum alignment, feature list, nominal/tolerance values, measurement uncertainty, source measurements, computed delta, and maximum compensation limit"
+                .to_string(),
+            "retain work-offset or tool-wear update, change-control approval, rollback snapshot, compensated dry run, spring pass or rerun path, first-article result, residual error, drift trend, process-limit impact, and release signoff"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("insert-installation") {
+        checks.extend([
+            "verify part revision, insert specification, hardware lot, parent material, boss geometry, prepared-hole diameter/depth/chamfer, fixture, tool tip, heat or press-force profile, and depth stop"
+                .to_string(),
+            "retain installed height, perpendicularity or orientation, boss condition, thread go/no-go gage, thread engagement, torque or pullout result, first article, rework limit, and release signoff"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("adhesive-bonding") {
+        checks.extend([
+            "verify part revisions, substrate compatibility, adhesive specification, lot and shelf life, mix ratio, surface cleaning/abrasion/activation, primer, bondline target, fixture, and release owner"
+                .to_string(),
+            "retain open time, clamp pressure, cure time and temperature/humidity, handling strength, void or squeeze-out inspection, lap-shear or peel coupon, dimensional fit, first article, rework limit, and release signoff"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("fastener-installation") {
+        checks.extend([
+            "verify part revisions, fastener specification, hardware lot, washer/spacer stack, joint stack thickness, prepared threads or inserts, access, torque tool calibration, threadlocker, and torque sequence"
+                .to_string(),
+            "retain final torque, torque angle or prevailing torque, witness mark or torque stripe, clamp gap, thread engagement, threadlocker cure, retorque requirement, first article, and release signoff"
+                .to_string(),
+        ]);
+    } else if dialect_family.contains("rivet-installation") {
+        checks.extend([
+            "verify part revisions, rivet specification, hardware lot, material stack, hole diameter/alignment, grip length, access, backing support, buck bar or nosepiece, tool calibration, and pull/squeeze/press force"
+                .to_string(),
+            "retain mandrel break or shop-head inspection, head height, clinch/stake/swage deformation, clamp-up, crack/looseness inspection, pull or shear proof, first article, and release signoff"
                 .to_string(),
         ]);
     } else if dialect_family.contains("part-marking") {
@@ -41576,6 +43765,18 @@ fn canonical_policy_method(value: &str) -> Option<String> {
         Some("pcb-fabrication".to_string())
     } else if wants_pcb_assembly(&token) {
         Some("pcb-assembly".to_string())
+    } else if wants_fixture_tooling(&token) {
+        Some("fixture-tooling".to_string())
+    } else if wants_adaptive_compensation(&token) {
+        Some("adaptive-compensation".to_string())
+    } else if wants_insert_installation(&token) {
+        Some("insert-installation".to_string())
+    } else if wants_adhesive_bonding(&token) {
+        Some("adhesive-bonding".to_string())
+    } else if wants_fastener_installation(&token) {
+        Some("fastener-installation".to_string())
+    } else if wants_rivet_installation(&token) {
+        Some("rivet-installation".to_string())
     } else if wants_part_marking(&token) {
         Some("part-marking".to_string())
     } else if wants_packaging_labeling(&token) {
@@ -41608,13 +43809,19 @@ fn method_rank(method: &str) -> u8 {
         "molding-casting" => 6,
         "pcb-fabrication" => 7,
         "pcb-assembly" => 8,
-        "part-marking" => 9,
-        "packaging-labeling" => 10,
-        "composite-layup" => 11,
-        "hot-wire-foam-cutting" => 12,
-        "sheet-forming" => 13,
-        "sheet-cutting" => 14,
-        "turning" => 15,
+        "fixture-tooling" => 9,
+        "adaptive-compensation" => 10,
+        "insert-installation" => 11,
+        "adhesive-bonding" => 12,
+        "fastener-installation" => 13,
+        "rivet-installation" => 14,
+        "part-marking" => 15,
+        "packaging-labeling" => 16,
+        "composite-layup" => 17,
+        "hot-wire-foam-cutting" => 18,
+        "sheet-forming" => 19,
+        "sheet-cutting" => 20,
+        "turning" => 21,
         _ => 100,
     }
 }
@@ -42202,7 +44409,13 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         let part_tolerance = part.tolerance_mm.unwrap_or(tolerance_mm);
         let machine = choose_machine(part, &machines, &part_material, constraints);
         let class = machine_class(&machine.kind);
-        let method = if is_assembly_cell_kind(&machine.kind) {
+        let method = if is_adhesive_bonding_kind(&machine.kind) {
+            "adhesive-bonding"
+        } else if is_fastener_installation_kind(&machine.kind) {
+            "fastener-installation"
+        } else if is_rivet_installation_kind(&machine.kind) {
+            "rivet-installation"
+        } else if is_assembly_cell_kind(&machine.kind) {
             "assembly-joining"
         } else if is_precision_grinder_kind(&machine.kind) {
             "precision-grinding"
@@ -42220,6 +44433,12 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
             "pcb-fabrication"
         } else if is_pcb_assembly_kind(&machine.kind) {
             "pcb-assembly"
+        } else if is_fixture_tooling_kind(&machine.kind) {
+            "fixture-tooling"
+        } else if is_adaptive_compensation_kind(&machine.kind) {
+            "adaptive-compensation"
+        } else if is_insert_installation_kind(&machine.kind) {
+            "insert-installation"
         } else if is_part_marking_kind(&machine.kind) {
             "part-marking"
         } else if is_packaging_labeling_kind(&machine.kind) {
@@ -45646,6 +47865,24 @@ fn material_feedstock_kind(part: &PartPlan) -> &'static str {
         }
         MachineClass::Other if is_pcb_assembly_kind(&part.machine_kind) => {
             "pcb-panel-solder-paste-and-component-kit"
+        }
+        MachineClass::Other if is_fixture_tooling_kind(&part.machine_kind) => {
+            "fixture-plate-soft-jaw-hardware-and-workholding-kit"
+        }
+        MachineClass::Other if is_adaptive_compensation_kind(&part.machine_kind) => {
+            "measurement-artifact-probe-offset-and-rollback-kit"
+        }
+        MachineClass::Other if is_insert_installation_kind(&part.machine_kind) => {
+            "threaded-insert-hardware-hole-prep-and-torque-test-kit"
+        }
+        MachineClass::Other if is_adhesive_bonding_kind(&part.machine_kind) => {
+            "adhesive-substrate-prep-fixture-cure-and-coupon-kit"
+        }
+        MachineClass::Other if is_fastener_installation_kind(&part.machine_kind) => {
+            "fastener-hardware-threadlocker-torque-tool-and-witness-mark-kit"
+        }
+        MachineClass::Other if is_rivet_installation_kind(&part.machine_kind) => {
+            "rivet-clinch-stake-tooling-hole-stack-and-inspection-kit"
         }
         MachineClass::Other if is_part_marking_kind(&part.machine_kind) => {
             "marked-part-artwork-serial-and-fixture-kit"
@@ -53133,6 +55370,9 @@ async fn run_nats_loop(state: AppState) {
 
 async fn root() -> impl IntoResponse {
     let routes = vec![
+        "GET /",
+        "GET /landing",
+        "GET /fabrication/landing",
         "GET /healthz",
         "GET /readyz",
         "GET /metrics",
@@ -53146,10 +55386,14 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/subtractive/catalog",
         "GET /cnc/catalog",
         "GET /fabrication/cnc/catalog",
+        "GET /cells/catalog",
+        "GET /fabrication/cells/catalog",
         "POST /machines/select",
         "POST /fabrication/machines/select",
         "GET /controllers/catalog",
         "GET /fabrication/controllers/catalog",
+        "POST /controllers/result",
+        "POST /fabrication/controllers/result",
         "GET /materials/catalog",
         "GET /fabrication/materials/catalog",
         "POST /materials/plan",
@@ -53164,6 +55408,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/slicers/result",
         "GET /mesh-repair/catalog",
         "GET /fabrication/mesh-repair/catalog",
+        "POST /mesh-repair/result",
+        "POST /fabrication/mesh-repair/result",
         "GET /formats/catalog",
         "GET /fabrication/formats/catalog",
         "GET /design/import/catalog",
@@ -53176,8 +55422,14 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/results/catalog",
         "GET /design/generation/catalog",
         "GET /fabrication/design/generation/catalog",
+        "POST /design/generate",
+        "POST /fabrication/design/generate",
         "POST /design/synthesis/result",
         "POST /fabrication/design/synthesis/result",
+        "GET /handoff/catalog",
+        "GET /fabrication/handoff/catalog",
+        "POST /handoff/result",
+        "POST /fabrication/handoff/result",
         "POST /design/import/review",
         "POST /fabrication/design/import/review",
         "POST /design/import/result",
@@ -53218,6 +55470,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/remediation/catalog",
         "POST /remediation/plan",
         "POST /fabrication/remediation/plan",
+        "POST /remediation/result",
+        "POST /fabrication/remediation/result",
         "GET /decomposition/catalog",
         "GET /fabrication/decomposition/catalog",
         "POST /decomposition/plan",
@@ -53230,6 +55484,16 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/release/preview",
         "POST /release/result",
         "POST /fabrication/release/result",
+        "POST /execution/plan",
+        "POST /fabrication/execution/plan",
+        "POST /execution/result",
+        "POST /fabrication/execution/result",
+        "GET /assembly/catalog",
+        "GET /fabrication/assembly/catalog",
+        "POST /assembly/plan",
+        "POST /fabrication/assembly/plan",
+        "POST /assembly/result",
+        "POST /fabrication/assembly/result",
         "GET /hybrid/catalog",
         "GET /fabrication/hybrid/catalog",
         "GET /strategy/catalog",
@@ -53254,6 +55518,32 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/quality/catalog",
         "GET /dispositions/catalog",
         "GET /fabrication/dispositions/catalog",
+        "POST /dispositions/result",
+        "POST /fabrication/dispositions/result",
+        "GET /costing/catalog",
+        "GET /fabrication/costing/catalog",
+        "POST /costing/result",
+        "POST /fabrication/costing/result",
+        "GET /utilities/catalog",
+        "GET /fabrication/utilities/catalog",
+        "GET /energy/catalog",
+        "GET /fabrication/energy/catalog",
+        "POST /energy/result",
+        "POST /fabrication/energy/result",
+        "POST /utilities/result",
+        "POST /fabrication/utilities/result",
+        "GET /telemetry/catalog",
+        "GET /fabrication/telemetry/catalog",
+        "GET /maintenance/catalog",
+        "GET /fabrication/maintenance/catalog",
+        "POST /maintenance/result",
+        "POST /fabrication/maintenance/result",
+        "GET /availability/catalog",
+        "GET /fabrication/availability/catalog",
+        "POST /availability/result",
+        "POST /fabrication/availability/result",
+        "POST /telemetry/result",
+        "POST /fabrication/telemetry/result",
         "POST /quality/plan",
         "POST /fabrication/quality/plan",
         "POST /quality/result",
@@ -53274,8 +55564,14 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/tooling/catalog",
         "POST /tooling/result",
         "POST /fabrication/tooling/result",
+        "GET /consumables/catalog",
+        "GET /fabrication/consumables/catalog",
+        "POST /consumables/result",
+        "POST /fabrication/consumables/result",
         "GET /workholding/catalog",
         "GET /fabrication/workholding/catalog",
+        "POST /workholding/result",
+        "POST /fabrication/workholding/result",
         "GET /nesting/catalog",
         "GET /fabrication/nesting/catalog",
         "POST /nesting/result",
@@ -53294,8 +55590,12 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/kinematics/result",
         "GET /tolerances/catalog",
         "GET /fabrication/tolerances/catalog",
+        "POST /tolerances/result",
+        "POST /fabrication/tolerances/result",
         "GET /process-capabilities/catalog",
         "GET /fabrication/process-capabilities/catalog",
+        "POST /process-capabilities/result",
+        "POST /fabrication/process-capabilities/result",
         "GET /manufacturability/catalog",
         "GET /fabrication/manufacturability/catalog",
         "POST /manufacturability/result",
@@ -53306,14 +55606,20 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/failure-modes/result",
         "GET /safety/catalog",
         "GET /fabrication/safety/catalog",
+        "POST /safety/result",
+        "POST /fabrication/safety/result",
         "GET /environment/catalog",
         "GET /fabrication/environment/catalog",
+        "POST /environment/result",
+        "POST /fabrication/environment/result",
         "GET /provenance/catalog",
         "GET /fabrication/provenance/catalog",
         "GET /as-built/catalog",
         "GET /fabrication/as-built/catalog",
         "POST /as-built/result",
         "POST /fabrication/as-built/result",
+        "POST /provenance/result",
+        "POST /fabrication/provenance/result",
         "POST /setup/plan",
         "POST /fabrication/setup/plan",
         "POST /setup/result",
@@ -53334,14 +55640,24 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/artifacts/catalog",
         "GET /learning/capabilities",
         "GET /fabrication/learning/capabilities",
+        "GET /learning/engines/catalog",
+        "GET /fabrication/learning/engines/catalog",
         "GET /learning/models/catalog",
         "GET /fabrication/learning/models/catalog",
         "GET /learning/optimizers/catalog",
         "GET /fabrication/learning/optimizers/catalog",
+        "GET /learning/rewards/catalog",
+        "GET /fabrication/learning/rewards/catalog",
+        "GET /learning/corpus",
+        "GET /fabrication/learning/corpus",
         "POST /learning/models/result",
         "POST /fabrication/learning/models/result",
         "POST /learning/optimizers/result",
         "POST /fabrication/learning/optimizers/result",
+        "GET /intake/catalog",
+        "GET /fabrication/intake/catalog",
+        "GET /templates/catalog",
+        "GET /fabrication/templates/catalog",
         "GET /schema",
         "GET /fabrication/schema",
         "GET /examples",
@@ -53390,6 +55706,22 @@ async fn root() -> impl IntoResponse {
     Json(json!({
         "service": SERVICE_NAME,
         "schemaVersion": SCHEMA_VERSION,
+        "landingPage": {
+            "label": "Human fabrication overview",
+            "routes": ["/landing", "/fabrication/landing"],
+            "describes": [
+                "request intake for CAD, mesh, slicer, CAM, CNC, and text instructions",
+                "design, instruction, machine-code, toolpath, simulation, and release evidence flow",
+                "machine-failure boundaries, human-intervention gates, split/combine planning, and learning handoffs"
+            ]
+        },
+        "startHere": {
+            "humanOverview": "/fabrication/landing",
+            "capabilities": "/fabrication/capabilities",
+            "requestSchema": "/fabrication/schema",
+            "examples": "/fabrication/examples",
+            "apiDocs": "/api/docs"
+        },
         "routes": routes,
         "capabilities": [
             "hybrid additive/subtractive/turning process planning",
@@ -53414,6 +55746,152 @@ async fn root() -> impl IntoResponse {
             "MDP/POMDP/DES/neural policy feature contract"
         ]
     }))
+}
+
+async fn landing_page() -> axum::response::Html<&'static str> {
+    axum::response::Html(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DD Fabrication Server</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1f2933;
+      --muted: #52606d;
+      --line: #d9e2ec;
+      --panel: #f8fafc;
+      --accent: #0f766e;
+      --accent-2: #b7791f;
+      --bg: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.55;
+    }
+    main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 40px 0 56px;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 28px;
+      margin-bottom: 28px;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 5vw, 4.25rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 1.1rem;
+      letter-spacing: 0;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 78ch;
+    }
+    a { color: var(--accent); font-weight: 700; }
+    .lede {
+      font-size: 1.14rem;
+      color: var(--ink);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+      margin: 26px 0;
+    }
+    section {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      min-height: 100%;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .step {
+      border-left: 4px solid var(--accent);
+      padding: 10px 12px;
+      background: #ffffff;
+      min-height: 86px;
+    }
+    .step strong, code {
+      color: var(--ink);
+    }
+    code {
+      background: #edf2f7;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 1px 5px;
+      font-size: 0.92em;
+    }
+    .note {
+      margin-top: 22px;
+      padding: 14px 16px;
+      border-left: 4px solid var(--accent-2);
+      background: #fffaf0;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>DD Fabrication Server</h1>
+      <p class="lede">A Rust planning and review service for 3D printing, CNC mills and routers, lathes, sheet cutters, EDM, postprocess cells, and hybrid split/combine manufacturing.</p>
+    </header>
+
+    <div class="grid">
+      <section>
+        <h2>What It Takes In</h2>
+        <p>Submit fabrication intents, CAD/model/slicer sources, machine profiles, existing G-code, CAM intermediate files such as APT/CLDATA, controller programs, or text job sheets.</p>
+      </section>
+      <section>
+        <h2>What It Builds</h2>
+        <p>The server creates draft design packages, export bundles, process plans, machine schedules, generated instructions, machine-code reviews, release packages, and job artifacts.</p>
+      </section>
+      <section>
+        <h2>How It Learns</h2>
+        <p>Outcomes feed bounded MDP, POMDP, DES, reward, and neural-policy evidence using the local <code>des_engine</code> crate. Learned preferences stay advisory until release gates clear.</p>
+      </section>
+      <section>
+        <h2>How It Stays Safe</h2>
+        <p>Machine-ready release is blocked until validation, simulation or dry-run review, controller/postprocessor checks, setup evidence, quality evidence, and operator or automation signoff are attached.</p>
+      </section>
+    </div>
+
+    <section>
+      <h2>Request Flow</h2>
+      <div class="flow">
+        <div class="step"><strong>1. Discover</strong><br>Use <code>/fabrication/capabilities</code>, <code>/fabrication/intake/catalog</code>, <code>/fabrication/templates/catalog</code>, schema, and examples.</div>
+        <div class="step"><strong>2. Intake</strong><br>Provide design inputs, instructions, machines, materials, and review evidence.</div>
+        <div class="step"><strong>3. Plan</strong><br>Generate route, split/combine, setup, toolpath, schedule, and release-package drafts.</div>
+        <div class="step"><strong>4. Validate</strong><br>Analyze imported or generated instructions for machine-failure, human-intervention, and release blockers.</div>
+        <div class="step"><strong>5. Learn</strong><br>Post outcomes and worker result reviews so future jobs can prefer safer strategies.</div>
+        <div class="step"><strong>6. Inspect</strong><br>Fetch retained jobs, artifacts, and release bundles before downstream release review.</div>
+      </div>
+    </section>
+
+    <p class="note">Start with <a href="/docs/api">API docs</a>, <a href="/fabrication/capabilities">capabilities</a>, <a href="/fabrication/intake/catalog">intake guide</a>, <a href="/fabrication/templates/catalog">request templates</a>, <a href="/fabrication/schema">schema</a>, or <a href="/fabrication/examples">examples</a>. This service produces planning and evidence packets; machine-ready release stays gated until validation, simulation, controller/postprocessor review, setup, quality, and signoff evidence clear.</p>
+  </main>
+</body>
+</html>"#,
+    )
 }
 
 fn safety_boundary_classes() -> Vec<&'static str> {
@@ -87510,6 +89988,19 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "indexed-mill-gcode",
         "grbl-gcode",
         "iso-gcode",
+        "siemens-sinumerik",
+        "heidenhain",
+        "heidenhain-conversational",
+        "mazatrol",
+        "mazak-mazatrol",
+        "okuma-osp",
+        "linuxcnc",
+        "apt-cldata",
+        "apt-source",
+        "cldata-toolpath",
+        "cutter-location-file",
+        "postprocessor-deck",
+        "cam-intermediate-job",
         "printer-job",
         "slicer-job",
         "sla-job",
@@ -87584,6 +90075,46 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "smt-assembly-job",
         "pick-and-place-job",
         "reflow-job",
+        "fixture-tooling-job",
+        "soft-jaw-job",
+        "fixture-plate-job",
+        "drill-jig-job",
+        "inspection-fixture-job",
+        "assembly-fixture-job",
+        "vacuum-fixture-job",
+        "adaptive-compensation-job",
+        "closed-loop-machining-job",
+        "in-process-probing-job",
+        "inspection-feedback-job",
+        "offset-update-job",
+        "tool-wear-update-job",
+        "compensated-rerun-job",
+        "insert-installation-job",
+        "threaded-insert-job",
+        "heat-set-insert-job",
+        "press-fit-insert-job",
+        "helicoil-installation-job",
+        "dowel-pin-installation-job",
+        "bushing-installation-job",
+        "adhesive-bonding-job",
+        "structural-adhesive-job",
+        "epoxy-bonding-job",
+        "bondline-control-job",
+        "adhesive-cure-job",
+        "lap-shear-peel-test-job",
+        "fastener-installation-job",
+        "mechanical-fastening-job",
+        "screw-installation-job",
+        "bolt-installation-job",
+        "torque-sequence-job",
+        "threadlocker-job",
+        "retorque-inspection-job",
+        "rivet-installation-job",
+        "blind-rivet-job",
+        "solid-rivet-job",
+        "clinch-stake-job",
+        "swage-peen-job",
+        "rivet-inspection-job",
         "part-marking-job",
         "laser-marking-job",
         "laser-engraving-job",
@@ -87627,7 +90158,23 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
 
 fn instruction_language_family(language: &str) -> &'static str {
     let token = normalize_token(language);
-    if token.contains("gcode") {
+    if matches!(
+        token.as_str(),
+        "apt-cldata"
+            | "apt-source"
+            | "cldata-toolpath"
+            | "cutter-location-file"
+            | "postprocessor-deck"
+            | "cam-intermediate-job"
+    ) {
+        "cam-intermediate-instruction"
+    } else if token.contains("gcode")
+        || token.contains("sinumerik")
+        || token.contains("heidenhain")
+        || token.contains("mazatrol")
+        || token.contains("okuma-osp")
+        || token.contains("linuxcnc")
+    {
         "controller-gcode"
     } else if wants_composite_layup(&token) {
         "composite-layup-job-sheet"
@@ -87692,6 +90239,18 @@ fn instruction_language_family(language: &str) -> &'static str {
         "pcb-fabrication-job-sheet"
     } else if wants_pcb_assembly(&token) {
         "pcb-assembly-job-sheet"
+    } else if wants_fixture_tooling(&token) {
+        "fixture-tooling-job-sheet"
+    } else if wants_adaptive_compensation(&token) {
+        "adaptive-compensation-job-sheet"
+    } else if wants_insert_installation(&token) {
+        "insert-installation-job-sheet"
+    } else if wants_adhesive_bonding(&token) {
+        "adhesive-bonding-job-sheet"
+    } else if wants_fastener_installation(&token) {
+        "fastener-installation-job-sheet"
+    } else if wants_rivet_installation(&token) {
+        "rivet-installation-job-sheet"
     } else if wants_part_marking(&token) {
         "part-marking-job-sheet"
     } else if wants_packaging_labeling(&token) {
@@ -87716,8 +90275,37 @@ fn instruction_language_family(language: &str) -> &'static str {
 
 fn instruction_language_machine_classes(language: &str) -> Vec<String> {
     let token = normalize_token(language);
-    let classes = if token.contains("marlin") || token == "gcode" || token == "printer-job" {
+    let classes = if matches!(
+        token.as_str(),
+        "apt-cldata"
+            | "apt-source"
+            | "cldata-toolpath"
+            | "cutter-location-file"
+            | "postprocessor-deck"
+            | "cam-intermediate-job"
+    ) {
+        vec![
+            "vertical-mill",
+            "horizontal-mill",
+            "five-axis-mill",
+            "mill-turn-center",
+            "lathe",
+            "cnc-router",
+            "wire-edm-sheet-cutter",
+        ]
+    } else if token.contains("marlin") || token == "gcode" || token == "printer-job" {
         vec!["fdm-printer"]
+    } else if token.contains("heidenhain") || token.contains("sinumerik") {
+        vec!["vertical-mill", "horizontal-mill", "five-axis-mill"]
+    } else if token.contains("mazatrol") || token.contains("okuma-osp") {
+        vec![
+            "vertical-mill",
+            "horizontal-mill",
+            "mill-turn-center",
+            "lathe",
+        ]
+    } else if token.contains("linuxcnc") {
+        vec!["vertical-mill", "cnc-router", "lathe"]
     } else if token.contains("haas") || token.contains("iso") {
         vec!["vertical-mill", "horizontal-mill"]
     } else if token.contains("fanuc") {
@@ -87747,6 +90335,18 @@ fn instruction_language_machine_classes(language: &str) -> Vec<String> {
         vec!["pcb-fabrication-cell", "manual-or-special-process"]
     } else if wants_pcb_assembly(&token) {
         vec!["pcb-assembly-cell", "manual-or-special-process"]
+    } else if wants_fixture_tooling(&token) {
+        vec!["fixture-tooling-cell", "manual-or-special-process"]
+    } else if wants_adaptive_compensation(&token) {
+        vec!["adaptive-compensation-cell", "manual-or-special-process"]
+    } else if wants_insert_installation(&token) {
+        vec!["insert-installation-cell", "manual-or-special-process"]
+    } else if wants_adhesive_bonding(&token) {
+        vec!["adhesive-bonding-cell", "manual-or-special-process"]
+    } else if wants_fastener_installation(&token) {
+        vec!["fastener-installation-cell", "manual-or-special-process"]
+    } else if wants_rivet_installation(&token) {
+        vec!["rivet-installation-cell", "manual-or-special-process"]
     } else if wants_part_marking(&token) {
         vec!["part-marking-cell", "manual-or-special-process"]
     } else if wants_packaging_labeling(&token) {
@@ -87836,6 +90436,10 @@ fn instruction_language_analysis_focus(language: &str) -> Vec<String> {
             "modal state, units, plane, work offsets, compensation, feed/spindle, coolant/support, macro/subprogram, and program-end state".to_string(),
             "simulation traces for envelope, clearance, rotary/index, and process-state risk".to_string(),
         ]),
+        "cam-intermediate-instruction" => focus.extend([
+            "APT/CLDATA or cutter-location operation order, tool-axis vectors, tool table references, cutter/contact points, stock/setup identity, and postprocessor deck compatibility".to_string(),
+            "translation provenance from CAD/CAM source to controller-specific G-code, controller simulation, dry-run, and operator or automation approval before release".to_string(),
+        ]),
         "additive-job-sheet" => focus.extend([
             "heatup, homing, extrusion state, bed/chamber/material evidence, slicer profile, support media, pause/resume, and postprocess handling".to_string(),
             "material lot, build profile, recovery, first-layer, powder/resin/feedstock, and environmental evidence".to_string(),
@@ -87869,6 +90473,24 @@ fn instruction_language_analysis_focus(language: &str) -> Vec<String> {
         ]),
         "pcb-assembly-job-sheet" => focus.extend([
             "board revision, fabrication package, BOM/AVL, centroid, stencil, paste lot and expiry, feeder/nozzle map, fiducial teach-in, polarity, ESD, first article, reflow profile, AOI/X-ray, ICT or functional test, rework disposition, and release evidence".to_string(),
+        ]),
+        "fixture-tooling-job-sheet" => focus.extend([
+            "part revision, target operation, stock state, datum scheme, locator strategy, clamp or vacuum plan, soft-jaw/nest/plate profile, hardware, clearance model, dry run, tool reach, load/unload, clamp force or vacuum leak, datum transfer, gage repeatability, first article, maintenance, and fixture release evidence".to_string(),
+        ]),
+        "adaptive-compensation-job-sheet" => focus.extend([
+            "baseline measurement, program revision, warmup, probe or inspection calibration, datum alignment, feature list, nominal/tolerance values, uncertainty, compensation computation, offset or tool-wear update, rollback snapshot, compensated dry run, first article, residual error, drift trend, and release evidence".to_string(),
+        ]),
+        "insert-installation-job-sheet" => focus.extend([
+            "insert specification, hardware lot, parent material, boss geometry, prepared-hole diameter/depth/chamfer, fixture, tool tip, heat or press-force profile, depth stop, installed height, orientation, thread gage, torque or pullout, first article, rework limit, and release evidence".to_string(),
+        ]),
+        "adhesive-bonding-job-sheet" => focus.extend([
+            "part revisions, substrate compatibility, adhesive specification, lot, shelf life, mix ratio, surface cleaning, abrasion or activation, primer, bondline thickness, fixture, open time, clamp pressure, cure environment, coupon proof, dimensional fit, first article, rework limit, and release evidence".to_string(),
+        ]),
+        "fastener-installation-job-sheet" => focus.extend([
+            "part revisions, fastener specification, hardware lot, washer or spacer stack, joint stack thickness, prepared threads or inserts, access, calibrated torque tool, threadlocker, torque sequence, final torque or angle, witness mark, clamp gap, thread engagement, retorque, first article, and release evidence".to_string(),
+        ]),
+        "rivet-installation-job-sheet" => focus.extend([
+            "part revisions, rivet specification, hardware lot, material stack, hole diameter and alignment, grip length, access, backing support, buck bar or nosepiece, tool calibration, pull/squeeze/press force, mandrel break or shop head, head height, clinch/stake/swage deformation, clamp-up, crack or looseness inspection, proof test, first article, and release evidence".to_string(),
         ]),
         "part-marking-job-sheet" => focus.extend([
             "released artwork or text, revision, serial/UDI/data-matrix payload, duplicate check, datum, fixture, mark location, material finish, contrast zone, recipe, laser safety or guarding, fume extraction, readability grade, permanence, cosmetic disposition, traceability, and release evidence".to_string(),
@@ -87921,6 +90543,15 @@ fn instruction_language_release_gates(language: &str) -> Vec<String> {
         gates.push("attach-controller-specific-dry-run-or-equivalent-review".to_string());
     }
     let token = normalize_token(language);
+    if family == "cam-intermediate-instruction" {
+        gates.push("attach-cam-source-setup-tool-table-and-cutter-location-provenance".to_string());
+        gates.push(
+            "attach-postprocessor-deck-controller-target-and-translated-program-review".to_string(),
+        );
+        gates.push(
+            "attach-controller-simulation-dry-run-and-operator-or-automation-release".to_string(),
+        );
+    }
     if token.contains("resin")
         || token.contains("ctb")
         || token.contains("photon")
@@ -87941,6 +90572,39 @@ fn instruction_language_release_gates(language: &str) -> Vec<String> {
         gates.push("attach-sheet-or-foil-stock-stack-order-and-surface-prep-evidence".to_string());
         gates.push(
             "attach-registration-trim-bond-consolidation-delamination-and-dimensional-release"
+                .to_string(),
+        );
+    } else if family == "fixture-tooling-job-sheet" {
+        gates.push("attach-fixture-design-datum-locator-clamp-and-clearance-evidence".to_string());
+        gates.push("attach-fixture-dry-run-datum-transfer-gage-and-release-evidence".to_string());
+    } else if family == "adaptive-compensation-job-sheet" {
+        gates.push("attach-baseline-measurement-datum-uncertainty-and-limit-evidence".to_string());
+        gates.push(
+            "attach-offset-update-rollback-first-article-and-residual-error-evidence".to_string(),
+        );
+    } else if family == "insert-installation-job-sheet" {
+        gates.push("attach-insert-spec-hole-prep-tool-heat-force-and-depth-evidence".to_string());
+        gates.push(
+            "attach-installed-height-thread-gage-torque-pullout-and-release-evidence".to_string(),
+        );
+    } else if family == "adhesive-bonding-job-sheet" {
+        gates.push("attach-substrate-adhesive-lot-surface-prep-and-bondline-evidence".to_string());
+        gates.push(
+            "attach-cure-environment-coupon-fit-first-article-and-release-evidence".to_string(),
+        );
+    } else if family == "fastener-installation-job-sheet" {
+        gates.push(
+            "attach-fastener-spec-hardware-lot-stack-threadlocker-and-torque-sequence-evidence"
+                .to_string(),
+        );
+        gates.push(
+            "attach-final-torque-witness-mark-retorque-first-article-and-release-evidence"
+                .to_string(),
+        );
+    } else if family == "rivet-installation-job-sheet" {
+        gates.push("attach-rivet-spec-hardware-lot-hole-stack-tool-and-force-evidence".to_string());
+        gates.push(
+            "attach-mandrel-shop-head-deformation-proof-first-article-and-release-evidence"
                 .to_string(),
         );
     } else if family == "part-marking-job-sheet" {
@@ -88351,6 +91015,66 @@ fn instruction_generation_catalog_program_contracts() -> Vec<Value> {
             "releaseGates": ["board revision", "Gerber or ODB++ package", "BOM/AVL and centroid", "stencil revision", "solder-paste lot and expiry", "feeder/nozzle map", "fiducials and polarity", "first article", "reflow profile", "AOI/X-ray", "ICT or functional test"],
             "boundarySignals": ["pcb-assembly-setup-boundary", "pcb-assembly-reflow-inspection-boundary"],
             "artifactKinds": ["generated-machine-program", "program-*", "pcb-board-data-bom-and-centroid-record", "stencil-paste-feeder-and-nozzle-record", "reflow-profile-and-first-article-record", "aoi-xray-test-and-rework-record"]
+        }),
+        json!({
+            "family": "fixture-tooling-release",
+            "generatedLanguages": ["fixture-tooling-job", "soft-jaw-job", "fixture-plate-job", "drill-jig-job", "inspection-fixture-job", "assembly-fixture-job", "vacuum-fixture-job"],
+            "machineClasses": ["fixture-tooling-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other fixture tooling cell",
+            "generatedInstructionKinds": ["part revision, target operation, stock state, datum scheme, locator, clamp/vacuum, hardware, soft-jaw/nest/plate, and clearance design review", "fixture body fabrication", "locator, clamp, hardware, and vacuum installation", "dry run, tool reach, load/unload, vacuum leak or clamp force, datum transfer, gage repeatability, first article, maintenance, and release"],
+            "releaseGates": ["part revision", "target operation", "stock and datum scheme", "locator strategy", "clamp or vacuum plan", "soft-jaw/nest/plate profile", "hardware and clearance model", "dry run", "datum transfer", "gage repeatability", "first article", "fixture release"],
+            "boundarySignals": ["fixture-tooling-design-boundary", "fixture-tooling-proof-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "fixture-design-datum-and-target-operation-record", "fixture-locator-clamp-and-clearance-record", "fixture-proof-dry-run-and-gage-record", "fixture-release-and-maintenance-record"]
+        }),
+        json!({
+            "family": "adaptive-compensation-release",
+            "generatedLanguages": ["adaptive-compensation-job", "closed-loop-machining-job", "in-process-probing-job", "inspection-feedback-job", "offset-update-job", "tool-wear-update-job", "compensated-rerun-job"],
+            "machineClasses": ["adaptive-compensation-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other adaptive compensation cell",
+            "generatedInstructionKinds": ["released program revision and baseline measurement review", "in-process probing or inspection feedback capture", "work-offset or tool-wear compensation calculation", "controlled update with rollback snapshot", "compensated rerun or spring pass", "first-article residual-error and drift release"],
+            "releaseGates": ["released program revision", "machine warmup", "probe or inspection calibration", "datum alignment", "feature list and nominal values", "tolerance band and uncertainty", "compensation limits", "offset or wear update", "rollback snapshot", "compensated dry run", "first article", "residual error and drift trend", "adaptive release"],
+            "boundarySignals": ["adaptive-compensation-measurement-boundary", "adaptive-compensation-release-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "adaptive-baseline-measurement-and-datum-record", "adaptive-compensation-computation-and-limit-record", "adaptive-offset-update-and-rollback-record", "adaptive-first-article-residual-error-and-release-record"]
+        }),
+        json!({
+            "family": "insert-installation-release",
+            "generatedLanguages": ["insert-installation-job", "threaded-insert-job", "heat-set-insert-job", "press-fit-insert-job", "helicoil-installation-job", "dowel-pin-installation-job", "bushing-installation-job"],
+            "machineClasses": ["insert-installation-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other insert installation cell",
+            "generatedInstructionKinds": ["part revision, insert specification, hardware lot, parent material, boss geometry, and prepared-hole review", "fixture, tool-tip, heat/force/depth-stop setup", "threaded, heat-set, press-fit, helicoil, dowel, or bushing installation", "installed-height, orientation, boss-condition, thread-gage, torque/pullout, first-article, rework-limit, and release verification"],
+            "releaseGates": ["part revision", "insert specification", "hardware lot trace", "parent material", "boss geometry", "prepared-hole diameter/depth/chamfer", "fixture and tool tip", "heat or press-force profile", "depth stop", "installed height", "thread go/no-go", "torque or pullout", "first article", "insert release"],
+            "boundarySignals": ["insert-installation-setup-boundary", "insert-installation-release-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "insert-spec-hole-prep-and-fixture-record", "insert-tool-heat-force-and-depth-record", "insert-height-thread-gage-and-boss-inspection-record", "insert-torque-pullout-first-article-and-release-record"]
+        }),
+        json!({
+            "family": "adhesive-bonding-release",
+            "generatedLanguages": ["adhesive-bonding-job", "structural-adhesive-job", "epoxy-bonding-job", "bondline-control-job", "adhesive-cure-job", "lap-shear-peel-test-job"],
+            "machineClasses": ["adhesive-bonding-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other adhesive bonding cell",
+            "generatedInstructionKinds": ["part revision, substrate compatibility, adhesive specification, lot, shelf-life, mix-ratio, and surface-prep review", "surface cleaning, abrasion, activation or primer, bondline and fixture setup", "adhesive mix, dispense, open-time, clamp, and cure control", "void/squeeze-out, coupon, dimensional fit, first-article, rework-limit, and bonded-assembly release"],
+            "releaseGates": ["part revisions", "substrate compatibility", "adhesive specification", "lot and shelf life", "mix ratio", "surface preparation", "activation or primer", "bondline thickness", "fixture and clamp pressure", "open time", "cure environment", "coupon proof", "dimensional fit", "first article", "bond release"],
+            "boundarySignals": ["adhesive-bonding-prep-boundary", "adhesive-bonding-cure-release-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "adhesive-substrate-prep-and-compatibility-record", "adhesive-lot-mix-open-time-and-bondline-record", "adhesive-fixture-clamp-cure-and-environment-record", "adhesive-coupon-fit-first-article-and-release-record"]
+        }),
+        json!({
+            "family": "fastener-installation-release",
+            "generatedLanguages": ["fastener-installation-job", "mechanical-fastening-job", "screw-installation-job", "bolt-installation-job", "torque-sequence-job", "threadlocker-job", "retorque-inspection-job"],
+            "machineClasses": ["fastener-installation-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other fastener installation cell",
+            "generatedInstructionKinds": ["released part revisions, fastener specification, hardware lot, washer/spacer stack, joint stack thickness, prepared threads or inserts, torque tool calibration, threadlocker, and torque sequence review", "fastener installation with washer or spacer stack and threadlocker control", "final torque, torque angle or prevailing torque, witness mark, clamp gap, thread engagement, threadlocker cure, retorque, first article, and fastener-release verification"],
+            "releaseGates": ["part revisions", "fastener specification", "hardware lot", "washer/spacer stack", "joint stack thickness", "prepared threads or inserts", "access", "torque tool calibration", "threadlocker", "torque sequence", "final torque", "witness mark", "clamp gap", "thread engagement", "retorque", "first article", "fastener release"],
+            "boundarySignals": ["fastener-installation-setup-boundary", "fastener-installation-release-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "fastener-spec-lot-and-joint-stack-record", "washer-spacer-threadlocker-and-torque-sequence-record", "torque-tool-final-torque-and-witness-mark-record", "fastener-retorque-first-article-and-release-record"]
+        }),
+        json!({
+            "family": "rivet-installation-release",
+            "generatedLanguages": ["rivet-installation-job", "blind-rivet-job", "solid-rivet-job", "clinch-stake-job", "swage-peen-job", "rivet-inspection-job"],
+            "machineClasses": ["rivet-installation-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other rivet installation cell",
+            "generatedInstructionKinds": ["part revision, rivet specification, hardware lot, material stack, hole diameter/alignment, grip length, backing support, tool calibration, and pull/squeeze/press-force review", "blind rivet, solid rivet, clinch, stake, swage, or peen installation", "mandrel break or shop-head, head height, deformation, clamp-up, crack/looseness, proof-test, first-article, and rivet-release verification"],
+            "releaseGates": ["part revisions", "rivet specification", "hardware lot", "material stack", "hole diameter", "hole alignment", "grip length", "backing support", "buck bar or nosepiece", "tool calibration", "pull/squeeze/press force", "mandrel break or shop head", "head height", "deformation", "clamp-up", "proof test", "first article", "rivet release"],
+            "boundarySignals": ["rivet-installation-setup-boundary", "rivet-installation-release-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "rivet-spec-lot-and-hole-stack-record", "rivet-tool-access-and-force-record", "mandrel-shop-head-and-deformation-record", "rivet-proof-first-article-and-release-record"]
         }),
         json!({
             "family": "part-marking-release",
@@ -90271,6 +92995,18 @@ fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
                 "add-metal-joining-inspection-evidence",
                 "add-molding-casting-tooling-evidence",
                 "add-molding-casting-process-evidence",
+                "add-fixture-tooling-design-evidence",
+                "add-fixture-tooling-proof-evidence",
+                "add-adaptive-compensation-measurement-evidence",
+                "add-adaptive-compensation-release-evidence",
+                "add-insert-installation-setup-evidence",
+                "add-insert-installation-release-evidence",
+                "add-adhesive-bonding-prep-evidence",
+                "add-adhesive-bonding-cure-release-evidence",
+                "add-fastener-installation-setup-evidence",
+                "add-fastener-installation-release-evidence",
+                "add-rivet-installation-setup-evidence",
+                "add-rivet-installation-release-evidence",
                 "add-part-marking-setup-evidence",
                 "add-part-marking-readability-evidence",
                 "add-composite-layup-tooling-evidence",
@@ -90282,7 +93018,7 @@ fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
                 "add-indexed-setup-evidence",
                 "add-structured-text-checkpoints"
             ],
-            "appliesTo": ["operator-checklist", "assembly-cell-job", "part-separation-checklist", "thermal-postprocess", "surface-finishing", "metal-joining", "welding-job", "brazing-job", "soldering-job", "molding-casting", "molding-casting-job", "casting-job", "molding-job", "urethane-casting-job", "silicone-molding-job", "vacuum-casting-job", "part-marking", "part-marking-job", "laser-marking-job", "laser-engraving-job", "dot-peen-job", "data-matrix-marking-job", "udi-marking-job", "composite-layup", "composite-layup-job", "wet-layup-job", "prepreg-layup-job", "vacuum-bag-job", "autoclave-cure-job", "resin-infusion-job", "hot-wire-foam", "hot-wire-foam-job", "hot-wire-job", "foam-cutting-job", "foam-core-job", "wing-core-job", "press-brake", "sheet-forming", "gear-cutting", "gear-cutting-job", "gear-hobbing-job", "spline-broaching-job", "indexed-setup"],
+            "appliesTo": ["operator-checklist", "assembly-cell-job", "part-separation-checklist", "thermal-postprocess", "surface-finishing", "metal-joining", "welding-job", "brazing-job", "soldering-job", "molding-casting", "molding-casting-job", "casting-job", "molding-job", "urethane-casting-job", "silicone-molding-job", "vacuum-casting-job", "fixture-tooling", "fixture-tooling-job", "soft-jaw-job", "fixture-plate-job", "drill-jig-job", "inspection-fixture-job", "assembly-fixture-job", "vacuum-fixture-job", "adaptive-compensation", "adaptive-compensation-job", "closed-loop-machining-job", "in-process-probing-job", "inspection-feedback-job", "offset-update-job", "tool-wear-update-job", "compensated-rerun-job", "insert-installation", "insert-installation-job", "threaded-insert-job", "heat-set-insert-job", "press-fit-insert-job", "helicoil-installation-job", "dowel-pin-installation-job", "bushing-installation-job", "adhesive-bonding", "adhesive-bonding-job", "structural-adhesive-job", "epoxy-bonding-job", "bondline-control-job", "adhesive-cure-job", "lap-shear-peel-test-job", "fastener-installation", "fastener-installation-job", "mechanical-fastening-job", "screw-installation-job", "bolt-installation-job", "torque-sequence-job", "threadlocker-job", "retorque-inspection-job", "rivet-installation", "rivet-installation-job", "blind-rivet-job", "solid-rivet-job", "clinch-stake-job", "swage-peen-job", "rivet-inspection-job", "part-marking", "part-marking-job", "laser-marking-job", "laser-engraving-job", "dot-peen-job", "data-matrix-marking-job", "udi-marking-job", "composite-layup", "composite-layup-job", "wet-layup-job", "prepreg-layup-job", "vacuum-bag-job", "autoclave-cure-job", "resin-infusion-job", "hot-wire-foam", "hot-wire-foam-job", "hot-wire-job", "foam-cutting-job", "foam-core-job", "wing-core-job", "press-brake", "sheet-forming", "gear-cutting", "gear-cutting-job", "gear-hobbing-job", "spline-broaching-job", "indexed-setup"],
             "operationKinds": ["insert-review-checkpoint", "review-line"],
             "generatedContent": ["setup-boundary, process-boundary, and completion-boundary checkpoints"],
             "sourceSurfaces": ["improvements", "improvedPrograms.instructions", "operatorInterventionPlan.requiredOperatorActions"],
@@ -90574,6 +93310,64 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
             languages.insert("reflow-job".to_string());
             languages.insert("operator-checklist".to_string());
         }
+        MachineClass::Other if is_fixture_tooling_kind(&machine.kind) => {
+            languages.insert("fixture-tooling-job".to_string());
+            languages.insert("soft-jaw-job".to_string());
+            languages.insert("fixture-plate-job".to_string());
+            languages.insert("drill-jig-job".to_string());
+            languages.insert("inspection-fixture-job".to_string());
+            languages.insert("assembly-fixture-job".to_string());
+            languages.insert("vacuum-fixture-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_adaptive_compensation_kind(&machine.kind) => {
+            languages.insert("adaptive-compensation-job".to_string());
+            languages.insert("closed-loop-machining-job".to_string());
+            languages.insert("in-process-probing-job".to_string());
+            languages.insert("inspection-feedback-job".to_string());
+            languages.insert("offset-update-job".to_string());
+            languages.insert("tool-wear-update-job".to_string());
+            languages.insert("compensated-rerun-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_insert_installation_kind(&machine.kind) => {
+            languages.insert("insert-installation-job".to_string());
+            languages.insert("threaded-insert-job".to_string());
+            languages.insert("heat-set-insert-job".to_string());
+            languages.insert("press-fit-insert-job".to_string());
+            languages.insert("helicoil-installation-job".to_string());
+            languages.insert("dowel-pin-installation-job".to_string());
+            languages.insert("bushing-installation-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_adhesive_bonding_kind(&machine.kind) => {
+            languages.insert("adhesive-bonding-job".to_string());
+            languages.insert("structural-adhesive-job".to_string());
+            languages.insert("epoxy-bonding-job".to_string());
+            languages.insert("bondline-control-job".to_string());
+            languages.insert("adhesive-cure-job".to_string());
+            languages.insert("lap-shear-peel-test-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_fastener_installation_kind(&machine.kind) => {
+            languages.insert("fastener-installation-job".to_string());
+            languages.insert("mechanical-fastening-job".to_string());
+            languages.insert("screw-installation-job".to_string());
+            languages.insert("bolt-installation-job".to_string());
+            languages.insert("torque-sequence-job".to_string());
+            languages.insert("threadlocker-job".to_string());
+            languages.insert("retorque-inspection-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_rivet_installation_kind(&machine.kind) => {
+            languages.insert("rivet-installation-job".to_string());
+            languages.insert("blind-rivet-job".to_string());
+            languages.insert("solid-rivet-job".to_string());
+            languages.insert("clinch-stake-job".to_string());
+            languages.insert("swage-peen-job".to_string());
+            languages.insert("rivet-inspection-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
         MachineClass::Other if is_part_marking_kind(&machine.kind) => {
             languages.insert("part-marking-job".to_string());
             languages.insert("laser-marking-job".to_string());
@@ -90708,6 +93502,30 @@ fn machine_catalog_release_gates(machine: &MachineProfile) -> Vec<String> {
         ),
         MachineClass::Other if is_pcb_assembly_kind(&machine.kind) => gates.push(
             "verify board revision, Gerber/ODB++ package, BOM/AVL, centroid, stencil, solder-paste lot/expiry, feeder/nozzle map, fiducials, polarity, ESD, first article, reflow profile, AOI/X-ray, ICT or functional test, rework disposition, and release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_fixture_tooling_kind(&machine.kind) => gates.push(
+            "verify part revision, target operation, stock state, datum scheme, locator strategy, clamp or vacuum plan, soft-jaw/nest/plate profile, hardware, clearance model, dry-run proof, tool reach, load/unload, clamp force or vacuum leak, datum transfer, gage repeatability, first article, maintenance, and fixture-release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_adaptive_compensation_kind(&machine.kind) => gates.push(
+            "verify released program revision, machine warmup, probe or inspection calibration, datum alignment, feature list, nominal values, tolerance band, measurement uncertainty, compensation limits, work-offset or tool-wear update, rollback snapshot, compensated dry run, spring pass or rerun path, first article, residual error, drift trend, and adaptive-release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_insert_installation_kind(&machine.kind) => gates.push(
+            "verify part revision, insert specification, hardware lot trace, parent material, boss wall or geometry, prepared-hole diameter/depth/chamfer, fixture, tool tip, heat or press-force profile, depth stop, installed height, orientation, boss condition, thread go/no-go gage, torque or pullout result, first article, rework limit, and insert-release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_adhesive_bonding_kind(&machine.kind) => gates.push(
+            "verify part revisions, substrate compatibility, adhesive specification, lot and shelf life, mix ratio, surface cleaning, abrasion or activation, primer, bondline thickness, fixture, open time, clamp pressure, cure time and temperature/humidity, void/squeeze-out inspection, lap-shear or peel proof, dimensional fit, first article, rework limit, and bond-release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_fastener_installation_kind(&machine.kind) => gates.push(
+            "verify part revisions, fastener specification, hardware lot, washer/spacer stack, joint stack thickness, prepared threads or inserts, access, torque tool calibration, threadlocker, torque sequence, final torque, torque angle or prevailing torque, witness mark, clamp gap, thread engagement, threadlocker cure, retorque, first article, and fastener-release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_rivet_installation_kind(&machine.kind) => gates.push(
+            "verify part revisions, rivet specification, hardware lot, material stack, hole diameter/alignment, grip length, access, backing support, buck bar or nosepiece, tool calibration, pull/squeeze/press force, mandrel break or shop-head inspection, deformation, clamp-up, proof test, first article, and rivet-release evidence"
                 .to_string(),
         ),
         MachineClass::Other if is_packaging_labeling_kind(&machine.kind) => gates.push(
@@ -93220,10 +96038,24 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/capabilities",
                 "GET /machines/catalog",
                 "GET /fabrication/machines/catalog",
+                "POST /machines/select",
+                "POST /fabrication/machines/select",
+                "GET /printers/catalog",
+                "GET /fabrication/printers/catalog",
+                "GET /subtractive/catalog",
+                "GET /fabrication/subtractive/catalog",
+                "GET /cnc/catalog",
+                "GET /fabrication/cnc/catalog",
                 "GET /cells/catalog",
                 "GET /fabrication/cells/catalog",
+                "GET /hybrid/catalog",
+                "GET /fabrication/hybrid/catalog",
+                "GET /methods/catalog",
+                "GET /fabrication/methods/catalog",
                 "GET /controllers/catalog",
                 "GET /fabrication/controllers/catalog",
+                "POST /controllers/result",
+                "POST /fabrication/controllers/result",
                 "GET /materials/catalog",
                 "GET /fabrication/materials/catalog",
                 "POST /materials/plan",
@@ -93238,6 +96070,8 @@ async fn capabilities() -> impl IntoResponse {
                 "POST /fabrication/slicers/result",
                 "GET /mesh-repair/catalog",
                 "GET /fabrication/mesh-repair/catalog",
+                "POST /mesh-repair/result",
+                "POST /fabrication/mesh-repair/result",
                 "GET /design/import/catalog",
                 "GET /fabrication/design/import/catalog",
                 "GET /subjects/catalog",
@@ -93274,6 +96108,8 @@ async fn capabilities() -> impl IntoResponse {
                 "POST /fabrication/instructions/review/result",
                 "POST /instructions/validation/result",
                 "POST /fabrication/instructions/validation/result",
+                "GET /machine-code/catalog",
+                "GET /fabrication/machine-code/catalog",
                 "POST /machine-code/generate",
                 "POST /fabrication/machine-code/generate",
                 "POST /machine-code/result",
@@ -93308,6 +96144,10 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/release/catalog",
                 "POST /release/result",
                 "POST /fabrication/release/result",
+                "GET /workflow/catalog",
+                "GET /fabrication/workflow/catalog",
+                "POST /workflow/plan",
+                "POST /fabrication/workflow/plan",
                 "GET /strategy/catalog",
                 "GET /fabrication/strategy/catalog",
                 "POST /strategy/recommend",
@@ -93436,6 +96276,8 @@ async fn capabilities() -> impl IntoResponse {
                 "POST /fabrication/instructions/generation/result"
             ],
             "toolpaths": [
+                "GET /machine-code/catalog",
+                "GET /fabrication/machine-code/catalog",
                 "POST /machine-code/generate",
                 "POST /fabrication/machine-code/generate",
                 "POST /machine-code/result",
@@ -93557,6 +96399,10 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/learning/outcomes",
                 "GET /learning/capabilities",
                 "GET /fabrication/learning/capabilities",
+                "GET /learning/rewards/catalog",
+                "GET /fabrication/learning/rewards/catalog",
+                "GET /learning/corpus",
+                "GET /fabrication/learning/corpus",
                 "GET /learning/policy",
                 "GET /fabrication/learning/policy"
             ],
@@ -97204,6 +100050,176 @@ async fn result_review_catalog_http() -> impl IntoResponse {
     Json(result_review_catalog_response())
 }
 
+fn intake_guide() -> Value {
+    json!([
+        {
+            "step": "discover",
+            "routes": ["/fabrication/landing", "/fabrication/capabilities", "/fabrication/schema", "/fabrication/examples"],
+            "evidence": ["objective", "candidate materials", "candidate machine classes", "operator constraints"]
+        },
+        {
+            "step": "review-design-inputs",
+            "routes": ["/fabrication/design/import/review", "/fabrication/design/import/result"],
+            "evidence": ["native CAD translator evidence", "mesh topology and units", "slicer profile compatibility"]
+        },
+        {
+            "step": "attach-machine-profile",
+            "routes": ["/fabrication/machines/catalog", "/fabrication/machines/select"],
+            "evidence": ["calibration labels", "tooling and fixture labels", "material and support-media readiness", "known blockers"]
+        },
+        {
+            "step": "analyze-or-generate-instructions",
+            "routes": ["/fabrication/instructions/analyze", "/fabrication/instructions/generate", "/fabrication/machine-code/generate"],
+            "evidence": ["submitted CNC or printer program", "postprocessor target", "controller dialect", "machine-failure boundaries"]
+        },
+        {
+            "step": "plan-hybrid-build",
+            "routes": ["/fabrication/plan", "/fabrication/decomposition/plan", "/fabrication/assembly/plan"],
+            "evidence": ["split/combine candidates", "interface-control evidence", "assembly and operator-intervention constraints"]
+        },
+        {
+            "step": "release-and-learn",
+            "routes": ["/fabrication/release/preview", "/fabrication/learning/observe", "/fabrication/learning/outcomes"],
+            "evidence": ["simulation and dry-run results", "quality and setup reviews", "fabrication outcome rewards"]
+        }
+    ])
+}
+
+async fn intake_catalog_http() -> impl IntoResponse {
+    Json(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.intake-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /intake/catalog", "GET /fabrication/intake/catalog"],
+        "intakeGuide": intake_guide(),
+        "releasePolicy": [
+            "intake evidence is advisory until retained design, instruction, setup, simulation, quality, and release reviews clear",
+            "machine-ready release remains blocked when machine-failure, human-intervention, split/combine, or operator signoff evidence is missing",
+            "learning observations can bias future plans but do not bypass release gates"
+        ]
+    }))
+}
+
+fn request_templates() -> Value {
+    json!([
+        {
+            "id": "fdm-print-functional-part",
+            "label": "FDM printer functional part",
+            "route": "POST /fabrication/plan",
+            "machineKind": "fdm-printer",
+            "preferredMethods": ["additive-print"],
+            "requiredEvidence": ["material loaded", "bed calibration current", "nozzle temperature profile", "slicer profile reviewed"],
+            "releaseGateHints": ["designInputReview.supportedFormats", "slicerProfileReview", "machineProfileEvidence", "simulationOrDryRun", "qualityPlan"],
+            "request": {
+                "templateId": "fdm-print-functional-part",
+                "templateVersion": "v1",
+                "objective": "Print a PETG bracket with retained slicer and first-layer evidence",
+                "material": { "name": "PETG", "family": "polymer" },
+                "constraints": {
+                    "preferredMethods": ["additive-print"],
+                    "requireDryRun": true
+                }
+            }
+        },
+        {
+            "id": "vertical-mill-fixture-plate",
+            "label": "Vertical mill fixture plate",
+            "route": "POST /fabrication/plan",
+            "machineKind": "vertical-mill",
+            "preferredMethods": ["milling", "drilling"],
+            "requiredEvidence": ["work offset current", "tool length offsets current", "fixture proof", "coolant or chip evacuation ready"],
+            "releaseGateHints": ["controllerPlan.releaseGates", "toolingPlan.releaseGates", "workholdingEvidence", "simulationOrDryRun", "machineRelease.blockers"],
+            "request": {
+                "templateId": "vertical-mill-fixture-plate",
+                "templateVersion": "v1",
+                "objective": "Mill an aluminum fixture plate with drilled datum holes",
+                "material": { "name": "6061 aluminum", "family": "metal" },
+                "constraints": {
+                    "preferredMethods": ["milling", "drilling"],
+                    "requireDryRun": true
+                }
+            }
+        },
+        {
+            "id": "horizontal-mill-side-feature",
+            "label": "Horizontal mill side feature",
+            "route": "POST /fabrication/plan",
+            "machineKind": "horizontal-mill",
+            "preferredMethods": ["horizontal-milling", "side-slotting", "keyway-milling"],
+            "requiredEvidence": ["pallet or tombstone setup", "fixture reach clearance", "work offset current", "tool length offsets current", "chip evacuation ready"],
+            "releaseGateHints": ["controllerPlan.releaseGates", "toolingPlan.releaseGates", "workholdingEvidence", "clearanceSweepEvidence", "simulationOrDryRun", "machineRelease.blockers"],
+            "request": {
+                "templateId": "horizontal-mill-side-feature",
+                "templateVersion": "v1",
+                "objective": "Machine a steel rail side slot and keyway on a horizontal mill",
+                "material": { "name": "4140 steel", "family": "metal" },
+                "constraints": {
+                    "preferredMethods": ["horizontal-milling", "side-slotting"],
+                    "requireDryRun": true
+                }
+            }
+        },
+        {
+            "id": "lathe-turned-insert",
+            "label": "Lathe turned insert",
+            "route": "POST /fabrication/plan",
+            "machineKind": "lathe",
+            "preferredMethods": ["turning", "boring", "threading"],
+            "requiredEvidence": ["chuck or collet setup", "tool geometry offsets", "spindle speed evidence", "thread pitch or feed-per-rev evidence"],
+            "releaseGateHints": ["controllerPlan.releaseGates", "toolingPlan.releaseGates", "workholdingEvidence", "threadingFeedModeEvidence", "machineRelease.blockers"],
+            "request": {
+                "templateId": "lathe-turned-insert",
+                "templateVersion": "v1",
+                "objective": "Turn and thread a brass insert for a printed assembly",
+                "material": { "name": "brass", "family": "metal" },
+                "constraints": {
+                    "preferredMethods": ["turning", "threading"],
+                    "allowHumanIntervention": true
+                }
+            }
+        },
+        {
+            "id": "hybrid-printed-milled-turned-assembly",
+            "label": "Hybrid printed, milled, and turned assembly",
+            "route": "POST /fabrication/plan",
+            "machineKind": "hybrid-fleet",
+            "preferredMethods": ["additive-print", "milling", "turning", "assembly"],
+            "requiredEvidence": ["split/combine rationale", "interface-control plan", "machine-profile evidence for each operation", "operator intervention plan"],
+            "releaseGateHints": ["decompositionPlan.releaseGates", "interfaceControlPlan.releaseGates", "assemblyPlan.releaseGates", "releasePackagePlan.releaseGates", "learningFeedbackRetained"],
+            "request": {
+                "templateId": "hybrid-printed-milled-turned-assembly",
+                "templateVersion": "v1",
+                "objective": "Make a printed fixture body with milled datum pads and a turned threaded insert",
+                "constraints": {
+                    "preferredMethods": ["additive-print", "milling", "turning"],
+                    "allowMultiPartAssembly": true,
+                    "allowHumanIntervention": true,
+                    "requireDryRun": true
+                }
+            }
+        }
+    ])
+}
+
+async fn request_templates_catalog_http() -> impl IntoResponse {
+    Json(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.request-templates-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /templates/catalog", "GET /fabrication/templates/catalog"],
+        "releaseCatalog": "/fabrication/release/catalog",
+        "templates": request_templates(),
+        "releasePolicy": [
+            "templates are starter request skeletons, not machine-ready instructions",
+            "templateId and templateVersion are trace labels clients should keep with retained job, artifact, and learning evidence",
+            "machine-ready release still requires retained design, instruction, setup, simulation, quality, and operator evidence",
+            "hybrid templates must keep split/combine and interface-control evidence visible until assembly and release reviews clear"
+        ]
+    }))
+}
+
 async fn request_schema() -> impl IntoResponse {
     Json(json!({
         "ok": true,
@@ -97322,8 +100338,10 @@ async fn request_schema() -> impl IntoResponse {
             "learningOutcomesMemory": ["GET /learning/outcomes", "GET /fabrication/learning/outcomes"],
             "learningOutcome": ["POST /learning/outcomes", "POST /fabrication/learning/outcomes"],
             "learningOptimizerCatalog": ["GET /learning/optimizers/catalog", "GET /fabrication/learning/optimizers/catalog"],
-            "learningOptimizerResult": ["POST /learning/optimizers/result", "POST /fabrication/learning/optimizers/result"]
+            "learningOptimizerResult": ["POST /learning/optimizers/result", "POST /fabrication/learning/optimizers/result"],
+            "requestTemplates": ["GET /templates/catalog", "GET /fabrication/templates/catalog"]
         },
+        "intakeGuide": intake_guide(),
         "planRequest": {
             "required": ["objective"],
             "optional": [
@@ -97490,6 +100508,32 @@ async fn examples() -> impl IntoResponse {
         "schemaVersion": "dd.fabrication.examples.v1",
         "serviceSchemaVersion": SCHEMA_VERSION,
         "examples": {
+            "templateDrivenPlan": {
+                "route": "POST /fabrication/plan",
+                "sourceCatalog": "GET /fabrication/templates/catalog",
+                "releaseCatalog": "GET /fabrication/release/catalog",
+                "request": {
+                    "requestId": "demo-template-fdm-bracket-001",
+                    "templateId": "fdm-print-functional-part",
+                    "templateVersion": "v1",
+                    "objective": "Print a PETG bracket from the FDM template while retaining slicer and first-layer evidence",
+                    "material": { "name": "PETG", "family": "polymer" },
+                    "constraints": {
+                        "preferredMethods": ["additive-print"],
+                        "requireDryRun": true
+                    },
+                    "templateTrace": {
+                        "releaseGateHints": [
+                            "designInputReview.supportedFormats",
+                            "slicerProfileReview",
+                            "machineProfileEvidence",
+                            "simulationOrDryRun",
+                            "qualityPlan"
+                        ],
+                        "retainWith": ["job", "artifacts", "releasePackagePlan", "learningOutcome"]
+                    }
+                }
+            },
             "hybridPlan": {
                 "route": "POST /fabrication/plan",
                 "request": {
@@ -99726,6 +102770,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let app = Router::new()
         .route("/", get(root))
+        .route("/landing", get(landing_page))
+        .route("/fabrication/landing", get(landing_page))
         .route("/healthz", get(healthz))
         .route("/readyz", get(healthz))
         .route("/capabilities", get(capabilities))
@@ -100311,6 +103357,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/learning/optimizers/result",
             post(learning_optimizer_result_http),
         )
+        .route("/intake/catalog", get(intake_catalog_http))
+        .route("/fabrication/intake/catalog", get(intake_catalog_http))
+        .route("/templates/catalog", get(request_templates_catalog_http))
+        .route(
+            "/fabrication/templates/catalog",
+            get(request_templates_catalog_http),
+        )
         .route("/schema", get(request_schema))
         .route("/fabrication/schema", get(request_schema))
         .route("/examples", get(examples))
@@ -100428,6 +103481,102 @@ mod tests {
             machine_kind: Some(machine_kind.to_string()),
             language: Some("gcode".to_string()),
             instructions: instructions.iter().map(|line| line.to_string()).collect(),
+        }
+    }
+
+    #[tokio::test]
+    async fn landing_page_explains_fabrication_flow_and_release_gates() {
+        let html = landing_page().await.0;
+
+        for expected in [
+            "DD Fabrication Server",
+            "Request Flow",
+            "3D printing",
+            "CNC mills and routers",
+            "CAM intermediate files such as APT/CLDATA",
+            "MDP",
+            "POMDP",
+            "DES",
+            "neural-policy evidence",
+            "machine-ready release stays gated",
+            "/fabrication/capabilities",
+            "/fabrication/intake/catalog",
+            "/fabrication/templates/catalog",
+            "/fabrication/schema",
+            "/fabrication/examples",
+        ] {
+            assert!(
+                html.contains(expected),
+                "landing page should include {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn intake_guide_exposes_release_gated_fabrication_flow() {
+        let guide = intake_guide();
+        let steps: Vec<&str> = guide
+            .as_array()
+            .expect("intake guide should be an array")
+            .iter()
+            .filter_map(|entry| entry.get("step").and_then(Value::as_str))
+            .collect();
+
+        for expected in [
+            "discover",
+            "review-design-inputs",
+            "attach-machine-profile",
+            "analyze-or-generate-instructions",
+            "plan-hybrid-build",
+            "release-and-learn",
+        ] {
+            assert!(
+                steps.contains(&expected),
+                "intake guide should include {expected}"
+            );
+        }
+
+        let guide_text = serde_json::to_string(&guide).expect("guide should serialize");
+        for expected in [
+            "/fabrication/instructions/analyze",
+            "/fabrication/decomposition/plan",
+            "split/combine candidates",
+            "machine-failure boundaries",
+            "fabrication outcome rewards",
+        ] {
+            assert!(
+                guide_text.contains(expected),
+                "intake guide should include {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn request_templates_cover_core_machine_classes() {
+        let templates = request_templates();
+        let template_text = serde_json::to_string(&templates).expect("templates should serialize");
+
+        for expected in [
+            "fdm-print-functional-part",
+            "vertical-mill-fixture-plate",
+            "horizontal-mill-side-feature",
+            "lathe-turned-insert",
+            "hybrid-printed-milled-turned-assembly",
+            "clearanceSweepEvidence",
+            "split/combine rationale",
+            "interface-control plan",
+            "controllerPlan.releaseGates",
+            "decompositionPlan.releaseGates",
+            "releasePackagePlan.releaseGates",
+            "learningFeedbackRetained",
+            "templateId",
+            "templateVersion",
+            "POST /fabrication/plan",
+        ] {
+            assert!(
+                template_text.contains(expected),
+                "request templates should include {expected}"
+            );
         }
     }
 
@@ -105838,6 +108987,34 @@ mod tests {
         assert_eq!(
             waterjet.get("dialectFamily").and_then(Value::as_str),
             Some("sheet-cutting-controller-dialect")
+        );
+        assert_eq!(
+            postprocessor_for(
+                "siemens-sinumerik-840d",
+                "siemens-sinumerik",
+                "five-axis-mill"
+            ),
+            "siemens-sinumerik-postprocessor"
+        );
+        assert_eq!(
+            postprocessor_for(
+                "heidenhain-tnc",
+                "heidenhain-conversational",
+                "five-axis-mill"
+            ),
+            "heidenhain-conversational-postprocessor"
+        );
+        assert_eq!(
+            postprocessor_for("mazak-mazatrol", "mazatrol", "mill-turn-center"),
+            "mazatrol-conversational-postprocessor"
+        );
+        assert_eq!(
+            postprocessor_for("okuma-osp", "okuma-osp", "lathe"),
+            "okuma-osp-postprocessor"
+        );
+        assert_eq!(
+            postprocessor_for("linuxcnc", "linuxcnc", "cnc-router"),
+            "linuxcnc-gcode-postprocessor"
         );
     }
 
@@ -122573,6 +125750,488 @@ mod tests {
     }
 
     #[test]
+    fn default_special_process_fleet_generates_fixture_tooling_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-fixture-tooling".to_string()),
+            objective:
+                "Create fixture tooling for a milled aluminum housing: soft jaws, fixture plate, drill jig, inspection nest, vacuum hold-down, part revision, target operation, stock state, datum scheme, locator strategy, clamp force, vacuum leak check, clearance dry run, datum transfer, gage repeatability, first article, maintenance, and release"
+                    .to_string(),
+            material: Some(material("aluminum-6061", "metal")),
+            stock: Some(StockSpec {
+                form: "fixture plate and soft jaw blanks".to_string(),
+                dimensions_mm: Some(vec![300.0, 180.0, 75.0]),
+            }),
+            tolerance_mm: Some(0.05),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("fixture tooling plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "fixture-tooling-release"
+                && part.machine_kind == "fixture-tooling-cell"
+                && part.manufacturing_method == "fixture-tooling"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "fixture-tooling-cell"
+                && step.operation.contains("design fixture datums")
+        }));
+        let fixture_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "fixture-tooling-cell")
+            .expect("fixture tooling program should be generated");
+        assert_eq!(fixture_program.language, "fixture-tooling-job");
+        for expected in [
+            "draft fixture/tooling job",
+            "fixture-tooling-design-boundary",
+            "VERIFY_FIXTURE_REQUIREMENTS",
+            "MAKE_FIXTURE_BODY",
+            "INSTALL_LOCATORS_AND_CLAMPS",
+            "fixture-tooling-proof-boundary",
+            "PROVE_FIXTURE_CLEARANCE",
+            "VERIFY_DATUM_TRANSFER",
+        ] {
+            assert!(
+                fixture_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing fixture tooling instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "fixture-tooling-cell"
+                    && target.postprocessor == "fixture-tooling-job-packager"
+                    && target.output_format == "fixture-tooling-job-package"
+            }));
+        for artifact in [
+            "fixture-design-datum-and-target-operation-record",
+            "fixture-locator-clamp-and-clearance-record",
+            "fixture-proof-dry-run-and-gage-record",
+            "fixture-release-and-maintenance-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing fixture tooling artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_adaptive_compensation_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-adaptive-compensation".to_string()),
+            objective:
+                "Create a closed-loop machining adaptive-compensation release for a milled titanium bracket: in-process probing, baseline measurement, released program revision, machine warmup, probe calibration, datum alignment, feature list, nominal values, tolerance band, measurement uncertainty, compensation limits, work-offset update, tool-wear update, rollback snapshot, compensated rerun, spring pass, first article, residual error, drift trend, and release"
+                    .to_string(),
+            material: Some(material("titanium", "metal")),
+            stock: Some(StockSpec {
+                form: "machined bracket and inspection artifact".to_string(),
+                dimensions_mm: Some(vec![220.0, 140.0, 70.0]),
+            }),
+            tolerance_mm: Some(0.015),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("adaptive compensation plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "adaptive-compensation-release"
+                && part.machine_kind == "adaptive-compensation-cell"
+                && part.manufacturing_method == "adaptive-compensation"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "adaptive-compensation-cell"
+                && step.operation.contains("capture baseline measurement")
+        }));
+        let adaptive_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "adaptive-compensation-cell")
+            .expect("adaptive compensation program should be generated");
+        assert_eq!(adaptive_program.language, "adaptive-compensation-job");
+        for expected in [
+            "draft adaptive compensation job",
+            "adaptive-compensation-measurement-boundary",
+            "CAPTURE_BASELINE_MEASUREMENT",
+            "COMPUTE_COMPENSATION",
+            "APPLY_OFFSET_UPDATE",
+            "adaptive-compensation-release-boundary",
+            "RUN_COMPENSATED_RERUN",
+            "VERIFY_COMPENSATED_RESULT",
+        ] {
+            assert!(
+                adaptive_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing adaptive compensation instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "adaptive-compensation-cell"
+                    && target.postprocessor == "adaptive-compensation-job-packager"
+                    && target.output_format == "adaptive-compensation-job-package"
+            }));
+        for artifact in [
+            "adaptive-baseline-measurement-and-datum-record",
+            "adaptive-compensation-computation-and-limit-record",
+            "adaptive-offset-update-and-rollback-record",
+            "adaptive-first-article-residual-error-and-release-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing adaptive compensation artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_insert_installation_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-insert-installation".to_string()),
+            objective:
+                "Install threaded inserts, heat-set inserts, press-fit bushings, helicoils, dowel pins, and alignment hardware into a printed polymer fixture: insert specification, hardware lot, parent material, boss wall, prepared hole diameter and depth, chamfer, fixture, tool tip, heat profile, force profile, depth stop, installed height, orientation, thread go/no-go, torque test, pullout coupon, first article, rework limit, and release"
+                    .to_string(),
+            material: Some(material("nylon-pa12", "polymer")),
+            stock: Some(StockSpec {
+                form: "printed fixture with prepared insert bosses".to_string(),
+                dimensions_mm: Some(vec![240.0, 160.0, 60.0]),
+            }),
+            tolerance_mm: Some(0.08),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("insert installation plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "insert-installation-release"
+                && part.machine_kind == "insert-installation-cell"
+                && part.manufacturing_method == "insert-installation"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "insert-installation-cell"
+                && step.operation.contains("verify insert specification")
+        }));
+        let insert_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "insert-installation-cell")
+            .expect("insert installation program should be generated");
+        assert_eq!(insert_program.language, "insert-installation-job");
+        for expected in [
+            "draft insert installation job",
+            "insert-installation-setup-boundary",
+            "VERIFY_INSERT_SETUP",
+            "INSTALL_INSERT",
+            "insert-installation-release-boundary",
+            "VERIFY_INSERT_RELEASE",
+        ] {
+            assert!(
+                insert_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing insert installation instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "insert-installation-cell"
+                    && target.postprocessor == "insert-installation-job-packager"
+                    && target.output_format == "insert-installation-job-package"
+            }));
+        for artifact in [
+            "insert-spec-hole-prep-and-fixture-record",
+            "insert-tool-heat-force-and-depth-record",
+            "insert-height-thread-gage-and-boss-inspection-record",
+            "insert-torque-pullout-first-article-and-release-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing insert installation artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_adhesive_bonding_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-adhesive-bonding".to_string()),
+            objective:
+                "Bond a printed nylon cover to a machined aluminum frame with structural adhesive: substrate compatibility, part revisions, adhesive specification, adhesive lot, shelf life, mix ratio, surface cleaning, abrasion, plasma activation, primer, bondline thickness, fixture, open time, clamp pressure, cure time, temperature and humidity, void inspection, squeeze-out inspection, lap shear coupon, peel test, dimensional fit, first article, rework limit, and bonded assembly release"
+                    .to_string(),
+            material: Some(material("nylon-pa12", "polymer")),
+            stock: Some(StockSpec {
+                form: "printed cover and machined aluminum frame".to_string(),
+                dimensions_mm: Some(vec![320.0, 220.0, 90.0]),
+            }),
+            tolerance_mm: Some(0.12),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("adhesive bonding plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "adhesive-bonding-release"
+                && part.machine_kind == "adhesive-bonding-cell"
+                && part.manufacturing_method == "adhesive-bonding"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "adhesive-bonding-cell"
+                && step.operation.contains("verify substrate surface prep")
+        }));
+        let bond_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "adhesive-bonding-cell")
+            .expect("adhesive bonding program should be generated");
+        assert_eq!(bond_program.language, "adhesive-bonding-job");
+        for expected in [
+            "draft adhesive bonding job",
+            "adhesive-bonding-prep-boundary",
+            "VERIFY_BOND_PREP",
+            "APPLY_ADHESIVE",
+            "adhesive-bonding-cure-release-boundary",
+            "VERIFY_BOND_CURE",
+            "VERIFY_BOND_RELEASE",
+        ] {
+            assert!(
+                bond_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing adhesive bonding instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "adhesive-bonding-cell"
+                    && target.postprocessor == "adhesive-bonding-job-packager"
+                    && target.output_format == "adhesive-bonding-job-package"
+            }));
+        for artifact in [
+            "adhesive-substrate-prep-and-compatibility-record",
+            "adhesive-lot-mix-open-time-and-bondline-record",
+            "adhesive-fixture-clamp-cure-and-environment-record",
+            "adhesive-coupon-fit-first-article-and-release-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing adhesive bonding artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_fastener_installation_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-fastener-installation".to_string()),
+            objective:
+                "Install screws and bolts joining a printed polymer cover to a milled aluminum base with washer stack, spacer stack, threadlocker, torque sequence, calibrated torque tool, witness marks, torque stripe, retorque, first article inspection, and fastener release"
+                    .to_string(),
+            material: Some(material("fastener hardware kit", "fastener")),
+            stock: Some(StockSpec {
+                form: "printed cover, milled base, screws, bolts, washers, spacers, and threadlocker".to_string(),
+                dimensions_mm: Some(vec![280.0, 180.0, 80.0]),
+            }),
+            tolerance_mm: Some(0.10),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("fastener installation plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "fastener-installation-release"
+                && part.machine_kind == "fastener-installation-cell"
+                && part.manufacturing_method == "fastener-installation"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "fastener-installation-cell"
+                && step.operation.contains("verify fastener kit")
+        }));
+        let fastener_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "fastener-installation-cell")
+            .expect("fastener installation program should be generated");
+        assert_eq!(fastener_program.language, "fastener-installation-job");
+        for expected in [
+            "draft fastener installation job",
+            "fastener-installation-setup-boundary",
+            "VERIFY_FASTENER_SETUP",
+            "INSTALL_FASTENERS",
+            "fastener-installation-release-boundary",
+            "VERIFY_FASTENER_RELEASE",
+            "COMPLETE record fastener kit",
+        ] {
+            assert!(
+                fastener_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing fastener installation instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "fastener-installation-cell"
+                    && target.postprocessor == "fastener-installation-job-packager"
+                    && target.output_format == "fastener-installation-job-package"
+            }));
+        for artifact in [
+            "fastener-spec-lot-and-joint-stack-record",
+            "washer-spacer-threadlocker-and-torque-sequence-record",
+            "torque-tool-final-torque-and-witness-mark-record",
+            "fastener-retorque-first-article-and-release-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing fastener installation artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_rivet_installation_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-rivet-installation".to_string()),
+            objective:
+                "Set blind rivets and clinch staked joints joining a printed composite cover to a milled aluminum bracket with rivet specification, hardware lot, material stack, hole diameter, hole alignment, grip length, backing support, nosepiece, tool calibration, pull force, mandrel break, head height, deformation, clamp-up, proof test, first article, and rivet release"
+                    .to_string(),
+            material: Some(material("rivet hardware kit", "rivet")),
+            stock: Some(StockSpec {
+                form: "printed cover, milled bracket, blind rivets, and clinch staking hardware"
+                    .to_string(),
+                dimensions_mm: Some(vec![300.0, 180.0, 85.0]),
+            }),
+            tolerance_mm: Some(0.12),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("rivet installation plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "rivet-installation-release"
+                && part.machine_kind == "rivet-installation-cell"
+                && part.manufacturing_method == "rivet-installation"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "rivet-installation-cell"
+                && step.operation.contains("verify rivet specification")
+        }));
+        let rivet_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "rivet-installation-cell")
+            .expect("rivet installation program should be generated");
+        assert_eq!(rivet_program.language, "rivet-installation-job");
+        for expected in [
+            "draft rivet / clinch / stake installation job",
+            "rivet-installation-setup-boundary",
+            "VERIFY_RIVET_SETUP",
+            "SET_RIVETS",
+            "rivet-installation-release-boundary",
+            "VERIFY_RIVET_RELEASE",
+            "COMPLETE record rivet specification",
+        ] {
+            assert!(
+                rivet_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing rivet installation instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "rivet-installation-cell"
+                    && target.postprocessor == "rivet-installation-job-packager"
+                    && target.output_format == "rivet-installation-job-package"
+            }));
+        for artifact in [
+            "rivet-spec-lot-and-hole-stack-record",
+            "rivet-tool-access-and-force-record",
+            "mandrel-shop-head-and-deformation-record",
+            "rivet-proof-first-article-and-release-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing rivet installation artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
     fn default_special_process_fleet_generates_part_marking_job() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-part-marking".to_string()),
@@ -131182,6 +134841,598 @@ mod tests {
     }
 
     #[test]
+    fn text_fixture_tooling_jobs_require_design_and_proof_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("fixture-tooling-missing-evidence".to_string()),
+                machine_id: Some("fixture-tooling-cell-1".to_string()),
+                machine_kind: Some("fixture-tooling-cell".to_string()),
+                language: Some("fixture-tooling-job".to_string()),
+                instructions: vec![
+                    "Make fixture tooling and soft jaws for the machining setup".to_string(),
+                    "Operator review pending".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("fixture-tooling-with-evidence".to_string()),
+                machine_id: Some("fixture-tooling-cell-1".to_string()),
+                machine_kind: Some("fixture-tooling-cell".to_string()),
+                language: Some("fixture-tooling-job".to_string()),
+                instructions: vec![
+                    "Make fixture tooling and soft jaws for the machining setup".to_string(),
+                    "Part revision, target operation, stock state, datum scheme, locator strategy, clamp plan, vacuum plan, soft-jaw profile, nest profile, hardware, and clearance model evidence recorded".to_string(),
+                    "Dry run, clamp clearance, tool reach, load/unload, vacuum leak check, clamp force, datum transfer, gage repeatability, first article, maintenance, and fixture release evidence recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "fixture-tooling-design-evidence-missing",
+            "fixture-tooling-proof-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref() == Some("fixture-tooling-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing fixture tooling finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("fixture-tooling-with-evidence")
+            }));
+        }
+        for boundary in [
+            "fixture-tooling-design-boundary",
+            "fixture-tooling-proof-boundary",
+        ] {
+            assert!(
+                validation.failure_boundaries.iter().any(|item| {
+                    item.kind == boundary
+                        && item.program_id.as_deref() == Some("fixture-tooling-missing-evidence")
+                        && item.requires_human_intervention
+                }),
+                "missing fixture tooling boundary {boundary}"
+            );
+        }
+        for action in [
+            "add-fixture-tooling-design-evidence",
+            "add-fixture-tooling-proof-evidence",
+        ] {
+            assert!(
+                improvements.iter().any(|improvement| {
+                    improvement.action == action
+                        && improvement.program_id.as_deref()
+                            == Some("fixture-tooling-missing-evidence")
+                }),
+                "missing fixture tooling improvement {action}"
+            );
+        }
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        for boundary in [
+            "CHECKPOINT [fixture-tooling-design-boundary]",
+            "CHECKPOINT [fixture-tooling-proof-boundary]",
+        ] {
+            assert!(
+                improved[0]
+                    .instructions
+                    .iter()
+                    .any(|line| line.starts_with(boundary)),
+                "missing improved fixture tooling checkpoint {boundary}"
+            );
+        }
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Fixture-tooling job needs part revision")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [fixture-tooling-")));
+    }
+
+    #[test]
+    fn text_adaptive_compensation_jobs_require_measurement_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("adaptive-compensation-missing-evidence".to_string()),
+                machine_id: Some("adaptive-compensation-cell-1".to_string()),
+                machine_kind: Some("adaptive-compensation-cell".to_string()),
+                language: Some("adaptive-compensation-job".to_string()),
+                instructions: vec![
+                    "Run closed-loop machining with in-process probing and adaptive compensation".to_string(),
+                    "Operator review pending".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("adaptive-compensation-with-evidence".to_string()),
+                machine_id: Some("adaptive-compensation-cell-1".to_string()),
+                machine_kind: Some("adaptive-compensation-cell".to_string()),
+                language: Some("adaptive-compensation-job".to_string()),
+                instructions: vec![
+                    "Run closed-loop machining with in-process probing and adaptive compensation".to_string(),
+                    "Baseline measurement, released program revision, machine warmup, probe calibration, inspection calibration, datum alignment, feature list, nominal values, tolerance band, measurement uncertainty, and compensation limit evidence recorded".to_string(),
+                    "Work-offset update, tool-wear update, rollback snapshot, compensated dry run, spring pass, rerun path, first article, residual error, drift trend, rollback plan, process limit, and release owner evidence recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "adaptive-compensation-measurement-evidence-missing",
+            "adaptive-compensation-release-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref()
+                            == Some("adaptive-compensation-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing adaptive compensation finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("adaptive-compensation-with-evidence")
+            }));
+        }
+        for boundary in [
+            "adaptive-compensation-measurement-boundary",
+            "adaptive-compensation-release-boundary",
+        ] {
+            assert!(
+                validation.failure_boundaries.iter().any(|item| {
+                    item.kind == boundary
+                        && item.program_id.as_deref()
+                            == Some("adaptive-compensation-missing-evidence")
+                        && item.requires_human_intervention
+                }),
+                "missing adaptive compensation boundary {boundary}"
+            );
+        }
+        for action in [
+            "add-adaptive-compensation-measurement-evidence",
+            "add-adaptive-compensation-release-evidence",
+        ] {
+            assert!(
+                improvements.iter().any(|improvement| {
+                    improvement.action == action
+                        && improvement.program_id.as_deref()
+                            == Some("adaptive-compensation-missing-evidence")
+                }),
+                "missing adaptive compensation improvement {action}"
+            );
+        }
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        for boundary in [
+            "CHECKPOINT [adaptive-compensation-measurement-boundary]",
+            "CHECKPOINT [adaptive-compensation-release-boundary]",
+        ] {
+            assert!(
+                improved[0]
+                    .instructions
+                    .iter()
+                    .any(|line| line.starts_with(boundary)),
+                "missing improved adaptive compensation checkpoint {boundary}"
+            );
+        }
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Adaptive-compensation job needs baseline measurement")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [adaptive-compensation-")));
+    }
+
+    #[test]
+    fn text_insert_installation_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("insert-installation-missing-evidence".to_string()),
+                machine_id: Some("insert-installation-cell-1".to_string()),
+                machine_kind: Some("insert-installation-cell".to_string()),
+                language: Some("insert-installation-job".to_string()),
+                instructions: vec![
+                    "Install threaded inserts and heat set inserts in the printed assembly"
+                        .to_string(),
+                    "Operator review pending".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("insert-installation-with-evidence".to_string()),
+                machine_id: Some("insert-installation-cell-1".to_string()),
+                machine_kind: Some("insert-installation-cell".to_string()),
+                language: Some("insert-installation-job".to_string()),
+                instructions: vec![
+                    "Install threaded inserts and heat set inserts in the printed assembly"
+                        .to_string(),
+                    "Insert specification, hardware lot, parent material, boss geometry, prepared hole, hole diameter, hole depth, chamfer, fixture, tool tip, heat profile, force profile, and depth stop evidence recorded".to_string(),
+                    "Installed height, orientation, boss condition, thread engagement, thread gage, go/no-go, torque test, pullout, first article, rework limit, and insert release evidence recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "insert-installation-setup-evidence-missing",
+            "insert-installation-release-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref()
+                            == Some("insert-installation-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing insert installation finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("insert-installation-with-evidence")
+            }));
+        }
+        for boundary in [
+            "insert-installation-setup-boundary",
+            "insert-installation-release-boundary",
+        ] {
+            assert!(
+                validation.failure_boundaries.iter().any(|item| {
+                    item.kind == boundary
+                        && item.program_id.as_deref()
+                            == Some("insert-installation-missing-evidence")
+                        && item.requires_human_intervention
+                }),
+                "missing insert installation boundary {boundary}"
+            );
+        }
+        for action in [
+            "add-insert-installation-setup-evidence",
+            "add-insert-installation-release-evidence",
+        ] {
+            assert!(
+                improvements.iter().any(|improvement| {
+                    improvement.action == action
+                        && improvement.program_id.as_deref()
+                            == Some("insert-installation-missing-evidence")
+                }),
+                "missing insert installation improvement {action}"
+            );
+        }
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        for boundary in [
+            "CHECKPOINT [insert-installation-setup-boundary]",
+            "CHECKPOINT [insert-installation-release-boundary]",
+        ] {
+            assert!(
+                improved[0]
+                    .instructions
+                    .iter()
+                    .any(|line| line.starts_with(boundary)),
+                "missing improved insert installation checkpoint {boundary}"
+            );
+        }
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Insert-installation job needs insert specification")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [insert-installation-")));
+    }
+
+    #[test]
+    fn text_adhesive_bonding_jobs_require_prep_and_cure_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("adhesive-bonding-missing-evidence".to_string()),
+                machine_id: Some("adhesive-bonding-cell-1".to_string()),
+                machine_kind: Some("adhesive-bonding-cell".to_string()),
+                language: Some("adhesive-bonding-job".to_string()),
+                instructions: vec![
+                    "Bond printed and machined parts with structural adhesive".to_string(),
+                    "Operator review pending".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("adhesive-bonding-with-evidence".to_string()),
+                machine_id: Some("adhesive-bonding-cell-1".to_string()),
+                machine_kind: Some("adhesive-bonding-cell".to_string()),
+                language: Some("adhesive-bonding-job".to_string()),
+                instructions: vec![
+                    "Bond printed and machined parts with structural adhesive".to_string(),
+                    "Part revisions, substrate materials, substrate compatibility, adhesive specification, adhesive lot, shelf life, mix ratio, surface cleaning, abrasion, plasma activation, primer, bondline thickness, and fixture evidence recorded".to_string(),
+                    "Clamp pressure, cure time, temperature/humidity, handling strength, void inspection, squeeze-out inspection, lap shear, peel coupon, dimensional fit, first article, and bond release evidence recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "adhesive-bonding-prep-evidence-missing",
+            "adhesive-bonding-cure-release-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref()
+                            == Some("adhesive-bonding-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing adhesive bonding finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("adhesive-bonding-with-evidence")
+            }));
+        }
+        for boundary in [
+            "adhesive-bonding-prep-boundary",
+            "adhesive-bonding-cure-release-boundary",
+        ] {
+            assert!(
+                validation.failure_boundaries.iter().any(|item| {
+                    item.kind == boundary
+                        && item.program_id.as_deref() == Some("adhesive-bonding-missing-evidence")
+                        && item.requires_human_intervention
+                }),
+                "missing adhesive bonding boundary {boundary}"
+            );
+        }
+        for action in [
+            "add-adhesive-bonding-prep-evidence",
+            "add-adhesive-bonding-cure-release-evidence",
+        ] {
+            assert!(
+                improvements.iter().any(|improvement| {
+                    improvement.action == action
+                        && improvement.program_id.as_deref()
+                            == Some("adhesive-bonding-missing-evidence")
+                }),
+                "missing adhesive bonding improvement {action}"
+            );
+        }
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        for boundary in [
+            "CHECKPOINT [adhesive-bonding-prep-boundary]",
+            "CHECKPOINT [adhesive-bonding-cure-release-boundary]",
+        ] {
+            assert!(
+                improved[0]
+                    .instructions
+                    .iter()
+                    .any(|line| line.starts_with(boundary)),
+                "missing improved adhesive bonding checkpoint {boundary}"
+            );
+        }
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Adhesive-bonding job needs substrate")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [adhesive-bonding-")));
+    }
+
+    #[test]
+    fn text_fastener_installation_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("fastener-installation-missing-evidence".to_string()),
+                machine_id: Some("fastener-installation-cell-1".to_string()),
+                machine_kind: Some("fastener-installation-cell".to_string()),
+                language: Some("fastener-installation-job".to_string()),
+                instructions: vec![
+                    "Install screws and bolts per traveler".to_string(),
+                    "Operator review pending".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("fastener-installation-with-evidence".to_string()),
+                machine_id: Some("fastener-installation-cell-1".to_string()),
+                machine_kind: Some("fastener-installation-cell".to_string()),
+                language: Some("fastener-installation-job".to_string()),
+                instructions: vec![
+                    "Install screws and bolts with threadlocker".to_string(),
+                    "Fastener specification, hardware lot, washer stack, spacer stack, joint stack, prepared threads, torque tool calibration, threadlocker, and torque sequence evidence recorded".to_string(),
+                    "Final torque, torque angle, witness mark, clamp gap, thread engagement, threadlocker cure, retorque, first article, and fastener release evidence recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "fastener-installation-setup-evidence-missing",
+            "fastener-installation-release-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref()
+                            == Some("fastener-installation-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing fastener installation finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("fastener-installation-with-evidence")
+            }));
+        }
+        for boundary in [
+            "fastener-installation-setup-boundary",
+            "fastener-installation-release-boundary",
+        ] {
+            assert!(
+                validation.failure_boundaries.iter().any(|item| {
+                    item.kind == boundary
+                        && item.program_id.as_deref()
+                            == Some("fastener-installation-missing-evidence")
+                        && item.requires_human_intervention
+                }),
+                "missing fastener installation boundary {boundary}"
+            );
+        }
+        for action in [
+            "add-fastener-installation-setup-evidence",
+            "add-fastener-installation-release-evidence",
+        ] {
+            assert!(
+                improvements.iter().any(|improvement| {
+                    improvement.action == action
+                        && improvement.program_id.as_deref()
+                            == Some("fastener-installation-missing-evidence")
+                }),
+                "missing fastener installation improvement {action}"
+            );
+        }
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        for boundary in [
+            "CHECKPOINT [fastener-installation-setup-boundary]",
+            "CHECKPOINT [fastener-installation-release-boundary]",
+        ] {
+            assert!(
+                improved[0]
+                    .instructions
+                    .iter()
+                    .any(|line| line.starts_with(boundary)),
+                "missing improved fastener installation checkpoint {boundary}"
+            );
+        }
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Fastener-installation job needs fastener specification")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [fastener-installation-")));
+    }
+
+    #[test]
+    fn text_rivet_installation_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("rivet-installation-missing-evidence".to_string()),
+                machine_id: Some("rivet-installation-cell-1".to_string()),
+                machine_kind: Some("rivet-installation-cell".to_string()),
+                language: Some("rivet-installation-job".to_string()),
+                instructions: vec![
+                    "Set rivets and clinch joints per traveler".to_string(),
+                    "Operator review pending".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("rivet-installation-with-evidence".to_string()),
+                machine_id: Some("rivet-installation-cell-1".to_string()),
+                machine_kind: Some("rivet-installation-cell".to_string()),
+                language: Some("rivet-installation-job".to_string()),
+                instructions: vec![
+                    "Set rivets and clinch joints per traveler".to_string(),
+                    "Rivet specification, hardware lot, material stack, hole diameter, hole alignment, grip length, backing support, buck bar, nosepiece, tool calibration, and pull force evidence recorded".to_string(),
+                    "Mandrel break, shop head, head height, clinch deformation, clamp-up, cracks, looseness, proof test, first article, and rivet release evidence recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "rivet-installation-setup-evidence-missing",
+            "rivet-installation-release-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref()
+                            == Some("rivet-installation-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing rivet installation finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("rivet-installation-with-evidence")
+            }));
+        }
+        for boundary in [
+            "rivet-installation-setup-boundary",
+            "rivet-installation-release-boundary",
+        ] {
+            assert!(
+                validation.failure_boundaries.iter().any(|item| {
+                    item.kind == boundary
+                        && item.program_id.as_deref() == Some("rivet-installation-missing-evidence")
+                        && item.requires_human_intervention
+                }),
+                "missing rivet installation boundary {boundary}"
+            );
+        }
+        for action in [
+            "add-rivet-installation-setup-evidence",
+            "add-rivet-installation-release-evidence",
+        ] {
+            assert!(
+                improvements.iter().any(|improvement| {
+                    improvement.action == action
+                        && improvement.program_id.as_deref()
+                            == Some("rivet-installation-missing-evidence")
+                }),
+                "missing rivet installation improvement {action}"
+            );
+        }
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        for boundary in [
+            "CHECKPOINT [rivet-installation-setup-boundary]",
+            "CHECKPOINT [rivet-installation-release-boundary]",
+        ] {
+            assert!(
+                improved[0]
+                    .instructions
+                    .iter()
+                    .any(|line| line.starts_with(boundary)),
+                "missing improved rivet installation checkpoint {boundary}"
+            );
+        }
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Rivet-installation job needs rivet specification")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [rivet-installation-")));
+    }
+
+    #[test]
     fn text_part_marking_jobs_require_setup_and_readability_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -131276,6 +135527,469 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.starts_with("CHECKPOINT [part-marking-")));
+    }
+
+    #[test]
+    fn generated_fixture_tooling_jobs_require_design_and_proof_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("generated-fixture-missing-design".to_string()),
+                machine_id: Some("fixture-tooling-cell-1".to_string()),
+                machine_kind: Some("fixture-tooling-cell".to_string()),
+                language: Some("fixture-tooling-job".to_string()),
+                instructions: vec![
+                    "; draft fixture/tooling job generated by dd-fabrication-server".to_string(),
+                    "PROVE_FIXTURE_CLEARANCE dry_run=required tool_clearance=verified load_unload=verified crash_risk=operator-reviewed human_intervention=operator-reviewed".to_string(),
+                    "VERIFY_DATUM_TRANSFER probe_or_gage=required repeatability=operator-reviewed clamp_force_or_vacuum=recorded first_article=required".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-fixture-missing-proof".to_string()),
+                machine_id: Some("fixture-tooling-cell-1".to_string()),
+                machine_kind: Some("fixture-tooling-cell".to_string()),
+                language: Some("fixture-tooling-job".to_string()),
+                instructions: vec![
+                    "; draft fixture/tooling job generated by dd-fabrication-server".to_string(),
+                    "VERIFY_FIXTURE_REQUIREMENTS part_revision=operator-reviewed target_operation=operator-reviewed stock_state=operator-reviewed datum_scheme=operator-reviewed clearance_model=operator-reviewed".to_string(),
+                    "MAKE_FIXTURE_BODY process=operator-reviewed material=operator-reviewed soft_jaw_or_plate_profile=operator-reviewed machine_allowance=operator-reviewed serial_or_tool_id=recorded".to_string(),
+                    "INSTALL_LOCATORS_AND_CLAMPS locators=operator-reviewed clamps=operator-reviewed hardware_torque=operator-reviewed vacuum_ports=operator-reviewed clamp_force=operator-reviewed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-fixture-with-evidence".to_string()),
+                machine_id: Some("fixture-tooling-cell-1".to_string()),
+                machine_kind: Some("fixture-tooling-cell".to_string()),
+                language: Some("fixture-tooling-job".to_string()),
+                instructions: vec![
+                    "; draft fixture/tooling job generated by dd-fabrication-server".to_string(),
+                    "VERIFY_FIXTURE_REQUIREMENTS part_revision=operator-reviewed target_operation=operator-reviewed stock_state=operator-reviewed datum_scheme=operator-reviewed clearance_model=operator-reviewed".to_string(),
+                    "MAKE_FIXTURE_BODY process=operator-reviewed material=operator-reviewed soft_jaw_or_plate_profile=operator-reviewed machine_allowance=operator-reviewed serial_or_tool_id=recorded".to_string(),
+                    "INSTALL_LOCATORS_AND_CLAMPS locators=operator-reviewed clamps=operator-reviewed hardware_torque=operator-reviewed vacuum_ports=operator-reviewed clamp_force=operator-reviewed".to_string(),
+                    "PROVE_FIXTURE_CLEARANCE dry_run=required tool_clearance=verified load_unload=verified crash_risk=operator-reviewed human_intervention=operator-reviewed".to_string(),
+                    "VERIFY_DATUM_TRANSFER probe_or_gage=required repeatability=operator-reviewed clamp_force_or_vacuum=recorded first_article=required".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "fixture-tooling-design-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-fixture-missing-design")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "fixture-tooling-proof-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-fixture-missing-proof")
+                && finding.line.is_none()
+        }));
+        for code in [
+            "fixture-tooling-design-evidence-missing",
+            "fixture-tooling-proof-evidence-missing",
+        ] {
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("generated-fixture-with-evidence")
+            }));
+        }
+        for action in [
+            "add-fixture-tooling-design-evidence",
+            "add-fixture-tooling-proof-evidence",
+        ] {
+            assert!(
+                improvements
+                    .iter()
+                    .any(|improvement| improvement.action == action),
+                "missing generated fixture tooling improvement {action}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_adaptive_compensation_jobs_require_measurement_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("generated-adaptive-missing-measurement".to_string()),
+                machine_id: Some("adaptive-compensation-cell-1".to_string()),
+                machine_kind: Some("adaptive-compensation-cell".to_string()),
+                language: Some("adaptive-compensation-job".to_string()),
+                instructions: vec![
+                    "; draft adaptive compensation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "APPLY_OFFSET_UPDATE work_offset=operator-reviewed tool_wear=operator-reviewed rollback_snapshot=required compensation_limits=operator-reviewed".to_string(),
+                    "RUN_COMPENSATED_RERUN dry_run=required spring_pass_or_rerun=operator-reviewed human_intervention=operator-reviewed".to_string(),
+                    "VERIFY_COMPENSATED_RESULT first_article=required residual_error=operator-reviewed drift_trend=operator-reviewed release_owner=operator-reviewed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-adaptive-missing-release".to_string()),
+                machine_id: Some("adaptive-compensation-cell-1".to_string()),
+                machine_kind: Some("adaptive-compensation-cell".to_string()),
+                language: Some("adaptive-compensation-job".to_string()),
+                instructions: vec![
+                    "; draft adaptive compensation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "CAPTURE_BASELINE_MEASUREMENT program_revision=operator-reviewed machine_warmup=verified probe_calibration=required datum_alignment=operator-reviewed feature_list=operator-reviewed nominal_values=operator-reviewed tolerance_band=operator-reviewed measurement_uncertainty=operator-reviewed".to_string(),
+                    "COMPUTE_COMPENSATION source_measurements=operator-reviewed delta=operator-reviewed max_compensation=operator-reviewed review_required=true".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-adaptive-with-evidence".to_string()),
+                machine_id: Some("adaptive-compensation-cell-1".to_string()),
+                machine_kind: Some("adaptive-compensation-cell".to_string()),
+                language: Some("adaptive-compensation-job".to_string()),
+                instructions: vec![
+                    "; draft adaptive compensation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "CAPTURE_BASELINE_MEASUREMENT program_revision=operator-reviewed machine_warmup=verified probe_calibration=required datum_alignment=operator-reviewed feature_list=operator-reviewed nominal_values=operator-reviewed tolerance_band=operator-reviewed measurement_uncertainty=operator-reviewed".to_string(),
+                    "COMPUTE_COMPENSATION source_measurements=operator-reviewed delta=operator-reviewed max_compensation=operator-reviewed review_required=true".to_string(),
+                    "APPLY_OFFSET_UPDATE work_offset=operator-reviewed tool_wear=operator-reviewed rollback_snapshot=required compensation_limits=operator-reviewed".to_string(),
+                    "RUN_COMPENSATED_RERUN dry_run=required spring_pass_or_rerun=operator-reviewed human_intervention=operator-reviewed".to_string(),
+                    "VERIFY_COMPENSATED_RESULT first_article=required residual_error=operator-reviewed drift_trend=operator-reviewed release_owner=operator-reviewed".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "adaptive-compensation-measurement-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-adaptive-missing-measurement")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "adaptive-compensation-release-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-adaptive-missing-release")
+                && finding.line.is_none()
+        }));
+        for code in [
+            "adaptive-compensation-measurement-evidence-missing",
+            "adaptive-compensation-release-evidence-missing",
+        ] {
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("generated-adaptive-with-evidence")
+            }));
+        }
+        for action in [
+            "add-adaptive-compensation-measurement-evidence",
+            "add-adaptive-compensation-release-evidence",
+        ] {
+            assert!(
+                improvements
+                    .iter()
+                    .any(|improvement| improvement.action == action),
+                "missing generated adaptive compensation improvement {action}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_insert_installation_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("generated-insert-missing-setup".to_string()),
+                machine_id: Some("insert-installation-cell-1".to_string()),
+                machine_kind: Some("insert-installation-cell".to_string()),
+                language: Some("insert-installation-job".to_string()),
+                instructions: vec![
+                    "; draft insert installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_INSERT_RELEASE installed_height=recorded orientation=verified boss_condition=inspected thread_go_nogo=required torque_or_pullout=operator-reviewed first_article=required".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-insert-missing-release".to_string()),
+                machine_id: Some("insert-installation-cell-1".to_string()),
+                machine_kind: Some("insert-installation-cell".to_string()),
+                language: Some("insert-installation-job".to_string()),
+                instructions: vec![
+                    "; draft insert installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_INSERT_SETUP part_revision=operator-reviewed insert_spec=operator-reviewed hardware_lot=recorded parent_material=verified hole_diameter=verified hole_depth=verified fixture=operator-reviewed".to_string(),
+                    "INSTALL_INSERT method=operator-reviewed heat_or_force_profile=operator-reviewed tool_tip=verified depth_stop=verified dwell_or_press_time=recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-insert-with-evidence".to_string()),
+                machine_id: Some("insert-installation-cell-1".to_string()),
+                machine_kind: Some("insert-installation-cell".to_string()),
+                language: Some("insert-installation-job".to_string()),
+                instructions: vec![
+                    "; draft insert installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_INSERT_SETUP part_revision=operator-reviewed insert_spec=operator-reviewed hardware_lot=recorded parent_material=verified hole_diameter=verified hole_depth=verified fixture=operator-reviewed".to_string(),
+                    "INSTALL_INSERT method=operator-reviewed heat_or_force_profile=operator-reviewed tool_tip=verified depth_stop=verified orientation=operator-reviewed dwell_or_press_time=recorded".to_string(),
+                    "VERIFY_INSERT_RELEASE installed_height=recorded orientation=verified boss_condition=inspected thread_go_nogo=required torque_or_pullout=operator-reviewed first_article=required".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "insert-installation-setup-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-insert-missing-setup")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "insert-installation-release-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-insert-missing-release")
+                && finding.line.is_none()
+        }));
+        for code in [
+            "insert-installation-setup-evidence-missing",
+            "insert-installation-release-evidence-missing",
+        ] {
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("generated-insert-with-evidence")
+            }));
+        }
+        for action in [
+            "add-insert-installation-setup-evidence",
+            "add-insert-installation-release-evidence",
+        ] {
+            assert!(
+                improvements
+                    .iter()
+                    .any(|improvement| improvement.action == action),
+                "missing generated insert installation improvement {action}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_adhesive_bonding_jobs_require_prep_and_cure_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("generated-adhesive-missing-prep".to_string()),
+                machine_id: Some("adhesive-bonding-cell-1".to_string()),
+                machine_kind: Some("adhesive-bonding-cell".to_string()),
+                language: Some("adhesive-bonding-job".to_string()),
+                instructions: vec![
+                    "; draft adhesive bonding job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_BOND_CURE cure_time=recorded temperature_humidity=recorded clamp_pressure=operator-reviewed handling_strength=verified coupon=operator-reviewed".to_string(),
+                    "VERIFY_BOND_RELEASE visual_voids=inspected squeeze_out=inspected dimensional_fit=verified lap_shear_or_peel=operator-reviewed first_article=required release_owner=operator-reviewed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-adhesive-missing-cure-release".to_string()),
+                machine_id: Some("adhesive-bonding-cell-1".to_string()),
+                machine_kind: Some("adhesive-bonding-cell".to_string()),
+                language: Some("adhesive-bonding-job".to_string()),
+                instructions: vec![
+                    "; draft adhesive bonding job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_BOND_PREP part_revisions=operator-reviewed substrates=verified adhesive_spec=operator-reviewed adhesive_lot=recorded shelf_life=verified surface_prep=operator-reviewed bondline=verified".to_string(),
+                    "APPLY_ADHESIVE mix_ratio=operator-reviewed open_time=tracked dispense_pattern=operator-reviewed bondline_spacers=verified fixture_clamp=operator-reviewed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-adhesive-with-evidence".to_string()),
+                machine_id: Some("adhesive-bonding-cell-1".to_string()),
+                machine_kind: Some("adhesive-bonding-cell".to_string()),
+                language: Some("adhesive-bonding-job".to_string()),
+                instructions: vec![
+                    "; draft adhesive bonding job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_BOND_PREP part_revisions=operator-reviewed substrates=verified adhesive_spec=operator-reviewed adhesive_lot=recorded shelf_life=verified surface_prep=operator-reviewed bondline=verified".to_string(),
+                    "APPLY_ADHESIVE mix_ratio=operator-reviewed open_time=tracked dispense_pattern=operator-reviewed bondline_spacers=verified fixture_clamp=operator-reviewed".to_string(),
+                    "VERIFY_BOND_CURE cure_time=recorded temperature_humidity=recorded clamp_pressure=operator-reviewed handling_strength=verified coupon=operator-reviewed".to_string(),
+                    "VERIFY_BOND_RELEASE visual_voids=inspected squeeze_out=inspected dimensional_fit=verified lap_shear_or_peel=operator-reviewed first_article=required release_owner=operator-reviewed".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "adhesive-bonding-prep-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-adhesive-missing-prep")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "adhesive-bonding-cure-release-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-adhesive-missing-cure-release")
+                && finding.line.is_none()
+        }));
+        for code in [
+            "adhesive-bonding-prep-evidence-missing",
+            "adhesive-bonding-cure-release-evidence-missing",
+        ] {
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("generated-adhesive-with-evidence")
+            }));
+        }
+        for action in [
+            "add-adhesive-bonding-prep-evidence",
+            "add-adhesive-bonding-cure-release-evidence",
+        ] {
+            assert!(
+                improvements
+                    .iter()
+                    .any(|improvement| improvement.action == action),
+                "missing generated adhesive bonding improvement {action}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_fastener_installation_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("generated-fastener-missing-setup".to_string()),
+                machine_id: Some("fastener-installation-cell-1".to_string()),
+                machine_kind: Some("fastener-installation-cell".to_string()),
+                language: Some("fastener-installation-job".to_string()),
+                instructions: vec![
+                    "; draft fastener installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_FASTENER_RELEASE final_torque=recorded torque_angle_or_prevailing=recorded witness_mark=verified clamp_gap=verified thread_engagement=verified retorque=operator-reviewed first_article=required fastener_release=operator-reviewed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-fastener-missing-release".to_string()),
+                machine_id: Some("fastener-installation-cell-1".to_string()),
+                machine_kind: Some("fastener-installation-cell".to_string()),
+                language: Some("fastener-installation-job".to_string()),
+                instructions: vec![
+                    "; draft fastener installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_FASTENER_SETUP part_revisions=operator-reviewed fastener_spec=operator-reviewed hardware_lot=recorded washer_spacer_stack=verified joint_stack=verified prepared_threads=verified torque_tool_calibration=required threadlocker=operator-reviewed torque_sequence=operator-reviewed".to_string(),
+                    "INSTALL_FASTENERS method=operator-reviewed access=verified washers_spacers=verified threadlocker_application=controlled sequence=operator-reviewed human_intervention=operator-reviewed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-fastener-with-evidence".to_string()),
+                machine_id: Some("fastener-installation-cell-1".to_string()),
+                machine_kind: Some("fastener-installation-cell".to_string()),
+                language: Some("fastener-installation-job".to_string()),
+                instructions: vec![
+                    "; draft fastener installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_FASTENER_SETUP part_revisions=operator-reviewed fastener_spec=operator-reviewed hardware_lot=recorded washer_spacer_stack=verified joint_stack=verified prepared_threads=verified torque_tool_calibration=required threadlocker=operator-reviewed torque_sequence=operator-reviewed".to_string(),
+                    "INSTALL_FASTENERS method=operator-reviewed access=verified washers_spacers=verified threadlocker_application=controlled sequence=operator-reviewed human_intervention=operator-reviewed".to_string(),
+                    "VERIFY_FASTENER_RELEASE final_torque=recorded torque_angle_or_prevailing=recorded witness_mark=verified clamp_gap=verified thread_engagement=verified threadlocker_cure=verified retorque=operator-reviewed first_article=required fastener_release=operator-reviewed".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "fastener-installation-setup-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-fastener-missing-setup")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "fastener-installation-release-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-fastener-missing-release")
+                && finding.line.is_none()
+        }));
+        for code in [
+            "fastener-installation-setup-evidence-missing",
+            "fastener-installation-release-evidence-missing",
+        ] {
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("generated-fastener-with-evidence")
+            }));
+        }
+        for action in [
+            "add-fastener-installation-setup-evidence",
+            "add-fastener-installation-release-evidence",
+        ] {
+            assert!(
+                improvements
+                    .iter()
+                    .any(|improvement| improvement.action == action),
+                "missing generated fastener installation improvement {action}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_rivet_installation_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("generated-rivet-missing-setup".to_string()),
+                machine_id: Some("rivet-installation-cell-1".to_string()),
+                machine_kind: Some("rivet-installation-cell".to_string()),
+                language: Some("rivet-installation-job".to_string()),
+                instructions: vec![
+                    "; draft rivet / clinch / stake installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_RIVET_RELEASE mandrel_break_or_shop_head=verified head_height=recorded deformation=verified clamp_up=verified cracks=inspected looseness=inspected proof_test=operator-reviewed first_article=required".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-rivet-missing-release".to_string()),
+                machine_id: Some("rivet-installation-cell-1".to_string()),
+                machine_kind: Some("rivet-installation-cell".to_string()),
+                language: Some("rivet-installation-job".to_string()),
+                instructions: vec![
+                    "; draft rivet / clinch / stake installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_RIVET_SETUP part_revisions=operator-reviewed rivet_spec=operator-reviewed hardware_lot=recorded material_stack=verified hole_diameter=verified grip_length=verified tool_calibration=recorded".to_string(),
+                    "SET_RIVETS method=operator-reviewed access=verified backing_support=verified nosepiece_or_buck_bar=verified pull_or_squeeze_force=operator-reviewed forming=operator-reviewed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-rivet-with-evidence".to_string()),
+                machine_id: Some("rivet-installation-cell-1".to_string()),
+                machine_kind: Some("rivet-installation-cell".to_string()),
+                language: Some("rivet-installation-job".to_string()),
+                instructions: vec![
+                    "; draft rivet / clinch / stake installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_RIVET_SETUP part_revisions=operator-reviewed rivet_spec=operator-reviewed hardware_lot=recorded material_stack=verified hole_diameter=verified grip_length=verified tool_calibration=recorded".to_string(),
+                    "SET_RIVETS method=operator-reviewed access=verified backing_support=verified nosepiece_or_buck_bar=verified pull_or_squeeze_force=operator-reviewed forming=operator-reviewed".to_string(),
+                    "VERIFY_RIVET_RELEASE mandrel_break_or_shop_head=verified head_height=recorded deformation=verified clamp_up=verified cracks=inspected looseness=inspected proof_test=operator-reviewed first_article=required".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "rivet-installation-setup-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-rivet-missing-setup")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "rivet-installation-release-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-rivet-missing-release")
+                && finding.line.is_none()
+        }));
+        for code in [
+            "rivet-installation-setup-evidence-missing",
+            "rivet-installation-release-evidence-missing",
+        ] {
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("generated-rivet-with-evidence")
+            }));
+        }
+        for action in [
+            "add-rivet-installation-setup-evidence",
+            "add-rivet-installation-release-evidence",
+        ] {
+            assert!(
+                improvements
+                    .iter()
+                    .any(|improvement| improvement.action == action),
+                "missing generated rivet installation improvement {action}"
+            );
+        }
     }
 
     #[test]
@@ -136146,6 +140860,19 @@ mod tests {
             "fanuc-gcode",
             "mill-turn-gcode",
             "swiss-turning-gcode",
+            "siemens-sinumerik",
+            "heidenhain",
+            "heidenhain-conversational",
+            "mazatrol",
+            "mazak-mazatrol",
+            "okuma-osp",
+            "linuxcnc",
+            "apt-cldata",
+            "apt-source",
+            "cldata-toolpath",
+            "cutter-location-file",
+            "postprocessor-deck",
+            "cam-intermediate-job",
             "sla-job",
             "material-jetting-job",
             "pellet-fgf-job",
@@ -136211,6 +140938,64 @@ mod tests {
                 "accepted instruction languages should include {language}"
             );
         }
+
+        let catalog = instruction_language_catalog();
+        let apt_entry = catalog
+            .iter()
+            .find(|entry| entry.get("language").and_then(Value::as_str) == Some("apt-cldata"))
+            .expect("APT/CLDATA intake should be discoverable");
+        assert_eq!(
+            apt_entry.get("family").and_then(Value::as_str),
+            Some("cam-intermediate-instruction")
+        );
+        assert!(apt_entry
+            .get("machineClasses")
+            .and_then(Value::as_array)
+            .is_some_and(|classes| classes
+                .iter()
+                .any(|class| class.as_str() == Some("horizontal-mill"))));
+        assert!(apt_entry
+            .get("releaseGates")
+            .and_then(Value::as_array)
+            .is_some_and(|gates| gates.iter().any(|gate| gate
+                .as_str()
+                .is_some_and(|gate| gate.contains("postprocessor-deck-controller-target")))));
+        let sinumerik_entry = catalog
+            .iter()
+            .find(|entry| {
+                entry.get("language").and_then(Value::as_str) == Some("siemens-sinumerik")
+            })
+            .expect("Siemens Sinumerik intake should be discoverable");
+        assert_eq!(
+            sinumerik_entry.get("family").and_then(Value::as_str),
+            Some("controller-gcode")
+        );
+        assert!(sinumerik_entry
+            .get("machineClasses")
+            .and_then(Value::as_array)
+            .is_some_and(|classes| classes
+                .iter()
+                .any(|class| class.as_str() == Some("five-axis-mill"))));
+        let mazatrol_entry = catalog
+            .iter()
+            .find(|entry| entry.get("language").and_then(Value::as_str) == Some("mazatrol"))
+            .expect("Mazatrol intake should be discoverable");
+        assert!(mazatrol_entry
+            .get("machineClasses")
+            .and_then(Value::as_array)
+            .is_some_and(|classes| classes
+                .iter()
+                .any(|class| class.as_str() == Some("mill-turn-center"))));
+        let linuxcnc_entry = catalog
+            .iter()
+            .find(|entry| entry.get("language").and_then(Value::as_str) == Some("linuxcnc"))
+            .expect("LinuxCNC intake should be discoverable");
+        assert!(linuxcnc_entry
+            .get("machineClasses")
+            .and_then(Value::as_array)
+            .is_some_and(|classes| classes
+                .iter()
+                .any(|class| class.as_str() == Some("cnc-router"))));
     }
 
     #[test]
