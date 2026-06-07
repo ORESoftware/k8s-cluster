@@ -77260,6 +77260,526 @@ async fn controller_catalog_http() -> impl IntoResponse {
     Json(controller_postprocessor_catalog_response())
 }
 
+fn validate_controller_postprocessor_result_targets(
+    targets: Option<Vec<ControllerPostprocessorResultTarget>>,
+) -> Result<Vec<Value>, String> {
+    let targets = targets.unwrap_or_default();
+    if targets.len() > MAX_PROGRAMS {
+        return Err(format!("targets must contain at most {MAX_PROGRAMS} entries"));
+    }
+    targets
+        .into_iter()
+        .enumerate()
+        .map(|(index, target)| {
+            let target_id =
+                validate_label(&target.target_id, &format!("targets[{index}].targetId"))?;
+            let program_id = validate_optional_label(target.program_id, "targets.programId")?;
+            let controller = validate_optional_label(target.controller, "targets.controller")?;
+            let postprocessor =
+                validate_optional_label(target.postprocessor, "targets.postprocessor")?;
+            let language = validate_optional_label(target.language, "targets.language")?;
+            let output_format =
+                validate_optional_label(target.output_format, "targets.outputFormat")?;
+            let status = validate_label(&target.status, &format!("targets[{index}].status"))?;
+            let evidence = validate_signal_list(target.evidence, "targets.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "targetId": target_id,
+                "programId": program_id,
+                "controller": controller,
+                "postprocessor": postprocessor,
+                "language": language,
+                "outputFormat": output_format,
+                "status": status,
+                "postprocessorKnown": target.postprocessor_known.unwrap_or(false),
+                "outputRetained": target.output_retained.unwrap_or(false),
+                "dryRunPassed": target.dry_run_passed.unwrap_or(false),
+                "releaseBlocker": target.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": target.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_controller_postprocessor_result_checks(
+    checks: Option<Vec<ControllerPostprocessorResultCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!("checks must contain at most {MAX_PROGRAMS} entries"));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id =
+                validate_label(&check.check_id, &format!("checks[{index}].checkId"))?;
+            let check_kind =
+                validate_label(&check.check_kind, &format!("checks[{index}].checkKind"))?;
+            let status = validate_label(&check.status, &format!("checks[{index}].status"))?;
+            let evidence = validate_signal_list(check.evidence, "checks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "checkKind": check_kind,
+                "status": status,
+                "passed": check.passed.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_controller_postprocessor_result_artifacts(
+    artifacts: Option<Vec<ControllerPostprocessorResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id =
+                validate_label(&artifact.artifact_id, &format!("artifacts[{index}].artifactId"))?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", MAX_TEXT_LEN)?;
+            let sha256 = validate_optional_text(artifact.sha256, "artifacts.sha256", 128)?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn controller_postprocessor_result_status_blocks_release(status: &str) -> bool {
+    let normalized = normalize_token(status);
+    normalized.contains("blocked")
+        || normalized.contains("failed")
+        || normalized.contains("missing")
+        || normalized.contains("unverified")
+        || normalized.contains("manual-review")
+        || normalized.contains("hold")
+}
+
+fn controller_postprocessor_result_target_blocks_release(target: &Value) -> bool {
+    target
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !target
+            .get("postprocessorKnown")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !target
+            .get("outputRetained")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !target
+            .get("dryRunPassed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || controller_postprocessor_result_status_blocks_release(
+            target.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn controller_postprocessor_result_check_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("passed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || controller_postprocessor_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn controller_postprocessor_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn controller_postprocessor_result_review_response(
+    request: ControllerPostprocessorResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "controller-postprocessor-result");
+    let generated_at_ms = now_ms();
+    let controller_postprocessor_result_job_id =
+        safe_job_id("controller-postprocessor-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let controller = validate_optional_label(request.controller, "controller")?;
+    let postprocessor = validate_optional_label(request.postprocessor, "postprocessor")?;
+    let output_format = validate_optional_label(request.output_format, "outputFormat")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let targets = validate_controller_postprocessor_result_targets(request.targets)?;
+    let checks = validate_controller_postprocessor_result_checks(request.checks)?;
+    let artifacts = validate_controller_postprocessor_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let target_blocker_count = targets
+        .iter()
+        .filter(|target| controller_postprocessor_result_target_blocks_release(target))
+        .count();
+    let check_blocker_count = checks
+        .iter()
+        .filter(|check| controller_postprocessor_result_check_blocks_release(check))
+        .count();
+    let human_intervention_target_count = targets
+        .iter()
+        .filter(|target| {
+            target
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_intervention_check_count = checks
+        .iter()
+        .filter(|check| {
+            check
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| controller_postprocessor_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let human_intervention_required =
+        human_intervention_target_count > 0 || human_intervention_check_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || targets.is_empty()
+        || target_blocker_count > 0
+        || check_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if targets.is_empty() {
+        "controller-postprocessor-result-targets-required"
+    } else if !request.success {
+        "controller-postprocessor-result-worker-failed-release-blocked"
+    } else if target_blocker_count > 0 {
+        "controller-postprocessor-result-target-release-blocked"
+    } else if check_blocker_count > 0 {
+        "controller-postprocessor-result-check-release-blocked"
+    } else if artifact_evidence_missing {
+        "controller-postprocessor-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "controller-postprocessor-result-machine-ready-review-required"
+    } else if !release_ready {
+        "controller-postprocessor-result-release-ready-review-required"
+    } else {
+        "controller-postprocessor-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("controller-postprocessor-worker:{worker_id}"),
+        format!("controller-postprocessor-result:{review_status}"),
+    ];
+    if let Some(controller) = controller.as_ref() {
+        learning_observations.push(format!(
+            "controller-postprocessor-controller:{}",
+            normalize_token(controller)
+        ));
+    }
+    if let Some(postprocessor) = postprocessor.as_ref() {
+        learning_observations.push(format!(
+            "controller-postprocessor-postprocessor:{}",
+            normalize_token(postprocessor)
+        ));
+    }
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "controller-postprocessor-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("controller-postprocessor:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations
+            .push("controller-postprocessor:human-intervention-required".to_string());
+    }
+    if artifact_evidence_missing {
+        learning_observations
+            .push("controller-postprocessor:artifact-evidence-missing".to_string());
+    }
+    learning_observations.extend(targets.iter().filter_map(|target| {
+        target
+            .get("postprocessor")
+            .and_then(Value::as_str)
+            .map(|postprocessor| {
+                format!(
+                    "controller-postprocessor-target-postprocessor:{}",
+                    normalize_token(postprocessor)
+                )
+            })
+    }));
+    learning_observations.extend(targets.iter().filter_map(|target| {
+        target
+            .get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("controller-postprocessor-target-status:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(checks.iter().filter_map(|check| {
+        check.get("checkKind").and_then(Value::as_str).map(|kind| {
+            format!(
+                "controller-postprocessor-check:{}",
+                normalize_token(kind)
+            )
+        })
+    }));
+    learning_observations.extend(artifacts.iter().filter_map(|artifact| {
+        artifact
+            .get("artifactKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("controller-postprocessor-artifact:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.controller-postprocessor-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "controllerPostprocessorResultJobId": controller_postprocessor_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": [
+            "POST /controllers/result",
+            "POST /fabrication/controllers/result"
+        ],
+        "catalogRoutes": [
+            "GET /controllers/catalog",
+            "GET /fabrication/controllers/catalog"
+        ],
+        "machineCodeRoutes": [
+            "POST /machine-code/result",
+            "POST /fabrication/machine-code/result"
+        ],
+        "postprocessRoutes": [
+            "POST /postprocess/result",
+            "POST /fabrication/postprocess/result"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "targetCount": targets.len(),
+        "targetBlockerCount": target_blocker_count,
+        "checkCount": checks.len(),
+        "checkBlockerCount": check_blocker_count,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "humanInterventionTargetCount": human_intervention_target_count,
+        "humanInterventionCheckCount": human_intervention_check_count,
+        "humanInterventionRequired": human_intervention_required,
+        "warningCount": warnings.len(),
+        "controllerPostprocessorResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "controller": controller,
+            "postprocessor": postprocessor,
+            "outputFormat": output_format,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "targets": targets,
+            "checks": checks,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "the selected postprocessor is known for the exact controller, machine kind, language, and output format",
+                "postprocessed controller output is retained with URI, checksum, format, and provenance evidence",
+                "modal state, units, offsets, macros, rotary or kinematic assumptions, and dry-run or simulation checks pass",
+                "manual controller review or operator intervention is recorded before machine-ready release when automatic checks cannot clear"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "controller-postprocessor-result",
+            "controller-postprocessor-targets",
+            "controller-postprocessor-checks",
+            "controller-postprocessor-artifacts",
+            "controller-postprocessor-learning-observations",
+            "controllerPlan.compatibilityTargets",
+            "postprocessPlan.controllerTargets",
+            "mdp-request.artifacts.controllerPostprocessorResult"
+        ],
+        "controllerPostprocessorPolicy": [
+            "controller postprocessor results are retained compatibility, output, dry-run, and review evidence, not certified machine safety approval",
+            "machine-ready release remains blocked until known postprocessor selection, controller checks, dry-run evidence, artifacts, and human-review gates clear",
+            "result observations feed MDP/POMDP/neural learning so future plans can prefer reliable postprocessors, route unknown controllers to review, or split/hold jobs before failure"
+        ]
+    }))
+}
+
+fn controller_postprocessor_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("target-release-blocked")
+        || status.contains("check-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_controller_postprocessor_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "controller-postprocessor-result");
+    let job_id = response_str_field(
+        response,
+        "controllerPostprocessorResultJobId",
+        &safe_job_id("controller-postprocessor-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "controller-postprocessor-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("controllerPostprocessorResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let targets = result
+        .get("targets")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let checks = result
+        .get("checks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let controller_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "controller-postprocessor-result".to_string(),
+            "controller-postprocessor-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "controller-postprocessor-targets".to_string(),
+            "controller-postprocessor-targets",
+            targets,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "controller-postprocessor-checks".to_string(),
+            "controller-postprocessor-checks",
+            checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "controller-postprocessor-artifacts".to_string(),
+            "controller-postprocessor-artifacts",
+            controller_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "controller-postprocessor-learning-observations".to_string(),
+            "controller-postprocessor-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "controller-postprocessor-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: controller_postprocessor_result_job_severity(response),
+            summary: format!("controller postprocessor result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_controller_postprocessor_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_controller_postprocessor_result_job(response));
+}
+
 fn material_catalog_family(material: &str) -> &'static str {
     let token = normalize_token(material);
     if summary_text_has_any(
@@ -85777,6 +86297,7 @@ async fn request_schema() -> impl IntoResponse {
         "routes": {
             "machineCatalog": ["GET /machines/catalog", "GET /fabrication/machines/catalog"],
             "controllerCatalog": ["GET /controllers/catalog", "GET /fabrication/controllers/catalog"],
+            "controllerPostprocessorResult": ["POST /controllers/result", "POST /fabrication/controllers/result"],
             "materialCatalog": ["GET /materials/catalog", "GET /fabrication/materials/catalog"],
             "materialPlan": ["POST /materials/plan", "POST /fabrication/materials/plan"],
             "materialResult": ["POST /materials/result", "POST /fabrication/materials/result"],
@@ -87222,6 +87743,23 @@ async fn toolpath_plan_http(
     }
 }
 
+async fn controller_postprocessor_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<ControllerPostprocessorResultReviewRequest>,
+) -> Response {
+    match controller_postprocessor_result_review_response(request) {
+        Ok(response) => {
+            store_controller_postprocessor_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 async fn toolpath_result_http(
     State(state): State<AppState>,
     Json(request): Json<ToolpathResultReviewRequest>,
@@ -88114,6 +88652,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/controllers/catalog",
             get(controller_catalog_http),
+        )
+        .route(
+            "/controllers/result",
+            post(controller_postprocessor_result_http),
+        )
+        .route(
+            "/fabrication/controllers/result",
+            post(controller_postprocessor_result_http),
         )
         .route("/materials/catalog", get(material_catalog_http))
         .route("/fabrication/materials/catalog", get(material_catalog_http))
@@ -101576,6 +102122,61 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified quality records")))));
+    }
+
+    #[test]
+    fn as_built_catalog_endpoint_exposes_deviation_scan_and_learning_contract() {
+        let payload = as_built_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.as-built-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/as-built/catalog"))));
+        assert_eq!(payload.get("asBuiltFamilyCount").and_then(Value::as_u64), Some(4));
+        assert!(payload
+            .get("asBuiltFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("hybrid-split-combine-as-built-interface-evidence")
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("as-built-deviation-map"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("qualityResult.measurements"))));
+        assert!(payload
+            .get("asBuiltContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("learningSignals")
+                .and_then(Value::as_array)
+                .is_some_and(|signals| signals.iter().any(|signal| signal
+                    .as_str()
+                    .is_some_and(|signal| signal == "deviation:hybrid-interface:*")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("actual geometry")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("split/combine")))));
     }
 
     #[test]

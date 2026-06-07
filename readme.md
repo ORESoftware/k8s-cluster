@@ -224,6 +224,8 @@ It exposes:
 - `POST /fabrication/environment/result`
 - `GET /provenance/catalog`
 - `GET /fabrication/provenance/catalog`
+- `GET /as-built/catalog`
+- `GET /fabrication/as-built/catalog`
 - `POST /provenance/result`
 - `POST /fabrication/provenance/result`
 - `POST /setup/plan`
@@ -3013,6 +3015,32 @@ hashes, conversion logs, lot records, controller program digests, inspection
 dispositions, nonconformance decisions, and learning outcome lineage are
 retained as MDP/POMDP/neural learning signals for future planning and
 instruction repair.
+
+## `GET /fabrication/as-built/catalog`
+
+`GET /as-built/catalog` and the gateway-prefixed
+`GET /fabrication/as-built/catalog` return the live
+`dd.fabrication.as-built-catalog.v1` actual-geometry evidence catalog before
+scan, CMM, deviation-map, or interface-fit observations are treated as release
+evidence. The catalog covers scan-to-design deviation maps, additive layer and
+defect evidence, subtractive feature and datum evidence, and hybrid
+split/combine as-built interface evidence.
+
+Each as-built family lists measured-geometry evidence scopes, required
+evidence, release blockers, response surfaces, and learning signals. The
+response names surfaces such as `qualityResult.measurements`,
+`toolpathResult.simulationChecks`, `releasePackagePlan.requiredArtifacts`,
+`machineRelease.blockers`, `decompositionPlan.parts`,
+`interfaceControlPlan.controls`, `handoffResult.evidence`, and
+`learning.outcomes`, plus artifacts such as `as-built-deviation-map`,
+`as-built-scan-mesh`, `as-built-cmm-report`, and
+`as-built-interface-fit-record`. Catalog entries are not certified metrology
+acceptance. Machine-ready release remains blocked while scan/CMM evidence,
+deviation-map artifacts, datum alignment, interface-fit proof, or as-built
+lineage is missing or unresolved. Actual geometry and split/combine interface
+observations are retained as MDP/POMDP/neural learning signals so future
+planning can learn when to add inspection, split parts, change machines,
+reroute features, or require human signoff.
 
 ## `POST /fabrication/provenance/result`
 
