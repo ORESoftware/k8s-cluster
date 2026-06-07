@@ -132,6 +132,8 @@ struct Config {
     cloud_backfill_segments: i64,
     google_oauth: OAuthProviderConfig,
     microsoft_oauth: OAuthProviderConfig,
+    google_drive_upload_url: String,
+    microsoft_graph_base_url: String,
 }
 
 #[derive(Clone)]
@@ -145,6 +147,8 @@ struct S3StorageConfig {
 struct OAuthProviderConfig {
     client_id: Option<String>,
     client_secret: Option<String>,
+    authorization_url: Option<String>,
+    token_url: Option<String>,
 }
 
 #[derive(Clone)]
@@ -835,11 +839,19 @@ fn config_from_env() -> Config {
         google_oauth: OAuthProviderConfig {
             client_id: first_env(&["SOUND_RECORDER_GOOGLE_CLIENT_ID"]),
             client_secret: first_env(&["SOUND_RECORDER_GOOGLE_CLIENT_SECRET"]),
+            authorization_url: first_env(&["SOUND_RECORDER_GOOGLE_AUTHORIZATION_URL"]),
+            token_url: first_env(&["SOUND_RECORDER_GOOGLE_TOKEN_URL"]),
         },
         microsoft_oauth: OAuthProviderConfig {
             client_id: first_env(&["SOUND_RECORDER_MICROSOFT_CLIENT_ID"]),
             client_secret: first_env(&["SOUND_RECORDER_MICROSOFT_CLIENT_SECRET"]),
+            authorization_url: first_env(&["SOUND_RECORDER_MICROSOFT_AUTHORIZATION_URL"]),
+            token_url: first_env(&["SOUND_RECORDER_MICROSOFT_TOKEN_URL"]),
         },
+        google_drive_upload_url: first_env(&["SOUND_RECORDER_GOOGLE_DRIVE_UPLOAD_URL"])
+            .unwrap_or_else(|| "https://www.googleapis.com/upload/drive/v3/files".to_string()),
+        microsoft_graph_base_url: first_env(&["SOUND_RECORDER_MICROSOFT_GRAPH_BASE_URL"])
+            .unwrap_or_else(|| "https://graph.microsoft.com/v1.0".to_string()),
     }
 }
 
@@ -1350,6 +1362,11 @@ fn graph_path_escape(path: &str) -> String {
         .join("/")
 }
 
+fn append_query(base_url: &str, query: &str) -> String {
+    let separator = if base_url.contains('?') { '&' } else { '?' };
+    format!("{base_url}{separator}{query}")
+}
+
 fn google_drive_file_name(destination_key: &str) -> String {
     let mut name = String::with_capacity(destination_key.len().min(512));
     for part in destination_key.split('/').filter(|part| !part.is_empty()) {
@@ -1383,9 +1400,13 @@ fn authorization_url(
             provider.as_str()
         ))
     })?;
-    let endpoint = provider.authorization_endpoint().ok_or_else(|| {
-        ServiceError::BadRequest("provider does not use server OAuth".to_string())
-    })?;
+    let endpoint = oauth
+        .authorization_url
+        .as_deref()
+        .or_else(|| provider.authorization_endpoint())
+        .ok_or_else(|| {
+            ServiceError::BadRequest("provider does not use server OAuth".to_string())
+        })?;
     let scope = provider.required_scope().unwrap_or_default();
     let mut params = vec![
         ("client_id", client_id.to_string()),
@@ -3200,9 +3221,13 @@ async fn upload_to_google_drive(
     let form = Form::new()
         .part("metadata", metadata_part)
         .part("file", file_part);
+    let url = append_query(
+        &state.config.google_drive_upload_url,
+        "uploadType=multipart&fields=id,name,webViewLink",
+    );
     let response = state
         .http
-        .post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink")
+        .post(url)
         .bearer_auth(&token_set.access_token)
         .multipart(form)
         .send()
@@ -3241,7 +3266,10 @@ async fn upload_to_microsoft_onedrive(
     token_set: &CloudTokenSet,
 ) -> Result<String, ServiceError> {
     let path = graph_path_escape(&job.destination_key);
-    let url = format!("https://graph.microsoft.com/v1.0/me/drive/special/approot:/{path}:/content");
+    let url = format!(
+        "{}/me/drive/special/approot:/{path}:/content",
+        state.config.microsoft_graph_base_url.trim_end_matches('/')
+    );
     let response = state
         .http
         .put(url)
@@ -3710,6 +3738,14 @@ fn destination_key(folder_path: &str, segment: &SegmentResponse) -> String {
     )
 }
 
+fn initial_cloud_copy_status(provider: CloudProvider) -> &'static str {
+    if provider == CloudProvider::AppleICloud {
+        "waiting_client"
+    } else {
+        "pending"
+    }
+}
+
 async fn exchange_authorization_code(
     state: &AppState,
     provider: CloudProvider,
@@ -3731,9 +3767,13 @@ async fn exchange_authorization_code(
             provider.as_str()
         ))
     })?;
-    let endpoint = provider.token_endpoint().ok_or_else(|| {
-        ServiceError::BadRequest("provider does not use server OAuth".to_string())
-    })?;
+    let endpoint = oauth
+        .token_url
+        .as_deref()
+        .or_else(|| provider.token_endpoint())
+        .ok_or_else(|| {
+            ServiceError::BadRequest("provider does not use server OAuth".to_string())
+        })?;
     let params = [
         ("client_id", client_id),
         ("client_secret", client_secret),
@@ -3797,9 +3837,13 @@ async fn refresh_access_token(
             provider.as_str()
         ))
     })?;
-    let endpoint = provider.token_endpoint().ok_or_else(|| {
-        ServiceError::BadRequest("provider does not use server OAuth".to_string())
-    })?;
+    let endpoint = oauth
+        .token_url
+        .as_deref()
+        .or_else(|| provider.token_endpoint())
+        .ok_or_else(|| {
+            ServiceError::BadRequest("provider does not use server OAuth".to_string())
+        })?;
     let params = [
         ("client_id", client_id),
         ("client_secret", client_secret),
@@ -4021,11 +4065,7 @@ async fn enqueue_cloud_copy_job_for_segment(
     segment: &SegmentResponse,
 ) -> Result<u64, ServiceError> {
     let provider = CloudProvider::parse(&connection.provider)?;
-    let status = if provider == CloudProvider::AppleICloud {
-        "waiting_client"
-    } else {
-        "pending"
-    };
+    let status = initial_cloud_copy_status(provider);
     let destination_key = destination_key(&connection.folder_path, segment);
     let job_id = Uuid::new_v4().to_string();
     client
@@ -4221,6 +4261,190 @@ async fn shutdown_signal() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::thread;
+
+    fn request_has_full_body(bytes: &[u8]) -> bool {
+        let Some(header_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n") else {
+            return false;
+        };
+        let header_text = String::from_utf8_lossy(&bytes[..header_end]);
+        let content_length = header_text.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            if name.eq_ignore_ascii_case("content-length") {
+                value.trim().parse::<usize>().ok()
+            } else {
+                None
+            }
+        });
+        match content_length {
+            Some(length) => bytes.len() >= header_end + 4 + length,
+            None => true,
+        }
+    }
+
+    fn spawn_json_server(
+        body: &'static str,
+    ) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut buf = [0u8; 4096];
+            loop {
+                match stream.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        request.extend_from_slice(&buf[..n]);
+                        if request_has_full_body(&request) {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            tx.send(String::from_utf8_lossy(&request).to_string())
+                .unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        (format!("http://{addr}"), rx, handle)
+    }
+
+    fn test_config() -> Config {
+        Config {
+            database_url: None,
+            server_auth_secret: Some("test-server-secret".to_string()),
+            token_pepper: "test-token-pepper".to_string(),
+            token_pepper_configured: true,
+            registration_bearer: None,
+            allow_public_device_registration: true,
+            s3: S3StorageConfig {
+                bucket: "test-bucket".to_string(),
+                key_prefix: "sound-recorder/segments".to_string(),
+                cdn_base_url: None,
+            },
+            ios_app_store_url: None,
+            android_play_store_url: None,
+            default_retention_hours: DEFAULT_RETENTION_HOURS,
+            upload_url_ttl: Duration::from_secs(DEFAULT_UPLOAD_URL_TTL_SECONDS),
+            download_url_ttl: Duration::from_secs(DEFAULT_DOWNLOAD_URL_TTL_SECONDS),
+            session_ttl_hours: DEFAULT_SESSION_TTL_HOURS,
+            default_segment_seconds: DEFAULT_SEGMENT_SECONDS,
+            max_segment_seconds: DEFAULT_MAX_SEGMENT_SECONDS,
+            max_segment_bytes: DEFAULT_MAX_SEGMENT_BYTES,
+            oauth_state_ttl: Duration::from_secs(DEFAULT_OAUTH_STATE_TTL_SECONDS),
+            cloud_copy_batch_size: DEFAULT_CLOUD_COPY_BATCH_SIZE,
+            cloud_copy_max_attempts: DEFAULT_CLOUD_COPY_MAX_ATTEMPTS,
+            cloud_copy_max_bytes: DEFAULT_CLOUD_COPY_MAX_BYTES,
+            cloud_backfill_segments: DEFAULT_CLOUD_BACKFILL_SEGMENTS,
+            google_oauth: OAuthProviderConfig {
+                client_id: Some("google-client".to_string()),
+                client_secret: Some("google-secret".to_string()),
+                authorization_url: None,
+                token_url: None,
+            },
+            microsoft_oauth: OAuthProviderConfig {
+                client_id: Some("microsoft-client".to_string()),
+                client_secret: Some("microsoft-secret".to_string()),
+                authorization_url: None,
+                token_url: None,
+            },
+            google_drive_upload_url: "https://www.googleapis.com/upload/drive/v3/files".to_string(),
+            microsoft_graph_base_url: "https://graph.microsoft.com/v1.0".to_string(),
+        }
+    }
+
+    fn test_state(config: Config) -> AppState {
+        AppState {
+            config: Arc::new(config),
+            s3: None,
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            cloud_sealer: None,
+        }
+    }
+
+    fn test_segment() -> SegmentResponse {
+        let now = Utc::now();
+        SegmentResponse {
+            id: Uuid::new_v4().to_string(),
+            account_id: Uuid::new_v4().to_string(),
+            device_id: Uuid::new_v4().to_string(),
+            session_id: Uuid::new_v4().to_string(),
+            sequence_number: 1,
+            status: "uploaded".to_string(),
+            storage_provider: "s3".to_string(),
+            storage_bucket: "test-bucket".to_string(),
+            storage_key: "sound-recorder/segments/device=dev/session=s/segment-0000000001.m4a"
+                .to_string(),
+            cdn_url: None,
+            content_type: "audio/m4a".to_string(),
+            codec: Some("aac".to_string()),
+            captured_started_at: now,
+            captured_ended_at: Some(now),
+            duration_millis: 1000,
+            byte_count: Some(4),
+            sha256_hex: None,
+            upload_url_expires_at: None,
+            uploaded_at: Some(now),
+            expires_at: now + ChronoDuration::hours(1),
+        }
+    }
+
+    fn test_connection(provider: CloudProvider) -> CloudConnectionRecord {
+        let now = Utc::now();
+        CloudConnectionRecord {
+            id: Uuid::new_v4().to_string(),
+            account_id: Uuid::new_v4().to_string(),
+            provider: provider.as_str().to_string(),
+            link_mode: provider.link_mode().to_string(),
+            status: "active".to_string(),
+            display_name: Some("test.user.zdm@proton.me".to_string()),
+            provider_account_id: Some("test.user.zdm@proton.me".to_string()),
+            root_folder_id: None,
+            folder_path: "sound-recorder".to_string(),
+            token_ciphertext: None,
+            token_nonce: None,
+            token_aad: None,
+            token_version: None,
+            token_expires_at: None,
+            last_sync_at: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn test_job(provider: CloudProvider, destination_key: &str) -> CloudCopyJobRecord {
+        CloudCopyJobRecord {
+            id: Uuid::new_v4().to_string(),
+            provider: provider.as_str().to_string(),
+            destination_key: destination_key.to_string(),
+        }
+    }
+
+    fn test_token_set() -> CloudTokenSet {
+        CloudTokenSet {
+            access_token: "test-access-token".to_string(),
+            refresh_token: Some("test-refresh-token".to_string()),
+            token_type: Some("Bearer".to_string()),
+            scope: None,
+            expires_at: Some(Utc::now() + ChronoDuration::minutes(15)),
+        }
+    }
 
     #[test]
     fn provider_aliases_normalize() {
@@ -4262,6 +4486,88 @@ mod tests {
             "sound-recorder__device=dev__session=s__segment-0000000001.m4a"
         );
         assert_eq!(google_drive_file_name("/"), "segment.m4a");
+    }
+
+    #[tokio::test]
+    async fn google_drive_upload_hits_configured_endpoint() {
+        let (base_url, rx, handle) = spawn_json_server(r#"{"id":"google-file-1"}"#);
+        let mut config = test_config();
+        config.google_drive_upload_url = format!("{base_url}/upload/drive/v3/files");
+        let state = test_state(config);
+        let mut connection = test_connection(CloudProvider::GoogleDrive);
+        connection.root_folder_id = Some("drive-root-folder".to_string());
+        let segment = test_segment();
+        let job = test_job(
+            CloudProvider::GoogleDrive,
+            "sound-recorder/device=dev/session=s/segment-0000000001.m4a",
+        );
+        let file_id = upload_to_google_drive(
+            &state,
+            &connection,
+            &segment,
+            &job,
+            b"ping".to_vec(),
+            &test_token_set(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(file_id, "google-file-1");
+        let request = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        handle.join().unwrap();
+        let request_lower = request.to_ascii_lowercase();
+        assert!(request.starts_with(
+            "POST /upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink HTTP/1.1"
+        ));
+        assert!(request_lower.contains("authorization: bearer test-access-token"));
+        assert!(request.contains("drive-root-folder"));
+        assert!(request.contains("sound-recorder__device=dev__session=s__segment-0000000001.m4a"));
+        assert!(request.contains("ping"));
+    }
+
+    #[tokio::test]
+    async fn microsoft_onedrive_upload_hits_configured_endpoint() {
+        let (base_url, rx, handle) = spawn_json_server(r#"{"id":"onedrive-file-1"}"#);
+        let mut config = test_config();
+        config.microsoft_graph_base_url = base_url;
+        let state = test_state(config);
+        let segment = test_segment();
+        let job = test_job(
+            CloudProvider::MicrosoftOneDrive,
+            "sound-recorder/device=dev/session=s/segment 0000000001.m4a",
+        );
+        let file_id = upload_to_microsoft_onedrive(
+            &state,
+            &segment,
+            &job,
+            b"ping".to_vec(),
+            &test_token_set(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(file_id, "onedrive-file-1");
+        let request = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        handle.join().unwrap();
+        let request_lower = request.to_ascii_lowercase();
+        assert!(request.starts_with(
+            "PUT /me/drive/special/approot:/sound-recorder/device%3Ddev/session%3Ds/segment%200000000001.m4a:/content HTTP/1.1"
+        ));
+        assert!(request_lower.contains("authorization: bearer test-access-token"));
+        assert!(request_lower.contains("content-type: audio/m4a"));
+        assert!(request.contains("ping"));
+    }
+
+    #[test]
+    fn apple_icloud_copy_jobs_are_client_managed() {
+        assert_eq!(CloudProvider::AppleICloud.link_mode(), "client_managed");
+        assert!(!CloudProvider::AppleICloud.is_server_managed());
+        assert_eq!(
+            initial_cloud_copy_status(CloudProvider::AppleICloud),
+            "waiting_client"
+        );
+        assert_eq!(
+            initial_cloud_copy_status(CloudProvider::GoogleDrive),
+            "pending"
+        );
     }
 
     #[test]

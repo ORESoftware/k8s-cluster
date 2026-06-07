@@ -85,6 +85,10 @@ destinations so completed segments are mirrored out of the centralized S3 bucket
 | `SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY` | unset | Base64-encoded 32-byte AES-GCM key required for server-managed Google Drive and OneDrive links. |
 | `SOUND_RECORDER_GOOGLE_CLIENT_ID` / `SOUND_RECORDER_GOOGLE_CLIENT_SECRET` | unset | OAuth client for Google Drive `drive.file` links. |
 | `SOUND_RECORDER_MICROSOFT_CLIENT_ID` / `SOUND_RECORDER_MICROSOFT_CLIENT_SECRET` | unset | OAuth client for Microsoft OneDrive AppFolder links. |
+| `SOUND_RECORDER_GOOGLE_AUTHORIZATION_URL` / `SOUND_RECORDER_GOOGLE_TOKEN_URL` | Google OAuth endpoints | Optional provider endpoint overrides for local integration tests. |
+| `SOUND_RECORDER_GOOGLE_DRIVE_UPLOAD_URL` | Google Drive upload endpoint | Optional upload endpoint override for local integration tests. |
+| `SOUND_RECORDER_MICROSOFT_AUTHORIZATION_URL` / `SOUND_RECORDER_MICROSOFT_TOKEN_URL` | Microsoft consumer OAuth endpoints | Optional provider endpoint overrides for local integration tests. |
+| `SOUND_RECORDER_MICROSOFT_GRAPH_BASE_URL` | Microsoft Graph v1.0 endpoint | Optional Graph endpoint override for local integration tests. |
 | `SOUND_RECORDER_OAUTH_STATE_TTL_SECONDS` | `600` | OAuth link state TTL, clamped to `60..3600`. |
 | `SOUND_RECORDER_CLOUD_COPY_BATCH_SIZE` | `25` | Internal copy drain batch size, clamped to `1..100`. |
 | `SOUND_RECORDER_CLOUD_COPY_MAX_ATTEMPTS` | `3` | Retry attempts before a server-managed copy job is marked failed. |
