@@ -48,3 +48,11 @@ data:
     [[raft.peers]]
     id = "dd-rust-network-mutex-raft-2"
     addr = "dd-rust-network-mutex-raft-2.dd-rust-network-mutex-raft-peer.default.svc.cluster.local:7980"
+
+    [[raft.peers]]
+    id = "dd-rust-network-mutex-raft-3"
+    addr = "dd-rust-network-mutex-raft-3.dd-rust-network-mutex-raft-peer.default.svc.cluster.local:7980"
+
+    [[raft.peers]]
+    id = "dd-rust-network-mutex-raft-4"
+    addr = "dd-rust-network-mutex-raft-4.dd-rust-network-mutex-raft-peer.default.svc.cluster.local:7980"
