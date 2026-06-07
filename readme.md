@@ -32,6 +32,8 @@ outcomes.
 - `GET /fabrication/subtractive/catalog`
 - `GET /subtractive/preflight/catalog`
 - `GET /fabrication/subtractive/preflight/catalog`
+- `GET /turning/preflight/catalog`
+- `GET /fabrication/turning/preflight/catalog`
 - `GET /cleanliness/preflight/catalog`
 - `GET /fabrication/cleanliness/preflight/catalog`
 - `GET /interfaces/preflight/catalog`
@@ -855,6 +857,24 @@ Subtractive preflight entries are release evidence contracts, not live machine
 approvals. Failed checks should be retained through setup, simulation, quality,
 telemetry, and learning outcome routes so DES, MDP/POMDP, and neural workers can
 learn safer split/combine and machine-routing strategies.
+
+## `GET /fabrication/turning/preflight/catalog`
+
+`GET /turning/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/turning/preflight/catalog` return the live
+`dd.fabrication.turning-preflight-catalog.v1` release checklist for lathe,
+Swiss/sliding-headstock, bar-fed, and mill-turn instructions. The catalog groups
+chuck/collet/bar-stock/support state, turning tooling/offset/threading state, and
+mill-turn live-tool/spindle-transfer state before generated or imported turning
+programs can move toward machine-ready review.
+
+Turning preflight keeps lathe, Swiss, and mill-turn programs blocked until
+workholding, stick-out/runout, subspindle or tailstock support, part-off capture,
+tool-nose and wear offsets, feed-per-rev or threading synchronization, C/Y/B-axis
+live tooling, spindle-transfer, simulation/dry-run, quality, and signoff evidence
+clear. Failed checks feed DES, MDP/POMDP, reward, neural, and learning-outcome
+workers so future plans can split or combine turned inserts, reroute machines, or
+insert human checkpoints before risky turning boundaries.
 
 ## `GET /fabrication/cleanliness/preflight/catalog`
 
@@ -5162,8 +5182,10 @@ simulation, controller, setup, quality, and signoff gates remain authoritative.
 retained compact/rich learning records, `maxOutcomes`, a `qualitySummary`,
 `qualityBuckets` for successful-positive-reward, failed-or-negative-reward,
 hybrid split/combine, and intervention-heavy history, the derived policy
-snapshot, and release-policy notes that learned preferences remain advisory
-until validation, simulation, controller review, and signoff evidence clear.
+snapshot, `policyImpactPreview` entries for method-combination,
+machine-kind, operation-sequence, remediation-risk, and neural-training impacts,
+and release-policy notes that learned preferences remain advisory until
+validation, simulation, controller review, and signoff evidence clear.
 `POST /learning/outcomes` and `POST /fabrication/learning/outcomes` accept a
 compact success/reward record when callers already have their own training
 features. They also accept the `learning.outcomeDraft` payloads emitted by

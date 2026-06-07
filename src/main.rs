@@ -58296,6 +58296,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/subtractive/catalog",
         "GET /subtractive/preflight/catalog",
         "GET /fabrication/subtractive/preflight/catalog",
+        "GET /turning/preflight/catalog",
+        "GET /fabrication/turning/preflight/catalog",
         "GET /cleanliness/preflight/catalog",
         "GET /fabrication/cleanliness/preflight/catalog",
         "GET /interfaces/preflight/catalog",
@@ -98644,6 +98646,125 @@ async fn subtractive_preflight_catalog_http() -> impl IntoResponse {
     Json(subtractive_preflight_catalog_response())
 }
 
+fn turning_preflight_catalog_response() -> Value {
+    let subtractive_payload = subtractive_catalog_response();
+    let turning_machines = subtractive_payload
+        .get("subtractiveMachines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| {
+                    let token = normalize_token(kind);
+                    token.contains("lathe")
+                        || token.contains("turn")
+                        || token.contains("mill-turn")
+                        || token.contains("swiss")
+                })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.turning-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /turning/preflight/catalog",
+            "GET /fabrication/turning/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/subtractive/catalog",
+            "GET /fabrication/subtractive/preflight/catalog",
+            "GET /fabrication/machine-code/preflight/catalog",
+            "GET /fabrication/controllers/preflight/catalog",
+            "POST /fabrication/machine-code/result",
+            "POST /fabrication/simulation/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "turningMachineCount": turning_machines.len(),
+        "turningMachineKinds": turning_machines
+            .iter()
+            .filter_map(|machine| machine.get("kind").and_then(Value::as_str))
+            .collect::<Vec<_>>(),
+        "preflightGroups": [
+            {
+                "group": "chuck-collet-bar-stock-and-support-state",
+                "requiredEvidence": [
+                    "chuck, collet, guide bushing, bar feeder, tailstock, subspindle, steady rest, part catcher, and stock stick-out evidence",
+                    "work offset, spindle centerline, runout, jaw pressure, clamp state, and safe bar-pull or transfer proof",
+                    "part-off, cutoff, catcher, subspindle pickup, or tailstock support evidence before separation moves"
+                ],
+                "releaseBlockers": [
+                    "turning move before chuck/collet/runout proof",
+                    "bar-feed or subspindle transfer without support and grip evidence",
+                    "part-off or cutoff without catcher, support, clearance, and chip evacuation evidence"
+                ]
+            },
+            {
+                "group": "turning-tooling-offset-and-threading-state",
+                "requiredEvidence": [
+                    "turret, gang-tool, live-tool, insert geometry, tool nose radius, wear offset, and tool-life evidence",
+                    "G50/spindle limit, feed-per-rev or pitch sync, threading pass/spring-pass plan, relief, and thread gauge evidence",
+                    "tool-nose compensation, canned cycle, CSS/fixed-RPM, coolant, chip control, and recovery state review"
+                ],
+                "releaseBlockers": [
+                    "threading cycle without encoder sync, feed mode, pitch, relief, and gauge evidence",
+                    "tool nose or wear compensation active without offset table and cancel-state proof",
+                    "turret/gang tool change without tool station, coolant, chip, and clearance review"
+                ]
+            },
+            {
+                "group": "mill-turn-live-tool-and-transfer-state",
+                "requiredEvidence": [
+                    "C/Y/B axis limits, spindle orientation, live-tool holder, polar interpolation, clamp/brake, and coolant-through-tool evidence",
+                    "main/subspindle phase sync, pickup force, grip check, pull force, transfer clearance, and datum transfer proof",
+                    "collision simulation or dry-run evidence for live-tool milling, cross drilling, spindle transfer, and interrupted cuts"
+                ],
+                "releaseBlockers": [
+                    "C/Y/B-axis live-tool operation without orientation, clamp, and travel evidence",
+                    "main/subspindle transfer without phase sync, pickup, grip, and clearance proof",
+                    "mill-turn or Swiss operation without controller/postprocessor dialect review and dry-run evidence"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "generatedPrograms.instructions",
+            "instructionAnalysis.failureBoundaries",
+            "simulation.axisExtents",
+            "simulation.failureBoundaries",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "qualityResult.measurements",
+            "machineRelease.blockers",
+            "learning.outcomeDraft"
+        ],
+        "artifactSurfaces": [
+            "turning-setup-sheet",
+            "lathe-tool-offset-table",
+            "thread-gauge-record",
+            "part-off-support-evidence",
+            "mill-turn-transfer-record",
+            "simulation-or-dry-run-report",
+            "mdp-request.artifacts.turningPreflight"
+        ],
+        "releasePolicy": [
+            "turning preflight catalog entries describe evidence required before lathe, Swiss, mill-turn, or bar-fed turning output can advance to machine-ready review",
+            "machine-ready release remains blocked until workholding, support, tool-offset, feed-mode, threading, part-off, live-tool, transfer, simulation, quality, and signoff evidence clear",
+            "failed turning preflight checks feed DES, MDP/POMDP, reward, neural, and learning-outcome workers so future plans can split/combine parts, reroute machines, or insert human checkpoints before risky turning boundaries"
+        ],
+        "turningMachines": turning_machines
+    })
+}
+
+async fn turning_preflight_catalog_http() -> impl IntoResponse {
+    Json(turning_preflight_catalog_response())
+}
+
 fn cleanliness_preflight_catalog_response() -> Value {
     json!({
         "ok": true,
@@ -106338,6 +106459,7 @@ async fn request_schema() -> impl IntoResponse {
             "slicerProfileCatalog": ["GET /slicers/catalog", "GET /fabrication/slicers/catalog"],
             "slicerProfileResult": ["POST /slicers/result", "POST /fabrication/slicers/result"],
             "meshRepairCatalog": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
+            "turningPreflightCatalog": ["GET /turning/preflight/catalog", "GET /fabrication/turning/preflight/catalog"],
             "designImportCatalog": ["GET /design/import/catalog", "GET /fabrication/design/import/catalog"],
             "handoffCatalog": ["GET /handoff/catalog", "GET /fabrication/handoff/catalog"],
             "handoffResult": ["POST /handoff/result", "POST /fabrication/handoff/result"],
@@ -108862,6 +108984,33 @@ fn learning_outcomes_memory_response(memory: &LearningMemory) -> Value {
                 "policyUse": "feeds POMDP hidden-state evidence for human-intervention, automation-gap, and machine-failure risk"
             }
         ],
+        "policyImpactPreview": [
+            {
+                "surface": "methodCombinationPreferences",
+                "input": "successful hybrid split/combine outcomes with positive reward",
+                "futureUse": "bias open requests toward proven printed, milled, turned, assembled, or joined route combinations while keeping machine-ready release gated"
+            },
+            {
+                "surface": "machineKindPreferences",
+                "input": "repeated successful machine-kind outcomes",
+                "futureUse": "rank candidate printers, mills, routers, lathes, sheet cutters, and hybrid cells before validation and simulation"
+            },
+            {
+                "surface": "operationSequencePreferences",
+                "input": "positive reward operation order and route sequencing evidence",
+                "futureUse": "prefer learned print-then-machine, machine-then-postprocess, split-combine, and assembly ordering when constraints are otherwise open"
+            },
+            {
+                "surface": "remediationRisks",
+                "input": "failed or negative-reward outcomes with machine-failure or human-intervention evidence",
+                "futureUse": "raise boundary, simulation, operator, or alternate-machine review before repeating risky code, setup, material, or process choices"
+            },
+            {
+                "surface": "neuralTrainingExamples",
+                "input": "retained observations, reward terms, artifacts, and outcome notes",
+                "futureUse": "feed bounded neural-policy examples without bypassing controller, setup, quality, or signoff release gates"
+            }
+        ],
         "policy": snapshot,
         "outcomes": outcomes,
         "releasePolicy": [
@@ -108952,6 +109101,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/subtractive/preflight/catalog",
             get(subtractive_preflight_catalog_http),
+        )
+        .route(
+            "/turning/preflight/catalog",
+            get(turning_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/turning/preflight/catalog",
+            get(turning_preflight_catalog_http),
         )
         .route(
             "/cleanliness/preflight/catalog",
@@ -131115,6 +131272,78 @@ mod tests {
     }
 
     #[test]
+    fn turning_preflight_catalog_endpoint_exposes_lathe_mill_turn_release_gates() {
+        let payload = turning_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.turning-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/turning/preflight/catalog")
+            })));
+        assert!(payload
+            .get("turningMachineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|kinds| kinds.iter().any(|kind| kind.as_str() == Some("lathe"))));
+        assert!(payload
+            .get("turningMachineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|kinds| kinds
+                .iter()
+                .any(|kind| kind.as_str() == Some("mill-turn-center"))));
+        assert!(payload
+            .get("turningMachineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|kinds| kinds
+                .iter()
+                .any(|kind| kind.as_str() == Some("swiss-turning-center"))));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("turning preflight groups should be present");
+        for group in [
+            "chuck-collet-bar-stock-and-support-state",
+            "turning-tooling-offset-and-threading-state",
+            "mill-turn-live-tool-and-transfer-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing turning preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("threading cycle without encoder sync"))))));
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("main/subspindle transfer"))))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("mill-turn-transfer-record") })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("lathe, Swiss, mill-turn")))));
+    }
+
+    #[test]
     fn cleanliness_preflight_catalog_endpoint_exposes_residue_fod_and_release_gates() {
         let payload = cleanliness_preflight_catalog_response();
         assert_eq!(
@@ -152749,6 +152978,33 @@ mod tests {
                     .get("policyUse")
                     .and_then(Value::as_str)
                     .is_some_and(|policy| policy.contains("POMDP hidden-state evidence")))));
+        let policy_impact = payload
+            .get("policyImpactPreview")
+            .and_then(Value::as_array)
+            .expect("policy impact preview should be exposed");
+        for surface in [
+            "methodCombinationPreferences",
+            "machineKindPreferences",
+            "operationSequencePreferences",
+            "remediationRisks",
+            "neuralTrainingExamples",
+        ] {
+            assert!(
+                policy_impact
+                    .iter()
+                    .any(|item| item.get("surface").and_then(Value::as_str) == Some(surface)),
+                "policy impact preview should include {surface}"
+            );
+        }
+        assert!(policy_impact.iter().any(|item| item
+            .get("futureUse")
+            .and_then(Value::as_str)
+            .is_some_and(|future_use| future_use.contains("machine-ready release gated"))));
+        assert!(policy_impact.iter().any(|item| item
+            .get("futureUse")
+            .and_then(Value::as_str)
+            .is_some_and(|future_use| future_use
+                .contains("without bypassing controller, setup, quality, or signoff"))));
     }
 
     #[test]
