@@ -28,6 +28,9 @@ Today there are several key runtime services:
 - [`deployments/economics-server-rs/`](./deployments/economics-server-rs/) — Rust economics dashboard and projection
   service that blends public/private market history, social/news sentiment placeholders, and transparent theory priors
   from accepted macro, asset-pricing, commodity, FX, bond, and stochastic-process equations.
+- [`deployments/apostille-services-server-rs/`](./deployments/apostille-services-server-rs/) — Rust Axum service for
+  apostille/legalization, notary, immigration, English translation handoff, configured government-provider submissions,
+  inbound status webhooks, and an HTMX landing page for operators and integrators.
 - [`deployments/runtime-config-rs/`](./deployments/runtime-config-rs/) — Rust runtime-config control plane. Redis-backed
   source of truth for per-env (`stage`/`prod`) key/value config; every 5 min the cron loop POSTs the
   current snapshot to every registered subscriber's `/internal/update-runtime-config` endpoint, and

@@ -38,6 +38,7 @@ const CENTRAL_DOCS_ROUTES = ['/api-docs', '/api-docs.json'];
 
 const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'agent-worker-broker-rs',
+  'apostille-services-server-rs',
   'auth-server-rs',
   'bastion-rs',
   'billing-server-rs',

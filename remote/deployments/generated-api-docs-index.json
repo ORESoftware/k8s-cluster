@@ -40,6 +40,19 @@
       ]
     },
     {
+      "service": "apostille-services-server-rs",
+      "language": "rust",
+      "routeCount": 23,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 16
+      },
+      "generated": [
+        "remote/deployments/apostille-services-server-rs/generated/api-docs.json",
+        "remote/deployments/apostille-services-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "auth-server-rs",
       "language": "rust",
       "routeCount": 11,
