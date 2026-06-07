@@ -9342,6 +9342,11 @@ mod tests {
                 .as_ref()
                 .expect("external verification report");
             assert_eq!(verification.status, "verified", "{verification:?}");
+            assert_eq!(verification.method.as_deref(), Some("highs"));
+            assert_eq!(
+                verification.solver.as_deref(),
+                Some("des-ipmip-external-lp")
+            );
             assert_eq!(verification.solution_status.as_deref(), Some("optimal"));
             assert!(
                 verification
@@ -9355,8 +9360,73 @@ mod tests {
                 ),
                 "{verification:?}"
             );
+            assert!(
+                verification
+                    .message
+                    .as_deref()
+                    .is_some_and(|message| message.contains("usesExternalSolvers=true")),
+                "{verification:?}"
+            );
         } else {
             assert!(response.external_verification.is_none());
+        }
+    }
+
+    #[cfg(feature = "external-solver-verification")]
+    #[test]
+    fn external_highs_methods_verify_real_100_by_150_dispatch_mip_optimum() {
+        if std::process::Command::new("highs")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("SKIP external HiGHS method verification: highs command not installed");
+            return;
+        }
+        let problem =
+            normalized_problem(hundred_variable_one_hundred_fifty_constraint_dispatch_mip())
+                .unwrap();
+        let options = SolveOptions {
+            max_nodes: Some(20_000),
+            max_ticks: Some(20_000),
+            lp_max_iters: Some(10_000),
+            ..SolveOptions::default()
+        };
+        let expected_z = (0..49).map(|pair| 1000.0 - pair as f64).sum::<f64>();
+
+        for method in ["highs", "highs-ds", "highs-ipm"] {
+            let verification =
+                run_external_verification(&problem, &options, expected_z, method, 1e-6)
+                    .unwrap_or_else(|error| panic!("{method} verification failed: {error}"));
+            assert_eq!(
+                verification.status, "verified",
+                "{method}: {verification:?}"
+            );
+            assert_eq!(verification.method.as_deref(), Some(method));
+            assert_eq!(
+                verification.solver.as_deref(),
+                Some("des-ipmip-external-lp")
+            );
+            assert_eq!(verification.solution_status.as_deref(), Some("optimal"));
+            assert!(
+                verification
+                    .objective
+                    .is_some_and(|objective| (objective - expected_z).abs() <= 1e-6),
+                "{method}: {verification:?}"
+            );
+            assert!(
+                verification
+                    .objective_delta
+                    .is_some_and(|delta| delta <= verification.tolerance),
+                "{method}: {verification:?}"
+            );
+            assert!(
+                verification
+                    .message
+                    .as_deref()
+                    .is_some_and(|message| message.contains("usesExternalSolvers=true")),
+                "{method}: {verification:?}"
+            );
         }
     }
 
