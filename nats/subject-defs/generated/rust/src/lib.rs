@@ -36,6 +36,15 @@ pub const DES_RESULTS_SUBJECT: &str = "dd.remote.des.results";
 pub const DES_SIMULATE_SUBJECT: &str = "dd.remote.des.simulate";
 pub const DES_SIMULATE_QUEUE_GROUP: &str = "dd-des-simulator";
 
+/// Published escrow validation results. Default for ESCROW_RESULT_SUBJECT.
+/// Service: dd-escrow-rs
+pub const ESCROW_SOLANA_RESULTS_SUBJECT: &str = "dd.remote.escrow.solana.results";
+
+/// Validation requests for solana.escrow.v1 intents. Default for ESCROW_VALIDATE_SUBJECT.
+/// Service: dd-escrow-rs
+pub const ESCROW_SOLANA_VALIDATE_SUBJECT: &str = "dd.remote.escrow.solana.validate";
+pub const ESCROW_SOLANA_VALIDATE_QUEUE_GROUP: &str = "dd-escrow-rs";
+
 /// Hybrid assembly and process-decomposition requests for workers that split, combine, join, and sequence printed, milled, turned, sheet-cut, and postprocessed parts.
 /// Service: dd-fabrication-server
 pub const FABRICATION_ASSEMBLY_PLANNING_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.assembly.planning.requests";

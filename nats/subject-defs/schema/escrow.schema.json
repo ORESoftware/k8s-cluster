@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/escrow.schema.json",
+  "title": "EscrowNats",
+  "description": "NATS subjects owned by dd-escrow-rs (Solana escrow validation + settlement events).",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-escrow-rs",
+    "summary": "Solana escrow validation and result subjects.",
+    "subjects": [
+      {
+        "name": "EscrowSolanaValidate",
+        "description": "Validation requests for solana.escrow.v1 intents. Default for ESCROW_VALIDATE_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.escrow.solana.validate",
+        "queueGroup": "dd-escrow-rs",
+        "direction": "both"
+      },
+      {
+        "name": "EscrowSolanaResults",
+        "description": "Published escrow validation results. Default for ESCROW_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.escrow.solana.results",
+        "direction": "both"
+      }
+    ]
+  }
+}

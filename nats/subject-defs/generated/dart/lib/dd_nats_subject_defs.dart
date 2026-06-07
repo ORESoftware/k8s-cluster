@@ -35,6 +35,15 @@ const String desResultsSubject = "dd.remote.des.results";
 const String desSimulateSubject = "dd.remote.des.simulate";
 const String desSimulateQueueGroup = "dd-des-simulator";
 
+/// Published escrow validation results. Default for ESCROW_RESULT_SUBJECT.
+/// Service: dd-escrow-rs
+const String escrowSolanaResultsSubject = "dd.remote.escrow.solana.results";
+
+/// Validation requests for solana.escrow.v1 intents. Default for ESCROW_VALIDATE_SUBJECT.
+/// Service: dd-escrow-rs
+const String escrowSolanaValidateSubject = "dd.remote.escrow.solana.validate";
+const String escrowSolanaValidateQueueGroup = "dd-escrow-rs";
+
 /// Hybrid assembly and process-decomposition requests for workers that split, combine, join, and sequence printed, milled, turned, sheet-cut, and postprocessed parts.
 /// Service: dd-fabrication-server
 const String fabricationAssemblyPlanningRequestsSubject = "dd.remote.fabrication.assembly.planning.requests";
