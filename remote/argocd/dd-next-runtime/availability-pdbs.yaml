@@ -134,6 +134,19 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
+  name: dd-public-data-server
+  namespace: default
+  labels:
+    app: dd-public-data-server
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-public-data-server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
   name: dd-web-scraper
   namespace: default
   labels:

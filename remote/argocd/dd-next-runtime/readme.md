@@ -223,11 +223,12 @@ Gateway path map:
 
 Availability guardrail for gateway-backed HTTP services: request-serving deployments that are safe
 to run in parallel should keep `replicas: 2`, `minReadySeconds: 5`, `progressDeadlineSeconds: 1800`,
-rolling updates with `maxUnavailable: 0` / `maxSurge: 1`, readiness probes, and a
-`PodDisruptionBudget` with `minAvailable: 1`. This covers the public/auth/API surface where normal
-rollouts previously caused intermittent gateway `502`s: `dd-remote-web-home`, `dd-remote-auth`,
+rolling updates with `maxUnavailable: 1` / `maxSurge: 0`, readiness probes, and a
+`PodDisruptionBudget` with `minAvailable: 1`. HostPath source-build services that should not overlap
+use `Recreate` and the same PDB floor. This covers the public/auth/API surface where normal
+rollouts previously caused intermittent gateway `502`s` or single-node scheduling stalls: `dd-remote-web-home`, `dd-remote-auth`,
 `dd-remote-rest-api`, `dd-agent-worker-broker`, `dd-des-rs`, `dd-contract-service`,
-`dd-escrow-rs`, `dd-mdp-optimizer`, `dd-fabrication-server`, `dd-trading-server`, `dd-economics-server`, `dd-web-scraper`, `dd-browser-test-server`,
+`dd-escrow-rs`, `dd-mdp-optimizer`, `dd-fabrication-server`, `dd-trading-server`, `dd-economics-server`, `dd-public-data-server`, `dd-web-scraper`, `dd-browser-test-server`,
 `dd-selenium-server`, and `dd-rust-vapi-phone`. `dd-des-rs` also has a small HPA with
 `minReplicas: 2` and a long scale-down stabilization window. That service cold-builds the Rust
 server and DES engine inside the pod, so scale-to-zero drift creates a multi-minute no-endpoint
@@ -251,7 +252,7 @@ requests/results, CAD design-conversion request/queue/result handoffs, runtime e
 optimization fan-out, so missing hostPath dependencies, stale docs, or stale subject definitions fail with a clear startup log and tiny CPU/memory/ephemeral-storage bounds. Cargo cache/target output stays on pod-local `emptyDir` storage with explicit `4Gi`/`8Gi` ephemeral-storage request/limit settings plus
 per-volume `sizeLimit` caps; a dedicated release-build init container performs the single-job
 locked Cargo build into that shared target directory, then the serving container remounts that cache
-read-only and starts the compiled server binary directly. Incremental compilation stays disabled for predictable cold-start memory and disk use. The pod reserves `250m` CPU and `512Mi` memory for
+read-only and starts the compiled server binary directly. Incremental compilation stays disabled for predictable cold-start memory and disk use. The pod reserves `100m` CPU and `512Mi` memory for
 cold builds and planning bursts while the `2` CPU / `2Gi` memory limits still cap runaway work. Pod
 DNS sets `ndots: 2` so NATS/runtime-config service lookups prefer the intended cluster FQDN before
 trying extra search-domain expansions. Runtime-config pushes are explicitly fail-closed:
@@ -265,8 +266,8 @@ Source validation, release-build, and serving startup failures fall back to rece
 the termination message, and pod annotations make the serving container the default for `kubectl`
 logs/exec while init-container logs remain addressable by name. During pod termination, the
 60-second grace window gives the serving entrypoint time to forward SIGTERM/SIGINT into the compiled
-Rust server's graceful-shutdown path before the pod exits. The HPA keeps 2-8 replicas based on CPU/memory pressure, and the
-immediate scale-up policy can double ready capacity during planning bursts while scale-down remains
+Rust server's graceful-shutdown path before the pod exits. The HPA keeps 2 replicas on the current single-node cluster, and the
+scale-up policy is ready to grow one pod at a time after the max is raised for a larger node pool while scale-down remains
 one-pod-at-a-time after a five-minute stabilization window. The Kubernetes resource exporter also
 publishes HPA current/desired/min/max replica state and an at-max signal so Prometheus can alert
 when fabrication planning demand holds the autoscaler at its ceiling. The dedicated NetworkPolicy permits
@@ -317,8 +318,8 @@ Single-owner workloads stay intentionally one-replica/`Recreate`: the host-port 
 mutex brokers, the bootstrap workspace worker, containerd/build managers, the runtime-config push
 controller, benchmark WebSocket pods, and in-memory signaling/job-state services. The
 `dd-remote-queue-consumer` remains one replica at rest because KEDA owns burst scaling, but it uses
-rolling updates with `maxUnavailable: 0` so a rollout brings up the replacement consumer before
-terminating the old one. The gateway also retries transient upstream `502`/`503`/`504` failures
+rolling updates with `maxUnavailable: 1` / `maxSurge: 0` so a rollout does not require spare CPU for
+a temporary replacement consumer. The gateway also retries transient upstream `502`/`503`/`504` failures
 before surfacing them to the browser. Do not scale `dd-remote-gateway` above one pod on the current
 single-node `hostPort` deployment; gateway HA needs either multiple nodes with a DaemonSet/load
 balancer shape or an external load balancer in front of multiple gateway instances. Canary or
