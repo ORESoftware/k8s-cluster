@@ -228,6 +228,8 @@ It exposes:
 - `GET /fabrication/provenance/catalog`
 - `GET /as-built/catalog`
 - `GET /fabrication/as-built/catalog`
+- `POST /as-built/result`
+- `POST /fabrication/as-built/result`
 - `POST /provenance/result`
 - `POST /fabrication/provenance/result`
 - `POST /setup/plan`
@@ -3065,6 +3067,27 @@ lineage is missing or unresolved. Actual geometry and split/combine interface
 observations are retained as MDP/POMDP/neural learning signals so future
 planning can learn when to add inspection, split parts, change machines,
 reroute features, or require human signoff.
+
+## `POST /fabrication/as-built/result`
+
+`POST /as-built/result` and the gateway-prefixed
+`POST /fabrication/as-built/result` accept retained as-built outcomes from
+scan-to-design, CMM, probing, additive layer-inspection, subtractive feature
+inspection, and split/combine interface-fit reviewers. The response uses
+`dd.fabrication.as-built-result-review.v1` and captures measurement checks,
+deviation maps, interface checks, retained artifacts, release blockers, warning
+counts, and MDP/POMDP/neural learning observations.
+
+Machine-ready and release-ready status remains blocked when measured actual
+geometry is missing, deviation maps are unaligned or out of tolerance,
+split/combine interfaces lack fit or datum-transfer proof, as-built artifacts
+lack URI/checksum/evidence labels, remeasurement or rework is required, or human
+intervention is still open. The result is stored with `as-built-result`,
+`as-built-measurement-checks`, `as-built-deviation-maps`,
+`as-built-interface-checks`, `as-built-artifacts`, and
+`as-built-learning-observations` artifacts so future planners can learn which
+scan, CMM, probe, interface-fit, and actual-geometry evidence made generated,
+imported, split, or combined fabrication instructions releasable.
 
 ## `POST /fabrication/provenance/result`
 

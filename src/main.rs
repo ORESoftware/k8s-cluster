@@ -49432,6 +49432,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/provenance/catalog",
         "GET /as-built/catalog",
         "GET /fabrication/as-built/catalog",
+        "POST /as-built/result",
+        "POST /fabrication/as-built/result",
         "POST /setup/plan",
         "POST /fabrication/setup/plan",
         "POST /setup/result",
@@ -73805,6 +73807,618 @@ async fn as_built_catalog_http() -> impl IntoResponse {
     Json(as_built_catalog_response())
 }
 
+fn validate_optional_non_negative_f64(
+    value: Option<f64>,
+    label: &str,
+) -> Result<Option<f64>, String> {
+    match value {
+        Some(value) if value.is_finite() && value >= 0.0 => Ok(Some(value)),
+        Some(_) => Err(format!("{label} must be a finite non-negative number")),
+        None => Ok(None),
+    }
+}
+
+fn validate_as_built_result_measurement_checks(
+    checks: Option<Vec<AsBuiltResultMeasurementCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "measurementChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id = validate_label(
+                &check.check_id,
+                &format!("measurementChecks[{index}].checkId"),
+            )?;
+            let as_built_family = validate_label(
+                &check.as_built_family,
+                &format!("measurementChecks[{index}].asBuiltFamily"),
+            )?;
+            let evidence_scope = validate_label(
+                &check.evidence_scope,
+                &format!("measurementChecks[{index}].evidenceScope"),
+            )?;
+            let status =
+                validate_label(&check.status, &format!("measurementChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "measurementChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "asBuiltFamily": as_built_family,
+                "evidenceScope": evidence_scope,
+                "status": status,
+                "measured": check.measured.unwrap_or(false),
+                "inTolerance": check.in_tolerance.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresRemeasure": check.requires_remeasure.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_as_built_result_deviation_maps(
+    maps: Option<Vec<AsBuiltResultDeviationMap>>,
+) -> Result<Vec<Value>, String> {
+    let maps = maps.unwrap_or_default();
+    if maps.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "deviationMaps must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    maps.into_iter()
+        .enumerate()
+        .map(|(index, map)| {
+            let map_id = validate_label(&map.map_id, &format!("deviationMaps[{index}].mapId"))?;
+            let source_ref_id =
+                validate_optional_label(map.source_ref_id, "deviationMaps.sourceRefId")?;
+            let status = validate_label(&map.status, &format!("deviationMaps[{index}].status"))?;
+            let max_deviation_mm = validate_optional_non_negative_f64(
+                map.max_deviation_mm,
+                "deviationMaps.maxDeviationMm",
+            )?;
+            let tolerance_mm =
+                validate_optional_non_negative_f64(map.tolerance_mm, "deviationMaps.toleranceMm")?;
+            let evidence =
+                validate_signal_list(map.evidence, "deviationMaps.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "mapId": map_id,
+                "sourceRefId": source_ref_id,
+                "status": status,
+                "maxDeviationMm": max_deviation_mm,
+                "toleranceMm": tolerance_mm,
+                "aligned": map.aligned.unwrap_or(false),
+                "releaseBlocker": map.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_as_built_result_interface_checks(
+    checks: Option<Vec<AsBuiltResultInterfaceCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "interfaceChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let interface_id = validate_label(
+                &check.interface_id,
+                &format!("interfaceChecks[{index}].interfaceId"),
+            )?;
+            let interface_kind = validate_label(
+                &check.interface_kind,
+                &format!("interfaceChecks[{index}].interfaceKind"),
+            )?;
+            let status =
+                validate_label(&check.status, &format!("interfaceChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "interfaceChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "interfaceId": interface_id,
+                "interfaceKind": interface_kind,
+                "status": status,
+                "fitVerified": check.fit_verified.unwrap_or(false),
+                "datumTransferVerified": check.datum_transfer_verified.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresRework": check.requires_rework.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_as_built_result_artifacts(
+    artifacts: Option<Vec<AsBuiltResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 =
+                validate_optional_text(artifact.sha256, "artifacts.sha256", MAX_LABEL_LEN)?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn as_built_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("out-of-tolerance")
+        || status.contains("nonconforming")
+        || status.contains("review-required")
+}
+
+fn as_built_result_measurement_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("measured")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !check
+            .get("inTolerance")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresRemeasure")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || as_built_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn as_built_result_deviation_blocks_release(map: &Value) -> bool {
+    let max_deviation = map.get("maxDeviationMm").and_then(Value::as_f64);
+    let tolerance = map.get("toleranceMm").and_then(Value::as_f64);
+    map.get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !map.get("aligned").and_then(Value::as_bool).unwrap_or(false)
+        || max_deviation.is_none()
+        || tolerance.is_none()
+        || max_deviation
+            .zip(tolerance)
+            .is_some_and(|(deviation, tolerance)| deviation > tolerance)
+        || as_built_result_status_blocks_release(
+            map.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn as_built_result_interface_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("fitVerified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !check
+            .get("datumTransferVerified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresRework")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || as_built_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn as_built_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn as_built_result_review_response(request: AsBuiltResultReviewRequest) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "as-built-result");
+    let generated_at_ms = now_ms();
+    let as_built_result_job_id = safe_job_id("as-built-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let source_part_id = validate_optional_label(request.source_part_id, "sourcePartId")?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let measurement_checks =
+        validate_as_built_result_measurement_checks(request.measurement_checks)?;
+    let deviation_maps = validate_as_built_result_deviation_maps(request.deviation_maps)?;
+    let interface_checks = validate_as_built_result_interface_checks(request.interface_checks)?;
+    let artifacts = validate_as_built_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let measurement_blocker_count = measurement_checks
+        .iter()
+        .filter(|check| as_built_result_measurement_blocks_release(check))
+        .count();
+    let deviation_blocker_count = deviation_maps
+        .iter()
+        .filter(|map| as_built_result_deviation_blocks_release(map))
+        .count();
+    let interface_blocker_count = interface_checks
+        .iter()
+        .filter(|check| as_built_result_interface_blocks_release(check))
+        .count();
+    let human_intervention_required = measurement_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || interface_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let remeasure_required = measurement_checks.iter().any(|check| {
+        check
+            .get("requiresRemeasure")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let rework_required = interface_checks.iter().any(|check| {
+        check
+            .get("requiresRework")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| as_built_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || measurement_checks.is_empty()
+        || measurement_blocker_count > 0
+        || deviation_maps.is_empty()
+        || deviation_blocker_count > 0
+        || interface_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if measurement_checks.is_empty() {
+        "as-built-result-measurement-checks-required"
+    } else if !request.success {
+        "as-built-result-worker-failed-release-blocked"
+    } else if measurement_blocker_count > 0 {
+        "as-built-result-measurement-release-blocked"
+    } else if deviation_maps.is_empty() || deviation_blocker_count > 0 {
+        "as-built-result-deviation-release-blocked"
+    } else if interface_blocker_count > 0 {
+        "as-built-result-interface-release-blocked"
+    } else if artifact_evidence_missing {
+        "as-built-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "as-built-result-machine-ready-review-required"
+    } else if !release_ready {
+        "as-built-result-release-ready-review-required"
+    } else {
+        "as-built-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("as-built-worker:{worker_id}"),
+        format!("as-built-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "as-built-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("as-built:release-blocked".to_string());
+    }
+    if remeasure_required {
+        learning_observations.push("as-built:remeasure-required".to_string());
+    }
+    if rework_required {
+        learning_observations.push("as-built:interface-rework-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("as-built:human-intervention-required".to_string());
+    }
+    learning_observations.extend(measurement_checks.iter().filter_map(|check| {
+        check
+            .get("asBuiltFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("as-built-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(measurement_checks.iter().filter_map(|check| {
+        check
+            .get("evidenceScope")
+            .and_then(Value::as_str)
+            .map(|scope| format!("as-built-scope:{}", normalize_token(scope)))
+    }));
+    learning_observations.extend(deviation_maps.iter().filter_map(|map| {
+        map.get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("as-built-deviation:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(interface_checks.iter().filter_map(|check| {
+        check
+            .get("interfaceKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("as-built-interface:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(artifacts.iter().filter_map(|artifact| {
+        artifact
+            .get("artifactKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("as-built-artifact:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.as-built-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "asBuiltResultJobId": as_built_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /as-built/result", "POST /fabrication/as-built/result"],
+        "catalogRoutes": ["GET /as-built/catalog", "GET /fabrication/as-built/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "measurementCheckCount": measurement_checks.len(),
+        "measurementBlockerCount": measurement_blocker_count,
+        "deviationMapCount": deviation_maps.len(),
+        "deviationBlockerCount": deviation_blocker_count,
+        "interfaceCheckCount": interface_checks.len(),
+        "interfaceBlockerCount": interface_blocker_count,
+        "remeasureRequired": remeasure_required,
+        "reworkRequired": rework_required,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "asBuiltResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "sourcePartId": source_part_id,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "measurementChecks": measurement_checks,
+            "deviationMaps": deviation_maps,
+            "interfaceChecks": interface_checks,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "measured actual geometry, datum alignment, tolerance band, and scan/CMM/probe evidence are retained",
+                "deviation maps are aligned to the released design package and inside tolerance or dispositioned by an operator",
+                "split/combine and hybrid-route interfaces have fit, datum-transfer, and join evidence before release",
+                "as-built artifacts retain URI, checksum, format, and evidence labels for release-package and learning lineage"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "as-built-result",
+            "as-built-measurement-checks",
+            "as-built-deviation-maps",
+            "as-built-interface-checks",
+            "as-built-artifacts",
+            "as-built-learning-observations",
+            "mdp-request.artifacts.asBuiltResult"
+        ]
+    }))
+}
+
+fn as_built_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("measurement-release-blocked")
+        || status.contains("deviation-release-blocked")
+        || status.contains("interface-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_as_built_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "as-built-result");
+    let job_id = response_str_field(
+        response,
+        "asBuiltResultJobId",
+        &safe_job_id("as-built-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "as-built-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("asBuiltResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let measurement_checks = result
+        .get("measurementChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let deviation_maps = result
+        .get("deviationMaps")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let interface_checks = result
+        .get("interfaceChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let as_built_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "as-built-result".to_string(),
+            "as-built-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "as-built-measurement-checks".to_string(),
+            "as-built-measurement-checks",
+            measurement_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "as-built-deviation-maps".to_string(),
+            "as-built-deviation-maps",
+            deviation_maps,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "as-built-interface-checks".to_string(),
+            "as-built-interface-checks",
+            interface_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "as-built-artifacts".to_string(),
+            "as-built-artifacts",
+            as_built_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "as-built-learning-observations".to_string(),
+            "as-built-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "as-built-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: as_built_result_job_severity(response),
+            summary: format!("as-built result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_as_built_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_as_built_result_job(response));
+}
+
 fn validate_provenance_result_lineage_checks(
     checks: Option<Vec<ProvenanceResultLineageCheck>>,
 ) -> Result<Vec<Value>, String> {
@@ -83069,6 +83683,8 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/provenance/catalog",
                 "GET /as-built/catalog",
                 "GET /fabrication/as-built/catalog",
+                "POST /as-built/result",
+                "POST /fabrication/as-built/result",
                 "POST /setup/plan",
                 "POST /fabrication/setup/plan",
                 "POST /setup/result",
@@ -86466,6 +87082,7 @@ async fn request_schema() -> impl IntoResponse {
             "environmentCatalog": ["GET /environment/catalog", "GET /fabrication/environment/catalog"],
             "provenanceCatalog": ["GET /provenance/catalog", "GET /fabrication/provenance/catalog"],
             "asBuiltCatalog": ["GET /as-built/catalog", "GET /fabrication/as-built/catalog"],
+            "asBuiltResult": ["POST /as-built/result", "POST /fabrication/as-built/result"],
             "setupPlan": ["POST /setup/plan", "POST /fabrication/setup/plan"],
             "setupResult": ["POST /setup/result", "POST /fabrication/setup/result"],
             "monitoringCatalog": ["GET /monitoring/catalog", "GET /fabrication/monitoring/catalog"],
@@ -87572,6 +88189,23 @@ async fn provenance_result_http(
     }
 }
 
+async fn as_built_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<AsBuiltResultReviewRequest>,
+) -> Response {
+    match as_built_result_review_response(request) {
+        Ok(response) => {
+            store_as_built_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 async fn failure_mode_result_http(
     State(state): State<AppState>,
     Json(request): Json<FailureModeResultReviewRequest>,
@@ -88664,6 +89298,58 @@ async fn learning_policy_http(State(state): State<AppState>) -> Response {
     }
 }
 
+fn learning_corpus_response(snapshot: &LearningPolicySnapshot) -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.learning-corpus.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /learning/corpus", "GET /fabrication/learning/corpus"],
+        "policyRoutes": ["GET /learning/policy", "GET /fabrication/learning/policy"],
+        "outcomeRoutes": ["GET /learning/outcomes", "GET /fabrication/learning/outcomes", "POST /learning/outcomes", "POST /fabrication/learning/outcomes"],
+        "engine": {
+            "crateName": "des_engine",
+            "sourceCrate": "remote/submodules/discrete-event-system.rs",
+            "neuralPrimitive": "des_engine::des::general::neural_network::FeedForwardNetwork",
+            "mdpSchema": MDP_SCHEMA,
+            "pomdpSchema": POMDP_SCHEMA
+        },
+        "corpusSummary": {
+            "outcomeCount": snapshot.outcome_count,
+            "neuralTrainingExampleCount": snapshot.neural_training_examples.len(),
+            "boundaryLearningExampleCount": snapshot.boundary_learning_examples.len(),
+            "remediationRiskCount": snapshot.remediation_risks.len()
+        },
+        "trainingSurfaces": [
+            "learning.neuralTrainingExamples",
+            "learning.boundaryLearningExamples",
+            "learning.remediationRisks",
+            "mdp-request.artifacts.neuralTrainingCorpus",
+            "analysis-neural-training-corpus",
+            "neural-example"
+        ],
+        "neuralTrainingExamples": snapshot.neural_training_examples,
+        "boundaryLearningExamples": snapshot.boundary_learning_examples,
+        "remediationRisks": snapshot.remediation_risks,
+        "releasePolicy": [
+            "learning corpus responses are bounded in-process evidence for offline neural training and policy previews, not certified machine-release authority",
+            "neural examples are derived from retained outcomes and boundary observations so future plans can bias machine, split/combine, intervention, and remediation choices",
+            "validation, simulation, controller, setup, quality, and signoff gates remain authoritative even when learned corpus examples prefer a route"
+        ]
+    })
+}
+
+async fn learning_corpus_http(State(state): State<AppState>) -> Response {
+    match learning_policy_snapshot(&state) {
+        Ok(snapshot) => Json(learning_corpus_response(&snapshot)).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 fn learning_outcomes_memory_response(memory: &LearningMemory) -> Value {
     let snapshot = memory.snapshot();
     let outcomes = memory.outcomes.iter().cloned().collect::<Vec<_>>();
@@ -89205,6 +89891,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/as-built/catalog", get(as_built_catalog_http))
         .route("/fabrication/as-built/catalog", get(as_built_catalog_http))
+        .route("/as-built/result", post(as_built_result_http))
+        .route("/fabrication/as-built/result", post(as_built_result_http))
         .route("/provenance/result", post(provenance_result_http))
         .route(
             "/fabrication/provenance/result",
@@ -89279,6 +89967,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/learning/policy", get(learning_policy_http))
         .route("/fabrication/learning/policy", get(learning_policy_http))
+        .route("/learning/corpus", get(learning_corpus_http))
+        .route("/fabrication/learning/corpus", get(learning_corpus_http))
         .route("/plan", post(plan_http))
         .route("/fabrication/plan", post(plan_http))
         .route("/workflow/plan", post(workflow_plan_http))
@@ -102413,6 +103103,151 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("split/combine")))));
+    }
+
+    #[test]
+    fn as_built_result_endpoint_reviews_deviation_interface_artifacts_and_learning() {
+        let response = as_built_result_review_response(AsBuiltResultReviewRequest {
+            request_id: Some("as-built-result-001".to_string()),
+            plan_request_id: Some("plan-as-built-001".to_string()),
+            job_id: Some("job-as-built-001".to_string()),
+            worker_id: "as-built-review-worker".to_string(),
+            reviewer: Some("metrology-reviewer".to_string()),
+            reviewer_version: Some("2026.06-as-built".to_string()),
+            source_part_id: Some("hybrid-bracket-asm".to_string()),
+            machine_id: Some("cmm-01".to_string()),
+            machine_kind: Some("coordinate-measuring-machine".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            measurement_checks: Some(vec![AsBuiltResultMeasurementCheck {
+                check_id: "as-built-measure-001".to_string(),
+                as_built_family: "hybrid-split-combine-as-built-interface-evidence".to_string(),
+                evidence_scope: "interface-fit".to_string(),
+                status: "out-of-tolerance".to_string(),
+                measured: Some(true),
+                in_tolerance: Some(false),
+                release_blocker: Some(true),
+                requires_remeasure: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "CMM actual geometry shows interface gap above tolerance".to_string(),
+                    "operator must disposition split/combine fit before release".to_string(),
+                ]),
+            }]),
+            deviation_maps: Some(vec![AsBuiltResultDeviationMap {
+                map_id: "deviation-map-001".to_string(),
+                source_ref_id: Some("as-built-measure-001".to_string()),
+                status: "aligned-out-of-tolerance".to_string(),
+                max_deviation_mm: Some(0.42),
+                tolerance_mm: Some(0.20),
+                aligned: Some(true),
+                release_blocker: Some(true),
+                evidence: Some(vec![
+                    "datum alignment retained against released design package".to_string(),
+                    "max deviation exceeds interface tolerance".to_string(),
+                ]),
+            }]),
+            interface_checks: Some(vec![AsBuiltResultInterfaceCheck {
+                interface_id: "interface-fit-001".to_string(),
+                interface_kind: "split-combine-datum-fit".to_string(),
+                status: "rework-required".to_string(),
+                fit_verified: Some(false),
+                datum_transfer_verified: Some(true),
+                release_blocker: Some(true),
+                requires_rework: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "mating surface scan requires rework before recomposition".to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![AsBuiltResultArtifact {
+                artifact_id: "as-built-deviation-map-001".to_string(),
+                artifact_kind: "as-built-deviation-map".to_string(),
+                source_ref_id: Some("deviation-map-001".to_string()),
+                uri: Some("s3://fabrication/as-built/deviation-map-001.json".to_string()),
+                sha256: Some("a".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained aligned scan-to-design deviation map".to_string()
+                ]),
+            }]),
+            warnings: Some(vec![
+                "as-built interface review blocks machine release".to_string()
+            ]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("as-built result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.as-built-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/as-built/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("as-built-result-measurement-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("measurementBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("deviationBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("interfaceBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(
+                |observations| observations.iter().any(|observation| observation
+                    .as_str()
+                    .is_some_and(|observation| observation
+                        == "as-built-family:hybrid-split-combine-as-built-interface-evidence"))
+            ));
+        assert!(response
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("as-built-deviation-maps"))));
+
+        let job = stored_as_built_result_job(&response);
+        assert_eq!(job.record.kind, "as-built-result");
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "as-built-result",
+            "as-built-measurement-checks",
+            "as-built-deviation-maps",
+            "as-built-interface-checks",
+            "as-built-artifacts",
+            "as-built-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
     }
 
     #[test]
