@@ -3090,6 +3090,21 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"plastic-joining-cell", "manual-or-special-process"/);
   assert.match(source, /"plastic-joining-setup-boundary", "plastic-joining-release-boundary"/);
   assert.match(source, /"lathe-and-mill-turn"/);
+  assert.match(source, /async fn instruction_generation_preflight_catalog_http/);
+  assert.match(source, /fn instruction_generation_preflight_catalog_response/);
+  assert.match(source, /dd\.fabrication\.instruction-generation-preflight-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/instructions\/generation\/preflight\/catalog"/);
+  assert.match(source, /request-design-and-machine-state/);
+  assert.match(source, /program-draft-and-controller-state/);
+  assert.match(source, /validation-simulation-release-and-learning-state/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/instructions\/generation\/preflight\/catalog",\s*get\(instruction_generation_preflight_catalog_http\),\s*\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/instructions\/generation\/preflight\/catalog",\s*get\(instruction_generation_preflight_catalog_http\),\s*\)/,
+  );
   assert.match(source, /async fn instruction_generate_http/);
   assert.match(source, /fn instruction_generation_response/);
   assert.match(source, /dd\.fabrication\.instruction-generation\.v1/);
@@ -3256,12 +3271,23 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /instruction_generation_catalog_endpoint_exposes_generated_program_contract/,
   );
+  assert.match(
+    source,
+    /instruction_generation_preflight_catalog_endpoint_exposes_draft_release_gates/,
+  );
   assert.match(source, /async fn instruction_improvement_catalog_http/);
   assert.match(source, /fn instruction_improvement_catalog_response/);
   assert.match(source, /fn instruction_improvement_catalog_action_contracts/);
   assert.match(source, /fn instruction_improvement_catalog_patch_operations/);
   assert.match(source, /dd\.fabrication\.instruction-improvement-catalog\.v1/);
   assert.match(source, /"GET \/fabrication\/improvements\/catalog"/);
+  assert.match(source, /async fn instruction_improvement_preflight_catalog_http/);
+  assert.match(source, /fn instruction_improvement_preflight_catalog_response/);
+  assert.match(source, /dd\.fabrication\.instruction-improvement-preflight-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/improvements\/preflight\/catalog"/);
+  assert.match(source, /source-program-and-finding-state/);
+  assert.match(source, /patch-review-and-simulation-state/);
+  assert.match(source, /learning-and-release-feedback-state/);
   assert.match(source, /async fn instruction_improve_http/);
   assert.match(source, /fn instruction_improvement_review_response/);
   assert.match(source, /dd\.fabrication\.instruction-improvement-review\.v1/);
@@ -3283,6 +3309,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(
     source,
     /instruction_improvement_catalog_endpoint_exposes_patch_and_review_contract/,
+  );
+  assert.match(
+    source,
+    /instruction_improvement_preflight_catalog_endpoint_exposes_patch_release_gates/,
   );
   assert.match(
     source,
@@ -5173,6 +5203,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /\.route\(\s*"\/fabrication\/instructions\/generation\/catalog",\s*get\(instruction_generation_catalog_http\),\s*\)/,
   );
+  assert.match(
+    source,
+    /\.route\(\s*"\/instructions\/generation\/preflight\/catalog",\s*get\(instruction_generation_preflight_catalog_http\),\s*\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/instructions\/generation\/preflight\/catalog",\s*get\(instruction_generation_preflight_catalog_http\),\s*\)/,
+  );
   assert.match(source, /\.route\("\/instructions\/generate", post\(instruction_generate_http\)\)/);
   assert.match(
     source,
@@ -5236,6 +5274,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(
     source,
     /\.route\(\s*"\/fabrication\/improvements\/catalog",\s*get\(instruction_improvement_catalog_http\),\s*\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/improvements\/preflight\/catalog",\s*get\(instruction_improvement_preflight_catalog_http\),\s*\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/improvements\/preflight\/catalog",\s*get\(instruction_improvement_preflight_catalog_http\),\s*\)/,
   );
   assert.match(source, /\.route\("\/instructions\/improve", post\(instruction_improve_http\)\)/);
   assert.match(
@@ -6229,6 +6275,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`generatedPrograms\.instructions`/);
   assert.match(readme, /`machineReady=false`/);
   assert.match(readme, /Program generation observations feed\s+MDP\/POMDP\/neural workers/);
+  assert.match(readme, /`GET \/instructions\/generation\/preflight\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/instructions\/generation\/preflight\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.instruction-generation-preflight-catalog\.v1/);
+  assert.match(readme, /request\/design\/machine\s+state/);
+  assert.match(readme, /program draft\/controller state/);
+  assert.match(readme, /validation\/simulation\/release\/learning\s+state/);
   assert.match(readme, /`POST \/instructions\/generate`/);
   assert.match(readme, /`POST \/fabrication\/instructions\/generate`/);
   assert.match(readme, /dd\.fabrication\.instruction-generation\.v1/);
@@ -6327,11 +6379,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /collision,\s+envelope,\s+clearance,\s+dry-run,\s+human-intervention/);
   assert.match(readme, /`GET \/improvements\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/improvements\/catalog`/);
+  assert.match(readme, /`GET \/improvements\/preflight\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/improvements\/preflight\/catalog`/);
   assert.match(readme, /`POST \/instructions\/improve`/);
   assert.match(readme, /`POST \/fabrication\/instructions\/improve`/);
   assert.match(readme, /`POST \/instructions\/boundaries\/review`/);
   assert.match(readme, /`POST \/fabrication\/instructions\/boundaries\/review`/);
   assert.match(readme, /dd\.fabrication\.instruction-improvement-catalog\.v1/);
+  assert.match(readme, /dd\.fabrication\.instruction-improvement-preflight-catalog\.v1/);
   assert.match(readme, /dd\.fabrication\.instruction-improvement-review\.v1/);
   assert.match(readme, /dd\.fabrication\.instruction-boundary-review\.v1/);
   assert.match(readme, /dd\.fabrication\.instruction-boundary-learning-outcome-draft\.v1/);
@@ -6343,6 +6398,9 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`improvedPrograms\.patchManifest\.operations`/);
   assert.match(readme, /`insert-before-first-risk-motion`/);
   assert.match(readme, /`machineReady=false`/);
+  assert.match(readme, /source-program and finding state/);
+  assert.match(readme, /patch-review and\s+simulation state/);
+  assert.match(readme, /learning plus release feedback state/);
   assert.match(readme, /Instruction-patch observations are emitted for MDP\/POMDP\/neural workers/);
   assert.match(readme, /`GET \/boundaries\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/boundaries\/catalog`/);
@@ -8352,6 +8410,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/validation\/catalog"/);
   assert.match(docs, /"path": "\/instructions\/generation\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/generation\/catalog"/);
+  assert.match(docs, /"path": "\/instructions\/generation\/preflight\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/instructions\/generation\/preflight\/catalog"/);
   assert.match(docs, /"path": "\/instructions\/generate"/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/generate"/);
   assert.match(docs, /"path": "\/instructions\/generation\/result"/);
@@ -8378,6 +8438,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/schedule\/result"/);
   assert.match(docs, /"path": "\/improvements\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/improvements\/catalog"/);
+  assert.match(docs, /"path": "\/improvements\/preflight\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/improvements\/preflight\/catalog"/);
   assert.match(docs, /"path": "\/instructions\/improve"/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/improve"/);
   assert.match(docs, /"path": "\/instructions\/boundaries\/review"/);
@@ -8675,6 +8737,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/results\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/validation\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/generation\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/instructions\/generation\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/generate"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/generation\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/review\/result"/);
@@ -8686,6 +8749,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/toolpaths\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/toolpaths\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/improvements\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/improvements\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/boundaries\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/remediation\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/remediation\/plan"/);
@@ -8931,6 +8995,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /toolpath catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/toolpaths\/plan/);
   assert.match(grafanaDashboards, /\/fabrication\/toolpaths\/result/);
+  assert.match(grafanaDashboards, /\/fabrication\/improvements\/preflight\/catalog/);
+  assert.match(grafanaDashboards, /improvement preflight catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/decomposition\/plan/);
   assert.match(grafanaDashboards, /\/fabrication\/decomposition\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/assembly\/plan/);
@@ -8985,6 +9051,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/calibration\/plan/);
   assert.match(grafanaDashboards, /\/fabrication\/calibration\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/generation\/catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/instructions\/generation\/preflight\/catalog/);
+  assert.match(grafanaDashboards, /instruction generation preflight catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/languages/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/validation\/catalog/);
   assert.match(grafanaDashboards, /instruction validation catalog/);
@@ -9163,6 +9231,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/results\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/instructions\/validation\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/instructions\/generation\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/instructions\/generation\/preflight\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/instructions\/generate/);
   assert.match(runtimeReadme, /POST \/fabrication\/instructions\/generation\/result/);
   assert.match(runtimeReadme, /POST \/fabrication\/instructions\/review\/result/);
@@ -9190,6 +9259,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/remediation\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/remediation\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/remediation\/result/);
+  assert.match(runtimeReadme, /\/fabrication\/improvements\/preflight\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/assembly\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/assembly\/preflight\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/release\/preflight\/catalog/);
@@ -9353,6 +9423,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/subjects\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/workers\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/instructions\/generate/);
+  assert.match(observabilityReadme, /\/fabrication\/instructions\/generation\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/instructions\/generation\/result/);
   assert.match(observabilityReadme, /\/fabrication\/instructions\/review\/result/);
   assert.match(observabilityReadme, /\/fabrication\/instructions\/validation\/result/);
@@ -9410,6 +9481,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/instructions\/validation\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/instructions\/validate/);
   assert.match(observabilityReadme, /\/fabrication\/improvements\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/improvements\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/boundaries\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/remediation\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/remediation\/plan/);

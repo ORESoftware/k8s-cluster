@@ -179,6 +179,7 @@ spec:
                 '"path": "/fabrication/results/catalog"' \
                 '"path": "/fabrication/instructions/validation/catalog"' \
                 '"path": "/fabrication/instructions/generation/catalog"' \
+                '"path": "/fabrication/instructions/generation/preflight/catalog"' \
                 '"path": "/fabrication/instructions/generate"' \
                 '"path": "/fabrication/instructions/generation/result"' \
                 '"path": "/fabrication/instructions/review/result"' \
@@ -190,6 +191,7 @@ spec:
                 '"path": "/fabrication/toolpaths/plan"' \
                 '"path": "/fabrication/toolpaths/result"' \
                 '"path": "/fabrication/improvements/catalog"' \
+                '"path": "/fabrication/improvements/preflight/catalog"' \
                 '"path": "/fabrication/decomposition/catalog"' \
                 '"path": "/fabrication/decomposition/plan"' \
                 '"path": "/fabrication/decomposition/result"' \

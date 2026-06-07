@@ -100,6 +100,8 @@ outcomes.
 - `GET /fabrication/instructions/validation/catalog`
 - `GET /instructions/generation/catalog`
 - `GET /fabrication/instructions/generation/catalog`
+- `GET /instructions/generation/preflight/catalog`
+- `GET /fabrication/instructions/generation/preflight/catalog`
 - `POST /instructions/generate`
 - `POST /fabrication/instructions/generate`
 - `POST /instructions/generation/result`
@@ -122,6 +124,8 @@ outcomes.
 - `POST /fabrication/toolpaths/result`
 - `GET /improvements/catalog`
 - `GET /fabrication/improvements/catalog`
+- `GET /improvements/preflight/catalog`
+- `GET /fabrication/improvements/preflight/catalog`
 - `GET /boundaries/catalog`
 - `GET /fabrication/boundaries/catalog`
 - `GET /boundaries/preflight/catalog`
@@ -1633,6 +1637,24 @@ or automation signoff clear. Program generation observations feed
 MDP/POMDP/neural workers so future plans can choose alternate machines,
 split/combine parts, regenerate programs, or add human checkpoints.
 
+## `GET /fabrication/instructions/generation/preflight/catalog`
+
+`GET /instructions/generation/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/instructions/generation/preflight/catalog` return the
+`dd.fabrication.instruction-generation-preflight-catalog.v1` evidence checklist
+for draft generated machine programs and job sheets before validation or release
+review. The catalog groups preflight requirements into request/design/machine
+state, program draft/controller state, and validation/simulation/release/learning
+state.
+
+Generation preflight entries are review gates, not controller-certified machine
+instructions. Generated programs stay `draft=true` and `machineReady=false` until
+design or import evidence, machine and controller profile evidence, setup and
+material/process context, validation, simulation or dry-run evidence, quality and
+release gates, and operator or automation signoff clear. Failed checks feed DES,
+MDP/POMDP, and neural workers so future plans can choose alternate machines,
+split/combine parts, regenerate programs, or add human checkpoints earlier.
+
 ## `POST /fabrication/instructions/generate`
 
 `POST /instructions/generate` and the gateway-prefixed
@@ -1886,6 +1908,24 @@ controller/postprocessor review, and operator or automation signoff clear.
 Instruction-patch observations are emitted for MDP/POMDP/neural workers so
 future planning can learn which evidence, defaults, checkpoints, and
 split/combine gates reduce failures.
+
+## `GET /fabrication/improvements/preflight/catalog`
+
+`GET /improvements/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/improvements/preflight/catalog` return the
+`dd.fabrication.instruction-improvement-preflight-catalog.v1` evidence checklist
+for patching imported or generated fabrication instructions. The catalog groups
+preflight requirements into source-program and finding state, patch-review and
+simulation state, and learning plus release feedback state before a repaired
+program can move toward release review.
+
+Improvement preflight entries are review requirements, not controller-certified
+patches. Improved programs stay `machineReady=false` until source provenance,
+patch manifests, validation, simulation or dry-run evidence, controller or
+postprocessor compatibility, setup/workholding rechecks, quality/release gates,
+and operator or automation signoff clear. Failed checks feed DES, MDP/POMDP, and
+neural workers so future plans can add evidence, split jobs, regenerate
+instructions, or require human intervention earlier.
 
 ## `GET /fabrication/boundaries/catalog`
 
