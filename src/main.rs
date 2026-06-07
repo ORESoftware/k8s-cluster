@@ -17846,6 +17846,8 @@ fn assembly_planning_result_review_response(
         "assemblyRoutes": [
             "GET /assembly/catalog",
             "GET /fabrication/assembly/catalog",
+            "GET /assembly/preflight/catalog",
+            "GET /fabrication/assembly/preflight/catalog",
             "POST /assembly/plan",
             "POST /fabrication/assembly/plan"
         ],
@@ -57036,6 +57038,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/execution/result",
         "GET /assembly/catalog",
         "GET /fabrication/assembly/catalog",
+        "GET /assembly/preflight/catalog",
+        "GET /fabrication/assembly/preflight/catalog",
         "POST /assembly/plan",
         "POST /fabrication/assembly/plan",
         "POST /assembly/result",
@@ -59485,6 +59489,107 @@ fn assembly_catalog_response() -> Value {
     })
 }
 
+fn assembly_preflight_catalog_response() -> Value {
+    let contracts = assembly_catalog_contracts();
+    let families = unique_sorted(contracts.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let release_gates = unique_sorted(contracts.iter().flat_map(|item| {
+        item.get("releaseGates")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.assembly-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /assembly/preflight/catalog",
+            "GET /fabrication/assembly/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/assembly/catalog",
+            "GET /fabrication/decomposition/catalog",
+            "GET /fabrication/interfaces/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "POST /fabrication/assembly/plan",
+            "POST /fabrication/assembly/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "assemblyFamilyCount": families.len(),
+        "assemblyFamilies": families,
+        "releaseGateKinds": release_gates,
+        "preflightGroups": [
+            {
+                "group": "child-route-package-and-interface-state",
+                "requiredEvidence": [
+                    "printed, milled, turned, sheet-cut, EDM, or special-process child route package IDs",
+                    "interface-control IDs, datum transfer, orientation keys, tolerance stackups, and dry-fit evidence",
+                    "retained child-route artifacts, checksums, material trace, and disposition status before recomposition"
+                ],
+                "releaseBlockers": [
+                    "child route package is missing, stale, failed, or not traceable to retained artifacts",
+                    "interface datum, tolerance, or orientation evidence is absent before parts are combined",
+                    "split/combine boundary expects human fit correction without an explicit intervention and disposition plan"
+                ]
+            },
+            {
+                "group": "join-recipe-fixture-and-process-state",
+                "requiredEvidence": [
+                    "assembly fixture, recomposition nest, robot cell, press, weld, fastener, adhesive, cure, torque, or heat-set recipe evidence",
+                    "workholding/preflight clearance, clamp or gripper force, access, collision, and process-window verification",
+                    "operator or automation ownership for each manual fit, robot handoff, joining, cure, rework, or recovery stop"
+                ],
+                "releaseBlockers": [
+                    "join operation lacks fixture, process, controller, cure, torque, or recipe evidence",
+                    "robotic, press, weld, adhesive, or fastener operation can collide, overconstrain, undercure, or damage child parts",
+                    "assembly process requires manual recovery but no planned stop, instruction, or release owner is retained"
+                ]
+            },
+            {
+                "group": "final-fit-quality-release-and-learning-state",
+                "requiredEvidence": [
+                    "final metrology, functional fit, leak/torque/pull/electrical test, visual inspection, and acceptance-band evidence",
+                    "nonconformance, rework, remake, waiver, split/combine redesign, or scrap disposition evidence",
+                    "learning observations for successful and failed recomposition paths, hidden human intervention, and route reliability"
+                ],
+                "releaseBlockers": [
+                    "assembled object lacks final fit, quality, or functional proof before release-package handoff",
+                    "out-of-tolerance interface or join result is not tied to disposition and reinspection evidence",
+                    "outcome learning is absent for a split/combine decision that changed route, fixture, operator, or process risk"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "assembly.assemblyGraph",
+            "hybridMakePlan.joinOperations",
+            "hybridMakePlan.splitCombineDecisions",
+            "interfaceControlPlan.controls",
+            "fixturePlan.setups",
+            "workholdingPreflightCatalog.preflightGroups",
+            "qualityPlan.inspectionPoints",
+            "releasePackagePlan.releaseGates",
+            "machineRelease.releaseBlockers",
+            "learningOutcome.observations"
+        ],
+        "releasePolicy": [
+            "assembly preflight entries describe evidence required before child fabrication routes are combined into one released object; they are not certified assembly, robot-cell, or joining instructions",
+            "machine-ready release remains blocked while child route packages, interface controls, join recipes, fixtures, final fit, quality, disposition, or operator/automation signoff evidence is absent",
+            "failed assembly preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can split, combine, recompose, redesign, reroute, or require human intervention earlier"
+        ],
+        "contracts": contracts
+    })
+}
+
 fn assembly_planning_response(
     response: &FabricationPlanResponse,
     policy: &LearningPolicySnapshot,
@@ -59679,6 +59784,10 @@ fn assembly_planning_response(
 
 async fn assembly_catalog_http() -> impl IntoResponse {
     Json(assembly_catalog_response())
+}
+
+async fn assembly_preflight_catalog_http() -> impl IntoResponse {
+    Json(assembly_preflight_catalog_response())
 }
 
 fn release_catalog_gate_contracts() -> Vec<Value> {
@@ -103773,6 +103882,7 @@ async fn request_schema() -> impl IntoResponse {
             "decompositionPlan": ["POST /decomposition/plan", "POST /fabrication/decomposition/plan"],
             "decompositionResult": ["POST /decomposition/result", "POST /fabrication/decomposition/result"],
             "assemblyCatalog": ["GET /assembly/catalog", "GET /fabrication/assembly/catalog"],
+            "assemblyPreflightCatalog": ["GET /assembly/preflight/catalog", "GET /fabrication/assembly/preflight/catalog"],
             "assemblyPlan": ["POST /assembly/plan", "POST /fabrication/assembly/plan"],
             "assemblyPlanningResult": ["POST /assembly/result", "POST /fabrication/assembly/result"],
             "releaseCatalog": ["GET /release/catalog", "GET /fabrication/release/catalog"],
@@ -106573,6 +106683,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/assembly/catalog", get(assembly_catalog_http))
         .route("/fabrication/assembly/catalog", get(assembly_catalog_http))
+        .route(
+            "/assembly/preflight/catalog",
+            get(assembly_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/assembly/preflight/catalog",
+            get(assembly_preflight_catalog_http),
+        )
         .route("/assembly/plan", post(assembly_plan_http))
         .route("/fabrication/assembly/plan", post(assembly_plan_http))
         .route("/assembly/result", post(assembly_planning_result_http))
@@ -115519,6 +115637,55 @@ mod tests {
             .is_some_and(|gates| gates
                 .iter()
                 .any(|gate| gate.as_str() == Some("post-join-inspection"))));
+    }
+
+    #[test]
+    fn assembly_preflight_catalog_endpoint_exposes_recomposition_release_gates() {
+        let payload = assembly_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.assembly-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/assembly/preflight/catalog")
+            })));
+        assert!(payload
+            .get("assemblyFamilyCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("assembly preflight groups should be present");
+        for group in [
+            "child-route-package-and-interface-state",
+            "join-recipe-fixture-and-process-state",
+            "final-fit-quality-release-and-learning-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing assembly preflight group {group}"
+            );
+        }
+
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("hybridMakePlan.splitCombineDecisions")
+            })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("child fabrication routes are combined")))));
     }
 
     #[test]
