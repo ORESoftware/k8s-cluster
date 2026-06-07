@@ -57014,6 +57014,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/improvements/catalog",
         "GET /boundaries/catalog",
         "GET /fabrication/boundaries/catalog",
+        "GET /boundaries/preflight/catalog",
+        "GET /fabrication/boundaries/preflight/catalog",
         "GET /remediation/catalog",
         "GET /fabrication/remediation/catalog",
         "POST /remediation/plan",
@@ -57761,8 +57763,106 @@ fn boundary_catalog_response() -> Value {
     })
 }
 
+fn boundary_preflight_catalog_response() -> Value {
+    let catalog = boundary_catalog();
+    let families = unique_sorted(catalog.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.boundary-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /boundaries/preflight/catalog",
+            "GET /fabrication/boundaries/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/boundaries/catalog",
+            "GET /fabrication/remediation/catalog",
+            "GET /fabrication/release/preflight/catalog",
+            "GET /fabrication/interventions/catalog",
+            "GET /fabrication/decomposition/catalog",
+            "POST /fabrication/instructions/analyze",
+            "POST /fabrication/instructions/validate",
+            "POST /fabrication/instructions/boundaries/review",
+            "POST /fabrication/remediation/plan",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "boundaryCount": catalog.len(),
+        "families": families,
+        "familyCounts": boundary_catalog_family_counts(&catalog),
+        "preflightGroups": [
+            {
+                "group": "machine-failure-boundary-evidence-state",
+                "requiredEvidence": [
+                    "machine envelope, axis travel, spindle/nozzle/tool state, fixture clearance, material-machine compatibility, controller modal state, and dry-run or simulation trace evidence",
+                    "failure boundary ID, source program ID, line/range, severity, machine-failure risk, release blocker, and recommended remediation evidence",
+                    "release probe, hidden-state/POMDP belief, and retained artifact checksum evidence when boundary confidence is uncertain"
+                ],
+                "releaseBlockers": [
+                    "machine-failure boundary lacks source line, detection source, simulation/probe evidence, or retained remediation action",
+                    "machine-ready release requested while collision, envelope, controller, material, postprocess, fixture, or profile blocker remains unresolved",
+                    "failure boundary is accepted without release-owner signoff and learning feedback"
+                ]
+            },
+            {
+                "group": "human-intervention-and-automation-gap-state",
+                "requiredEvidence": [
+                    "operator checkpoint, manual setup/recovery action, robot/automation capability, monitoring trigger, and safe stop/resume evidence",
+                    "handoff instructions, intervention owner, release authority, and artifact links for each hidden manual step",
+                    "learning observation that records whether human intervention recovered, failed, or changed the route"
+                ],
+                "releaseBlockers": [
+                    "program requires manual recovery or automation fallback without an explicit intervention plan",
+                    "human handoff is expected but no owner, stop point, instruction, or release authority is retained",
+                    "automation capability gap is hidden inside generated instructions instead of surfaced as a release blocker"
+                ]
+            },
+            {
+                "group": "split-combine-and-remediation-boundary-state",
+                "requiredEvidence": [
+                    "split boundary, combine/assembly boundary, interface-control, decomposition target, datum transfer, recomposition, and quality evidence",
+                    "remediation plan that names regeneration, instruction improvement, route split, assembly recomposition, rework, waiver, or human intervention",
+                    "DES/MDP/POMDP/neural learning signals for the final boundary outcome and future route selection"
+                ],
+                "releaseBlockers": [
+                    "single-piece route is infeasible but split/combine, interface, or assembly evidence is missing",
+                    "combine or recomposition boundary lacks datum, fit, quality, workholding, or release-package evidence",
+                    "remediation outcome is not tied to learning observations before release"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "validation.failureBoundaries",
+            "boundarySummary.machineFailureRisks",
+            "interventionMap.requiredActions",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "releaseProbePlan.probes",
+            "decompositionPlan.targets",
+            "interfaceControlPlan.controls",
+            "boundaryRemediationPlan.actions",
+            "releasePackagePlan.releaseGates",
+            "learningOutcome.observations"
+        ],
+        "releasePolicy": [
+            "boundary preflight entries describe evidence required before trusting machine-failure, human-intervention, automation-gap, and split/combine decisions; they are not controller-certified safety results",
+            "machine-ready release remains blocked while boundary source evidence, remediation action, release probe, intervention owner, split/combine route, or learning feedback is absent",
+            "failed boundary preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can reroute manufacturing, split parts, regenerate instructions, or require human intervention earlier"
+        ],
+        "boundaries": catalog
+    })
+}
+
 async fn boundary_catalog_http() -> impl IntoResponse {
     Json(boundary_catalog_response())
+}
+
+async fn boundary_preflight_catalog_http() -> impl IntoResponse {
+    Json(boundary_preflight_catalog_response())
 }
 
 fn boundary_remediation_route_handoffs(boundary_kind: &str) -> Vec<&'static str> {
@@ -103985,6 +104085,7 @@ async fn request_schema() -> impl IntoResponse {
             "toolpathResult": ["POST /toolpaths/result", "POST /fabrication/toolpaths/result"],
             "instructionImprovementCatalog": ["GET /improvements/catalog", "GET /fabrication/improvements/catalog"],
             "boundaryCatalog": ["GET /boundaries/catalog", "GET /fabrication/boundaries/catalog"],
+            "boundaryPreflightCatalog": ["GET /boundaries/preflight/catalog", "GET /fabrication/boundaries/preflight/catalog"],
             "boundaryRemediationCatalog": ["GET /remediation/catalog", "GET /fabrication/remediation/catalog"],
             "boundaryRemediationPlan": ["POST /remediation/plan", "POST /fabrication/remediation/plan"],
             "boundaryRemediationResult": ["POST /remediation/result", "POST /fabrication/remediation/result"],
@@ -106755,6 +106856,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/boundaries/catalog",
             get(boundary_catalog_http),
+        )
+        .route(
+            "/boundaries/preflight/catalog",
+            get(boundary_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/boundaries/preflight/catalog",
+            get(boundary_preflight_catalog_http),
         )
         .route(
             "/remediation/catalog",
@@ -114722,6 +114831,60 @@ mod tests {
             .is_some_and(|signals| signals.iter().any(|signal| signal
                 .as_str()
                 .is_some_and(|signal| signal == "boundary-kind:split-boundary"))));
+    }
+
+    #[test]
+    fn boundary_preflight_catalog_endpoint_exposes_machine_failure_and_split_gates() {
+        let payload = boundary_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.boundary-preflight-catalog.v1")
+        );
+        assert_eq!(
+            payload.get("boundaryCount").and_then(Value::as_u64),
+            Some(safety_boundary_classes().len() as u64)
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/boundaries/preflight/catalog")
+            })));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("boundary preflight groups should be present");
+        for group in [
+            "machine-failure-boundary-evidence-state",
+            "human-intervention-and-automation-gap-state",
+            "split-combine-and-remediation-boundary-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing boundary preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("machine-ready release requested"))))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("boundarySummary.machineFailureRisks")
+            })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not controller-certified safety results")))));
     }
 
     #[test]
