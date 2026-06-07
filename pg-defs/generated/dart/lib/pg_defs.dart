@@ -186,6 +186,280 @@ class VapiPhoneCallEventsRow {
   }
 }
 
+const musicSongsTable = "music_songs";
+const musicSongsSelectSql = "select\n      id::text as id,\n      title,\n      slug,\n      status,\n      seed,\n      generation_date,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      audio_url,\n      content_type,\n      duration_millis,\n      sample_rate,\n      bpm_millis,\n      genre,\n      peak_micros,\n      rms_micros,\n      spectral_centroid_millihz,\n      listenability_score_micros,\n      vote_score,\n      up_votes,\n      down_votes,\n      play_count,\n      summary::text as summary_json,\n      meta_data::text as meta_data_json,\n      to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from music_songs";
+
+const musicSongsStatusValues = <String>["generated", "published", "discarded", "failed", "archived"];
+const musicSongsStorageProviderValues = <String>["s3", "r2", "gcs", "drive", "local"];
+
+class MusicSongsRow {
+  const MusicSongsRow({
+    required this.id,
+    required this.title,
+    required this.slug,
+    required this.status,
+    required this.seed,
+    required this.generationDate,
+    this.storageProvider,
+    this.storageBucket,
+    this.storageKey,
+    this.audioUrl,
+    this.contentType,
+    required this.durationMillis,
+    required this.sampleRate,
+    required this.bpmMillis,
+    required this.genre,
+    required this.peakMicros,
+    required this.rmsMicros,
+    required this.spectralCentroidMillihz,
+    required this.listenabilityScoreMicros,
+    required this.voteScore,
+    required this.upVotes,
+    required this.downVotes,
+    required this.playCount,
+    required this.summary,
+    required this.metaData,
+    this.publishedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String title;
+  final String slug;
+  final String status;
+  final int seed;
+  final String generationDate;
+  final String? storageProvider;
+  final String? storageBucket;
+  final String? storageKey;
+  final String? audioUrl;
+  final String? contentType;
+  final int durationMillis;
+  final int sampleRate;
+  final int bpmMillis;
+  final String genre;
+  final int peakMicros;
+  final int rmsMicros;
+  final int spectralCentroidMillihz;
+  final int listenabilityScoreMicros;
+  final int voteScore;
+  final int upVotes;
+  final int downVotes;
+  final int playCount;
+  final Map<String, Object?> summary;
+  final Map<String, Object?> metaData;
+  final String? publishedAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory MusicSongsRow.fromJson(Map<String, Object?> json) {
+    return MusicSongsRow(
+      id: _readRequiredString(json, "id"),
+      title: _readRequiredString(json, "title"),
+      slug: _readRequiredString(json, "slug"),
+      status: _readRequiredString(json, "status"),
+      seed: _readRequiredInt(json, "seed"),
+      generationDate: _readRequiredString(json, "generationDate"),
+      storageProvider: _readOptionalString(json, "storageProvider"),
+      storageBucket: _readOptionalString(json, "storageBucket"),
+      storageKey: _readOptionalString(json, "storageKey"),
+      audioUrl: _readOptionalString(json, "audioUrl"),
+      contentType: _readOptionalString(json, "contentType"),
+      durationMillis: _readRequiredInt(json, "durationMillis"),
+      sampleRate: _readRequiredInt(json, "sampleRate"),
+      bpmMillis: _readRequiredInt(json, "bpmMillis"),
+      genre: _readRequiredString(json, "genre"),
+      peakMicros: _readRequiredInt(json, "peakMicros"),
+      rmsMicros: _readRequiredInt(json, "rmsMicros"),
+      spectralCentroidMillihz: _readRequiredInt(json, "spectralCentroidMillihz"),
+      listenabilityScoreMicros: _readRequiredInt(json, "listenabilityScoreMicros"),
+      voteScore: _readRequiredInt(json, "voteScore"),
+      upVotes: _readRequiredInt(json, "upVotes"),
+      downVotes: _readRequiredInt(json, "downVotes"),
+      playCount: _readRequiredInt(json, "playCount"),
+      summary: _readRequiredObject(json, "summary"),
+      metaData: _readRequiredObject(json, "metaData"),
+      publishedAt: _readOptionalString(json, "publishedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "title": title,
+    "slug": slug,
+    "status": status,
+    "seed": seed,
+    "generationDate": generationDate,
+    "storageProvider": storageProvider,
+    "storageBucket": storageBucket,
+    "storageKey": storageKey,
+    "audioUrl": audioUrl,
+    "contentType": contentType,
+    "durationMillis": durationMillis,
+    "sampleRate": sampleRate,
+    "bpmMillis": bpmMillis,
+    "genre": genre,
+    "peakMicros": peakMicros,
+    "rmsMicros": rmsMicros,
+    "spectralCentroidMillihz": spectralCentroidMillihz,
+    "listenabilityScoreMicros": listenabilityScoreMicros,
+    "voteScore": voteScore,
+    "upVotes": upVotes,
+    "downVotes": downVotes,
+    "playCount": playCount,
+    "summary": summary,
+    "metaData": metaData,
+    "publishedAt": publishedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(title).length > 200) {
+      errors.add("music_songs.title exceeds 200 bytes");
+    }
+    if (utf8.encode(title).length < 1) {
+      errors.add("music_songs.title is below 1 bytes");
+    }
+    if (!RegExp(r'^[a-z0-9][a-z0-9-]{0,218}[a-z0-9]$').hasMatch(slug)) {
+      errors.add("music_songs.slug must be a lowercase slug");
+    }
+    if (!musicSongsStatusValues.contains(status)) {
+      errors.add("unsupported music_songs.status");
+    }
+    if (!RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(generationDate)) {
+      errors.add("music_songs.generation_date does not match the required pattern");
+    }
+    if (storageProvider != null && !musicSongsStorageProviderValues.contains(storageProvider!)) {
+      errors.add("unsupported music_songs.storage_provider");
+    }
+    if (storageBucket != null && utf8.encode(storageBucket!).length > 200) {
+      errors.add("music_songs.storage_bucket exceeds 200 bytes");
+    }
+    if (storageKey != null && utf8.encode(storageKey!).length > 2048) {
+      errors.add("music_songs.storage_key exceeds 2048 bytes");
+    }
+    if (audioUrl != null && utf8.encode(audioUrl!).length > 4096) {
+      errors.add("music_songs.audio_url exceeds 4096 bytes");
+    }
+    if (contentType != null && utf8.encode(contentType!).length > 120) {
+      errors.add("music_songs.content_type exceeds 120 bytes");
+    }
+    if (durationMillis < 1) {
+      errors.add("music_songs.duration_millis is below the minimum");
+    }
+    if (durationMillis > 1800000) {
+      errors.add("music_songs.duration_millis is above the maximum");
+    }
+    if (sampleRate < 8000) {
+      errors.add("music_songs.sample_rate is below the minimum");
+    }
+    if (sampleRate > 192000) {
+      errors.add("music_songs.sample_rate is above the maximum");
+    }
+    if (bpmMillis < 1) {
+      errors.add("music_songs.bpm_millis is below the minimum");
+    }
+    if (bpmMillis > 300000) {
+      errors.add("music_songs.bpm_millis is above the maximum");
+    }
+    if (utf8.encode(genre).length > 80) {
+      errors.add("music_songs.genre exceeds 80 bytes");
+    }
+    if (utf8.encode(genre).length < 1) {
+      errors.add("music_songs.genre is below 1 bytes");
+    }
+    if (peakMicros < 0) {
+      errors.add("music_songs.peak_micros is below the minimum");
+    }
+    if (rmsMicros < 0) {
+      errors.add("music_songs.rms_micros is below the minimum");
+    }
+    if (listenabilityScoreMicros < 0) {
+      errors.add("music_songs.listenability_score_micros is below the minimum");
+    }
+    if (listenabilityScoreMicros > 1000000) {
+      errors.add("music_songs.listenability_score_micros is above the maximum");
+    }
+    if (upVotes < 0) {
+      errors.add("music_songs.up_votes is below the minimum");
+    }
+    if (downVotes < 0) {
+      errors.add("music_songs.down_votes is below the minimum");
+    }
+    if (playCount < 0) {
+      errors.add("music_songs.play_count is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const musicSongVotesTable = "music_song_votes";
+const musicSongVotesSelectSql = "select\n      id::text as id,\n      song_id::text as song_id,\n      visitor_hash,\n      user_agent_hash,\n      vote_value,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from music_song_votes";
+
+class MusicSongVotesRow {
+  const MusicSongVotesRow({
+    required this.id,
+    required this.songId,
+    required this.visitorHash,
+    this.userAgentHash,
+    required this.voteValue,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String songId;
+  final String visitorHash;
+  final String? userAgentHash;
+  final int voteValue;
+  final String createdAt;
+  final String updatedAt;
+
+  factory MusicSongVotesRow.fromJson(Map<String, Object?> json) {
+    return MusicSongVotesRow(
+      id: _readRequiredString(json, "id"),
+      songId: _readRequiredString(json, "songId"),
+      visitorHash: _readRequiredString(json, "visitorHash"),
+      userAgentHash: _readOptionalString(json, "userAgentHash"),
+      voteValue: _readRequiredInt(json, "voteValue"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "songId": songId,
+    "visitorHash": visitorHash,
+    "userAgentHash": userAgentHash,
+    "voteValue": voteValue,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(visitorHash)) {
+      errors.add("music_song_votes.visitor_hash does not match the required pattern");
+    }
+    if (userAgentHash != null && !RegExp(r'^[a-f0-9]{64}$').hasMatch(userAgentHash!)) {
+      errors.add("music_song_votes.user_agent_hash does not match the required pattern");
+    }
+    if (voteValue < -1) {
+      errors.add("music_song_votes.vote_value is below the minimum");
+    }
+    if (voteValue > 1) {
+      errors.add("music_song_votes.vote_value is above the maximum");
+    }
+    return errors;
+  }
+}
+
 const containerPoolConfigsTable = "container_pool_configs";
 const containerPoolConfigsSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      image,\n      command::text as command_json,\n      env::text as env_json,\n      request_path,\n      health_path,\n      container_port,\n      min_warm,\n      max_warm,\n      max_concurrency_per_container,\n      request_timeout_ms,\n      idle_ttl_seconds,\n      nats_subject,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_configs";
 

@@ -170,6 +170,252 @@ class VapiPhoneCallEventsInsert(BaseModel):
             raise ValueError("vapi_phone_call_events.summary exceeds 4000 bytes")
         return value
 
+MusicSongsStatus = Literal["generated", "published", "discarded", "failed", "archived"]
+MusicSongsStorageProvider = Literal["s3", "r2", "gcs", "drive", "local"]
+
+class MusicSongs(Base):
+    __tablename__ = "music_songs"
+    __table_args__ = (
+        CheckConstraint("octet_length(title) between 1 and 200", name="music_songs_title_size_chk"),
+        CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{0,218}[a-z0-9]$'", name="music_songs_slug_format_chk"),
+        CheckConstraint("status in ('generated', 'published', 'discarded', 'failed', 'archived')", name="music_songs_status_chk"),
+        CheckConstraint("generation_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'", name="music_songs_generation_date_chk"),
+        CheckConstraint("storage_provider is null or storage_provider in ('s3', 'r2', 'gcs', 'drive', 'local')", name="music_songs_storage_provider_chk"),
+        CheckConstraint("storage_bucket is null or octet_length(storage_bucket) <= 200", name="music_songs_storage_bucket_size_chk"),
+        CheckConstraint("storage_key is null or octet_length(storage_key) <= 2048", name="music_songs_storage_key_size_chk"),
+        CheckConstraint("audio_url is null or octet_length(audio_url) <= 4096", name="music_songs_audio_url_size_chk"),
+        CheckConstraint("content_type is null or octet_length(content_type) <= 120", name="music_songs_content_type_size_chk"),
+        CheckConstraint("duration_millis between 1 and 1800000", name="music_songs_duration_chk"),
+        CheckConstraint("sample_rate between 8000 and 192000", name="music_songs_sample_rate_chk"),
+        CheckConstraint("bpm_millis between 1 and 300000", name="music_songs_bpm_chk"),
+        CheckConstraint("octet_length(genre) between 1 and 80", name="music_songs_genre_size_chk"),
+        CheckConstraint("peak_micros >= 0\n      and rms_micros >= 0\n      and spectral_centroid_millihz >= 0\n      and listenability_score_micros between 0 and 1000000\n      and up_votes >= 0\n      and down_votes >= 0\n      and play_count >= 0", name="music_songs_metric_nonnegative_chk"),
+        CheckConstraint("jsonb_typeof(summary) = 'object'", name="music_songs_summary_object_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="music_songs_meta_object_chk"),
+        CheckConstraint("status <> 'published' or audio_url is not null", name="music_songs_published_audio_chk"),
+        Index("music_songs_slug_uq", "slug", unique=True),
+        Index("music_songs_published_at_idx", text("published_at desc"), postgresql_where=text("status = 'published'")),
+        Index("music_songs_generation_date_status_idx", text("generation_date desc"), "status"),
+        Index("music_songs_vote_score_idx", text("vote_score desc"), text("published_at desc"), postgresql_where=text("status = 'published'")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    slug: Mapped[str] = mapped_column(String(220), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'generated'"))
+    seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    generation_date: Mapped[str] = mapped_column(String(10), nullable=False, server_default=text("to_char(current_date, 'YYYY-MM-DD')"))
+    storage_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    storage_bucket: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    audio_url: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    duration_millis: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("180000"))
+    sample_rate: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("44100"))
+    bpm_millis: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("128000"))
+    genre: Mapped[str] = mapped_column(String(80), nullable=False, server_default=text("'electronica'"))
+    peak_micros: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    rms_micros: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    spectral_centroid_millihz: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    listenability_score_micros: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    vote_score: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    up_votes: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    down_votes: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    play_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    summary: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class MusicSongsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    title: str = Field(..., max_length=200)
+    slug: str = Field(..., max_length=220, pattern="^[a-z0-9][a-z0-9-]{0,218}[a-z0-9]$")
+    status: MusicSongsStatus
+    seed: int
+    generationDate: str = Field(..., max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    storageProvider: MusicSongsStorageProvider | None = None
+    storageBucket: str | None = Field(None, max_length=200)
+    storageKey: str | None = None
+    audioUrl: str | None = None
+    contentType: str | None = Field(None, max_length=120)
+    durationMillis: int = Field(..., ge=1, le=1800000)
+    sampleRate: int = Field(..., ge=8000, le=192000)
+    bpmMillis: int = Field(..., ge=1, le=300000)
+    genre: str = Field(..., max_length=80)
+    peakMicros: int = Field(..., ge=0)
+    rmsMicros: int = Field(..., ge=0)
+    spectralCentroidMillihz: int
+    listenabilityScoreMicros: int = Field(..., ge=0, le=1000000)
+    voteScore: int
+    upVotes: int = Field(..., ge=0)
+    downVotes: int = Field(..., ge=0)
+    playCount: int = Field(..., ge=0)
+    summary: dict[str, Any]
+    metaData: dict[str, Any]
+    publishedAt: datetime | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("music_songs.title exceeds 200 bytes")
+        return value
+
+    @field_validator("storageBucket")
+    @classmethod
+    def validate_storage_bucket(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("music_songs.storage_bucket exceeds 200 bytes")
+        return value
+
+    @field_validator("storageKey")
+    @classmethod
+    def validate_storage_key(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("music_songs.storage_key exceeds 2048 bytes")
+        return value
+
+    @field_validator("audioUrl")
+    @classmethod
+    def validate_audio_url(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("music_songs.audio_url exceeds 4096 bytes")
+        return value
+
+    @field_validator("contentType")
+    @classmethod
+    def validate_content_type(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("music_songs.content_type exceeds 120 bytes")
+        return value
+
+    @field_validator("genre")
+    @classmethod
+    def validate_genre(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("music_songs.genre exceeds 80 bytes")
+        return value
+
+class MusicSongsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    title: str = Field(..., max_length=200)
+    slug: str = Field(..., max_length=220, pattern="^[a-z0-9][a-z0-9-]{0,218}[a-z0-9]$")
+    status: MusicSongsStatus | None = "generated"
+    seed: int
+    generationDate: str | None = Field(None, max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    storageProvider: MusicSongsStorageProvider | None = None
+    storageBucket: str | None = Field(None, max_length=200)
+    storageKey: str | None = None
+    audioUrl: str | None = None
+    contentType: str | None = Field(None, max_length=120)
+    durationMillis: int | None = Field(180000, ge=1, le=1800000)
+    sampleRate: int | None = Field(44100, ge=8000, le=192000)
+    bpmMillis: int | None = Field(128000, ge=1, le=300000)
+    genre: str | None = Field("electronica", max_length=80)
+    peakMicros: int | None = Field(0, ge=0)
+    rmsMicros: int | None = Field(0, ge=0)
+    spectralCentroidMillihz: int | None = 0
+    listenabilityScoreMicros: int | None = Field(0, ge=0, le=1000000)
+    voteScore: int | None = 0
+    upVotes: int | None = Field(0, ge=0)
+    downVotes: int | None = Field(0, ge=0)
+    playCount: int | None = Field(0, ge=0)
+    summary: dict[str, Any] | None = Field(default_factory=dict)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    publishedAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("music_songs.title exceeds 200 bytes")
+        return value
+
+    @field_validator("storageBucket")
+    @classmethod
+    def validate_storage_bucket(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("music_songs.storage_bucket exceeds 200 bytes")
+        return value
+
+    @field_validator("storageKey")
+    @classmethod
+    def validate_storage_key(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("music_songs.storage_key exceeds 2048 bytes")
+        return value
+
+    @field_validator("audioUrl")
+    @classmethod
+    def validate_audio_url(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("music_songs.audio_url exceeds 4096 bytes")
+        return value
+
+    @field_validator("contentType")
+    @classmethod
+    def validate_content_type(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("music_songs.content_type exceeds 120 bytes")
+        return value
+
+    @field_validator("genre")
+    @classmethod
+    def validate_genre(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("music_songs.genre exceeds 80 bytes")
+        return value
+
+class MusicSongVotes(Base):
+    __tablename__ = "music_song_votes"
+    __table_args__ = (
+        CheckConstraint("visitor_hash ~ '^[a-f0-9]{64}$'", name="music_song_votes_visitor_hash_chk"),
+        CheckConstraint("user_agent_hash is null or user_agent_hash ~ '^[a-f0-9]{64}$'", name="music_song_votes_user_agent_hash_chk"),
+        CheckConstraint("vote_value >= -1 and vote_value <= 1 and vote_value <> 0", name="music_song_votes_value_chk"),
+        Index("music_song_votes_song_visitor_uq", "song_id", "visitor_hash", unique=True),
+        Index("music_song_votes_song_created_at_idx", "song_id", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    song_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    visitor_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_agent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    vote_value: Mapped[int] = mapped_column(Integer(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class MusicSongVotesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    songId: UUID
+    visitorHash: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    userAgentHash: str | None = Field(None, max_length=64, pattern="^[a-f0-9]{64}$")
+    voteValue: int = Field(..., ge=-1, le=1)
+    createdAt: datetime
+    updatedAt: datetime
+
+class MusicSongVotesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    songId: UUID
+    visitorHash: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    userAgentHash: str | None = Field(None, max_length=64, pattern="^[a-f0-9]{64}$")
+    voteValue: int = Field(..., ge=-1, le=1)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
 ContainerPoolConfigsStatus = Literal["active", "paused", "archived"]
 
 class ContainerPoolConfigs(Base):

@@ -92,6 +92,27 @@ export function containerPoolAffinityLockKey(prefix: string, poolSlug: string, t
 
 export const CONTAINER_POOL_AFFINITY_LOCK_KEY_DEFAULT_PREFIX = "dd:container-pool:affinity";
 
+/** Redis STRING integer containing the 3-5 song generation target for one UTC date. SET with EX TTL; missing entries can be recomputed deterministically. */
+export function musicDailyGenerationTargetKey(prefix: string, yyyyMmDd: string): string {
+  return `${prefix}:daily:${yyyyMmDd}:target`;
+}
+
+export const MUSIC_DAILY_GENERATION_TARGET_KEY_DEFAULT_PREFIX = "dd:music";
+
+/** Redis STRING lock token used to avoid concurrent generator sweeps across dd-music-rs replicas. Acquired with SET NX EX. */
+export function musicGenerationRunLockKey(prefix: string): string {
+  return `${prefix}:generate:lock`;
+}
+
+export const MUSIC_GENERATION_RUN_LOCK_KEY_DEFAULT_PREFIX = "dd:music";
+
+/** Redis STRING short-lived throttle for one anonymous visitor hash voting on one song. Durable vote state lives in Postgres. */
+export function musicSongVisitorVoteKey(prefix: string, songId: string, visitorHash: string): string {
+  return `${prefix}:song:${songId}:visitor:${visitorHash}:vote`;
+}
+
+export const MUSIC_SONG_VISITOR_VOTE_KEY_DEFAULT_PREFIX = "dd:music";
+
 /** Redis SET of '{scope}:{key}' members listing every entry that exists in this env. */
 export function runtimeConfigEntryIndexKey(prefix: string, env: string): string {
   return `${prefix}:${env}:entry-index`;

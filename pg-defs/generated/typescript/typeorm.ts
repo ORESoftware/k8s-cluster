@@ -92,6 +92,125 @@ export class VapiPhoneCallEventsEntity {
 
 }
 
+@Index("music_songs_slug_uq", ["slug"], { unique: true })
+// music_songs_published_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// music_songs_generation_date_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// music_songs_vote_score_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "music_songs" })
+export class MusicSongsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "title", type: "varchar", length: 200 })
+  title!: string;
+
+  @Column({ name: "slug", type: "varchar", length: 220 })
+  slug!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'generated'" })
+  status!: string;
+
+  @Column({ name: "seed", type: "bigint" })
+  seed!: number;
+
+  @Column({ name: "generation_date", type: "varchar", length: 10, default: () => "to_char(current_date, 'YYYY-MM-DD')" })
+  generationDate!: string;
+
+  @Column({ name: "storage_provider", type: "varchar", length: 32, nullable: true })
+  storageProvider!: string | null;
+
+  @Column({ name: "storage_bucket", type: "varchar", length: 200, nullable: true })
+  storageBucket!: string | null;
+
+  @Column({ name: "storage_key", type: "text", nullable: true })
+  storageKey!: string | null;
+
+  @Column({ name: "audio_url", type: "text", nullable: true })
+  audioUrl!: string | null;
+
+  @Column({ name: "content_type", type: "varchar", length: 120, nullable: true })
+  contentType!: string | null;
+
+  @Column({ name: "duration_millis", type: "integer", default: () => "180000" })
+  durationMillis!: number;
+
+  @Column({ name: "sample_rate", type: "integer", default: () => "44100" })
+  sampleRate!: number;
+
+  @Column({ name: "bpm_millis", type: "integer", default: () => "128000" })
+  bpmMillis!: number;
+
+  @Column({ name: "genre", type: "varchar", length: 80, default: () => "'electronica'" })
+  genre!: string;
+
+  @Column({ name: "peak_micros", type: "integer", default: () => "0" })
+  peakMicros!: number;
+
+  @Column({ name: "rms_micros", type: "integer", default: () => "0" })
+  rmsMicros!: number;
+
+  @Column({ name: "spectral_centroid_millihz", type: "bigint", default: () => "0" })
+  spectralCentroidMillihz!: number;
+
+  @Column({ name: "listenability_score_micros", type: "integer", default: () => "0" })
+  listenabilityScoreMicros!: number;
+
+  @Column({ name: "vote_score", type: "integer", default: () => "0" })
+  voteScore!: number;
+
+  @Column({ name: "up_votes", type: "integer", default: () => "0" })
+  upVotes!: number;
+
+  @Column({ name: "down_votes", type: "integer", default: () => "0" })
+  downVotes!: number;
+
+  @Column({ name: "play_count", type: "integer", default: () => "0" })
+  playCount!: number;
+
+  @Column({ name: "summary", type: "jsonb", default: () => "'{}'::jsonb" })
+  summary!: Record<string, unknown>;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "published_at", type: "timestamptz", nullable: true })
+  publishedAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("music_song_votes_song_visitor_uq", ["songId", "visitorHash"], { unique: true })
+// music_song_votes_song_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "music_song_votes" })
+export class MusicSongVotesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "song_id", type: "uuid" })
+  songId!: string;
+
+  @Column({ name: "visitor_hash", type: "varchar", length: 64 })
+  visitorHash!: string;
+
+  @Column({ name: "user_agent_hash", type: "varchar", length: 64, nullable: true })
+  userAgentHash!: string | null;
+
+  @Column({ name: "vote_value", type: "integer" })
+  voteValue!: number;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
 @Index("container_pool_configs_slug_active_uq", ["slug"], { unique: true, where: "is_soft_deleted = false" })
 @Index("container_pool_configs_status_idx", ["status"], { where: "is_soft_deleted = false" })
 // container_pool_configs_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.

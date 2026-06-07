@@ -55,6 +55,67 @@ class VapiPhoneCallEventsTable extends Table {
   };
 }
 
+@DataClassName("MusicSongsData")
+class MusicSongsTable extends Table {
+  @override String get tableName => "music_songs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get title => text().named("title").withLength(max: 200)();
+  TextColumn get slug => text().named("slug").withLength(max: 220)();
+  TextColumn get status => text().named("status").clientDefault(() => 'generated')();
+  Int64Column get seed => int64().named("seed")();
+  TextColumn get generationDate => text().named("generation_date").withLength(max: 10)();
+  TextColumn get storageProvider => text().named("storage_provider").nullable()();
+  TextColumn get storageBucket => text().named("storage_bucket").withLength(max: 200).nullable()();
+  TextColumn get storageKey => text().named("storage_key").nullable()();
+  TextColumn get audioUrl => text().named("audio_url").nullable()();
+  TextColumn get contentType => text().named("content_type").withLength(max: 120).nullable()();
+  IntColumn get durationMillis => integer().named("duration_millis").clientDefault(() => 180000)();
+  IntColumn get sampleRate => integer().named("sample_rate").clientDefault(() => 44100)();
+  IntColumn get bpmMillis => integer().named("bpm_millis").clientDefault(() => 128000)();
+  TextColumn get genre => text().named("genre").withLength(max: 80).clientDefault(() => 'electronica')();
+  IntColumn get peakMicros => integer().named("peak_micros").clientDefault(() => 0)();
+  IntColumn get rmsMicros => integer().named("rms_micros").clientDefault(() => 0)();
+  Int64Column get spectralCentroidMillihz => int64().named("spectral_centroid_millihz").clientDefault(() => 0)();
+  IntColumn get listenabilityScoreMicros => integer().named("listenability_score_micros").clientDefault(() => 0)();
+  IntColumn get voteScore => integer().named("vote_score").clientDefault(() => 0)();
+  IntColumn get upVotes => integer().named("up_votes").clientDefault(() => 0)();
+  IntColumn get downVotes => integer().named("down_votes").clientDefault(() => 0)();
+  IntColumn get playCount => integer().named("play_count").clientDefault(() => 0)();
+  TextColumn get summary => text().named("summary").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get publishedAt => dateTime().named("published_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("MusicSongVotesData")
+class MusicSongVotesTable extends Table {
+  @override String get tableName => "music_song_votes";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get songId => text().named("song_id").customConstraint("UUID REFERENCES music_songs (id)")();
+  TextColumn get visitorHash => text().named("visitor_hash").withLength(max: 64)();
+  TextColumn get userAgentHash => text().named("user_agent_hash").withLength(max: 64).nullable()();
+  IntColumn get voteValue => integer().named("vote_value")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("ContainerPoolConfigsData")
 class ContainerPoolConfigsTable extends Table {
   @override String get tableName => "container_pool_configs";
@@ -938,6 +999,8 @@ class DesFelElevatorPomdpBeliefsTable extends Table {
 const List<Type> registeredDriftTables = <Type>[
   AppConfigTable,
   VapiPhoneCallEventsTable,
+  MusicSongsTable,
+  MusicSongVotesTable,
   ContainerPoolConfigsTable,
   KnownGitRepoTable,
   AgentContextBlobsTable,

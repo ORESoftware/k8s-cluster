@@ -54,6 +54,57 @@ model VapiPhoneCallEvents {
   @@map("vapi_phone_call_events")
 }
 
+model MusicSongs {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title String @db.VarChar(200)
+  slug String @db.VarChar(220)
+  status String @default("generated") @db.VarChar(32)
+  seed BigInt @db.BigInt
+  generationDate String @map("generation_date") @default(dbgenerated("to_char(current_date, 'YYYY-MM-DD')")) @db.VarChar(10)
+  storageProvider String? @map("storage_provider") @db.VarChar(32)
+  storageBucket String? @map("storage_bucket") @db.VarChar(200)
+  storageKey String? @map("storage_key") @db.Text
+  audioUrl String? @map("audio_url") @db.Text
+  contentType String? @map("content_type") @db.VarChar(120)
+  durationMillis Int @map("duration_millis") @default(180000)
+  sampleRate Int @map("sample_rate") @default(44100)
+  bpmMillis Int @map("bpm_millis") @default(128000)
+  genre String @default("electronica") @db.VarChar(80)
+  peakMicros Int @map("peak_micros") @default(0)
+  rmsMicros Int @map("rms_micros") @default(0)
+  spectralCentroidMillihz BigInt @map("spectral_centroid_millihz") @default(0) @db.BigInt
+  listenabilityScoreMicros Int @map("listenability_score_micros") @default(0)
+  voteScore Int @map("vote_score") @default(0)
+  upVotes Int @map("up_votes") @default(0)
+  downVotes Int @map("down_votes") @default(0)
+  playCount Int @map("play_count") @default(0)
+  summary Json @default("{}")
+  metaData Json @map("meta_data") @default("{}")
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([slug], map: "music_songs_slug_uq")
+  // music_songs_published_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([generationDate, status], map: "music_songs_generation_date_status_idx")
+  // music_songs_vote_score_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("music_songs")
+}
+
+model MusicSongVotes {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  songId String @map("song_id") @db.Uuid
+  visitorHash String @map("visitor_hash") @db.VarChar(64)
+  userAgentHash String? @map("user_agent_hash") @db.VarChar(64)
+  voteValue Int @map("vote_value")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([songId, visitorHash], map: "music_song_votes_song_visitor_uq")
+  @@index([songId, createdAt], map: "music_song_votes_song_created_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("music_song_votes")
+}
+
 model ContainerPoolConfigs {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   slug String @db.VarChar(120)

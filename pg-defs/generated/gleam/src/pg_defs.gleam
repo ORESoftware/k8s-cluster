@@ -92,6 +92,145 @@ pub fn validate_vapi_phone_call_events_slug(value: String) -> Result(String, Str
   }
 }
 
+pub const music_songs_table = "music_songs"
+pub const music_songs_select_sql = "select\n      id::text as id,\n      title,\n      slug,\n      status,\n      seed,\n      generation_date,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      audio_url,\n      content_type,\n      duration_millis,\n      sample_rate,\n      bpm_millis,\n      genre,\n      peak_micros,\n      rms_micros,\n      spectral_centroid_millihz,\n      listenability_score_micros,\n      vote_score,\n      up_votes,\n      down_votes,\n      play_count,\n      summary::text as summary_json,\n      meta_data::text as meta_data_json,\n      to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from music_songs"
+
+pub type MusicSongsStatus {
+  MusicSongsStatusGenerated
+  MusicSongsStatusPublished
+  MusicSongsStatusDiscarded
+  MusicSongsStatusFailed
+  MusicSongsStatusArchived
+}
+
+pub fn music_songs_status_to_string(value: MusicSongsStatus) -> String {
+  case value {
+    MusicSongsStatusGenerated -> "generated"
+    MusicSongsStatusPublished -> "published"
+    MusicSongsStatusDiscarded -> "discarded"
+    MusicSongsStatusFailed -> "failed"
+    MusicSongsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_music_songs_status(value: String) -> Result(MusicSongsStatus, String) {
+  case value {
+    "generated" -> Ok(MusicSongsStatusGenerated)
+    "published" -> Ok(MusicSongsStatusPublished)
+    "discarded" -> Ok(MusicSongsStatusDiscarded)
+    "failed" -> Ok(MusicSongsStatusFailed)
+    "archived" -> Ok(MusicSongsStatusArchived)
+    _ -> Error("unsupported music_songs.status: " <> value)
+  }
+}
+
+pub type MusicSongsStorageProvider {
+  MusicSongsStorageProviderS3
+  MusicSongsStorageProviderR2
+  MusicSongsStorageProviderGcs
+  MusicSongsStorageProviderDrive
+  MusicSongsStorageProviderLocal
+}
+
+pub fn music_songs_storage_provider_to_string(value: MusicSongsStorageProvider) -> String {
+  case value {
+    MusicSongsStorageProviderS3 -> "s3"
+    MusicSongsStorageProviderR2 -> "r2"
+    MusicSongsStorageProviderGcs -> "gcs"
+    MusicSongsStorageProviderDrive -> "drive"
+    MusicSongsStorageProviderLocal -> "local"
+  }
+}
+
+pub fn parse_music_songs_storage_provider(value: String) -> Result(MusicSongsStorageProvider, String) {
+  case value {
+    "s3" -> Ok(MusicSongsStorageProviderS3)
+    "r2" -> Ok(MusicSongsStorageProviderR2)
+    "gcs" -> Ok(MusicSongsStorageProviderGcs)
+    "drive" -> Ok(MusicSongsStorageProviderDrive)
+    "local" -> Ok(MusicSongsStorageProviderLocal)
+    _ -> Error("unsupported music_songs.storage_provider: " <> value)
+  }
+}
+
+pub type MusicSongsRow {
+  MusicSongsRow(
+    id: String,
+    title: String,
+    slug: String,
+    status: String,
+    seed: Int,
+    generation_date: String,
+    storage_provider: Option(String),
+    storage_bucket: Option(String),
+    storage_key: Option(String),
+    audio_url: Option(String),
+    content_type: Option(String),
+    duration_millis: Int,
+    sample_rate: Int,
+    bpm_millis: Int,
+    genre: String,
+    peak_micros: Int,
+    rms_micros: Int,
+    spectral_centroid_millihz: Int,
+    listenability_score_micros: Int,
+    vote_score: Int,
+    up_votes: Int,
+    down_votes: Int,
+    play_count: Int,
+    summary_json: String,
+    meta_data_json: String,
+    published_at: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_music_songs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("music_songs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_music_songs_status(value: String) -> Result(String, String) {
+  case list.contains(["generated", "published", "discarded", "failed", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported music_songs.status: " <> value)
+  }
+}
+
+pub fn validate_music_songs_storage_provider(value: String) -> Result(String, String) {
+  case list.contains(["s3", "r2", "gcs", "drive", "local"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported music_songs.storage_provider: " <> value)
+  }
+}
+
+pub const music_song_votes_table = "music_song_votes"
+pub const music_song_votes_select_sql = "select\n      id::text as id,\n      song_id::text as song_id,\n      visitor_hash,\n      user_agent_hash,\n      vote_value,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from music_song_votes"
+
+pub type MusicSongVotesRow {
+  MusicSongVotesRow(
+    id: String,
+    song_id: String,
+    visitor_hash: String,
+    user_agent_hash: Option(String),
+    vote_value: Int,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_music_song_votes_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("music_song_votes.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const container_pool_configs_table = "container_pool_configs"
 pub const container_pool_configs_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      image,\n      command::text as command_json,\n      env::text as env_json,\n      request_path,\n      health_path,\n      container_port,\n      min_warm,\n      max_warm,\n      max_concurrency_per_container,\n      request_timeout_ms,\n      idle_ttl_seconds,\n      nats_subject,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_configs"
 

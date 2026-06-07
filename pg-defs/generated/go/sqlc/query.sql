@@ -31,6 +31,36 @@ update vapi_phone_call_events set call_id = $2, event_type = $3, payload_hash = 
 -- name: DeleteVapiPhoneCallEvents :exec
 delete from vapi_phone_call_events where id = $1;
 
+-- name: ListMusicSongs :many
+select id, title, slug, status, seed, generation_date, storage_provider, storage_bucket, storage_key, audio_url, content_type, duration_millis, sample_rate, bpm_millis, genre, peak_micros, rms_micros, spectral_centroid_millihz, listenability_score_micros, vote_score, up_votes, down_votes, play_count, summary, meta_data, published_at, created_at, updated_at from music_songs;
+
+-- name: GetMusicSongs :one
+select id, title, slug, status, seed, generation_date, storage_provider, storage_bucket, storage_key, audio_url, content_type, duration_millis, sample_rate, bpm_millis, genre, peak_micros, rms_micros, spectral_centroid_millihz, listenability_score_micros, vote_score, up_votes, down_votes, play_count, summary, meta_data, published_at, created_at, updated_at from music_songs where id = $1 limit 1;
+
+-- name: CreateMusicSongs :one
+insert into music_songs (id, title, slug, status, seed, generation_date, storage_provider, storage_bucket, storage_key, audio_url, content_type, duration_millis, sample_rate, bpm_millis, genre, peak_micros, rms_micros, spectral_centroid_millihz, listenability_score_micros, vote_score, up_votes, down_votes, play_count, summary, meta_data, published_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28) returning id, title, slug, status, seed, generation_date, storage_provider, storage_bucket, storage_key, audio_url, content_type, duration_millis, sample_rate, bpm_millis, genre, peak_micros, rms_micros, spectral_centroid_millihz, listenability_score_micros, vote_score, up_votes, down_votes, play_count, summary, meta_data, published_at, created_at, updated_at;
+
+-- name: UpdateMusicSongs :one
+update music_songs set title = $2, slug = $3, status = $4, seed = $5, generation_date = $6, storage_provider = $7, storage_bucket = $8, storage_key = $9, audio_url = $10, content_type = $11, duration_millis = $12, sample_rate = $13, bpm_millis = $14, genre = $15, peak_micros = $16, rms_micros = $17, spectral_centroid_millihz = $18, listenability_score_micros = $19, vote_score = $20, up_votes = $21, down_votes = $22, play_count = $23, summary = $24, meta_data = $25, published_at = $26, updated_at = $27 where id = $1 returning id, title, slug, status, seed, generation_date, storage_provider, storage_bucket, storage_key, audio_url, content_type, duration_millis, sample_rate, bpm_millis, genre, peak_micros, rms_micros, spectral_centroid_millihz, listenability_score_micros, vote_score, up_votes, down_votes, play_count, summary, meta_data, published_at, created_at, updated_at;
+
+-- name: DeleteMusicSongs :exec
+delete from music_songs where id = $1;
+
+-- name: ListMusicSongVotes :many
+select id, song_id, visitor_hash, user_agent_hash, vote_value, created_at, updated_at from music_song_votes;
+
+-- name: GetMusicSongVotes :one
+select id, song_id, visitor_hash, user_agent_hash, vote_value, created_at, updated_at from music_song_votes where id = $1 limit 1;
+
+-- name: CreateMusicSongVotes :one
+insert into music_song_votes (id, song_id, visitor_hash, user_agent_hash, vote_value, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7) returning id, song_id, visitor_hash, user_agent_hash, vote_value, created_at, updated_at;
+
+-- name: UpdateMusicSongVotes :one
+update music_song_votes set song_id = $2, visitor_hash = $3, user_agent_hash = $4, vote_value = $5, updated_at = $6 where id = $1 returning id, song_id, visitor_hash, user_agent_hash, vote_value, created_at, updated_at;
+
+-- name: DeleteMusicSongVotes :exec
+delete from music_song_votes where id = $1;
+
 -- name: ListContainerPoolConfigs :many
 select id, slug, display_name, image, command, env, request_path, health_path, container_port, min_warm, max_warm, max_concurrency_per_container, request_timeout_ms, idle_ttl_seconds, nats_subject, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from container_pool_configs;
 
