@@ -55,7 +55,7 @@ const SERVICE_NAME: &str = "dd-in-house-mip-solver-node";
 const SERVICE_DESCRIPTION: &str =
     "In-house LP solver plus distributed MIP/IP branch-and-bound node with NATS JetStream master/slave execution.";
 const API_DOCS_SCHEMA: &str = "dd.service-docs.v1";
-const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
+const MAX_HTTP_BODY_BYTES: usize = 16 * 1024 * 1024;
 const MAX_VARS: usize = 10_000;
 const MAX_CONSTRAINTS: usize = 50_000;
 const MAX_STREAM_COMMANDS: usize = 2_000;
