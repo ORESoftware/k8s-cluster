@@ -3123,6 +3123,70 @@ struct PostprocessResultArtifact {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ControllerPostprocessorResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    controller: Option<String>,
+    postprocessor: Option<String>,
+    output_format: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    targets: Option<Vec<ControllerPostprocessorResultTarget>>,
+    checks: Option<Vec<ControllerPostprocessorResultCheck>>,
+    artifacts: Option<Vec<ControllerPostprocessorResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ControllerPostprocessorResultTarget {
+    target_id: String,
+    program_id: Option<String>,
+    controller: Option<String>,
+    postprocessor: Option<String>,
+    language: Option<String>,
+    output_format: Option<String>,
+    status: String,
+    postprocessor_known: Option<bool>,
+    output_retained: Option<bool>,
+    dry_run_passed: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ControllerPostprocessorResultCheck {
+    check_id: String,
+    check_kind: String,
+    status: String,
+    passed: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ControllerPostprocessorResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ToolpathResultReviewRequest {
     request_id: Option<String>,
     plan_request_id: Option<String>,
@@ -49289,6 +49353,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/environment/catalog",
         "GET /provenance/catalog",
         "GET /fabrication/provenance/catalog",
+        "GET /as-built/catalog",
+        "GET /fabrication/as-built/catalog",
         "POST /setup/plan",
         "POST /fabrication/setup/plan",
         "POST /setup/result",
@@ -73504,6 +73570,164 @@ async fn provenance_catalog_http() -> impl IntoResponse {
     Json(provenance_catalog_response())
 }
 
+fn as_built_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "asBuiltFamily": "scan-to-design-deviation-map",
+            "machineKinds": ["all-fabrication-machines", "cmm", "structured-light-scanner", "ct-scanner", "probe-equipped-mill", "probe-equipped-lathe"],
+            "evidenceScopes": ["point-cloud", "mesh-scan", "cmm-report", "probe-result", "datum-alignment", "deviation-map"],
+            "requiredEvidence": [
+                "point cloud, mesh, CMM report, probe log, or equivalent measured geometry",
+                "coordinate-frame alignment, datum registration, units, scale, tolerance band, and inspection program hash",
+                "deviation map comparing actual geometry to intended CAD, mesh, drawing, or released design package"
+            ],
+            "releaseBlockers": [
+                "scan or CMM evidence lacks datum alignment, units, scale, measured values, or tolerance band",
+                "actual geometry has unresolved out-of-tolerance deviation before release",
+                "deviation-map artifact cannot be traced to design, machine program, material lot, and inspection setup"
+            ],
+            "responseSurfaces": ["qualityResult.measurements", "toolpathResult.simulationChecks", "releasePackagePlan.requiredArtifacts", "machineRelease.blockers", "learning.outcomes"],
+            "learningSignals": ["as-built:scan-deviation", "deviation-map:*", "quality-result:actual-geometry"]
+        }),
+        json!({
+            "asBuiltFamily": "additive-as-built-layer-and-defect-evidence",
+            "machineKinds": ["fdm-printer", "pellet-fgf-printer", "resin-printer", "material-jetting-printer", "powder-bed-printer", "binder-jet-printer", "directed-energy-deposition-cell", "continuous-fiber-composite-printer"],
+            "evidenceScopes": ["layer-image", "thermal-log", "scan-log", "bead-geometry", "support-contact", "warpage-map"],
+            "requiredEvidence": [
+                "layer images, thermal history, bead geometry, cure/sinter state, or process-monitoring logs",
+                "support-contact, support-removal, scarring, powder/resin residue, and surface-condition evidence when applicable",
+                "dimensional scan or inspection result linked to print orientation, material, slicer profile, and postprocess state"
+            ],
+            "releaseBlockers": [
+                "layer shift, under/over-cure, bead drift, delamination, support damage, or trapped material remains unresolved",
+                "as-built additive scan is missing after a high-risk orientation, support, temperature, material, or tool-change event",
+                "postprocess or final geometry evidence is missing before machine-ready or release-package signoff"
+            ],
+            "responseSurfaces": ["monitoringPlan.monitorPoints", "postprocessPlan.requiredArtifacts", "qualityPlan.measurementTargets", "machineRelease.blockers", "learning.outcomes"],
+            "learningSignals": ["as-built:additive-layer", "deviation:additive:*", "postprocess-defect:*"]
+        }),
+        json!({
+            "asBuiltFamily": "subtractive-as-built-feature-and-datum-evidence",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "rotary-indexer-mill", "cnc-router", "lathe", "mill-turn-center", "edm-cell"],
+            "evidenceScopes": ["in-process-probing", "first-article-report", "cmm-report", "gauge-result", "surface-finish", "datum-transfer"],
+            "requiredEvidence": [
+                "in-process probe, first-article, CMM, gauge, or surface-finish result for critical features",
+                "datum preservation, work-offset, tool-offset, tool-wear, and fixture-release evidence",
+                "feature deviation, chatter/wear marks, burr state, and remaining-stock/allowance review when rework is possible"
+            ],
+            "releaseBlockers": [
+                "datum drift, feature mismatch, surface-finish failure, tool-wear evidence, or chatter mark remains unresolved",
+                "measured feature result cannot be linked to the active work offset, fixture, tool, controller program, or drawing callout",
+                "rework or split/combine recovery lacks fresh inspection targets and retained as-built evidence"
+            ],
+            "responseSurfaces": ["fixturePlan.setups", "toolingPlan.requirements", "qualityResult.measurements", "dispositionPlan.actions", "machineRelease.blockers"],
+            "learningSignals": ["as-built:subtractive-feature", "datum-drift:*", "tool-wear-deviation:*"]
+        }),
+        json!({
+            "asBuiltFamily": "hybrid-split-combine-as-built-interface-evidence",
+            "machineKinds": ["hybrid split/combine jobs", "robotic-assembly-cell", "manual-or-special-process", "multi-machine-route"],
+            "evidenceScopes": ["mating-surface-scan", "interface-fit", "recomposition-datum", "adhesive-gap", "join-record", "handoff-result"],
+            "requiredEvidence": [
+                "mating-surface scan, interface fit record, recomposition datum transfer, and final assembly alignment evidence",
+                "adhesive, fastener, weld, press, cure, torque, gap, or join recipe evidence for combined parts",
+                "handoff/result lineage linking each printed, milled, turned, cut, or postprocessed subpart to the final as-built assembly"
+            ],
+            "releaseBlockers": [
+                "interface mismatch, unverified datum transfer, adhesive/join gap, or assembly fit nonconformance remains unresolved",
+                "split/combine actual geometry cannot be reconciled to the intended design package and interface-control plan",
+                "human fitting, rework, or combination step is expected but lacks retained operator or automation evidence"
+            ],
+            "responseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.controls", "handoffResult.evidence", "qualityResult.measurements", "machineRelease.blockers", "learning.outcomes"],
+            "learningSignals": ["as-built:hybrid-interface", "deviation:hybrid-interface:*", "split-combine-outcome:*"]
+        }),
+    ]
+}
+
+fn as_built_catalog_response() -> Value {
+    let entries = as_built_catalog_entries();
+    let as_built_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("asBuiltFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let evidence_scopes = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("evidenceScopes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.as-built-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /as-built/catalog", "GET /fabrication/as-built/catalog"],
+        "asBuiltFamilyCount": entries.len(),
+        "asBuiltFamilies": as_built_families,
+        "machineKinds": machine_kinds,
+        "evidenceScopes": evidence_scopes,
+        "planningRoutes": [
+            "POST /quality/result",
+            "POST /fabrication/quality/result",
+            "POST /handoff/result",
+            "POST /fabrication/handoff/result",
+            "POST /release/preview",
+            "POST /fabrication/release/preview"
+        ],
+        "reviewRoutes": [
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog",
+            "GET /provenance/catalog",
+            "GET /fabrication/provenance/catalog",
+            "GET /learning/outcomes",
+            "GET /fabrication/learning/outcomes"
+        ],
+        "responseSurfaces": [
+            "qualityResult.measurements",
+            "toolpathResult.simulationChecks",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.blockers",
+            "decompositionPlan.parts",
+            "interfaceControlPlan.controls",
+            "handoffResult.evidence",
+            "learning.outcomes"
+        ],
+        "artifactSurfaces": [
+            "as-built-deviation-map",
+            "as-built-scan-mesh",
+            "as-built-cmm-report",
+            "as-built-interface-fit-record",
+            "as-built-learning-observations",
+            "mdp-request.artifacts.asBuilt"
+        ],
+        "releasePolicy": [
+            "as-built catalog entries describe actual geometry evidence contracts, not certified metrology acceptance",
+            "machine-ready release remains blocked while scan, CMM, deviation-map, datum-alignment, interface-fit, or as-built lineage artifacts are absent or unresolved",
+            "split/combine and hybrid-route release requires as-built interface evidence showing the recomposed actual geometry still satisfies the intended design package",
+            "as-built deviations are retained for MDP/POMDP/neural workers so future planning can learn when to add inspection, split parts, change machines, reroute features, or require human signoff"
+        ],
+        "asBuiltContracts": entries
+    })
+}
+
+async fn as_built_catalog_http() -> impl IntoResponse {
+    Json(as_built_catalog_response())
+}
+
 fn validate_provenance_result_lineage_checks(
     checks: Option<Vec<ProvenanceResultLineageCheck>>,
 ) -> Result<Vec<Value>, String> {
@@ -82229,6 +82453,8 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/environment/catalog",
                 "GET /provenance/catalog",
                 "GET /fabrication/provenance/catalog",
+                "GET /as-built/catalog",
+                "GET /fabrication/as-built/catalog",
                 "POST /setup/plan",
                 "POST /fabrication/setup/plan",
                 "POST /setup/result",
@@ -85559,6 +85785,8 @@ async fn request_schema() -> impl IntoResponse {
             "slicerProfileResult": ["POST /slicers/result", "POST /fabrication/slicers/result"],
             "meshRepairCatalog": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
             "designImportCatalog": ["GET /design/import/catalog", "GET /fabrication/design/import/catalog"],
+            "handoffCatalog": ["GET /handoff/catalog", "GET /fabrication/handoff/catalog"],
+            "handoffResult": ["POST /handoff/result", "POST /fabrication/handoff/result"],
             "subjectCatalog": ["GET /subjects/catalog", "GET /fabrication/subjects/catalog"],
             "designImportReview": ["POST /design/import/review", "POST /fabrication/design/import/review"],
             "designImportResult": ["POST /design/import/result", "POST /fabrication/design/import/result"],
@@ -85619,9 +85847,10 @@ async fn request_schema() -> impl IntoResponse {
         "manufacturabilityResult": ["POST /manufacturability/result", "POST /fabrication/manufacturability/result"],
         "failureModeCatalog": ["GET /failure-modes/catalog", "GET /fabrication/failure-modes/catalog"],
         "failureModeResult": ["POST /failure-modes/result", "POST /fabrication/failure-modes/result"],
-        "safetyCatalog": ["GET /safety/catalog", "GET /fabrication/safety/catalog"],
+            "safetyCatalog": ["GET /safety/catalog", "GET /fabrication/safety/catalog"],
             "environmentCatalog": ["GET /environment/catalog", "GET /fabrication/environment/catalog"],
             "provenanceCatalog": ["GET /provenance/catalog", "GET /fabrication/provenance/catalog"],
+            "asBuiltCatalog": ["GET /as-built/catalog", "GET /fabrication/as-built/catalog"],
             "setupPlan": ["POST /setup/plan", "POST /fabrication/setup/plan"],
             "setupResult": ["POST /setup/result", "POST /fabrication/setup/result"],
             "monitoringCatalog": ["GET /monitoring/catalog", "GET /fabrication/monitoring/catalog"],
@@ -88333,6 +88562,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/provenance/catalog",
             get(provenance_catalog_http),
+        )
+        .route("/as-built/catalog", get(as_built_catalog_http))
+        .route(
+            "/fabrication/as-built/catalog",
+            get(as_built_catalog_http),
         )
         .route("/provenance/result", post(provenance_result_http))
         .route(
