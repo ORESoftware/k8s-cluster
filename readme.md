@@ -1817,6 +1817,24 @@ release-probe, neural-corpus, and learning-outcome observations remain available
 for MDP/POMDP/neural workers to learn when to regenerate code, reroute machines,
 split parts, combine assemblies, or add human checkpoints.
 
+## `GET /fabrication/machine-code/preflight/catalog`
+
+`GET /machine-code/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/machine-code/preflight/catalog` return the live
+`dd.fabrication.machine-code-preflight-catalog.v1` evidence checklist for
+generated or imported controller output before machine-code generation, controller
+handoff, or release packaging. The catalog groups program source/design state,
+controller/postprocessor/dialect state, machine/setup/toolpath/process state, and
+validation/simulation/release/learning state.
+
+Machine-code preflight keeps generated programs as `draft=true` and
+`machineReady=false` until design provenance, controller/postprocessor
+compatibility, machine setup, validation, simulation or dry-run, quality, release
+package, and signoff evidence clear. Failed preflight checks feed DES,
+MDP/POMDP, reward, neural, and learning-outcome workers so future requests can
+regenerate code, choose alternate machines, split/combine parts, or add human
+checkpoints before controller release.
+
 ## `POST /fabrication/machine-code/generate`
 
 `POST /machine-code/generate` and the gateway-prefixed
