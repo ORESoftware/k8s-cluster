@@ -177,6 +177,7 @@ spec:
                 '"path": "/fabrication/subjects/catalog"' \
                 '"path": "/fabrication/workers/catalog"' \
                 '"path": "/fabrication/results/catalog"' \
+                '"path": "/fabrication/instructions/import/catalog"' \
                 '"path": "/fabrication/instructions/validation/catalog"' \
                 '"path": "/fabrication/instructions/generation/catalog"' \
                 '"path": "/fabrication/instructions/generation/preflight/catalog"' \
@@ -212,6 +213,7 @@ spec:
                 '"path": "/fabrication/execution/plan"' \
                 '"path": "/fabrication/execution/result"' \
                 '"path": "/fabrication/simulation/catalog"' \
+                '"path": "/fabrication/simulation/preflight/catalog"' \
                 '"path": "/fabrication/simulation/run"' \
                 '"path": "/fabrication/simulation/result"' \
                 '"path": "/fabrication/quality/catalog"' \
