@@ -9,6 +9,10 @@ It exposes:
 `GET /` returns the machine-readable service inventory with a `landingPage`
 block for the human fabrication overview and a compact `startHere` map to
 `/fabrication/landing`, capabilities, schema, examples, and generated API docs.
+The landing page explains how the service turns fabrication goals into
+design/import decisions, machine/material route choices, split/combine plans,
+instruction generation or review, validation, release gates, and learned
+outcomes.
 
 - `GET /`
 - `GET /landing`
@@ -22,6 +26,8 @@ block for the human fabrication overview and a compact `startHere` map to
 - `GET /fabrication/machines/catalog`
 - `GET /printers/catalog`
 - `GET /fabrication/printers/catalog`
+- `GET /printers/preflight/catalog`
+- `GET /fabrication/printers/preflight/catalog`
 - `GET /subtractive/catalog`
 - `GET /fabrication/subtractive/catalog`
 - `GET /cnc/catalog`
@@ -32,6 +38,8 @@ block for the human fabrication overview and a compact `startHere` map to
 - `POST /fabrication/machines/select`
 - `GET /controllers/catalog`
 - `GET /fabrication/controllers/catalog`
+- `GET /controllers/preflight/catalog`
+- `GET /fabrication/controllers/preflight/catalog`
 - `POST /controllers/result`
 - `POST /fabrication/controllers/result`
 - `GET /materials/catalog`
@@ -288,6 +296,8 @@ block for the human fabrication overview and a compact `startHere` map to
 - `GET /fabrication/learning/rewards/catalog`
 - `GET /learning/models/catalog`
 - `GET /fabrication/learning/models/catalog`
+- `GET /learning/beliefs/catalog`
+- `GET /fabrication/learning/beliefs/catalog`
 - `GET /learning/optimizers/catalog`
 - `GET /fabrication/learning/optimizers/catalog`
 - `POST /learning/models/result`
@@ -856,6 +866,17 @@ evidence, postprocessor version, and operator or automation signoff are retained
 unknown controller/postprocessor combinations stay routed to manual controller
 review.
 
+`GET /controllers/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/controllers/preflight/catalog` return the live
+`dd.fabrication.controller-preflight-catalog.v1` checklist for controller
+modal-state, offset/setup-state, and program-dependency evidence before generated
+or imported machine code can move toward release. The catalog calls out required
+units, positioning, plane, cutter/tool compensation, datum/work-offset,
+tool-length/tool-radius, macro/subprogram, postprocessor-version, tool map, and
+dry-run/simulation evidence. Failed preflight checks should be retained through
+`POST /fabrication/controllers/result` and `POST /fabrication/machine-code/result`
+so MDP/POMDP/neural workers can learn which controller routes are reliable.
+
 ## `POST /fabrication/controllers/result`
 
 `POST /controllers/result` and the gateway-prefixed
@@ -1023,6 +1044,22 @@ The `learning.outcomeDraft` uses
 printer-family, material, profile-check, preparation, machine-code-check,
 artifact, human-intervention, blocker, reward, and submit-route hints for direct
 submission to `POST /fabrication/learning/outcomes`.
+
+`GET /printers/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/printers/preflight/catalog` return the live
+`dd.fabrication.printer-preflight-catalog.v1` additive release checklist. The
+catalog groups thermal/motion state, extrusion/material/resume state, and
+support/orientation/first-article evidence before generated or imported printer
+instructions can move toward release. It calls out homing, `M109`/`M190` or
+explicit temperature proof, bed mesh/Z-offset evidence, extrusion reset, purge
+or prime evidence, material capacity, support/orientation review, first-layer or
+first-slice preview, and simulation, dry-run, telemetry, quality, or operator
+signoff gates.
+
+Printer preflight entries are additive release evidence contracts, not live
+printer approvals. Failed checks should be retained through slicer, material,
+quality, telemetry, and learning outcome routes so MDP/POMDP/neural workers can
+learn safer print strategies.
 
 ## `GET /fabrication/mesh-repair/catalog`
 
@@ -4012,6 +4049,21 @@ planning requires retained artifacts, replay verification, metric review, and
 cleared promotion blockers, and remains subordinate to fabrication validation,
 simulation, setup, quality, telemetry, and human-intervention gates.
 
+`GET /learning/beliefs/catalog` and
+`GET /fabrication/learning/beliefs/catalog` return the live
+`dd.fabrication.learning-belief-catalog.v1` POMDP belief and release-probe
+contract. The catalog names the local `des_engine` POMDP primitive, the
+`pomdpBeliefState.hiddenStates`, `releaseProbePlan.probes`, and
+`mdp-request.desPomdpSpec` surfaces, and the evidence needed to collapse hidden
+machine-failure, human-intervention, split/combine, setup, quality, thermal, or
+controller uncertainty before release.
+
+Belief probabilities are advisory priors, not machine-ready proof. Unresolved
+release probes, validation findings, setup gaps, quality gaps, or
+human-intervention gates keep release blocked, and probe outcomes should be
+submitted to `POST /fabrication/learning/outcomes` before influencing future
+printed, milled, turned, split, or combined jobs.
+
 `GET /learning/optimizers/catalog` and
 `GET /fabrication/learning/optimizers/catalog` return the live
 `dd.fabrication.learning-optimizer-catalog.v1` optimizer discovery contract for
@@ -4065,7 +4117,7 @@ reviews clear the machine-ready gates.
 
 `GET /templates/catalog` and `GET /fabrication/templates/catalog` return the
 `dd.fabrication.request-templates-catalog.v1` starter-request catalog. The
-templates cover FDM printed functional parts, native CAD/3MF intake review for SOLIDWORKS, Creo/ProE, and additive handoff packages, design-to-machine-code generation, direct FDM slicer machine-code generation, direct CNC controller/postprocessor machine-code generation, direct FDM printer instruction generation, direct CNC setup/controller instruction generation, imported CNC dry-run simulation, imported CNC program review, direct imported CNC improvement/patch review, imported slicer G-code review, imported resin/SLA job review, imported powder-bed build review, vertical-mill fixture plates, horizontal-mill side-slot/keyway work, lathe turned inserts, hybrid printed/milled/turned assemblies, direct hybrid decomposition planning, direct hybrid assembly planning, hybrid route costing result feedback, operator intervention result feedback, hybrid outcome learning feedback, and boundary-failure learning feedback. Each template
+templates cover FDM printed functional parts, native CAD/3MF intake review for SOLIDWORKS, Creo/ProE, and additive handoff packages, design-to-machine-code generation, direct FDM slicer machine-code generation, direct CNC controller/postprocessor machine-code generation, direct FDM printer instruction generation, direct CNC setup/controller instruction generation, imported CNC dry-run simulation, imported CNC program review, direct imported CNC improvement/patch review, imported slicer G-code review, imported resin/SLA job review, imported powder-bed build review, vertical-mill fixture plates, horizontal-mill side-slot/keyway work, lathe turned inserts, hybrid printed/milled/turned assemblies, direct hybrid decomposition planning, direct hybrid assembly planning, hybrid route costing result feedback, operator intervention result feedback, runtime monitoring result feedback, quality metrology result feedback, release-readiness result feedback, hybrid outcome learning feedback, and boundary-failure learning feedback. Each template
 names the target route, including `POST /fabrication/plan`,
 `POST /fabrication/design/import/review`,
 `POST /fabrication/design/generate`, `POST /fabrication/machine-code/generate`,
@@ -4073,7 +4125,9 @@ names the target route, including `POST /fabrication/plan`,
 `POST /fabrication/instructions/improve`, `POST /fabrication/simulation/run`,
 `POST /fabrication/decomposition/plan`, `POST /fabrication/assembly/plan`, and
 `POST /fabrication/costing/result`, `POST /fabrication/interventions/result`,
-and `POST /fabrication/learning/outcomes`,
+`POST /fabrication/monitoring/result`, and
+`POST /fabrication/quality/result`, `POST /fabrication/release/result`, and
+`POST /fabrication/learning/outcomes`,
 plus preferred manufacturing
 methods, machine class, required evidence labels, and a minimal request skeleton
 while making clear that templates are not machine-ready instructions. Plan,
@@ -4104,6 +4158,22 @@ The operator intervention result starter deserializes as an
 automation fallback, split/combine interface review, unacknowledged evidence
 gates, retained checkpoint artifacts, and `interventionLearningOutcomeDraft`
 feedback visible before a machine-ready or unattended release decision.
+The runtime monitoring result starter deserializes as a
+`MonitoringResultReviewRequest` example and keeps channel heartbeat blockers,
+critical alerts, safe-stop/restart recovery actions, operator check-ins,
+retained monitoring artifacts, and `monitoringLearningOutcomeDraft` feedback
+visible before unattended restart or release decisions.
+The quality metrology result starter deserializes as a
+`QualityResultReviewRequest` example and keeps out-of-tolerance measurements,
+nonconformance findings, blocked inspection gates, retained metrology artifacts,
+human disposition or rework/split decisions, and `qualityLearningOutcomeDraft`
+feedback visible before machine-ready release.
+The release-readiness result starter deserializes as a
+`ReleaseReadinessResultReviewRequest` example and keeps blocked release
+decisions, retained manifest artifact evidence, machine-ready blockers, pending
+human interventions, split/combine release conditions, and
+`releaseReadinessLearningOutcomeDraft` feedback visible at the final release
+gate.
 Design import starter bodies deserialize as
 `DesignImportReviewRequest` examples with `designInputs` for native CAD,
 ambiguous Creo/NX-style extensions, 3MF packages, translator evidence, units,

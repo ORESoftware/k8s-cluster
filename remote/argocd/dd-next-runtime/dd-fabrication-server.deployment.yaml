@@ -143,12 +143,14 @@ spec:
                 '"path": "/fabrication/instructions/boundaries/review"' \
                 '"path": "/fabrication/machines/catalog"' \
                 '"path": "/fabrication/printers/catalog"' \
+                '"path": "/fabrication/printers/preflight/catalog"' \
                 '"path": "/fabrication/subtractive/catalog"' \
                 '"path": "/fabrication/cnc/catalog"' \
                 '"path": "/fabrication/hybrid/catalog"' \
                 '"path": "/fabrication/cells/catalog"' \
                 '"path": "/fabrication/machines/select"' \
                 '"path": "/fabrication/controllers/catalog"' \
+                '"path": "/fabrication/controllers/preflight/catalog"' \
                 '"path": "/fabrication/controllers/result"' \
                 '"path": "/fabrication/materials/catalog"' \
                 '"path": "/fabrication/materials/plan"' \
@@ -277,6 +279,7 @@ spec:
                 '"path": "/fabrication/learning/engines/catalog"' \
                 '"path": "/fabrication/learning/rewards/catalog"' \
                 '"path": "/fabrication/learning/models/catalog"' \
+                '"path": "/fabrication/learning/beliefs/catalog"' \
                 '"path": "/fabrication/learning/optimizers/catalog"' \
                 '"path": "/fabrication/learning/models/result"' \
                 '"path": "/fabrication/learning/optimizers/result"' \
