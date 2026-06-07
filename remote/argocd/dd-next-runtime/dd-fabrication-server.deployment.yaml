@@ -198,6 +198,7 @@ spec:
                 '"path": "/fabrication/assembly/plan"' \
                 '"path": "/fabrication/assembly/result"' \
                 '"path": "/fabrication/release/catalog"' \
+                '"path": "/fabrication/release/preflight/catalog"' \
                 '"path": "/fabrication/release/preview"' \
                 '"path": "/fabrication/release/result"' \
                 '"path": "/fabrication/strategy/catalog"' \
