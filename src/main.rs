@@ -105307,8 +105307,9 @@ mod tests {
         assert!(outcome_draft
             .get("toleranceFamilyHints")
             .and_then(Value::as_array)
-            .is_some_and(|hints| hints.iter().any(|hint| hint.as_str()
-                == Some("hybrid-assembly-interface-stackups"))));
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("hybrid-assembly-interface-stackups"))));
         assert!(outcome_draft
             .get("fitHints")
             .and_then(Value::as_array)
@@ -105318,8 +105319,9 @@ mod tests {
         assert!(outcome_draft
             .get("compensationHints")
             .and_then(Value::as_array)
-            .is_some_and(|hints| hints.iter().any(|hint| hint.as_str()
-                == Some("post-machined-printed-face-offset"))));
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("post-machined-printed-face-offset"))));
         assert_eq!(
             outcome_draft
                 .pointer("/featureHints/splitCombineRequired")

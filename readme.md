@@ -2861,6 +2861,11 @@ with `tolerance-result`, `tolerance-checks`, `tolerance-fit-checks`,
 `tolerance-learning-observations` artifacts so future planners can learn which
 allowances, offsets, interface designs, or human checkpoints made generated or
 imported instructions releasable.
+The `learning.outcomeDraft` uses
+`dd.fabrication.tolerance-learning-outcome-draft.v1` and carries
+tolerance-family, geometry-scope, fit, compensation, artifact, blocker,
+split/combine, human-intervention, reward, and submit-route hints for
+`POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/process-capabilities/catalog`
 
