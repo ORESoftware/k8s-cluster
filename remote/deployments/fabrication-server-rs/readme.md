@@ -4065,23 +4065,55 @@ reviews clear the machine-ready gates.
 
 `GET /templates/catalog` and `GET /fabrication/templates/catalog` return the
 `dd.fabrication.request-templates-catalog.v1` starter-request catalog. The
-templates cover FDM printed functional parts, native CAD/3MF intake review for SOLIDWORKS, Creo/ProE, and additive handoff packages, design-to-machine-code generation, direct FDM slicer machine-code generation, direct CNC controller/postprocessor machine-code generation, imported CNC program review, imported slicer G-code review, imported resin/SLA job review, imported powder-bed build review, vertical-mill fixture plates, horizontal-mill side-slot/keyway work, lathe turned inserts, hybrid printed/milled/turned assemblies, hybrid outcome learning feedback, and boundary-failure learning feedback. Each template
+templates cover FDM printed functional parts, native CAD/3MF intake review for SOLIDWORKS, Creo/ProE, and additive handoff packages, design-to-machine-code generation, direct FDM slicer machine-code generation, direct CNC controller/postprocessor machine-code generation, direct FDM printer instruction generation, direct CNC setup/controller instruction generation, imported CNC dry-run simulation, imported CNC program review, direct imported CNC improvement/patch review, imported slicer G-code review, imported resin/SLA job review, imported powder-bed build review, vertical-mill fixture plates, horizontal-mill side-slot/keyway work, lathe turned inserts, hybrid printed/milled/turned assemblies, direct hybrid decomposition planning, direct hybrid assembly planning, hybrid route costing result feedback, operator intervention result feedback, hybrid outcome learning feedback, and boundary-failure learning feedback. Each template
 names the target route, including `POST /fabrication/plan`,
 `POST /fabrication/design/import/review`,
 `POST /fabrication/design/generate`, `POST /fabrication/machine-code/generate`,
-`POST /fabrication/instructions/analyze`, and
-`POST /fabrication/learning/outcomes`, plus preferred manufacturing
+`POST /fabrication/instructions/generate`, `POST /fabrication/instructions/analyze`,
+`POST /fabrication/instructions/improve`, `POST /fabrication/simulation/run`,
+`POST /fabrication/decomposition/plan`, `POST /fabrication/assembly/plan`, and
+`POST /fabrication/costing/result`, `POST /fabrication/interventions/result`,
+and `POST /fabrication/learning/outcomes`,
+plus preferred manufacturing
 methods, machine class, required evidence labels, and a minimal request skeleton
 while making clear that templates are not machine-ready instructions. Plan,
-design-generation, and machine-code-generation starter bodies deserialize as
+design-generation, machine-code-generation, and instruction-generation starter bodies deserialize as
 `FabricationPlanRequest` examples, with part `description` and `toleranceMm`
-hints where a part list is present. Design import starter bodies deserialize as
+hints where a part list is present. Direct instruction-generation starters keep
+FDM slicer/profile, nozzle and bed temperature, extrusion, purge or prime, CNC
+controller/postprocessor, tooling, workholding, and dry-run evidence visible
+before generated setup sheets or controller handoffs can advance to release
+review. The imported CNC dry-run simulation starter also deserializes as a
+`FabricationPlanRequest` and keeps imported instructions, machine envelope,
+fixture/work-offset review, simulation-risk findings, failure boundaries,
+execution stop points, and release-probe learning visible before release. The hybrid printed/milled/turned starter
+includes explicit printed-body, milled-datum-pad, and turned-insert part routes
+so split/combine and interface-control review starts from concrete child parts.
+Direct decomposition and assembly starter bodies reuse those concrete child
+routes for `decompositionPlan.routeContracts`,
+`decompositionPlan.recompositionInterfaces`, `assemblyPlan.joinOperations`, and
+`assemblyPlan.splitCombineDecisions` review.
+The hybrid route costing result starter deserializes as a
+`CostingResultReviewRequest` example and keeps machine-time/setup estimates,
+material yield and scrap allowances, route comparisons, split/combine route
+economics, human-intervention cost review, retained artifact checksums, and
+`costingLearningOutcomeDraft` feedback visible before future planners promote a
+cheaper or safer hybrid route.
+The operator intervention result starter deserializes as an
+`InterventionResultReviewRequest` example and keeps blocked operator actions,
+automation fallback, split/combine interface review, unacknowledged evidence
+gates, retained checkpoint artifacts, and `interventionLearningOutcomeDraft`
+feedback visible before a machine-ready or unattended release decision.
+Design import starter bodies deserialize as
 `DesignImportReviewRequest` examples with `designInputs` for native CAD,
 ambiguous Creo/NX-style extensions, 3MF packages, translator evidence, units,
 topology, PMI, and neutral export review. Imported instruction starter bodies
 deserialize as `InstructionAnalysisRequest` examples for Fanuc-style CNC G-code,
 Marlin printer G-code, resin job sheets, and powder-bed build packets so the
-analyzer path covers G-code and non-G-code fabrication instructions. Learning feedback starter bodies deserialize
+analyzer path covers G-code and non-G-code fabrication instructions. The direct
+instruction-improvement starter uses the same request contract while targeting
+`improvedPrograms.patchManifest`, conservative patch review, simulation, and
+human approval gates before any repaired controller code can be released. Learning feedback starter bodies deserialize
 as `LearningOutcomeRequest` examples with `rewardHint`, manufacturing methods,
 and split/combine, machine-failure, and human-intervention observations retained
 for MDP/POMDP/neural outcome memory. Template
