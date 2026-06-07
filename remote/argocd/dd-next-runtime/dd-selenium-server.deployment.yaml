@@ -9,13 +9,13 @@ spec:
   replicas: 2
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
-  # Single-node cluster has no headroom to run two browser pods during a deploy, and the API
-  # container self-builds from the mounted repo; recreate keeps exactly one pod at a time.
+  # Single-node cluster has no headroom to run extra browser pods during a deploy.
+  # Roll within existing capacity so one replica remains available.
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-selenium-server
