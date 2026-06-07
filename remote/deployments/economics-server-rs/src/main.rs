@@ -17,7 +17,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use dd_nats_subject_defs::RUNTIME_EVENTS_SUBJECT;
+use dd_nats_subject_defs::{PUBLIC_DATA_PIPELINE_JOBS_SUBJECT, RUNTIME_EVENTS_SUBJECT};
 use des_engine::service::{EndpointKind, ServiceBuilder, ServiceInfo};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -33,11 +33,21 @@ const MAX_SOURCE_FETCH_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SERIES: usize = 160;
 const MAX_OBSERVATIONS_PER_SERIES: usize = 8_000;
 const MAX_TOKEN_LEN: usize = 128;
+const MAX_URL_LEN: usize = 2_048;
 const MAX_SENTIMENT_DOCUMENTS: usize = 512;
 const MAX_SENTIMENT_TEXT_BYTES: usize = 4_096;
+const MAX_SENTIMENT_CONTEXT_SCORES: usize = 512;
+const MAX_VC_DEALS: usize = 256;
+const MAX_VC_SECTOR_FLOWS: usize = 128;
+const MAX_PIPELINE_JOB_INTENTS: usize = 12;
 const ECONOMICS_FORECAST_REQUEST_SUBJECT: &str = "dd.remote.economics.forecast.requests";
 const ECONOMICS_FORECAST_RESULT_SUBJECT: &str = "dd.remote.economics.forecast.results";
 const ECONOMICS_MARKET_EVENT_SUBJECT: &str = "dd.remote.economics.market.events";
+const DEFAULT_SPARK_PIPELINE_URL: &str =
+    "http://dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085";
+const DEFAULT_SPARK_MASTER_URL: &str = "spark://spark-master.big-data.svc.cluster.local:7077";
+const DEFAULT_AIRFLOW_API_URL: &str = "http://airflow.big-data.svc.cluster.local:8080";
+const DEFAULT_DATA_LAKE_URI: &str = "s3a://dd-economics/market-signals";
 const ECONOMICS_QUEUE_GROUP: &str = "dd-economics-server";
 
 #[derive(Clone)]
@@ -64,6 +74,15 @@ struct Config {
     result_subject: String,
     market_event_subject: String,
     runtime_event_subject: String,
+    pipeline_intent_subject: String,
+    spark_pipeline_url: Option<String>,
+    spark_pipeline_auth_env: String,
+    spark_master_url: String,
+    airflow_api_url: Option<String>,
+    databricks_host: Option<String>,
+    data_lake_uri: String,
+    allow_pipeline_submit: bool,
+    allow_external_pipeline_urls: bool,
 }
 
 #[derive(Default)]
@@ -74,6 +93,8 @@ struct Metrics {
     source_pull_total: AtomicU64,
     sentiment_requests_total: AtomicU64,
     recommendation_requests_total: AtomicU64,
+    pipeline_plan_requests_total: AtomicU64,
+    pipeline_submit_requests_total: AtomicU64,
     auth_failures_total: AtomicU64,
     errors_total: AtomicU64,
     nats_messages_total: AtomicU64,
@@ -361,6 +382,24 @@ struct MarketDataCredentialStatus {
     preqin_api_key: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelineIntegrationStatus {
+    spark_pipeline_url_configured: bool,
+    spark_pipeline_auth_configured: bool,
+    spark_pipeline_submit_enabled: bool,
+    spark_pipeline_url: Option<String>,
+    spark_pipeline_auth_env: String,
+    spark_master_url: String,
+    airflow_api_url_configured: bool,
+    airflow_api_url: Option<String>,
+    databricks_host_configured: bool,
+    databricks_token_configured: bool,
+    data_lake_uri: String,
+    pipeline_intent_subject: String,
+    nats_configured: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SentimentAnalyzeRequest {
@@ -488,6 +527,69 @@ struct RecommendationComponent {
     name: String,
     value: f64,
     weight: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelinePlanRequest {
+    request_id: Option<String>,
+    schema_version: Option<String>,
+    scenario: Option<String>,
+    data_lake_uri: Option<String>,
+    include_recommendations: Option<bool>,
+    publish_to_nats: Option<bool>,
+    job_kinds: Option<Vec<String>>,
+    recommendation_request: Option<RecommendationRequest>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelinePlanResponse {
+    ok: bool,
+    request_id: String,
+    schema_version: &'static str,
+    generated_at_ms: u128,
+    pipeline_status: PipelineIntegrationStatus,
+    recommendation_summary: Value,
+    job_intents: Vec<PipelineJobIntent>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelineJobIntent {
+    id: String,
+    engine: String,
+    target: String,
+    kind: String,
+    endpoint: Option<String>,
+    auth_required: bool,
+    submit_eligible: bool,
+    params: Value,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelineSubmitResponse {
+    ok: bool,
+    request_id: String,
+    schema_version: &'static str,
+    generated_at_ms: u128,
+    plan: PipelinePlanResponse,
+    submitted_jobs: Vec<PipelineSubmittedJob>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelineSubmittedJob {
+    intent_id: String,
+    target: String,
+    http_status: Option<u16>,
+    accepted: bool,
+    response: Option<Value>,
+    error: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -618,6 +720,20 @@ fn config_from_env() -> Config {
             ECONOMICS_MARKET_EVENT_SUBJECT,
         ),
         runtime_event_subject: env_value("ECONOMICS_RUNTIME_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT),
+        pipeline_intent_subject: env_value(
+            "ECONOMICS_PIPELINE_INTENT_SUBJECT",
+            PUBLIC_DATA_PIPELINE_JOBS_SUBJECT,
+        ),
+        spark_pipeline_url: optional_env("ECONOMICS_SPARK_PIPELINE_URL")
+            .or_else(|| Some(DEFAULT_SPARK_PIPELINE_URL.to_string())),
+        spark_pipeline_auth_env: env_value("ECONOMICS_SPARK_PIPELINE_AUTH_ENV", "SERVER_AUTH_SECRET"),
+        spark_master_url: env_value("ECONOMICS_SPARK_MASTER_URL", DEFAULT_SPARK_MASTER_URL),
+        airflow_api_url: optional_env("ECONOMICS_AIRFLOW_API_URL")
+            .or_else(|| Some(DEFAULT_AIRFLOW_API_URL.to_string())),
+        databricks_host: optional_env("ECONOMICS_DATABRICKS_HOST"),
+        data_lake_uri: env_value("ECONOMICS_DATA_LAKE_URI", DEFAULT_DATA_LAKE_URI),
+        allow_pipeline_submit: env_bool("ECONOMICS_ENABLE_PIPELINE_SUBMIT", false),
+        allow_external_pipeline_urls: env_bool("ECONOMICS_ALLOW_EXTERNAL_PIPELINE_URLS", false),
     }
 }
 
@@ -695,6 +811,26 @@ fn clean_token(value: &str, label: &str) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
+fn clean_optional_token(value: &Option<String>, label: &str) -> Result<(), String> {
+    if let Some(value) = value.as_deref() {
+        clean_token(value, label)?;
+    }
+    Ok(())
+}
+
+fn constant_time_eq(left: &str, right: &str) -> bool {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    let max_len = left.len().max(right.len());
+    let mut diff = left.len() ^ right.len();
+    for index in 0..max_len {
+        let l = left.get(index).copied().unwrap_or(0);
+        let r = right.get(index).copied().unwrap_or(0);
+        diff |= usize::from(l ^ r);
+    }
+    diff == 0
+}
+
 fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), AuthFailure> {
     if state.config.allow_unauthenticated {
         return Ok(());
@@ -705,9 +841,10 @@ fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), AuthFailure
     let provided = headers
         .get("x-server-auth")
         .or_else(|| headers.get("auth"))
+        .or_else(|| headers.get("authorization"))
         .and_then(|value| value.to_str().ok());
     match provided {
-        Some(value) if value == secret => Ok(()),
+        Some(value) if constant_time_eq(value.trim_start_matches("Bearer ").trim(), secret) => Ok(()),
         _ => Err(AuthFailure::Unauthorized),
     }
 }
@@ -1249,6 +1386,9 @@ fn validate_series(series: &[MarketSeries]) -> Result<(), String> {
     for item in series {
         clean_token(&item.instrument_id, "instrumentId")?;
         clean_token(&item.asset_class, "assetClass")?;
+        clean_optional_token(&item.display_name, "displayName")?;
+        clean_optional_token(&item.currency, "currency")?;
+        clean_optional_token(&item.source, "source")?;
         if item.observations.len() < 2 {
             return Err(format!(
                 "series {} must contain at least two observations",
@@ -1278,6 +1418,267 @@ fn validate_series(series: &[MarketSeries]) -> Result<(), String> {
                 }
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_optional_number(
+    value: Option<f64>,
+    label: &str,
+    min: f64,
+    max: f64,
+) -> Result<(), String> {
+    if let Some(value) = value {
+        if !value.is_finite() || value < min || value > max {
+            return Err(format!("{label} must be finite and between {min} and {max}"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_macro_context(context: Option<&MacroContext>) -> Result<(), String> {
+    let Some(context) = context else {
+        return Ok(());
+    };
+    validate_optional_number(context.policy_rate, "macroContext.policyRate", -0.50, 1.00)?;
+    validate_optional_number(
+        context.foreign_policy_rate,
+        "macroContext.foreignPolicyRate",
+        -0.50,
+        1.00,
+    )?;
+    validate_optional_number(context.inflation, "macroContext.inflation", -0.50, 1.00)?;
+    validate_optional_number(
+        context.foreign_inflation,
+        "macroContext.foreignInflation",
+        -0.50,
+        1.00,
+    )?;
+    validate_optional_number(
+        context.expected_inflation,
+        "macroContext.expectedInflation",
+        -0.50,
+        1.00,
+    )?;
+    validate_optional_number(
+        context.money_supply_growth,
+        "macroContext.moneySupplyGrowth",
+        -1.00,
+        2.00,
+    )?;
+    validate_optional_number(context.real_growth, "macroContext.realGrowth", -1.00, 2.00)?;
+    validate_optional_number(context.output_gap, "macroContext.outputGap", -1.00, 1.00)?;
+    validate_optional_number(
+        context.unemployment_gap,
+        "macroContext.unemploymentGap",
+        -1.00,
+        1.00,
+    )?;
+    validate_optional_number(
+        context.risk_free_rate,
+        "macroContext.riskFreeRate",
+        -0.50,
+        1.00,
+    )?;
+    validate_optional_number(context.market_return, "macroContext.marketReturn", -1.00, 2.00)?;
+    Ok(())
+}
+
+fn validate_macro_fiscal_context(context: Option<&MacroFiscalContext>) -> Result<(), String> {
+    let Some(context) = context else {
+        return Ok(());
+    };
+    clean_optional_token(&context.country, "macroFiscalContext.country")?;
+    clean_optional_token(&context.period, "macroFiscalContext.period")?;
+    validate_optional_number(context.gdp, "macroFiscalContext.gdp", 1.0, 1.0e17)?;
+    validate_optional_number(
+        context.gdp_growth,
+        "macroFiscalContext.gdpGrowth",
+        -1.00,
+        2.00,
+    )?;
+    validate_optional_number(
+        context.national_debt,
+        "macroFiscalContext.nationalDebt",
+        0.0,
+        1.0e17,
+    )?;
+    validate_optional_number(
+        context.debt_to_gdp,
+        "macroFiscalContext.debtToGdp",
+        0.0,
+        10.0,
+    )?;
+    validate_optional_number(
+        context.deficit,
+        "macroFiscalContext.deficit",
+        -1.0e16,
+        1.0e16,
+    )?;
+    validate_optional_number(
+        context.deficit_to_gdp,
+        "macroFiscalContext.deficitToGdp",
+        -2.0,
+        2.0,
+    )?;
+    validate_optional_number(context.receipts, "macroFiscalContext.receipts", 0.0, 1.0e17)?;
+    validate_optional_number(context.outlays, "macroFiscalContext.outlays", 0.0, 1.0e17)?;
+    validate_optional_number(context.borrowing, "macroFiscalContext.borrowing", 0.0, 1.0e17)?;
+    validate_optional_number(
+        context.net_interest_outlays,
+        "macroFiscalContext.netInterestOutlays",
+        0.0,
+        1.0e17,
+    )?;
+    validate_optional_number(
+        context.labor_force_participation,
+        "macroFiscalContext.laborForceParticipation",
+        0.0,
+        1.0,
+    )?;
+    validate_optional_number(
+        context.prime_age_participation,
+        "macroFiscalContext.primeAgeParticipation",
+        0.0,
+        1.0,
+    )?;
+    validate_optional_number(
+        context.unemployment_rate,
+        "macroFiscalContext.unemploymentRate",
+        0.0,
+        1.0,
+    )?;
+    validate_optional_number(
+        context.payroll_growth,
+        "macroFiscalContext.payrollGrowth",
+        -1.0,
+        2.0,
+    )?;
+    validate_optional_number(
+        context.wage_growth,
+        "macroFiscalContext.wageGrowth",
+        -1.0,
+        2.0,
+    )?;
+    validate_optional_number(
+        context.productivity_growth,
+        "macroFiscalContext.productivityGrowth",
+        -1.0,
+        2.0,
+    )?;
+    Ok(())
+}
+
+fn validate_venture_capital_context(context: Option<&VentureCapitalContext>) -> Result<(), String> {
+    let Some(context) = context else {
+        return Ok(());
+    };
+    clean_optional_token(&context.period, "ventureCapitalContext.period")?;
+    if context.deals.len() > MAX_VC_DEALS {
+        return Err(format!(
+            "ventureCapitalContext.deals must contain at most {MAX_VC_DEALS} items"
+        ));
+    }
+    if context.sector_flows.len() > MAX_VC_SECTOR_FLOWS {
+        return Err(format!(
+            "ventureCapitalContext.sectorFlows must contain at most {MAX_VC_SECTOR_FLOWS} items"
+        ));
+    }
+    for (index, deal) in context.deals.iter().enumerate() {
+        clean_token(&deal.firm, "ventureCapitalContext.deals[].firm")?;
+        clean_token(&deal.company, "ventureCapitalContext.deals[].company")?;
+        clean_token(&deal.sector, "ventureCapitalContext.deals[].sector")?;
+        clean_token(&deal.stage, "ventureCapitalContext.deals[].stage")?;
+        clean_optional_token(&deal.currency, "ventureCapitalContext.deals[].currency")?;
+        clean_optional_token(&deal.country, "ventureCapitalContext.deals[].country")?;
+        clean_optional_token(&deal.announced_at, "ventureCapitalContext.deals[].announcedAt")?;
+        if !deal.amount.is_finite() || deal.amount < 0.0 || deal.amount > 1.0e13 {
+            return Err(format!(
+                "ventureCapitalContext.deals[{index}].amount must be finite and between 0 and 10000000000000"
+            ));
+        }
+        validate_optional_number(
+            deal.confidence,
+            "ventureCapitalContext.deals[].confidence",
+            0.0,
+            1.0,
+        )?;
+    }
+    for flow in &context.sector_flows {
+        clean_token(&flow.sector, "ventureCapitalContext.sectorFlows[].sector")?;
+        validate_optional_number(
+            Some(f64::from(flow.deal_count)),
+            "ventureCapitalContext.sectorFlows[].dealCount",
+            0.0,
+            1_000_000.0,
+        )?;
+        validate_optional_number(
+            Some(flow.invested_capital),
+            "ventureCapitalContext.sectorFlows[].investedCapital",
+            0.0,
+            1.0e15,
+        )?;
+        validate_optional_number(
+            Some(flow.yoy_growth),
+            "ventureCapitalContext.sectorFlows[].yoyGrowth",
+            -1.0,
+            10.0,
+        )?;
+        validate_optional_number(
+            flow.dry_powder,
+            "ventureCapitalContext.sectorFlows[].dryPowder",
+            0.0,
+            1.0e15,
+        )?;
+        validate_optional_number(
+            flow.exit_liquidity,
+            "ventureCapitalContext.sectorFlows[].exitLiquidity",
+            -1.0,
+            10.0,
+        )?;
+        validate_optional_number(
+            flow.confidence,
+            "ventureCapitalContext.sectorFlows[].confidence",
+            0.0,
+            1.0,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_sentiment_context(context: Option<&SentimentSignalContext>) -> Result<(), String> {
+    let Some(context) = context else {
+        return Ok(());
+    };
+    validate_optional_number(
+        context.average_sentiment,
+        "sentimentContext.averageSentiment",
+        -1.0,
+        1.0,
+    )?;
+    validate_sentiment_score_map(
+        context.instrument_scores.as_ref(),
+        "sentimentContext.instrumentScores",
+    )?;
+    validate_sentiment_score_map(context.sector_scores.as_ref(), "sentimentContext.sectorScores")?;
+    Ok(())
+}
+
+fn validate_sentiment_score_map(
+    map: Option<&BTreeMap<String, f64>>,
+    label: &str,
+) -> Result<(), String> {
+    let Some(map) = map else {
+        return Ok(());
+    };
+    if map.len() > MAX_SENTIMENT_CONTEXT_SCORES {
+        return Err(format!(
+            "{label} must contain at most {MAX_SENTIMENT_CONTEXT_SCORES} scores"
+        ));
+    }
+    for (key, value) in map {
+        clean_token(key, label)?;
+        validate_optional_number(Some(*value), label, -1.0, 1.0)?;
     }
     Ok(())
 }
@@ -1332,6 +1733,9 @@ fn generate_forecast(
     let series = request
         .series
         .ok_or_else(|| "series must be provided or previously ingested".to_string())?;
+    validate_macro_context(request.macro_context.as_ref())?;
+    validate_macro_fiscal_context(request.macro_fiscal_context.as_ref())?;
+    validate_venture_capital_context(request.venture_capital_context.as_ref())?;
     validate_series(&series)?;
     let macro_context = request.macro_context.unwrap_or_default();
     let weights = normalize_weights(request.theory_weights.as_ref());
@@ -2293,6 +2697,10 @@ fn generate_recommendations(
             return Err(format!("schemaVersion must be {SCHEMA_VERSION}"));
         }
     }
+    validate_macro_context(request.macro_context.as_ref())?;
+    validate_macro_fiscal_context(request.macro_fiscal_context.as_ref())?;
+    validate_venture_capital_context(request.venture_capital_context.as_ref())?;
+    validate_sentiment_context(request.sentiment_context.as_ref())?;
 
     let request_id = request_id(request.request_id.as_ref(), "economics-recommendations");
     let horizon_months = request
@@ -4216,6 +4624,16 @@ fn analyze_sentiment(
             "documents must contain at most {MAX_SENTIMENT_DOCUMENTS} items"
         ));
     }
+    if let Some(instrument_ids) = request.instrument_ids.as_ref() {
+        if instrument_ids.len() > MAX_SENTIMENT_CONTEXT_SCORES {
+            return Err(format!(
+                "instrumentIds must contain at most {MAX_SENTIMENT_CONTEXT_SCORES} items"
+            ));
+        }
+        for instrument_id in instrument_ids {
+            clean_token(instrument_id, "instrumentIds[]")?;
+        }
+    }
 
     let request_id = request_id(request.request_id.as_ref(), "sentiment-analyze");
     let mut weighted_sum = 0.0;
@@ -4233,6 +4651,15 @@ fn analyze_sentiment(
             return Err(format!(
                 "documents[].text must be at most {MAX_SENTIMENT_TEXT_BYTES} bytes"
             ));
+        }
+        clean_optional_token(&document.author, "documents[].author")?;
+        clean_optional_token(&document.published_at, "documents[].publishedAt")?;
+        if let Some(url) = document.url.as_deref() {
+            if url.len() > MAX_URL_LEN || url.chars().any(char::is_control) {
+                return Err(format!(
+                    "documents[].url must be at most {MAX_URL_LEN} bytes and contain no control characters"
+                ));
+            }
         }
         let weight = document
             .weight

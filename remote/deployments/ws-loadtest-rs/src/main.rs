@@ -115,6 +115,8 @@ struct Config {
     gcs_clients_per_conv: usize,
     /// gcs-mode: how many clients per conversation actually send (0 => all send).
     gcs_senders_per_conv: usize,
+    /// gcs-mode: hot-path wire format for MongoChatMessage frames.
+    gcs_message_encoding: MessageEncoding,
 }
 
 fn env_usize(name: &str, default_value: usize) -> usize {
@@ -167,6 +169,15 @@ fn parse_message_encodings() -> Vec<MessageEncoding> {
     encodings
 }
 
+fn parse_gcs_message_encoding() -> MessageEncoding {
+    env::var("GCS_MESSAGE_ENCODING")
+        .ok()
+        .or_else(|| env::var("MESSAGE_ENCODING").ok())
+        .and_then(|value| MessageEncoding::parse(&value))
+        .filter(|encoding| matches!(encoding, MessageEncoding::Json | MessageEncoding::Protobuf))
+        .unwrap_or(MessageEncoding::Json)
+}
+
 fn format_message_encodings(encodings: &[MessageEncoding]) -> String {
     encodings
         .iter()
@@ -199,6 +210,7 @@ fn load_config() -> Config {
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(0),
+        gcs_message_encoding: parse_gcs_message_encoding(),
     }
 }
 
@@ -805,20 +817,44 @@ fn url_encode(s: &str) -> String {
     out
 }
 
-fn gcs_connect_url(base: &str, user_id: &str, device_id: &str, conv_id: &str) -> String {
+fn gcs_connect_url(
+    base: &str,
+    user_id: &str,
+    device_id: &str,
+    conv_id: &str,
+    encoding: MessageEncoding,
+) -> String {
     let conv_ids_json = format!("[\"{}\"]", conv_id);
+    let wire = if encoding == MessageEncoding::Protobuf {
+        "&wire=protobuf"
+    } else {
+        ""
+    };
     format!(
-        "{}/gcs/ws/?userId={}&deviceId={}&conversationIds={}",
+        "{}/gcs/ws/?userId={}&deviceId={}&conversationIds={}{}",
         base.trim_end_matches('/'),
         user_id,
         device_id,
-        url_encode(&conv_ids_json)
+        url_encode(&conv_ids_json),
+        wire
     )
 }
 
 /// Build the outer envelope carrying one MongoChatMessage. `marker` goes into
 /// `Messages[0]` and is the latency beacon receivers parse.
-fn build_gcs_chat_frame(conv_id: &str, user_id: &str, members: &[String], marker: &str) -> String {
+fn build_gcs_chat_frame(
+    conv_id: &str,
+    user_id: &str,
+    members: &[String],
+    marker: &str,
+    encoding: MessageEncoding,
+) -> Message {
+    if encoding == MessageEncoding::Protobuf {
+        return Message::Binary(encode_gcs_protobuf_chat_frame(
+            conv_id, user_id, members, marker,
+        ));
+    }
+
     let now = rfc3339_now();
     let priority = members
         .iter()
@@ -835,29 +871,61 @@ fn build_gcs_chat_frame(conv_id: &str, user_id: &str, members: &[String], marker
         conv = conv_id,
         marker = marker
     );
-    format!(
+    Message::Text(format!(
         r#"{{"Meta":{{}},"List":[{{"@vibe-meta":{{}},"@vibe-type":"MongoChatMessage","@vibe-data":"{}"}}]}}"#,
         json_escape(&inner)
-    )
+    ))
+}
+
+fn encode_gcs_protobuf_chat_frame(
+    conv_id: &str,
+    user_id: &str,
+    members: &[String],
+    marker: &str,
+) -> Vec<u8> {
+    let now_ms = now_millis();
+    let mut message = Vec::with_capacity(256 + marker.len() + members.len() * 28);
+    push_protobuf_string_field(&mut message, 1, &object_id());
+    push_protobuf_string_field(&mut message, 3, user_id);
+    push_protobuf_string_field(&mut message, 4, conv_id);
+    for member in members {
+        push_protobuf_string_field(&mut message, 5, member);
+    }
+    push_protobuf_bool_field(&mut message, 7, members.len() > 2);
+    push_protobuf_varint_field(&mut message, 9, members.len() as u64);
+    push_protobuf_string_field(&mut message, 10, marker);
+    push_protobuf_varint_field(&mut message, 15, now_ms);
+    push_protobuf_varint_field(&mut message, 16, now_ms);
+    push_protobuf_string_field(&mut message, 23, user_id);
+    push_protobuf_varint_field(&mut message, 25, now_ms);
+
+    let mut frame = Vec::with_capacity(message.len() + 32);
+    push_protobuf_string_field(&mut frame, 1, "MongoChatMessage");
+    push_protobuf_bytes_field(&mut frame, 2, &message);
+    frame
 }
 
 /// Scan a received frame for our `gcsrt-<client>-<seq>-<sendMicros>` markers,
 /// pushing an end-to-end latency (µs) for each one found.
 fn parse_gcs_markers(text: &str, out: &mut Vec<u64>) {
+    parse_gcs_marker_bytes(text.as_bytes(), out);
+}
+
+fn parse_gcs_marker_bytes(bytes: &[u8], out: &mut Vec<u64>) {
     let needle = "gcsrt-";
     let mut idx = 0usize;
-    while let Some(pos) = text[idx..].find(needle) {
+    while let Some(pos) = find_bytes(&bytes[idx..], needle.as_bytes()) {
         let start = idx + pos;
-        let rest = &text[start..];
+        let rest = &bytes[start..];
         // The marker is `gcsrt-<client>-<seq>-<micros>`; every char is in
         // [0-9a-zA-Z-]. Stop at the first byte outside that set so we don't pick
         // up a trailing quote or escape character regardless of how the frame is
         // (re)serialized.
         let marker_len = rest
-            .bytes()
+            .iter()
             .take_while(|b| b.is_ascii_alphanumeric() || *b == b'-')
             .count();
-        let marker = &rest[..marker_len];
+        let marker = std::str::from_utf8(&rest[..marker_len]).unwrap_or("");
         if let Some(send_us) = marker
             .rsplit('-')
             .next()
@@ -867,6 +935,13 @@ fn parse_gcs_markers(text: &str, out: &mut Vec<u64>) {
         }
         idx = start + marker_len.max(needle.len());
     }
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    haystack.windows(needle.len()).position(|window| window == needle)
 }
 
 struct GcsAssignment {

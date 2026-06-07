@@ -5,7 +5,8 @@ Rust Solana escrow intent validator and settlement gateway.
 The service does not store private keys and does not sign transactions. Callers submit escrow
 intents plus client-signed settlement transactions. `dd-escrow-rs` validates escrow-specific policy,
 can simulate settlement transactions through Solana JSON-RPC, and only sends transactions when
-`SOLANA_SETTLEMENT_ENABLED=true` and `ESCROW_SETTLEMENT_AUTH_SECRET` are configured.
+`SOLANA_SETTLEMENT_ENABLED=true` and `ESCROW_SETTLEMENT_AUTH_SECRET` are configured. Live
+settlement requires an attached validated intent by default.
 
 ## Escrow Kinds
 
@@ -33,9 +34,12 @@ that do not belong to the selected kind.
 - `GET /metrics` - Prometheus metrics.
 - `GET /status` - checks `getHealth` and `getVersion` against `SOLANA_RPC_URL`.
 - `GET /types` - escrow kind catalog.
+- `GET /capabilities` - runtime settlement posture, limits, and supported escrow kinds.
 - `GET /schema` - JSON Schema sketch for `solana.escrow.v1`.
 - `GET /example` - marketplace escrow example.
 - `POST /validate` - validates an escrow intent and returns a deterministic digest.
+- `POST /audit` - returns validation, readiness, checks, warnings, and errors without touching
+  Solana RPC.
 - `POST /simulate-settlement` - calls Solana JSON-RPC `simulateTransaction` for a signed settlement
   transaction.
 - `POST /settle` - calls Solana JSON-RPC `sendTransaction` only when explicitly enabled and the
@@ -50,6 +54,13 @@ Generated docs are served at `/docs/api`, `/api/docs`, and `/api/docs.json`.
   `.cluster.local` hosts unless `SOLANA_ALLOW_PRIVATE_RPC=true`.
 - `POST /settle` requires both `SOLANA_SETTLEMENT_ENABLED=true` and
   `ESCROW_SETTLEMENT_AUTH_SECRET`.
+- `POST /settle` requires an attached `intent` by default
+  (`ESCROW_SETTLEMENT_REQUIRE_INTENT=true`), so live sends are checked against the escrow parties,
+  terms, asset, action, and settlement plan.
+- Mainnet settlement has a second explicit gate:
+  `SOLANA_MAINNET_SETTLEMENT_ENABLED=true`.
+- `ESCROW_ALLOWED_PROGRAM_IDS` can hold a comma-separated Solana program allowlist. When set,
+  `settlementPlan.programId` must be one of those public keys.
 - `skipPreflight` is rejected unless `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
 - Settlement transactions must already be signed by the caller and fit within the bounded payload
   size.

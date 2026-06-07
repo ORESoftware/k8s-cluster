@@ -165,7 +165,7 @@ Gateway path map:
   `/fabrication/safety/catalog`, `POST /fabrication/safety/result`,
   `/fabrication/environment/catalog`, `POST /fabrication/environment/result`,
   `/fabrication/provenance/catalog`, `/fabrication/as-built/catalog`,
-  `POST /fabrication/provenance/result`,
+  `POST /fabrication/as-built/result`, `POST /fabrication/provenance/result`,
   `POST /fabrication/setup/plan`,
   `POST /fabrication/setup/result`,
   `/fabrication/monitoring/catalog`, `POST /fabrication/monitoring/plan`,
