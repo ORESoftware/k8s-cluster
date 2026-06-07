@@ -146,6 +146,7 @@ spec:
                 '"path": "/fabrication/printers/preflight/catalog"' \
                 '"path": "/fabrication/subtractive/catalog"' \
                 '"path": "/fabrication/subtractive/preflight/catalog"' \
+                '"path": "/fabrication/turning/preflight/catalog"' \
                 '"path": "/fabrication/cleanliness/preflight/catalog"' \
                 '"path": "/fabrication/interfaces/preflight/catalog"' \
                 '"path": "/fabrication/interfaces/result"' \

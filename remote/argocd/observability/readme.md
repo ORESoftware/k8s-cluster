@@ -187,6 +187,7 @@ Currently opted-in:
   `/fabrication/machines/catalog`,
   `/fabrication/printers/catalog`, `/fabrication/subtractive/catalog`,
   `/fabrication/subtractive/preflight/catalog`,
+  `/fabrication/turning/preflight/catalog`,
   `/fabrication/cleanliness/preflight/catalog`,
   `/fabrication/interfaces/preflight/catalog`, `/fabrication/interfaces/result`,
   `/fabrication/cnc/catalog`,

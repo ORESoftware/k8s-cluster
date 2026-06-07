@@ -99,6 +99,7 @@ Gateway path map:
   `/fabrication/capabilities`, `/fabrication/schema`, `/fabrication/examples`,
   `/fabrication/machines/catalog`, `/fabrication/printers/catalog`,
   `/fabrication/subtractive/catalog`, `/fabrication/subtractive/preflight/catalog`,
+  `/fabrication/turning/preflight/catalog`,
   `/fabrication/cleanliness/preflight/catalog`,
   `/fabrication/interfaces/preflight/catalog`, `/fabrication/cnc/catalog`,
   `/fabrication/hybrid/catalog`, `/fabrication/cells/catalog`,
