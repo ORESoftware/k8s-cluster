@@ -3181,6 +3181,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /fn machine_code_catalog_response/);
   assert.match(source, /dd\.fabrication\.machine-code-catalog\.v1/);
   assert.match(source, /"GET \/fabrication\/machine-code\/catalog"/);
+  assert.match(source, /async fn machine_code_preflight_catalog_http/);
+  assert.match(source, /fn machine_code_preflight_catalog_response/);
+  assert.match(source, /dd\.fabrication\.machine-code-preflight-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/machine-code\/preflight\/catalog"/);
+  assert.match(source, /program-source-and-design-state/);
+  assert.match(source, /controller-postprocessor-and-dialect-state/);
+  assert.match(source, /machine-setup-toolpath-and-process-state/);
+  assert.match(source, /validation-simulation-release-and-learning-state/);
   assert.match(
     source,
     /\.route\("\/machine-code\/catalog", get\(machine_code_catalog_http\)\)/,
@@ -3195,6 +3203,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(
     source,
     /machine_code_catalog_endpoint_exposes_program_controller_and_learning_contract/,
+  );
+  assert.match(
+    source,
+    /machine_code_preflight_catalog_endpoint_exposes_controller_release_gates/,
   );
   assert.match(source, /async fn machine_code_generate_http/);
   assert.match(source, /fn machine_code_generation_response/);
@@ -5332,6 +5344,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /\.route\(\s*"\/fabrication\/machine-code\/catalog",\s*get\(machine_code_catalog_http\),\s*\)/,
   );
+  assert.match(
+    source,
+    /\.route\(\s*"\/machine-code\/preflight\/catalog",\s*get\(machine_code_preflight_catalog_http\),\s*\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/machine-code\/preflight\/catalog",\s*get\(machine_code_preflight_catalog_http\),\s*\)/,
+  );
   assert.match(source, /\.route\("\/machine-code\/generate", post\(machine_code_generate_http\)\)/);
   assert.match(
     source,
@@ -6452,6 +6472,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /CTB\/Photon\/Lychee\/Chitubox resin\s+package jobs/);
   assert.match(readme, /Machine-ready=false|machineReady=false/);
   assert.match(readme, /Program-generation, controller-release, simulation-risk/);
+  assert.match(readme, /`GET \/machine-code\/preflight\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/machine-code\/preflight\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.machine-code-preflight-catalog\.v1/);
+  assert.match(readme, /program source\/design state/);
+  assert.match(readme, /controller\/postprocessor\/dialect state/);
+  assert.match(readme, /machine\/setup\/toolpath\/process state/);
+  assert.match(readme, /validation\/simulation\/release\/learning state/);
   assert.match(readme, /`POST \/machine-code\/generate`/);
   assert.match(readme, /`POST \/fabrication\/machine-code\/generate`/);
   assert.match(readme, /dd\.fabrication\.machine-code-generation\.v1/);
@@ -8587,6 +8614,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/machine-code\/catalog"/);
   assert.match(docs, /"path": "\/machine-code\/generate"/);
   assert.match(docs, /"path": "\/fabrication\/machine-code\/generate"/);
+  assert.match(docs, /"path": "\/machine-code\/preflight\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/machine-code\/preflight\/catalog"/);
   assert.match(docs, /"path": "\/machine-code\/result"/);
   assert.match(docs, /"path": "\/fabrication\/machine-code\/result"/);
   assert.match(docs, /"path": "\/materials\/result"/);
@@ -8914,6 +8943,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/instructions\/review\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/validation\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/machine-code\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/machine-code\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/machine-code\/generate"/);
   assert.match(deployment, /"path": "\/fabrication\/machine-code\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/toolpaths\/catalog"/);
@@ -9165,6 +9195,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/validation\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/machine-code\/catalog/);
   assert.match(grafanaDashboards, /machine-code catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/machine-code\/preflight\/catalog/);
+  assert.match(grafanaDashboards, /machine-code preflight catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/machine-code\/generate/);
   assert.match(grafanaDashboards, /\/fabrication\/machine-code\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/toolpaths\/catalog/);
@@ -9425,6 +9457,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /POST \/fabrication\/instructions\/review\/result/);
   assert.match(runtimeReadme, /POST \/fabrication\/instructions\/validation\/result/);
   assert.match(runtimeReadme, /\/fabrication\/machine-code\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/machine-code\/preflight\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/machine-code\/generate/);
   assert.match(runtimeReadme, /POST \/fabrication\/machine-code\/result/);
   assert.match(runtimeReadme, /\/fabrication\/toolpaths\/catalog/);
@@ -9624,6 +9657,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/instructions\/review\/result/);
   assert.match(observabilityReadme, /\/fabrication\/instructions\/validation\/result/);
   assert.match(observabilityReadme, /\/fabrication\/machine-code\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/machine-code\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/machine-code\/generate/);
   assert.match(observabilityReadme, /\/fabrication\/machine-code\/result/);
   assert.match(observabilityReadme, /\/fabrication\/toolpaths\/catalog/);

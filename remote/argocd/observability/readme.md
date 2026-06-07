@@ -222,6 +222,7 @@ Currently opted-in:
   `/fabrication/instructions/review/result`,
   `/fabrication/instructions/validation/result`,
   `/fabrication/machine-code/catalog`, `/fabrication/machine-code/generate`,
+  `/fabrication/machine-code/preflight/catalog`,
   `/fabrication/machine-code/result`,
   `/fabrication/toolpaths/catalog`, `/fabrication/toolpaths/plan`,
   `/fabrication/toolpaths/result`,
