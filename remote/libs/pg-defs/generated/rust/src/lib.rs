@@ -597,6 +597,951 @@ pub fn validate_music_song_votes_insert(value: &MusicSongVotesInsert) -> Result<
     Ok(())
 }
 
+pub const SOUND_RECORDER_ACCOUNTS_TABLE: &str = "sound_recorder_accounts";
+pub const SOUND_RECORDER_ACCOUNTS_COLUMNS: &[&str] = &["id", "status", "external_subject", "display_name", "legal_region", "retention_hours", "retention_policy_version", "created_at", "updated_at"];
+pub const SOUND_RECORDER_ACCOUNTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      status,
+      external_subject,
+      display_name,
+      legal_region,
+      retention_hours,
+      retention_policy_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_accounts"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderAccountsStatus {
+    Active,
+    Paused,
+    Locked,
+    Deleted,
+}
+
+impl SoundRecorderAccountsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "paused", "locked", "deleted"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Locked => "locked",
+            Self::Deleted => "deleted",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderAccountsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "locked" => Ok(Self::Locked),
+            "deleted" => Ok(Self::Deleted),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderAccountsRow {
+    pub id: String,
+    pub status: String,
+    pub external_subject: Option<String>,
+    pub display_name: Option<String>,
+    pub legal_region: Option<String>,
+    pub retention_hours: i32,
+    pub retention_policy_version: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderAccountsInsert {
+    pub id: Option<String>,
+    pub status: Option<String>,
+    pub external_subject: Option<String>,
+    pub display_name: Option<String>,
+    pub legal_region: Option<String>,
+    pub retention_hours: Option<i32>,
+    pub retention_policy_version: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_accounts_row(value: &SoundRecorderAccountsRow) -> Result<(), String> {
+    if !["active", "paused", "locked", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_accounts.status: {}", &value.status)); }
+    if let Some(value) = &value.external_subject {
+        validate_string_length("sound_recorder_accounts.external_subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("sound_recorder_accounts.external_subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("sound_recorder_accounts.display_name", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_accounts.display_name exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.legal_region {
+        validate_string_length("sound_recorder_accounts.legal_region", value, None, Some(64))?;
+    }
+    if *(&value.retention_hours) < 1 { return Err("sound_recorder_accounts.retention_hours is below the minimum".to_string()); }
+    if *(&value.retention_hours) > 500 { return Err("sound_recorder_accounts.retention_hours is above the maximum".to_string()); }
+    validate_string_length("sound_recorder_accounts.retention_policy_version", &value.retention_policy_version, None, Some(80))?;
+    Ok(())
+}
+
+pub fn validate_sound_recorder_accounts_insert(value: &SoundRecorderAccountsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["active", "paused", "locked", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_accounts.status: {}", value)); }
+    }
+    if let Some(value) = &value.external_subject {
+        validate_string_length("sound_recorder_accounts.external_subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("sound_recorder_accounts.external_subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("sound_recorder_accounts.display_name", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_accounts.display_name exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.legal_region {
+        validate_string_length("sound_recorder_accounts.legal_region", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.retention_hours {
+        if *(value) < 1 { return Err("sound_recorder_accounts.retention_hours is below the minimum".to_string()); }
+        if *(value) > 500 { return Err("sound_recorder_accounts.retention_hours is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.retention_policy_version {
+        validate_string_length("sound_recorder_accounts.retention_policy_version", value, None, Some(80))?;
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_DEVICES_TABLE: &str = "sound_recorder_devices";
+pub const SOUND_RECORDER_DEVICES_COLUMNS: &[&str] = &["id", "account_id", "platform", "status", "install_id", "device_label", "app_version", "os_version", "token_hash", "token_last4", "consent_version", "consent_accepted_at", "recording_indicator_acknowledged", "last_seen_at", "created_at", "updated_at"];
+pub const SOUND_RECORDER_DEVICES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      platform,
+      status,
+      install_id,
+      device_label,
+      app_version,
+      os_version,
+      token_hash,
+      token_last4,
+      consent_version,
+      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consent_accepted_at,
+      recording_indicator_acknowledged,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_devices"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderDevicesPlatform {
+    Ios,
+    Android,
+}
+
+impl SoundRecorderDevicesPlatform {
+    pub const VALUES: &'static [&'static str] = &["ios", "android"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ios => "ios",
+            Self::Android => "android",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderDevicesPlatform {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "ios" => Ok(Self::Ios),
+            "android" => Ok(Self::Android),
+            _ => Err(format!("unsupported platform: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderDevicesStatus {
+    Active,
+    Revoked,
+    Lost,
+    Replaced,
+    Deleted,
+}
+
+impl SoundRecorderDevicesStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "revoked", "lost", "replaced", "deleted"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Revoked => "revoked",
+            Self::Lost => "lost",
+            Self::Replaced => "replaced",
+            Self::Deleted => "deleted",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderDevicesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "revoked" => Ok(Self::Revoked),
+            "lost" => Ok(Self::Lost),
+            "replaced" => Ok(Self::Replaced),
+            "deleted" => Ok(Self::Deleted),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderDevicesRow {
+    pub id: String,
+    pub account_id: String,
+    pub platform: String,
+    pub status: String,
+    pub install_id: String,
+    pub device_label: Option<String>,
+    pub app_version: Option<String>,
+    pub os_version: Option<String>,
+    pub token_hash: String,
+    pub token_last4: String,
+    pub consent_version: String,
+    pub consent_accepted_at: String,
+    pub recording_indicator_acknowledged: bool,
+    pub last_seen_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderDevicesInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub platform: Option<String>,
+    pub status: Option<String>,
+    pub install_id: Option<String>,
+    pub device_label: Option<String>,
+    pub app_version: Option<String>,
+    pub os_version: Option<String>,
+    pub token_hash: Option<String>,
+    pub token_last4: Option<String>,
+    pub consent_version: Option<String>,
+    pub consent_accepted_at: Option<String>,
+    pub recording_indicator_acknowledged: Option<bool>,
+    pub last_seen_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_devices_row(value: &SoundRecorderDevicesRow) -> Result<(), String> {
+    if !["ios", "android"].contains(&(&value.platform).as_str()) { return Err(format!("unsupported sound_recorder_devices.platform: {}", &value.platform)); }
+    if !["active", "revoked", "lost", "replaced", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_devices.status: {}", &value.status)); }
+    validate_string_length("sound_recorder_devices.install_id", &value.install_id, None, Some(160))?;
+    if (&value.install_id).as_bytes().len() > 160 { return Err("sound_recorder_devices.install_id exceeds 160 bytes".to_string()); }
+    if let Some(value) = &value.device_label {
+        validate_string_length("sound_recorder_devices.device_label", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_devices.device_label exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.app_version {
+        validate_string_length("sound_recorder_devices.app_version", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_devices.app_version exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.os_version {
+        validate_string_length("sound_recorder_devices.os_version", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_devices.os_version exceeds 80 bytes".to_string()); }
+    }
+    validate_string_length("sound_recorder_devices.token_hash", &value.token_hash, None, Some(64))?;
+    validate_string_length("sound_recorder_devices.token_last4", &value.token_last4, None, Some(4))?;
+    validate_string_length("sound_recorder_devices.consent_version", &value.consent_version, None, Some(80))?;
+    Ok(())
+}
+
+pub fn validate_sound_recorder_devices_insert(value: &SoundRecorderDevicesInsert) -> Result<(), String> {
+    if let Some(value) = &value.platform {
+        if !["ios", "android"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.platform: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "revoked", "lost", "replaced", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.status: {}", value)); }
+    }
+    if let Some(value) = &value.install_id {
+        validate_string_length("sound_recorder_devices.install_id", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_devices.install_id exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.device_label {
+        validate_string_length("sound_recorder_devices.device_label", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_devices.device_label exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.app_version {
+        validate_string_length("sound_recorder_devices.app_version", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_devices.app_version exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.os_version {
+        validate_string_length("sound_recorder_devices.os_version", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_devices.os_version exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.token_hash {
+        validate_string_length("sound_recorder_devices.token_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.token_last4 {
+        validate_string_length("sound_recorder_devices.token_last4", value, None, Some(4))?;
+    }
+    if let Some(value) = &value.consent_version {
+        validate_string_length("sound_recorder_devices.consent_version", value, None, Some(80))?;
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_UPLOAD_SESSIONS_TABLE: &str = "sound_recorder_upload_sessions";
+pub const SOUND_RECORDER_UPLOAD_SESSIONS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "status", "storage_provider", "storage_bucket", "storage_prefix", "content_type", "codec", "sample_rate", "channel_count", "segment_duration_seconds", "max_segment_bytes", "started_at", "last_heartbeat_at", "closed_at", "expires_at", "client_timezone", "legal_region", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_UPLOAD_SESSIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      status,
+      storage_provider,
+      storage_bucket,
+      storage_prefix,
+      content_type,
+      codec,
+      sample_rate,
+      channel_count,
+      segment_duration_seconds,
+      max_segment_bytes,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(last_heartbeat_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_heartbeat_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closed_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      client_timezone,
+      legal_region,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_upload_sessions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderUploadSessionsStatus {
+    Active,
+    Closed,
+    Revoked,
+    Expired,
+}
+
+impl SoundRecorderUploadSessionsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "closed", "revoked", "expired"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Closed => "closed",
+            Self::Revoked => "revoked",
+            Self::Expired => "expired",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderUploadSessionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "closed" => Ok(Self::Closed),
+            "revoked" => Ok(Self::Revoked),
+            "expired" => Ok(Self::Expired),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderUploadSessionsStorageProvider {
+    S3,
+}
+
+impl SoundRecorderUploadSessionsStorageProvider {
+    pub const VALUES: &'static [&'static str] = &["s3"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::S3 => "s3",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderUploadSessionsStorageProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "s3" => Ok(Self::S3),
+            _ => Err(format!("unsupported storage_provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderUploadSessionsRow {
+    pub id: String,
+    pub account_id: String,
+    pub device_id: String,
+    pub status: String,
+    pub storage_provider: String,
+    pub storage_bucket: String,
+    pub storage_prefix: String,
+    pub content_type: String,
+    pub codec: Option<String>,
+    pub sample_rate: Option<i32>,
+    pub channel_count: i32,
+    pub segment_duration_seconds: i32,
+    pub max_segment_bytes: i32,
+    pub started_at: String,
+    pub last_heartbeat_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub client_timezone: Option<String>,
+    pub legal_region: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderUploadSessionsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub status: Option<String>,
+    pub storage_provider: Option<String>,
+    pub storage_bucket: Option<String>,
+    pub storage_prefix: Option<String>,
+    pub content_type: Option<String>,
+    pub codec: Option<String>,
+    pub sample_rate: Option<i32>,
+    pub channel_count: Option<i32>,
+    pub segment_duration_seconds: Option<i32>,
+    pub max_segment_bytes: Option<i32>,
+    pub started_at: Option<String>,
+    pub last_heartbeat_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub client_timezone: Option<String>,
+    pub legal_region: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_upload_sessions_row(value: &SoundRecorderUploadSessionsRow) -> Result<(), String> {
+    if !["active", "closed", "revoked", "expired"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.status: {}", &value.status)); }
+    if !["s3"].contains(&(&value.storage_provider).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.storage_provider: {}", &value.storage_provider)); }
+    validate_string_length("sound_recorder_upload_sessions.storage_bucket", &value.storage_bucket, None, Some(200))?;
+    if (&value.storage_bucket).as_bytes().len() > 200 { return Err("sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes".to_string()); }
+    if (&value.storage_prefix).as_bytes().len() > 2048 { return Err("sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes".to_string()); }
+    validate_string_length("sound_recorder_upload_sessions.content_type", &value.content_type, None, Some(120))?;
+    if (&value.content_type).as_bytes().len() > 120 { return Err("sound_recorder_upload_sessions.content_type exceeds 120 bytes".to_string()); }
+    if let Some(value) = &value.codec {
+        validate_string_length("sound_recorder_upload_sessions.codec", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_upload_sessions.codec exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.sample_rate {
+        if *(value) < 8000 { return Err("sound_recorder_upload_sessions.sample_rate is below the minimum".to_string()); }
+        if *(value) > 192000 { return Err("sound_recorder_upload_sessions.sample_rate is above the maximum".to_string()); }
+    }
+    if *(&value.channel_count) < 1 { return Err("sound_recorder_upload_sessions.channel_count is below the minimum".to_string()); }
+    if *(&value.channel_count) > 8 { return Err("sound_recorder_upload_sessions.channel_count is above the maximum".to_string()); }
+    if *(&value.segment_duration_seconds) < 1 { return Err("sound_recorder_upload_sessions.segment_duration_seconds is below the minimum".to_string()); }
+    if *(&value.segment_duration_seconds) > 600 { return Err("sound_recorder_upload_sessions.segment_duration_seconds is above the maximum".to_string()); }
+    if *(&value.max_segment_bytes) < 1 { return Err("sound_recorder_upload_sessions.max_segment_bytes is below the minimum".to_string()); }
+    if *(&value.max_segment_bytes) > 209715200 { return Err("sound_recorder_upload_sessions.max_segment_bytes is above the maximum".to_string()); }
+    if let Some(value) = &value.client_timezone {
+        validate_string_length("sound_recorder_upload_sessions.client_timezone", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_upload_sessions.client_timezone exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.legal_region {
+        validate_string_length("sound_recorder_upload_sessions.legal_region", value, None, Some(64))?;
+    }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_upload_sessions.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_upload_sessions_insert(value: &SoundRecorderUploadSessionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["active", "closed", "revoked", "expired"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.status: {}", value)); }
+    }
+    if let Some(value) = &value.storage_provider {
+        if !["s3"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.storage_provider: {}", value)); }
+    }
+    if let Some(value) = &value.storage_bucket {
+        validate_string_length("sound_recorder_upload_sessions.storage_bucket", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.storage_prefix {
+        if (value).as_bytes().len() > 2048 { return Err("sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.content_type {
+        validate_string_length("sound_recorder_upload_sessions.content_type", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("sound_recorder_upload_sessions.content_type exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.codec {
+        validate_string_length("sound_recorder_upload_sessions.codec", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_upload_sessions.codec exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.sample_rate {
+        if *(value) < 8000 { return Err("sound_recorder_upload_sessions.sample_rate is below the minimum".to_string()); }
+        if *(value) > 192000 { return Err("sound_recorder_upload_sessions.sample_rate is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.channel_count {
+        if *(value) < 1 { return Err("sound_recorder_upload_sessions.channel_count is below the minimum".to_string()); }
+        if *(value) > 8 { return Err("sound_recorder_upload_sessions.channel_count is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.segment_duration_seconds {
+        if *(value) < 1 { return Err("sound_recorder_upload_sessions.segment_duration_seconds is below the minimum".to_string()); }
+        if *(value) > 600 { return Err("sound_recorder_upload_sessions.segment_duration_seconds is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.max_segment_bytes {
+        if *(value) < 1 { return Err("sound_recorder_upload_sessions.max_segment_bytes is below the minimum".to_string()); }
+        if *(value) > 209715200 { return Err("sound_recorder_upload_sessions.max_segment_bytes is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.client_timezone {
+        validate_string_length("sound_recorder_upload_sessions.client_timezone", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_upload_sessions.client_timezone exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.legal_region {
+        validate_string_length("sound_recorder_upload_sessions.legal_region", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_upload_sessions.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_SEGMENTS_TABLE: &str = "sound_recorder_segments";
+pub const SOUND_RECORDER_SEGMENTS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "session_id", "sequence_number", "status", "storage_provider", "storage_bucket", "storage_key", "content_type", "codec", "captured_started_at", "captured_ended_at", "duration_millis", "byte_count", "sha256_hex", "upload_url_expires_at", "etag", "uploaded_at", "expires_at", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_SEGMENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      session_id::text as session_id,
+      sequence_number,
+      status,
+      storage_provider,
+      storage_bucket,
+      storage_key,
+      content_type,
+      codec,
+      to_char(captured_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as captured_started_at,
+      to_char(captured_ended_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as captured_ended_at,
+      duration_millis,
+      byte_count,
+      sha256_hex,
+      to_char(upload_url_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as upload_url_expires_at,
+      etag,
+      to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as uploaded_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_segments"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderSegmentsStatus {
+    Pending,
+    Uploaded,
+    Failed,
+    Expired,
+    Deleted,
+}
+
+impl SoundRecorderSegmentsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "uploaded", "failed", "expired", "deleted"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Uploaded => "uploaded",
+            Self::Failed => "failed",
+            Self::Expired => "expired",
+            Self::Deleted => "deleted",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderSegmentsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "uploaded" => Ok(Self::Uploaded),
+            "failed" => Ok(Self::Failed),
+            "expired" => Ok(Self::Expired),
+            "deleted" => Ok(Self::Deleted),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderSegmentsStorageProvider {
+    S3,
+}
+
+impl SoundRecorderSegmentsStorageProvider {
+    pub const VALUES: &'static [&'static str] = &["s3"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::S3 => "s3",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderSegmentsStorageProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "s3" => Ok(Self::S3),
+            _ => Err(format!("unsupported storage_provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderSegmentsRow {
+    pub id: String,
+    pub account_id: String,
+    pub device_id: String,
+    pub session_id: String,
+    pub sequence_number: i32,
+    pub status: String,
+    pub storage_provider: String,
+    pub storage_bucket: String,
+    pub storage_key: String,
+    pub content_type: String,
+    pub codec: Option<String>,
+    pub captured_started_at: String,
+    pub captured_ended_at: Option<String>,
+    pub duration_millis: i32,
+    pub byte_count: Option<i32>,
+    pub sha256_hex: Option<String>,
+    pub upload_url_expires_at: Option<String>,
+    pub etag: Option<String>,
+    pub uploaded_at: Option<String>,
+    pub expires_at: String,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderSegmentsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub session_id: Option<String>,
+    pub sequence_number: Option<i32>,
+    pub status: Option<String>,
+    pub storage_provider: Option<String>,
+    pub storage_bucket: Option<String>,
+    pub storage_key: Option<String>,
+    pub content_type: Option<String>,
+    pub codec: Option<String>,
+    pub captured_started_at: Option<String>,
+    pub captured_ended_at: Option<String>,
+    pub duration_millis: Option<i32>,
+    pub byte_count: Option<i32>,
+    pub sha256_hex: Option<String>,
+    pub upload_url_expires_at: Option<String>,
+    pub etag: Option<String>,
+    pub uploaded_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_segments_row(value: &SoundRecorderSegmentsRow) -> Result<(), String> {
+    if *(&value.sequence_number) < 0 { return Err("sound_recorder_segments.sequence_number is below the minimum".to_string()); }
+    if !["pending", "uploaded", "failed", "expired", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_segments.status: {}", &value.status)); }
+    if !["s3"].contains(&(&value.storage_provider).as_str()) { return Err(format!("unsupported sound_recorder_segments.storage_provider: {}", &value.storage_provider)); }
+    validate_string_length("sound_recorder_segments.storage_bucket", &value.storage_bucket, None, Some(200))?;
+    if (&value.storage_bucket).as_bytes().len() > 200 { return Err("sound_recorder_segments.storage_bucket exceeds 200 bytes".to_string()); }
+    if (&value.storage_key).as_bytes().len() > 2048 { return Err("sound_recorder_segments.storage_key exceeds 2048 bytes".to_string()); }
+    validate_string_length("sound_recorder_segments.content_type", &value.content_type, None, Some(120))?;
+    if (&value.content_type).as_bytes().len() > 120 { return Err("sound_recorder_segments.content_type exceeds 120 bytes".to_string()); }
+    if let Some(value) = &value.codec {
+        validate_string_length("sound_recorder_segments.codec", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_segments.codec exceeds 80 bytes".to_string()); }
+    }
+    if *(&value.duration_millis) < 1 { return Err("sound_recorder_segments.duration_millis is below the minimum".to_string()); }
+    if *(&value.duration_millis) > 600000 { return Err("sound_recorder_segments.duration_millis is above the maximum".to_string()); }
+    if let Some(value) = &value.byte_count {
+        if *(value) < 0 { return Err("sound_recorder_segments.byte_count is below the minimum".to_string()); }
+        if *(value) > 209715200 { return Err("sound_recorder_segments.byte_count is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.sha256_hex {
+        validate_string_length("sound_recorder_segments.sha256_hex", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.etag {
+        validate_string_length("sound_recorder_segments.etag", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_segments.etag exceeds 160 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_segments.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_segments_insert(value: &SoundRecorderSegmentsInsert) -> Result<(), String> {
+    if let Some(value) = &value.sequence_number {
+        if *(value) < 0 { return Err("sound_recorder_segments.sequence_number is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "uploaded", "failed", "expired", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_segments.status: {}", value)); }
+    }
+    if let Some(value) = &value.storage_provider {
+        if !["s3"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_segments.storage_provider: {}", value)); }
+    }
+    if let Some(value) = &value.storage_bucket {
+        validate_string_length("sound_recorder_segments.storage_bucket", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("sound_recorder_segments.storage_bucket exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.storage_key {
+        if (value).as_bytes().len() > 2048 { return Err("sound_recorder_segments.storage_key exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.content_type {
+        validate_string_length("sound_recorder_segments.content_type", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("sound_recorder_segments.content_type exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.codec {
+        validate_string_length("sound_recorder_segments.codec", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_segments.codec exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.duration_millis {
+        if *(value) < 1 { return Err("sound_recorder_segments.duration_millis is below the minimum".to_string()); }
+        if *(value) > 600000 { return Err("sound_recorder_segments.duration_millis is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.byte_count {
+        if *(value) < 0 { return Err("sound_recorder_segments.byte_count is below the minimum".to_string()); }
+        if *(value) > 209715200 { return Err("sound_recorder_segments.byte_count is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.sha256_hex {
+        validate_string_length("sound_recorder_segments.sha256_hex", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.etag {
+        validate_string_length("sound_recorder_segments.etag", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_segments.etag exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_segments.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_EVIDENCE_EXPORTS_TABLE: &str = "sound_recorder_evidence_exports";
+pub const SOUND_RECORDER_EVIDENCE_EXPORTS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "created_by_device_id", "status", "requested_from", "requested_to", "segment_count", "manifest", "download_url_expires_at", "requested_at", "ready_at", "expires_at", "meta_data"];
+pub const SOUND_RECORDER_EVIDENCE_EXPORTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      created_by_device_id::text as created_by_device_id,
+      status,
+      to_char(requested_from at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as requested_from,
+      to_char(requested_to at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as requested_to,
+      segment_count,
+      manifest,
+      to_char(download_url_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as download_url_expires_at,
+      to_char(requested_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as requested_at,
+      to_char(ready_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ready_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      meta_data
+    from sound_recorder_evidence_exports"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderEvidenceExportsStatus {
+    Requested,
+    Ready,
+    Expired,
+    Revoked,
+}
+
+impl SoundRecorderEvidenceExportsStatus {
+    pub const VALUES: &'static [&'static str] = &["requested", "ready", "expired", "revoked"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Requested => "requested",
+            Self::Ready => "ready",
+            Self::Expired => "expired",
+            Self::Revoked => "revoked",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderEvidenceExportsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "requested" => Ok(Self::Requested),
+            "ready" => Ok(Self::Ready),
+            "expired" => Ok(Self::Expired),
+            "revoked" => Ok(Self::Revoked),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderEvidenceExportsRow {
+    pub id: String,
+    pub account_id: String,
+    pub device_id: Option<String>,
+    pub created_by_device_id: Option<String>,
+    pub status: String,
+    pub requested_from: String,
+    pub requested_to: String,
+    pub segment_count: i32,
+    pub manifest: Value,
+    pub download_url_expires_at: Option<String>,
+    pub requested_at: String,
+    pub ready_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub meta_data: Value,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderEvidenceExportsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub created_by_device_id: Option<String>,
+    pub status: Option<String>,
+    pub requested_from: Option<String>,
+    pub requested_to: Option<String>,
+    pub segment_count: Option<i32>,
+    pub manifest: Option<Value>,
+    pub download_url_expires_at: Option<String>,
+    pub requested_at: Option<String>,
+    pub ready_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub meta_data: Option<Value>,
+}
+
+pub fn validate_sound_recorder_evidence_exports_row(value: &SoundRecorderEvidenceExportsRow) -> Result<(), String> {
+    if !["requested", "ready", "expired", "revoked"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_evidence_exports.status: {}", &value.status)); }
+    if *(&value.segment_count) < 0 { return Err("sound_recorder_evidence_exports.segment_count is below the minimum".to_string()); }
+    if !(&value.manifest).is_object() { return Err("sound_recorder_evidence_exports.manifest must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_evidence_exports.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_evidence_exports_insert(value: &SoundRecorderEvidenceExportsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["requested", "ready", "expired", "revoked"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_evidence_exports.status: {}", value)); }
+    }
+    if let Some(value) = &value.segment_count {
+        if *(value) < 0 { return Err("sound_recorder_evidence_exports.segment_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.manifest {
+        if !(value).is_object() { return Err("sound_recorder_evidence_exports.manifest must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_evidence_exports.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_AUDIT_EVENTS_TABLE: &str = "sound_recorder_audit_events";
+pub const SOUND_RECORDER_AUDIT_EVENTS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "event_type", "event_hash", "payload", "created_at"];
+pub const SOUND_RECORDER_AUDIT_EVENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      event_type,
+      event_hash,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from sound_recorder_audit_events"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderAuditEventsRow {
+    pub id: String,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub event_type: String,
+    pub event_hash: String,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderAuditEventsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub event_type: Option<String>,
+    pub event_hash: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_audit_events_row(value: &SoundRecorderAuditEventsRow) -> Result<(), String> {
+    validate_string_length("sound_recorder_audit_events.event_type", &value.event_type, None, Some(80))?;
+    validate_string_length("sound_recorder_audit_events.event_hash", &value.event_hash, None, Some(64))?;
+    if !(&value.payload).is_object() { return Err("sound_recorder_audit_events.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_audit_events_insert(value: &SoundRecorderAuditEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.event_type {
+        validate_string_length("sound_recorder_audit_events.event_type", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.event_hash {
+        validate_string_length("sound_recorder_audit_events.event_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("sound_recorder_audit_events.payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
 pub const CONTAINER_POOL_CONFIGS_TABLE: &str = "container_pool_configs";
 pub const CONTAINER_POOL_CONFIGS_COLUMNS: &[&str] = &["id", "slug", "display_name", "image", "command", "env", "request_path", "health_path", "container_port", "min_warm", "max_warm", "max_concurrency_per_container", "request_timeout_ms", "idle_ttl_seconds", "nats_subject", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const CONTAINER_POOL_CONFIGS_SELECT_SQL: &str = r###"select

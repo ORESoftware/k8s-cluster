@@ -460,6 +460,710 @@ class MusicSongVotesRow {
   }
 }
 
+const soundRecorderAccountsTable = "sound_recorder_accounts";
+const soundRecorderAccountsSelectSql = "select\n      id::text as id,\n      status,\n      external_subject,\n      display_name,\n      legal_region,\n      retention_hours,\n      retention_policy_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_accounts";
+
+const soundRecorderAccountsStatusValues = <String>["active", "paused", "locked", "deleted"];
+
+class SoundRecorderAccountsRow {
+  const SoundRecorderAccountsRow({
+    required this.id,
+    required this.status,
+    this.externalSubject,
+    this.displayName,
+    this.legalRegion,
+    required this.retentionHours,
+    required this.retentionPolicyVersion,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String status;
+  final String? externalSubject;
+  final String? displayName;
+  final String? legalRegion;
+  final int retentionHours;
+  final String retentionPolicyVersion;
+  final String createdAt;
+  final String updatedAt;
+
+  factory SoundRecorderAccountsRow.fromJson(Map<String, Object?> json) {
+    return SoundRecorderAccountsRow(
+      id: _readRequiredString(json, "id"),
+      status: _readRequiredString(json, "status"),
+      externalSubject: _readOptionalString(json, "externalSubject"),
+      displayName: _readOptionalString(json, "displayName"),
+      legalRegion: _readOptionalString(json, "legalRegion"),
+      retentionHours: _readRequiredInt(json, "retentionHours"),
+      retentionPolicyVersion: _readRequiredString(json, "retentionPolicyVersion"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "status": status,
+    "externalSubject": externalSubject,
+    "displayName": displayName,
+    "legalRegion": legalRegion,
+    "retentionHours": retentionHours,
+    "retentionPolicyVersion": retentionPolicyVersion,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!soundRecorderAccountsStatusValues.contains(status)) {
+      errors.add("unsupported sound_recorder_accounts.status");
+    }
+    if (externalSubject != null && utf8.encode(externalSubject!).length > 240) {
+      errors.add("sound_recorder_accounts.external_subject exceeds 240 bytes");
+    }
+    if (externalSubject != null && utf8.encode(externalSubject!).length < 1) {
+      errors.add("sound_recorder_accounts.external_subject is below 1 bytes");
+    }
+    if (displayName != null && utf8.encode(displayName!).length > 160) {
+      errors.add("sound_recorder_accounts.display_name exceeds 160 bytes");
+    }
+    if (displayName != null && utf8.encode(displayName!).length < 1) {
+      errors.add("sound_recorder_accounts.display_name is below 1 bytes");
+    }
+    if (legalRegion != null && !RegExp(r'^[A-Za-z0-9._:/-]{1,64}$').hasMatch(legalRegion!)) {
+      errors.add("sound_recorder_accounts.legal_region does not match the required pattern");
+    }
+    if (retentionHours < 1) {
+      errors.add("sound_recorder_accounts.retention_hours is below the minimum");
+    }
+    if (retentionHours > 500) {
+      errors.add("sound_recorder_accounts.retention_hours is above the maximum");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,80}$').hasMatch(retentionPolicyVersion)) {
+      errors.add("sound_recorder_accounts.retention_policy_version does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const soundRecorderDevicesTable = "sound_recorder_devices";
+const soundRecorderDevicesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      platform,\n      status,\n      install_id,\n      device_label,\n      app_version,\n      os_version,\n      token_hash,\n      token_last4,\n      consent_version,\n      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consent_accepted_at,\n      recording_indicator_acknowledged,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_devices";
+
+const soundRecorderDevicesPlatformValues = <String>["ios", "android"];
+const soundRecorderDevicesStatusValues = <String>["active", "revoked", "lost", "replaced", "deleted"];
+
+class SoundRecorderDevicesRow {
+  const SoundRecorderDevicesRow({
+    required this.id,
+    required this.accountId,
+    required this.platform,
+    required this.status,
+    required this.installId,
+    this.deviceLabel,
+    this.appVersion,
+    this.osVersion,
+    required this.tokenHash,
+    required this.tokenLast4,
+    required this.consentVersion,
+    required this.consentAcceptedAt,
+    required this.recordingIndicatorAcknowledged,
+    this.lastSeenAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String accountId;
+  final String platform;
+  final String status;
+  final String installId;
+  final String? deviceLabel;
+  final String? appVersion;
+  final String? osVersion;
+  final String tokenHash;
+  final String tokenLast4;
+  final String consentVersion;
+  final String consentAcceptedAt;
+  final bool recordingIndicatorAcknowledged;
+  final String? lastSeenAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory SoundRecorderDevicesRow.fromJson(Map<String, Object?> json) {
+    return SoundRecorderDevicesRow(
+      id: _readRequiredString(json, "id"),
+      accountId: _readRequiredString(json, "accountId"),
+      platform: _readRequiredString(json, "platform"),
+      status: _readRequiredString(json, "status"),
+      installId: _readRequiredString(json, "installId"),
+      deviceLabel: _readOptionalString(json, "deviceLabel"),
+      appVersion: _readOptionalString(json, "appVersion"),
+      osVersion: _readOptionalString(json, "osVersion"),
+      tokenHash: _readRequiredString(json, "tokenHash"),
+      tokenLast4: _readRequiredString(json, "tokenLast4"),
+      consentVersion: _readRequiredString(json, "consentVersion"),
+      consentAcceptedAt: _readRequiredString(json, "consentAcceptedAt"),
+      recordingIndicatorAcknowledged: _readRequiredBool(json, "recordingIndicatorAcknowledged"),
+      lastSeenAt: _readOptionalString(json, "lastSeenAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "platform": platform,
+    "status": status,
+    "installId": installId,
+    "deviceLabel": deviceLabel,
+    "appVersion": appVersion,
+    "osVersion": osVersion,
+    "tokenHash": tokenHash,
+    "tokenLast4": tokenLast4,
+    "consentVersion": consentVersion,
+    "consentAcceptedAt": consentAcceptedAt,
+    "recordingIndicatorAcknowledged": recordingIndicatorAcknowledged,
+    "lastSeenAt": lastSeenAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!soundRecorderDevicesPlatformValues.contains(platform)) {
+      errors.add("unsupported sound_recorder_devices.platform");
+    }
+    if (!soundRecorderDevicesStatusValues.contains(status)) {
+      errors.add("unsupported sound_recorder_devices.status");
+    }
+    if (utf8.encode(installId).length > 160) {
+      errors.add("sound_recorder_devices.install_id exceeds 160 bytes");
+    }
+    if (utf8.encode(installId).length < 1) {
+      errors.add("sound_recorder_devices.install_id is below 1 bytes");
+    }
+    if (deviceLabel != null && utf8.encode(deviceLabel!).length > 160) {
+      errors.add("sound_recorder_devices.device_label exceeds 160 bytes");
+    }
+    if (deviceLabel != null && utf8.encode(deviceLabel!).length < 1) {
+      errors.add("sound_recorder_devices.device_label is below 1 bytes");
+    }
+    if (appVersion != null && utf8.encode(appVersion!).length > 80) {
+      errors.add("sound_recorder_devices.app_version exceeds 80 bytes");
+    }
+    if (appVersion != null && utf8.encode(appVersion!).length < 1) {
+      errors.add("sound_recorder_devices.app_version is below 1 bytes");
+    }
+    if (osVersion != null && utf8.encode(osVersion!).length > 80) {
+      errors.add("sound_recorder_devices.os_version exceeds 80 bytes");
+    }
+    if (osVersion != null && utf8.encode(osVersion!).length < 1) {
+      errors.add("sound_recorder_devices.os_version is below 1 bytes");
+    }
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(tokenHash)) {
+      errors.add("sound_recorder_devices.token_hash does not match the required pattern");
+    }
+    if (!RegExp(r'^[A-Za-z0-9_-]{4}$').hasMatch(tokenLast4)) {
+      errors.add("sound_recorder_devices.token_last4 does not match the required pattern");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,80}$').hasMatch(consentVersion)) {
+      errors.add("sound_recorder_devices.consent_version does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const soundRecorderUploadSessionsTable = "sound_recorder_upload_sessions";
+const soundRecorderUploadSessionsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      status,\n      storage_provider,\n      storage_bucket,\n      storage_prefix,\n      content_type,\n      codec,\n      sample_rate,\n      channel_count,\n      segment_duration_seconds,\n      max_segment_bytes,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(last_heartbeat_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_heartbeat_at,\n      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closed_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      client_timezone,\n      legal_region,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_upload_sessions";
+
+const soundRecorderUploadSessionsStatusValues = <String>["active", "closed", "revoked", "expired"];
+const soundRecorderUploadSessionsStorageProviderValues = <String>["s3"];
+
+class SoundRecorderUploadSessionsRow {
+  const SoundRecorderUploadSessionsRow({
+    required this.id,
+    required this.accountId,
+    required this.deviceId,
+    required this.status,
+    required this.storageProvider,
+    required this.storageBucket,
+    required this.storagePrefix,
+    required this.contentType,
+    this.codec,
+    this.sampleRate,
+    required this.channelCount,
+    required this.segmentDurationSeconds,
+    required this.maxSegmentBytes,
+    required this.startedAt,
+    this.lastHeartbeatAt,
+    this.closedAt,
+    this.expiresAt,
+    this.clientTimezone,
+    this.legalRegion,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String accountId;
+  final String deviceId;
+  final String status;
+  final String storageProvider;
+  final String storageBucket;
+  final String storagePrefix;
+  final String contentType;
+  final String? codec;
+  final int? sampleRate;
+  final int channelCount;
+  final int segmentDurationSeconds;
+  final int maxSegmentBytes;
+  final String startedAt;
+  final String? lastHeartbeatAt;
+  final String? closedAt;
+  final String? expiresAt;
+  final String? clientTimezone;
+  final String? legalRegion;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory SoundRecorderUploadSessionsRow.fromJson(Map<String, Object?> json) {
+    return SoundRecorderUploadSessionsRow(
+      id: _readRequiredString(json, "id"),
+      accountId: _readRequiredString(json, "accountId"),
+      deviceId: _readRequiredString(json, "deviceId"),
+      status: _readRequiredString(json, "status"),
+      storageProvider: _readRequiredString(json, "storageProvider"),
+      storageBucket: _readRequiredString(json, "storageBucket"),
+      storagePrefix: _readRequiredString(json, "storagePrefix"),
+      contentType: _readRequiredString(json, "contentType"),
+      codec: _readOptionalString(json, "codec"),
+      sampleRate: _readOptionalInt(json, "sampleRate"),
+      channelCount: _readRequiredInt(json, "channelCount"),
+      segmentDurationSeconds: _readRequiredInt(json, "segmentDurationSeconds"),
+      maxSegmentBytes: _readRequiredInt(json, "maxSegmentBytes"),
+      startedAt: _readRequiredString(json, "startedAt"),
+      lastHeartbeatAt: _readOptionalString(json, "lastHeartbeatAt"),
+      closedAt: _readOptionalString(json, "closedAt"),
+      expiresAt: _readOptionalString(json, "expiresAt"),
+      clientTimezone: _readOptionalString(json, "clientTimezone"),
+      legalRegion: _readOptionalString(json, "legalRegion"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceId": deviceId,
+    "status": status,
+    "storageProvider": storageProvider,
+    "storageBucket": storageBucket,
+    "storagePrefix": storagePrefix,
+    "contentType": contentType,
+    "codec": codec,
+    "sampleRate": sampleRate,
+    "channelCount": channelCount,
+    "segmentDurationSeconds": segmentDurationSeconds,
+    "maxSegmentBytes": maxSegmentBytes,
+    "startedAt": startedAt,
+    "lastHeartbeatAt": lastHeartbeatAt,
+    "closedAt": closedAt,
+    "expiresAt": expiresAt,
+    "clientTimezone": clientTimezone,
+    "legalRegion": legalRegion,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!soundRecorderUploadSessionsStatusValues.contains(status)) {
+      errors.add("unsupported sound_recorder_upload_sessions.status");
+    }
+    if (!soundRecorderUploadSessionsStorageProviderValues.contains(storageProvider)) {
+      errors.add("unsupported sound_recorder_upload_sessions.storage_provider");
+    }
+    if (utf8.encode(storageBucket).length > 200) {
+      errors.add("sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes");
+    }
+    if (utf8.encode(storageBucket).length < 1) {
+      errors.add("sound_recorder_upload_sessions.storage_bucket is below 1 bytes");
+    }
+    if (utf8.encode(storagePrefix).length > 2048) {
+      errors.add("sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes");
+    }
+    if (utf8.encode(storagePrefix).length < 1) {
+      errors.add("sound_recorder_upload_sessions.storage_prefix is below 1 bytes");
+    }
+    if (utf8.encode(contentType).length > 120) {
+      errors.add("sound_recorder_upload_sessions.content_type exceeds 120 bytes");
+    }
+    if (utf8.encode(contentType).length < 1) {
+      errors.add("sound_recorder_upload_sessions.content_type is below 1 bytes");
+    }
+    if (codec != null && utf8.encode(codec!).length > 80) {
+      errors.add("sound_recorder_upload_sessions.codec exceeds 80 bytes");
+    }
+    if (codec != null && utf8.encode(codec!).length < 1) {
+      errors.add("sound_recorder_upload_sessions.codec is below 1 bytes");
+    }
+    if (sampleRate != null && sampleRate! < 8000) {
+      errors.add("sound_recorder_upload_sessions.sample_rate is below the minimum");
+    }
+    if (sampleRate != null && sampleRate! > 192000) {
+      errors.add("sound_recorder_upload_sessions.sample_rate is above the maximum");
+    }
+    if (channelCount < 1) {
+      errors.add("sound_recorder_upload_sessions.channel_count is below the minimum");
+    }
+    if (channelCount > 8) {
+      errors.add("sound_recorder_upload_sessions.channel_count is above the maximum");
+    }
+    if (segmentDurationSeconds < 1) {
+      errors.add("sound_recorder_upload_sessions.segment_duration_seconds is below the minimum");
+    }
+    if (segmentDurationSeconds > 600) {
+      errors.add("sound_recorder_upload_sessions.segment_duration_seconds is above the maximum");
+    }
+    if (maxSegmentBytes < 1) {
+      errors.add("sound_recorder_upload_sessions.max_segment_bytes is below the minimum");
+    }
+    if (maxSegmentBytes > 209715200) {
+      errors.add("sound_recorder_upload_sessions.max_segment_bytes is above the maximum");
+    }
+    if (clientTimezone != null && utf8.encode(clientTimezone!).length > 80) {
+      errors.add("sound_recorder_upload_sessions.client_timezone exceeds 80 bytes");
+    }
+    if (clientTimezone != null && utf8.encode(clientTimezone!).length < 1) {
+      errors.add("sound_recorder_upload_sessions.client_timezone is below 1 bytes");
+    }
+    if (legalRegion != null && !RegExp(r'^[A-Za-z0-9._:/-]{1,64}$').hasMatch(legalRegion!)) {
+      errors.add("sound_recorder_upload_sessions.legal_region does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const soundRecorderSegmentsTable = "sound_recorder_segments";
+const soundRecorderSegmentsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      session_id::text as session_id,\n      sequence_number,\n      status,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      content_type,\n      codec,\n      to_char(captured_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_started_at,\n      to_char(captured_ended_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_ended_at,\n      duration_millis,\n      byte_count,\n      sha256_hex,\n      to_char(upload_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as upload_url_expires_at,\n      etag,\n      to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as uploaded_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_segments";
+
+const soundRecorderSegmentsStatusValues = <String>["pending", "uploaded", "failed", "expired", "deleted"];
+const soundRecorderSegmentsStorageProviderValues = <String>["s3"];
+
+class SoundRecorderSegmentsRow {
+  const SoundRecorderSegmentsRow({
+    required this.id,
+    required this.accountId,
+    required this.deviceId,
+    required this.sessionId,
+    required this.sequenceNumber,
+    required this.status,
+    required this.storageProvider,
+    required this.storageBucket,
+    required this.storageKey,
+    required this.contentType,
+    this.codec,
+    required this.capturedStartedAt,
+    this.capturedEndedAt,
+    required this.durationMillis,
+    this.byteCount,
+    this.sha256Hex,
+    this.uploadUrlExpiresAt,
+    this.etag,
+    this.uploadedAt,
+    required this.expiresAt,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String accountId;
+  final String deviceId;
+  final String sessionId;
+  final int sequenceNumber;
+  final String status;
+  final String storageProvider;
+  final String storageBucket;
+  final String storageKey;
+  final String contentType;
+  final String? codec;
+  final String capturedStartedAt;
+  final String? capturedEndedAt;
+  final int durationMillis;
+  final int? byteCount;
+  final String? sha256Hex;
+  final String? uploadUrlExpiresAt;
+  final String? etag;
+  final String? uploadedAt;
+  final String expiresAt;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory SoundRecorderSegmentsRow.fromJson(Map<String, Object?> json) {
+    return SoundRecorderSegmentsRow(
+      id: _readRequiredString(json, "id"),
+      accountId: _readRequiredString(json, "accountId"),
+      deviceId: _readRequiredString(json, "deviceId"),
+      sessionId: _readRequiredString(json, "sessionId"),
+      sequenceNumber: _readRequiredInt(json, "sequenceNumber"),
+      status: _readRequiredString(json, "status"),
+      storageProvider: _readRequiredString(json, "storageProvider"),
+      storageBucket: _readRequiredString(json, "storageBucket"),
+      storageKey: _readRequiredString(json, "storageKey"),
+      contentType: _readRequiredString(json, "contentType"),
+      codec: _readOptionalString(json, "codec"),
+      capturedStartedAt: _readRequiredString(json, "capturedStartedAt"),
+      capturedEndedAt: _readOptionalString(json, "capturedEndedAt"),
+      durationMillis: _readRequiredInt(json, "durationMillis"),
+      byteCount: _readOptionalInt(json, "byteCount"),
+      sha256Hex: _readOptionalString(json, "sha256Hex"),
+      uploadUrlExpiresAt: _readOptionalString(json, "uploadUrlExpiresAt"),
+      etag: _readOptionalString(json, "etag"),
+      uploadedAt: _readOptionalString(json, "uploadedAt"),
+      expiresAt: _readRequiredString(json, "expiresAt"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceId": deviceId,
+    "sessionId": sessionId,
+    "sequenceNumber": sequenceNumber,
+    "status": status,
+    "storageProvider": storageProvider,
+    "storageBucket": storageBucket,
+    "storageKey": storageKey,
+    "contentType": contentType,
+    "codec": codec,
+    "capturedStartedAt": capturedStartedAt,
+    "capturedEndedAt": capturedEndedAt,
+    "durationMillis": durationMillis,
+    "byteCount": byteCount,
+    "sha256Hex": sha256Hex,
+    "uploadUrlExpiresAt": uploadUrlExpiresAt,
+    "etag": etag,
+    "uploadedAt": uploadedAt,
+    "expiresAt": expiresAt,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (sequenceNumber < 0) {
+      errors.add("sound_recorder_segments.sequence_number is below the minimum");
+    }
+    if (!soundRecorderSegmentsStatusValues.contains(status)) {
+      errors.add("unsupported sound_recorder_segments.status");
+    }
+    if (!soundRecorderSegmentsStorageProviderValues.contains(storageProvider)) {
+      errors.add("unsupported sound_recorder_segments.storage_provider");
+    }
+    if (utf8.encode(storageBucket).length > 200) {
+      errors.add("sound_recorder_segments.storage_bucket exceeds 200 bytes");
+    }
+    if (utf8.encode(storageBucket).length < 1) {
+      errors.add("sound_recorder_segments.storage_bucket is below 1 bytes");
+    }
+    if (utf8.encode(storageKey).length > 2048) {
+      errors.add("sound_recorder_segments.storage_key exceeds 2048 bytes");
+    }
+    if (utf8.encode(storageKey).length < 1) {
+      errors.add("sound_recorder_segments.storage_key is below 1 bytes");
+    }
+    if (utf8.encode(contentType).length > 120) {
+      errors.add("sound_recorder_segments.content_type exceeds 120 bytes");
+    }
+    if (utf8.encode(contentType).length < 1) {
+      errors.add("sound_recorder_segments.content_type is below 1 bytes");
+    }
+    if (codec != null && utf8.encode(codec!).length > 80) {
+      errors.add("sound_recorder_segments.codec exceeds 80 bytes");
+    }
+    if (codec != null && utf8.encode(codec!).length < 1) {
+      errors.add("sound_recorder_segments.codec is below 1 bytes");
+    }
+    if (durationMillis < 1) {
+      errors.add("sound_recorder_segments.duration_millis is below the minimum");
+    }
+    if (durationMillis > 600000) {
+      errors.add("sound_recorder_segments.duration_millis is above the maximum");
+    }
+    if (byteCount != null && byteCount! < 0) {
+      errors.add("sound_recorder_segments.byte_count is below the minimum");
+    }
+    if (byteCount != null && byteCount! > 209715200) {
+      errors.add("sound_recorder_segments.byte_count is above the maximum");
+    }
+    if (sha256Hex != null && !RegExp(r'^[a-f0-9]{64}$').hasMatch(sha256Hex!)) {
+      errors.add("sound_recorder_segments.sha256_hex does not match the required pattern");
+    }
+    if (etag != null && utf8.encode(etag!).length > 160) {
+      errors.add("sound_recorder_segments.etag exceeds 160 bytes");
+    }
+    if (etag != null && utf8.encode(etag!).length < 1) {
+      errors.add("sound_recorder_segments.etag is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const soundRecorderEvidenceExportsTable = "sound_recorder_evidence_exports";
+const soundRecorderEvidenceExportsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      created_by_device_id::text as created_by_device_id,\n      status,\n      to_char(requested_from at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as requested_from,\n      to_char(requested_to at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as requested_to,\n      segment_count,\n      manifest::text as manifest_json,\n      to_char(download_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as download_url_expires_at,\n      to_char(requested_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as requested_at,\n      to_char(ready_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as ready_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      meta_data::text as meta_data_json\n    from sound_recorder_evidence_exports";
+
+const soundRecorderEvidenceExportsStatusValues = <String>["requested", "ready", "expired", "revoked"];
+
+class SoundRecorderEvidenceExportsRow {
+  const SoundRecorderEvidenceExportsRow({
+    required this.id,
+    required this.accountId,
+    this.deviceId,
+    this.createdByDeviceId,
+    required this.status,
+    required this.requestedFrom,
+    required this.requestedTo,
+    required this.segmentCount,
+    required this.manifest,
+    this.downloadUrlExpiresAt,
+    required this.requestedAt,
+    this.readyAt,
+    this.expiresAt,
+    required this.metaData,
+  });
+
+  final String id;
+  final String accountId;
+  final String? deviceId;
+  final String? createdByDeviceId;
+  final String status;
+  final String requestedFrom;
+  final String requestedTo;
+  final int segmentCount;
+  final Map<String, Object?> manifest;
+  final String? downloadUrlExpiresAt;
+  final String requestedAt;
+  final String? readyAt;
+  final String? expiresAt;
+  final Map<String, Object?> metaData;
+
+  factory SoundRecorderEvidenceExportsRow.fromJson(Map<String, Object?> json) {
+    return SoundRecorderEvidenceExportsRow(
+      id: _readRequiredString(json, "id"),
+      accountId: _readRequiredString(json, "accountId"),
+      deviceId: _readOptionalString(json, "deviceId"),
+      createdByDeviceId: _readOptionalString(json, "createdByDeviceId"),
+      status: _readRequiredString(json, "status"),
+      requestedFrom: _readRequiredString(json, "requestedFrom"),
+      requestedTo: _readRequiredString(json, "requestedTo"),
+      segmentCount: _readRequiredInt(json, "segmentCount"),
+      manifest: _readRequiredObject(json, "manifest"),
+      downloadUrlExpiresAt: _readOptionalString(json, "downloadUrlExpiresAt"),
+      requestedAt: _readRequiredString(json, "requestedAt"),
+      readyAt: _readOptionalString(json, "readyAt"),
+      expiresAt: _readOptionalString(json, "expiresAt"),
+      metaData: _readRequiredObject(json, "metaData"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceId": deviceId,
+    "createdByDeviceId": createdByDeviceId,
+    "status": status,
+    "requestedFrom": requestedFrom,
+    "requestedTo": requestedTo,
+    "segmentCount": segmentCount,
+    "manifest": manifest,
+    "downloadUrlExpiresAt": downloadUrlExpiresAt,
+    "requestedAt": requestedAt,
+    "readyAt": readyAt,
+    "expiresAt": expiresAt,
+    "metaData": metaData,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!soundRecorderEvidenceExportsStatusValues.contains(status)) {
+      errors.add("unsupported sound_recorder_evidence_exports.status");
+    }
+    if (segmentCount < 0) {
+      errors.add("sound_recorder_evidence_exports.segment_count is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const soundRecorderAuditEventsTable = "sound_recorder_audit_events";
+const soundRecorderAuditEventsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      event_type,\n      event_hash,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from sound_recorder_audit_events";
+
+class SoundRecorderAuditEventsRow {
+  const SoundRecorderAuditEventsRow({
+    required this.id,
+    this.accountId,
+    this.deviceId,
+    required this.eventType,
+    required this.eventHash,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String? accountId;
+  final String? deviceId;
+  final String eventType;
+  final String eventHash;
+  final Map<String, Object?> payload;
+  final String createdAt;
+
+  factory SoundRecorderAuditEventsRow.fromJson(Map<String, Object?> json) {
+    return SoundRecorderAuditEventsRow(
+      id: _readRequiredString(json, "id"),
+      accountId: _readOptionalString(json, "accountId"),
+      deviceId: _readOptionalString(json, "deviceId"),
+      eventType: _readRequiredString(json, "eventType"),
+      eventHash: _readRequiredString(json, "eventHash"),
+      payload: _readRequiredObject(json, "payload"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceId": deviceId,
+    "eventType": eventType,
+    "eventHash": eventHash,
+    "payload": payload,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,80}$').hasMatch(eventType)) {
+      errors.add("sound_recorder_audit_events.event_type does not match the required pattern");
+    }
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(eventHash)) {
+      errors.add("sound_recorder_audit_events.event_hash does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
 const containerPoolConfigsTable = "container_pool_configs";
 const containerPoolConfigsSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      image,\n      command::text as command_json,\n      env::text as env_json,\n      request_path,\n      health_path,\n      container_port,\n      min_warm,\n      max_warm,\n      max_concurrency_per_container,\n      request_timeout_ms,\n      idle_ttl_seconds,\n      nats_subject,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_configs";
 

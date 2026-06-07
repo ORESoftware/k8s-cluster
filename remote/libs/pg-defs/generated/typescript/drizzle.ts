@@ -325,6 +325,491 @@ export type MusicSongVotesRow = z.infer<typeof musicSongVotesRowSchema>;
 export type MusicSongVotesInsert = z.infer<typeof musicSongVotesInsertSchema>;
 export type MusicSongVotesUpdate = z.infer<typeof musicSongVotesUpdateSchema>;
 
+export const soundRecorderAccountsStatusValues = ["active","paused","locked","deleted"] as const;
+export const soundRecorderAccountsStatusSchema = z.enum(soundRecorderAccountsStatusValues);
+export type SoundRecorderAccountsStatus = z.infer<typeof soundRecorderAccountsStatusSchema>;
+
+export const soundRecorderAccounts = pgTable(
+  "sound_recorder_accounts",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    externalSubject: varchar("external_subject", { length: 240 }),
+    displayName: varchar("display_name", { length: 160 }),
+    legalRegion: varchar("legal_region", { length: 64 }),
+    retentionHours: integer("retention_hours").default(sql`500`).notNull(),
+    retentionPolicyVersion: varchar("retention_policy_version", { length: 80 }).default(sql`'sound-recorder-retention-v1'`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    soundRecorderAccountsStatusChk: check("sound_recorder_accounts_status_chk", sql.raw("status in ('active', 'paused', 'locked', 'deleted')")),
+    soundRecorderAccountsExternalSubjectSizeChk: check("sound_recorder_accounts_external_subject_size_chk", sql.raw("external_subject is null or octet_length(external_subject) between 1 and 240")),
+    soundRecorderAccountsDisplayNameSizeChk: check("sound_recorder_accounts_display_name_size_chk", sql.raw("display_name is null or octet_length(display_name) between 1 and 160")),
+    soundRecorderAccountsLegalRegionFormatChk: check("sound_recorder_accounts_legal_region_format_chk", sql.raw("legal_region is null or legal_region ~ '^[A-Za-z0-9._:/-]{1,64}$'")),
+    soundRecorderAccountsRetentionHoursChk: check("sound_recorder_accounts_retention_hours_chk", sql.raw("retention_hours between 1 and 500")),
+    soundRecorderAccountsRetentionPolicyVersionChk: check("sound_recorder_accounts_retention_policy_version_chk", sql.raw("retention_policy_version ~ '^[A-Za-z0-9._:/-]{1,80}$'")),
+    soundRecorderAccountsExternalSubjectUq: uniqueIndex("sound_recorder_accounts_external_subject_uq").on(table.externalSubject).where(sql.raw("external_subject is not null")),
+    soundRecorderAccountsStatusUpdatedAtIdx: index("sound_recorder_accounts_status_updated_at_idx").on(table.status, table.updatedAt.desc()),
+  }),
+);
+
+export const soundRecorderAccountsRowSchema = z.object({
+  id: z.string().uuid(),
+  status: soundRecorderAccountsStatusSchema,
+  externalSubject: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable(),
+  displayName: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable(),
+  legalRegion: z.string().max(64).regex(new RegExp("^[A-Za-z0-9._:/-]{1,64}$")).nullable(),
+  retentionHours: z.number().int().min(1).max(500),
+  retentionPolicyVersion: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const soundRecorderAccountsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  status: soundRecorderAccountsStatusSchema.optional().default("active"),
+  externalSubject: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable().optional(),
+  displayName: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable().optional(),
+  legalRegion: z.string().max(64).regex(new RegExp("^[A-Za-z0-9._:/-]{1,64}$")).nullable().optional(),
+  retentionHours: z.number().int().min(1).max(500).optional().default(500),
+  retentionPolicyVersion: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")).optional().default("sound-recorder-retention-v1"),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const soundRecorderAccountsUpdateSchema = soundRecorderAccountsInsertSchema.partial();
+export type SoundRecorderAccountsRow = z.infer<typeof soundRecorderAccountsRowSchema>;
+export type SoundRecorderAccountsInsert = z.infer<typeof soundRecorderAccountsInsertSchema>;
+export type SoundRecorderAccountsUpdate = z.infer<typeof soundRecorderAccountsUpdateSchema>;
+
+export const soundRecorderDevicesPlatformValues = ["ios","android"] as const;
+export const soundRecorderDevicesPlatformSchema = z.enum(soundRecorderDevicesPlatformValues);
+export type SoundRecorderDevicesPlatform = z.infer<typeof soundRecorderDevicesPlatformSchema>;
+
+export const soundRecorderDevicesStatusValues = ["active","revoked","lost","replaced","deleted"] as const;
+export const soundRecorderDevicesStatusSchema = z.enum(soundRecorderDevicesStatusValues);
+export type SoundRecorderDevicesStatus = z.infer<typeof soundRecorderDevicesStatusSchema>;
+
+export const soundRecorderDevices = pgTable(
+  "sound_recorder_devices",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    accountId: uuid("account_id").notNull(),
+    platform: varchar("platform", { length: 24 }).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    installId: varchar("install_id", { length: 160 }).notNull(),
+    deviceLabel: varchar("device_label", { length: 160 }),
+    appVersion: varchar("app_version", { length: 80 }),
+    osVersion: varchar("os_version", { length: 80 }),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+    tokenLast4: varchar("token_last4", { length: 4 }).notNull(),
+    consentVersion: varchar("consent_version", { length: 80 }).notNull(),
+    consentAcceptedAt: timestamp("consent_accepted_at", { withTimezone: true, mode: "string" }).notNull(),
+    recordingIndicatorAcknowledged: boolean("recording_indicator_acknowledged").default(sql`false`).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    soundRecorderDevicesPlatformChk: check("sound_recorder_devices_platform_chk", sql.raw("platform in ('ios', 'android')")),
+    soundRecorderDevicesStatusChk: check("sound_recorder_devices_status_chk", sql.raw("status in ('active', 'revoked', 'lost', 'replaced', 'deleted')")),
+    soundRecorderDevicesInstallIdSizeChk: check("sound_recorder_devices_install_id_size_chk", sql.raw("octet_length(install_id) between 1 and 160")),
+    soundRecorderDevicesDeviceLabelSizeChk: check("sound_recorder_devices_device_label_size_chk", sql.raw("device_label is null or octet_length(device_label) between 1 and 160")),
+    soundRecorderDevicesAppVersionSizeChk: check("sound_recorder_devices_app_version_size_chk", sql.raw("app_version is null or octet_length(app_version) between 1 and 80")),
+    soundRecorderDevicesOsVersionSizeChk: check("sound_recorder_devices_os_version_size_chk", sql.raw("os_version is null or octet_length(os_version) between 1 and 80")),
+    soundRecorderDevicesTokenHashChk: check("sound_recorder_devices_token_hash_chk", sql.raw("token_hash ~ '^[a-f0-9]{64}$'")),
+    soundRecorderDevicesTokenLast4Chk: check("sound_recorder_devices_token_last4_chk", sql.raw("token_last4 ~ '^[A-Za-z0-9_-]{4}$'")),
+    soundRecorderDevicesConsentVersionChk: check("sound_recorder_devices_consent_version_chk", sql.raw("consent_version ~ '^[A-Za-z0-9._:/-]{1,80}$'")),
+    soundRecorderDevicesTokenHashUq: uniqueIndex("sound_recorder_devices_token_hash_uq").on(table.tokenHash),
+    soundRecorderDevicesAccountInstallUq: uniqueIndex("sound_recorder_devices_account_install_uq").on(table.accountId, table.installId),
+    soundRecorderDevicesAccountStatusIdx: index("sound_recorder_devices_account_status_idx").on(table.accountId, table.status, table.updatedAt.desc()),
+  }),
+);
+
+export const soundRecorderDevicesRowSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string().uuid(),
+  platform: soundRecorderDevicesPlatformSchema,
+  status: soundRecorderDevicesStatusSchema,
+  installId: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes"),
+  deviceLabel: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable(),
+  appVersion: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable(),
+  osVersion: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable(),
+  tokenHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  tokenLast4: z.string().max(4).regex(new RegExp("^[A-Za-z0-9_-]{4}$")),
+  consentVersion: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")),
+  consentAcceptedAt: z.string().datetime(),
+  recordingIndicatorAcknowledged: z.boolean(),
+  lastSeenAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const soundRecorderDevicesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  accountId: z.string().uuid(),
+  platform: soundRecorderDevicesPlatformSchema,
+  status: soundRecorderDevicesStatusSchema.optional().default("active"),
+  installId: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes"),
+  deviceLabel: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable().optional(),
+  appVersion: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable().optional(),
+  osVersion: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable().optional(),
+  tokenHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  tokenLast4: z.string().max(4).regex(new RegExp("^[A-Za-z0-9_-]{4}$")),
+  consentVersion: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")),
+  consentAcceptedAt: z.string().datetime(),
+  recordingIndicatorAcknowledged: z.boolean().optional().default(false),
+  lastSeenAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const soundRecorderDevicesUpdateSchema = soundRecorderDevicesInsertSchema.partial();
+export type SoundRecorderDevicesRow = z.infer<typeof soundRecorderDevicesRowSchema>;
+export type SoundRecorderDevicesInsert = z.infer<typeof soundRecorderDevicesInsertSchema>;
+export type SoundRecorderDevicesUpdate = z.infer<typeof soundRecorderDevicesUpdateSchema>;
+
+export const soundRecorderUploadSessionsStatusValues = ["active","closed","revoked","expired"] as const;
+export const soundRecorderUploadSessionsStatusSchema = z.enum(soundRecorderUploadSessionsStatusValues);
+export type SoundRecorderUploadSessionsStatus = z.infer<typeof soundRecorderUploadSessionsStatusSchema>;
+
+export const soundRecorderUploadSessionsStorageProviderValues = ["s3"] as const;
+export const soundRecorderUploadSessionsStorageProviderSchema = z.enum(soundRecorderUploadSessionsStorageProviderValues);
+export type SoundRecorderUploadSessionsStorageProvider = z.infer<typeof soundRecorderUploadSessionsStorageProviderSchema>;
+
+export const soundRecorderUploadSessions = pgTable(
+  "sound_recorder_upload_sessions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    accountId: uuid("account_id").notNull(),
+    deviceId: uuid("device_id").notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    storageProvider: varchar("storage_provider", { length: 32 }).default(sql`'s3'`).notNull(),
+    storageBucket: varchar("storage_bucket", { length: 200 }).notNull(),
+    storagePrefix: text("storage_prefix").notNull(),
+    contentType: varchar("content_type", { length: 120 }).default(sql`'audio/mp4'`).notNull(),
+    codec: varchar("codec", { length: 80 }),
+    sampleRate: integer("sample_rate"),
+    channelCount: integer("channel_count").default(sql`1`).notNull(),
+    segmentDurationSeconds: integer("segment_duration_seconds").default(sql`60`).notNull(),
+    maxSegmentBytes: integer("max_segment_bytes").default(sql`10485760`).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true, mode: "string" }),
+    closedAt: timestamp("closed_at", { withTimezone: true, mode: "string" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }),
+    clientTimezone: varchar("client_timezone", { length: 80 }),
+    legalRegion: varchar("legal_region", { length: 64 }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    soundRecorderUploadSessionsStatusChk: check("sound_recorder_upload_sessions_status_chk", sql.raw("status in ('active', 'closed', 'revoked', 'expired')")),
+    soundRecorderUploadSessionsStorageProviderChk: check("sound_recorder_upload_sessions_storage_provider_chk", sql.raw("storage_provider in ('s3')")),
+    soundRecorderUploadSessionsStorageBucketSizeChk: check("sound_recorder_upload_sessions_storage_bucket_size_chk", sql.raw("octet_length(storage_bucket) between 1 and 200")),
+    soundRecorderUploadSessionsStoragePrefixSizeChk: check("sound_recorder_upload_sessions_storage_prefix_size_chk", sql.raw("octet_length(storage_prefix) between 1 and 2048")),
+    soundRecorderUploadSessionsContentTypeSizeChk: check("sound_recorder_upload_sessions_content_type_size_chk", sql.raw("octet_length(content_type) between 1 and 120")),
+    soundRecorderUploadSessionsCodecSizeChk: check("sound_recorder_upload_sessions_codec_size_chk", sql.raw("codec is null or octet_length(codec) between 1 and 80")),
+    soundRecorderUploadSessionsSampleRateChk: check("sound_recorder_upload_sessions_sample_rate_chk", sql.raw("sample_rate is null or sample_rate between 8000 and 192000")),
+    soundRecorderUploadSessionsChannelCountChk: check("sound_recorder_upload_sessions_channel_count_chk", sql.raw("channel_count between 1 and 8")),
+    soundRecorderUploadSessionsSegmentDurationChk: check("sound_recorder_upload_sessions_segment_duration_chk", sql.raw("segment_duration_seconds between 1 and 600")),
+    soundRecorderUploadSessionsMaxSegmentBytesChk: check("sound_recorder_upload_sessions_max_segment_bytes_chk", sql.raw("max_segment_bytes between 1 and 209715200")),
+    soundRecorderUploadSessionsClientTimezoneSizeChk: check("sound_recorder_upload_sessions_client_timezone_size_chk", sql.raw("client_timezone is null or octet_length(client_timezone) between 1 and 80")),
+    soundRecorderUploadSessionsLegalRegionFormatChk: check("sound_recorder_upload_sessions_legal_region_format_chk", sql.raw("legal_region is null or legal_region ~ '^[A-Za-z0-9._:/-]{1,64}$'")),
+    soundRecorderUploadSessionsMetaObjectChk: check("sound_recorder_upload_sessions_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    soundRecorderUploadSessionsStoragePrefixUq: uniqueIndex("sound_recorder_upload_sessions_storage_prefix_uq").on(table.storagePrefix),
+    soundRecorderUploadSessionsAccountStartedIdx: index("sound_recorder_upload_sessions_account_started_idx").on(table.accountId, table.startedAt.desc()),
+    soundRecorderUploadSessionsDeviceStatusIdx: index("sound_recorder_upload_sessions_device_status_idx").on(table.deviceId, table.status, table.startedAt.desc()),
+  }),
+);
+
+export const soundRecorderUploadSessionsRowSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string().uuid(),
+  deviceId: z.string().uuid(),
+  status: soundRecorderUploadSessionsStatusSchema,
+  storageProvider: soundRecorderUploadSessionsStorageProviderSchema,
+  storageBucket: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  storagePrefix: z.string().refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes"),
+  contentType: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes"),
+  codec: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable(),
+  sampleRate: z.number().int().min(8000).max(192000).nullable(),
+  channelCount: z.number().int().min(1).max(8),
+  segmentDurationSeconds: z.number().int().min(1).max(600),
+  maxSegmentBytes: z.number().int().min(1).max(209715200),
+  startedAt: z.string().datetime(),
+  lastHeartbeatAt: z.string().datetime().nullable(),
+  closedAt: z.string().datetime().nullable(),
+  expiresAt: z.string().datetime().nullable(),
+  clientTimezone: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable(),
+  legalRegion: z.string().max(64).regex(new RegExp("^[A-Za-z0-9._:/-]{1,64}$")).nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const soundRecorderUploadSessionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  accountId: z.string().uuid(),
+  deviceId: z.string().uuid(),
+  status: soundRecorderUploadSessionsStatusSchema.optional().default("active"),
+  storageProvider: soundRecorderUploadSessionsStorageProviderSchema.optional().default("s3"),
+  storageBucket: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  storagePrefix: z.string().refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes"),
+  contentType: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").optional().default("audio/mp4"),
+  codec: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable().optional(),
+  sampleRate: z.number().int().min(8000).max(192000).nullable().optional(),
+  channelCount: z.number().int().min(1).max(8).optional().default(1),
+  segmentDurationSeconds: z.number().int().min(1).max(600).optional().default(60),
+  maxSegmentBytes: z.number().int().min(1).max(209715200).optional().default(10485760),
+  startedAt: z.string().datetime().optional(),
+  lastHeartbeatAt: z.string().datetime().nullable().optional(),
+  closedAt: z.string().datetime().nullable().optional(),
+  expiresAt: z.string().datetime().nullable().optional(),
+  clientTimezone: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable().optional(),
+  legalRegion: z.string().max(64).regex(new RegExp("^[A-Za-z0-9._:/-]{1,64}$")).nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const soundRecorderUploadSessionsUpdateSchema = soundRecorderUploadSessionsInsertSchema.partial();
+export type SoundRecorderUploadSessionsRow = z.infer<typeof soundRecorderUploadSessionsRowSchema>;
+export type SoundRecorderUploadSessionsInsert = z.infer<typeof soundRecorderUploadSessionsInsertSchema>;
+export type SoundRecorderUploadSessionsUpdate = z.infer<typeof soundRecorderUploadSessionsUpdateSchema>;
+
+export const soundRecorderSegmentsStatusValues = ["pending","uploaded","failed","expired","deleted"] as const;
+export const soundRecorderSegmentsStatusSchema = z.enum(soundRecorderSegmentsStatusValues);
+export type SoundRecorderSegmentsStatus = z.infer<typeof soundRecorderSegmentsStatusSchema>;
+
+export const soundRecorderSegmentsStorageProviderValues = ["s3"] as const;
+export const soundRecorderSegmentsStorageProviderSchema = z.enum(soundRecorderSegmentsStorageProviderValues);
+export type SoundRecorderSegmentsStorageProvider = z.infer<typeof soundRecorderSegmentsStorageProviderSchema>;
+
+export const soundRecorderSegments = pgTable(
+  "sound_recorder_segments",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    accountId: uuid("account_id").notNull(),
+    deviceId: uuid("device_id").notNull(),
+    sessionId: uuid("session_id").notNull(),
+    sequenceNumber: integer("sequence_number").notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'pending'`).notNull(),
+    storageProvider: varchar("storage_provider", { length: 32 }).default(sql`'s3'`).notNull(),
+    storageBucket: varchar("storage_bucket", { length: 200 }).notNull(),
+    storageKey: text("storage_key").notNull(),
+    contentType: varchar("content_type", { length: 120 }).default(sql`'audio/mp4'`).notNull(),
+    codec: varchar("codec", { length: 80 }),
+    capturedStartedAt: timestamp("captured_started_at", { withTimezone: true, mode: "string" }).notNull(),
+    capturedEndedAt: timestamp("captured_ended_at", { withTimezone: true, mode: "string" }),
+    durationMillis: integer("duration_millis").notNull(),
+    byteCount: integer("byte_count"),
+    sha256Hex: varchar("sha256_hex", { length: 64 }),
+    uploadUrlExpiresAt: timestamp("upload_url_expires_at", { withTimezone: true, mode: "string" }),
+    etag: varchar("etag", { length: 160 }),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true, mode: "string" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    soundRecorderSegmentsSequenceChk: check("sound_recorder_segments_sequence_chk", sql.raw("sequence_number >= 0")),
+    soundRecorderSegmentsStatusChk: check("sound_recorder_segments_status_chk", sql.raw("status in ('pending', 'uploaded', 'failed', 'expired', 'deleted')")),
+    soundRecorderSegmentsStorageProviderChk: check("sound_recorder_segments_storage_provider_chk", sql.raw("storage_provider in ('s3')")),
+    soundRecorderSegmentsStorageBucketSizeChk: check("sound_recorder_segments_storage_bucket_size_chk", sql.raw("octet_length(storage_bucket) between 1 and 200")),
+    soundRecorderSegmentsStorageKeySizeChk: check("sound_recorder_segments_storage_key_size_chk", sql.raw("octet_length(storage_key) between 1 and 2048")),
+    soundRecorderSegmentsContentTypeSizeChk: check("sound_recorder_segments_content_type_size_chk", sql.raw("octet_length(content_type) between 1 and 120")),
+    soundRecorderSegmentsCodecSizeChk: check("sound_recorder_segments_codec_size_chk", sql.raw("codec is null or octet_length(codec) between 1 and 80")),
+    soundRecorderSegmentsDurationChk: check("sound_recorder_segments_duration_chk", sql.raw("duration_millis between 1 and 600000")),
+    soundRecorderSegmentsByteCountChk: check("sound_recorder_segments_byte_count_chk", sql.raw("byte_count is null or byte_count between 0 and 209715200")),
+    soundRecorderSegmentsSha256Chk: check("sound_recorder_segments_sha256_chk", sql.raw("sha256_hex is null or sha256_hex ~ '^[a-f0-9]{64}$'")),
+    soundRecorderSegmentsEtagSizeChk: check("sound_recorder_segments_etag_size_chk", sql.raw("etag is null or octet_length(etag) between 1 and 160")),
+    soundRecorderSegmentsCaptureWindowChk: check("sound_recorder_segments_capture_window_chk", sql.raw("captured_ended_at is null or captured_ended_at >= captured_started_at")),
+    soundRecorderSegmentsMetaObjectChk: check("sound_recorder_segments_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    soundRecorderSegmentsSessionSequenceUq: uniqueIndex("sound_recorder_segments_session_sequence_uq").on(table.sessionId, table.sequenceNumber),
+    soundRecorderSegmentsStorageKeyUq: uniqueIndex("sound_recorder_segments_storage_key_uq").on(table.storageKey),
+    soundRecorderSegmentsAccountCaptureIdx: index("sound_recorder_segments_account_capture_idx").on(table.accountId, table.capturedStartedAt.desc()).where(sql.raw("status = 'uploaded'")),
+    soundRecorderSegmentsExpiryIdx: index("sound_recorder_segments_expiry_idx").on(table.expiresAt).where(sql.raw("status in ('pending', 'uploaded')")),
+  }),
+);
+
+export const soundRecorderSegmentsRowSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string().uuid(),
+  deviceId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  sequenceNumber: z.number().int().min(0),
+  status: soundRecorderSegmentsStatusSchema,
+  storageProvider: soundRecorderSegmentsStorageProviderSchema,
+  storageBucket: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  storageKey: z.string().refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes"),
+  contentType: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes"),
+  codec: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable(),
+  capturedStartedAt: z.string().datetime(),
+  capturedEndedAt: z.string().datetime().nullable(),
+  durationMillis: z.number().int().min(1).max(600000),
+  byteCount: z.number().int().min(0).max(209715200).nullable(),
+  sha256Hex: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")).nullable(),
+  uploadUrlExpiresAt: z.string().datetime().nullable(),
+  etag: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable(),
+  uploadedAt: z.string().datetime().nullable(),
+  expiresAt: z.string().datetime(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const soundRecorderSegmentsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  accountId: z.string().uuid(),
+  deviceId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  sequenceNumber: z.number().int().min(0),
+  status: soundRecorderSegmentsStatusSchema.optional().default("pending"),
+  storageProvider: soundRecorderSegmentsStorageProviderSchema.optional().default("s3"),
+  storageBucket: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  storageKey: z.string().refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes"),
+  contentType: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").optional().default("audio/mp4"),
+  codec: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable().optional(),
+  capturedStartedAt: z.string().datetime(),
+  capturedEndedAt: z.string().datetime().nullable().optional(),
+  durationMillis: z.number().int().min(1).max(600000),
+  byteCount: z.number().int().min(0).max(209715200).nullable().optional(),
+  sha256Hex: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")).nullable().optional(),
+  uploadUrlExpiresAt: z.string().datetime().nullable().optional(),
+  etag: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable().optional(),
+  uploadedAt: z.string().datetime().nullable().optional(),
+  expiresAt: z.string().datetime(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const soundRecorderSegmentsUpdateSchema = soundRecorderSegmentsInsertSchema.partial();
+export type SoundRecorderSegmentsRow = z.infer<typeof soundRecorderSegmentsRowSchema>;
+export type SoundRecorderSegmentsInsert = z.infer<typeof soundRecorderSegmentsInsertSchema>;
+export type SoundRecorderSegmentsUpdate = z.infer<typeof soundRecorderSegmentsUpdateSchema>;
+
+export const soundRecorderEvidenceExportsStatusValues = ["requested","ready","expired","revoked"] as const;
+export const soundRecorderEvidenceExportsStatusSchema = z.enum(soundRecorderEvidenceExportsStatusValues);
+export type SoundRecorderEvidenceExportsStatus = z.infer<typeof soundRecorderEvidenceExportsStatusSchema>;
+
+export const soundRecorderEvidenceExports = pgTable(
+  "sound_recorder_evidence_exports",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    accountId: uuid("account_id").notNull(),
+    deviceId: uuid("device_id"),
+    createdByDeviceId: uuid("created_by_device_id"),
+    status: varchar("status", { length: 32 }).default(sql`'requested'`).notNull(),
+    requestedFrom: timestamp("requested_from", { withTimezone: true, mode: "string" }).notNull(),
+    requestedTo: timestamp("requested_to", { withTimezone: true, mode: "string" }).notNull(),
+    segmentCount: integer("segment_count").default(sql`0`).notNull(),
+    manifest: jsonb("manifest").default(sql`'{}'::jsonb`).notNull(),
+    downloadUrlExpiresAt: timestamp("download_url_expires_at", { withTimezone: true, mode: "string" }),
+    requestedAt: timestamp("requested_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    readyAt: timestamp("ready_at", { withTimezone: true, mode: "string" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+  },
+  (table) => ({
+    soundRecorderEvidenceExportsStatusChk: check("sound_recorder_evidence_exports_status_chk", sql.raw("status in ('requested', 'ready', 'expired', 'revoked')")),
+    soundRecorderEvidenceExportsWindowChk: check("sound_recorder_evidence_exports_window_chk", sql.raw("requested_to > requested_from")),
+    soundRecorderEvidenceExportsSegmentCountChk: check("sound_recorder_evidence_exports_segment_count_chk", sql.raw("segment_count >= 0")),
+    soundRecorderEvidenceExportsManifestObjectChk: check("sound_recorder_evidence_exports_manifest_object_chk", sql.raw("jsonb_typeof(manifest) = 'object'")),
+    soundRecorderEvidenceExportsMetaObjectChk: check("sound_recorder_evidence_exports_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    soundRecorderEvidenceExportsAccountRequestedIdx: index("sound_recorder_evidence_exports_account_requested_idx").on(table.accountId, table.requestedAt.desc()),
+    soundRecorderEvidenceExportsStatusIdx: index("sound_recorder_evidence_exports_status_idx").on(table.status, table.requestedAt.desc()),
+  }),
+);
+
+export const soundRecorderEvidenceExportsRowSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string().uuid(),
+  deviceId: z.string().uuid().nullable(),
+  createdByDeviceId: z.string().uuid().nullable(),
+  status: soundRecorderEvidenceExportsStatusSchema,
+  requestedFrom: z.string().datetime(),
+  requestedTo: z.string().datetime(),
+  segmentCount: z.number().int().min(0),
+  manifest: jsonObjectSchema,
+  downloadUrlExpiresAt: z.string().datetime().nullable(),
+  requestedAt: z.string().datetime(),
+  readyAt: z.string().datetime().nullable(),
+  expiresAt: z.string().datetime().nullable(),
+  metaData: jsonObjectSchema,
+});
+
+export const soundRecorderEvidenceExportsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  accountId: z.string().uuid(),
+  deviceId: z.string().uuid().nullable().optional(),
+  createdByDeviceId: z.string().uuid().nullable().optional(),
+  status: soundRecorderEvidenceExportsStatusSchema.optional().default("requested"),
+  requestedFrom: z.string().datetime(),
+  requestedTo: z.string().datetime(),
+  segmentCount: z.number().int().min(0).optional().default(0),
+  manifest: jsonObjectSchema.optional().default({}),
+  downloadUrlExpiresAt: z.string().datetime().nullable().optional(),
+  requestedAt: z.string().datetime().optional(),
+  readyAt: z.string().datetime().nullable().optional(),
+  expiresAt: z.string().datetime().nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+});
+
+export const soundRecorderEvidenceExportsUpdateSchema = soundRecorderEvidenceExportsInsertSchema.partial();
+export type SoundRecorderEvidenceExportsRow = z.infer<typeof soundRecorderEvidenceExportsRowSchema>;
+export type SoundRecorderEvidenceExportsInsert = z.infer<typeof soundRecorderEvidenceExportsInsertSchema>;
+export type SoundRecorderEvidenceExportsUpdate = z.infer<typeof soundRecorderEvidenceExportsUpdateSchema>;
+
+export const soundRecorderAuditEvents = pgTable(
+  "sound_recorder_audit_events",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    accountId: uuid("account_id"),
+    deviceId: uuid("device_id"),
+    eventType: varchar("event_type", { length: 80 }).notNull(),
+    eventHash: varchar("event_hash", { length: 64 }).notNull(),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    soundRecorderAuditEventsEventTypeFormatChk: check("sound_recorder_audit_events_event_type_format_chk", sql.raw("event_type ~ '^[A-Za-z0-9._:/-]{1,80}$'")),
+    soundRecorderAuditEventsEventHashChk: check("sound_recorder_audit_events_event_hash_chk", sql.raw("event_hash ~ '^[a-f0-9]{64}$'")),
+    soundRecorderAuditEventsPayloadObjectChk: check("sound_recorder_audit_events_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
+    soundRecorderAuditEventsEventHashUq: uniqueIndex("sound_recorder_audit_events_event_hash_uq").on(table.eventHash),
+    soundRecorderAuditEventsAccountCreatedIdx: index("sound_recorder_audit_events_account_created_idx").on(table.accountId, table.createdAt.desc()).where(sql.raw("account_id is not null")),
+    soundRecorderAuditEventsTypeCreatedIdx: index("sound_recorder_audit_events_type_created_idx").on(table.eventType, table.createdAt.desc()),
+  }),
+);
+
+export const soundRecorderAuditEventsRowSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string().uuid().nullable(),
+  deviceId: z.string().uuid().nullable(),
+  eventType: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")),
+  eventHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  payload: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const soundRecorderAuditEventsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  accountId: z.string().uuid().nullable().optional(),
+  deviceId: z.string().uuid().nullable().optional(),
+  eventType: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")),
+  eventHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  payload: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const soundRecorderAuditEventsUpdateSchema = soundRecorderAuditEventsInsertSchema.partial();
+export type SoundRecorderAuditEventsRow = z.infer<typeof soundRecorderAuditEventsRowSchema>;
+export type SoundRecorderAuditEventsInsert = z.infer<typeof soundRecorderAuditEventsInsertSchema>;
+export type SoundRecorderAuditEventsUpdate = z.infer<typeof soundRecorderAuditEventsUpdateSchema>;
+
 export const containerPoolConfigsStatusValues = ["active","paused","archived"] as const;
 export const containerPoolConfigsStatusSchema = z.enum(containerPoolConfigsStatusValues);
 export type ContainerPoolConfigsStatus = z.infer<typeof containerPoolConfigsStatusSchema>;

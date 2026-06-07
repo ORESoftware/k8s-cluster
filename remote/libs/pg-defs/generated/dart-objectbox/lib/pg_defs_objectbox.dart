@@ -384,6 +384,580 @@ class MusicSongVotesObjectBox {
 }
 
 @Entity()
+class SoundRecorderAccountsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String status;
+
+  String? externalSubject;
+
+  String? displayName;
+
+  String? legalRegion;
+
+  int retentionHours;
+
+  String retentionPolicyVersion;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  SoundRecorderAccountsObjectBox({
+    required this.id,
+    required this.status,
+    this.externalSubject,
+    this.displayName,
+    this.legalRegion,
+    required this.retentionHours,
+    required this.retentionPolicyVersion,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "status": status,
+    "externalSubject": externalSubject,
+    "displayName": displayName,
+    "legalRegion": legalRegion,
+    "retentionHours": retentionHours,
+    "retentionPolicyVersion": retentionPolicyVersion,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static SoundRecorderAccountsObjectBox fromJson(Map<String, Object?> json) {
+    return SoundRecorderAccountsObjectBox(
+      id: json["id"] as String,
+      status: json["status"] as String,
+      externalSubject: json["externalSubject"] as String?,
+      displayName: json["displayName"] as String?,
+      legalRegion: json["legalRegion"] as String?,
+      retentionHours: (json["retentionHours"] as num).toInt(),
+      retentionPolicyVersion: json["retentionPolicyVersion"] as String,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class SoundRecorderDevicesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String accountId;
+
+  String platform;
+
+  String status;
+
+  String installId;
+
+  String? deviceLabel;
+
+  String? appVersion;
+
+  String? osVersion;
+
+  String tokenHash;
+
+  String tokenLast4;
+
+  String consentVersion;
+
+  String consentAcceptedAt;
+
+  bool recordingIndicatorAcknowledged;
+
+  String? lastSeenAt;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  SoundRecorderDevicesObjectBox({
+    required this.id,
+    required this.accountId,
+    required this.platform,
+    required this.status,
+    required this.installId,
+    this.deviceLabel,
+    this.appVersion,
+    this.osVersion,
+    required this.tokenHash,
+    required this.tokenLast4,
+    required this.consentVersion,
+    required this.consentAcceptedAt,
+    required this.recordingIndicatorAcknowledged,
+    this.lastSeenAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "platform": platform,
+    "status": status,
+    "installId": installId,
+    "deviceLabel": deviceLabel,
+    "appVersion": appVersion,
+    "osVersion": osVersion,
+    "tokenHash": tokenHash,
+    "tokenLast4": tokenLast4,
+    "consentVersion": consentVersion,
+    "consentAcceptedAt": consentAcceptedAt,
+    "recordingIndicatorAcknowledged": recordingIndicatorAcknowledged,
+    "lastSeenAt": lastSeenAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static SoundRecorderDevicesObjectBox fromJson(Map<String, Object?> json) {
+    return SoundRecorderDevicesObjectBox(
+      id: json["id"] as String,
+      accountId: json["accountId"] as String,
+      platform: json["platform"] as String,
+      status: json["status"] as String,
+      installId: json["installId"] as String,
+      deviceLabel: json["deviceLabel"] as String?,
+      appVersion: json["appVersion"] as String?,
+      osVersion: json["osVersion"] as String?,
+      tokenHash: json["tokenHash"] as String,
+      tokenLast4: json["tokenLast4"] as String,
+      consentVersion: json["consentVersion"] as String,
+      consentAcceptedAt: json["consentAcceptedAt"] as String,
+      recordingIndicatorAcknowledged: json["recordingIndicatorAcknowledged"] as bool,
+      lastSeenAt: json["lastSeenAt"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class SoundRecorderUploadSessionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String accountId;
+
+  String deviceId;
+
+  String status;
+
+  String storageProvider;
+
+  String storageBucket;
+
+  String storagePrefix;
+
+  String contentType;
+
+  String? codec;
+
+  int? sampleRate;
+
+  int channelCount;
+
+  int segmentDurationSeconds;
+
+  int maxSegmentBytes;
+
+  String startedAt;
+
+  String? lastHeartbeatAt;
+
+  String? closedAt;
+
+  String? expiresAt;
+
+  String? clientTimezone;
+
+  String? legalRegion;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  SoundRecorderUploadSessionsObjectBox({
+    required this.id,
+    required this.accountId,
+    required this.deviceId,
+    required this.status,
+    required this.storageProvider,
+    required this.storageBucket,
+    required this.storagePrefix,
+    required this.contentType,
+    this.codec,
+    this.sampleRate,
+    required this.channelCount,
+    required this.segmentDurationSeconds,
+    required this.maxSegmentBytes,
+    required this.startedAt,
+    this.lastHeartbeatAt,
+    this.closedAt,
+    this.expiresAt,
+    this.clientTimezone,
+    this.legalRegion,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceId": deviceId,
+    "status": status,
+    "storageProvider": storageProvider,
+    "storageBucket": storageBucket,
+    "storagePrefix": storagePrefix,
+    "contentType": contentType,
+    "codec": codec,
+    "sampleRate": sampleRate,
+    "channelCount": channelCount,
+    "segmentDurationSeconds": segmentDurationSeconds,
+    "maxSegmentBytes": maxSegmentBytes,
+    "startedAt": startedAt,
+    "lastHeartbeatAt": lastHeartbeatAt,
+    "closedAt": closedAt,
+    "expiresAt": expiresAt,
+    "clientTimezone": clientTimezone,
+    "legalRegion": legalRegion,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static SoundRecorderUploadSessionsObjectBox fromJson(Map<String, Object?> json) {
+    return SoundRecorderUploadSessionsObjectBox(
+      id: json["id"] as String,
+      accountId: json["accountId"] as String,
+      deviceId: json["deviceId"] as String,
+      status: json["status"] as String,
+      storageProvider: json["storageProvider"] as String,
+      storageBucket: json["storageBucket"] as String,
+      storagePrefix: json["storagePrefix"] as String,
+      contentType: json["contentType"] as String,
+      codec: json["codec"] as String?,
+      sampleRate: json["sampleRate"] == null ? null : (json["sampleRate"] as num).toInt(),
+      channelCount: (json["channelCount"] as num).toInt(),
+      segmentDurationSeconds: (json["segmentDurationSeconds"] as num).toInt(),
+      maxSegmentBytes: (json["maxSegmentBytes"] as num).toInt(),
+      startedAt: json["startedAt"] as String,
+      lastHeartbeatAt: json["lastHeartbeatAt"] as String?,
+      closedAt: json["closedAt"] as String?,
+      expiresAt: json["expiresAt"] as String?,
+      clientTimezone: json["clientTimezone"] as String?,
+      legalRegion: json["legalRegion"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class SoundRecorderSegmentsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String accountId;
+
+  String deviceId;
+
+  String sessionId;
+
+  int sequenceNumber;
+
+  String status;
+
+  String storageProvider;
+
+  String storageBucket;
+
+  String storageKey;
+
+  String contentType;
+
+  String? codec;
+
+  String capturedStartedAt;
+
+  String? capturedEndedAt;
+
+  int durationMillis;
+
+  int? byteCount;
+
+  String? sha256Hex;
+
+  String? uploadUrlExpiresAt;
+
+  String? etag;
+
+  String? uploadedAt;
+
+  String expiresAt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  SoundRecorderSegmentsObjectBox({
+    required this.id,
+    required this.accountId,
+    required this.deviceId,
+    required this.sessionId,
+    required this.sequenceNumber,
+    required this.status,
+    required this.storageProvider,
+    required this.storageBucket,
+    required this.storageKey,
+    required this.contentType,
+    this.codec,
+    required this.capturedStartedAt,
+    this.capturedEndedAt,
+    required this.durationMillis,
+    this.byteCount,
+    this.sha256Hex,
+    this.uploadUrlExpiresAt,
+    this.etag,
+    this.uploadedAt,
+    required this.expiresAt,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceId": deviceId,
+    "sessionId": sessionId,
+    "sequenceNumber": sequenceNumber,
+    "status": status,
+    "storageProvider": storageProvider,
+    "storageBucket": storageBucket,
+    "storageKey": storageKey,
+    "contentType": contentType,
+    "codec": codec,
+    "capturedStartedAt": capturedStartedAt,
+    "capturedEndedAt": capturedEndedAt,
+    "durationMillis": durationMillis,
+    "byteCount": byteCount,
+    "sha256Hex": sha256Hex,
+    "uploadUrlExpiresAt": uploadUrlExpiresAt,
+    "etag": etag,
+    "uploadedAt": uploadedAt,
+    "expiresAt": expiresAt,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static SoundRecorderSegmentsObjectBox fromJson(Map<String, Object?> json) {
+    return SoundRecorderSegmentsObjectBox(
+      id: json["id"] as String,
+      accountId: json["accountId"] as String,
+      deviceId: json["deviceId"] as String,
+      sessionId: json["sessionId"] as String,
+      sequenceNumber: (json["sequenceNumber"] as num).toInt(),
+      status: json["status"] as String,
+      storageProvider: json["storageProvider"] as String,
+      storageBucket: json["storageBucket"] as String,
+      storageKey: json["storageKey"] as String,
+      contentType: json["contentType"] as String,
+      codec: json["codec"] as String?,
+      capturedStartedAt: json["capturedStartedAt"] as String,
+      capturedEndedAt: json["capturedEndedAt"] as String?,
+      durationMillis: (json["durationMillis"] as num).toInt(),
+      byteCount: json["byteCount"] == null ? null : (json["byteCount"] as num).toInt(),
+      sha256Hex: json["sha256Hex"] as String?,
+      uploadUrlExpiresAt: json["uploadUrlExpiresAt"] as String?,
+      etag: json["etag"] as String?,
+      uploadedAt: json["uploadedAt"] as String?,
+      expiresAt: json["expiresAt"] as String,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class SoundRecorderEvidenceExportsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String accountId;
+
+  String? deviceId;
+
+  String? createdByDeviceId;
+
+  String status;
+
+  String requestedFrom;
+
+  String requestedTo;
+
+  int segmentCount;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String manifest;
+
+  String? downloadUrlExpiresAt;
+
+  String requestedAt;
+
+  String? readyAt;
+
+  String? expiresAt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+
+  SoundRecorderEvidenceExportsObjectBox({
+    required this.id,
+    required this.accountId,
+    this.deviceId,
+    this.createdByDeviceId,
+    required this.status,
+    required this.requestedFrom,
+    required this.requestedTo,
+    required this.segmentCount,
+    required this.manifest,
+    this.downloadUrlExpiresAt,
+    required this.requestedAt,
+    this.readyAt,
+    this.expiresAt,
+    required this.metaData,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceId": deviceId,
+    "createdByDeviceId": createdByDeviceId,
+    "status": status,
+    "requestedFrom": requestedFrom,
+    "requestedTo": requestedTo,
+    "segmentCount": segmentCount,
+    "manifest": jsonDecode(manifest),
+    "downloadUrlExpiresAt": downloadUrlExpiresAt,
+    "requestedAt": requestedAt,
+    "readyAt": readyAt,
+    "expiresAt": expiresAt,
+    "metaData": jsonDecode(metaData),
+  };
+
+  static SoundRecorderEvidenceExportsObjectBox fromJson(Map<String, Object?> json) {
+    return SoundRecorderEvidenceExportsObjectBox(
+      id: json["id"] as String,
+      accountId: json["accountId"] as String,
+      deviceId: json["deviceId"] as String?,
+      createdByDeviceId: json["createdByDeviceId"] as String?,
+      status: json["status"] as String,
+      requestedFrom: json["requestedFrom"] as String,
+      requestedTo: json["requestedTo"] as String,
+      segmentCount: (json["segmentCount"] as num).toInt(),
+      manifest: json["manifest"] is String ? json["manifest"] as String : jsonEncode(json["manifest"]),
+      downloadUrlExpiresAt: json["downloadUrlExpiresAt"] as String?,
+      requestedAt: json["requestedAt"] as String,
+      readyAt: json["readyAt"] as String?,
+      expiresAt: json["expiresAt"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+    );
+  }
+}
+
+@Entity()
+class SoundRecorderAuditEventsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? accountId;
+
+  String? deviceId;
+
+  String eventType;
+
+  String eventHash;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String payload;
+
+  String createdAt;
+
+
+  SoundRecorderAuditEventsObjectBox({
+    required this.id,
+    this.accountId,
+    this.deviceId,
+    required this.eventType,
+    required this.eventHash,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceId": deviceId,
+    "eventType": eventType,
+    "eventHash": eventHash,
+    "payload": jsonDecode(payload),
+    "createdAt": createdAt,
+  };
+
+  static SoundRecorderAuditEventsObjectBox fromJson(Map<String, Object?> json) {
+    return SoundRecorderAuditEventsObjectBox(
+      id: json["id"] as String,
+      accountId: json["accountId"] as String?,
+      deviceId: json["deviceId"] as String?,
+      eventType: json["eventType"] as String,
+      eventHash: json["eventHash"] as String,
+      payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class ContainerPoolConfigsObjectBox {
   @Id()
   int obxId = 0;

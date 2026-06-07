@@ -105,6 +105,144 @@ model MusicSongVotes {
   @@map("music_song_votes")
 }
 
+model SoundRecorderAccounts {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  status String @default("active") @db.VarChar(32)
+  externalSubject String? @map("external_subject") @db.VarChar(240)
+  displayName String? @map("display_name") @db.VarChar(160)
+  legalRegion String? @map("legal_region") @db.VarChar(64)
+  retentionHours Int @map("retention_hours") @default(500)
+  retentionPolicyVersion String @map("retention_policy_version") @default("sound-recorder-retention-v1") @db.VarChar(80)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  // sound_recorder_accounts_external_subject_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([status, updatedAt], map: "sound_recorder_accounts_status_updated_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sound_recorder_accounts")
+}
+
+model SoundRecorderDevices {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  platform String @db.VarChar(24)
+  status String @default("active") @db.VarChar(32)
+  installId String @map("install_id") @db.VarChar(160)
+  deviceLabel String? @map("device_label") @db.VarChar(160)
+  appVersion String? @map("app_version") @db.VarChar(80)
+  osVersion String? @map("os_version") @db.VarChar(80)
+  tokenHash String @map("token_hash") @db.VarChar(64)
+  tokenLast4 String @map("token_last4") @db.VarChar(4)
+  consentVersion String @map("consent_version") @db.VarChar(80)
+  consentAcceptedAt DateTime @map("consent_accepted_at") @db.Timestamptz(6)
+  recordingIndicatorAcknowledged Boolean @map("recording_indicator_acknowledged") @default(false)
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([tokenHash], map: "sound_recorder_devices_token_hash_uq")
+  @@unique([accountId, installId], map: "sound_recorder_devices_account_install_uq")
+  @@index([accountId, status, updatedAt], map: "sound_recorder_devices_account_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sound_recorder_devices")
+}
+
+model SoundRecorderUploadSessions {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  deviceId String @map("device_id") @db.Uuid
+  status String @default("active") @db.VarChar(32)
+  storageProvider String @map("storage_provider") @default("s3") @db.VarChar(32)
+  storageBucket String @map("storage_bucket") @db.VarChar(200)
+  storagePrefix String @map("storage_prefix") @db.Text
+  contentType String @map("content_type") @default("audio/mp4") @db.VarChar(120)
+  codec String? @db.VarChar(80)
+  sampleRate Int? @map("sample_rate")
+  channelCount Int @map("channel_count") @default(1)
+  segmentDurationSeconds Int @map("segment_duration_seconds") @default(60)
+  maxSegmentBytes Int @map("max_segment_bytes") @default(10485760)
+  startedAt DateTime @map("started_at") @default(now()) @db.Timestamptz(6)
+  lastHeartbeatAt DateTime? @map("last_heartbeat_at") @db.Timestamptz(6)
+  closedAt DateTime? @map("closed_at") @db.Timestamptz(6)
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
+  clientTimezone String? @map("client_timezone") @db.VarChar(80)
+  legalRegion String? @map("legal_region") @db.VarChar(64)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([storagePrefix], map: "sound_recorder_upload_sessions_storage_prefix_uq")
+  @@index([accountId, startedAt], map: "sound_recorder_upload_sessions_account_started_idx")
+  @@index([deviceId, status, startedAt], map: "sound_recorder_upload_sessions_device_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sound_recorder_upload_sessions")
+}
+
+model SoundRecorderSegments {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  deviceId String @map("device_id") @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  sequenceNumber Int @map("sequence_number")
+  status String @default("pending") @db.VarChar(32)
+  storageProvider String @map("storage_provider") @default("s3") @db.VarChar(32)
+  storageBucket String @map("storage_bucket") @db.VarChar(200)
+  storageKey String @map("storage_key") @db.Text
+  contentType String @map("content_type") @default("audio/mp4") @db.VarChar(120)
+  codec String? @db.VarChar(80)
+  capturedStartedAt DateTime @map("captured_started_at") @db.Timestamptz(6)
+  capturedEndedAt DateTime? @map("captured_ended_at") @db.Timestamptz(6)
+  durationMillis Int @map("duration_millis")
+  byteCount Int? @map("byte_count")
+  sha256Hex String? @map("sha256_hex") @db.VarChar(64)
+  uploadUrlExpiresAt DateTime? @map("upload_url_expires_at") @db.Timestamptz(6)
+  etag String? @db.VarChar(160)
+  uploadedAt DateTime? @map("uploaded_at") @db.Timestamptz(6)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([sessionId, sequenceNumber], map: "sound_recorder_segments_session_sequence_uq")
+  @@unique([storageKey], map: "sound_recorder_segments_storage_key_uq")
+  // sound_recorder_segments_account_capture_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // sound_recorder_segments_expiry_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sound_recorder_segments")
+}
+
+model SoundRecorderEvidenceExports {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  deviceId String? @map("device_id") @db.Uuid
+  createdByDeviceId String? @map("created_by_device_id") @db.Uuid
+  status String @default("requested") @db.VarChar(32)
+  requestedFrom DateTime @map("requested_from") @db.Timestamptz(6)
+  requestedTo DateTime @map("requested_to") @db.Timestamptz(6)
+  segmentCount Int @map("segment_count") @default(0)
+  manifest Json @default("{}")
+  downloadUrlExpiresAt DateTime? @map("download_url_expires_at") @db.Timestamptz(6)
+  requestedAt DateTime @map("requested_at") @default(now()) @db.Timestamptz(6)
+  readyAt DateTime? @map("ready_at") @db.Timestamptz(6)
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
+  metaData Json @map("meta_data") @default("{}")
+  @@index([accountId, requestedAt], map: "sound_recorder_evidence_exports_account_requested_idx")
+  @@index([status, requestedAt], map: "sound_recorder_evidence_exports_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sound_recorder_evidence_exports")
+}
+
+model SoundRecorderAuditEvents {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String? @map("account_id") @db.Uuid
+  deviceId String? @map("device_id") @db.Uuid
+  eventType String @map("event_type") @db.VarChar(80)
+  eventHash String @map("event_hash") @db.VarChar(64)
+  payload Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([eventHash], map: "sound_recorder_audit_events_event_hash_uq")
+  // sound_recorder_audit_events_account_created_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([eventType, createdAt], map: "sound_recorder_audit_events_type_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sound_recorder_audit_events")
+}
+
 model ContainerPoolConfigs {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   slug String @db.VarChar(120)

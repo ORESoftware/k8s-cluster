@@ -3,7 +3,7 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs).
--export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, vapi_phone_call_events_table/0, vapi_phone_call_events_columns/0, vapi_phone_call_events_select_sql/0, music_songs_table/0, music_songs_columns/0, music_songs_select_sql/0, music_songs_status_values/0, validate_music_songs_status/1, music_songs_storage_provider_values/0, validate_music_songs_storage_provider/1, music_song_votes_table/0, music_song_votes_columns/0, music_song_votes_select_sql/0, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_context_blobs_table/0, agent_context_blobs_columns/0, agent_context_blobs_select_sql/0, agent_context_blobs_status_values/0, validate_agent_context_blobs_status/1, agent_context_embeddings_table/0, agent_context_embeddings_columns/0, agent_context_embeddings_select_sql/0, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_tasks_pr_state_values/0, validate_agent_remote_dev_tasks_pr_state/1, agent_remote_dev_tasks_exit_reason_values/0, validate_agent_remote_dev_tasks_exit_reason/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_breadcrumbs_table/0, agent_remote_dev_breadcrumbs_columns/0, agent_remote_dev_breadcrumbs_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, mip_solver_sessions_table/0, mip_solver_sessions_columns/0, mip_solver_sessions_select_sql/0, mip_solver_solves_table/0, mip_solver_solves_columns/0, mip_solver_solves_select_sql/0, mip_solver_solves_node_role_values/0, validate_mip_solver_solves_node_role/1, mip_solver_jobs_table/0, mip_solver_jobs_columns/0, mip_solver_jobs_select_sql/0, mip_solver_events_table/0, mip_solver_events_columns/0, mip_solver_events_select_sql/0, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1, container_pool_image_revisions_table/0, container_pool_image_revisions_columns/0, container_pool_image_revisions_select_sql/0, container_pool_image_revisions_source_values/0, validate_container_pool_image_revisions_source/1, container_pool_image_revisions_status_values/0, validate_container_pool_image_revisions_status/1, container_pool_build_runs_table/0, container_pool_build_runs_columns/0, container_pool_build_runs_select_sql/0, container_pool_build_runs_build_status_values/0, validate_container_pool_build_runs_build_status/1, container_pool_build_runs_test_status_values/0, validate_container_pool_build_runs_test_status/1, container_pool_build_runs_overall_status_values/0, validate_container_pool_build_runs_overall_status/1, presence_convs_table/0, presence_convs_columns/0, presence_convs_select_sql/0, presence_convs_status_values/0, validate_presence_convs_status/1, presence_conv_members_table/0, presence_conv_members_columns/0, presence_conv_members_select_sql/0, presence_conv_members_role_values/0, validate_presence_conv_members_role/1, presence_conv_members_status_values/0, validate_presence_conv_members_status/1, presence_users_table/0, presence_users_columns/0, presence_users_select_sql/0, presence_events_table/0, presence_events_columns/0, presence_events_select_sql/0, presence_events_op_values/0, validate_presence_events_op/1, presence_consumer_checkpoints_table/0, presence_consumer_checkpoints_columns/0, presence_consumer_checkpoints_select_sql/0, des_soccer_learning_experiments_table/0, des_soccer_learning_experiments_columns/0, des_soccer_learning_experiments_select_sql/0, des_soccer_learning_experiments_status_values/0, validate_des_soccer_learning_experiments_status/1, des_soccer_learning_policy_versions_table/0, des_soccer_learning_policy_versions_columns/0, des_soccer_learning_policy_versions_select_sql/0, des_soccer_learning_policy_versions_source_kind_values/0, validate_des_soccer_learning_policy_versions_source_kind/1, des_soccer_learning_policy_versions_status_values/0, validate_des_soccer_learning_policy_versions_status/1, des_soccer_learning_policy_versions_retention_kind_values/0, validate_des_soccer_learning_policy_versions_retention_kind/1, des_soccer_learning_policy_entries_table/0, des_soccer_learning_policy_entries_columns/0, des_soccer_learning_policy_entries_select_sql/0, des_soccer_learning_policy_entries_team_values/0, validate_des_soccer_learning_policy_entries_team/1, des_soccer_learning_policy_entries_entry_kind_values/0, validate_des_soccer_learning_policy_entries_entry_kind/1, des_soccer_learning_jobs_table/0, des_soccer_learning_jobs_columns/0, des_soccer_learning_jobs_select_sql/0, des_soccer_learning_jobs_spawn_strategy_values/0, validate_des_soccer_learning_jobs_spawn_strategy/1, des_soccer_learning_jobs_status_values/0, validate_des_soccer_learning_jobs_status/1, des_soccer_learning_runs_table/0, des_soccer_learning_runs_columns/0, des_soccer_learning_runs_select_sql/0, des_soccer_learning_runs_status_values/0, validate_des_soccer_learning_runs_status/1, des_soccer_learning_runs_home_outcome_values/0, validate_des_soccer_learning_runs_home_outcome/1, des_soccer_learning_runs_away_outcome_values/0, validate_des_soccer_learning_runs_away_outcome/1, des_soccer_learning_run_deltas_table/0, des_soccer_learning_run_deltas_columns/0, des_soccer_learning_run_deltas_select_sql/0, des_soccer_learning_run_deltas_team_values/0, validate_des_soccer_learning_run_deltas_team/1, des_soccer_learning_run_deltas_entry_kind_values/0, validate_des_soccer_learning_run_deltas_entry_kind/1, des_soccer_learning_merge_events_table/0, des_soccer_learning_merge_events_columns/0, des_soccer_learning_merge_events_select_sql/0, des_soccer_learning_merge_events_strategy_values/0, validate_des_soccer_learning_merge_events_strategy/1, des_fel_elevator_learning_runs_table/0, des_fel_elevator_learning_runs_columns/0, des_fel_elevator_learning_runs_select_sql/0, des_fel_elevator_learning_runs_status_values/0, validate_des_fel_elevator_learning_runs_status/1, des_fel_elevator_learning_runs_dispatch_policy_values/0, validate_des_fel_elevator_learning_runs_dispatch_policy/1, des_fel_elevator_policy_states_table/0, des_fel_elevator_policy_states_columns/0, des_fel_elevator_policy_states_select_sql/0, des_fel_elevator_policy_states_policy_kind_values/0, validate_des_fel_elevator_policy_states_policy_kind/1, des_fel_elevator_policy_states_source_kind_values/0, validate_des_fel_elevator_policy_states_source_kind/1, des_fel_elevator_dispatch_decisions_table/0, des_fel_elevator_dispatch_decisions_columns/0, des_fel_elevator_dispatch_decisions_select_sql/0, des_fel_elevator_dispatch_decisions_policy_kind_values/0, validate_des_fel_elevator_dispatch_decisions_policy_kind/1, des_fel_elevator_pomdp_beliefs_table/0, des_fel_elevator_pomdp_beliefs_columns/0, des_fel_elevator_pomdp_beliefs_select_sql/0, des_fel_elevator_pomdp_beliefs_action_values/0, validate_des_fel_elevator_pomdp_beliefs_action/1, des_fel_elevator_pomdp_beliefs_observation_values/0, validate_des_fel_elevator_pomdp_beliefs_observation/1]).
+-export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, vapi_phone_call_events_table/0, vapi_phone_call_events_columns/0, vapi_phone_call_events_select_sql/0, music_songs_table/0, music_songs_columns/0, music_songs_select_sql/0, music_songs_status_values/0, validate_music_songs_status/1, music_songs_storage_provider_values/0, validate_music_songs_storage_provider/1, music_song_votes_table/0, music_song_votes_columns/0, music_song_votes_select_sql/0, sound_recorder_accounts_table/0, sound_recorder_accounts_columns/0, sound_recorder_accounts_select_sql/0, sound_recorder_accounts_status_values/0, validate_sound_recorder_accounts_status/1, sound_recorder_devices_table/0, sound_recorder_devices_columns/0, sound_recorder_devices_select_sql/0, sound_recorder_devices_platform_values/0, validate_sound_recorder_devices_platform/1, sound_recorder_devices_status_values/0, validate_sound_recorder_devices_status/1, sound_recorder_upload_sessions_table/0, sound_recorder_upload_sessions_columns/0, sound_recorder_upload_sessions_select_sql/0, sound_recorder_upload_sessions_status_values/0, validate_sound_recorder_upload_sessions_status/1, sound_recorder_upload_sessions_storage_provider_values/0, validate_sound_recorder_upload_sessions_storage_provider/1, sound_recorder_segments_table/0, sound_recorder_segments_columns/0, sound_recorder_segments_select_sql/0, sound_recorder_segments_status_values/0, validate_sound_recorder_segments_status/1, sound_recorder_segments_storage_provider_values/0, validate_sound_recorder_segments_storage_provider/1, sound_recorder_evidence_exports_table/0, sound_recorder_evidence_exports_columns/0, sound_recorder_evidence_exports_select_sql/0, sound_recorder_evidence_exports_status_values/0, validate_sound_recorder_evidence_exports_status/1, sound_recorder_audit_events_table/0, sound_recorder_audit_events_columns/0, sound_recorder_audit_events_select_sql/0, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_context_blobs_table/0, agent_context_blobs_columns/0, agent_context_blobs_select_sql/0, agent_context_blobs_status_values/0, validate_agent_context_blobs_status/1, agent_context_embeddings_table/0, agent_context_embeddings_columns/0, agent_context_embeddings_select_sql/0, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_tasks_pr_state_values/0, validate_agent_remote_dev_tasks_pr_state/1, agent_remote_dev_tasks_exit_reason_values/0, validate_agent_remote_dev_tasks_exit_reason/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_breadcrumbs_table/0, agent_remote_dev_breadcrumbs_columns/0, agent_remote_dev_breadcrumbs_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, mip_solver_sessions_table/0, mip_solver_sessions_columns/0, mip_solver_sessions_select_sql/0, mip_solver_solves_table/0, mip_solver_solves_columns/0, mip_solver_solves_select_sql/0, mip_solver_solves_node_role_values/0, validate_mip_solver_solves_node_role/1, mip_solver_jobs_table/0, mip_solver_jobs_columns/0, mip_solver_jobs_select_sql/0, mip_solver_events_table/0, mip_solver_events_columns/0, mip_solver_events_select_sql/0, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1, container_pool_image_revisions_table/0, container_pool_image_revisions_columns/0, container_pool_image_revisions_select_sql/0, container_pool_image_revisions_source_values/0, validate_container_pool_image_revisions_source/1, container_pool_image_revisions_status_values/0, validate_container_pool_image_revisions_status/1, container_pool_build_runs_table/0, container_pool_build_runs_columns/0, container_pool_build_runs_select_sql/0, container_pool_build_runs_build_status_values/0, validate_container_pool_build_runs_build_status/1, container_pool_build_runs_test_status_values/0, validate_container_pool_build_runs_test_status/1, container_pool_build_runs_overall_status_values/0, validate_container_pool_build_runs_overall_status/1, presence_convs_table/0, presence_convs_columns/0, presence_convs_select_sql/0, presence_convs_status_values/0, validate_presence_convs_status/1, presence_conv_members_table/0, presence_conv_members_columns/0, presence_conv_members_select_sql/0, presence_conv_members_role_values/0, validate_presence_conv_members_role/1, presence_conv_members_status_values/0, validate_presence_conv_members_status/1, presence_users_table/0, presence_users_columns/0, presence_users_select_sql/0, presence_events_table/0, presence_events_columns/0, presence_events_select_sql/0, presence_events_op_values/0, validate_presence_events_op/1, presence_consumer_checkpoints_table/0, presence_consumer_checkpoints_columns/0, presence_consumer_checkpoints_select_sql/0, des_soccer_learning_experiments_table/0, des_soccer_learning_experiments_columns/0, des_soccer_learning_experiments_select_sql/0, des_soccer_learning_experiments_status_values/0, validate_des_soccer_learning_experiments_status/1, des_soccer_learning_policy_versions_table/0, des_soccer_learning_policy_versions_columns/0, des_soccer_learning_policy_versions_select_sql/0, des_soccer_learning_policy_versions_source_kind_values/0, validate_des_soccer_learning_policy_versions_source_kind/1, des_soccer_learning_policy_versions_status_values/0, validate_des_soccer_learning_policy_versions_status/1, des_soccer_learning_policy_versions_retention_kind_values/0, validate_des_soccer_learning_policy_versions_retention_kind/1, des_soccer_learning_policy_entries_table/0, des_soccer_learning_policy_entries_columns/0, des_soccer_learning_policy_entries_select_sql/0, des_soccer_learning_policy_entries_team_values/0, validate_des_soccer_learning_policy_entries_team/1, des_soccer_learning_policy_entries_entry_kind_values/0, validate_des_soccer_learning_policy_entries_entry_kind/1, des_soccer_learning_jobs_table/0, des_soccer_learning_jobs_columns/0, des_soccer_learning_jobs_select_sql/0, des_soccer_learning_jobs_spawn_strategy_values/0, validate_des_soccer_learning_jobs_spawn_strategy/1, des_soccer_learning_jobs_status_values/0, validate_des_soccer_learning_jobs_status/1, des_soccer_learning_runs_table/0, des_soccer_learning_runs_columns/0, des_soccer_learning_runs_select_sql/0, des_soccer_learning_runs_status_values/0, validate_des_soccer_learning_runs_status/1, des_soccer_learning_runs_home_outcome_values/0, validate_des_soccer_learning_runs_home_outcome/1, des_soccer_learning_runs_away_outcome_values/0, validate_des_soccer_learning_runs_away_outcome/1, des_soccer_learning_run_deltas_table/0, des_soccer_learning_run_deltas_columns/0, des_soccer_learning_run_deltas_select_sql/0, des_soccer_learning_run_deltas_team_values/0, validate_des_soccer_learning_run_deltas_team/1, des_soccer_learning_run_deltas_entry_kind_values/0, validate_des_soccer_learning_run_deltas_entry_kind/1, des_soccer_learning_merge_events_table/0, des_soccer_learning_merge_events_columns/0, des_soccer_learning_merge_events_select_sql/0, des_soccer_learning_merge_events_strategy_values/0, validate_des_soccer_learning_merge_events_strategy/1, des_fel_elevator_learning_runs_table/0, des_fel_elevator_learning_runs_columns/0, des_fel_elevator_learning_runs_select_sql/0, des_fel_elevator_learning_runs_status_values/0, validate_des_fel_elevator_learning_runs_status/1, des_fel_elevator_learning_runs_dispatch_policy_values/0, validate_des_fel_elevator_learning_runs_dispatch_policy/1, des_fel_elevator_policy_states_table/0, des_fel_elevator_policy_states_columns/0, des_fel_elevator_policy_states_select_sql/0, des_fel_elevator_policy_states_policy_kind_values/0, validate_des_fel_elevator_policy_states_policy_kind/1, des_fel_elevator_policy_states_source_kind_values/0, validate_des_fel_elevator_policy_states_source_kind/1, des_fel_elevator_dispatch_decisions_table/0, des_fel_elevator_dispatch_decisions_columns/0, des_fel_elevator_dispatch_decisions_select_sql/0, des_fel_elevator_dispatch_decisions_policy_kind_values/0, validate_des_fel_elevator_dispatch_decisions_policy_kind/1, des_fel_elevator_pomdp_beliefs_table/0, des_fel_elevator_pomdp_beliefs_columns/0, des_fel_elevator_pomdp_beliefs_select_sql/0, des_fel_elevator_pomdp_beliefs_action_values/0, validate_des_fel_elevator_pomdp_beliefs_action/1, des_fel_elevator_pomdp_beliefs_observation_values/0, validate_des_fel_elevator_pomdp_beliefs_observation/1]).
 
 app_config_table() -> <<"app_config">>.
 
@@ -121,6 +121,219 @@ music_song_votes_select_sql() -> <<"select
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
     from music_song_votes">>.
+
+sound_recorder_accounts_table() -> <<"sound_recorder_accounts">>.
+
+sound_recorder_accounts_columns() -> [<<"id">>, <<"status">>, <<"external_subject">>, <<"display_name">>, <<"legal_region">>, <<"retention_hours">>, <<"retention_policy_version">>, <<"created_at">>, <<"updated_at">>].
+
+sound_recorder_accounts_select_sql() -> <<"select
+      id::text as id,
+      status,
+      external_subject,
+      display_name,
+      legal_region,
+      retention_hours,
+      retention_policy_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from sound_recorder_accounts">>.
+
+sound_recorder_accounts_status_values() -> [<<"active">>, <<"paused">>, <<"locked">>, <<"deleted">>].
+
+validate_sound_recorder_accounts_status(Value) when is_binary(Value) ->
+    case lists:member(Value, sound_recorder_accounts_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported sound_recorder_accounts.status: "/binary, Value/binary>>}
+    end;
+validate_sound_recorder_accounts_status(Value) when is_list(Value) ->
+    validate_sound_recorder_accounts_status(unicode:characters_to_binary(Value)).
+
+sound_recorder_devices_table() -> <<"sound_recorder_devices">>.
+
+sound_recorder_devices_columns() -> [<<"id">>, <<"account_id">>, <<"platform">>, <<"status">>, <<"install_id">>, <<"device_label">>, <<"app_version">>, <<"os_version">>, <<"token_hash">>, <<"token_last4">>, <<"consent_version">>, <<"consent_accepted_at">>, <<"recording_indicator_acknowledged">>, <<"last_seen_at">>, <<"created_at">>, <<"updated_at">>].
+
+sound_recorder_devices_select_sql() -> <<"select
+      id::text as id,
+      account_id::text as account_id,
+      platform,
+      status,
+      install_id,
+      device_label,
+      app_version,
+      os_version,
+      token_hash,
+      token_last4,
+      consent_version,
+      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consent_accepted_at,
+      recording_indicator_acknowledged,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from sound_recorder_devices">>.
+
+sound_recorder_devices_platform_values() -> [<<"ios">>, <<"android">>].
+
+validate_sound_recorder_devices_platform(Value) when is_binary(Value) ->
+    case lists:member(Value, sound_recorder_devices_platform_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported sound_recorder_devices.platform: "/binary, Value/binary>>}
+    end;
+validate_sound_recorder_devices_platform(Value) when is_list(Value) ->
+    validate_sound_recorder_devices_platform(unicode:characters_to_binary(Value)).
+
+sound_recorder_devices_status_values() -> [<<"active">>, <<"revoked">>, <<"lost">>, <<"replaced">>, <<"deleted">>].
+
+validate_sound_recorder_devices_status(Value) when is_binary(Value) ->
+    case lists:member(Value, sound_recorder_devices_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported sound_recorder_devices.status: "/binary, Value/binary>>}
+    end;
+validate_sound_recorder_devices_status(Value) when is_list(Value) ->
+    validate_sound_recorder_devices_status(unicode:characters_to_binary(Value)).
+
+sound_recorder_upload_sessions_table() -> <<"sound_recorder_upload_sessions">>.
+
+sound_recorder_upload_sessions_columns() -> [<<"id">>, <<"account_id">>, <<"device_id">>, <<"status">>, <<"storage_provider">>, <<"storage_bucket">>, <<"storage_prefix">>, <<"content_type">>, <<"codec">>, <<"sample_rate">>, <<"channel_count">>, <<"segment_duration_seconds">>, <<"max_segment_bytes">>, <<"started_at">>, <<"last_heartbeat_at">>, <<"closed_at">>, <<"expires_at">>, <<"client_timezone">>, <<"legal_region">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+sound_recorder_upload_sessions_select_sql() -> <<"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      status,
+      storage_provider,
+      storage_bucket,
+      storage_prefix,
+      content_type,
+      codec,
+      sample_rate,
+      channel_count,
+      segment_duration_seconds,
+      max_segment_bytes,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,
+      to_char(last_heartbeat_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_heartbeat_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closed_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,
+      client_timezone,
+      legal_region,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from sound_recorder_upload_sessions">>.
+
+sound_recorder_upload_sessions_status_values() -> [<<"active">>, <<"closed">>, <<"revoked">>, <<"expired">>].
+
+validate_sound_recorder_upload_sessions_status(Value) when is_binary(Value) ->
+    case lists:member(Value, sound_recorder_upload_sessions_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported sound_recorder_upload_sessions.status: "/binary, Value/binary>>}
+    end;
+validate_sound_recorder_upload_sessions_status(Value) when is_list(Value) ->
+    validate_sound_recorder_upload_sessions_status(unicode:characters_to_binary(Value)).
+
+sound_recorder_upload_sessions_storage_provider_values() -> [<<"s3">>].
+
+validate_sound_recorder_upload_sessions_storage_provider(Value) when is_binary(Value) ->
+    case lists:member(Value, sound_recorder_upload_sessions_storage_provider_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported sound_recorder_upload_sessions.storage_provider: "/binary, Value/binary>>}
+    end;
+validate_sound_recorder_upload_sessions_storage_provider(Value) when is_list(Value) ->
+    validate_sound_recorder_upload_sessions_storage_provider(unicode:characters_to_binary(Value)).
+
+sound_recorder_segments_table() -> <<"sound_recorder_segments">>.
+
+sound_recorder_segments_columns() -> [<<"id">>, <<"account_id">>, <<"device_id">>, <<"session_id">>, <<"sequence_number">>, <<"status">>, <<"storage_provider">>, <<"storage_bucket">>, <<"storage_key">>, <<"content_type">>, <<"codec">>, <<"captured_started_at">>, <<"captured_ended_at">>, <<"duration_millis">>, <<"byte_count">>, <<"sha256_hex">>, <<"upload_url_expires_at">>, <<"etag">>, <<"uploaded_at">>, <<"expires_at">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+sound_recorder_segments_select_sql() -> <<"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      session_id::text as session_id,
+      sequence_number,
+      status,
+      storage_provider,
+      storage_bucket,
+      storage_key,
+      content_type,
+      codec,
+      to_char(captured_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_started_at,
+      to_char(captured_ended_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_ended_at,
+      duration_millis,
+      byte_count,
+      sha256_hex,
+      to_char(upload_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as upload_url_expires_at,
+      etag,
+      to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as uploaded_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from sound_recorder_segments">>.
+
+sound_recorder_segments_status_values() -> [<<"pending">>, <<"uploaded">>, <<"failed">>, <<"expired">>, <<"deleted">>].
+
+validate_sound_recorder_segments_status(Value) when is_binary(Value) ->
+    case lists:member(Value, sound_recorder_segments_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported sound_recorder_segments.status: "/binary, Value/binary>>}
+    end;
+validate_sound_recorder_segments_status(Value) when is_list(Value) ->
+    validate_sound_recorder_segments_status(unicode:characters_to_binary(Value)).
+
+sound_recorder_segments_storage_provider_values() -> [<<"s3">>].
+
+validate_sound_recorder_segments_storage_provider(Value) when is_binary(Value) ->
+    case lists:member(Value, sound_recorder_segments_storage_provider_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported sound_recorder_segments.storage_provider: "/binary, Value/binary>>}
+    end;
+validate_sound_recorder_segments_storage_provider(Value) when is_list(Value) ->
+    validate_sound_recorder_segments_storage_provider(unicode:characters_to_binary(Value)).
+
+sound_recorder_evidence_exports_table() -> <<"sound_recorder_evidence_exports">>.
+
+sound_recorder_evidence_exports_columns() -> [<<"id">>, <<"account_id">>, <<"device_id">>, <<"created_by_device_id">>, <<"status">>, <<"requested_from">>, <<"requested_to">>, <<"segment_count">>, <<"manifest">>, <<"download_url_expires_at">>, <<"requested_at">>, <<"ready_at">>, <<"expires_at">>, <<"meta_data">>].
+
+sound_recorder_evidence_exports_select_sql() -> <<"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      created_by_device_id::text as created_by_device_id,
+      status,
+      to_char(requested_from at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as requested_from,
+      to_char(requested_to at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as requested_to,
+      segment_count,
+      manifest::text as manifest_json,
+      to_char(download_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as download_url_expires_at,
+      to_char(requested_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as requested_at,
+      to_char(ready_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as ready_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,
+      meta_data::text as meta_data_json
+    from sound_recorder_evidence_exports">>.
+
+sound_recorder_evidence_exports_status_values() -> [<<"requested">>, <<"ready">>, <<"expired">>, <<"revoked">>].
+
+validate_sound_recorder_evidence_exports_status(Value) when is_binary(Value) ->
+    case lists:member(Value, sound_recorder_evidence_exports_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported sound_recorder_evidence_exports.status: "/binary, Value/binary>>}
+    end;
+validate_sound_recorder_evidence_exports_status(Value) when is_list(Value) ->
+    validate_sound_recorder_evidence_exports_status(unicode:characters_to_binary(Value)).
+
+sound_recorder_audit_events_table() -> <<"sound_recorder_audit_events">>.
+
+sound_recorder_audit_events_columns() -> [<<"id">>, <<"account_id">>, <<"device_id">>, <<"event_type">>, <<"event_hash">>, <<"payload">>, <<"created_at">>].
+
+sound_recorder_audit_events_select_sql() -> <<"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      event_type,
+      event_hash,
+      payload::text as payload_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+    from sound_recorder_audit_events">>.
 
 container_pool_configs_table() -> <<"container_pool_configs">>.
 
