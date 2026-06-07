@@ -142,6 +142,12 @@ It exposes:
 - `GET /fabrication/tooling/catalog`
 - `GET /process-recipes/catalog`
 - `GET /fabrication/process-recipes/catalog`
+- `GET /kinematics/catalog`
+- `GET /fabrication/kinematics/catalog`
+- `GET /tolerances/catalog`
+- `GET /fabrication/tolerances/catalog`
+- `GET /safety/catalog`
+- `GET /fabrication/safety/catalog`
 - `POST /setup/plan`
 - `POST /fabrication/setup/plan`
 - `POST /setup/result`
@@ -1986,6 +1992,79 @@ provenance, material/tool/machine compatibility, simulation, first-article or
 coupon evidence, and operator or automation signoff clear. Recipe choices,
 parameter revisions, feed/speed outcomes, thermal cycles, edge quality,
 first-layer behavior, and postprocess results are retained as MDP/POMDP/neural
+learning signals for future planning and instruction repair.
+
+## `GET /fabrication/kinematics/catalog`
+
+`GET /kinematics/catalog` and the gateway-prefixed
+`GET /fabrication/kinematics/catalog` return the live
+`dd.fabrication.kinematics-catalog.v1` axis, coordinate-state, and motion
+evidence catalog before generated or imported instructions are treated as ready
+for simulation, postprocessing, or machine release. The catalog covers Cartesian
+additive, router, and sheet motion; rotary/five-axis milling; turning,
+mill-turn, and Swiss kinematics; robotic additive and external-axis cells; and
+inspection/probing coordinate-state review.
+
+Each kinematic family lists axes, required evidence, release blockers, response
+surfaces, and learning signals. The response names surfaces such as
+`simulation.axisExtents`, `simulation.riskProfile.programRisks`,
+`controllerPlan.requiredControllerChecks`, `fixturePlan.setups.requiredEvidence`,
+`monitoringPlan.monitorPoints`, `releaseProbePlan.probes`, and
+`machineRelease.blockers`. Catalog entries are not certified kinematic
+calibration records. Machine-ready release remains blocked until homing, units,
+coordinate state, axis envelope, rotary/robot frames, fixture clearance,
+simulation, and operator or automation signoff evidence clear. Axis-envelope,
+coordinate-mode, TCP/frame, external-axis, spindle-sync, and clearance
+observations are retained as MDP/POMDP/neural learning signals for future
+planning and instruction repair.
+
+## `GET /fabrication/tolerances/catalog`
+
+`GET /tolerances/catalog` and the gateway-prefixed
+`GET /fabrication/tolerances/catalog` return the live
+`dd.fabrication.tolerance-catalog.v1` dimensional, fit, GD&T/PMI, kerf, and
+interface-control evidence catalog before generated or imported instructions are
+treated as ready for quality planning, split/combine assembly, or machine
+release. The catalog covers additive shrinkage and printed fits, subtractive
+GD&T feature controls, turning/threading fits, sheet-cut kerf and edge quality,
+and hybrid assembly interface stackups.
+
+Each tolerance family lists geometry scopes, required evidence, release
+blockers, response surfaces, and learning signals. The response names surfaces
+such as `designInputReview.pmi`, `materialPlan.routeRequirements`,
+`slicerPlan.profileEvidence`, `fixturePlan.datumTransfers`,
+`decompositionPlan.parts`, `interfaceControlPlan.interfaces`,
+`assemblyPlan.requiredEvidence`, `qualityPlan.measurementTargets`, and
+`machineRelease.blockers`. Catalog entries are not certified inspection plans.
+Machine-ready release remains blocked until tolerance-critical features have
+material/process allowance, datum, metrology, inspection, and operator or
+automation signoff evidence. Coupon measurements, first-article results, gauge
+outcomes, kerf offsets, fit-up interventions, and split/combine stackups are
+retained as MDP/POMDP/neural learning signals for future planning and
+instruction repair.
+
+## `GET /fabrication/safety/catalog`
+
+`GET /safety/catalog` and the gateway-prefixed
+`GET /fabrication/safety/catalog` return the live
+`dd.fabrication.safety-catalog.v1` guarding, interlock, extraction, emergency,
+and human-intervention evidence catalog before generated or imported
+instructions are treated as ready for unattended or machine-ready release. The
+catalog covers additive enclosure and thermal safety, CNC guarding and chip
+control, sheet-cutting energy and extraction safety, robotic-cell and
+external-axis interlocks, and release lockout/emergency response.
+
+Each safety family lists hazards, required evidence, release blockers, response
+surfaces, and learning signals. The response names surfaces such as
+`executionPlan.stopPoints`, `executionPlan.operatorActions`,
+`interventionMap.requiredInterventions`, `monitoringPlan.monitorPoints`,
+`monitoringPlan.alertRules`, `monitoringPlan.recoveryActions`,
+`releasePackagePlan.requiredArtifacts`, and `machineRelease.blockers`. Catalog
+entries are not certified machine-safety approvals. Machine-ready release
+remains blocked until machine guarding, process support, operator intervention,
+emergency response, monitoring, alerting, and release signoff evidence clear.
+Interlock states, operator stops, extraction failures, E-stop events, recovery
+actions, and unattended-release outcomes are retained as MDP/POMDP/neural
 learning signals for future planning and instruction repair.
 
 ## `POST /fabrication/setup/plan`
