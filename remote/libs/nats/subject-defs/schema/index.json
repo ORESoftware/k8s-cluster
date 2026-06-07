@@ -8,6 +8,7 @@
     "fabrication.schema.json",
     "lambdas.schema.json",
     "presence.schema.json",
+    "public-data.schema.json",
     "runtime-events.schema.json",
     "trading.schema.json",
     "wal-cdc.schema.json"

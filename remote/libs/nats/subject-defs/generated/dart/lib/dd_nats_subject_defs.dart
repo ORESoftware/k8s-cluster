@@ -189,6 +189,27 @@ const String mlFeaturesSubject = "dd.remote.ml.features";
 const String orchestratorWakeupSubject = "dd.remote.orchestrator.wakeup";
 const String orchestratorWakeupStream = "DD_REMOTE_CONTROL";
 
+/// Trend, correlation, grant-match, graph-data, model, and white-paper evidence results from public-data analysis runs.
+/// Service: dd-public-data-server
+const String publicDataAnalysisResultsSubject = "dd.remote.public_data.analysis.results";
+
+/// Inbound public-data ingestion requests accepted over NATS. Payloads mirror the HTTP /ingest and /scrape contracts.
+/// Service: dd-public-data-server
+const String publicDataIngestRequestsSubject = "dd.remote.public_data.ingest.requests";
+const String publicDataIngestRequestsQueueGroup = "dd-public-data-server";
+
+/// Results emitted after public-data records, scrape results, or webhook receipts are normalized into the service ledger.
+/// Service: dd-public-data-server
+const String publicDataIngestResultsSubject = "dd.remote.public_data.ingest.results";
+
+/// Spark/Airflow pipeline job intents generated from ingested public datasets, grants, trend/correlation analysis, and white-paper evidence briefs.
+/// Service: dd-public-data-server
+const String publicDataPipelineJobsSubject = "dd.remote.public_data.pipeline.jobs";
+
+/// Raw-but-redacted webhook receipt events from public/primary data providers. Consumers should use this as an audit/event source, not the canonical dataset store.
+/// Service: dd-public-data-server
+const String publicDataWebhookEventsSubject = "dd.remote.public_data.webhooks.events";
+
 /// Critical operational event bus for compact alert-worthy runtime failures. JetStream-backed by DD_REMOTE_CRITICAL_EVENTS so dd-remote-queue-consumer can log/alert without losing events during restarts. Payloads should carry a dd.log.v1-compatible envelope and must not contain secrets.
 /// Service: shared
 const String runtimeCriticalEventsSubject = "dd.remote.events.critical";
@@ -613,6 +634,10 @@ const String lambdaRunnerQueueGroup = "dd-gleam-lambda-runner";
 /// Shared queue group used by slave solver pods so each branch-and-bound subproblem is solved once.
 /// Service: dd-ai-ml-pipeline
 const String mipSolverWorkersQueueGroup = "dd-in-house-mip-solver-node-workers";
+
+/// Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
+/// Service: dd-public-data-server
+const String publicDataWorkersQueueGroup = "dd-public-data-server";
 
 /// Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once.
 /// Service: dd-remote-rest-api

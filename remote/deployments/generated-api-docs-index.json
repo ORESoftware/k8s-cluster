@@ -343,6 +343,19 @@
       ]
     },
     {
+      "service": "public-data-server-rs",
+      "language": "rust",
+      "routeCount": 21,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 14
+      },
+      "generated": [
+        "remote/deployments/public-data-server-rs/generated/api-docs.json",
+        "remote/deployments/public-data-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "rest-api-rs",
       "language": "rust",
       "routeCount": 45,

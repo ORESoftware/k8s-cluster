@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/public-data.schema.json",
+  "title": "PublicDataNats",
+  "description": "NATS subjects for the public-data ingestion service: webhook receipts, scrape/ingest jobs, normalized dataset facts, grants, evidence briefs, and downstream Spark/Airflow pipeline triggers.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-public-data-server",
+    "summary": "Public research/government data ingestion, source scraping, grants discovery, analysis, and big-data pipeline handoff subjects.",
+    "subjects": [
+      {
+        "name": "PublicDataIngestRequests",
+        "description": "Inbound public-data ingestion requests accepted over NATS. Payloads mirror the HTTP /ingest and /scrape contracts.",
+        "kind": "static",
+        "subject": "dd.remote.public_data.ingest.requests",
+        "queueGroup": "dd-public-data-server",
+        "direction": "both"
+      },
+      {
+        "name": "PublicDataIngestResults",
+        "description": "Results emitted after public-data records, scrape results, or webhook receipts are normalized into the service ledger.",
+        "kind": "static",
+        "subject": "dd.remote.public_data.ingest.results",
+        "direction": "publish"
+      },
+      {
+        "name": "PublicDataWebhookEvents",
+        "description": "Raw-but-redacted webhook receipt events from public/primary data providers. Consumers should use this as an audit/event source, not the canonical dataset store.",
+        "kind": "static",
+        "subject": "dd.remote.public_data.webhooks.events",
+        "direction": "publish"
+      },
+      {
+        "name": "PublicDataPipelineJobs",
+        "description": "Spark/Airflow pipeline job intents generated from ingested public datasets, grants, trend/correlation analysis, and white-paper evidence briefs.",
+        "kind": "static",
+        "subject": "dd.remote.public_data.pipeline.jobs",
+        "direction": "both"
+      },
+      {
+        "name": "PublicDataAnalysisResults",
+        "description": "Trend, correlation, grant-match, graph-data, model, and white-paper evidence results from public-data analysis runs.",
+        "kind": "static",
+        "subject": "dd.remote.public_data.analysis.results",
+        "direction": "publish"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "PublicDataWorkersQueueGroup",
+        "value": "dd-public-data-server",
+        "description": "Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once."
+      }
+    ]
+  }
+}
