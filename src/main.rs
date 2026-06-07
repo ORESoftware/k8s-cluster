@@ -849,6 +849,85 @@ struct ManufacturabilityResultArtifact {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct DispositionResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    source_part_id: Option<String>,
+    machine_kind: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    disposition_decisions: Option<Vec<DispositionResultDecision>>,
+    remediation_actions: Option<Vec<DispositionResultRemediationAction>>,
+    authority_reviews: Option<Vec<DispositionResultAuthorityReview>>,
+    artifacts: Option<Vec<DispositionResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DispositionResultDecision {
+    decision_id: String,
+    disposition_family: String,
+    decision_kind: String,
+    status: String,
+    source_finding_id: Option<String>,
+    accepted: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_rework: Option<bool>,
+    requires_remake: Option<bool>,
+    requires_waiver: Option<bool>,
+    requires_split_combine: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DispositionResultRemediationAction {
+    action_id: String,
+    action_kind: String,
+    status: String,
+    machine_kind: Option<String>,
+    manufacturing_method: Option<String>,
+    completed: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_reinspection: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DispositionResultAuthorityReview {
+    review_id: String,
+    authority_kind: String,
+    status: String,
+    approved: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_signoff: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DispositionResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SupportStrategyResultReviewRequest {
     request_id: Option<String>,
     plan_request_id: Option<String>,
@@ -1166,6 +1245,306 @@ struct ToleranceResultCompensation {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ToleranceResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessCapabilityResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    machine_kind: Option<String>,
+    source_part_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    capability_findings: Option<Vec<ProcessCapabilityResultFinding>>,
+    alternate_routes: Option<Vec<ProcessCapabilityResultAlternateRoute>>,
+    measurement_results: Option<Vec<ProcessCapabilityResultMeasurement>>,
+    artifacts: Option<Vec<ProcessCapabilityResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessCapabilityResultFinding {
+    finding_id: String,
+    capability_family: String,
+    capability_scope: String,
+    status: String,
+    within_capability: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_redesign: Option<bool>,
+    requires_alternate_route: Option<bool>,
+    requires_split_combine: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessCapabilityResultAlternateRoute {
+    route_id: String,
+    route_kind: String,
+    manufacturing_method: Option<String>,
+    machine_kind: Option<String>,
+    status: String,
+    accepted: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_split_combine: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessCapabilityResultMeasurement {
+    measurement_id: String,
+    measurement_kind: String,
+    status: String,
+    target_value: Option<String>,
+    measured_value: Option<String>,
+    within_limits: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessCapabilityResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SafetyResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    safety_checks: Option<Vec<SafetyResultCheck>>,
+    interlock_checks: Option<Vec<SafetyResultInterlockCheck>>,
+    emergency_actions: Option<Vec<SafetyResultEmergencyAction>>,
+    artifacts: Option<Vec<SafetyResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SafetyResultCheck {
+    check_id: String,
+    safety_family: String,
+    hazard: String,
+    status: String,
+    cleared: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_stop_point: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SafetyResultInterlockCheck {
+    interlock_id: String,
+    interlock_kind: String,
+    status: String,
+    verified: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_restart_review: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SafetyResultEmergencyAction {
+    action_id: String,
+    action_kind: String,
+    status: String,
+    completed: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SafetyResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvironmentResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    condition_checks: Option<Vec<EnvironmentResultConditionCheck>>,
+    utility_checks: Option<Vec<EnvironmentResultUtilityCheck>>,
+    metrology_checks: Option<Vec<EnvironmentResultMetrologyCheck>>,
+    artifacts: Option<Vec<EnvironmentResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvironmentResultConditionCheck {
+    check_id: String,
+    environment_family: String,
+    condition_scope: String,
+    status: String,
+    target_value: Option<String>,
+    measured_value: Option<String>,
+    within_limits: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_conditioning: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvironmentResultUtilityCheck {
+    utility_id: String,
+    utility_kind: String,
+    status: String,
+    available: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_recovery: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvironmentResultMetrologyCheck {
+    metrology_id: String,
+    metrology_kind: String,
+    status: String,
+    stable: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_recheck: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvironmentResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProvenanceResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    source_part_id: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    lineage_checks: Option<Vec<ProvenanceResultLineageCheck>>,
+    artifact_checks: Option<Vec<ProvenanceResultArtifactCheck>>,
+    custody_events: Option<Vec<ProvenanceResultCustodyEvent>>,
+    artifacts: Option<Vec<ProvenanceResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProvenanceResultLineageCheck {
+    check_id: String,
+    provenance_family: String,
+    evidence_scope: String,
+    status: String,
+    traceable: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_review: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProvenanceResultArtifactCheck {
+    artifact_id: String,
+    artifact_kind: String,
+    status: String,
+    digest_verified: Option<bool>,
+    uri_present: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProvenanceResultCustodyEvent {
+    event_id: String,
+    event_kind: String,
+    status: String,
+    accepted: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProvenanceResultArtifact {
     artifact_id: String,
     artifact_kind: String,
     source_ref_id: Option<String>,
@@ -1861,6 +2240,92 @@ struct MonitoringResultOperatorIntervention {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MonitoringResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TelemetryResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    program_id: Option<String>,
+    run_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    learning_ready: Option<bool>,
+    sensor_windows: Option<Vec<TelemetryResultSensorWindow>>,
+    machine_stops: Option<Vec<TelemetryResultMachineStop>>,
+    boundary_correlations: Option<Vec<TelemetryResultBoundaryCorrelation>>,
+    operator_interventions: Option<Vec<TelemetryResultOperatorIntervention>>,
+    artifacts: Option<Vec<TelemetryResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TelemetryResultSensorWindow {
+    window_id: String,
+    telemetry_family: String,
+    channel_kind: String,
+    status: String,
+    samples_retained: Option<bool>,
+    within_envelope: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TelemetryResultMachineStop {
+    stop_id: String,
+    stop_kind: String,
+    status: String,
+    safe_stop_verified: Option<bool>,
+    restart_authorized: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TelemetryResultBoundaryCorrelation {
+    correlation_id: String,
+    predicted_boundary_id: Option<String>,
+    actual_event_id: Option<String>,
+    status: String,
+    matched: Option<bool>,
+    false_positive: Option<bool>,
+    false_negative: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TelemetryResultOperatorIntervention {
+    intervention_id: String,
+    intervention_kind: String,
+    status: String,
+    completed: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TelemetryResultArtifact {
     artifact_id: String,
     artifact_kind: String,
     source_ref_id: Option<String>,
@@ -54244,6 +54709,657 @@ async fn disposition_catalog_http() -> impl IntoResponse {
     Json(disposition_catalog_response())
 }
 
+fn validate_disposition_result_decisions(
+    decisions: Option<Vec<DispositionResultDecision>>,
+) -> Result<Vec<Value>, String> {
+    let decisions = decisions.unwrap_or_default();
+    if decisions.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "dispositionDecisions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    decisions
+        .into_iter()
+        .enumerate()
+        .map(|(index, decision)| {
+            let decision_id = validate_label(
+                &decision.decision_id,
+                &format!("dispositionDecisions[{index}].decisionId"),
+            )?;
+            let disposition_family = validate_label(
+                &decision.disposition_family,
+                &format!("dispositionDecisions[{index}].dispositionFamily"),
+            )?;
+            let decision_kind = validate_label(
+                &decision.decision_kind,
+                &format!("dispositionDecisions[{index}].decisionKind"),
+            )?;
+            let status = validate_label(
+                &decision.status,
+                &format!("dispositionDecisions[{index}].status"),
+            )?;
+            let source_finding_id = validate_optional_label(
+                decision.source_finding_id,
+                "dispositionDecisions.sourceFindingId",
+            )?;
+            let evidence = validate_signal_list(
+                decision.evidence,
+                "dispositionDecisions.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "decisionId": decision_id,
+                "dispositionFamily": disposition_family,
+                "decisionKind": decision_kind,
+                "status": status,
+                "sourceFindingId": source_finding_id,
+                "accepted": decision.accepted.unwrap_or(false),
+                "releaseBlocker": decision.release_blocker.unwrap_or(true),
+                "requiresRework": decision.requires_rework.unwrap_or(false),
+                "requiresRemake": decision.requires_remake.unwrap_or(false),
+                "requiresWaiver": decision.requires_waiver.unwrap_or(false),
+                "requiresSplitCombine": decision.requires_split_combine.unwrap_or(false),
+                "requiresHumanIntervention": decision.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_disposition_result_remediation_actions(
+    actions: Option<Vec<DispositionResultRemediationAction>>,
+) -> Result<Vec<Value>, String> {
+    let actions = actions.unwrap_or_default();
+    if actions.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "remediationActions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    actions
+        .into_iter()
+        .enumerate()
+        .map(|(index, action)| {
+            let action_id = validate_label(
+                &action.action_id,
+                &format!("remediationActions[{index}].actionId"),
+            )?;
+            let action_kind = validate_label(
+                &action.action_kind,
+                &format!("remediationActions[{index}].actionKind"),
+            )?;
+            let status = validate_label(
+                &action.status,
+                &format!("remediationActions[{index}].status"),
+            )?;
+            let machine_kind =
+                validate_optional_label(action.machine_kind, "remediationActions.machineKind")?;
+            let manufacturing_method = validate_optional_label(
+                action.manufacturing_method,
+                "remediationActions.manufacturingMethod",
+            )?;
+            let evidence =
+                validate_signal_list(action.evidence, "remediationActions.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "actionId": action_id,
+                "actionKind": action_kind,
+                "status": status,
+                "machineKind": machine_kind,
+                "manufacturingMethod": manufacturing_method,
+                "completed": action.completed.unwrap_or(false),
+                "releaseBlocker": action.release_blocker.unwrap_or(true),
+                "requiresReinspection": action.requires_reinspection.unwrap_or(false),
+                "requiresHumanIntervention": action.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_disposition_result_authority_reviews(
+    reviews: Option<Vec<DispositionResultAuthorityReview>>,
+) -> Result<Vec<Value>, String> {
+    let reviews = reviews.unwrap_or_default();
+    if reviews.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "authorityReviews must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    reviews
+        .into_iter()
+        .enumerate()
+        .map(|(index, review)| {
+            let review_id = validate_label(
+                &review.review_id,
+                &format!("authorityReviews[{index}].reviewId"),
+            )?;
+            let authority_kind = validate_label(
+                &review.authority_kind,
+                &format!("authorityReviews[{index}].authorityKind"),
+            )?;
+            let status =
+                validate_label(&review.status, &format!("authorityReviews[{index}].status"))?;
+            let evidence =
+                validate_signal_list(review.evidence, "authorityReviews.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "reviewId": review_id,
+                "authorityKind": authority_kind,
+                "status": status,
+                "approved": review.approved.unwrap_or(false),
+                "releaseBlocker": review.release_blocker.unwrap_or(true),
+                "requiresHumanSignoff": review.requires_human_signoff.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_disposition_result_artifacts(
+    artifacts: Option<Vec<DispositionResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn disposition_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("rejected")
+        || status.contains("pending")
+        || status.contains("required")
+}
+
+fn disposition_result_decision_blocks_release(decision: &Value) -> bool {
+    decision
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !decision
+            .get("accepted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || decision
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || disposition_result_status_blocks_release(
+            decision.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn disposition_result_action_blocks_release(action: &Value) -> bool {
+    action
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !action
+            .get("completed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || action
+            .get("requiresReinspection")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || action
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || disposition_result_status_blocks_release(
+            action.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn disposition_result_authority_blocks_release(review: &Value) -> bool {
+    review
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !review
+            .get("approved")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || review
+            .get("requiresHumanSignoff")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || disposition_result_status_blocks_release(
+            review.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn disposition_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn disposition_result_review_response(
+    request: DispositionResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "disposition-result");
+    let generated_at_ms = now_ms();
+    let disposition_result_job_id = safe_job_id("disposition-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let source_part_id = validate_optional_label(request.source_part_id, "sourcePartId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let disposition_decisions =
+        validate_disposition_result_decisions(request.disposition_decisions)?;
+    let remediation_actions =
+        validate_disposition_result_remediation_actions(request.remediation_actions)?;
+    let authority_reviews =
+        validate_disposition_result_authority_reviews(request.authority_reviews)?;
+    let artifacts = validate_disposition_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let decision_blocker_count = disposition_decisions
+        .iter()
+        .filter(|decision| disposition_result_decision_blocks_release(decision))
+        .count();
+    let action_blocker_count = remediation_actions
+        .iter()
+        .filter(|action| disposition_result_action_blocks_release(action))
+        .count();
+    let authority_blocker_count = authority_reviews
+        .iter()
+        .filter(|review| disposition_result_authority_blocks_release(review))
+        .count();
+    let rework_required = disposition_decisions.iter().any(|decision| {
+        decision
+            .get("requiresRework")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let remake_required = disposition_decisions.iter().any(|decision| {
+        decision
+            .get("requiresRemake")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let waiver_required = disposition_decisions.iter().any(|decision| {
+        decision
+            .get("requiresWaiver")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let split_combine_required = disposition_decisions.iter().any(|decision| {
+        decision
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let reinspection_required = remediation_actions.iter().any(|action| {
+        action
+            .get("requiresReinspection")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let human_intervention_required = disposition_decisions.iter().any(|decision| {
+        decision
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || remediation_actions.iter().any(|action| {
+        action
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let human_signoff_required = authority_reviews.iter().any(|review| {
+        review
+            .get("requiresHumanSignoff")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| disposition_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || disposition_decisions.is_empty()
+        || decision_blocker_count > 0
+        || action_blocker_count > 0
+        || authority_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if disposition_decisions.is_empty() {
+        "disposition-result-decisions-required"
+    } else if !request.success {
+        "disposition-result-worker-failed-release-blocked"
+    } else if decision_blocker_count > 0 {
+        "disposition-result-decisions-release-blocked"
+    } else if action_blocker_count > 0 {
+        "disposition-result-actions-release-blocked"
+    } else if authority_blocker_count > 0 {
+        "disposition-result-authority-release-blocked"
+    } else if artifact_evidence_missing {
+        "disposition-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "disposition-result-machine-ready-review-required"
+    } else if !release_ready {
+        "disposition-result-release-ready-review-required"
+    } else {
+        "disposition-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("disposition-worker:{worker_id}"),
+        format!("disposition-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "disposition-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("disposition:release-blocked".to_string());
+    }
+    if rework_required {
+        learning_observations.push("disposition:rework-required".to_string());
+    }
+    if remake_required {
+        learning_observations.push("disposition:remake-required".to_string());
+    }
+    if waiver_required {
+        learning_observations.push("disposition:waiver-required".to_string());
+    }
+    if split_combine_required {
+        learning_observations.push("disposition:split-combine-required".to_string());
+    }
+    if reinspection_required {
+        learning_observations.push("disposition:reinspection-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("disposition:human-intervention-required".to_string());
+    }
+    if human_signoff_required {
+        learning_observations.push("disposition:human-signoff-required".to_string());
+    }
+    learning_observations.extend(disposition_decisions.iter().filter_map(|decision| {
+        decision
+            .get("dispositionFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("disposition-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(disposition_decisions.iter().filter_map(|decision| {
+        decision
+            .get("decisionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("disposition-decision:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(remediation_actions.iter().filter_map(|action| {
+        action
+            .get("actionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("disposition-action:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(authority_reviews.iter().filter_map(|review| {
+        review
+            .get("authorityKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("disposition-authority:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.disposition-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "dispositionResultJobId": disposition_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /dispositions/result", "POST /fabrication/dispositions/result"],
+        "catalogRoutes": ["GET /dispositions/catalog", "GET /fabrication/dispositions/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "decisionCount": disposition_decisions.len(),
+        "decisionBlockerCount": decision_blocker_count,
+        "remediationActionCount": remediation_actions.len(),
+        "remediationActionBlockerCount": action_blocker_count,
+        "authorityReviewCount": authority_reviews.len(),
+        "authorityBlockerCount": authority_blocker_count,
+        "reworkRequired": rework_required,
+        "remakeRequired": remake_required,
+        "waiverRequired": waiver_required,
+        "splitCombineRequired": split_combine_required,
+        "reinspectionRequired": reinspection_required,
+        "humanInterventionRequired": human_intervention_required,
+        "humanSignoffRequired": human_signoff_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "dispositionResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "sourcePartId": source_part_id,
+            "machineKind": machine_kind,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "dispositionDecisions": disposition_decisions,
+            "remediationActions": remediation_actions,
+            "authorityReviews": authority_reviews,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "pass, rework, scrap, waiver, or split/combine disposition decisions are accepted with retained evidence",
+                "rework, remake, remediation, and reinspection actions are complete before release",
+                "human authority, engineering waiver, or operator signoff records are approved when required",
+                "disposition result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "disposition-result",
+            "disposition-decisions",
+            "disposition-remediation-actions",
+            "disposition-authority-reviews",
+            "disposition-artifacts",
+            "disposition-learning-observations",
+            "mdp-request.artifacts.dispositionResult"
+        ],
+        "dispositionResultPolicy": [
+            "disposition results are retained pass/rework/scrap/waiver/split-combine review evidence, not certified quality acceptance",
+            "machine-ready release remains blocked until disposition decisions, remediation actions, authority reviews, artifacts, and human signoff clear",
+            "disposition result observations feed MDP/POMDP/neural learning so future planners can avoid failed routes, split/combine earlier, remake, rework, or add inspection"
+        ]
+    }))
+}
+
+fn disposition_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("decisions-release-blocked")
+        || status.contains("actions-release-blocked")
+        || status.contains("authority-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_disposition_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "disposition-result");
+    let job_id = response_str_field(
+        response,
+        "dispositionResultJobId",
+        &safe_job_id("disposition-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "disposition-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("dispositionResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let disposition_decisions = result
+        .get("dispositionDecisions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let remediation_actions = result
+        .get("remediationActions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let authority_reviews = result
+        .get("authorityReviews")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let disposition_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "disposition-result".to_string(),
+            "disposition-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "disposition-decisions".to_string(),
+            "disposition-decisions",
+            disposition_decisions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "disposition-remediation-actions".to_string(),
+            "disposition-remediation-actions",
+            remediation_actions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "disposition-authority-reviews".to_string(),
+            "disposition-authority-reviews",
+            authority_reviews,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "disposition-artifacts".to_string(),
+            "disposition-artifacts",
+            disposition_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "disposition-learning-observations".to_string(),
+            "disposition-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "disposition-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: disposition_result_job_severity(response),
+            summary: format!("disposition result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_disposition_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_disposition_result_job(response));
+}
+
 fn costing_catalog_entries() -> Vec<Value> {
     vec![
         json!({
@@ -54691,6 +55807,691 @@ fn telemetry_catalog_response() -> Value {
 
 async fn telemetry_catalog_http() -> impl IntoResponse {
     Json(telemetry_catalog_response())
+}
+
+fn validate_telemetry_result_sensor_windows(
+    windows: Option<Vec<TelemetryResultSensorWindow>>,
+) -> Result<Vec<Value>, String> {
+    let windows = windows.unwrap_or_default();
+    if windows.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "sensorWindows must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    windows
+        .into_iter()
+        .enumerate()
+        .map(|(index, window)| {
+            let window_id =
+                validate_label(&window.window_id, &format!("sensorWindows[{index}].windowId"))?;
+            let telemetry_family = validate_label(
+                &window.telemetry_family,
+                &format!("sensorWindows[{index}].telemetryFamily"),
+            )?;
+            let channel_kind = validate_label(
+                &window.channel_kind,
+                &format!("sensorWindows[{index}].channelKind"),
+            )?;
+            let status =
+                validate_label(&window.status, &format!("sensorWindows[{index}].status"))?;
+            let evidence =
+                validate_signal_list(window.evidence, "sensorWindows.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "windowId": window_id,
+                "telemetryFamily": telemetry_family,
+                "channelKind": channel_kind,
+                "status": status,
+                "samplesRetained": window.samples_retained.unwrap_or(false),
+                "withinEnvelope": window.within_envelope.unwrap_or(false),
+                "releaseBlocker": window.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_telemetry_result_machine_stops(
+    stops: Option<Vec<TelemetryResultMachineStop>>,
+) -> Result<Vec<Value>, String> {
+    let stops = stops.unwrap_or_default();
+    if stops.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "machineStops must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    stops
+        .into_iter()
+        .enumerate()
+        .map(|(index, stop)| {
+            let stop_id =
+                validate_label(&stop.stop_id, &format!("machineStops[{index}].stopId"))?;
+            let stop_kind =
+                validate_label(&stop.stop_kind, &format!("machineStops[{index}].stopKind"))?;
+            let status = validate_label(&stop.status, &format!("machineStops[{index}].status"))?;
+            let evidence =
+                validate_signal_list(stop.evidence, "machineStops.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "stopId": stop_id,
+                "stopKind": stop_kind,
+                "status": status,
+                "safeStopVerified": stop.safe_stop_verified.unwrap_or(false),
+                "restartAuthorized": stop.restart_authorized.unwrap_or(false),
+                "requiresHumanIntervention": stop.requires_human_intervention.unwrap_or(false),
+                "releaseBlocker": stop.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_telemetry_result_boundary_correlations(
+    correlations: Option<Vec<TelemetryResultBoundaryCorrelation>>,
+) -> Result<Vec<Value>, String> {
+    let correlations = correlations.unwrap_or_default();
+    if correlations.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "boundaryCorrelations must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    correlations
+        .into_iter()
+        .enumerate()
+        .map(|(index, correlation)| {
+            let correlation_id = validate_label(
+                &correlation.correlation_id,
+                &format!("boundaryCorrelations[{index}].correlationId"),
+            )?;
+            let predicted_boundary_id = validate_optional_label(
+                correlation.predicted_boundary_id,
+                "boundaryCorrelations.predictedBoundaryId",
+            )?;
+            let actual_event_id = validate_optional_label(
+                correlation.actual_event_id,
+                "boundaryCorrelations.actualEventId",
+            )?;
+            let status = validate_label(
+                &correlation.status,
+                &format!("boundaryCorrelations[{index}].status"),
+            )?;
+            let evidence = validate_signal_list(
+                correlation.evidence,
+                "boundaryCorrelations.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "correlationId": correlation_id,
+                "predictedBoundaryId": predicted_boundary_id,
+                "actualEventId": actual_event_id,
+                "status": status,
+                "matched": correlation.matched.unwrap_or(false),
+                "falsePositive": correlation.false_positive.unwrap_or(false),
+                "falseNegative": correlation.false_negative.unwrap_or(false),
+                "releaseBlocker": correlation.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_telemetry_result_operator_interventions(
+    interventions: Option<Vec<TelemetryResultOperatorIntervention>>,
+) -> Result<Vec<Value>, String> {
+    let interventions = interventions.unwrap_or_default();
+    if interventions.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "operatorInterventions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    interventions
+        .into_iter()
+        .enumerate()
+        .map(|(index, intervention)| {
+            let intervention_id = validate_label(
+                &intervention.intervention_id,
+                &format!("operatorInterventions[{index}].interventionId"),
+            )?;
+            let intervention_kind = validate_label(
+                &intervention.intervention_kind,
+                &format!("operatorInterventions[{index}].interventionKind"),
+            )?;
+            let status = validate_label(
+                &intervention.status,
+                &format!("operatorInterventions[{index}].status"),
+            )?;
+            let evidence = validate_signal_list(
+                intervention.evidence,
+                "operatorInterventions.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "interventionId": intervention_id,
+                "interventionKind": intervention_kind,
+                "status": status,
+                "completed": intervention.completed.unwrap_or(false),
+                "releaseBlocker": intervention.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_telemetry_result_artifacts(
+    artifacts: Option<Vec<TelemetryResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn telemetry_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("out-of")
+        || status.contains("mismatch")
+        || status.contains("false-negative")
+}
+
+fn telemetry_result_sensor_window_blocks_release(window: &Value) -> bool {
+    window
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !window
+            .get("samplesRetained")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !window
+            .get("withinEnvelope")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || telemetry_result_status_blocks_release(
+            window.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn telemetry_result_machine_stop_blocks_release(stop: &Value) -> bool {
+    stop.get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || !stop
+            .get("safeStopVerified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !stop
+            .get("restartAuthorized")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || stop
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || telemetry_result_status_blocks_release(
+            stop.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn telemetry_result_boundary_correlation_blocks_release(correlation: &Value) -> bool {
+    correlation
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !correlation
+            .get("matched")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || correlation
+            .get("falseNegative")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || telemetry_result_status_blocks_release(
+            correlation
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )
+}
+
+fn telemetry_result_operator_intervention_blocks_release(intervention: &Value) -> bool {
+    intervention
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !intervention
+            .get("completed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || telemetry_result_status_blocks_release(
+            intervention
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )
+}
+
+fn telemetry_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn telemetry_result_review_response(
+    request: TelemetryResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "telemetry-result");
+    let generated_at_ms = now_ms();
+    let telemetry_result_job_id = safe_job_id("telemetry-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let program_id = validate_optional_label(request.program_id, "programId")?;
+    let run_id = validate_optional_label(request.run_id, "runId")?;
+    let learning_ready = request.learning_ready.unwrap_or(false);
+    let sensor_windows = validate_telemetry_result_sensor_windows(request.sensor_windows)?;
+    let machine_stops = validate_telemetry_result_machine_stops(request.machine_stops)?;
+    let boundary_correlations =
+        validate_telemetry_result_boundary_correlations(request.boundary_correlations)?;
+    let operator_interventions =
+        validate_telemetry_result_operator_interventions(request.operator_interventions)?;
+    let artifacts = validate_telemetry_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let sensor_window_blocker_count = sensor_windows
+        .iter()
+        .filter(|window| telemetry_result_sensor_window_blocks_release(window))
+        .count();
+    let machine_stop_blocker_count = machine_stops
+        .iter()
+        .filter(|stop| telemetry_result_machine_stop_blocks_release(stop))
+        .count();
+    let boundary_correlation_blocker_count = boundary_correlations
+        .iter()
+        .filter(|correlation| telemetry_result_boundary_correlation_blocks_release(correlation))
+        .count();
+    let operator_intervention_blocker_count = operator_interventions
+        .iter()
+        .filter(|intervention| telemetry_result_operator_intervention_blocks_release(intervention))
+        .count();
+    let false_positive_count = boundary_correlations
+        .iter()
+        .filter(|correlation| {
+            correlation
+                .get("falsePositive")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let false_negative_count = boundary_correlations
+        .iter()
+        .filter(|correlation| {
+            correlation
+                .get("falseNegative")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_intervention_required = machine_stops.iter().any(|stop| {
+        stop.get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || operator_intervention_blocker_count > 0;
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| telemetry_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || sensor_windows.is_empty()
+        || sensor_window_blocker_count > 0
+        || machine_stop_blocker_count > 0
+        || boundary_correlations.is_empty()
+        || boundary_correlation_blocker_count > 0
+        || operator_intervention_blocker_count > 0
+        || artifact_evidence_missing;
+    let learning_blocked = !learning_ready || release_blocked || boundary_correlations.is_empty();
+    let review_status = if sensor_windows.is_empty() {
+        "telemetry-result-sensor-windows-required"
+    } else if !request.success {
+        "telemetry-result-worker-failed-release-blocked"
+    } else if sensor_window_blocker_count > 0 {
+        "telemetry-result-sensor-window-release-blocked"
+    } else if machine_stop_blocker_count > 0 {
+        "telemetry-result-machine-stop-release-blocked"
+    } else if boundary_correlations.is_empty() || boundary_correlation_blocker_count > 0 {
+        "telemetry-result-boundary-correlation-release-blocked"
+    } else if operator_intervention_blocker_count > 0 {
+        "telemetry-result-operator-intervention-release-blocked"
+    } else if artifact_evidence_missing {
+        "telemetry-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "telemetry-result-machine-ready-review-required"
+    } else if !learning_ready {
+        "telemetry-result-learning-ready-review-required"
+    } else {
+        "telemetry-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("telemetry-worker:{worker_id}"),
+        format!("telemetry-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "telemetry-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("telemetry:release-blocked".to_string());
+    }
+    if learning_blocked {
+        learning_observations.push("telemetry:learning-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("telemetry:human-intervention-required".to_string());
+    }
+    if false_positive_count > 0 {
+        learning_observations.push("telemetry:false-positive".to_string());
+    }
+    if false_negative_count > 0 {
+        learning_observations.push("telemetry:false-negative".to_string());
+    }
+    learning_observations.extend(sensor_windows.iter().filter_map(|window| {
+        window
+            .get("telemetryFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("telemetry-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(sensor_windows.iter().filter_map(|window| {
+        window
+            .get("channelKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("telemetry-channel:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(machine_stops.iter().filter_map(|stop| {
+        stop.get("stopKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("telemetry-stop:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(boundary_correlations.iter().filter_map(|correlation| {
+        correlation
+            .get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("telemetry-boundary-status:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(operator_interventions.iter().filter_map(|intervention| {
+        intervention
+            .get("interventionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("telemetry-operator-intervention:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(artifacts.iter().filter_map(|artifact| {
+        artifact
+            .get("artifactKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("telemetry-artifact:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.telemetry-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "telemetryResultJobId": telemetry_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /telemetry/result", "POST /fabrication/telemetry/result"],
+        "catalogRoutes": ["GET /telemetry/catalog", "GET /fabrication/telemetry/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "learningReady": learning_ready && !learning_blocked,
+        "releaseBlocked": release_blocked,
+        "learningBlocked": learning_blocked,
+        "sensorWindowCount": sensor_windows.len(),
+        "sensorWindowBlockerCount": sensor_window_blocker_count,
+        "machineStopCount": machine_stops.len(),
+        "machineStopBlockerCount": machine_stop_blocker_count,
+        "boundaryCorrelationCount": boundary_correlations.len(),
+        "boundaryCorrelationBlockerCount": boundary_correlation_blocker_count,
+        "falsePositiveCount": false_positive_count,
+        "falseNegativeCount": false_negative_count,
+        "operatorInterventionCount": operator_interventions.len(),
+        "operatorInterventionBlockerCount": operator_intervention_blocker_count,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "telemetryResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "programId": program_id,
+            "runId": run_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "learningReady": learning_ready,
+            "sensorWindows": sensor_windows,
+            "machineStops": machine_stops,
+            "boundaryCorrelations": boundary_correlations,
+            "operatorInterventions": operator_interventions,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "learningReleaseBlocked": learning_blocked,
+            "requiredBeforeMachineReady": [
+                "sensor windows retain samples, machine/program/run identity, envelopes, and evidence labels",
+                "machine stops and restart decisions are linked to safe-stop and operator-intervention evidence",
+                "predicted failure boundaries are correlated with actual stops, alarms, false positives, and false negatives",
+                "telemetry artifacts retain URI, checksum, format, and evidence labels before learning release"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "telemetry-result",
+            "telemetry-sensor-windows",
+            "telemetry-machine-stops",
+            "telemetry-boundary-correlations",
+            "telemetry-operator-interventions",
+            "telemetry-artifacts",
+            "telemetry-learning-observations",
+            "mdp-request.artifacts.telemetryResult"
+        ]
+    }))
+}
+
+fn telemetry_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("sensor-window-release-blocked")
+        || status.contains("machine-stop-release-blocked")
+        || status.contains("boundary-correlation-release-blocked")
+        || status.contains("operator-intervention-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_telemetry_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "telemetry-result");
+    let job_id = response_str_field(
+        response,
+        "telemetryResultJobId",
+        &safe_job_id("telemetry-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "telemetry-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("telemetryResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let sensor_windows = result
+        .get("sensorWindows")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let machine_stops = result
+        .get("machineStops")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let boundary_correlations = result
+        .get("boundaryCorrelations")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let operator_interventions = result
+        .get("operatorInterventions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let telemetry_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "telemetry-result".to_string(),
+            "telemetry-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "telemetry-sensor-windows".to_string(),
+            "telemetry-sensor-windows",
+            sensor_windows,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "telemetry-machine-stops".to_string(),
+            "telemetry-machine-stops",
+            machine_stops,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "telemetry-boundary-correlations".to_string(),
+            "telemetry-boundary-correlations",
+            boundary_correlations,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "telemetry-operator-interventions".to_string(),
+            "telemetry-operator-interventions",
+            operator_interventions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "telemetry-artifacts".to_string(),
+            "telemetry-artifacts",
+            telemetry_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "telemetry-learning-observations".to_string(),
+            "telemetry-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "telemetry-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: telemetry_result_job_severity(response),
+            summary: format!("telemetry result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_telemetry_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_telemetry_result_job(response));
 }
 
 fn quality_planning_response(
@@ -62038,6 +63839,647 @@ async fn process_capability_catalog_http() -> impl IntoResponse {
     Json(process_capability_catalog_response())
 }
 
+fn validate_process_capability_result_findings(
+    findings: Option<Vec<ProcessCapabilityResultFinding>>,
+) -> Result<Vec<Value>, String> {
+    let findings = findings.unwrap_or_default();
+    if findings.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "capabilityFindings must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    findings
+        .into_iter()
+        .enumerate()
+        .map(|(index, finding)| {
+            let finding_id = validate_label(
+                &finding.finding_id,
+                &format!("capabilityFindings[{index}].findingId"),
+            )?;
+            let capability_family = validate_label(
+                &finding.capability_family,
+                &format!("capabilityFindings[{index}].capabilityFamily"),
+            )?;
+            let capability_scope = validate_label(
+                &finding.capability_scope,
+                &format!("capabilityFindings[{index}].capabilityScope"),
+            )?;
+            let status = validate_label(
+                &finding.status,
+                &format!("capabilityFindings[{index}].status"),
+            )?;
+            let evidence = validate_signal_list(
+                finding.evidence,
+                "capabilityFindings.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "findingId": finding_id,
+                "capabilityFamily": capability_family,
+                "capabilityScope": capability_scope,
+                "status": status,
+                "withinCapability": finding.within_capability.unwrap_or(false),
+                "releaseBlocker": finding.release_blocker.unwrap_or(true),
+                "requiresRedesign": finding.requires_redesign.unwrap_or(false),
+                "requiresAlternateRoute": finding.requires_alternate_route.unwrap_or(false),
+                "requiresSplitCombine": finding.requires_split_combine.unwrap_or(false),
+                "requiresHumanIntervention": finding.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_process_capability_result_alternate_routes(
+    routes: Option<Vec<ProcessCapabilityResultAlternateRoute>>,
+) -> Result<Vec<Value>, String> {
+    let routes = routes.unwrap_or_default();
+    if routes.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "alternateRoutes must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    routes
+        .into_iter()
+        .enumerate()
+        .map(|(index, route)| {
+            let route_id = validate_label(
+                &route.route_id,
+                &format!("alternateRoutes[{index}].routeId"),
+            )?;
+            let route_kind = validate_label(
+                &route.route_kind,
+                &format!("alternateRoutes[{index}].routeKind"),
+            )?;
+            let manufacturing_method = validate_optional_label(
+                route.manufacturing_method,
+                "alternateRoutes.manufacturingMethod",
+            )?;
+            let machine_kind =
+                validate_optional_label(route.machine_kind, "alternateRoutes.machineKind")?;
+            let status =
+                validate_label(&route.status, &format!("alternateRoutes[{index}].status"))?;
+            let evidence =
+                validate_signal_list(route.evidence, "alternateRoutes.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "routeId": route_id,
+                "routeKind": route_kind,
+                "manufacturingMethod": manufacturing_method,
+                "machineKind": machine_kind,
+                "status": status,
+                "accepted": route.accepted.unwrap_or(false),
+                "releaseBlocker": route.release_blocker.unwrap_or(true),
+                "requiresSplitCombine": route.requires_split_combine.unwrap_or(false),
+                "requiresHumanIntervention": route.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_process_capability_result_measurements(
+    measurements: Option<Vec<ProcessCapabilityResultMeasurement>>,
+) -> Result<Vec<Value>, String> {
+    let measurements = measurements.unwrap_or_default();
+    if measurements.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "measurementResults must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    measurements
+        .into_iter()
+        .enumerate()
+        .map(|(index, measurement)| {
+            let measurement_id = validate_label(
+                &measurement.measurement_id,
+                &format!("measurementResults[{index}].measurementId"),
+            )?;
+            let measurement_kind = validate_label(
+                &measurement.measurement_kind,
+                &format!("measurementResults[{index}].measurementKind"),
+            )?;
+            let status = validate_label(
+                &measurement.status,
+                &format!("measurementResults[{index}].status"),
+            )?;
+            let target_value = validate_optional_text(
+                measurement.target_value,
+                "measurementResults.targetValue",
+                256,
+            )?;
+            let measured_value = validate_optional_text(
+                measurement.measured_value,
+                "measurementResults.measuredValue",
+                256,
+            )?;
+            let evidence = validate_signal_list(
+                measurement.evidence,
+                "measurementResults.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "measurementId": measurement_id,
+                "measurementKind": measurement_kind,
+                "status": status,
+                "targetValue": target_value,
+                "measuredValue": measured_value,
+                "withinLimits": measurement.within_limits.unwrap_or(false),
+                "releaseBlocker": measurement.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_process_capability_result_artifacts(
+    artifacts: Option<Vec<ProcessCapabilityResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn process_capability_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("exceeded")
+        || status.contains("infeasible")
+        || status.contains("out-of")
+}
+
+fn process_capability_result_finding_blocks_release(finding: &Value) -> bool {
+    finding
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !finding
+            .get("withinCapability")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || finding
+            .get("requiresRedesign")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || finding
+            .get("requiresAlternateRoute")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || finding
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || finding
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || process_capability_result_status_blocks_release(
+            finding.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn process_capability_result_route_blocks_release(route: &Value) -> bool {
+    route
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !route
+            .get("accepted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || route
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || route
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || process_capability_result_status_blocks_release(
+            route.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn process_capability_result_measurement_blocks_release(measurement: &Value) -> bool {
+    measurement
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !measurement
+            .get("withinLimits")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || process_capability_result_status_blocks_release(
+            measurement
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )
+}
+
+fn process_capability_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn process_capability_result_review_response(
+    request: ProcessCapabilityResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "process-capability-result");
+    let generated_at_ms = now_ms();
+    let process_capability_result_job_id =
+        safe_job_id("process-capability-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let source_part_id = validate_optional_label(request.source_part_id, "sourcePartId")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let capability_findings =
+        validate_process_capability_result_findings(request.capability_findings)?;
+    let alternate_routes =
+        validate_process_capability_result_alternate_routes(request.alternate_routes)?;
+    let measurement_results =
+        validate_process_capability_result_measurements(request.measurement_results)?;
+    let artifacts = validate_process_capability_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let finding_blocker_count = capability_findings
+        .iter()
+        .filter(|finding| process_capability_result_finding_blocks_release(finding))
+        .count();
+    let route_blocker_count = alternate_routes
+        .iter()
+        .filter(|route| process_capability_result_route_blocks_release(route))
+        .count();
+    let measurement_blocker_count = measurement_results
+        .iter()
+        .filter(|measurement| process_capability_result_measurement_blocks_release(measurement))
+        .count();
+    let alternate_route_required = capability_findings.iter().any(|finding| {
+        finding
+            .get("requiresAlternateRoute")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let split_combine_required = capability_findings.iter().any(|finding| {
+        finding
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || alternate_routes.iter().any(|route| {
+        route
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let redesign_required = capability_findings.iter().any(|finding| {
+        finding
+            .get("requiresRedesign")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let human_intervention_required = capability_findings.iter().any(|finding| {
+        finding
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || alternate_routes.iter().any(|route| {
+        route
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| process_capability_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || capability_findings.is_empty()
+        || finding_blocker_count > 0
+        || route_blocker_count > 0
+        || measurement_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if capability_findings.is_empty() {
+        "process-capability-result-findings-required"
+    } else if !request.success {
+        "process-capability-result-worker-failed-release-blocked"
+    } else if finding_blocker_count > 0 {
+        "process-capability-result-findings-release-blocked"
+    } else if route_blocker_count > 0 {
+        "process-capability-result-routes-release-blocked"
+    } else if measurement_blocker_count > 0 {
+        "process-capability-result-measurements-release-blocked"
+    } else if artifact_evidence_missing {
+        "process-capability-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "process-capability-result-machine-ready-review-required"
+    } else if !release_ready {
+        "process-capability-result-release-ready-review-required"
+    } else {
+        "process-capability-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("process-capability-worker:{worker_id}"),
+        format!("process-capability-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "process-capability-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("process-capability:release-blocked".to_string());
+    }
+    if alternate_route_required {
+        learning_observations.push("process-capability:alternate-route-required".to_string());
+    }
+    if split_combine_required {
+        learning_observations.push("process-capability:split-combine-required".to_string());
+    }
+    if redesign_required {
+        learning_observations.push("process-capability:redesign-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("process-capability:human-intervention-required".to_string());
+    }
+    learning_observations.extend(capability_findings.iter().filter_map(|finding| {
+        finding
+            .get("capabilityFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("process-capability-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(capability_findings.iter().filter_map(|finding| {
+        finding
+            .get("capabilityScope")
+            .and_then(Value::as_str)
+            .map(|scope| format!("process-capability-scope:{}", normalize_token(scope)))
+    }));
+    learning_observations.extend(alternate_routes.iter().filter_map(|route| {
+        route
+            .get("routeKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("process-capability-route:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(measurement_results.iter().filter_map(|measurement| {
+        measurement
+            .get("measurementKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("process-capability-measurement:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.process-capability-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "processCapabilityResultJobId": process_capability_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /process-capabilities/result", "POST /fabrication/process-capabilities/result"],
+        "catalogRoutes": ["GET /process-capabilities/catalog", "GET /fabrication/process-capabilities/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "capabilityFindingCount": capability_findings.len(),
+        "findingBlockerCount": finding_blocker_count,
+        "alternateRouteCount": alternate_routes.len(),
+        "routeBlockerCount": route_blocker_count,
+        "measurementResultCount": measurement_results.len(),
+        "measurementBlockerCount": measurement_blocker_count,
+        "alternateRouteRequired": alternate_route_required,
+        "splitCombineRequired": split_combine_required,
+        "redesignRequired": redesign_required,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "processCapabilityResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "machineKind": machine_kind,
+            "sourcePartId": source_part_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "capabilityFindings": capability_findings,
+            "alternateRoutes": alternate_routes,
+            "measurementResults": measurement_results,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "process-capability findings prove requested features fit the retained printability, tool-access, workholding, kerf, or hybrid route envelope",
+                "alternate route, redesign, split/combine, or human-intervention decisions are accepted when geometry exceeds a process envelope",
+                "coupon, simulation, measurement, or first-article results stay within retained capability limits",
+                "process-capability result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "process-capability-result",
+            "process-capability-findings",
+            "process-capability-alternate-routes",
+            "process-capability-measurements",
+            "process-capability-artifacts",
+            "process-capability-learning-observations",
+            "mdp-request.artifacts.processCapabilityResult"
+        ]
+    }))
+}
+
+fn process_capability_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("findings-release-blocked")
+        || status.contains("routes-release-blocked")
+        || status.contains("measurements-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_process_capability_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "process-capability-result");
+    let job_id = response_str_field(
+        response,
+        "processCapabilityResultJobId",
+        &safe_job_id("process-capability-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "process-capability-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("processCapabilityResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let capability_findings = result
+        .get("capabilityFindings")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let alternate_routes = result
+        .get("alternateRoutes")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let measurement_results = result
+        .get("measurementResults")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let process_capability_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "process-capability-result".to_string(),
+            "process-capability-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "process-capability-findings".to_string(),
+            "process-capability-findings",
+            capability_findings,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "process-capability-alternate-routes".to_string(),
+            "process-capability-alternate-routes",
+            alternate_routes,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "process-capability-measurements".to_string(),
+            "process-capability-measurements",
+            measurement_results,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "process-capability-artifacts".to_string(),
+            "process-capability-artifacts",
+            process_capability_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "process-capability-learning-observations".to_string(),
+            "process-capability-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "process-capability-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: process_capability_result_job_severity(response),
+            summary: format!("process capability result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_process_capability_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_process_capability_result_job(response));
+}
+
 fn manufacturability_catalog_entries() -> Vec<Value> {
     vec![
         json!({
@@ -63942,6 +66384,586 @@ async fn safety_catalog_http() -> impl IntoResponse {
     Json(safety_catalog_response())
 }
 
+fn validate_safety_result_checks(
+    checks: Option<Vec<SafetyResultCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "safetyChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id =
+                validate_label(&check.check_id, &format!("safetyChecks[{index}].checkId"))?;
+            let safety_family = validate_label(
+                &check.safety_family,
+                &format!("safetyChecks[{index}].safetyFamily"),
+            )?;
+            let hazard = validate_label(&check.hazard, &format!("safetyChecks[{index}].hazard"))?;
+            let status = validate_label(&check.status, &format!("safetyChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "safetyChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "safetyFamily": safety_family,
+                "hazard": hazard,
+                "status": status,
+                "cleared": check.cleared.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresStopPoint": check.requires_stop_point.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_safety_result_interlock_checks(
+    checks: Option<Vec<SafetyResultInterlockCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "interlockChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let interlock_id = validate_label(
+                &check.interlock_id,
+                &format!("interlockChecks[{index}].interlockId"),
+            )?;
+            let interlock_kind = validate_label(
+                &check.interlock_kind,
+                &format!("interlockChecks[{index}].interlockKind"),
+            )?;
+            let status =
+                validate_label(&check.status, &format!("interlockChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "interlockChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "interlockId": interlock_id,
+                "interlockKind": interlock_kind,
+                "status": status,
+                "verified": check.verified.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresRestartReview": check.requires_restart_review.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_safety_result_emergency_actions(
+    actions: Option<Vec<SafetyResultEmergencyAction>>,
+) -> Result<Vec<Value>, String> {
+    let actions = actions.unwrap_or_default();
+    if actions.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "emergencyActions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    actions
+        .into_iter()
+        .enumerate()
+        .map(|(index, action)| {
+            let action_id = validate_label(
+                &action.action_id,
+                &format!("emergencyActions[{index}].actionId"),
+            )?;
+            let action_kind = validate_label(
+                &action.action_kind,
+                &format!("emergencyActions[{index}].actionKind"),
+            )?;
+            let status =
+                validate_label(&action.status, &format!("emergencyActions[{index}].status"))?;
+            let evidence =
+                validate_signal_list(action.evidence, "emergencyActions.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "actionId": action_id,
+                "actionKind": action_kind,
+                "status": status,
+                "completed": action.completed.unwrap_or(false),
+                "releaseBlocker": action.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": action.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_safety_result_artifacts(
+    artifacts: Option<Vec<SafetyResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn safety_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("unsafe")
+        || status.contains("restart")
+}
+
+fn safety_result_check_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("cleared")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresStopPoint")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || safety_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn safety_result_interlock_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("verified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresRestartReview")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || safety_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn safety_result_action_blocks_release(action: &Value) -> bool {
+    action
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !action
+            .get("completed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || action
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || safety_result_status_blocks_release(
+            action.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn safety_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn safety_result_review_response(request: SafetyResultReviewRequest) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "safety-result");
+    let generated_at_ms = now_ms();
+    let safety_result_job_id = safe_job_id("safety-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let safety_checks = validate_safety_result_checks(request.safety_checks)?;
+    let interlock_checks = validate_safety_result_interlock_checks(request.interlock_checks)?;
+    let emergency_actions = validate_safety_result_emergency_actions(request.emergency_actions)?;
+    let artifacts = validate_safety_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let safety_blocker_count = safety_checks
+        .iter()
+        .filter(|check| safety_result_check_blocks_release(check))
+        .count();
+    let interlock_blocker_count = interlock_checks
+        .iter()
+        .filter(|check| safety_result_interlock_blocks_release(check))
+        .count();
+    let emergency_action_blocker_count = emergency_actions
+        .iter()
+        .filter(|action| safety_result_action_blocks_release(action))
+        .count();
+    let stop_point_required = safety_checks.iter().any(|check| {
+        check
+            .get("requiresStopPoint")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let restart_review_required = interlock_checks.iter().any(|check| {
+        check
+            .get("requiresRestartReview")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let human_intervention_required = safety_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || interlock_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || emergency_actions.iter().any(|action| {
+        action
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| safety_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || safety_checks.is_empty()
+        || interlock_checks.is_empty()
+        || safety_blocker_count > 0
+        || interlock_blocker_count > 0
+        || emergency_action_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if safety_checks.is_empty() {
+        "safety-result-checks-required"
+    } else if interlock_checks.is_empty() {
+        "safety-result-interlock-checks-required"
+    } else if !request.success {
+        "safety-result-worker-failed-release-blocked"
+    } else if safety_blocker_count > 0 {
+        "safety-result-checks-release-blocked"
+    } else if interlock_blocker_count > 0 {
+        "safety-result-interlocks-release-blocked"
+    } else if emergency_action_blocker_count > 0 {
+        "safety-result-emergency-actions-release-blocked"
+    } else if artifact_evidence_missing {
+        "safety-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "safety-result-machine-ready-review-required"
+    } else if !release_ready {
+        "safety-result-release-ready-review-required"
+    } else {
+        "safety-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("safety-worker:{worker_id}"),
+        format!("safety-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "safety-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("safety:release-blocked".to_string());
+    }
+    if stop_point_required {
+        learning_observations.push("safety:stop-point-required".to_string());
+    }
+    if restart_review_required {
+        learning_observations.push("safety:restart-review-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("safety:human-intervention-required".to_string());
+    }
+    learning_observations.extend(safety_checks.iter().filter_map(|check| {
+        check
+            .get("safetyFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("safety-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(safety_checks.iter().filter_map(|check| {
+        check
+            .get("hazard")
+            .and_then(Value::as_str)
+            .map(|hazard| format!("safety-hazard:{}", normalize_token(hazard)))
+    }));
+    learning_observations.extend(interlock_checks.iter().filter_map(|check| {
+        check
+            .get("interlockKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("safety-interlock:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(emergency_actions.iter().filter_map(|action| {
+        action
+            .get("actionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("safety-emergency-action:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.safety-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "safetyResultJobId": safety_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /safety/result", "POST /fabrication/safety/result"],
+        "catalogRoutes": ["GET /safety/catalog", "GET /fabrication/safety/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "safetyCheckCount": safety_checks.len(),
+        "safetyBlockerCount": safety_blocker_count,
+        "interlockCheckCount": interlock_checks.len(),
+        "interlockBlockerCount": interlock_blocker_count,
+        "emergencyActionCount": emergency_actions.len(),
+        "emergencyActionBlockerCount": emergency_action_blocker_count,
+        "stopPointRequired": stop_point_required,
+        "restartReviewRequired": restart_review_required,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "safetyResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "safetyChecks": safety_checks,
+            "interlockChecks": interlock_checks,
+            "emergencyActions": emergency_actions,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "safety hazards are cleared with retained evidence before generated or imported instructions run",
+                "guarding, enclosure, extraction, robot-cell, emergency-stop, and restart interlocks are verified",
+                "required stop points, emergency actions, and human interventions are completed or routed before release",
+                "safety result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "safety-result",
+            "safety-checks",
+            "safety-interlock-checks",
+            "safety-emergency-actions",
+            "safety-artifacts",
+            "safety-learning-observations",
+            "mdp-request.artifacts.safetyResult"
+        ]
+    }))
+}
+
+fn safety_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("checks-release-blocked")
+        || status.contains("interlocks-release-blocked")
+        || status.contains("emergency-actions-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_safety_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "safety-result");
+    let job_id = response_str_field(
+        response,
+        "safetyResultJobId",
+        &safe_job_id("safety-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "safety-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response.get("safetyResult").cloned().unwrap_or(Value::Null);
+    let safety_checks = result
+        .get("safetyChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let interlock_checks = result
+        .get("interlockChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let emergency_actions = result
+        .get("emergencyActions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let safety_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "safety-result".to_string(),
+            "safety-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "safety-checks".to_string(),
+            "safety-checks",
+            safety_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "safety-interlock-checks".to_string(),
+            "safety-interlock-checks",
+            interlock_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "safety-emergency-actions".to_string(),
+            "safety-emergency-actions",
+            emergency_actions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "safety-artifacts".to_string(),
+            "safety-artifacts",
+            safety_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "safety-learning-observations".to_string(),
+            "safety-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "safety-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: safety_result_job_severity(response),
+            summary: format!("safety result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_safety_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_safety_result_job(response));
+}
+
 fn environment_catalog_entries() -> Vec<Value> {
     vec![
         json!({
@@ -64117,6 +67139,614 @@ async fn environment_catalog_http() -> impl IntoResponse {
     Json(environment_catalog_response())
 }
 
+fn validate_environment_result_condition_checks(
+    checks: Option<Vec<EnvironmentResultConditionCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "conditionChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id = validate_label(
+                &check.check_id,
+                &format!("conditionChecks[{index}].checkId"),
+            )?;
+            let environment_family = validate_label(
+                &check.environment_family,
+                &format!("conditionChecks[{index}].environmentFamily"),
+            )?;
+            let condition_scope = validate_label(
+                &check.condition_scope,
+                &format!("conditionChecks[{index}].conditionScope"),
+            )?;
+            let status =
+                validate_label(&check.status, &format!("conditionChecks[{index}].status"))?;
+            let target_value =
+                validate_optional_text(check.target_value, "conditionChecks.targetValue", 256)?;
+            let measured_value =
+                validate_optional_text(check.measured_value, "conditionChecks.measuredValue", 256)?;
+            let evidence =
+                validate_signal_list(check.evidence, "conditionChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "environmentFamily": environment_family,
+                "conditionScope": condition_scope,
+                "status": status,
+                "targetValue": target_value,
+                "measuredValue": measured_value,
+                "withinLimits": check.within_limits.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresConditioning": check.requires_conditioning.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_environment_result_utility_checks(
+    checks: Option<Vec<EnvironmentResultUtilityCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "utilityChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let utility_id = validate_label(
+                &check.utility_id,
+                &format!("utilityChecks[{index}].utilityId"),
+            )?;
+            let utility_kind = validate_label(
+                &check.utility_kind,
+                &format!("utilityChecks[{index}].utilityKind"),
+            )?;
+            let status = validate_label(&check.status, &format!("utilityChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "utilityChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "utilityId": utility_id,
+                "utilityKind": utility_kind,
+                "status": status,
+                "available": check.available.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresRecovery": check.requires_recovery.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_environment_result_metrology_checks(
+    checks: Option<Vec<EnvironmentResultMetrologyCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "metrologyChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let metrology_id = validate_label(
+                &check.metrology_id,
+                &format!("metrologyChecks[{index}].metrologyId"),
+            )?;
+            let metrology_kind = validate_label(
+                &check.metrology_kind,
+                &format!("metrologyChecks[{index}].metrologyKind"),
+            )?;
+            let status =
+                validate_label(&check.status, &format!("metrologyChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "metrologyChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "metrologyId": metrology_id,
+                "metrologyKind": metrology_kind,
+                "status": status,
+                "stable": check.stable.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresRecheck": check.requires_recheck.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_environment_result_artifacts(
+    artifacts: Option<Vec<EnvironmentResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn environment_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("out-of")
+        || status.contains("unstable")
+}
+
+fn environment_result_condition_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("withinLimits")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresConditioning")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || environment_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn environment_result_utility_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("available")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresRecovery")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || environment_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn environment_result_metrology_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("stable")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresRecheck")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || environment_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn environment_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn environment_result_review_response(
+    request: EnvironmentResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "environment-result");
+    let generated_at_ms = now_ms();
+    let environment_result_job_id = safe_job_id("environment-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let condition_checks = validate_environment_result_condition_checks(request.condition_checks)?;
+    let utility_checks = validate_environment_result_utility_checks(request.utility_checks)?;
+    let metrology_checks = validate_environment_result_metrology_checks(request.metrology_checks)?;
+    let artifacts = validate_environment_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let condition_blocker_count = condition_checks
+        .iter()
+        .filter(|check| environment_result_condition_blocks_release(check))
+        .count();
+    let utility_blocker_count = utility_checks
+        .iter()
+        .filter(|check| environment_result_utility_blocks_release(check))
+        .count();
+    let metrology_blocker_count = metrology_checks
+        .iter()
+        .filter(|check| environment_result_metrology_blocks_release(check))
+        .count();
+    let conditioning_required = condition_checks.iter().any(|check| {
+        check
+            .get("requiresConditioning")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let recovery_required = utility_checks.iter().any(|check| {
+        check
+            .get("requiresRecovery")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let recheck_required = metrology_checks.iter().any(|check| {
+        check
+            .get("requiresRecheck")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let human_intervention_required = condition_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || utility_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || metrology_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| environment_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || condition_checks.is_empty()
+        || condition_blocker_count > 0
+        || utility_blocker_count > 0
+        || metrology_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if condition_checks.is_empty() {
+        "environment-result-condition-checks-required"
+    } else if !request.success {
+        "environment-result-worker-failed-release-blocked"
+    } else if condition_blocker_count > 0 {
+        "environment-result-conditions-release-blocked"
+    } else if utility_blocker_count > 0 {
+        "environment-result-utilities-release-blocked"
+    } else if metrology_blocker_count > 0 {
+        "environment-result-metrology-release-blocked"
+    } else if artifact_evidence_missing {
+        "environment-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "environment-result-machine-ready-review-required"
+    } else if !release_ready {
+        "environment-result-release-ready-review-required"
+    } else {
+        "environment-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("environment-worker:{worker_id}"),
+        format!("environment-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "environment-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("environment:release-blocked".to_string());
+    }
+    if conditioning_required {
+        learning_observations.push("environment:conditioning-required".to_string());
+    }
+    if recovery_required {
+        learning_observations.push("environment:utility-recovery-required".to_string());
+    }
+    if recheck_required {
+        learning_observations.push("environment:metrology-recheck-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("environment:human-intervention-required".to_string());
+    }
+    learning_observations.extend(condition_checks.iter().filter_map(|check| {
+        check
+            .get("environmentFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("environment-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(condition_checks.iter().filter_map(|check| {
+        check
+            .get("conditionScope")
+            .and_then(Value::as_str)
+            .map(|scope| format!("environment-scope:{}", normalize_token(scope)))
+    }));
+    learning_observations.extend(utility_checks.iter().filter_map(|check| {
+        check
+            .get("utilityKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("environment-utility:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(metrology_checks.iter().filter_map(|check| {
+        check
+            .get("metrologyKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("environment-metrology:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.environment-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "environmentResultJobId": environment_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /environment/result", "POST /fabrication/environment/result"],
+        "catalogRoutes": ["GET /environment/catalog", "GET /fabrication/environment/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "conditionCheckCount": condition_checks.len(),
+        "conditionBlockerCount": condition_blocker_count,
+        "utilityCheckCount": utility_checks.len(),
+        "utilityBlockerCount": utility_blocker_count,
+        "metrologyCheckCount": metrology_checks.len(),
+        "metrologyBlockerCount": metrology_blocker_count,
+        "conditioningRequired": conditioning_required,
+        "utilityRecoveryRequired": recovery_required,
+        "metrologyRecheckRequired": recheck_required,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "environmentResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "conditionChecks": condition_checks,
+            "utilityChecks": utility_checks,
+            "metrologyChecks": metrology_checks,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "material, ambient, chamber, extraction, utility, vibration, and metrology conditions are within retained limits",
+                "conditioning, drying, extraction, coolant, utility recovery, or metrology recheck work is complete before release",
+                "human intervention for environmental recovery or inspection stabilization is completed or routed",
+                "environment result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "environment-result",
+            "environment-condition-checks",
+            "environment-utility-checks",
+            "environment-metrology-checks",
+            "environment-artifacts",
+            "environment-learning-observations",
+            "mdp-request.artifacts.environmentResult"
+        ]
+    }))
+}
+
+fn environment_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("conditions-release-blocked")
+        || status.contains("utilities-release-blocked")
+        || status.contains("metrology-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_environment_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "environment-result");
+    let job_id = response_str_field(
+        response,
+        "environmentResultJobId",
+        &safe_job_id("environment-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "environment-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("environmentResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let condition_checks = result
+        .get("conditionChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let utility_checks = result
+        .get("utilityChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let metrology_checks = result
+        .get("metrologyChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let environment_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "environment-result".to_string(),
+            "environment-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "environment-condition-checks".to_string(),
+            "environment-condition-checks",
+            condition_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "environment-utility-checks".to_string(),
+            "environment-utility-checks",
+            utility_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "environment-metrology-checks".to_string(),
+            "environment-metrology-checks",
+            metrology_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "environment-artifacts".to_string(),
+            "environment-artifacts",
+            environment_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "environment-learning-observations".to_string(),
+            "environment-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "environment-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: environment_result_job_severity(response),
+            summary: format!("environment result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_environment_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_environment_result_job(response));
+}
+
 fn provenance_catalog_entries() -> Vec<Value> {
     vec![
         json!({
@@ -64290,6 +67920,571 @@ fn provenance_catalog_response() -> Value {
 
 async fn provenance_catalog_http() -> impl IntoResponse {
     Json(provenance_catalog_response())
+}
+
+fn validate_provenance_result_lineage_checks(
+    checks: Option<Vec<ProvenanceResultLineageCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "lineageChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id =
+                validate_label(&check.check_id, &format!("lineageChecks[{index}].checkId"))?;
+            let provenance_family = validate_label(
+                &check.provenance_family,
+                &format!("lineageChecks[{index}].provenanceFamily"),
+            )?;
+            let evidence_scope = validate_label(
+                &check.evidence_scope,
+                &format!("lineageChecks[{index}].evidenceScope"),
+            )?;
+            let status = validate_label(&check.status, &format!("lineageChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "lineageChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "provenanceFamily": provenance_family,
+                "evidenceScope": evidence_scope,
+                "status": status,
+                "traceable": check.traceable.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresReview": check.requires_review.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_provenance_result_artifact_checks(
+    checks: Option<Vec<ProvenanceResultArtifactCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifactChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let artifact_id = validate_label(
+                &check.artifact_id,
+                &format!("artifactChecks[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &check.artifact_kind,
+                &format!("artifactChecks[{index}].artifactKind"),
+            )?;
+            let status = validate_label(&check.status, &format!("artifactChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "artifactChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "status": status,
+                "digestVerified": check.digest_verified.unwrap_or(false),
+                "uriPresent": check.uri_present.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_provenance_result_custody_events(
+    events: Option<Vec<ProvenanceResultCustodyEvent>>,
+) -> Result<Vec<Value>, String> {
+    let events = events.unwrap_or_default();
+    if events.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "custodyEvents must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    events
+        .into_iter()
+        .enumerate()
+        .map(|(index, event)| {
+            let event_id =
+                validate_label(&event.event_id, &format!("custodyEvents[{index}].eventId"))?;
+            let event_kind = validate_label(
+                &event.event_kind,
+                &format!("custodyEvents[{index}].eventKind"),
+            )?;
+            let status = validate_label(&event.status, &format!("custodyEvents[{index}].status"))?;
+            let evidence =
+                validate_signal_list(event.evidence, "custodyEvents.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "eventId": event_id,
+                "eventKind": event_kind,
+                "status": status,
+                "accepted": event.accepted.unwrap_or(false),
+                "releaseBlocker": event.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": event.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_provenance_result_artifacts(
+    artifacts: Option<Vec<ProvenanceResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn provenance_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("mismatch")
+        || status.contains("unresolved")
+        || status.contains("untraceable")
+        || status.contains("review-required")
+}
+
+fn provenance_result_lineage_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("traceable")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresReview")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || provenance_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn provenance_result_artifact_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("digestVerified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !check
+            .get("uriPresent")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || provenance_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn provenance_result_custody_blocks_release(event: &Value) -> bool {
+    event
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !event
+            .get("accepted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || event
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || provenance_result_status_blocks_release(
+            event.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn provenance_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn provenance_result_review_response(
+    request: ProvenanceResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "provenance-result");
+    let generated_at_ms = now_ms();
+    let provenance_result_job_id = safe_job_id("provenance-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let source_part_id = validate_optional_label(request.source_part_id, "sourcePartId")?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let lineage_checks = validate_provenance_result_lineage_checks(request.lineage_checks)?;
+    let artifact_checks = validate_provenance_result_artifact_checks(request.artifact_checks)?;
+    let custody_events = validate_provenance_result_custody_events(request.custody_events)?;
+    let artifacts = validate_provenance_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let lineage_blocker_count = lineage_checks
+        .iter()
+        .filter(|check| provenance_result_lineage_blocks_release(check))
+        .count();
+    let artifact_blocker_count = artifact_checks
+        .iter()
+        .filter(|check| provenance_result_artifact_blocks_release(check))
+        .count();
+    let custody_blocker_count = custody_events
+        .iter()
+        .filter(|event| provenance_result_custody_blocks_release(event))
+        .count();
+    let review_required = lineage_checks.iter().any(|check| {
+        check
+            .get("requiresReview")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let human_intervention_required = lineage_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || custody_events.iter().any(|event| {
+        event
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| provenance_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || lineage_checks.is_empty()
+        || lineage_blocker_count > 0
+        || artifact_checks.is_empty()
+        || artifact_blocker_count > 0
+        || custody_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if lineage_checks.is_empty() {
+        "provenance-result-lineage-checks-required"
+    } else if !request.success {
+        "provenance-result-worker-failed-release-blocked"
+    } else if lineage_blocker_count > 0 {
+        "provenance-result-lineage-release-blocked"
+    } else if artifact_checks.is_empty() || artifact_blocker_count > 0 {
+        "provenance-result-artifact-release-blocked"
+    } else if custody_blocker_count > 0 {
+        "provenance-result-custody-release-blocked"
+    } else if artifact_evidence_missing {
+        "provenance-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "provenance-result-machine-ready-review-required"
+    } else if !release_ready {
+        "provenance-result-release-ready-review-required"
+    } else {
+        "provenance-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("provenance-worker:{worker_id}"),
+        format!("provenance-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "provenance-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("provenance:release-blocked".to_string());
+    }
+    if review_required {
+        learning_observations.push("provenance:review-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("provenance:human-intervention-required".to_string());
+    }
+    learning_observations.extend(lineage_checks.iter().filter_map(|check| {
+        check
+            .get("provenanceFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("provenance-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(lineage_checks.iter().filter_map(|check| {
+        check
+            .get("evidenceScope")
+            .and_then(Value::as_str)
+            .map(|scope| format!("provenance-scope:{}", normalize_token(scope)))
+    }));
+    learning_observations.extend(artifact_checks.iter().filter_map(|check| {
+        check
+            .get("artifactKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("provenance-artifact:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(custody_events.iter().filter_map(|event| {
+        event
+            .get("eventKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("provenance-custody:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.provenance-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "provenanceResultJobId": provenance_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /provenance/result", "POST /fabrication/provenance/result"],
+        "catalogRoutes": ["GET /provenance/catalog", "GET /fabrication/provenance/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "lineageCheckCount": lineage_checks.len(),
+        "lineageBlockerCount": lineage_blocker_count,
+        "artifactCheckCount": artifact_checks.len(),
+        "artifactBlockerCount": artifact_blocker_count,
+        "custodyEventCount": custody_events.len(),
+        "custodyBlockerCount": custody_blocker_count,
+        "reviewRequired": review_required,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "provenanceResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "sourcePartId": source_part_id,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "lineageChecks": lineage_checks,
+            "artifactChecks": artifact_checks,
+            "custodyEvents": custody_events,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "design, material, machine-program, inspection, release, and learning lineage checks are traceable",
+                "CAD, mesh, machine-code, inspection, quality, and release package artifacts retain URI, checksum, format, and evidence labels",
+                "operator custody, review, nonconformance, or signoff events are accepted or routed before release",
+                "human intervention for ambiguous conversions, digest mismatches, or missing release-bundle lineage is complete"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "provenance-result",
+            "provenance-lineage-checks",
+            "provenance-artifact-checks",
+            "provenance-custody-events",
+            "provenance-artifacts",
+            "provenance-learning-observations",
+            "mdp-request.artifacts.provenanceResult"
+        ]
+    }))
+}
+
+fn provenance_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("lineage-release-blocked")
+        || status.contains("artifact-release-blocked")
+        || status.contains("custody-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_provenance_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "provenance-result");
+    let job_id = response_str_field(
+        response,
+        "provenanceResultJobId",
+        &safe_job_id("provenance-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "provenance-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("provenanceResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let lineage_checks = result
+        .get("lineageChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifact_checks = result
+        .get("artifactChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let custody_events = result
+        .get("custodyEvents")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let provenance_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "provenance-result".to_string(),
+            "provenance-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "provenance-lineage-checks".to_string(),
+            "provenance-lineage-checks",
+            lineage_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "provenance-artifact-checks".to_string(),
+            "provenance-artifact-checks",
+            artifact_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "provenance-custody-events".to_string(),
+            "provenance-custody-events",
+            custody_events,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "provenance-artifacts".to_string(),
+            "provenance-artifacts",
+            provenance_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "provenance-learning-observations".to_string(),
+            "provenance-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "provenance-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: provenance_result_job_severity(response),
+            summary: format!("provenance result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_provenance_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_provenance_result_job(response));
 }
 
 fn setup_planning_response(
@@ -64919,6 +69114,23 @@ async fn monitoring_result_http(
     match monitoring_result_review_response(request) {
         Ok(response) => {
             store_monitoring_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn telemetry_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<TelemetryResultReviewRequest>,
+) -> Response {
+    match telemetry_result_review_response(request) {
+        Ok(response) => {
+            store_telemetry_result_response(&state, &response);
             Json(response).into_response()
         }
         Err(error) => (
@@ -75518,6 +79730,23 @@ async fn manufacturability_result_http(
     }
 }
 
+async fn disposition_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<DispositionResultReviewRequest>,
+) -> Response {
+    match disposition_result_review_response(request) {
+        Ok(response) => {
+            store_disposition_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 async fn support_strategy_result_http(
     State(state): State<AppState>,
     Json(request): Json<SupportStrategyResultReviewRequest>,
@@ -75576,6 +79805,74 @@ async fn tolerance_result_http(
     match tolerance_result_review_response(request) {
         Ok(response) => {
             store_tolerance_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn process_capability_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<ProcessCapabilityResultReviewRequest>,
+) -> Response {
+    match process_capability_result_review_response(request) {
+        Ok(response) => {
+            store_process_capability_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn safety_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<SafetyResultReviewRequest>,
+) -> Response {
+    match safety_result_review_response(request) {
+        Ok(response) => {
+            store_safety_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn environment_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<EnvironmentResultReviewRequest>,
+) -> Response {
+    match environment_result_review_response(request) {
+        Ok(response) => {
+            store_environment_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn provenance_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<ProvenanceResultReviewRequest>,
+) -> Response {
+    match provenance_result_review_response(request) {
+        Ok(response) => {
+            store_provenance_result_response(&state, &response);
             Json(response).into_response()
         }
         Err(error) => (
@@ -76986,6 +81283,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/dispositions/catalog",
             get(disposition_catalog_http),
         )
+        .route("/dispositions/result", post(disposition_result_http))
+        .route(
+            "/fabrication/dispositions/result",
+            post(disposition_result_http),
+        )
         .route("/costing/catalog", get(costing_catalog_http))
         .route("/fabrication/costing/catalog", get(costing_catalog_http))
         .route("/utilities/catalog", get(utilities_catalog_http))
@@ -76997,6 +81299,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/telemetry/catalog",
             get(telemetry_catalog_http),
+        )
+        .route("/telemetry/result", post(telemetry_result_http))
+        .route(
+            "/fabrication/telemetry/result",
+            post(telemetry_result_http),
         )
         .route("/quality/plan", post(quality_plan_http))
         .route("/fabrication/quality/plan", post(quality_plan_http))
@@ -77083,6 +81390,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             get(process_capability_catalog_http),
         )
         .route(
+            "/process-capabilities/result",
+            post(process_capability_result_http),
+        )
+        .route(
+            "/fabrication/process-capabilities/result",
+            post(process_capability_result_http),
+        )
+        .route(
             "/manufacturability/catalog",
             get(manufacturability_catalog_http),
         )
@@ -77110,15 +81425,27 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/safety/catalog", get(safety_catalog_http))
         .route("/fabrication/safety/catalog", get(safety_catalog_http))
+        .route("/safety/result", post(safety_result_http))
+        .route("/fabrication/safety/result", post(safety_result_http))
         .route("/environment/catalog", get(environment_catalog_http))
         .route(
             "/fabrication/environment/catalog",
             get(environment_catalog_http),
         )
+        .route("/environment/result", post(environment_result_http))
+        .route(
+            "/fabrication/environment/result",
+            post(environment_result_http),
+        )
         .route("/provenance/catalog", get(provenance_catalog_http))
         .route(
             "/fabrication/provenance/catalog",
             get(provenance_catalog_http),
+        )
+        .route("/provenance/result", post(provenance_result_http))
+        .route(
+            "/fabrication/provenance/result",
+            post(provenance_result_http),
         )
         .route("/setup/plan", post(setup_plan_http))
         .route("/fabrication/setup/plan", post(setup_plan_http))
@@ -85646,6 +89973,181 @@ mod tests {
     }
 
     #[test]
+    fn disposition_result_endpoint_reviews_rework_authority_split_and_learning() {
+        let response = disposition_result_review_response(DispositionResultReviewRequest {
+            request_id: Some("disposition-result-001".to_string()),
+            plan_request_id: Some("plan-disposition-001".to_string()),
+            job_id: Some("job-disposition-001".to_string()),
+            worker_id: "disposition-review-worker".to_string(),
+            reviewer: Some("quality-disposition-reviewer".to_string()),
+            reviewer_version: Some("2026.06-disposition".to_string()),
+            source_part_id: Some("warped-fixture-body".to_string()),
+            machine_kind: Some("fdm-printer".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            disposition_decisions: Some(vec![DispositionResultDecision {
+                decision_id: "disposition-decision-001".to_string(),
+                disposition_family: "split-combine-redesign-disposition".to_string(),
+                decision_kind: "split-combine-rework".to_string(),
+                status: "review-required".to_string(),
+                source_finding_id: Some("quality-finding-001".to_string()),
+                accepted: Some(false),
+                release_blocker: Some(true),
+                requires_rework: Some(true),
+                requires_remake: Some(false),
+                requires_waiver: Some(false),
+                requires_split_combine: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "one-piece printed body warped at datum pad interface".to_string(),
+                    "split/remake metal datum insert route must be dispositioned".to_string(),
+                ]),
+            }]),
+            remediation_actions: Some(vec![DispositionResultRemediationAction {
+                action_id: "remediation-action-001".to_string(),
+                action_kind: "print-split-then-mill-interface".to_string(),
+                status: "reinspection-required".to_string(),
+                machine_kind: Some("vertical-mill".to_string()),
+                manufacturing_method: Some("hybrid-additive-subtractive".to_string()),
+                completed: Some(false),
+                release_blocker: Some(true),
+                requires_reinspection: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "datum pad rework route needs post-machining CMM inspection".to_string(),
+                ]),
+            }]),
+            authority_reviews: Some(vec![DispositionResultAuthorityReview {
+                review_id: "authority-review-001".to_string(),
+                authority_kind: "engineering-disposition-signoff".to_string(),
+                status: "signoff-required".to_string(),
+                approved: Some(false),
+                release_blocker: Some(true),
+                requires_human_signoff: Some(true),
+                evidence: Some(vec![
+                    "engineering owner must approve split/combine recovery before release"
+                        .to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![DispositionResultArtifact {
+                artifact_id: "disposition-report-001".to_string(),
+                artifact_kind: "nonconformance-disposition-record".to_string(),
+                source_ref_id: Some("disposition-decision-001".to_string()),
+                uri: Some("s3://fabrication/disposition-report-001.json".to_string()),
+                sha256: Some("b".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained split/combine disposition and remediation review".to_string(),
+                ]),
+            }]),
+            warnings: Some(vec![
+                "release remains blocked until reinspection and engineering signoff".to_string(),
+            ]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("disposition result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.disposition-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/dispositions/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("disposition-result-decisions-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("decisionBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("remediationActionBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("authorityBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("splitCombineRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("reinspectionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanSignoffRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "disposition:release-blocked",
+            "disposition:rework-required",
+            "disposition:split-combine-required",
+            "disposition:reinspection-required",
+            "disposition:human-intervention-required",
+            "disposition:human-signoff-required",
+            "disposition-family:split-combine-redesign-disposition",
+            "disposition-decision:split-combine-rework",
+            "disposition-action:print-split-then-mill-interface",
+            "disposition-authority:engineering-disposition-signoff",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_disposition_result_job(&response);
+        assert_eq!(job.record.kind, "disposition-result");
+        assert_eq!(
+            job.record.status,
+            "disposition-result-decisions-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "disposition-result",
+            "disposition-decisions",
+            "disposition-remediation-actions",
+            "disposition-authority-reviews",
+            "disposition-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
+    }
+
+    #[test]
     fn costing_catalog_endpoint_exposes_yield_quote_and_split_learning_contract() {
         let payload = costing_catalog_response();
         assert_eq!(
@@ -85799,6 +90301,166 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("runtime evidence contracts")))));
+    }
+
+    #[test]
+    fn telemetry_result_endpoint_reviews_runtime_boundaries_and_learning() {
+        let response = telemetry_result_review_response(TelemetryResultReviewRequest {
+            request_id: Some("telemetry-result-001".to_string()),
+            plan_request_id: Some("plan-telemetry-001".to_string()),
+            job_id: Some("job-telemetry-001".to_string()),
+            worker_id: "telemetry-review-worker".to_string(),
+            machine_id: Some("waterjet-cell-01".to_string()),
+            machine_kind: Some("sheet-cutter".to_string()),
+            program_id: Some("cut-program-44".to_string()),
+            run_id: Some("runtime-run-44".to_string()),
+            success: true,
+            machine_ready: false,
+            learning_ready: Some(false),
+            sensor_windows: Some(vec![TelemetryResultSensorWindow {
+                window_id: "sensor-window-001".to_string(),
+                telemetry_family: "sheet-cut-process-and-support-media".to_string(),
+                channel_kind: "abrasive-flow".to_string(),
+                status: "retained".to_string(),
+                samples_retained: Some(true),
+                within_envelope: Some(true),
+                release_blocker: Some(false),
+                evidence: Some(vec![
+                    "abrasive flow samples retained for the cut window".to_string()
+                ]),
+            }]),
+            machine_stops: Some(vec![TelemetryResultMachineStop {
+                stop_id: "machine-stop-001".to_string(),
+                stop_kind: "support-media-stop".to_string(),
+                status: "safe-stop-verified".to_string(),
+                safe_stop_verified: Some(true),
+                restart_authorized: Some(true),
+                requires_human_intervention: Some(false),
+                release_blocker: Some(false),
+                evidence: Some(vec![
+                    "safe stop was verified before restart authorization".to_string()
+                ]),
+            }]),
+            boundary_correlations: Some(vec![TelemetryResultBoundaryCorrelation {
+                correlation_id: "boundary-correlation-001".to_string(),
+                predicted_boundary_id: Some("waterjet-abrasive-boundary".to_string()),
+                actual_event_id: Some("machine-stop-001".to_string()),
+                status: "false-negative".to_string(),
+                matched: Some(false),
+                false_positive: Some(false),
+                false_negative: Some(true),
+                release_blocker: Some(true),
+                evidence: Some(vec![
+                    "actual abrasive-flow stop was not predicted by the boundary review"
+                        .to_string(),
+                ]),
+            }]),
+            operator_interventions: Some(vec![TelemetryResultOperatorIntervention {
+                intervention_id: "operator-review-001".to_string(),
+                intervention_kind: "boundary-review".to_string(),
+                status: "completed".to_string(),
+                completed: Some(true),
+                release_blocker: Some(false),
+                evidence: Some(vec![
+                    "operator reviewed the unexpected support-media stop".to_string()
+                ]),
+            }]),
+            artifacts: Some(vec![TelemetryResultArtifact {
+                artifact_id: "telemetry-ledger-001".to_string(),
+                artifact_kind: "runtime-boundary-correlation".to_string(),
+                source_ref_id: Some("boundary-correlation-001".to_string()),
+                uri: Some("s3://fabrication/telemetry-ledger-001.json".to_string()),
+                sha256: Some("b".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "runtime telemetry, stop, and boundary correlation ledger retained"
+                        .to_string(),
+                ]),
+            }]),
+            warnings: Some(vec![
+                "telemetry boundary correlation blocks learning release".to_string()
+            ]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("telemetry result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.telemetry-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/telemetry/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("telemetry-result-boundary-correlation-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("learningBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("boundaryCorrelationBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("falseNegativeCount").and_then(Value::as_u64),
+            Some(1)
+        );
+
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "telemetry:release-blocked",
+            "telemetry:learning-blocked",
+            "telemetry:false-negative",
+            "telemetry-family:sheet-cut-process-and-support-media",
+            "telemetry-channel:abrasive-flow",
+            "telemetry-stop:support-media-stop",
+            "telemetry-boundary-status:false-negative",
+            "telemetry-artifact:runtime-boundary-correlation",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_telemetry_result_job(&response);
+        assert_eq!(job.record.kind, "telemetry-result");
+        assert_eq!(
+            job.record.status,
+            "telemetry-result-boundary-correlation-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "telemetry-result",
+            "telemetry-sensor-windows",
+            "telemetry-machine-stops",
+            "telemetry-boundary-correlations",
+            "telemetry-operator-interventions",
+            "telemetry-artifacts",
+            "telemetry-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
     }
 
     #[test]
@@ -87658,6 +92320,164 @@ mod tests {
     }
 
     #[test]
+    fn safety_result_endpoint_reviews_interlocks_emergency_actions_and_learning() {
+        let response = safety_result_review_response(SafetyResultReviewRequest {
+            request_id: Some("safety-result-001".to_string()),
+            plan_request_id: Some("plan-safety-001".to_string()),
+            job_id: Some("job-safety-001".to_string()),
+            worker_id: "safety-review-worker".to_string(),
+            reviewer: Some("machine-safety-reviewer".to_string()),
+            reviewer_version: Some("2026.06-safety".to_string()),
+            machine_id: Some("robotic-cell-01".to_string()),
+            machine_kind: Some("robotic-additive-cell".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            safety_checks: Some(vec![SafetyResultCheck {
+                check_id: "safety-check-001".to_string(),
+                safety_family: "robotic-cell-and-external-axis-interlocks".to_string(),
+                hazard: "operator-entry".to_string(),
+                status: "blocked".to_string(),
+                cleared: Some(false),
+                release_blocker: Some(true),
+                requires_stop_point: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "operator load/unload step lacks locked stop point".to_string(),
+                    "cell entry requires restart authorization".to_string(),
+                ]),
+            }]),
+            interlock_checks: Some(vec![SafetyResultInterlockCheck {
+                interlock_id: "interlock-light-curtain-001".to_string(),
+                interlock_kind: "light-curtain-reset".to_string(),
+                status: "restart-review-required".to_string(),
+                verified: Some(false),
+                release_blocker: Some(true),
+                requires_restart_review: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec!["light curtain reset evidence missing".to_string()]),
+            }]),
+            emergency_actions: Some(vec![SafetyResultEmergencyAction {
+                action_id: "emergency-action-001".to_string(),
+                action_kind: "emergency-stop-and-restart-authorization".to_string(),
+                status: "pending".to_string(),
+                completed: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "restart authorization has not been signed off".to_string()
+                ]),
+            }]),
+            artifacts: Some(vec![SafetyResultArtifact {
+                artifact_id: "safety-report-001".to_string(),
+                artifact_kind: "robot-cell-safety-review".to_string(),
+                source_ref_id: Some("safety-check-001".to_string()),
+                uri: Some("s3://fabrication/safety-report-001.json".to_string()),
+                sha256: Some("e".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained interlock and emergency action report".to_string()
+                ]),
+            }]),
+            warnings: Some(vec![
+                "robotic cell blocked before unattended release".to_string()
+            ]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("safety result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.safety-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("POST /fabrication/safety/result") })));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("safety-result-checks-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("safetyBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("interlockBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("emergencyActionBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("stopPointRequired").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("restartReviewRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "safety:stop-point-required",
+            "safety:restart-review-required",
+            "safety:human-intervention-required",
+            "safety-family:robotic-cell-and-external-axis-interlocks",
+            "safety-hazard:operator-entry",
+            "safety-interlock:light-curtain-reset",
+            "safety-emergency-action:emergency-stop-and-restart-authorization",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_safety_result_job(&response);
+        assert_eq!(job.record.kind, "safety-result");
+        assert_eq!(job.record.status, "safety-result-checks-release-blocked");
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "safety-result",
+            "safety-checks",
+            "safety-interlock-checks",
+            "safety-emergency-actions",
+            "safety-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
+    }
+
+    #[test]
     fn environment_catalog_endpoint_exposes_condition_release_contract() {
         let payload = environment_catalog_response();
         assert_eq!(
@@ -87709,6 +92529,173 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified facility qualifications")))));
+    }
+
+    #[test]
+    fn environment_result_endpoint_reviews_conditions_utilities_metrology_and_learning() {
+        let response = environment_result_review_response(EnvironmentResultReviewRequest {
+            request_id: Some("environment-result-001".to_string()),
+            plan_request_id: Some("plan-environment-001".to_string()),
+            job_id: Some("job-environment-001".to_string()),
+            worker_id: "environment-review-worker".to_string(),
+            reviewer: Some("environment-release-reviewer".to_string()),
+            reviewer_version: Some("2026.06-environment".to_string()),
+            machine_id: Some("nylon-fdm-01".to_string()),
+            machine_kind: Some("fdm-printer".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            condition_checks: Some(vec![EnvironmentResultConditionCheck {
+                check_id: "environment-condition-001".to_string(),
+                environment_family: "additive-material-storage-and-printroom-state".to_string(),
+                condition_scope: "filament-humidity".to_string(),
+                status: "out-of-limits".to_string(),
+                target_value: Some("below 15% RH storage".to_string()),
+                measured_value: Some("42% RH storage".to_string()),
+                within_limits: Some(false),
+                release_blocker: Some(true),
+                requires_conditioning: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "nylon spool humidity exceeds retained release limit".to_string(),
+                    "drying cycle must complete before print release".to_string(),
+                ]),
+            }]),
+            utility_checks: Some(vec![EnvironmentResultUtilityCheck {
+                utility_id: "environment-utility-001".to_string(),
+                utility_kind: "fume-extraction".to_string(),
+                status: "recovery-required".to_string(),
+                available: Some(false),
+                release_blocker: Some(true),
+                requires_recovery: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec!["fume extraction heartbeat is missing".to_string()]),
+            }]),
+            metrology_checks: Some(vec![EnvironmentResultMetrologyCheck {
+                metrology_id: "environment-metrology-001".to_string(),
+                metrology_kind: "part-temperature-stabilization".to_string(),
+                status: "unstable".to_string(),
+                stable: Some(false),
+                release_blocker: Some(true),
+                requires_recheck: Some(true),
+                requires_human_intervention: Some(false),
+                evidence: Some(vec![
+                    "part has not equilibrated before inspection".to_string()
+                ]),
+            }]),
+            artifacts: Some(vec![EnvironmentResultArtifact {
+                artifact_id: "environment-report-001".to_string(),
+                artifact_kind: "environment-release-report".to_string(),
+                source_ref_id: Some("environment-condition-001".to_string()),
+                uri: Some("s3://fabrication/environment-report-001.json".to_string()),
+                sha256: Some("f".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained humidity, extraction, and metrology environment report".to_string(),
+                ]),
+            }]),
+            warnings: Some(vec![
+                "environment recovery blocked before machine release".to_string()
+            ]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("environment result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.environment-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/environment/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("environment-result-conditions-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("conditionBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("utilityBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("metrologyBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("conditioningRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("utilityRecoveryRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("metrologyRecheckRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "environment:conditioning-required",
+            "environment:utility-recovery-required",
+            "environment:metrology-recheck-required",
+            "environment:human-intervention-required",
+            "environment-family:additive-material-storage-and-printroom-state",
+            "environment-scope:filament-humidity",
+            "environment-utility:fume-extraction",
+            "environment-metrology:part-temperature-stabilization",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_environment_result_job(&response);
+        assert_eq!(job.record.kind, "environment-result");
+        assert_eq!(
+            job.record.status,
+            "environment-result-conditions-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "environment-result",
+            "environment-condition-checks",
+            "environment-utility-checks",
+            "environment-metrology-checks",
+            "environment-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
     }
 
     #[test]
@@ -87764,6 +92751,154 @@ mod tests {
     }
 
     #[test]
+    fn provenance_result_endpoint_reviews_lineage_artifacts_and_learning() {
+        let response = provenance_result_review_response(ProvenanceResultReviewRequest {
+            request_id: Some("provenance-result-001".to_string()),
+            plan_request_id: Some("plan-provenance-001".to_string()),
+            job_id: Some("job-provenance-001".to_string()),
+            worker_id: "provenance-review-worker".to_string(),
+            reviewer: Some("release-lineage-reviewer".to_string()),
+            reviewer_version: Some("2026.06-provenance".to_string()),
+            source_part_id: Some("imported-bracket-v4".to_string()),
+            machine_id: Some("vmc-02".to_string()),
+            machine_kind: Some("vertical-mill".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            lineage_checks: Some(vec![ProvenanceResultLineageCheck {
+                check_id: "provenance-lineage-001".to_string(),
+                provenance_family: "design-input-and-cad-lineage".to_string(),
+                evidence_scope: "native-cad".to_string(),
+                status: "review-required".to_string(),
+                traceable: Some(false),
+                release_blocker: Some(true),
+                requires_review: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "Creo source revision lacks retained PMI conversion log".to_string(),
+                    "operator must accept lossy STEP export before release".to_string(),
+                ]),
+            }]),
+            artifact_checks: Some(vec![ProvenanceResultArtifactCheck {
+                artifact_id: "controller-program-001".to_string(),
+                artifact_kind: "controller-program".to_string(),
+                status: "digest-mismatch".to_string(),
+                digest_verified: Some(false),
+                uri_present: Some(true),
+                release_blocker: Some(true),
+                evidence: Some(vec![
+                    "submitted NC program digest differs from release package manifest".to_string(),
+                ]),
+            }]),
+            custody_events: Some(vec![ProvenanceResultCustodyEvent {
+                event_id: "operator-review-001".to_string(),
+                event_kind: "operator-review".to_string(),
+                status: "awaiting-acceptance".to_string(),
+                accepted: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "lineage exception has not been accepted by a release operator".to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![ProvenanceResultArtifact {
+                artifact_id: "provenance-ledger-001".to_string(),
+                artifact_kind: "release-provenance-ledger".to_string(),
+                source_ref_id: Some("provenance-lineage-001".to_string()),
+                uri: Some("s3://fabrication/provenance-ledger-001.json".to_string()),
+                sha256: Some("a".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained CAD, controller-program, and custody lineage ledger".to_string(),
+                ]),
+            }]),
+            warnings: Some(vec!["provenance review blocks machine release".to_string()]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("provenance result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.provenance-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/provenance/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("provenance-result-lineage-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("lineageBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("artifactBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("custodyBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "provenance:release-blocked",
+            "provenance:review-required",
+            "provenance:human-intervention-required",
+            "provenance-family:design-input-and-cad-lineage",
+            "provenance-scope:native-cad",
+            "provenance-artifact:controller-program",
+            "provenance-custody:operator-review",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_provenance_result_job(&response);
+        assert_eq!(job.record.kind, "provenance-result");
+        assert_eq!(
+            job.record.status,
+            "provenance-result-lineage-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "provenance-result",
+            "provenance-lineage-checks",
+            "provenance-artifact-checks",
+            "provenance-custody-events",
+            "provenance-artifacts",
+            "provenance-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
+    }
+
+    #[test]
     fn process_capability_catalog_endpoint_exposes_geometry_release_boundaries() {
         let payload = process_capability_catalog_response();
         assert_eq!(
@@ -87813,6 +92948,167 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified machine capability studies")))));
+    }
+
+    #[test]
+    fn process_capability_result_endpoint_reviews_routes_measurements_and_learning() {
+        let response =
+            process_capability_result_review_response(ProcessCapabilityResultReviewRequest {
+                request_id: Some("process-capability-result-001".to_string()),
+                plan_request_id: Some("plan-process-capability-001".to_string()),
+                job_id: Some("job-process-capability-001".to_string()),
+                worker_id: "process-capability-worker".to_string(),
+                reviewer: Some("capability-reviewer".to_string()),
+                reviewer_version: Some("2026.06-capability".to_string()),
+                machine_kind: Some("mixed-additive-subtractive-job".to_string()),
+                source_part_id: Some("oversized-bracket".to_string()),
+                success: true,
+                machine_ready: false,
+                release_ready: Some(false),
+                capability_findings: Some(vec![ProcessCapabilityResultFinding {
+                    finding_id: "capability-finding-001".to_string(),
+                    capability_family: "hybrid-split-combine-and-rework-envelope".to_string(),
+                    capability_scope: "split-boundary".to_string(),
+                    status: "exceeded".to_string(),
+                    within_capability: Some(false),
+                    release_blocker: Some(true),
+                    requires_redesign: Some(false),
+                    requires_alternate_route: Some(true),
+                    requires_split_combine: Some(true),
+                    requires_human_intervention: Some(true),
+                    evidence: Some(vec![
+                        "single-piece print exceeds build envelope".to_string(),
+                        "post-machined interface needs split boundary".to_string(),
+                    ]),
+                }]),
+                alternate_routes: Some(vec![ProcessCapabilityResultAlternateRoute {
+                    route_id: "alternate-route-001".to_string(),
+                    route_kind: "print-split-then-mill-interface".to_string(),
+                    manufacturing_method: Some("hybrid-additive-subtractive".to_string()),
+                    machine_kind: Some("mixed-additive-subtractive-job".to_string()),
+                    status: "review-required".to_string(),
+                    accepted: Some(false),
+                    release_blocker: Some(true),
+                    requires_split_combine: Some(true),
+                    requires_human_intervention: Some(true),
+                    evidence: Some(vec![
+                        "alternate route lacks accepted interface control plan".to_string(),
+                    ]),
+                }]),
+                measurement_results: Some(vec![ProcessCapabilityResultMeasurement {
+                    measurement_id: "capability-measurement-001".to_string(),
+                    measurement_kind: "first-article-build-envelope-coupon".to_string(),
+                    status: "out-of-limits".to_string(),
+                    target_value: Some("200 mm envelope".to_string()),
+                    measured_value: Some("218 mm required".to_string()),
+                    within_limits: Some(false),
+                    release_blocker: Some(true),
+                    evidence: Some(vec!["first article exceeds retained envelope".to_string()]),
+                }]),
+                artifacts: Some(vec![ProcessCapabilityResultArtifact {
+                    artifact_id: "process-capability-report-001".to_string(),
+                    artifact_kind: "process-capability-review".to_string(),
+                    source_ref_id: Some("capability-finding-001".to_string()),
+                    uri: Some("s3://fabrication/process-capability-report-001.json".to_string()),
+                    sha256: Some("d".repeat(64)),
+                    format: Some("json".to_string()),
+                    evidence: Some(vec![
+                        "retained route, measurement, and split boundary evidence".to_string(),
+                    ]),
+                }]),
+                warnings: Some(vec![
+                    "alternate route requires human fit-up review".to_string()
+                ]),
+                review_metadata: Some(json!({"source": "unit-test"})),
+            })
+            .expect("process capability result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.process-capability-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/process-capabilities/result")
+            })));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("process-capability-result-findings-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("findingBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("routeBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("measurementBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("splitCombineRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "process-capability:alternate-route-required",
+            "process-capability:split-combine-required",
+            "process-capability:human-intervention-required",
+            "process-capability-family:hybrid-split-combine-and-rework-envelope",
+            "process-capability-scope:split-boundary",
+            "process-capability-route:print-split-then-mill-interface",
+            "process-capability-measurement:first-article-build-envelope-coupon",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_process_capability_result_job(&response);
+        assert_eq!(job.record.kind, "process-capability-result");
+        assert_eq!(
+            job.record.status,
+            "process-capability-result-findings-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "process-capability-result",
+            "process-capability-findings",
+            "process-capability-alternate-routes",
+            "process-capability-measurements",
+            "process-capability-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
     }
 
     #[test]
