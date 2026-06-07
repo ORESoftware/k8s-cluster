@@ -18,7 +18,10 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose, Engine as _};
-use dd_nats_subject_defs::{RUNTIME_CRITICAL_EVENTS_SUBJECT, RUNTIME_EVENTS_SUBJECT};
+use dd_nats_subject_defs::{
+    ESCROW_SOLANA_RESULTS_SUBJECT, ESCROW_SOLANA_VALIDATE_QUEUE_GROUP,
+    ESCROW_SOLANA_VALIDATE_SUBJECT, RUNTIME_CRITICAL_EVENTS_SUBJECT, RUNTIME_EVENTS_SUBJECT,
+};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -31,9 +34,6 @@ const LOG_SCHEMA: &str = "dd.log.v1";
 const LOG_SCOPE: &str = "dd-escrow-rs";
 const DEFAULT_COMMITMENT: &str = "confirmed";
 const SETTLEMENT_AUTH_HEADER: &str = "x-escrow-settlement-auth";
-const DEFAULT_VALIDATE_SUBJECT: &str = "dd.remote.escrow.solana.validate";
-const DEFAULT_RESULT_SUBJECT: &str = "dd.remote.escrow.solana.results";
-const DEFAULT_QUEUE_GROUP: &str = "dd-escrow-rs";
 const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;
 const MAX_NATS_PAYLOAD_BYTES: usize = 512 * 1024;
 const MAX_SIGNED_TRANSACTION_BYTES: usize = 256 * 1024;
@@ -2192,7 +2192,7 @@ async fn run_nats_loop(state: AppState) {
         "Escrow validation NATS loop is starting.",
         json!({
             "subject": state.validate_subject,
-            "queueGroup": DEFAULT_QUEUE_GROUP,
+            "queueGroup": ESCROW_SOLANA_VALIDATE_QUEUE_GROUP,
             "resultSubject": state.result_subject,
             "eventSubject": state.event_subject,
             "criticalEventSubject": state.critical_event_subject,
@@ -2201,7 +2201,7 @@ async fn run_nats_loop(state: AppState) {
     let mut subscription = match nats
         .queue_subscribe(
             state.validate_subject.clone(),
-            DEFAULT_QUEUE_GROUP.to_string(),
+            ESCROW_SOLANA_VALIDATE_QUEUE_GROUP.to_string(),
         )
         .await
     {
@@ -2344,8 +2344,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     let allow_skip_preflight = env_bool("SOLANA_ALLOW_SKIP_PREFLIGHT", false);
     let rpc_timeout_seconds = env_u64("SOLANA_RPC_TIMEOUT_SECONDS", 20);
-    let validate_subject = env_value("ESCROW_VALIDATE_SUBJECT", DEFAULT_VALIDATE_SUBJECT);
-    let result_subject = env_value("ESCROW_RESULT_SUBJECT", DEFAULT_RESULT_SUBJECT);
+    let validate_subject = env_value("ESCROW_VALIDATE_SUBJECT", ESCROW_SOLANA_VALIDATE_SUBJECT);
+    let result_subject = env_value("ESCROW_RESULT_SUBJECT", ESCROW_SOLANA_RESULTS_SUBJECT);
     let event_subject = env_value("ESCROW_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT);
     let critical_event_subject = env_value(
         "NATS_CRITICAL_EVENT_SUBJECT",
@@ -2451,8 +2451,8 @@ mod tests {
             settlement_auth_secret: Some("secret".to_string()),
             allow_skip_preflight: false,
             nats: None,
-            validate_subject: DEFAULT_VALIDATE_SUBJECT.to_string(),
-            result_subject: DEFAULT_RESULT_SUBJECT.to_string(),
+            validate_subject: ESCROW_SOLANA_VALIDATE_SUBJECT.to_string(),
+            result_subject: ESCROW_SOLANA_RESULTS_SUBJECT.to_string(),
             event_subject: RUNTIME_EVENTS_SUBJECT.to_string(),
             critical_event_subject: RUNTIME_CRITICAL_EVENTS_SUBJECT.to_string(),
             metrics: Arc::new(Metrics::default()),

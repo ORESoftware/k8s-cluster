@@ -138,6 +138,8 @@ It exposes:
 - `GET /fabrication/costing/catalog`
 - `GET /utilities/catalog`
 - `GET /fabrication/utilities/catalog`
+- `POST /utilities/result`
+- `POST /fabrication/utilities/result`
 - `GET /telemetry/catalog`
 - `GET /fabrication/telemetry/catalog`
 - `POST /telemetry/result`
@@ -2021,6 +2023,26 @@ abrasive, fume, vacuum, fixture, robot, or recovery utilities lack retained
 evidence. Utility outages, restarts, operator recovery, and environmental
 excursions are retained as MDP/POMDP/neural learning signals so future planners
 can resequence, add checkpoints, split work, or avoid brittle unattended routes.
+
+## `POST /fabrication/utilities/result`
+
+`POST /utilities/result` and the gateway-prefixed
+`POST /fabrication/utilities/result` accept retained process-support and
+facility-readiness outcomes from coolant, chip evacuation, dust collection,
+sheet-cut support media, additive thermal/material utilities, hybrid-cell
+services, power, network, environment, and operator recovery reviewers. The
+response uses `dd.fabrication.utilities-result-review.v1` and captures utility
+checks, recovery actions, outage events, retained artifacts, release blockers,
+warning counts, and MDP/POMDP/neural learning observations.
+
+Machine-ready and release-ready status remains blocked when process support
+utilities are unavailable, outside limits, unrecovered, restart-unverified,
+unreplanned, missing retained evidence, or still require human intervention.
+The result is stored with `utilities-result`, `utilities-checks`,
+`utilities-recovery-actions`, `utilities-outage-events`, `utilities-artifacts`,
+and `utilities-learning-observations` artifacts so future planners can learn
+which utility readiness, restart, outage, and recovery patterns made generated
+or imported instructions releasable.
 
 ## `GET /fabrication/telemetry/catalog`
 

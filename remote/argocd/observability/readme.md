@@ -51,6 +51,10 @@ The runtimes are instrumented explicitly:
 - The Solana contract gateway exposes Prometheus counters for validation,
   policy rejection, Solana RPC method outcomes, NATS publish outcomes, and
   send-auth failures, plus `dd.log.v1` stdout/stderr records for Loki.
+- The Solana escrow gateway exposes Prometheus counters for escrow intent
+  validation, settlement simulation/send outcomes, Solana RPC outcomes, NATS
+  publish outcomes, policy rejections, and settlement-auth failures, plus the
+  same `dd.log.v1` stdout/stderr envelope for Loki.
 - Runtime-config exposes subscriber, entry, and push counters that make
   configuration delivery visible for dependent planners such as
   `dd-fabrication-server`; Prometheus alerts when the target is down, stage
@@ -213,7 +217,8 @@ Currently opted-in:
   `/fabrication/simulation/result`, `/fabrication/quality/catalog`,
   `/fabrication/dispositions/catalog`, `/fabrication/dispositions/result`,
   `/fabrication/costing/catalog`,
-  `/fabrication/utilities/catalog`, `/fabrication/telemetry/catalog`,
+  `/fabrication/utilities/catalog`, `/fabrication/utilities/result`,
+  `/fabrication/telemetry/catalog`,
   `/fabrication/telemetry/result`, `/fabrication/quality/plan`,
   `/fabrication/quality/result`,
   `/fabrication/manufacturability/result`,

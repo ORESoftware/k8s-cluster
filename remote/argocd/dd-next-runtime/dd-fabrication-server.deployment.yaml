@@ -198,6 +198,7 @@ spec:
                 '"path": "/fabrication/dispositions/result"' \
                 '"path": "/fabrication/costing/catalog"' \
                 '"path": "/fabrication/utilities/catalog"' \
+                '"path": "/fabrication/utilities/result"' \
                 '"path": "/fabrication/telemetry/catalog"' \
                 '"path": "/fabrication/telemetry/result"' \
                 '"path": "/fabrication/quality/plan"' \

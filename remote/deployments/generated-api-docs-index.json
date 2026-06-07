@@ -163,6 +163,19 @@
       ]
     },
     {
+      "service": "dd-music-rs",
+      "language": "rust",
+      "routeCount": 12,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 5
+      },
+      "generated": [
+        "remote/deployments/dd-music-rs/generated/api-docs.json",
+        "remote/deployments/dd-music-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "des-simulator-rs",
       "language": "rust",
       "routeCount": 19,
@@ -207,10 +220,10 @@
     {
       "service": "fabrication-server-rs",
       "language": "rust",
-      "routeCount": 256,
+      "routeCount": 258,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 246,
+        "user-generated": 248,
         "runtime-config": 3
       },
       "generated": [
