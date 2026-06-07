@@ -56988,6 +56988,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/design/convert/result",
         "GET /instructions/languages",
         "GET /fabrication/instructions/languages",
+        "GET /instructions/import/catalog",
+        "GET /fabrication/instructions/import/catalog",
         "GET /instructions/validation/catalog",
         "GET /fabrication/instructions/validation/catalog",
         "GET /instructions/generation/catalog",
@@ -57068,6 +57070,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/schedule/result",
         "GET /simulation/catalog",
         "GET /fabrication/simulation/catalog",
+        "GET /simulation/preflight/catalog",
+        "GET /fabrication/simulation/preflight/catalog",
         "POST /simulation/run",
         "POST /fabrication/simulation/run",
         "POST /simulation/result",
@@ -63597,6 +63601,112 @@ fn simulation_catalog_response() -> Value {
     })
 }
 
+fn simulation_preflight_catalog_response() -> Value {
+    let risk_contracts = simulation_catalog_risk_contracts();
+    let dry_run_contracts = simulation_catalog_dry_run_contracts();
+    let risk_types = unique_sorted(risk_contracts.iter().filter_map(|item| {
+        item.get("riskType")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.simulation-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /simulation/preflight/catalog",
+            "GET /fabrication/simulation/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/simulation/catalog",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/simulation/result",
+            "GET /fabrication/toolpaths/catalog",
+            "GET /fabrication/machine-code/catalog",
+            "GET /fabrication/release/preflight/catalog",
+            "GET /fabrication/learning/preflight/catalog",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "riskContractCount": risk_contracts.len(),
+        "dryRunContractCount": dry_run_contracts.len(),
+        "riskTypes": risk_types,
+        "preflightGroups": [
+            {
+                "group": "machine-envelope-fixture-and-datum-state",
+                "requiredEvidence": [
+                    "selected machine work envelope, axis limits, rotary/index limits, fixture and stock envelope, and datum/work-offset proof",
+                    "tool/nozzle/beam/jet/end-effector clearance model, safe retract height, clamp/tab/hold-down state, and collision sweep",
+                    "split/combine child-route envelope checks when a single machine cannot safely cover the full object"
+                ],
+                "releaseBlockers": [
+                    "generated or imported program lacks machine envelope, fixture, work-offset, stock, datum, or clearance evidence before dry-run",
+                    "axis extents, rotary sweep, robot reach, or sheet nesting exceed the selected machine or fixture envelope",
+                    "simulation would hide a required human intervention, re-fixture, child-part split, or assembly recomposition gate"
+                ]
+            },
+            {
+                "group": "controller-process-and-program-state",
+                "requiredEvidence": [
+                    "controller/postprocessor dialect, units, coordinate mode, tool/nozzle/process state, feed/speed, and modal defaults for each simulated program",
+                    "process-start evidence for spindle, beam, jet, heater, extrusion, assist media, coolant, chip evacuation, or equivalent process support",
+                    "arc, canned-cycle, compensation, tool-length, threading, additive thermal, and sheet-cutting support-media assumptions surfaced before dry-run"
+                ],
+                "releaseBlockers": [
+                    "simulation input omits controller dialect, modal state, units, work offset, feed/speed, or postprocessor evidence",
+                    "simulated cutting, extrusion, beam, jet, or process feed occurs before process-start or support-media evidence",
+                    "program trace cannot map findings back to source lines, generated programs, machine-code artifacts, or validation boundaries"
+                ]
+            },
+            {
+                "group": "dry-run-release-and-learning-state",
+                "requiredEvidence": [
+                    "retained simulation report, dry-run artifact URI/checksum, risk profile, findings, failure boundaries, and operator or automation signoff",
+                    "release-package links to simulation, execution plan, machine release, quality plan, remediation, and required human interventions",
+                    "DES, MDP/POMDP, and neural learning observations for reroute, split/combine, clearance, intervention, and reward updates"
+                ],
+                "releaseBlockers": [
+                    "machine-ready release requested while simulation risk is blocked or review-required, dry-run artifacts are missing, or signoff remains open",
+                    "risk findings are not promoted into failure boundaries, remediation actions, release probes, or operator intervention plans",
+                    "learning workers cannot observe whether dry-run evidence reduced risk, forced split/combine, or required human intervention"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "simulation.programs",
+            "simulation.programs.axisExtents",
+            "simulation.programs.safeClearanceObserved",
+            "simulation.programs.spindleOrHeatupObserved",
+            "simulation.riskProfile",
+            "simulation.riskProfile.programRisks",
+            "simulation.riskProfile.learningObservations",
+            "simulation.findings",
+            "simulation.failureBoundaries",
+            "validation.failureBoundaries",
+            "machineRelease.blockers",
+            "executionPlan.stopPoints",
+            "releaseProbePlan.probes",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "releasePackagePlan.requiredArtifacts"
+        ],
+        "artifactSurfaces": [
+            "simulation-report",
+            "analysis-simulation-report",
+            "dry-run-or-simulation-report",
+            "rotary-clearance-simulation-report",
+            "robot-path-or-fixture-simulation-report",
+            "mdp-request.artifacts.simulation",
+            "mdp-request.artifacts.releaseProbePlan"
+        ],
+        "releasePolicy": [
+            "simulation preflight entries describe required evidence before dry-run or simulation results can influence release; they do not certify machine execution",
+            "machineReady remains false while envelope, fixture, datum, controller, process-start, dry-run artifact, risk, signoff, release-package, or learning evidence is missing",
+            "failed simulation preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can reroute, split or combine work, add clearance, regenerate programs, or require human intervention earlier"
+        ]
+    })
+}
+
 fn simulation_run_response(
     response: &FabricationPlanResponse,
     policy: &LearningPolicySnapshot,
@@ -63764,6 +63874,10 @@ fn simulation_run_response(
 
 async fn simulation_catalog_http() -> impl IntoResponse {
     Json(simulation_catalog_response())
+}
+
+async fn simulation_preflight_catalog_http() -> impl IntoResponse {
+    Json(simulation_preflight_catalog_response())
 }
 
 fn quality_catalog_inspection_contracts() -> Vec<Value> {
@@ -92949,6 +93063,160 @@ async fn instruction_languages() -> impl IntoResponse {
     Json(instruction_language_catalog_response())
 }
 
+fn instruction_import_catalog_response() -> Value {
+    let languages = instruction_language_catalog();
+    let validation_contracts = instruction_validation_catalog_check_contracts();
+    let improvement_contracts = instruction_improvement_catalog_action_contracts();
+    let language_families = unique_sorted(languages.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_classes = unique_sorted(languages.iter().flat_map(|item| {
+        item.get("machineClasses")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-import-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /instructions/import/catalog",
+            "GET /fabrication/instructions/import/catalog"
+        ],
+        "submitRoutes": [
+            "POST /instructions/analyze",
+            "POST /fabrication/instructions/analyze",
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate",
+            "POST /instructions/improve",
+            "POST /fabrication/instructions/improve"
+        ],
+        "relatedCatalogRoutes": [
+            "GET /fabrication/instructions/languages",
+            "GET /fabrication/instructions/validation/catalog",
+            "GET /fabrication/improvements/catalog",
+            "GET /fabrication/improvements/preflight/catalog",
+            "GET /fabrication/boundaries/catalog",
+            "GET /fabrication/simulation/catalog",
+            "GET /fabrication/controllers/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /fabrication/learning/preflight/catalog"
+        ],
+        "acceptedLanguageCount": languages.len(),
+        "languageFamilies": language_families,
+        "machineClasses": machine_classes,
+        "importGroups": [
+            {
+                "group": "controller-and-cam-machine-code",
+                "acceptedFamilies": ["controller-gcode", "cam-intermediate-instruction"],
+                "examples": ["fanuc-gcode", "haas-gcode", "grbl-gcode", "siemens-sinumerik", "heidenhain", "mazatrol", "apt-cldata", "postprocessor-deck"],
+                "requiredEvidence": [
+                    "raw imported program, checksum, source system, revision, controller/postprocessor target, and machine profile",
+                    "units, coordinate system, work offset, tool table, stock, fixture, spindle/process state, feed, coolant or process media, and program end state",
+                    "simulation, dry-run, postprocessor review, controller compatibility, and operator or automation signoff before machine-ready release"
+                ],
+                "releaseBlockers": [
+                    "unknown controller dialect, missing source checksum, missing machine profile, or unverified postprocessor deck",
+                    "program can move the machine but lacks setup, workholding, tool, material, simulation, or release evidence",
+                    "validation findings or machine-failure boundaries are unresolved"
+                ]
+            },
+            {
+                "group": "slicer-and-additive-job-files",
+                "acceptedFamilies": ["additive-job-sheet", "controller-gcode"],
+                "examples": ["slicer-job", "printer-job", "marlin-gcode", "resin-job", "ctb-resin-job", "sls-job", "metal-pbf-job", "binder-jet-job"],
+                "requiredEvidence": [
+                    "slicer profile, printer firmware, material lot, mesh/design revision, units/scale, orientation/support choices, and generated toolpath artifact",
+                    "thermal, exposure, layer, support, recoater, feedstock, bed/nozzle/vat/powder, postprocess, and first-article evidence appropriate to process",
+                    "simulation or preview review plus human-intervention and recovery checkpoints for pauses, support removal, curing, depowdering, or inspection"
+                ],
+                "releaseBlockers": [
+                    "slicer artifact lacks profile, material, orientation, support, or machine/firmware provenance",
+                    "process cannot complete without unplanned operator intervention or missing postprocess evidence",
+                    "split/combine route, support strategy, or machine envelope remains unresolved"
+                ]
+            },
+            {
+                "group": "subtractive-sheet-edm-and-special-process-sheets",
+                "acceptedFamilies": ["subtractive-job-sheet", "operator-text-instruction", "cam-intermediate-instruction"],
+                "examples": ["mill-turn-job", "swiss-turning-job", "lathe-job", "laser-job", "waterjet-job", "wire-edm-job", "sinker-edm-job", "grinding-job", "press-brake-job", "gear-cutting-job"],
+                "requiredEvidence": [
+                    "setup sheet, stock/material, workholding, datum, tool/electrode/nozzle/wire, cut recipe, fixture, axis envelope, inspection, and release criteria",
+                    "process-specific proof for coolant/chip evacuation, kerf/pierce/threading, dielectric, abrasive/gas, guarding, bend tooling, gear cutter, or grinding wheel state",
+                    "boundary analysis for machine envelope, tool reach, unsupported stock, slug retention, human intervention, and split/combine recovery"
+                ],
+                "releaseBlockers": [
+                    "imported setup sheet lacks machine, stock, fixture, datum, tooling, process media, or inspection evidence",
+                    "machine cannot finish without unplanned manual reset, part separation, re-fixture, or split/combine route review",
+                    "release package cannot link imported instruction artifacts to validation, simulation, quality, and operator signoff"
+                ]
+            },
+            {
+                "group": "operator-assembly-postprocess-and-quality-work",
+                "acceptedFamilies": ["operator-text-instruction", "additive-job-sheet", "subtractive-job-sheet"],
+                "examples": ["operator-checklist", "setup-sheet", "assembly-cell-job", "adhesive-bonding-job", "plastic-joining-job", "surface-finishing-job", "cmm-inspection-job", "packaging-labeling-job"],
+                "requiredEvidence": [
+                    "traveler, checklist, part revisions, fixture or tooling, process recipe, lot/traceability, inspection criteria, disposition, and signoff owner",
+                    "automation coverage, manual fallback, human-intervention points, safe stops, recovery/rework rules, and final release condition",
+                    "learning outcome labels that distinguish planned human checkpoints from unexpected rescues or hidden split/combine failures"
+                ],
+                "releaseBlockers": [
+                    "plain-text instructions lack setup, process, inspection, disposition, or release owner evidence",
+                    "automation gap or human intervention is discovered but not represented as a release gate",
+                    "assembly, postprocess, or quality instruction can hide a split/combine or recomposition boundary"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "programs",
+            "programs.language",
+            "programs.instructions",
+            "validation.findings",
+            "validation.failureBoundaries",
+            "improvements",
+            "improvedPrograms.patchManifest",
+            "interventionMap",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "simulation.programs",
+            "machineRelease.blockers",
+            "releasePackagePlan.requiredArtifacts",
+            "learning.outcomeDraft",
+            "neuralTrainingCorpus.examples"
+        ],
+        "artifactSurfaces": [
+            "imported-instruction-artifact",
+            "imported-controller-program",
+            "imported-slicer-job",
+            "imported-setup-sheet",
+            "imported-operator-checklist",
+            "analysis-validation-report",
+            "analysis-improvements",
+            "analysis-mdp-request"
+        ],
+        "releasePolicy": [
+            "imported instruction streams are accepted as review inputs, not trusted machine-ready code",
+            "machineReady remains false until provenance, checksum, language/dialect, machine profile, validation, simulation or dry-run, setup, quality, release-package, and operator or automation signoff evidence clear",
+            "import analysis findings feed MDP/POMDP/neural workers so future plans learn when to reject, patch, regenerate, split/combine, reroute, or require human intervention before release"
+        ],
+        "validationContractCount": validation_contracts.len(),
+        "improvementContractCount": improvement_contracts.len(),
+        "acceptedLanguages": languages,
+        "validationContracts": validation_contracts,
+        "improvementActionContracts": improvement_contracts
+    })
+}
+
+async fn instruction_import_catalog_http() -> impl IntoResponse {
+    Json(instruction_import_catalog_response())
+}
+
 fn instruction_validation_catalog_check_contracts() -> Vec<Value> {
     vec![
         json!({
@@ -104415,6 +104683,7 @@ async fn request_schema() -> impl IntoResponse {
             "designGenerationCatalog": ["GET /design/generation/catalog", "GET /fabrication/design/generation/catalog"],
             "designGeneration": ["POST /design/generate", "POST /fabrication/design/generate"],
             "instructionLanguages": ["GET /instructions/languages", "GET /fabrication/instructions/languages"],
+            "instructionImportCatalog": ["GET /instructions/import/catalog", "GET /fabrication/instructions/import/catalog"],
             "instructionGenerationCatalog": ["GET /instructions/generation/catalog", "GET /fabrication/instructions/generation/catalog"],
             "instructionGenerationPreflightCatalog": ["GET /instructions/generation/preflight/catalog", "GET /fabrication/instructions/generation/preflight/catalog"],
             "instructionGeneration": ["POST /instructions/generate", "POST /fabrication/instructions/generate"],
@@ -104450,6 +104719,7 @@ async fn request_schema() -> impl IntoResponse {
             "scheduleCatalog": ["GET /schedule/catalog", "GET /fabrication/schedule/catalog"],
             "scheduleResult": ["POST /schedule/result", "POST /fabrication/schedule/result"],
             "simulationCatalog": ["GET /simulation/catalog", "GET /fabrication/simulation/catalog"],
+            "simulationPreflightCatalog": ["GET /simulation/preflight/catalog", "GET /fabrication/simulation/preflight/catalog"],
             "simulationRun": ["POST /simulation/run", "POST /fabrication/simulation/run"],
             "instructionSimulationResult": ["POST /simulation/result", "POST /fabrication/simulation/result"],
             "qualityCatalog": ["GET /quality/catalog", "GET /fabrication/quality/catalog"],
@@ -107121,6 +107391,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/instructions/languages",
             get(instruction_languages),
         )
+        .route(
+            "/instructions/import/catalog",
+            get(instruction_import_catalog_http),
+        )
+        .route(
+            "/fabrication/instructions/import/catalog",
+            get(instruction_import_catalog_http),
+        )
         .route("/cnc/catalog", get(cnc_catalog_http))
         .route("/fabrication/cnc/catalog", get(cnc_catalog_http))
         .route(
@@ -107308,6 +107586,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/simulation/catalog",
             get(simulation_catalog_http),
+        )
+        .route(
+            "/simulation/preflight/catalog",
+            get(simulation_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/simulation/preflight/catalog",
+            get(simulation_preflight_catalog_http),
         )
         .route("/simulation/run", post(simulation_run_http))
         .route("/fabrication/simulation/run", post(simulation_run_http))
@@ -111862,6 +112148,67 @@ mod tests {
             .is_some_and(|gates| gates.iter().any(|gate| gate
                 .as_str()
                 .is_some_and(|gate| gate.contains("resin-exposure-layer-manifest")))));
+    }
+
+    #[test]
+    fn instruction_import_catalog_endpoint_exposes_external_instruction_intake_contract() {
+        let payload = instruction_import_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-import-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/instructions/import/catalog")
+            })));
+        assert!(payload
+            .get("submitRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/instructions/analyze")
+            })));
+        assert_eq!(
+            payload.get("acceptedLanguageCount").and_then(Value::as_u64),
+            Some(accepted_instruction_languages().len() as u64)
+        );
+
+        let groups = payload
+            .get("importGroups")
+            .and_then(Value::as_array)
+            .expect("import groups should be exposed");
+        for group in [
+            "controller-and-cam-machine-code",
+            "slicer-and-additive-job-files",
+            "subtractive-sheet-edm-and-special-process-sheets",
+            "operator-assembly-postprocess-and-quality-work",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing import group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("examples")
+            .and_then(Value::as_array)
+            .is_some_and(|examples| examples.iter().any(|example| example
+                .as_str()
+                .is_some_and(|example| example == "apt-cldata")))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("improvedPrograms.patchManifest") })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not trusted machine-ready code")))));
     }
 
     #[test]
@@ -119110,6 +119457,59 @@ mod tests {
             .is_some_and(|evidence| evidence
                 .iter()
                 .any(|item| item.as_str() == Some("rotary-clearance-simulation-report"))));
+    }
+
+    #[test]
+    fn simulation_preflight_catalog_endpoint_exposes_release_gates() {
+        let payload = simulation_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.simulation-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/simulation/preflight/catalog")
+            })));
+        assert!(payload
+            .get("riskContractCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("simulation preflight groups should be present");
+        for group in [
+            "machine-envelope-fixture-and-datum-state",
+            "controller-process-and-program-state",
+            "dry-run-release-and-learning-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing simulation preflight group {group}"
+            );
+        }
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("simulation.riskProfile.learningObservations")
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("dry-run-or-simulation-report"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady remains false")))));
     }
 
     #[test]

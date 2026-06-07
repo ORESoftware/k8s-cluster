@@ -96,6 +96,8 @@ outcomes.
 - `POST /fabrication/handoff/result`
 - `GET /instructions/languages`
 - `GET /fabrication/instructions/languages`
+- `GET /instructions/import/catalog`
+- `GET /fabrication/instructions/import/catalog`
 - `GET /instructions/validation/catalog`
 - `GET /fabrication/instructions/validation/catalog`
 - `GET /instructions/generation/catalog`
@@ -178,6 +180,8 @@ outcomes.
 - `POST /fabrication/schedule/result`
 - `GET /simulation/catalog`
 - `GET /fabrication/simulation/catalog`
+- `GET /simulation/preflight/catalog`
+- `GET /fabrication/simulation/preflight/catalog`
 - `POST /simulation/run`
 - `POST /fabrication/simulation/run`
 - `POST /simulation/result`
@@ -1542,6 +1546,30 @@ automation evidence clear. CNC validation and result reviews feed DES,
 MDP/POMDP, and neural learning surfaces so future plans can split parts, reroute
 machines, regenerate code, or require human intervention earlier.
 
+## `GET /fabrication/instructions/import/catalog`
+
+`GET /instructions/import/catalog` and the gateway-prefixed
+`GET /fabrication/instructions/import/catalog` return the live
+`dd.fabrication.instruction-import-catalog.v1` intake contract for existing CNC,
+slicer, printer, CAM intermediate, setup-sheet, postprocess, assembly, quality,
+and operator instruction streams. The catalog groups controller/CAM machine
+code, slicer and additive job files, subtractive/sheet/EDM/special-process job
+sheets, and operator assembly/postprocess/quality work. Each group lists
+accepted families, examples such as `apt-cldata`, `marlin-gcode`,
+`ctb-resin-job`, `wire-edm-job`, and `assembly-cell-job`, required provenance
+and release evidence, and release blockers.
+
+Imported instructions are accepted as review inputs, not trusted machine-ready
+code. The import contract points callers to `POST /fabrication/instructions/analyze`,
+`POST /fabrication/instructions/validate`, and
+`POST /fabrication/instructions/improve`, and names response surfaces including
+`validation.failureBoundaries`, `improvements`,
+`improvedPrograms.patchManifest`, `operatorInterventionPlan`, simulation,
+release-package, and learning surfaces. Machine-ready release remains blocked
+until provenance, checksum, dialect, machine profile, validation, simulation or
+dry-run, setup, quality, release-package, and operator or automation signoff
+evidence clear.
+
 ## `GET /fabrication/instructions/validation/catalog`
 
 `GET /instructions/validation/catalog` and the gateway-prefixed
@@ -2531,6 +2559,22 @@ process-start proof is missing, or required dry-run artifacts such as
 `robot-path-or-fixture-simulation-report` are absent. Simulation-risk
 observations are emitted for MDP/POMDP/neural workers so future planning can
 learn when to reroute, split parts, add clearance, or require operator review.
+
+## `GET /fabrication/simulation/preflight/catalog`
+
+`GET /simulation/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/simulation/preflight/catalog` return the live
+`dd.fabrication.simulation-preflight-catalog.v1` evidence checklist for dry-run
+or simulation readiness before risk results can influence release. The catalog
+groups preflight requirements into machine envelope/fixture/datum state,
+controller/process/program state, and dry-run/release/learning state.
+
+Simulation preflight entries are release gates, not certified machine safety.
+Machine-ready release remains blocked while machine envelope, fixture, datum,
+controller, process-start, retained dry-run artifacts, risk findings, signoff,
+release-package links, or learning evidence is missing. Failed checks feed DES,
+MDP/POMDP, and neural workers so future plans can reroute, split or combine
+work, add clearance, regenerate programs, or require human intervention earlier.
 
 ## `POST /fabrication/simulation/run`
 
