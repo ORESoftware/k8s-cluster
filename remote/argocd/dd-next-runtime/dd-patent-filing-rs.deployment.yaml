@@ -1,0 +1,238 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-patent-filing-rs
+  namespace: default
+  labels:
+    app: dd-patent-filing-rs
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-patent-filing-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-07-patent-filing-rs'
+      labels:
+        app: dd-patent-filing-rs
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: release-build
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          terminationMessagePolicy: FallbackToLogsOnError
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export HOME=/tmp
+              export CARGO_HOME=/var/cache/dd-patent-filing-rs/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-patent-filing-rs/target
+              export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+              export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+              export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-never}"
+              export CARGO_REGISTRIES_CRATES_IO_PROTOCOL="${CARGO_REGISTRIES_CRATES_IO_PROTOCOL:-sparse}"
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              cd /opt/dd-next-1/remote/deployments/patent-filing-rs
+              echo "dd-patent-filing-rs release build starting pod=${POD_NAME} namespace=${POD_NAMESPACE} node=${NODE_NAME}"
+              /usr/local/cargo/bin/cargo build --release --locked
+              if [ ! -x "$CARGO_TARGET_DIR/release/dd-patent-filing-rs" ]; then
+                echo "dd-patent-filing-rs release build failed: compiled binary missing" >&2
+                exit 78
+              fi
+              echo "dd-patent-filing-rs release build completed pod=${POD_NAME} namespace=${POD_NAMESPACE} node=${NODE_NAME}"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: CARGO_INCREMENTAL
+              value: '0'
+            - name: CARGO_TERM_COLOR
+              value: never
+            - name: CARGO_NET_RETRY
+              value: '5'
+            - name: CARGO_HTTP_TIMEOUT
+              value: '120'
+            - name: CARGO_REGISTRIES_CRATES_IO_PROTOCOL
+              value: sparse
+          resources:
+            requests:
+              cpu: 100m
+              memory: 1Gi
+              ephemeral-storage: 3Gi
+            limits:
+              cpu: '2'
+              memory: 4Gi
+              ephemeral-storage: 6Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-patent-filing-rs
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: patent-filing-rs
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export HOME=/tmp
+              export CARGO_TARGET_DIR=/var/cache/dd-patent-filing-rs/target
+              cd /opt/dd-next-1/remote/deployments/patent-filing-rs
+              if [ ! -x "$CARGO_TARGET_DIR/release/dd-patent-filing-rs" ]; then
+                echo "dd-patent-filing-rs startup failed: compiled binary missing" >&2
+                exit 78
+              fi
+              exec "$CARGO_TARGET_DIR/release/dd-patent-filing-rs"
+          env:
+            - name: HOME
+              value: /tmp
+            - name: CARGO_TARGET_DIR
+              value: /var/cache/dd-patent-filing-rs/target
+            - name: RUST_LOG
+              value: info
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8116'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+            - name: PATENT_FILING_ALLOW_UNAUTHENTICATED
+              value: 'false'
+            - name: PATENT_FILING_CENTER_URL
+              value: https://patentcenter.uspto.gov/
+            - name: PATENT_FILING_MAX_MATTERS
+              value: '200'
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-patent-filing-rs
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-patent-filing-rs
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-patent-filing-rs.default.svc.cluster.local:8116/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: dd-agent-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8116
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-patent-filing-rs
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: build-cache
+          emptyDir:
+            sizeLimit: 6Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
