@@ -1625,7 +1625,7 @@ fn render_thread_deployment(
         json!({ "name": "OTEL_SERVICE_NAME", "value": name }),
         json!({ "name": "OTEL_EXPORTER_OTLP_ENDPOINT", "value": "http://dd-otel-collector.observability.svc.cluster.local:4318" }),
         json!({ "name": "THREAD_CONTEXT_BASE_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082" }),
-        json!({ "name": "AGENT_MCP_URL", "value": "http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp" }),
+        json!({ "name": "AGENT_MCP_URL", "value": "http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/mcp" }),
         json!({ "name": "AGENT_MCP_CONNECT_TIMEOUT_MS", "value": "3000" }),
         json!({ "name": "EVENT_INGEST_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082/api/agents/events" }),
         json!({ "name": "EVENT_INGEST_SECRET", "valueFrom": { "secretKeyRef": { "name": "dd-agent-secrets", "key": "SERVER_AUTH_SECRET" } } }),

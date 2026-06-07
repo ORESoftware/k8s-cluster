@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-cluster-mcp-rs
+  namespace: default
+  labels:
+    app: dd-cluster-mcp-rs
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: dd-cluster-mcp-rs

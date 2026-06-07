@@ -127,6 +127,7 @@ helper is kept self-contained per-service because `dev-server` pins its tsc
 | `dd-formal-methods-server`     | `http://dd-formal-methods-server.default.svc.cluster.local:8110/internal/update-runtime-config`                        | Rust   |
 | `dd-formal-methods-service`    | `http://dd-formal-methods-service.default.svc.cluster.local:8111/internal/update-runtime-config`                       | Rust   |
 | `dd-gleam-lambda-runner`       | `http://dd-gleam-lambda-runner.default.svc.cluster.local:8083/internal/update-runtime-config`                          | Gleam  |
+| `dd-cluster-mcp-rs`            | `http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/internal/update-runtime-config`                                | Rust   |
 | `dd-gleam-mcp-server`          | `http://dd-gleam-mcp-server.default.svc.cluster.local:8090/internal/update-runtime-config`                             | Gleam  |
 | `dd-gleamlang-presence-server` | `http://<pod>.presence-svc.presence.svc.cluster.local:8081/internal/update-runtime-config` (one register per replica)  | Gleam  |
 | `dd-gleamlang-server`          | `http://dd-gleamlang-server.default.svc.cluster.local:8081/internal/update-runtime-config`                             | Gleam  |

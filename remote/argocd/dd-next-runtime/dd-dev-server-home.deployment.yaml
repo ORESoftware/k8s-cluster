@@ -68,7 +68,7 @@ spec:
             - name: THREAD_CONTEXT_BASE_URL
               value: http://dd-remote-rest-api.default.svc.cluster.local:8082
             - name: AGENT_MCP_URL
-              value: http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp
+              value: http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/mcp
             - name: AGENT_MCP_CONNECT_TIMEOUT_MS
               value: "3000"
             - name: EVENT_INGEST_URL

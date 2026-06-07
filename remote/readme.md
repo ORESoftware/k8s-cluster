@@ -81,12 +81,14 @@ The baseline Kubernetes runtime bundle lives in
 when bootstrapping Argo, then let Git + Argo own runtime Deployment, Service, ConfigMap, and gateway
 changes.
 
-There are also two Gleam/OTP services with their own ArgoCD Application manifests for the EC2 k8s
-runtime. The live MCP and agent cluster-context path is EC2:
+There are also MCP/WebSocket runtime services with their own ArgoCD Application manifests for the
+EC2 k8s runtime. The live MCP and agent cluster-context path is EC2:
 
+- [`deployments/cluster-mcp-rs/`](./deployments/cluster-mcp-rs/) — primary Rust MCP JSON-RPC service
+  with read-only Kubernetes inventory, service-directory, and observability tools for AI agents.
 - [`deployments/gleamlang-server/`](./deployments/gleamlang-server/) — WebSocket streaming service.
-- [`deployments/gleam-mcp-server/`](./deployments/gleam-mcp-server/) — MCP JSON-RPC service with read-only runtime tools
-  and Prometheus metrics.
+- [`deployments/gleam-mcp-server/`](./deployments/gleam-mcp-server/) — legacy Gleam MCP JSON-RPC
+  service with read-only runtime tools and Prometheus metrics.
 
 The cluster observability stack lives in [`argocd/observability/`](./argocd/observability/) and is
 managed by the `dd-observability` ArgoCD Application. It installs Prometheus, Grafana,
@@ -183,8 +185,10 @@ being tuned:
   - `http://54.91.17.58/nats-metrics/metrics` (NATS exporter, requires `Auth`)
   - `http://54.91.17.58/gleam/home` and `wss://54.91.17.58/gleam/ws` (Gleam WebSocket service,
     requires `Auth`)
+  - `http://54.91.17.58/cluster-mcp`, `http://54.91.17.58/cluster-mcp/home`, and
+    `http://54.91.17.58/cluster-mcp/metrics` (Rust cluster MCP service, requires `Auth`)
   - `http://54.91.17.58/mcp`, `http://54.91.17.58/mcp/home`, and `http://54.91.17.58/mcp/metrics`
-    (Gleam MCP service, requires `Auth`)
+    (legacy Gleam MCP service, requires `Auth`)
   - `http://54.91.17.58/reaper/` and `http://54.91.17.58/cron/` (runtime service status surfaces,
     require `Auth`)
 - `curl http://127.0.0.1/` -> `302` redirect to `/home`

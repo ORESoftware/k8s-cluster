@@ -783,6 +783,36 @@ data:
         proxy_pass http://dd-dart-server.default.svc.cluster.local:8090;
       }
 
+      location = /cluster-mcp {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Forwarded-Prefix /cluster-mcp;
+        proxy_pass http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/mcp;
+      }
+
+      location /cluster-mcp/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Forwarded-Prefix /cluster-mcp;
+        proxy_pass http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/;
+      }
+
       location = /mcp {
         if ($dd_gateway_auth_ok = 0) {
           return 401;

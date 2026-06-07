@@ -260,7 +260,16 @@ const MANAGED_DEPLOYMENTS: &[ManagedDeployment] = &[
         deployment: "dd-gleam-mcp-server",
         service: "dd-gleam-mcp-server.default.svc.cluster.local:8090",
         access: "server auth",
-        notes: "Read-only JSON-RPC MCP runtime tools, metrics, and log surface.",
+        notes: "Legacy read-only JSON-RPC MCP runtime tools, metrics, and log surface.",
+    },
+    ManagedDeployment {
+        slug: "cluster-mcp-rs",
+        title: "Rust cluster MCP server",
+        namespace: "default",
+        deployment: "dd-cluster-mcp-rs",
+        service: "dd-cluster-mcp-rs.default.svc.cluster.local:8091",
+        access: "server auth",
+        notes: "Read-only Rust MCP runtime tools for cluster inventory, service wiring, Prometheus/Loki/Grafana/NATS, and OTLP trace health.",
     },
     ManagedDeployment {
         slug: "webrtc-signaling",

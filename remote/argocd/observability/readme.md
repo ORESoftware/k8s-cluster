@@ -31,7 +31,11 @@ The runtimes are instrumented explicitly:
 - Rust web-home emits Prometheus metrics.
 - Rust REST API emits Prometheus metrics for the RDS/Postgres data boundary.
 - Gleam websocket server emits actor-backed Prometheus metrics.
-- Gleam MCP server emits HTTP and JSON-RPC method Prometheus metrics.
+- Rust cluster MCP server emits HTTP, JSON-RPC, Kubernetes-read,
+  observability-read, and OTLP-export Prometheus metrics, plus explicit OTLP
+  spans and `dd.log.v1` stdout events.
+- Gleam MCP server remains available as the legacy `/mcp` endpoint and emits
+  HTTP and JSON-RPC method Prometheus metrics.
 - Akka/async.java websocket server emits Prometheus counters for both
   websocket pipelines.
 - F# websocket server exposes its Rx live counters as Prometheus metrics.
