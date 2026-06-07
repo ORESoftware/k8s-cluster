@@ -3381,6 +3381,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn tolerance_result_review_response/);
   assert.match(source, /fn store_tolerance_result_response/);
   assert.match(source, /dd\.fabrication\.tolerance-result-review\.v1/);
+  assert.match(source, /dd\.fabrication\.tolerance-learning-outcome-draft\.v1/);
+  assert.match(source, /"toleranceFamilyHints"/);
+  assert.match(source, /"compensationHints"/);
   assert.match(source, /"POST \/fabrication\/tolerances\/result"/);
   assert.match(source, /tolerance-result-tolerance-release-blocked/);
   assert.match(source, /tolerance_result_endpoint_reviews_fit_compensation_and_learning/);
@@ -4518,6 +4521,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/tolerances\/result`/);
   assert.match(readme, /`POST \/fabrication\/tolerances\/result`/);
   assert.match(readme, /dd\.fabrication\.tolerance-result-review\.v1/);
+  assert.match(readme, /dd\.fabrication\.tolerance-learning-outcome-draft\.v1/);
+  assert.match(readme, /tolerance-family, geometry-scope, fit, compensation/);
   assert.match(readme, /tolerance-compensations/);
   assert.match(readme, /tolerance-learning-observations/);
   assert.match(readme, /split\/combine planning, or human fit-up/);
