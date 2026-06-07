@@ -116,8 +116,14 @@ preferred operator path is:
   unless a human explicitly grants it.
 - External Secrets reads AWS Secrets Manager and syncs Kubernetes secrets.
 - Agents receive only the strict env allowlist defined in `remote/deployments/dev-server/src/agents`.
-- Humans use the WireGuard VPN plus `dd-bastion` for private cluster access and read-only
-  kubeconfig retrieval.
+- Cluster access (operators and agents) uses the local AWS credentials in `~/.aws/credentials`
+  (profile `dd-codex`, `region = us-east-1`) together with the `dd-ec2-runtime` kubeconfig context,
+  which targets the API endpoint directly. Refresh the profile when needed (its
+  `credential_process` exports short-lived credentials) and verify with
+  `aws sts get-caller-identity --profile dd-codex` before running `kubectl`; if STS returns
+  `InvalidClientTokenId`/expiry, refresh the profile rather than falling back to another auth path.
+  It is **not** a WireGuard-VPN-plus-`dd-bastion` human-only step. (That bastion path still exists as
+  a legacy fallback for private access and read-only kubeconfig retrieval, but is not required.)
 - Browser access to protected public gateway paths goes through `dd-remote-auth`; configure
   the optional TOTP seed there when a passphrase plus one-time code is required.
 - The legacy gateway auth header name is `Auth`; read its value from the operator secret or local
