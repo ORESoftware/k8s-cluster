@@ -89973,7 +89973,7 @@ mod tests {
             .and_then(Value::as_array)
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
-                .is_some_and(|item| item.contains("Positive rewards cannot bypass")))));
+                .is_some_and(|item| item.contains("positive rewards cannot bypass")))));
     }
 
     #[test]
