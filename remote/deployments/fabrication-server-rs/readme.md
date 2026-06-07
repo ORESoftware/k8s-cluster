@@ -30,6 +30,8 @@ outcomes.
 - `GET /fabrication/printers/preflight/catalog`
 - `GET /subtractive/catalog`
 - `GET /fabrication/subtractive/catalog`
+- `GET /subtractive/preflight/catalog`
+- `GET /fabrication/subtractive/preflight/catalog`
 - `GET /cnc/catalog`
 - `GET /fabrication/cnc/catalog`
 - `GET /cells/catalog`
@@ -62,6 +64,8 @@ outcomes.
 - `GET /fabrication/formats/catalog`
 - `GET /design/import/catalog`
 - `GET /fabrication/design/import/catalog`
+- `GET /design/preflight/catalog`
+- `GET /fabrication/design/preflight/catalog`
 - `GET /subjects/catalog`
 - `GET /fabrication/subjects/catalog`
 - `GET /workers/catalog`
@@ -800,6 +804,26 @@ machine availability; machine-ready release remains blocked until the setup,
 controller/postprocessor, process media, simulation, and operator or automation
 evidence clear.
 
+## `GET /fabrication/subtractive/preflight/catalog`
+
+`GET /subtractive/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/subtractive/preflight/catalog` return the live
+`dd.fabrication.subtractive-preflight-catalog.v1` machining and cutting release
+checklist. The catalog groups stock/workholding/datum state,
+tool/process/media state, and controller/geometry/simulation state before
+generated or imported mill, router, lathe, sheet-cutting, EDM, grinding, or gear
+cutting instructions can move toward release. It calls out stock orientation,
+fixtures, vises, chucks, collets, tailstock/subspindle/catcher support,
+work-offset/probe/setup-sheet proof, tool and offset evidence, positive spindle,
+beam, pump, abrasive, gas, coolant, chip-evacuation, dust, fume, or support-media
+readiness, feed/speed evidence, modal controller review, exact-program dry-run,
+first-article, metrology, telemetry, and release-package checksum gates.
+
+Subtractive preflight entries are release evidence contracts, not live machine
+approvals. Failed checks should be retained through setup, simulation, quality,
+telemetry, and learning outcome routes so DES, MDP/POMDP, and neural workers can
+learn safer split/combine and machine-routing strategies.
+
 ## `GET /fabrication/cells/catalog`
 
 `GET /cells/catalog` and the gateway-prefixed
@@ -1129,6 +1153,29 @@ gates, preferred neutral exports, release blockers, response surfaces such as
 release remains blocked until conversion results, topology/scale/profile review,
 neutral export checksums, simulation, and operator or automation signoff are
 retained.
+
+## `GET /fabrication/design/preflight/catalog`
+
+`GET /design/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/design/preflight/catalog` return the live
+`dd.fabrication.design-preflight-catalog.v1` CAD/model/slicer release checklist.
+The catalog groups source identity and provenance state, geometry/units/feature
+state, and conversion/simulation/learning state before imported Creo/ProE,
+SOLIDWORKS, Fusion, NX, CATIA, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush,
+JT/PMI, STEP/IGES, Parasolid/ACIS, mesh, scan, or slicer-project sources can
+feed design generation, machine-code generation, or machine-ready release. It
+calls out file/source-system identity, translator version evidence, ambiguous
+`.prt`/`.asm` disambiguation, checksum and revision retention, units and scale,
+assembly transforms, watertightness, wall thickness, PMI/GD&T, material/color
+metadata, neutral export comparison, mesh repair, manufacturability,
+split/combine review, simulation, first-article, metrology, and operator or
+automation signoff gates.
+
+Design preflight entries are evidence contracts, not certified geometry or
+translator approvals. Failed checks should be retained through design import,
+conversion, mesh repair, quality, and learning outcome routes so DES,
+MDP/POMDP, and neural workers can learn safer translators, split/combine
+strategies, and human-review boundaries.
 
 ## `POST /fabrication/design/import/review`
 
@@ -1464,7 +1511,7 @@ job-sheet catalog for plan responses. The payload exposes generated program
 families for FDM printing, resin and powder-bed additive, pellet FGF, robotic/gantry additive, paste/clay
 extrusion, bound-metal filament FFF, material jetting, DED/WAAM, continuous-fiber, composite layup/vacuum-bag/autoclave, hot-wire foam cutting, binder jet, vertical/horizontal/indexed
 milling, routing, laser/waterjet/plasma/wire EDM sheet cutting, sinker EDM,
-precision grinding/lapping/honing, CMM/vision dimensional inspection, thermal postprocess furnace/oven release, surface finishing/coating/plating/anodizing/media-blasting/powder-coating/deburr release, metal-joining/welding/brazing/soldering release, molding/casting/vacuum-casting/urethane/silicone release, fixture tooling/soft jaws/drill jigs/vacuum fixtures, closed-loop machining/adaptive compensation/in-process probing/inspection feedback/offset and tool-wear updates, insert installation/threaded inserts/heat-set inserts/press-fit bushings/helicoils/dowel pins, adhesive bonding/structural adhesives/epoxy bonding/bondline control/cure and coupon release, fastener installation/mechanical fastening/screw and bolt torque/threadlocker/witness-mark/retorque release, rivet installation/blind-rivet/solid-rivet/clinch/stake/swage/peen release, seal/gasket/O-ring/RTV installation with leak/pressure/vacuum release, bearing/interference-fit/shrink-fit installation with preload/runout/rotation release, dynamic balancing/rotor-balancing/impeller-balancing/fan-balancing release with residual-unbalance/vibration evidence, composite layup/prepreg/wet-layup/vacuum-bag/autoclave/resin-infusion release, hot-wire foam cutting release, press-brake/sheet-forming release, gear/spline cutting release, lathe, mill-turn, Swiss/sliding-headstock turning, robotic assembly, part separation, and fallback manual
+precision grinding/lapping/honing, CMM/vision dimensional inspection, thermal postprocess furnace/oven release, surface finishing/coating/plating/anodizing/media-blasting/powder-coating/deburr release, metal-joining/welding/brazing/soldering release, molding/casting/vacuum-casting/urethane/silicone release, fixture tooling/soft jaws/drill jigs/vacuum fixtures, closed-loop machining/adaptive compensation/in-process probing/inspection feedback/offset and tool-wear updates, insert installation/threaded inserts/heat-set inserts/press-fit bushings/helicoils/dowel pins, adhesive bonding/structural adhesives/epoxy bonding/bondline control/cure and coupon release, plastic joining/ultrasonic welding/heat staking/solvent/hot-plate/vibration/spin welding with energy-director, weld-collapse, proof, leak, visual, and release evidence, fastener installation/mechanical fastening/screw and bolt torque/threadlocker/witness-mark/retorque release, rivet installation/blind-rivet/solid-rivet/clinch/stake/swage/peen release, seal/gasket/O-ring/RTV installation with leak/pressure/vacuum release, bearing/interference-fit/shrink-fit installation with preload/runout/rotation release, dynamic balancing/rotor-balancing/impeller-balancing/fan-balancing release with residual-unbalance/vibration evidence, composite layup/prepreg/wet-layup/vacuum-bag/autoclave/resin-infusion release, hot-wire foam cutting release, press-brake/sheet-forming release, gear/spline cutting release, lathe, mill-turn, Swiss/sliding-headstock turning, robotic assembly, part separation, and fallback manual
 instructions. It lists generated languages such as `marlin-gcode`,
 `ctb-resin-job`, `photon-resin-job`, `lychee-resin-job`,
 `chitubox-resin-job`, `haas-gcode`, `indexed-mill-gcode`, `waterjet-job`, `wire-edm-job`,
@@ -1490,6 +1537,9 @@ instructions. It lists generated languages such as `marlin-gcode`,
 `dowel-pin-installation-job`, `bushing-installation-job`,
 `adhesive-bonding-job`, `structural-adhesive-job`, `epoxy-bonding-job`,
 `bondline-control-job`, `adhesive-cure-job`, `lap-shear-peel-test-job`,
+`plastic-joining-job`, `plastic-welding-job`, `ultrasonic-welding-job`,
+`heat-staking-job`, `solvent-welding-job`, `hot-plate-welding-job`,
+`vibration-welding-job`,
 `fastener-installation-job`, `mechanical-fastening-job`,
 `screw-installation-job`, `bolt-installation-job`, `torque-sequence-job`,
 `threadlocker-job`, `retorque-inspection-job`,
@@ -4551,7 +4601,7 @@ build profile/powder lot/nesting controls or missing powder-bed build/profile ev
 cooldown/depowder/recovery controls or missing powder-bed handling evidence, missing
 metal-PBF alloy-lot/oxygen/recoater/stress-relief/plate-removal evidence, missing
 powder-bed recoater clearance/thermal spacing/cooldown evidence, missing binder-jet binder/saturation/printhead/green-strength evidence, missing binder-jet cure/debind/sinter/infiltration/shrink-compensation evidence, assembly
-dry-fit/metrology/datum/torque/cure controls or missing assembly fit/metrology evidence, missing assembly-cell robot-path/gripper/fixture/vision/interlock evidence, missing assembly-cell press/heat-set/torque/adhesive/cure/final-metrology evidence, missing part-separation cut-path/fixture/kerf/heat/deburr/traceability/final-inspection evidence, missing part-separation retained-tab release/deburr/traceability/final-inspection evidence, missing precision tolerance/surface-finish metrology evidence, missing unattended/batch monitoring and recovery evidence, missing unattended/batch restart/recovery/operator-check-in evidence, missing thermal postprocess temperature/furnace/atmosphere/cooldown/quench/inspection evidence, missing surface/chemical finishing media/masking/PPE/waste/thickness/inspection evidence, missing metal-joining WPS/procedure/qualification/filler/flux/gas/fit-up/fume-control/heat-input/interpass/NDE/repair-disposition evidence, missing molding/casting master/tool/mold-material/parting/vent-gate/release-agent/mix-ratio/pot-life/degas/vacuum/pressure/cure/demold/shrinkage/void/dimensional-release evidence, missing dynamic-balancing rotor-identity/balance-grade/target-speed/fixture-arbor/sensor-calibration/trial-weight evidence, missing dynamic-balancing residual-unbalance/vibration-spectrum/correction-retention/first-article/release evidence, missing composite layup mold/mandrel/release-film/ply-schedule/resin-prepreg-core-lot/out-time/vacuum-bag/leak-down/debulk/cure-trace/demold/trim-drill/coupon/NDI/dimensional-release evidence, missing press-brake/sheet-forming flat-pattern/bend-allowance/tooling/tonnage/backgauge/springback/angle-inspection evidence, missing gear-cutting/hobbing/spline-broaching gear-drawing/tooth-count/module-or-DP/pressure-angle/helix-lead/cutter-arbor/index-ratio/blank-runout/deburr/over-pins/span/profile/backlash inspection evidence, missing indexed setup clamp/brake/index-angle/clearance/re-probe evidence, unreviewed `G51` scaling/mirroring or `G68` coordinate rotation and missing `G50.1`/`G69` transform cancellation, `G43.4`/`G234` tool-center-point mode before rotary/linear motion or program end without TCP kinematic review and `G49` cancellation, `G92` work-coordinate offsets before motion or program end without temporary-offset review and `G92.1`/`G92.2` cancellation, `G10 L2`/`G10 L20` fixture/work-offset table writes without controller offset-table backup or review evidence, late or mid-program `G20`/`G21` unit-mode changes after motion without conversion review, sheet-cutting
+dry-fit/metrology/datum/torque/cure controls or missing assembly fit/metrology evidence, missing assembly-cell robot-path/gripper/fixture/vision/interlock evidence, missing assembly-cell press/heat-set/torque/adhesive/cure/final-metrology evidence, missing part-separation cut-path/fixture/kerf/heat/deburr/traceability/final-inspection evidence, missing part-separation retained-tab release/deburr/traceability/final-inspection evidence, missing precision tolerance/surface-finish metrology evidence, missing unattended/batch monitoring and recovery evidence, missing unattended/batch restart/recovery/operator-check-in evidence, missing thermal postprocess temperature/furnace/atmosphere/cooldown/quench/inspection evidence, missing surface/chemical finishing media/masking/PPE/waste/thickness/inspection evidence, missing metal-joining WPS/procedure/qualification/filler/flux/gas/fit-up/fume-control/heat-input/interpass/NDE/repair-disposition evidence, missing molding/casting master/tool/mold-material/parting/vent-gate/release-agent/mix-ratio/pot-life/degas/vacuum/pressure/cure/demold/shrinkage/void/dimensional-release evidence, missing plastic-joining polymer-compatibility/joint-design/energy-director/staking-boss/fixture-nest/weld-stake-solvent-recipe/collapse/melt-flow/cooling evidence, missing plastic-joining weld-collapse/stake-head/flash/cracks-crazing/proof/leak-or-visual/dimensional-fit/first-article release evidence, missing dynamic-balancing rotor-identity/balance-grade/target-speed/fixture-arbor/sensor-calibration/trial-weight evidence, missing dynamic-balancing residual-unbalance/vibration-spectrum/correction-retention/first-article/release evidence, missing composite layup mold/mandrel/release-film/ply-schedule/resin-prepreg-core-lot/out-time/vacuum-bag/leak-down/debulk/cure-trace/demold/trim-drill/coupon/NDI/dimensional-release evidence, missing press-brake/sheet-forming flat-pattern/bend-allowance/tooling/tonnage/backgauge/springback/angle-inspection evidence, missing gear-cutting/hobbing/spline-broaching gear-drawing/tooth-count/module-or-DP/pressure-angle/helix-lead/cutter-arbor/index-ratio/blank-runout/deburr/over-pins/span/profile/backlash inspection evidence, missing indexed setup clamp/brake/index-angle/clearance/re-probe evidence, unreviewed `G51` scaling/mirroring or `G68` coordinate rotation and missing `G50.1`/`G69` transform cancellation, `G43.4`/`G234` tool-center-point mode before rotary/linear motion or program end without TCP kinematic review and `G49` cancellation, `G92` work-coordinate offsets before motion or program end without temporary-offset review and `G92.1`/`G92.2` cancellation, `G10 L2`/`G10 L20` fixture/work-offset table writes without controller offset-table backup or review evidence, late or mid-program `G20`/`G21` unit-mode changes after motion without conversion review, sheet-cutting
 kerf/fire/fume checks or missing sheet-cutting material/thickness/cut-chart recipe evidence, missing generated sheet-cutting setup/cut-path/release evidence, missing wire EDM start-hole/threading/slug-retention/dielectric/flushing/skim-pass evidence, wire EDM profile/skim cuts before start-hole, wire-threading, guide/tension, conductive workholding, or slug-retention setup evidence, missing sinker EDM electrode/dielectric/flushing/debris-removal/depth/orbit-finish/recast evidence, missing precision grinding wheel dress/balance/coolant/workholding/spark-out/burn-check/surface-finish/final-metrology evidence, missing CMM/vision inspection probe or vision calibration, datum alignment, uncertainty, measured-values, pass/fail disposition, nonconformance-routing evidence, missing mill-turn live-tooling C-axis/Y-axis/polar-interpolation evidence, missing mill-turn subspindle pickup/clamp/sync/pull-force/transfer-clearance evidence, missing Swiss guide-bushing/bar-feed/collet/remnant evidence, missing Swiss gang-tool/live-tool clearance, missing Swiss subspindle pickoff/cutoff/ejection/runout evidence, `G4`/`G04` dwell commands without positive `P`/`S`/`X`/`U` duration or operator-timed dwell review, lathe text threading feed-per-rev/pitch/spindle-encoder evidence, lathe text part-off catcher/subspindle/tailstock/stock-support evidence, assembly, splitting, or operator intervention. Improved
 drafts are still marked `machineReady=false`; they are normalization aids for
 review, motion-envelope simulation, and controller-specific postprocessing.

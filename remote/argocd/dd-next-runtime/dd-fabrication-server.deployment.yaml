@@ -145,6 +145,7 @@ spec:
                 '"path": "/fabrication/printers/catalog"' \
                 '"path": "/fabrication/printers/preflight/catalog"' \
                 '"path": "/fabrication/subtractive/catalog"' \
+                '"path": "/fabrication/subtractive/preflight/catalog"' \
                 '"path": "/fabrication/cnc/catalog"' \
                 '"path": "/fabrication/hybrid/catalog"' \
                 '"path": "/fabrication/cells/catalog"' \
@@ -161,6 +162,7 @@ spec:
                 '"path": "/fabrication/mesh-repair/catalog"' \
                 '"path": "/fabrication/mesh-repair/result"' \
                 '"path": "/fabrication/design/import/catalog"' \
+                '"path": "/fabrication/design/preflight/catalog"' \
                 '"path": "/fabrication/design/import/review"' \
                 '"path": "/fabrication/design/import/result"' \
                 '"path": "/fabrication/design/convert/plan"' \
