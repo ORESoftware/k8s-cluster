@@ -177,6 +177,41 @@ test("hostPath Rust source-build services use bounded scheduler CPU requests", a
   assert.deepEqual(offenders, [], `source-build CPU request guard failed:\n${offenders.join("\n")}`);
 });
 
+test("benchmark websocket services do not reserve whole idle cores", async () => {
+  const requestBudgets = [
+    {
+      path: "remote/deployments/dart-server/k8s/ec2/dd-dart-server.deployment.yaml",
+      cpu: "250m",
+    },
+    {
+      path: "remote/deployments/akka-ws-server/k8s/ec2/dd-akka-ws-server.deployment.yaml",
+      cpu: "100m",
+    },
+    {
+      path: "remote/argocd/dd-next-runtime/dd-go-wss-server.deployment.yaml",
+      cpu: "100m",
+    },
+    {
+      path: "remote/argocd/dd-next-runtime/dd-rust-wss-server.deployment.yaml",
+      cpu: "100m",
+    },
+    {
+      path: "remote/deployments/fsharp-ws-server/k8s/ec2/dd-fsharp-ws-server.deployment.yaml",
+      cpu: "100m",
+    },
+  ];
+  const offenders: string[] = [];
+
+  for (const { path, cpu } of requestBudgets) {
+    const text = await readRepoFile(path);
+    if (!new RegExp(`requests:\\s*\\n\\s*cpu:\\s*${cpu}`).test(text)) {
+      offenders.push(`${path}: expected CPU request ${cpu}`);
+    }
+  }
+
+  assert.deepEqual(offenders, [], `websocket benchmark CPU request guard failed:\n${offenders.join("\n")}`);
+});
+
 test("no kubernetes manifest in argocd uses the :latest image tag", async () => {
   // Templates under remote/k8s/ are scaffold placeholders (REPLACE_ME) and
   // are intentionally exempt; production deployments live under remote/argocd.

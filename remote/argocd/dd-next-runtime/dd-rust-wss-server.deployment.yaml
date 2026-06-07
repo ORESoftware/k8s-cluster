@@ -99,11 +99,11 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
-          # Resources match dd-dart-server so the comparison is fair —
-          # 1 vCPU / 2 Gi steady, burst to 6 cores / 8 Gi under load.
+          # Keep benchmark burst headroom high, but reserve only
+          # steady-state CPU on the shared single-node cluster.
           resources:
             requests:
-              cpu: '1'
+              cpu: 100m
               memory: 2Gi
             limits:
               cpu: '6'
