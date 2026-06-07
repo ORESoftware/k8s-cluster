@@ -795,9 +795,12 @@ data:
           "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
           "targets": [
             { "expr": "sum(rate(dd_fabrication_server_nats_results_published_total[5m]))", "legendFormat": "fabrication results", "refId": "A" },
-            { "expr": "sum(rate(dd_fabrication_server_mdp_published_total[5m]))", "legendFormat": "mdp optimize jobs", "refId": "B" }
+            { "expr": "sum(rate(dd_fabrication_server_mdp_published_total[5m]))", "legendFormat": "mdp optimize jobs", "refId": "B" },
+            { "expr": "sum(rate(dd_fabrication_server_learning_requests_total[5m]))", "legendFormat": "learning outcome submissions", "refId": "C" },
+            { "expr": "sum(rate(dd_fabrication_server_learning_events_stored_total[5m]))", "legendFormat": "learning events stored", "refId": "D" },
+            { "expr": "sum(rate(dd_fabrication_server_costing_result_reviews_total[5m]))", "legendFormat": "costing result reviews", "refId": "E" }
           ],
-          "title": "Result and Learning Fanout",
+          "title": "Result, Learning, and Outcome Fanout",
           "type": "timeseries"
         },
         {

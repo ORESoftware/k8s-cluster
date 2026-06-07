@@ -160,8 +160,8 @@ Currently opted-in:
   split/combine review rates,
   a composite release-readiness blocker rate, intervention/automation review
   pressure,
-  result fanout, MDP optimization fanout, generated-program,
-  job/artifact, learning-event, and artifact detail-request throughput, in-memory
+  result fanout, MDP optimization fanout, costing-result review throughput,
+  generated-program, job/artifact, learning-event, and artifact detail-request throughput, in-memory
   job/artifact/learning evidence ledgers, including an artifact high-watermark
   alert for retained design, machine-code, and instruction evidence,
   a machine-release readiness versus learning-fanout panel that correlates

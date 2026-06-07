@@ -496,21 +496,22 @@ is supplied.
   high-speed input-shaper/acceleration/volumetric-flow evidence,
   chamber/enclosure/thermal-soak evidence for warp-prone filament,
   bed-adhesion, first-layer, fan-timing, resin exposure/profile/layer/support evidence,
-  resin layer/exposure manifest image-hash/checksum and peel/lift/recoat evidence, resin
+  resin layer/exposure manifest image-hash/checksum and peel/lift/recoat evidence,
+  including generated `EXPOSE`/`PEEL` image-stack records and peel/lift/recoat evidence, resin
   vat-capacity/refill evidence, resin-handling/postprocess evidence,
   pellet/FGF pellet-lot/drying/moisture/hopper/purge and bead/screw/melt/cooling/gantry-clearance/warpage/trim-allowance evidence,
   robotic additive robot frame/TCP/reach/collision/interlock/external-axis evidence and feedstock/nozzle/purge/bead/flow/cooling/cure/dimensional-scan evidence,
   sheet-lamination sheet/foil stock/stack-order/surface-prep evidence and registration/trim/bond/consolidation/delamination/dimensional-release evidence,
   paste/clay rheology/slump/deairing/nozzle/pressure evidence and drying/humidity/shrinkage/green-part/firing evidence,
   bound-metal filament profile/nozzle/dry-storage/shrinkage evidence and debind/sinter/furnace/atmosphere/density inspection evidence,
-  material-jetting cartridge/channel-map/printhead/tray and support-removal/UV/color/material inspection evidence,
+  material-jetting cartridge/channel-map/printhead/tray plus generated `PACK_TRAY`/`JET_MATERIALS` evidence and support-removal/UV/color/material inspection evidence from generated `REMOVE_SUPPORT`/`UV_CURE_INLINE` records,
   DED/WAAM feedstock/substrate/bead-path/standoff and laser/arc/shielding/interpass/NDE/coupon evidence,
   composite-fiber layup/orientation/load-case and spool/cutter/coupon/continuity evidence,
   composite layup mold/mandrel/release-film/ply-schedule/resin-prepreg-core-lot/out-time evidence and vacuum-bag/leak-down/debulk/cure-trace/demold/trim-drill/coupon/NDI/dimensional-release evidence,
   hot-wire foam density/blank-thickness/template-or-CNC-profile/bow-wire-tension/fume-fire-watch evidence and wire-heat/feed/kerf/wire-lag/taper/surface-melt/dimensional-release evidence,
   powder-bed build profile/powder lot/nesting evidence, powder-handling/cooldown-depowder evidence,
   metal powder-bed fusion alloy-lot/oxygen/recoater/stress-relief/plate-removal evidence,
-  binder-jet binder-lot/saturation/printhead/green-strength and cure/debind/sinter/infiltration/shrink-compensation evidence,
+  binder-jet binder-lot/saturation/printhead/green-strength plus generated `BINDER_JET_PRINT` evidence and cure/debind/sinter/infiltration/shrink-compensation evidence from generated `CURE_GREEN_PART`/`SINTER_OR_INFILTRATE` records,
   powder-bed recoater clearance/thermal spacing/cooldown evidence,
   assembly fit/metrology/datum/torque/cure evidence, assembly-cell
   robot-path/gripper/fixture/vision/interlock evidence, assembly-cell
@@ -643,10 +644,17 @@ metal-filament, SLA/resin,
 material-jetting, DED/WAAM, composite-fiber, composite-layup, wet-layup, prepreg-layup, vacuum-bag, autoclave-cure, resin-infusion, hot-wire-foam, hot-wire, foam-cutting, foam-core, wing-core, binder-jet, SLS/powder, metal-PBF,
 mill-turn, swiss-turning, lathe/turning, indexed-mill, assembly-cell, part-separation, laser/waterjet/plasma,
 wire-EDM, sinker-EDM, grinding, CMM inspection, vision inspection, metrology, furnace, heat-treatment, thermal-postprocess, surface-finishing, coating, plating, anodizing, media-blasting, powder-coating, deburr-polish, metal-joining, welding, brazing, soldering, molding-casting, casting, molding, urethane-casting, silicone-molding, vacuum-casting, injection-molding, press-brake, sheet-forming, bend, gear-cutting, gear-hobbing, and spline-broaching job sheets, design input format
-families, generated artifact families, learning
-channels, bounded `profileEvidence` buckets for submitted machine profiles, and
-safety boundary classes. These capabilities describe draft planning and
-validation support, not controller-certified release.
+families, generated artifact families including `learning-policy-snapshot`,
+`learning-outcome-memory`, and `learning-corpus`, learning channels, bounded
+`profileEvidence` buckets for submitted machine profiles, and safety boundary
+classes. The capability contract also advertises
+`strategyQualitySurfaces` such as `policySummary.successRate`,
+`policySummary.failureRate`, `policySummary.learnedQuality`,
+`learningOutcomeQuality.riskReviewRequired`, and
+`learningOutcomeQuality.releasePolicy` so clients can discover the learned
+strategy review gate before calling `POST /fabrication/strategy/recommend`.
+These capabilities describe draft planning and validation support, not
+controller-certified release.
 
 ## `GET /fabrication/machines/catalog`
 
@@ -734,6 +742,12 @@ artifacts include `controller-postprocessor-result`,
 `controller-postprocessor-learning-observations`, feeding MDP/POMDP/neural
 learning about reliable postprocessors, manual-review routes, and controller
 failure boundaries before machine release.
+The `learning.outcomeDraft` uses
+`dd.fabrication.controller-postprocessor-learning-outcome-draft.v1` with target,
+program, controller, postprocessor, target-status, check, artifact,
+human-intervention, blocker, reward, and submit-route hints so retained
+controller outputs can be submitted directly to
+`POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/materials/catalog`
 
@@ -805,7 +819,11 @@ human dispositions clear. Stored artifacts include `material-result`,
 `material-artifacts`, and `material-learning-observations` so
 MDP/POMDP/neural workers can learn when to choose alternate feedstock, reroute
 machines, split parts, combine assemblies, add conditioning, or require human
-evidence before release.
+evidence before release. The learning section includes a
+`dd.fabrication.material-learning-outcome-draft.v1` `outcomeDraft` with lot,
+conditioning, check, artifact, blocker, certificate, traceability, quantity,
+human-intervention, reward, and submit-route hints ready for
+`POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/design/formats`
 
@@ -861,6 +879,11 @@ evidence, or human intervention is still required. Observations such as
 bounded MDP/POMDP/neural policy memory so future print jobs can pick safer
 profiles, split fragile parts, lower high-speed settings, or request operator
 review earlier.
+The `learning.outcomeDraft` uses
+`dd.fabrication.slicer-profile-learning-outcome-draft.v1` with slicer,
+printer-family, material, profile-check, preparation, machine-code-check,
+artifact, human-intervention, blocker, reward, and submit-route hints for direct
+submission to `POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/mesh-repair/catalog`
 
@@ -902,7 +925,11 @@ stored with `mesh-repair-result`, `mesh-repair-topology-checks`,
 `mesh-repair-dimensional-reviews`, `mesh-repair-orientation-reviews`,
 `mesh-repair-artifacts`, and `mesh-repair-learning-observations` artifacts so
 future MDP/POMDP/neural planners can choose repair, redesign, split/combine,
-support, or human-review paths earlier.
+support, or human-review paths earlier. The learning section includes a
+`dd.fabrication.mesh-repair-learning-outcome-draft.v1` `outcomeDraft` with
+topology, dimensional-drift, orientation/support, artifact, split/combine,
+redesign, human-intervention, reward, and submit-route hints ready for
+`POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/design/import/catalog`
 
@@ -1004,6 +1031,11 @@ machine-ready release remains false until neutral export checksums, units,
 topology/scale/profile review, simulation, and operator or automation signoff
 are retained in `designInputReview`, `designExports`, `machineRelease`, and
 `releasePackagePlan`.
+The `learning.outcomeDraft` uses
+`dd.fabrication.design-conversion-learning-outcome-draft.v1` with input,
+source-format, source-system, worker-lane, status, converted, neutral-export,
+blocker, evidence, reward, and submit-route hints for direct submission to
+`POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/design/generation/catalog`
 
@@ -1062,6 +1094,12 @@ machine-ready release remains false until an accepted candidate, source
 artifacts, export checksums, manufacturability review, simulation, and operator
 or automation signoff are retained in `designPackage`, `designExports`,
 `manufacturingHandoff`, `machineRelease`, and `releasePackagePlan`.
+The `learning.outcomeDraft` uses
+`dd.fabrication.design-synthesis-learning-outcome-draft.v1` with worker-lane,
+accepted-candidate, candidate, part, export-format, manufacturing-method,
+candidate-review, manufacturability-evidence, blocker, reward, and submit-route
+hints so split/combine and hybrid manufacturing candidates can be submitted to
+`POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/handoff/catalog`
 
@@ -1105,7 +1143,11 @@ Stored review artifacts include `handoff-result`, `handoff-segments`,
 `handoff-datum-transfers`, `handoff-transport-holds`, `handoff-artifacts`, and
 `handoff-learning-observations`, so MDP/POMDP/neural policy workers can learn
 which worker lanes, datum transfers, split/combine interfaces, queue holds, and
-human interventions blocked or enabled machine-ready release.
+human interventions blocked or enabled machine-ready release. The learning
+section includes a `dd.fabrication.handoff-learning-outcome-draft.v1`
+`outcomeDraft` with segment, datum-transfer, transport-hold, artifact, rework,
+human-intervention, reward, and submit-route hints ready for
+`POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/subjects/catalog`
 
@@ -1403,6 +1445,11 @@ include `toolpath-result`, `toolpath-segments`, `toolpath-simulations`,
 `toolpath-learning-observations` so MDP/POMDP/neural workers can learn when to
 split parts, combine assemblies, reroute machines, regenerate motion, change
 fixtures, or require human review before release.
+The `learning.outcomeDraft` uses
+`dd.fabrication.toolpath-learning-outcome-draft.v1` with segment, part,
+operation, simulation, check, artifact, collision, envelope, clearance, dry-run,
+human-intervention, blocker, reward, and submit-route hints for direct
+submission to `POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/improvements/catalog`
 
@@ -1851,12 +1898,18 @@ the planner, and return a compact
 `dd.fabrication.strategy-recommendation.v1` advisory envelope. The response
 focuses on `strategyCandidates`, the top scored candidate,
 `hybridMakePlan.selectedStrategy`, part routes, join operations,
-split/combine decisions, policy-memory counts, DES-backed `learning.enginePolicy`,
-POMDP belief/probe surfaces, neural-policy inference, intervention signals, and
-`machineRelease.blockers`. Recommendation responses do not retain full plan jobs,
-publish generated controller code, or certify machine-ready release; they keep
-`machineReady=false` while validation, setup, simulation, quality, postprocess,
-schedule, intervention, or release blockers remain.
+split/combine decisions, policy-memory counts, `policySummary.successRate`,
+`policySummary.failureRate`, `learningOutcomeQuality`, DES-backed
+`learning.enginePolicy`, POMDP belief/probe surfaces, neural-policy inference,
+intervention signals, and `machineRelease.blockers`. `learningOutcomeQuality`
+summarizes learned success/failure rates, reward average, remediation-risk count,
+and a `releasePolicy` such as `positive-learned-route-evidence` or
+`review-learned-route-quality-before-release` so clients can require route review
+when prior failures or negative rewards are present. Recommendation responses do
+not retain full plan jobs, publish generated controller code, or certify
+machine-ready release; they keep `machineReady=false` while validation, setup,
+simulation, quality, postprocess, schedule, intervention, or release blockers
+remain.
 
 ## `POST /fabrication/strategy/result`
 
@@ -3016,6 +3069,11 @@ unresolved. Learning observations such as `failure-family:*`,
 `failure-mode:support-failure`, and `failure-mode:split-combine-required` feed
 the bounded MDP/POMDP/neural policy memory so future planners can reroute,
 recover, split, combine, or request human help before release.
+The `learning.outcomeDraft` uses
+`dd.fabrication.failure-mode-learning-outcome-draft.v1` and carries
+failure-family, failure-mode, recovery-action, intervention, artifact, blocker,
+split/combine, human-intervention, reward, and submit-route hints for
+`POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/safety/catalog`
 
@@ -3049,7 +3107,10 @@ interlock, extraction, robot-cell, emergency-stop, restart, and human
 intervention reviewers. The response uses
 `dd.fabrication.safety-result-review.v1` and captures safety checks, interlock
 checks, emergency actions, retained artifacts, release blockers, warning counts,
-and MDP/POMDP/neural learning observations.
+and MDP/POMDP/neural learning observations. The learning section includes a
+`dd.fabrication.safety-learning-outcome-draft.v1` `outcomeDraft` with safety
+family, hazard, interlock, emergency-action, artifact, stop-point, restart-review,
+and human-intervention hints ready for `POST /fabrication/learning/outcomes`.
 
 Machine-ready and release-ready status remains blocked when hazards are not
 cleared, interlocks are not verified, stop points or restart reviews remain
@@ -3095,7 +3156,11 @@ material-conditioning, ambient/chamber, coolant, extraction, utility, vibration,
 and metrology-environment reviewers. The response uses
 `dd.fabrication.environment-result-review.v1` and captures condition checks,
 utility checks, metrology checks, retained artifacts, release blockers, warning
-counts, and MDP/POMDP/neural learning observations.
+counts, and MDP/POMDP/neural learning observations. The learning section includes
+a `dd.fabrication.environment-learning-outcome-draft.v1` `outcomeDraft` with
+environment-family, condition-scope, utility, metrology, artifact, recovery,
+recheck, and human-intervention hints ready for
+`POST /fabrication/learning/outcomes`.
 
 Machine-ready and release-ready status remains blocked when environmental
 conditions are out of limits, drying or conditioning is incomplete, extraction or
@@ -3191,7 +3256,11 @@ inspection ledgers, release-bundle builders, and learning-policy lineage checks.
 The response uses `dd.fabrication.provenance-result-review.v1` and captures
 lineage checks, artifact digest checks, custody/signoff events, retained
 artifacts, release blockers, warning counts, and MDP/POMDP/neural learning
-observations.
+observations. The learning section includes a
+`dd.fabrication.provenance-learning-outcome-draft.v1` `outcomeDraft` with
+provenance-family, evidence-scope, artifact-kind, custody-event, blocker,
+review, and human-intervention hints ready for
+`POST /fabrication/learning/outcomes`.
 
 Machine-ready and release-ready status remains blocked when design, material,
 machine-program, inspection, release-package, or learning lineage is missing,
@@ -3424,7 +3493,11 @@ bounded review job with retained target, gate, traveler-step, signoff, artifact,
 and learning-observation surfaces. The response reports blocker counts for
 controller target failures, unresolved dry-run or simulation gates, incomplete
 traveler steps, missing operator/automation signoff, and missing postprocess
-artifact evidence.
+artifact evidence. The learning section includes a
+`dd.fabrication.postprocess-learning-outcome-draft.v1` `outcomeDraft` with target
+status, postprocessor, gate, traveler-step, signoff, artifact, blocker, traveler
+completion, signoff approval, and human-intervention hints ready for
+`POST /fabrication/learning/outcomes`.
 
 Postprocess result reviews are retained controller-output, finishing, traveler,
 dry-run, inspection, and signoff evidence, not certified process completion or
@@ -3437,6 +3510,11 @@ dispositions clear. Stored artifacts include `postprocess-result`,
 MDP/POMDP/neural workers can learn when to change postprocessors, add finishing
 operations, split parts, combine assemblies, improve instructions, or require
 human signoff before release.
+The `learning.outcomeDraft` uses
+`dd.fabrication.postprocess-learning-outcome-draft.v1` and carries target-status,
+postprocessor, gate, traveler-step, signoff, artifact, blocker,
+human-intervention, reward, and submit-route hints for
+`POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/artifacts/catalog`
 
@@ -3448,7 +3526,11 @@ artifacts. The payload groups artifact contracts for design/CAD handoff,
 generated design exports, generated or imported machine instruction work,
 release/execution evidence, setup/quality/monitoring evidence, split/combine and
 assembly evidence, DES-backed MDP/POMDP/neural learning evidence, and outcome
-learning evidence. It names retrieval routes such as `GET /jobs`,
+learning evidence. Learning artifact surfaces include `learning-policy-snapshot`,
+`learning-outcome-memory`, `learning-corpus`, `neural-training-corpus`,
+`mdp-request`, `reward-signal`, `mdp-experience`, and `neural-example` so
+policy, outcome-memory, and neural-corpus workers can discover retained evidence
+before fetching a job artifact. It names retrieval routes such as `GET /jobs`,
 `GET /fabrication/jobs`, `GET /jobs/:job_id`, `GET /fabrication/jobs/:job_id`,
 `GET /jobs/:job_id/release-bundle`,
 `GET /fabrication/jobs/:job_id/release-bundle`,
@@ -3490,8 +3572,13 @@ MDP/POMDP/DES/neural learning surface. The payload identifies the local
 MDP/POMDP/DES Studio schema names, `solve_mdp` value-iteration support,
 `solve_pomdp_underlying` QMDP-underlying previews, DES Studio
 `StudioModelSpec`/`analyze_model_spec` queue graph checks, and
-`FeedForwardNetwork` neural-policy sketches. These outputs remain planning and
-learning evidence only: machine-ready release stays blocked while validation
+`FeedForwardNetwork` neural-policy sketches. It also lists
+`GET /fabrication/learning/outcomes` and `outcomeQualitySurfaces` such as
+`learningOutcomes.qualitySummary`, `learningOutcomes.qualityBuckets`,
+`learningOutcomes.qualityBuckets.policyUse`, and
+`strategyRecommendation.learningOutcomeQuality.releasePolicy` so workers can
+discover how compact outcome memory feeds future strategy review. These outputs
+remain planning and learning evidence only: machine-ready release stays blocked while validation
 findings, unresolved failure boundaries, missing probe evidence, or
 human-intervention gates remain open.
 
@@ -4063,12 +4150,21 @@ simulation, controller, setup, quality, and signoff gates remain authoritative.
 `GET /learning/outcomes` and
 `GET /fabrication/learning/outcomes` return the
 `dd.fabrication.learning-outcome-memory.v1` bounded outcome memory, including
-retained compact/rich learning records, `maxOutcomes`, the derived policy
+retained compact/rich learning records, `maxOutcomes`, a `qualitySummary`,
+`qualityBuckets` for successful-positive-reward, failed-or-negative-reward,
+hybrid split/combine, and intervention-heavy history, the derived policy
 snapshot, and release-policy notes that learned preferences remain advisory
 until validation, simulation, controller review, and signoff evidence clear.
 `POST /learning/outcomes` and `POST /fabrication/learning/outcomes` accept a
 compact success/reward record when callers already have their own training
-features.
+features. They also accept the `learning.outcomeDraft` payloads emitted by
+result endpoints directly: `sourceRequestId`, `sourceJobId`, and `rewardHint`
+map to the compact record identity/reward fields, while `sourceKind`, `*Hints`,
+and `featureHints` are retained as normalized learning observations and
+`manufacturingMethodHints` can seed learned method preferences. Assembly,
+decomposition, and strategy result drafts can also use `joinKindHints` and
+`splitCombineHints` to seed learned assembly strategies for future hybrid
+split/combine plans.
 
 When a policy snapshot has at least two positive samples for a method such as
 `additive-print`, `milling`, `five-axis-milling`, `horizontal-milling`, `routing`, `sheet-cutting`,
