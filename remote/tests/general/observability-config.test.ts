@@ -145,6 +145,9 @@ function extractDashboardJson(configMap: string, key: string): Record<string, un
 
 test("observability kustomization installs collector, metrics, logs, traces, and UI", async () => {
   const kustomization = await readRepoFile("remote/argocd/observability/kustomization.yaml");
+  const prometheusDeployment = await readRepoFile(
+    "remote/argocd/observability/prometheus.deployment.yaml",
+  );
 
   assert.match(kustomization, /otel-collector\.deployment\.yaml/);
   assert.match(kustomization, /prometheus\.deployment\.yaml/);
@@ -153,6 +156,8 @@ test("observability kustomization installs collector, metrics, logs, traces, and
   assert.match(kustomization, /promtail\.daemonset\.yaml/);
   assert.match(kustomization, /tempo\.deployment\.yaml/);
   assert.match(kustomization, /jaeger\.deployment\.yaml/);
+  assert.match(prometheusDeployment, /replicas:\s*1/);
+  assert.match(prometheusDeployment, /strategy:[\s\S]*type:\s*Recreate/);
 });
 
 test("otel collector scrapes all remote runtimes and exports traces", async () => {
