@@ -66236,7 +66236,49 @@ fn consumables_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.consumables-learning-outcome-draft.v1",
+                "sourceKind": "consumables-result",
+                "sourceJobId": consumables_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.6 } else { 0.48 },
+                "workerId": worker_id,
+                "reviewer": reviewer,
+                "machineKind": machine_kind,
+                "routeId": route_id,
+                "inventoryHints": inventory_checks
+                    .iter()
+                    .filter_map(|check| {
+                        check
+                            .get("consumableKind")
+                            .and_then(Value::as_str)
+                            .or_else(|| check.get("consumableFamily").and_then(Value::as_str))
+                    })
+                    .collect::<Vec<_>>(),
+                "toolLifeHints": tool_life_checks
+                    .iter()
+                    .filter_map(|check| check.get("toolKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "supportMediaHints": support_media_checks
+                    .iter()
+                    .filter_map(|check| check.get("mediaKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("inventory-blockers:{inventory_blocker_count}"),
+                    format!("tool-life-blockers:{tool_life_blocker_count}"),
+                    format!("support-media-blockers:{support_media_blocker_count}"),
+                    format!("split-combine-required:{split_combine_required}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "consumables-result",
@@ -67058,7 +67100,53 @@ fn workholding_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.workholding-learning-outcome-draft.v1",
+                "sourceKind": "workholding-result",
+                "sourceJobId": workholding_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.62 } else { 0.48 },
+                "reviewer": reviewer,
+                "machineKind": machine_kind,
+                "routeId": route_id,
+                "fixtureHints": fixture_checks
+                    .iter()
+                    .filter_map(|check| {
+                        check
+                            .get("fixtureKind")
+                            .and_then(Value::as_str)
+                            .or_else(|| check.get("workholdingFamily").and_then(Value::as_str))
+                    })
+                    .collect::<Vec<_>>(),
+                "datumTransferHints": datum_transfers
+                    .iter()
+                    .filter_map(|transfer| transfer.get("transferKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "clearanceHints": clearance_checks
+                    .iter()
+                    .filter_map(|check| check.get("clearanceKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "splitCombineHints": split_combine_holds
+                    .iter()
+                    .filter_map(|hold| hold.get("holdKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("fixture-blockers:{fixture_blocker_count}"),
+                    format!("datum-blockers:{datum_blocker_count}"),
+                    format!("clearance-blockers:{clearance_blocker_count}"),
+                    format!("split-combine-blockers:{split_combine_blocker_count}"),
+                    format!("split-combine-required:{split_combine_required}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "workholding-result",
@@ -68019,7 +68107,56 @@ fn support_strategy_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.support-strategy-learning-outcome-draft.v1",
+                "sourceKind": "support-strategy-result",
+                "sourceJobId": support_strategy_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.64 } else { 0.5 },
+                "reviewer": reviewer,
+                "machineKind": machine_kind,
+                "sourcePartId": source_part_id,
+                "orientationHints": orientation_reviews
+                    .iter()
+                    .filter_map(|review| {
+                        review
+                            .get("orientationKind")
+                            .and_then(Value::as_str)
+                            .or_else(|| review.get("strategyFamily").and_then(Value::as_str))
+                    })
+                    .collect::<Vec<_>>(),
+                "supportHints": support_reviews
+                    .iter()
+                    .filter_map(|review| review.get("supportKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "splitCombineHints": split_combine_decisions
+                    .iter()
+                    .filter_map(|decision| decision.get("decisionKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "interventionHints": interventions
+                    .iter()
+                    .filter_map(|intervention| {
+                        intervention.get("interventionKind").and_then(Value::as_str)
+                    })
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("orientation-blockers:{orientation_blocker_count}"),
+                    format!("support-blockers:{support_blocker_count}"),
+                    format!("support-change-required:{support_change_required_count}"),
+                    format!("split-combine-blockers:{split_combine_blocker_count}"),
+                    format!("split-combine-required:{split_combine_required_count}"),
+                    format!("intervention-blockers:{intervention_blocker_count}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "support-strategy-result",
@@ -68774,7 +68911,49 @@ fn process_recipe_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.process-recipe-learning-outcome-draft.v1",
+                "sourceKind": "process-recipe-result",
+                "sourceJobId": process_recipe_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.66 } else { 0.52 },
+                "workerId": worker_id,
+                "reviewer": reviewer,
+                "machineKind": machine_kind,
+                "materialId": material_id,
+                "recipeHints": recipe_reviews
+                    .iter()
+                    .filter_map(|review| {
+                        review
+                            .get("recipeKind")
+                            .and_then(Value::as_str)
+                            .or_else(|| review.get("recipeFamily").and_then(Value::as_str))
+                    })
+                    .collect::<Vec<_>>(),
+                "parameterHints": parameter_checks
+                    .iter()
+                    .filter_map(|check| check.get("parameterKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "couponHints": coupon_results
+                    .iter()
+                    .filter_map(|coupon| coupon.get("resultKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("recipe-blockers:{recipe_blocker_count}"),
+                    format!("parameter-blockers:{parameter_blocker_count}"),
+                    format!("coupon-blockers:{coupon_blocker_count}"),
+                    format!("parameter-change-required:{parameter_change_required_count}"),
+                    format!("human-signoff-required:{human_signoff_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "process-recipe-result",
@@ -69518,7 +69697,48 @@ fn kinematics_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.kinematics-learning-outcome-draft.v1",
+                "sourceKind": "kinematics-result",
+                "sourceJobId": kinematics_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.7 } else { 0.55 },
+                "workerId": worker_id,
+                "reviewer": reviewer,
+                "machineId": machine_id,
+                "machineKind": machine_kind,
+                "axisHints": axis_checks
+                    .iter()
+                    .filter_map(|check| {
+                        check
+                            .get("axisKind")
+                            .and_then(Value::as_str)
+                            .or_else(|| check.get("kinematicFamily").and_then(Value::as_str))
+                    })
+                    .collect::<Vec<_>>(),
+                "coordinateStateHints": coordinate_reviews
+                    .iter()
+                    .filter_map(|review| review.get("coordinateKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "frameHints": frame_checks
+                    .iter()
+                    .filter_map(|check| check.get("frameKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("axis-blockers:{axis_blocker_count}"),
+                    format!("coordinate-blockers:{coordinate_blocker_count}"),
+                    format!("frame-blockers:{frame_blocker_count}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "kinematics-result",
@@ -70139,7 +70359,52 @@ fn tolerance_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.tolerance-learning-outcome-draft.v1",
+                "sourceKind": "tolerance-result",
+                "sourceJobId": tolerance_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.66 } else { 0.53 },
+                "workerId": worker_id,
+                "reviewer": reviewer,
+                "machineKind": machine_kind,
+                "sourcePartId": source_part_id,
+                "toleranceFamilyHints": tolerance_checks
+                    .iter()
+                    .filter_map(|check| check.get("toleranceFamily").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "geometryScopeHints": tolerance_checks
+                    .iter()
+                    .filter_map(|check| check.get("geometryScope").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "fitHints": fit_checks
+                    .iter()
+                    .filter_map(|check| check.get("fitKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "compensationHints": compensations
+                    .iter()
+                    .filter_map(|compensation| {
+                        compensation.get("compensationKind").and_then(Value::as_str)
+                    })
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": {
+                    "releaseBlocked": release_blocked,
+                    "toleranceBlockerCount": tolerance_blocker_count,
+                    "fitBlockerCount": fit_blocker_count,
+                    "compensationBlockerCount": compensation_blocker_count,
+                    "compensationRequired": compensation_required,
+                    "splitCombineRequired": split_combine_required,
+                    "humanInterventionRequired": human_intervention_required,
+                    "artifactEvidenceMissing": artifact_evidence_missing
+                },
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "tolerance-result",
@@ -71131,7 +71396,51 @@ fn process_capability_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.process-capability-learning-outcome-draft.v1",
+                "sourceKind": "process-capability-result",
+                "sourceJobId": process_capability_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.68 } else { 0.54 },
+                "reviewer": reviewer,
+                "machineKind": machine_kind,
+                "sourcePartId": source_part_id,
+                "capabilityFamilyHints": capability_findings
+                    .iter()
+                    .filter_map(|finding| finding.get("capabilityFamily").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "capabilityScopeHints": capability_findings
+                    .iter()
+                    .filter_map(|finding| finding.get("capabilityScope").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "alternateRouteHints": alternate_routes
+                    .iter()
+                    .filter_map(|route| route.get("routeKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "measurementHints": measurement_results
+                    .iter()
+                    .filter_map(|measurement| {
+                        measurement.get("measurementKind").and_then(Value::as_str)
+                    })
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("finding-blockers:{finding_blocker_count}"),
+                    format!("route-blockers:{route_blocker_count}"),
+                    format!("measurement-blockers:{measurement_blocker_count}"),
+                    format!("alternate-route-required:{alternate_route_required}"),
+                    format!("split-combine-required:{split_combine_required}"),
+                    format!("redesign-required:{redesign_required}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "process-capability-result",
@@ -72022,7 +72331,49 @@ fn manufacturability_result_review_response(
         "learning": {
             "observations": learning_observations,
             "engineTargets": ["MDP", "POMDP", "neural"],
-            "outcomeRoute": "POST /fabrication/learning/outcomes"
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.manufacturability-learning-outcome-draft.v1",
+                "sourceKind": "manufacturability-result",
+                "sourceJobId": manufacturability_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.72 } else { 0.56 },
+                "reviewer": reviewer,
+                "sourcePartId": source_part_id,
+                "reviewFamilyHints": findings
+                    .iter()
+                    .filter_map(|finding| finding.get("reviewFamily").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "checkScopeHints": findings
+                    .iter()
+                    .filter_map(|finding| finding.get("checkScope").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "routeHints": route_reviews
+                    .iter()
+                    .filter_map(|route| route.get("routeKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "decisionHints": split_combine_decisions
+                    .iter()
+                    .filter_map(|decision| decision.get("decisionKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": {
+                    "releaseBlocked": release_blocked,
+                    "findingBlockerCount": finding_blocker_count,
+                    "routeBlockerCount": route_blocker_count,
+                    "splitCombineBlockerCount": split_combine_blocker_count,
+                    "infeasibleRouteCount": infeasible_route_count,
+                    "redesignRequiredCount": redesign_required_count,
+                    "splitCombineRequiredCount": split_combine_required_count,
+                    "humanInterventionRequired": human_intervention_required,
+                    "artifactEvidenceMissing": artifact_evidence_missing
+                },
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
         },
         "artifactSurfaces": [
             "manufacturability-result",
@@ -103660,6 +104011,52 @@ mod tests {
                 .iter()
                 .any(|surface| surface.as_str() == Some("consumables-learning-observations"))));
 
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("consumables learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.consumables-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.6)
+        );
+        assert!(outcome_draft
+            .get("inventoryHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| { hint.as_str() == Some("coolant-and-fresh-edge-capacity") })));
+        assert!(outcome_draft
+            .get("toolLifeHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("carbide-endmill-fresh-edge"))));
+        assert!(outcome_draft
+            .get("supportMediaHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("chip-evacuation-and-mist-coolant"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("split-combine-required:true"))));
+
         let stored = stored_consumables_result_job(&response);
         assert_eq!(stored.record.kind, "consumables-result");
         assert_eq!(stored.record.ok, false);
@@ -103897,6 +104294,58 @@ mod tests {
                 .iter()
                 .any(|surface| surface.as_str() == Some("workholding-learning-observations"))));
 
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("workholding learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.workholding-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.62)
+        );
+        assert!(outcome_draft
+            .get("fixtureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("soft-jaw-and-tabbed-bridge-fixture"))));
+        assert!(outcome_draft
+            .get("datumTransferHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("multi-setup-work-offset-transfer"))));
+        assert!(outcome_draft
+            .get("clearanceHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("clamp-and-toolpath-clearance"))));
+        assert!(outcome_draft
+            .get("splitCombineHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(
+                |hint| hint.as_str() == Some("hybrid-assembly-fixture-datum-and-recomposition")
+            )));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("split-combine-required:true"))));
+
         let stored = stored_workholding_result_job(&response);
         assert_eq!(stored.record.kind, "workholding-result");
         assert_eq!(stored.record.ok, false);
@@ -104106,6 +104555,58 @@ mod tests {
             );
         }
 
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("support strategy learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.support-strategy-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.64)
+        );
+        assert!(outcome_draft
+            .get("orientationHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("steep-overhang-support-risk"))));
+        assert!(outcome_draft
+            .get("supportHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("tree-support-interface"))));
+        assert!(outcome_draft
+            .get("splitCombineHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("split-for-support-removal"))));
+        assert!(outcome_draft
+            .get("interventionHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("support-removal-and-split-review"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("split-combine-required:3"))));
+
         let job = stored_support_strategy_result_job(&response);
         assert_eq!(job.record.kind, "support-strategy-result");
         assert_eq!(
@@ -104294,6 +104795,50 @@ mod tests {
             );
         }
 
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("process recipe learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.process-recipe-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.66)
+        );
+        assert!(outcome_draft
+            .get("recipeHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("adaptive-roughing-feed-speed"))));
+        assert!(outcome_draft
+            .get("parameterHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint.as_str() == Some("feed-rate"))));
+        assert!(outcome_draft
+            .get("couponHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("first-article-chip-load-coupon"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("human-signoff-required:true"))));
+
         let job = stored_process_recipe_result_job(&response);
         assert_eq!(job.record.kind, "process-recipe-result");
         assert_eq!(
@@ -104481,6 +105026,52 @@ mod tests {
                 "missing learning observation {observation}"
             );
         }
+
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("kinematics learning outcome draft should be retained");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.kinematics-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.7)
+        );
+        assert!(outcome_draft
+            .get("axisHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("b-axis-sweep-envelope"))));
+        assert!(outcome_draft
+            .get("coordinateStateHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("tcp-work-offset-state"))));
+        assert!(outcome_draft
+            .get("frameHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("rotary-pivot-tcp-frame"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| { hint.as_str() == Some("human-intervention-required:true") })));
 
         let job = stored_kinematics_result_job(&response);
         assert_eq!(job.record.kind, "kinematics-result");
@@ -104692,6 +105283,55 @@ mod tests {
                 "missing learning observation {observation}"
             );
         }
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("tolerance learning outcome draft should be retained");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.tolerance-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.66)
+        );
+        assert!(outcome_draft
+            .get("toleranceFamilyHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint.as_str()
+                == Some("hybrid-assembly-interface-stackups"))));
+        assert!(outcome_draft
+            .get("fitHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("press-fit-alignment-pin"))));
+        assert!(outcome_draft
+            .get("compensationHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints.iter().any(|hint| hint.as_str()
+                == Some("post-machined-printed-face-offset"))));
+        assert_eq!(
+            outcome_draft
+                .pointer("/featureHints/splitCombineRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            outcome_draft
+                .pointer("/featureHints/compensationBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
 
         let job = stored_tolerance_result_job(&response);
         assert_eq!(job.record.kind, "tolerance-result");
@@ -105780,6 +106420,52 @@ mod tests {
             );
         }
 
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("process capability learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.process-capability-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.68)
+        );
+        assert!(outcome_draft
+            .get("capabilityFamilyHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("hybrid-split-combine-and-rework-envelope"))));
+        assert!(outcome_draft
+            .get("alternateRouteHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("print-split-then-mill-interface"))));
+        assert!(outcome_draft
+            .get("measurementHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("first-article-build-envelope-coupon"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("split-combine-required:true"))));
+
         let job = stored_process_capability_result_job(&response);
         assert_eq!(job.record.kind, "process-capability-result");
         assert_eq!(
@@ -105983,6 +106669,57 @@ mod tests {
                 observation.as_str()
                     == Some("manufacturability-family:additive-dfm-print-or-split-review")
             })));
+        let outcome_draft = response
+            .pointer("/learning/outcomeDraft")
+            .expect("manufacturability result should include a learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.manufacturability-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert_eq!(
+            outcome_draft.get("success").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            outcome_draft.get("rewardHint").and_then(Value::as_f64),
+            Some(-0.72)
+        );
+        assert!(outcome_draft
+            .get("reviewFamilyHints")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families
+                .iter()
+                .any(|family| family.as_str() == Some("additive-dfm-print-or-split-review"))));
+        assert!(outcome_draft
+            .get("routeHints")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("single-piece-additive"))));
+        assert!(outcome_draft
+            .get("decisionHints")
+            .and_then(Value::as_array)
+            .is_some_and(|decisions| decisions
+                .iter()
+                .any(|decision| decision.as_str() == Some("split-and-machine-interface"))));
+        assert_eq!(
+            outcome_draft
+                .pointer("/featureHints/splitCombineRequiredCount")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            outcome_draft
+                .pointer("/featureHints/humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
 
         let job = stored_manufacturability_result_job(&response);
         assert_eq!(job.record.kind, "manufacturability-result");
