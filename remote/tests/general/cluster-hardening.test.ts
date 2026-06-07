@@ -123,6 +123,60 @@ test("dd-dev-server-api declares resource requests and limits", async () => {
   assert.ok(resourcesMatch, "dd-dev-server-api should declare requests + limits");
 });
 
+test("dd-next-runtime two-replica rollouts stay within single-node CPU capacity", async () => {
+  const { readdir, readFile } = await import("node:fs/promises");
+  const runtimeRoot = resolve(repoRoot, "remote/argocd/dd-next-runtime");
+  const entries = await readdir(runtimeRoot, { withFileTypes: true });
+  const offenders: string[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".deployment.yaml")) {
+      continue;
+    }
+
+    const path = resolve(runtimeRoot, entry.name);
+    const text = await readFile(path, "utf8");
+    const replicas = Number.parseInt(text.match(/^\s*replicas:\s*(\d+)/m)?.[1] ?? "1", 10);
+    if (replicas < 2 || !/type:\s*RollingUpdate/.test(text)) {
+      continue;
+    }
+
+    if (!/maxSurge:\s*0/.test(text) || !/maxUnavailable:\s*1/.test(text)) {
+      offenders.push(entry.name);
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `two-replica rollouts should not require surge capacity on the single-node cluster:\n${offenders.join("\n")}`,
+  );
+});
+
+test("hostPath Rust source-build services use bounded scheduler CPU requests", async () => {
+  const sourceBuildDeployments = [
+    "remote/argocd/dd-next-runtime/dd-economics-server.deployment.yaml",
+    "remote/argocd/dd-next-runtime/dd-fabrication-server.deployment.yaml",
+    "remote/argocd/dd-next-runtime/dd-public-data-server.deployment.yaml",
+  ];
+  const offenders: string[] = [];
+
+  for (const relativePath of sourceBuildDeployments) {
+    const text = await readRepoFile(relativePath);
+    if (!/CARGO_BUILD_JOBS[\s\S]*value:\s*'1'/.test(text)) {
+      offenders.push(`${relativePath}: missing CARGO_BUILD_JOBS=1`);
+    }
+    if (/requests:\s*\n\s*cpu:\s*250m/.test(text)) {
+      offenders.push(`${relativePath}: request still uses 250m`);
+    }
+    if (!/requests:\s*\n\s*cpu:\s*100m/.test(text)) {
+      offenders.push(`${relativePath}: missing 100m request`);
+    }
+  }
+
+  assert.deepEqual(offenders, [], `source-build CPU request guard failed:\n${offenders.join("\n")}`);
+});
+
 test("no kubernetes manifest in argocd uses the :latest image tag", async () => {
   // Templates under remote/k8s/ are scaffold placeholders (REPLACE_ME) and
   // are intentionally exempt; production deployments live under remote/argocd.

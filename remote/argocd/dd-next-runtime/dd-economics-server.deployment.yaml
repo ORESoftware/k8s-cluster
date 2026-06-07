@@ -102,7 +102,7 @@ spec:
               value: sparse
           resources:
             requests:
-              cpu: 250m
+              cpu: 100m
               memory: 2Gi
               ephemeral-storage: 4Gi
             limits:
@@ -354,7 +354,7 @@ spec:
               containerPort: 8114
           resources:
             requests:
-              cpu: 250m
+              cpu: 100m
               memory: 512Mi
             limits:
               cpu: '2'
