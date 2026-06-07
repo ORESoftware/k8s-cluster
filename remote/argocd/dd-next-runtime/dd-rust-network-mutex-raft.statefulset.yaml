@@ -7,7 +7,9 @@ metadata:
     app: dd-rust-network-mutex-raft
 spec:
   serviceName: dd-rust-network-mutex-raft-peer
-  replicas: 3
+  # Five voters: quorum is 3, so the cluster tolerates 2 node failures. Keep this
+  # odd and in sync with the peer list in dd-rust-network-mutex-raft.configmap.yaml.
+  replicas: 5
   podManagementPolicy: Parallel
   selector:
     matchLabels:

@@ -100,6 +100,24 @@ def container_pool_affinity_lock_key(prefix: str, pool_slug: str, thread_id: str
 
 CONTAINER_POOL_AFFINITY_LOCK_KEY_DEFAULT_PREFIX = "dd:container-pool:affinity"
 
+def music_daily_generation_target_key(prefix: str, yyyy_mm_dd: str) -> str:
+    """Redis STRING integer containing the 3-5 song generation target for one UTC date. SET with EX TTL; missing entries can be recomputed deterministically."""
+    return "{prefix}:daily:{yyyy_mm_dd}:target".format(prefix=prefix, yyyy_mm_dd=yyyy_mm_dd)
+
+MUSIC_DAILY_GENERATION_TARGET_KEY_DEFAULT_PREFIX = "dd:music"
+
+def music_generation_run_lock_key(prefix: str) -> str:
+    """Redis STRING lock token used to avoid concurrent generator sweeps across dd-music-rs replicas. Acquired with SET NX EX."""
+    return "{prefix}:generate:lock".format(prefix=prefix)
+
+MUSIC_GENERATION_RUN_LOCK_KEY_DEFAULT_PREFIX = "dd:music"
+
+def music_song_visitor_vote_key(prefix: str, song_id: str, visitor_hash: str) -> str:
+    """Redis STRING short-lived throttle for one anonymous visitor hash voting on one song. Durable vote state lives in Postgres."""
+    return "{prefix}:song:{song_id}:visitor:{visitor_hash}:vote".format(prefix=prefix, song_id=song_id, visitor_hash=visitor_hash)
+
+MUSIC_SONG_VISITOR_VOTE_KEY_DEFAULT_PREFIX = "dd:music"
+
 def runtime_config_entry_index_key(prefix: str, env: str) -> str:
     """Redis SET of '{scope}:{key}' members listing every entry that exists in this env."""
     return "{prefix}:{env}:entry-index".format(prefix=prefix, env=env)

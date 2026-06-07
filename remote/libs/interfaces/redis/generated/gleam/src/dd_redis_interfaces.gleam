@@ -74,6 +74,27 @@ pub fn container_pool_affinity_lock_key(prefix prefix: String, pool_slug pool_sl
 
 pub const container_pool_affinity_lock_key_default_prefix = "dd:container-pool:affinity"
 
+/// Redis STRING integer containing the 3-5 song generation target for one UTC date. SET with EX TTL; missing entries can be recomputed deterministically.
+pub fn music_daily_generation_target_key(prefix prefix: String, yyyy_mm_dd yyyy_mm_dd: String) -> String {
+  prefix <> ":daily:" <> yyyy_mm_dd <> ":target"
+}
+
+pub const music_daily_generation_target_key_default_prefix = "dd:music"
+
+/// Redis STRING lock token used to avoid concurrent generator sweeps across dd-music-rs replicas. Acquired with SET NX EX.
+pub fn music_generation_run_lock_key(prefix prefix: String) -> String {
+  prefix <> ":generate:lock"
+}
+
+pub const music_generation_run_lock_key_default_prefix = "dd:music"
+
+/// Redis STRING short-lived throttle for one anonymous visitor hash voting on one song. Durable vote state lives in Postgres.
+pub fn music_song_visitor_vote_key(prefix prefix: String, song_id song_id: String, visitor_hash visitor_hash: String) -> String {
+  prefix <> ":song:" <> song_id <> ":visitor:" <> visitor_hash <> ":vote"
+}
+
+pub const music_song_visitor_vote_key_default_prefix = "dd:music"
+
 /// Redis SET of '{scope}:{key}' members listing every entry that exists in this env.
 pub fn runtime_config_entry_index_key(prefix prefix: String, env env: String) -> String {
   prefix <> ":" <> env <> ":entry-index"

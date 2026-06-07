@@ -37,6 +37,9 @@ resources:
   - dd-des-rs.hpa.yaml
   - dd-des-rs.networkpolicy.yaml
   - dd-des-rs.service.yaml
+  - dd-music-rs.deployment.yaml
+  - dd-music-rs.networkpolicy.yaml
+  - dd-music-rs.service.yaml
   - dd-contract-service.deployment.yaml
   - dd-contract-service.networkpolicy.yaml
   - dd-contract-service.service.yaml
