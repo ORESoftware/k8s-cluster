@@ -56920,6 +56920,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/printers/preflight/catalog",
         "GET /subtractive/catalog",
         "GET /fabrication/subtractive/catalog",
+        "GET /subtractive/preflight/catalog",
+        "GET /fabrication/subtractive/preflight/catalog",
         "GET /cnc/catalog",
         "GET /fabrication/cnc/catalog",
         "GET /cells/catalog",
@@ -56952,6 +56954,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/formats/catalog",
         "GET /design/import/catalog",
         "GET /fabrication/design/import/catalog",
+        "GET /design/preflight/catalog",
+        "GET /fabrication/design/preflight/catalog",
         "GET /subjects/catalog",
         "GET /fabrication/subjects/catalog",
         "GET /workers/catalog",
@@ -95872,6 +95876,98 @@ async fn subtractive_catalog_http() -> impl IntoResponse {
     Json(subtractive_catalog_response())
 }
 
+fn subtractive_preflight_catalog_response() -> Value {
+    let subtractive_payload = subtractive_catalog_response();
+    let subtractive_machines = subtractive_payload
+        .get("subtractiveMachines")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.subtractive-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /subtractive/preflight/catalog",
+            "GET /fabrication/subtractive/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/subtractive/catalog",
+            "GET /fabrication/cnc/catalog",
+            "GET /fabrication/controllers/preflight/catalog",
+            "POST /fabrication/machines/select",
+            "POST /fabrication/setup/result",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/quality/result"
+        ],
+        "subtractiveCount": subtractive_machines.len(),
+        "preflightGroups": [
+            {
+                "group": "stock-workholding-and-datum-state",
+                "requiredEvidence": [
+                    "stock, blank, sheet, bar, billet, or electrode material lot and orientation",
+                    "fixture, vise, chuck, collet, tailstock, subspindle, catcher, tabs, bridges, slats, or pallet proof",
+                    "work offset, datum, probe, touch-off, or setup-sheet verification",
+                    "clearance envelope, safe retract, clamp clearance, and setup-photo or traveler evidence"
+                ],
+                "releaseBlockers": [
+                    "feed or rapid setup-risk move before workholding evidence",
+                    "cutting before datum/work-offset proof",
+                    "part-off, cutoff, sheet drop, or electrode burn without support or capture evidence"
+                ]
+            },
+            {
+                "group": "tool-process-and-media-state",
+                "requiredEvidence": [
+                    "tool list, tool length, cutter radius, tool-nose, wheel, nozzle, beam, jet, or electrode profile",
+                    "positive spindle, beam, pump, abrasive, gas, coolant, chip evacuation, dust, fume, or support-media readiness",
+                    "feed and speed evidence for cutting moves, threading, drilling, routing, grinding, EDM, or sheet cutting",
+                    "tool-change, ATC, magazine, operator-loaded tool, and process stop/restart evidence"
+                ],
+                "releaseBlockers": [
+                    "cutting feed without feed-rate, spindle/process, or support-media evidence",
+                    "tool change while the spindle/process remains active",
+                    "continued cutting after coolant, dust, chip, fume, gas, abrasive, beam, jet, or support media is stopped"
+                ]
+            },
+            {
+                "group": "controller-geometry-and-simulation-state",
+                "requiredEvidence": [
+                    "controller dialect, postprocessor, macro/subprogram, canned-cycle, and offset-table review",
+                    "arc plane/center, cutter compensation, tool-length, tool-nose, absolute/incremental, and feed-mode modal proof",
+                    "material-removal, collision, dry-run, first-article, metrology, telemetry, or operator signoff evidence",
+                    "release-package artifact checksums for the exact generated or imported machine program"
+                ],
+                "releaseBlockers": [
+                    "controller macro/subprogram dependency without submitted review evidence",
+                    "arc, compensation, canned cycle, or threading modal state not verified",
+                    "simulation, dry-run, first-article, or metrology evidence absent for the exact release artifact"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "machineSelection.selectionTraces",
+            "setupResult.setupChecks",
+            "instructionAnalysis.failureBoundaries",
+            "simulationResult.collisionAndEnvelopeChecks",
+            "qualityResult.metrologyChecks",
+            "machineRelease.releaseBlockers"
+        ],
+        "releasePolicy": [
+            "subtractive preflight catalog entries describe machining and cutting release evidence, not certified live machine approval",
+            "preflight evidence cannot bypass controller/postprocessor review, instruction validation, simulation or dry-run, setup, quality, telemetry, or operator/automation signoff",
+            "failed subtractive preflight checks should be retained through setup, simulation, quality, telemetry, and learning outcome routes so DES, MDP/POMDP, and neural workers can learn safer split/combine and machine-routing strategies"
+        ],
+        "subtractiveMachines": subtractive_machines
+    })
+}
+
+async fn subtractive_preflight_catalog_http() -> impl IntoResponse {
+    Json(subtractive_preflight_catalog_response())
+}
+
 fn cnc_catalog_response() -> Value {
     let machines = default_machines();
     let cnc_machines = machines
@@ -100491,6 +100587,110 @@ fn design_import_catalog_response() -> Value {
 
 async fn design_import_catalog_http() -> impl IntoResponse {
     Json(design_import_catalog_response())
+}
+
+fn design_preflight_catalog_response() -> Value {
+    let contracts = design_import_catalog_contracts();
+    let formats = design_format_catalog();
+    let categories = unique_sorted(contracts.iter().filter_map(|contract| {
+        contract
+            .get("category")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let source_systems = unique_sorted(contracts.iter().filter_map(|contract| {
+        contract
+            .get("sourceSystem")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.design-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /design/preflight/catalog",
+            "GET /fabrication/design/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/formats/catalog",
+            "GET /fabrication/design/import/catalog",
+            "POST /fabrication/design/import/review",
+            "POST /fabrication/design/convert/plan",
+            "GET /fabrication/mesh-repair/catalog",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/quality/result"
+        ],
+        "formatContractCount": contracts.len(),
+        "supportedFormatCount": formats.len(),
+        "categories": categories,
+        "sourceSystems": source_systems,
+        "preflightGroups": [
+            {
+                "group": "source-identity-and-provenance-state",
+                "requiredEvidence": [
+                    "file name, source URI, source system, format, revision, and authoring-tool identity",
+                    "native CAD ownership, license/export authority, and translator version evidence",
+                    "ambiguous .prt/.asm source-system disambiguation for Creo/ProE, NX, SOLIDWORKS, or other native CAD",
+                    "redacted URI, checksum, artifact retention, and source-to-neutral lineage"
+                ],
+                "releaseBlockers": [
+                    "notes-only design input without source identity",
+                    "ambiguous native CAD extension without source-system or translator evidence",
+                    "missing checksum, revision, or provenance for downstream release package"
+                ]
+            },
+            {
+                "group": "geometry-units-and-feature-state",
+                "requiredEvidence": [
+                    "units, scale, coordinate frame, assembly transform, and tolerance basis",
+                    "solid/surface/mesh topology, watertightness, normals, wall thickness, and feature preservation",
+                    "PMI/GD&T, material/color/body metadata, configuration, and assembly mate review",
+                    "neutral export comparison for STEP, IGES, Parasolid, ACIS, JT, STL, 3MF, OBJ, or slicer package outputs"
+                ],
+                "releaseBlockers": [
+                    "unit or scale ambiguity before design generation or toolpath planning",
+                    "non-manifold, missing-body, suppressed-feature, or assembly-transform ambiguity",
+                    "PMI, tolerance, material, color, or slicer profile metadata not preserved when required"
+                ]
+            },
+            {
+                "group": "conversion-simulation-and-learning-state",
+                "requiredEvidence": [
+                    "worker lane selection and design-conversion request/result subject handoff",
+                    "mesh repair, manufacturability, split/combine, and release-boundary review",
+                    "simulation, first-article, metrology, or operator/automation signoff for the converted design",
+                    "learning observations for translator success, topology drift, split requirement, and human-intervention boundaries"
+                ],
+                "releaseBlockers": [
+                    "conversion worker result missing or failed",
+                    "topology, manufacturability, split/combine, or human-intervention boundary unresolved",
+                    "simulation, quality, release-package, or learning evidence missing for the exact converted artifact"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "designInputReview.inputs",
+            "designInputReview.conversionPlan",
+            "designExports.partExports",
+            "meshRepairPlan.repairDomains",
+            "manufacturabilityPlan.failureBoundaries",
+            "machineRelease.releaseBlockers",
+            "learningOutcomeDraft.observations"
+        ],
+        "releasePolicy": [
+            "design preflight catalog entries describe CAD/model/slicer evidence required before generation, conversion, or machine-code release",
+            "preflight evidence cannot bypass import worker results, mesh/topology review, simulation, setup, quality, or operator/automation signoff",
+            "failed design preflight checks should be retained through design import, conversion, mesh repair, quality, and learning outcome routes so DES, MDP/POMDP, and neural workers can learn safer translators and split/combine strategies"
+        ],
+        "formatContracts": contracts
+    })
+}
+
+async fn design_preflight_catalog_http() -> impl IntoResponse {
+    Json(design_preflight_catalog_response())
 }
 
 fn design_generation_catalog_export_contracts() -> Vec<Value> {
@@ -105713,6 +105913,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/subtractive/catalog",
             get(subtractive_catalog_http),
         )
+        .route(
+            "/subtractive/preflight/catalog",
+            get(subtractive_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/subtractive/preflight/catalog",
+            get(subtractive_preflight_catalog_http),
+        )
         .route("/machines/select", post(machine_select_http))
         .route("/fabrication/machines/select", post(machine_select_http))
         .route("/controllers/catalog", get(controller_catalog_http))
@@ -105773,6 +105981,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/design/import/catalog",
             get(design_import_catalog_http),
+        )
+        .route(
+            "/design/preflight/catalog",
+            get(design_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/design/preflight/catalog",
+            get(design_preflight_catalog_http),
         )
         .route("/subjects/catalog", get(subject_catalog_http))
         .route("/fabrication/subjects/catalog", get(subject_catalog_http))
@@ -108988,6 +109204,84 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+    }
+
+    #[test]
+    fn design_preflight_catalog_endpoint_exposes_cad_geometry_and_learning_gates() {
+        let payload = design_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.design-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/design/preflight/catalog")
+            })));
+        assert_eq!(
+            payload.get("formatContractCount").and_then(Value::as_u64),
+            Some(DESIGN_FORMAT_SPECS.len() as u64)
+        );
+
+        let source_systems = payload
+            .get("sourceSystems")
+            .and_then(Value::as_array)
+            .expect("source systems should be present");
+        for system in [
+            "PTC Creo / Pro/ENGINEER",
+            "SOLIDWORKS",
+            "Siemens NX",
+            "CATIA",
+        ] {
+            assert!(
+                source_systems
+                    .iter()
+                    .any(|source_system| source_system.as_str() == Some(system)),
+                "missing design preflight source system {system}"
+            );
+        }
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("design preflight groups should be present");
+        for group in [
+            "source-identity-and-provenance-state",
+            "geometry-units-and-feature-state",
+            "conversion-simulation-and-learning-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing design preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("ambiguous native CAD extension"))))));
+        assert!(groups.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("PMI/GD&T"))))));
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("split/combine"))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
     }
 
     #[test]
@@ -126576,6 +126870,66 @@ mod tests {
     }
 
     #[test]
+    fn subtractive_preflight_catalog_endpoint_exposes_setup_process_and_simulation_gates() {
+        let payload = subtractive_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.subtractive-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/subtractive/preflight/catalog")
+            })));
+        assert!(payload
+            .get("subtractiveCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 10));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("subtractive preflight groups should be present");
+        for group in [
+            "stock-workholding-and-datum-state",
+            "tool-process-and-media-state",
+            "controller-geometry-and-simulation-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing subtractive preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("fixture, vise, chuck"))))));
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("continued cutting after coolant"))))));
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("simulation, dry-run"))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+    }
+
+    #[test]
     fn cnc_catalog_endpoint_exposes_import_generation_and_release_contract() {
         let payload = cnc_catalog_response();
         assert_eq!(
@@ -139584,6 +139938,103 @@ mod tests {
     }
 
     #[test]
+    fn text_plastic_joining_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("plastic-joining-missing-evidence".to_string()),
+                machine_id: Some("plastic-joining-cell-1".to_string()),
+                machine_kind: Some("plastic-joining-cell".to_string()),
+                language: Some("plastic-joining-job".to_string()),
+                instructions: vec![
+                    "Ultrasonic weld and heat stake ABS enclosure halves".to_string(),
+                    "Operator review pending".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("plastic-joining-with-evidence".to_string()),
+                machine_id: Some("plastic-joining-cell-1".to_string()),
+                machine_kind: Some("plastic-joining-cell".to_string()),
+                language: Some("plastic-joining-job".to_string()),
+                instructions: vec![
+                    "Ultrasonic weld and heat stake ABS enclosure halves".to_string(),
+                    "Part revisions, polymer compatibility, joint design, energy director, staking boss, fixture nest, weld recipe, amplitude, force time, collapse target, melt flow, cooling clamp, and stop criteria evidence recorded".to_string(),
+                    "Weld collapse, stake head, flash, cracks, crazing, pull proof, peel proof, leak inspection, visual inspection, dimensional fit, cosmetic impact, first article, and plastic join release evidence recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "plastic-joining-setup-evidence-missing",
+            "plastic-joining-release-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref() == Some("plastic-joining-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing plastic joining finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("plastic-joining-with-evidence")
+            }));
+        }
+        for boundary in [
+            "plastic-joining-setup-boundary",
+            "plastic-joining-release-boundary",
+        ] {
+            assert!(
+                validation.failure_boundaries.iter().any(|item| {
+                    item.kind == boundary
+                        && item.program_id.as_deref() == Some("plastic-joining-missing-evidence")
+                        && item.requires_human_intervention
+                }),
+                "missing plastic joining boundary {boundary}"
+            );
+        }
+        for action in [
+            "add-plastic-joining-setup-evidence",
+            "add-plastic-joining-release-evidence",
+        ] {
+            assert!(
+                improvements.iter().any(|improvement| {
+                    improvement.action == action
+                        && improvement.program_id.as_deref()
+                            == Some("plastic-joining-missing-evidence")
+                }),
+                "missing plastic joining improvement {action}"
+            );
+        }
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        for boundary in [
+            "CHECKPOINT [plastic-joining-setup-boundary]",
+            "CHECKPOINT [plastic-joining-release-boundary]",
+        ] {
+            assert!(
+                improved[0]
+                    .instructions
+                    .iter()
+                    .any(|line| line.starts_with(boundary)),
+                "missing improved plastic joining checkpoint {boundary}"
+            );
+        }
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Plastic-joining job needs polymer")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [plastic-joining-")));
+    }
+
+    #[test]
     fn text_fastener_installation_jobs_require_setup_and_release_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -140479,6 +140930,81 @@ mod tests {
                     .iter()
                     .any(|improvement| improvement.action == action),
                 "missing generated adhesive bonding improvement {action}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_plastic_joining_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("generated-plastic-joining-missing-setup".to_string()),
+                machine_id: Some("plastic-joining-cell-1".to_string()),
+                machine_kind: Some("plastic-joining-cell".to_string()),
+                language: Some("plastic-joining-job".to_string()),
+                instructions: vec![
+                    "; draft plastic joining job generated by dd-fabrication-server".to_string(),
+                    "VERIFY_PLASTIC_JOIN_RELEASE collapse_or_stake=recorded flash=inspected cracks_crazing=inspected proof_test=operator-reviewed leak_or_visual=passed dimensional_fit=verified first_article=required".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-plastic-joining-missing-release".to_string()),
+                machine_id: Some("plastic-joining-cell-1".to_string()),
+                machine_kind: Some("plastic-joining-cell".to_string()),
+                language: Some("plastic-joining-job".to_string()),
+                instructions: vec![
+                    "; draft plastic joining job generated by dd-fabrication-server".to_string(),
+                    "VERIFY_PLASTIC_JOIN_SETUP part_revisions=operator-reviewed polymer_compatibility=verified joint_design=operator-reviewed energy_director_or_stake_boss=verified fixture_nest=verified recipe=operator-reviewed collapse_target=recorded cooling_clamp=recorded".to_string(),
+                    "RUN_PLASTIC_JOIN process=ultrasonic_or_heat_stake_or_solvent amplitude_force_time=operator-reviewed solvent_dwell=operator-reviewed melt_flow=controlled collapse=recorded fixture_clamp=verified".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-plastic-joining-with-evidence".to_string()),
+                machine_id: Some("plastic-joining-cell-1".to_string()),
+                machine_kind: Some("plastic-joining-cell".to_string()),
+                language: Some("plastic-joining-job".to_string()),
+                instructions: vec![
+                    "; draft plastic joining job generated by dd-fabrication-server".to_string(),
+                    "VERIFY_PLASTIC_JOIN_SETUP part_revisions=operator-reviewed polymer_compatibility=verified joint_design=operator-reviewed energy_director_or_stake_boss=verified fixture_nest=verified recipe=operator-reviewed collapse_target=recorded cooling_clamp=recorded".to_string(),
+                    "RUN_PLASTIC_JOIN process=ultrasonic_or_heat_stake_or_solvent amplitude_force_time=operator-reviewed solvent_dwell=operator-reviewed melt_flow=controlled collapse=recorded fixture_clamp=verified".to_string(),
+                    "VERIFY_PLASTIC_JOIN_RELEASE collapse_or_stake=recorded flash=inspected cracks_crazing=inspected proof_test=operator-reviewed leak_or_visual=passed dimensional_fit=verified first_article=required".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "plastic-joining-setup-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-plastic-joining-missing-setup")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "plastic-joining-release-evidence-missing"
+                && finding.program_id.as_deref()
+                    == Some("generated-plastic-joining-missing-release")
+                && finding.line.is_none()
+        }));
+        for code in [
+            "plastic-joining-setup-evidence-missing",
+            "plastic-joining-release-evidence-missing",
+        ] {
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref()
+                        == Some("generated-plastic-joining-with-evidence")
+            }));
+        }
+        for action in [
+            "add-plastic-joining-setup-evidence",
+            "add-plastic-joining-release-evidence",
+        ] {
+            assert!(
+                improvements
+                    .iter()
+                    .any(|improvement| improvement.action == action),
+                "missing generated plastic joining improvement {action}"
             );
         }
     }
