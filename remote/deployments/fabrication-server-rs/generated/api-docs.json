@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 182,
+  "routeCount": 184,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 172,
+    "user-generated": 174,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -1223,6 +1223,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/jobs/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "job_evidence_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/learning/capabilities",
       "methods": [
         "GET"
@@ -2340,6 +2357,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "get_job_release_bundle"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/jobs/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "job_evidence_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"

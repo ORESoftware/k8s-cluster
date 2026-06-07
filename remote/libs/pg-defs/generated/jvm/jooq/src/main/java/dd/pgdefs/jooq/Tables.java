@@ -40,6 +40,20 @@ public final class Tables {
     public static final Field<UUID> APP_CONFIG_CREATED_BY = DSL.field(DSL.name("app_config", "created_by"), SQLDataType.UUID);
     public static final Field<UUID> APP_CONFIG_UPDATED_BY = DSL.field(DSL.name("app_config", "updated_by"), SQLDataType.UUID);
 
+    public static final Name VAPI_PHONE_CALL_EVENTS_NAME = DSL.name("vapi_phone_call_events");
+    public static final Table<org.jooq.Record> VAPI_PHONE_CALL_EVENTS = DSL.table(VAPI_PHONE_CALL_EVENTS_NAME);
+    public static final Field<UUID> VAPI_PHONE_CALL_EVENTS_ID = DSL.field(DSL.name("vapi_phone_call_events", "id"), SQLDataType.UUID);
+    public static final Field<String> VAPI_PHONE_CALL_EVENTS_CALL_ID = DSL.field(DSL.name("vapi_phone_call_events", "call_id"), SQLDataType.VARCHAR(160));
+    public static final Field<String> VAPI_PHONE_CALL_EVENTS_EVENT_TYPE = DSL.field(DSL.name("vapi_phone_call_events", "event_type"), SQLDataType.VARCHAR(80));
+    public static final Field<String> VAPI_PHONE_CALL_EVENTS_PAYLOAD_HASH = DSL.field(DSL.name("vapi_phone_call_events", "payload_hash"), SQLDataType.VARCHAR(64));
+    public static final Field<String> VAPI_PHONE_CALL_EVENTS_CALLER_HASH = DSL.field(DSL.name("vapi_phone_call_events", "caller_hash"), SQLDataType.VARCHAR(64));
+    public static final Field<String> VAPI_PHONE_CALL_EVENTS_CALLED_NUMBER_HASH = DSL.field(DSL.name("vapi_phone_call_events", "called_number_hash"), SQLDataType.VARCHAR(64));
+    public static final Field<String> VAPI_PHONE_CALL_EVENTS_ENDED_REASON = DSL.field(DSL.name("vapi_phone_call_events", "ended_reason"), SQLDataType.VARCHAR(160));
+    public static final Field<Integer> VAPI_PHONE_CALL_EVENTS_DURATION_SECONDS = DSL.field(DSL.name("vapi_phone_call_events", "duration_seconds"), SQLDataType.INTEGER);
+    public static final Field<String> VAPI_PHONE_CALL_EVENTS_SUMMARY = DSL.field(DSL.name("vapi_phone_call_events", "summary"), SQLDataType.CLOB);
+    public static final Field<JSONB> VAPI_PHONE_CALL_EVENTS_PAYLOAD = DSL.field(DSL.name("vapi_phone_call_events", "payload"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> VAPI_PHONE_CALL_EVENTS_CREATED_AT = DSL.field(DSL.name("vapi_phone_call_events", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
     public static final Name CONTAINER_POOL_CONFIGS_NAME = DSL.name("container_pool_configs");
     public static final Table<org.jooq.Record> CONTAINER_POOL_CONFIGS = DSL.table(CONTAINER_POOL_CONFIGS_NAME);
     public static final Field<UUID> CONTAINER_POOL_CONFIGS_ID = DSL.field(DSL.name("container_pool_configs", "id"), SQLDataType.UUID);

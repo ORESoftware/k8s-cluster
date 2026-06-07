@@ -31,6 +31,33 @@ pub type AgentThreadBreadcrumbTail {
   )
 }
 
+/// Low-latency context for a hashed caller number. Values intentionally avoid raw phone numbers and full transcripts.
+pub type VapiPhoneCallerContext {
+  VapiPhoneCallerContext(
+    caller_hash: String,
+    recent_call_count: Int,
+    last_call_id: Option(String),
+    last_signal: Option(String),
+    last_reason: Option(String),
+    last_event_at: Option(String),
+    generated_at_ms: Int,
+    source: Option(String)
+  )
+}
+
+/// Latest compact screening signal for a single call. Raw phone numbers and transcripts are excluded by contract.
+pub type VapiPhoneCallSignal {
+  VapiPhoneCallSignal(
+    call_id: String,
+    caller_hash: Option(String),
+    called_number_hash: Option(String),
+    signal: String,
+    caller_kind: Option(String),
+    reason: Option(String),
+    recorded_at_ms: Int
+  )
+}
+
 // ---------- Redis key formatters ----------
 
 /// Redis STRING containing a JSON-encoded AgentThreadBreadcrumbTail snapshot. SET with PX TTL; missing or stale entries trigger a rebuild from agent_remote_dev_breadcrumbs.
@@ -81,6 +108,20 @@ pub fn runtime_config_subscriber_key(prefix prefix: String, env env: String, nam
 }
 
 pub const runtime_config_subscriber_key_default_prefix = "dd:rc"
+
+/// Redis STRING containing a JSON-encoded VapiPhoneCallerContext for a hashed caller number. SET with EX TTL; missing entries can be rebuilt from Postgres.
+pub fn vapi_phone_caller_context_key(prefix prefix: String, caller_hash caller_hash: String) -> String {
+  prefix <> ":caller:" <> caller_hash
+}
+
+pub const vapi_phone_caller_context_key_default_prefix = "dd:vapi-phone"
+
+/// Redis STRING containing the latest JSON-encoded VapiPhoneCallSignal for a Vapi call id. SET with EX TTL and updated by server tool calls.
+pub fn vapi_phone_call_signal_key(prefix prefix: String, call_id call_id: String) -> String {
+  prefix <> ":call:" <> call_id <> ":signal"
+}
+
+pub const vapi_phone_call_signal_key_default_prefix = "dd:vapi-phone"
 
 @internal
 pub fn _force_use_string_module(value: String) -> String {

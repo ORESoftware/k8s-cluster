@@ -51,6 +51,47 @@ export class AppConfigEntity {
 
 }
 
+@Index("vapi_phone_call_events_payload_hash_uq", ["payloadHash"], { unique: true })
+// vapi_phone_call_events_call_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// vapi_phone_call_events_caller_hash_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// vapi_phone_call_events_event_type_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "vapi_phone_call_events" })
+export class VapiPhoneCallEventsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "call_id", type: "varchar", length: 160 })
+  callId!: string;
+
+  @Column({ name: "event_type", type: "varchar", length: 80 })
+  eventType!: string;
+
+  @Column({ name: "payload_hash", type: "varchar", length: 64 })
+  payloadHash!: string;
+
+  @Column({ name: "caller_hash", type: "varchar", length: 64, nullable: true })
+  callerHash!: string | null;
+
+  @Column({ name: "called_number_hash", type: "varchar", length: 64, nullable: true })
+  calledNumberHash!: string | null;
+
+  @Column({ name: "ended_reason", type: "varchar", length: 160, nullable: true })
+  endedReason!: string | null;
+
+  @Column({ name: "duration_seconds", type: "integer", nullable: true })
+  durationSeconds!: number | null;
+
+  @Column({ name: "summary", type: "text", nullable: true })
+  summary!: string | null;
+
+  @Column({ name: "payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
 @Index("container_pool_configs_slug_active_uq", ["slug"], { unique: true, where: "is_soft_deleted = false" })
 @Index("container_pool_configs_status_idx", ["status"], { where: "is_soft_deleted = false" })
 // container_pool_configs_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.

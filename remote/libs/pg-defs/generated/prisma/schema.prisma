@@ -34,6 +34,26 @@ model AppConfig {
   @@map("app_config")
 }
 
+model VapiPhoneCallEvents {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  callId String @map("call_id") @db.VarChar(160)
+  eventType String @map("event_type") @db.VarChar(80)
+  payloadHash String @map("payload_hash") @db.VarChar(64)
+  callerHash String? @map("caller_hash") @db.VarChar(64)
+  calledNumberHash String? @map("called_number_hash") @db.VarChar(64)
+  endedReason String? @map("ended_reason") @db.VarChar(160)
+  durationSeconds Int? @map("duration_seconds")
+  summary String? @db.Text
+  payload Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([payloadHash], map: "vapi_phone_call_events_payload_hash_uq")
+  @@index([callId, createdAt], map: "vapi_phone_call_events_call_id_created_at_idx")
+  // vapi_phone_call_events_caller_hash_created_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([eventType, createdAt], map: "vapi_phone_call_events_event_type_created_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("vapi_phone_call_events")
+}
+
 model ContainerPoolConfigs {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   slug String @db.VarChar(120)

@@ -94,6 +94,81 @@ class AppConfigObjectBox {
 }
 
 @Entity()
+class VapiPhoneCallEventsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String callId;
+
+  String eventType;
+
+  String payloadHash;
+
+  String? callerHash;
+
+  String? calledNumberHash;
+
+  String? endedReason;
+
+  int? durationSeconds;
+
+  String? summary;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String payload;
+
+  String createdAt;
+
+
+  VapiPhoneCallEventsObjectBox({
+    required this.id,
+    required this.callId,
+    required this.eventType,
+    required this.payloadHash,
+    this.callerHash,
+    this.calledNumberHash,
+    this.endedReason,
+    this.durationSeconds,
+    this.summary,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "callId": callId,
+    "eventType": eventType,
+    "payloadHash": payloadHash,
+    "callerHash": callerHash,
+    "calledNumberHash": calledNumberHash,
+    "endedReason": endedReason,
+    "durationSeconds": durationSeconds,
+    "summary": summary,
+    "payload": jsonDecode(payload),
+    "createdAt": createdAt,
+  };
+
+  static VapiPhoneCallEventsObjectBox fromJson(Map<String, Object?> json) {
+    return VapiPhoneCallEventsObjectBox(
+      id: json["id"] as String,
+      callId: json["callId"] as String,
+      eventType: json["eventType"] as String,
+      payloadHash: json["payloadHash"] as String,
+      callerHash: json["callerHash"] as String?,
+      calledNumberHash: json["calledNumberHash"] as String?,
+      endedReason: json["endedReason"] as String?,
+      durationSeconds: json["durationSeconds"] == null ? null : (json["durationSeconds"] as num).toInt(),
+      summary: json["summary"] as String?,
+      payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class ContainerPoolConfigsObjectBox {
   @Id()
   int obxId = 0;

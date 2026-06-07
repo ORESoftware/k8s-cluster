@@ -83,6 +83,93 @@ class AppConfigInsert(BaseModel):
     createdBy: UUID | None = None
     updatedBy: UUID | None = None
 
+class VapiPhoneCallEvents(Base):
+    __tablename__ = "vapi_phone_call_events"
+    __table_args__ = (
+        CheckConstraint("octet_length(call_id) between 1 and 160", name="vapi_phone_call_events_call_id_size_chk"),
+        CheckConstraint("event_type ~ '^[A-Za-z0-9._:/-]{1,80}$'", name="vapi_phone_call_events_event_type_format_chk"),
+        CheckConstraint("payload_hash ~ '^[a-f0-9]{64}$'", name="vapi_phone_call_events_payload_hash_chk"),
+        CheckConstraint("caller_hash is null or caller_hash ~ '^[a-f0-9]{64}$'", name="vapi_phone_call_events_caller_hash_chk"),
+        CheckConstraint("called_number_hash is null or called_number_hash ~ '^[a-f0-9]{64}$'", name="vapi_phone_call_events_called_number_hash_chk"),
+        CheckConstraint("duration_seconds is null or duration_seconds between 0 and 86400", name="vapi_phone_call_events_duration_chk"),
+        CheckConstraint("summary is null or octet_length(summary) <= 4000", name="vapi_phone_call_events_summary_size_chk"),
+        CheckConstraint("jsonb_typeof(payload) = 'object'", name="vapi_phone_call_events_payload_object_chk"),
+        Index("vapi_phone_call_events_payload_hash_uq", "payload_hash", unique=True),
+        Index("vapi_phone_call_events_call_id_created_at_idx", "call_id", text("created_at desc")),
+        Index("vapi_phone_call_events_caller_hash_created_at_idx", "caller_hash", text("created_at desc"), postgresql_where=text("caller_hash is not null")),
+        Index("vapi_phone_call_events_event_type_created_at_idx", "event_type", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    call_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    caller_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    called_number_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ended_reason: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class VapiPhoneCallEventsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    callId: str = Field(..., max_length=160)
+    eventType: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    payloadHash: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    callerHash: str | None = Field(None, max_length=64, pattern="^[a-f0-9]{64}$")
+    calledNumberHash: str | None = Field(None, max_length=64, pattern="^[a-f0-9]{64}$")
+    endedReason: str | None = Field(None, max_length=160)
+    durationSeconds: int | None = Field(None, ge=0, le=86400)
+    summary: str | None = None
+    payload: dict[str, Any]
+    createdAt: datetime
+
+    @field_validator("callId")
+    @classmethod
+    def validate_call_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("vapi_phone_call_events.call_id exceeds 160 bytes")
+        return value
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4000:
+            raise ValueError("vapi_phone_call_events.summary exceeds 4000 bytes")
+        return value
+
+class VapiPhoneCallEventsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    callId: str = Field(..., max_length=160)
+    eventType: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    payloadHash: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    callerHash: str | None = Field(None, max_length=64, pattern="^[a-f0-9]{64}$")
+    calledNumberHash: str | None = Field(None, max_length=64, pattern="^[a-f0-9]{64}$")
+    endedReason: str | None = Field(None, max_length=160)
+    durationSeconds: int | None = Field(None, ge=0, le=86400)
+    summary: str | None = None
+    payload: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+
+    @field_validator("callId")
+    @classmethod
+    def validate_call_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("vapi_phone_call_events.call_id exceeds 160 bytes")
+        return value
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4000:
+            raise ValueError("vapi_phone_call_events.summary exceeds 4000 bytes")
+        return value
+
 ContainerPoolConfigsStatus = Literal["active", "paused", "archived"]
 
 class ContainerPoolConfigs(Base):
