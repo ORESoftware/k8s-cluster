@@ -41,6 +41,15 @@ DES_RESULTS_SUBJECT = "dd.remote.des.results"
 DES_SIMULATE_SUBJECT = "dd.remote.des.simulate"
 DES_SIMULATE_QUEUE_GROUP = "dd-des-simulator"
 
+# Published escrow validation results. Default for ESCROW_RESULT_SUBJECT.
+# Service: dd-escrow-rs
+ESCROW_SOLANA_RESULTS_SUBJECT = "dd.remote.escrow.solana.results"
+
+# Validation requests for solana.escrow.v1 intents. Default for ESCROW_VALIDATE_SUBJECT.
+# Service: dd-escrow-rs
+ESCROW_SOLANA_VALIDATE_SUBJECT = "dd.remote.escrow.solana.validate"
+ESCROW_SOLANA_VALIDATE_QUEUE_GROUP = "dd-escrow-rs"
+
 # Hybrid assembly and process-decomposition requests for workers that split, combine, join, and sequence printed, milled, turned, sheet-cut, and postprocessed parts.
 # Service: dd-fabrication-server
 FABRICATION_ASSEMBLY_PLANNING_REQUESTS_SUBJECT = "dd.remote.fabrication.assembly.planning.requests"

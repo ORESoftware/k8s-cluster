@@ -13,6 +13,9 @@
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
+    escrow_solana_results_subject/0,
+    escrow_solana_validate_subject/0,
+    escrow_solana_validate_queue_group/0,
     fabrication_assembly_planning_requests_subject/0,
     fabrication_assembly_planning_requests_queue_group/0,
     fabrication_assembly_planning_results_subject/0,
@@ -211,6 +214,15 @@ des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 %% Service: dd-ai-ml-pipeline
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
 des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
+
+%% Published escrow validation results. Default for ESCROW_RESULT_SUBJECT.
+%% Service: dd-escrow-rs
+escrow_solana_results_subject() -> <<"dd.remote.escrow.solana.results"/utf8>>.
+
+%% Validation requests for solana.escrow.v1 intents. Default for ESCROW_VALIDATE_SUBJECT.
+%% Service: dd-escrow-rs
+escrow_solana_validate_subject() -> <<"dd.remote.escrow.solana.validate"/utf8>>.
+escrow_solana_validate_queue_group() -> <<"dd-escrow-rs"/utf8>>.
 
 %% Hybrid assembly and process-decomposition requests for workers that split, combine, join, and sequence printed, milled, turned, sheet-cut, and postprocessed parts.
 %% Service: dd-fabrication-server

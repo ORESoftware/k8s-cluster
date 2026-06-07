@@ -51,6 +51,10 @@ The runtimes are instrumented explicitly:
 - The Solana contract gateway exposes Prometheus counters for validation,
   policy rejection, Solana RPC method outcomes, NATS publish outcomes, and
   send-auth failures, plus `dd.log.v1` stdout/stderr records for Loki.
+- The Solana escrow gateway exposes Prometheus counters for escrow intent
+  validation, settlement simulation/send outcomes, Solana RPC outcomes, NATS
+  publish outcomes, policy rejections, and settlement-auth failures, plus the
+  same `dd.log.v1` stdout/stderr envelope for Loki.
 - Runtime-config exposes subscriber, entry, and push counters that make
   configuration delivery visible for dependent planners such as
   `dd-fabrication-server`; Prometheus alerts when the target is down, stage
@@ -211,9 +215,11 @@ Currently opted-in:
   `/fabrication/execution/plan`, `/fabrication/execution/result`,
   `/fabrication/simulation/catalog`, `/fabrication/simulation/run`,
   `/fabrication/simulation/result`, `/fabrication/quality/catalog`,
-  `/fabrication/dispositions/catalog`, `/fabrication/costing/catalog`,
-  `/fabrication/utilities/catalog`, `/fabrication/telemetry/catalog`,
-  `/fabrication/quality/plan`,
+  `/fabrication/dispositions/catalog`, `/fabrication/dispositions/result`,
+  `/fabrication/costing/catalog`,
+  `/fabrication/utilities/catalog`, `/fabrication/utilities/result`,
+  `/fabrication/telemetry/catalog`,
+  `/fabrication/telemetry/result`, `/fabrication/quality/plan`,
   `/fabrication/quality/result`,
   `/fabrication/manufacturability/result`,
   `/fabrication/interventions/catalog`, `/fabrication/setup/catalog`,
@@ -222,10 +228,12 @@ Currently opted-in:
   `/fabrication/process-recipes/catalog`, `/fabrication/process-recipes/result`,
   `/fabrication/kinematics/catalog`, `/fabrication/kinematics/result`,
   `/fabrication/tolerances/catalog`, `/fabrication/tolerances/result`,
-  `/fabrication/process-capabilities/catalog`, `/fabrication/manufacturability/catalog`,
+  `/fabrication/process-capabilities/catalog`, `/fabrication/process-capabilities/result`,
+  `/fabrication/manufacturability/catalog`,
   `/fabrication/failure-modes/catalog`, `/fabrication/failure-modes/result`,
-  `/fabrication/safety/catalog`, `/fabrication/environment/catalog`,
-  `/fabrication/provenance/catalog`,
+  `/fabrication/safety/catalog`, `/fabrication/safety/result`,
+  `/fabrication/environment/catalog`, `/fabrication/environment/result`,
+  `/fabrication/provenance/catalog`, `/fabrication/provenance/result`,
   `/fabrication/setup/plan`,
   `/fabrication/setup/result`,
   `/fabrication/monitoring/catalog`, `/fabrication/monitoring/plan`,

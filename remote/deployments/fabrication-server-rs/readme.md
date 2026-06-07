@@ -132,12 +132,18 @@ It exposes:
 - `GET /fabrication/quality/catalog`
 - `GET /dispositions/catalog`
 - `GET /fabrication/dispositions/catalog`
+- `POST /dispositions/result`
+- `POST /fabrication/dispositions/result`
 - `GET /costing/catalog`
 - `GET /fabrication/costing/catalog`
 - `GET /utilities/catalog`
 - `GET /fabrication/utilities/catalog`
+- `POST /utilities/result`
+- `POST /fabrication/utilities/result`
 - `GET /telemetry/catalog`
 - `GET /fabrication/telemetry/catalog`
+- `POST /telemetry/result`
+- `POST /fabrication/telemetry/result`
 - `POST /quality/plan`
 - `POST /fabrication/quality/plan`
 - `POST /quality/result`
@@ -174,6 +180,8 @@ It exposes:
 - `POST /fabrication/tolerances/result`
 - `GET /process-capabilities/catalog`
 - `GET /fabrication/process-capabilities/catalog`
+- `POST /process-capabilities/result`
+- `POST /fabrication/process-capabilities/result`
 - `GET /manufacturability/catalog`
 - `GET /fabrication/manufacturability/catalog`
 - `POST /manufacturability/result`
@@ -184,10 +192,16 @@ It exposes:
 - `POST /fabrication/failure-modes/result`
 - `GET /safety/catalog`
 - `GET /fabrication/safety/catalog`
+- `POST /safety/result`
+- `POST /fabrication/safety/result`
 - `GET /environment/catalog`
 - `GET /fabrication/environment/catalog`
+- `POST /environment/result`
+- `POST /fabrication/environment/result`
 - `GET /provenance/catalog`
 - `GET /fabrication/provenance/catalog`
+- `POST /provenance/result`
+- `POST /fabrication/provenance/result`
 - `POST /setup/plan`
 - `POST /fabrication/setup/plan`
 - `POST /setup/result`
@@ -1942,6 +1956,25 @@ authority. Disposition outcomes are retained as MDP/POMDP/neural learning
 signals so future planners can avoid failed routes, change fixtures, split
 parts, remake, or add inspection earlier.
 
+## `POST /fabrication/dispositions/result`
+
+`POST /dispositions/result` and the gateway-prefixed
+`POST /fabrication/dispositions/result` accept retained disposition outcomes
+from quality, simulation, failure, release, or remediation reviewers. The
+response uses `dd.fabrication.disposition-result-review.v1` and captures
+pass/rework/scrap/waiver/split-combine decisions, remediation and reinspection
+actions, authority/signoff reviews, retained artifacts, release blockers, and
+MDP/POMDP/neural learning observations.
+
+Machine-ready and release-ready status remains blocked while a disposition
+decision is missing, unaccepted, pending rework/remake/reinspection, waiting on
+engineering/operator authority, or lacking artifact evidence. The result is
+stored with `disposition-result`, `disposition-decisions`,
+`disposition-remediation-actions`, `disposition-authority-reviews`,
+`disposition-artifacts`, and `disposition-learning-observations` artifacts so
+future planners can learn when to rework, remake, waive, split/combine, add
+inspection, or avoid the failed route.
+
 ## `GET /fabrication/costing/catalog`
 
 `GET /costing/catalog` and the gateway-prefixed
@@ -1991,6 +2024,26 @@ evidence. Utility outages, restarts, operator recovery, and environmental
 excursions are retained as MDP/POMDP/neural learning signals so future planners
 can resequence, add checkpoints, split work, or avoid brittle unattended routes.
 
+## `POST /fabrication/utilities/result`
+
+`POST /utilities/result` and the gateway-prefixed
+`POST /fabrication/utilities/result` accept retained process-support and
+facility-readiness outcomes from coolant, chip evacuation, dust collection,
+sheet-cut support media, additive thermal/material utilities, hybrid-cell
+services, power, network, environment, and operator recovery reviewers. The
+response uses `dd.fabrication.utilities-result-review.v1` and captures utility
+checks, recovery actions, outage events, retained artifacts, release blockers,
+warning counts, and MDP/POMDP/neural learning observations.
+
+Machine-ready and release-ready status remains blocked when process support
+utilities are unavailable, outside limits, unrecovered, restart-unverified,
+unreplanned, missing retained evidence, or still require human intervention.
+The result is stored with `utilities-result`, `utilities-checks`,
+`utilities-recovery-actions`, `utilities-outage-events`, `utilities-artifacts`,
+and `utilities-learning-observations` artifacts so future planners can learn
+which utility readiness, restart, outage, and recovery patterns made generated
+or imported instructions releasable.
+
 ## `GET /fabrication/telemetry/catalog`
 
 `GET /telemetry/catalog` and the gateway-prefixed
@@ -2017,6 +2070,28 @@ evidence cannot be retained. Telemetry outcomes feed MDP/POMDP/neural workers so
 future planners can learn which generated instructions, machine choices,
 utilities, split/combine handoffs, and human checkpoints prevented or caused
 failures.
+
+## `POST /fabrication/telemetry/result`
+
+`POST /telemetry/result` and the gateway-prefixed
+`POST /fabrication/telemetry/result` accept retained runtime telemetry outcomes
+from additive, subtractive, sheet-cutting, hybrid-cell, and simulation-boundary
+workers. The response uses `dd.fabrication.telemetry-result-review.v1` and
+captures sensor windows, machine stops, boundary correlations, operator
+interventions, retained artifacts, release blockers, warning counts, and
+MDP/POMDP/neural learning observations.
+
+Machine-ready and learning-ready status remains blocked when telemetry samples
+are not retained, sensor windows drift outside the reviewed envelope, machine
+stops lack safe-stop/restart evidence, predicted boundaries do not match actual
+runtime events, operator interventions remain incomplete, or artifacts lack URI,
+checksum, format, and evidence labels. The result is stored with
+`telemetry-result`, `telemetry-sensor-windows`, `telemetry-machine-stops`,
+`telemetry-boundary-correlations`, `telemetry-operator-interventions`,
+`telemetry-artifacts`, and `telemetry-learning-observations` artifacts so future
+planners can learn which generated/imported instructions, machine choices,
+utilities, split/combine handoffs, and human checkpoints prevented or caused
+runtime failures.
 
 ## `POST /fabrication/quality/result`
 
@@ -2428,6 +2503,28 @@ plan, or human-intervention evidence is present. Capability failures, alternate
 routes, split boundaries, and measured process outcomes are retained as
 MDP/POMDP/neural learning signals for future planning and instruction repair.
 
+## `POST /fabrication/process-capabilities/result`
+
+`POST /process-capabilities/result` and the gateway-prefixed
+`POST /fabrication/process-capabilities/result` accept retained process
+capability outcomes from printability, tool-access, workholding, kerf/pierce,
+turning, and hybrid split/combine reviewers. The response uses
+`dd.fabrication.process-capability-result-review.v1` and captures capability
+findings, alternate route decisions, measured coupon or first-article results,
+retained artifacts, release blockers, warning counts, and MDP/POMDP/neural
+learning observations.
+
+Machine-ready and release-ready status remains blocked when requested geometry
+exceeds a reviewed process envelope, alternate routes are not accepted,
+measurements are out of limits, retained artifact evidence is missing, or the
+job still requires redesign, split/combine planning, or human intervention. The
+result is stored with `process-capability-result`,
+`process-capability-findings`, `process-capability-alternate-routes`,
+`process-capability-measurements`, `process-capability-artifacts`, and
+`process-capability-learning-observations` artifacts so future planners can
+learn which printer, mill, lathe, sheet-cut, or hybrid routes actually made the
+requested part releasable.
+
 ## `GET /fabrication/manufacturability/catalog`
 
 `GET /manufacturability/catalog` and the gateway-prefixed
@@ -2547,6 +2644,26 @@ Interlock states, operator stops, extraction failures, E-stop events, recovery
 actions, and unattended-release outcomes are retained as MDP/POMDP/neural
 learning signals for future planning and instruction repair.
 
+## `POST /fabrication/safety/result`
+
+`POST /safety/result` and the gateway-prefixed
+`POST /fabrication/safety/result` accept retained safety outcomes from guarding,
+interlock, extraction, robot-cell, emergency-stop, restart, and human
+intervention reviewers. The response uses
+`dd.fabrication.safety-result-review.v1` and captures safety checks, interlock
+checks, emergency actions, retained artifacts, release blockers, warning counts,
+and MDP/POMDP/neural learning observations.
+
+Machine-ready and release-ready status remains blocked when hazards are not
+cleared, interlocks are not verified, stop points or restart reviews remain
+open, emergency actions are incomplete, retained artifact evidence is missing,
+or human intervention is still required. The result is stored with
+`safety-result`, `safety-checks`, `safety-interlock-checks`,
+`safety-emergency-actions`, `safety-artifacts`, and
+`safety-learning-observations` artifacts so future planners can learn where
+generated/imported instructions need safe stops, interlock verification,
+operator handoff, or earlier rejection.
+
 ## `GET /fabrication/environment/catalog`
 
 `GET /environment/catalog` and the gateway-prefixed
@@ -2573,6 +2690,26 @@ drying, coolant, extraction, utility, vibration, temperature, and metrology
 outcomes are retained as MDP/POMDP/neural learning signals for future planning
 and instruction repair.
 
+## `POST /fabrication/environment/result`
+
+`POST /environment/result` and the gateway-prefixed
+`POST /fabrication/environment/result` accept retained environment outcomes from
+material-conditioning, ambient/chamber, coolant, extraction, utility, vibration,
+and metrology-environment reviewers. The response uses
+`dd.fabrication.environment-result-review.v1` and captures condition checks,
+utility checks, metrology checks, retained artifacts, release blockers, warning
+counts, and MDP/POMDP/neural learning observations.
+
+Machine-ready and release-ready status remains blocked when environmental
+conditions are out of limits, drying or conditioning is incomplete, extraction or
+utilities require recovery, metrology conditions are unstable, retained artifact
+evidence is missing, or human intervention is still required. The result is
+stored with `environment-result`, `environment-condition-checks`,
+`environment-utility-checks`, `environment-metrology-checks`,
+`environment-artifacts`, and `environment-learning-observations` artifacts so
+future planners can learn which material, machine, utility, inspection, and
+ambient conditions made generated/imported instructions releasable.
+
 ## `GET /fabrication/provenance/catalog`
 
 `GET /provenance/catalog` and the gateway-prefixed
@@ -2598,6 +2735,27 @@ hashes, conversion logs, lot records, controller program digests, inspection
 dispositions, nonconformance decisions, and learning outcome lineage are
 retained as MDP/POMDP/neural learning signals for future planning and
 instruction repair.
+
+## `POST /fabrication/provenance/result`
+
+`POST /provenance/result` and the gateway-prefixed
+`POST /fabrication/provenance/result` accept retained provenance outcomes from
+CAD translators, material-lot reviewers, machine-code/postprocessor reviewers,
+inspection ledgers, release-bundle builders, and learning-policy lineage checks.
+The response uses `dd.fabrication.provenance-result-review.v1` and captures
+lineage checks, artifact digest checks, custody/signoff events, retained
+artifacts, release blockers, warning counts, and MDP/POMDP/neural learning
+observations.
+
+Machine-ready and release-ready status remains blocked when design, material,
+machine-program, inspection, release-package, or learning lineage is missing,
+untraceable, mismatched, or still awaiting human review. The result is stored
+with `provenance-result`, `provenance-lineage-checks`,
+`provenance-artifact-checks`, `provenance-custody-events`,
+`provenance-artifacts`, and `provenance-learning-observations` artifacts so
+future planners can learn which CAD/source, material, controller-program,
+inspection, signoff, and release-package evidence made generated or imported
+instructions releasable.
 
 ## `POST /fabrication/setup/plan`
 

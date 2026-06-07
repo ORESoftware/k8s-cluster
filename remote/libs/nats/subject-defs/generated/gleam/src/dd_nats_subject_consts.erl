@@ -20,6 +20,9 @@
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
+    escrow_solana_results_subject/0,
+    escrow_solana_validate_subject/0,
+    escrow_solana_validate_queue_group/0,
     fabrication_assembly_planning_requests_subject/0,
     fabrication_assembly_planning_requests_queue_group/0,
     fabrication_assembly_planning_results_subject/0,
@@ -146,6 +149,9 @@ cron_prompts_stream() -> <<"DD_REMOTE_CRON"/utf8>>.
 des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
 des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
+escrow_solana_results_subject() -> <<"dd.remote.escrow.solana.results"/utf8>>.
+escrow_solana_validate_subject() -> <<"dd.remote.escrow.solana.validate"/utf8>>.
+escrow_solana_validate_queue_group() -> <<"dd-escrow-rs"/utf8>>.
 fabrication_assembly_planning_requests_subject() -> <<"dd.remote.fabrication.assembly.planning.requests"/utf8>>.
 fabrication_assembly_planning_requests_queue_group() -> <<"dd-fabrication-assembly-planners"/utf8>>.
 fabrication_assembly_planning_results_subject() -> <<"dd.remote.fabrication.assembly.planning.results"/utf8>>.

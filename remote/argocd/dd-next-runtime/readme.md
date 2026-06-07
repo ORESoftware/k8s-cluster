@@ -21,6 +21,7 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
 - `dd-fabrication-server` (Rust fabrication planner and instruction validator for printers, mills, routers, and lathes)
 - `dd-contract-service` (Rust Solana contract gateway for `solana.contract.v1` validation)
+- `dd-escrow-rs` (Rust Solana escrow gateway for `solana.escrow.v1` validation and settlement)
 - `dd-trading-server` (Rust trading decision service for `trading.decision.v1` risk-gated order intents)
 - `dd-economics-server` (Rust economics dashboard and `economics.forecast.v1` theory/data projection service)
 - `dd-dev-server-api` (bootstrap Node.js coding-agent task manager for `/tasks`, `/stream`,
@@ -135,8 +136,10 @@ Gateway path map:
   `/fabrication/simulation/catalog`, `POST /fabrication/simulation/run`,
   `POST /fabrication/simulation/result`,
   `/fabrication/quality/catalog`, `/fabrication/dispositions/catalog`,
-  `/fabrication/costing/catalog`, `/fabrication/utilities/catalog`,
-  `/fabrication/telemetry/catalog`, `POST /fabrication/quality/plan`,
+  `POST /fabrication/dispositions/result`, `/fabrication/costing/catalog`,
+  `/fabrication/utilities/catalog`, `POST /fabrication/utilities/result`,
+  `/fabrication/telemetry/catalog`, `POST /fabrication/telemetry/result`,
+  `POST /fabrication/quality/plan`,
   `POST /fabrication/quality/result`, `POST /fabrication/manufacturability/result`,
   `/fabrication/calibration/catalog`, `POST /fabrication/calibration/plan`,
   `POST /fabrication/calibration/result`,
@@ -146,10 +149,12 @@ Gateway path map:
   `/fabrication/process-recipes/catalog`, `POST /fabrication/process-recipes/result`,
   `/fabrication/kinematics/catalog`, `POST /fabrication/kinematics/result`,
   `/fabrication/tolerances/catalog`, `POST /fabrication/tolerances/result`,
-  `/fabrication/process-capabilities/catalog`, `/fabrication/manufacturability/catalog`,
+  `/fabrication/process-capabilities/catalog`, `POST /fabrication/process-capabilities/result`,
+  `/fabrication/manufacturability/catalog`,
   `/fabrication/failure-modes/catalog`, `POST /fabrication/failure-modes/result`,
-  `/fabrication/safety/catalog`, `/fabrication/environment/catalog`,
-  `/fabrication/provenance/catalog`,
+  `/fabrication/safety/catalog`, `POST /fabrication/safety/result`,
+  `/fabrication/environment/catalog`, `POST /fabrication/environment/result`,
+  `/fabrication/provenance/catalog`, `POST /fabrication/provenance/result`,
   `POST /fabrication/setup/plan`,
   `POST /fabrication/setup/result`,
   `/fabrication/monitoring/catalog`, `POST /fabrication/monitoring/plan`,
@@ -173,6 +178,9 @@ Gateway path map:
   `dd-fabrication-planner` Grafana dashboard
 - `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
   `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`
+  (internal auth required)
+- `/escrow/`, `/escrow/types`, `/escrow/schema`, `/escrow/example`, `POST /escrow/validate`,
+  `POST /escrow/simulate-settlement`, `POST /escrow/settle` -> `dd-escrow-rs:8115`
   (internal auth required)
 - `/ml/`, `/ml/healthz`, `/ml/metrics`, `/ml/status`, `POST /ml/analyze`, `POST /ml/ingest` ->
   `dd-ai-ml-pipeline.ai-ml:8099` (internal auth required)
@@ -208,7 +216,7 @@ rolling updates with `maxUnavailable: 0` / `maxSurge: 1`, readiness probes, and 
 `PodDisruptionBudget` with `minAvailable: 1`. This covers the public/auth/API surface where normal
 rollouts previously caused intermittent gateway `502`s: `dd-remote-web-home`, `dd-remote-auth`,
 `dd-remote-rest-api`, `dd-agent-worker-broker`, `dd-des-rs`, `dd-contract-service`,
-`dd-mdp-optimizer`, `dd-fabrication-server`, `dd-trading-server`, `dd-economics-server`, `dd-web-scraper`, `dd-browser-test-server`,
+`dd-escrow-rs`, `dd-mdp-optimizer`, `dd-fabrication-server`, `dd-trading-server`, `dd-economics-server`, `dd-web-scraper`, `dd-browser-test-server`,
 `dd-selenium-server`, and `dd-rust-vapi-phone`. `dd-des-rs` also has a small HPA with
 `minReplicas: 2` and a long scale-down stabilization window. That service cold-builds the Rust
 server and DES engine inside the pod, so scale-to-zero drift creates a multi-minute no-endpoint
@@ -640,6 +648,35 @@ and result-publish failures also emit `dd.log.v1` stderr records and compact cri
 Prometheus counters for validation, Solana RPC method outcomes, NATS publish outcomes, send-auth
 failures, and policy rejections; the service is scraped by both `dd-otel-collector` and
 `dd-prometheus`, with Loki/Grafana coverage through the shared observability stack.
+
+The pod runs as non-root with a read-only root filesystem, no mounted service-account token, and a
+NetworkPolicy that keeps ingress to the gateway, runtime-config, and observability, while limiting
+egress to DNS, NATS, runtime-config, and public HTTPS Solana RPC.
+
+## Solana escrow service
+
+`dd-escrow-rs` runs `remote/deployments/dd-escrow-rs` as a Rust Solana escrow intent gateway. It
+serves `/escrow/healthz`, `/escrow/metrics`, `/escrow/status`, `/escrow/types`, `/escrow/schema`,
+`/escrow/example`, `POST /escrow/validate`, `POST /escrow/simulate-settlement`, and
+`POST /escrow/settle`. The service validates `solana.escrow.v1` intents for ten escrow shapes:
+marketplace order, milestone, freelance contract, digital delivery, OTC trade, rental deposit,
+bounty, subscription release, group buy, and dispute resolution.
+
+The service does not hold private keys or sign transactions. Settlement callers submit a signed
+Solana transaction; `POST /escrow/simulate-settlement` calls `simulateTransaction`, while
+`POST /escrow/settle` calls `sendTransaction` only when `SOLANA_SETTLEMENT_ENABLED=true` plus
+`ESCROW_SETTLEMENT_AUTH_SECRET` are configured and the request includes `x-escrow-settlement-auth`.
+Request `cluster` must match `SOLANA_CLUSTER`, private RPC URLs require
+`SOLANA_ALLOW_PRIVATE_RPC=true`, and `skipPreflight` requires `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
+
+The deployment queue-subscribes to `dd.remote.escrow.solana.validate` with queue group
+`dd-escrow-rs`, publishes validation results to `dd.remote.escrow.solana.results`, and emits compact
+lifecycle events on `dd.remote.events`. Invalid or oversized NATS messages and settlement send
+failures emit `dd.log.v1` stderr records and compact critical events on `dd.remote.events.critical`
+when NATS is reachable. `/escrow/metrics` includes fixed-label Prometheus counters for intent
+validation, settlement simulation/sending, Solana RPC outcomes, NATS publish outcomes,
+settlement-auth failures, and policy rejections; the service is scraped by both `dd-otel-collector`
+and `dd-prometheus`.
 
 The pod runs as non-root with a read-only root filesystem, no mounted service-account token, and a
 NetworkPolicy that keeps ingress to the gateway, runtime-config, and observability, while limiting
