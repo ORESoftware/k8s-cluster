@@ -56992,6 +56992,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/instructions/validation/catalog",
         "GET /instructions/generation/catalog",
         "GET /fabrication/instructions/generation/catalog",
+        "GET /instructions/generation/preflight/catalog",
+        "GET /fabrication/instructions/generation/preflight/catalog",
         "POST /instructions/generate",
         "POST /fabrication/instructions/generate",
         "POST /instructions/generation/result",
@@ -57012,6 +57014,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/toolpaths/result",
         "GET /improvements/catalog",
         "GET /fabrication/improvements/catalog",
+        "GET /improvements/preflight/catalog",
+        "GET /fabrication/improvements/preflight/catalog",
         "GET /boundaries/catalog",
         "GET /fabrication/boundaries/catalog",
         "GET /boundaries/preflight/catalog",
@@ -93566,8 +93570,131 @@ fn instruction_generation_catalog_response() -> Value {
     })
 }
 
+fn instruction_generation_preflight_catalog_response() -> Value {
+    let program_contracts = instruction_generation_catalog_program_contracts();
+    let generated_languages = unique_sorted(program_contracts.iter().flat_map(|contract| {
+        contract
+            .get("generatedLanguages")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_classes = unique_sorted(program_contracts.iter().flat_map(|contract| {
+        contract
+            .get("machineClasses")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let families = unique_sorted(program_contracts.iter().filter_map(|contract| {
+        contract
+            .get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-generation-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /instructions/generation/preflight/catalog",
+            "GET /fabrication/instructions/generation/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/instructions/generation/catalog",
+            "GET /fabrication/instructions/languages",
+            "GET /fabrication/instructions/validation/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /fabrication/controllers/preflight/catalog",
+            "GET /fabrication/toolpaths/catalog",
+            "GET /fabrication/simulation/catalog",
+            "GET /fabrication/release/preflight/catalog",
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/instructions/generation/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "programFamilyCount": families.len(),
+        "generatedLanguageCount": generated_languages.len(),
+        "machineClassCount": machine_classes.len(),
+        "programFamilies": families,
+        "generatedLanguages": generated_languages,
+        "machineClasses": machine_classes,
+        "preflightGroups": [
+            {
+                "group": "request-design-and-machine-state",
+                "requiredEvidence": [
+                    "fabrication objective, part list, material, tolerance, quantity, and design or import review evidence",
+                    "selected machine profile, controller or firmware, build volume or axis envelope, tooling/nozzle/process support, and workholding/setup context",
+                    "split/combine route, interface control, and child-part manufacturing method decisions when one process cannot safely make the object"
+                ],
+                "releaseBlockers": [
+                    "instruction generation requested without design/import evidence, machine profile, controller target, or material/process context",
+                    "candidate machine cannot satisfy envelope, tolerance, material, setup, support-media, or split/combine constraints",
+                    "generated route hides a manual intervention, assembly join, fixture transfer, or postprocess gate"
+                ]
+            },
+            {
+                "group": "program-draft-and-controller-state",
+                "requiredEvidence": [
+                    "generated program language, machine kind, part ID, draft status, line count, safety notes, and release-blocking controller state",
+                    "controller/postprocessor dialect, units, coordinate mode, work offset, tool/nozzle/spindle/beam state, feed/speed, and process media assumptions",
+                    "additive thermal/extrusion/bed/material evidence, CNC tool/workholding/coolant/chip evidence, sheet-cutting assist-media evidence, or lathe workholding/threading evidence as applicable"
+                ],
+                "releaseBlockers": [
+                    "generated instructions omit modal defaults, controller dialect, coordinate frame, feed/speed, material conditioning, or process-start evidence",
+                    "generated program would require validation repair, human intervention, split/combine recomposition, or controller-specific postprocessing before review",
+                    "draft instructions are treated as controller-certified output before validation, simulation, and release gates clear"
+                ]
+            },
+            {
+                "group": "validation-simulation-release-and-learning-state",
+                "requiredEvidence": [
+                    "validation run, boundary catalog review, dry-run or simulation evidence, release package artifacts, and generated-program checksums",
+                    "operator or automation signoff for manual stops, setup transfers, split/combine interfaces, postprocess steps, and restart conditions",
+                    "learning outcome or observation labels for generated-program risk, route choice, split/combine success, blocker class, and reward hints"
+                ],
+                "releaseBlockers": [
+                    "machine-ready release requested before validation, dry-run or simulation, controller/postprocessor, setup, quality, and release preflight evidence clears",
+                    "generated program artifacts are not retained with URI/checksum/provenance and learning observations",
+                    "DES, MDP/POMDP, and neural workers cannot observe whether generation reduced risk, split work, or required human intervention"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "generatedPrograms",
+            "generatedPrograms.instructions",
+            "generatedPrograms.safetyNotes",
+            "generatedPrograms.draft",
+            "generatedPrograms.machineReady",
+            "validation.failureBoundaries",
+            "simulation.programs",
+            "machineRelease.generatedProgramsBlocked",
+            "releasePackagePlan.requiredArtifacts",
+            "executionPlan.programRuns",
+            "controllerPlan.controllerTargets",
+            "learning.outcomeDraft"
+        ],
+        "releasePolicy": [
+            "instruction-generation preflight entries describe evidence required before draft generated instructions can move to validation or release review; they do not certify machine execution",
+            "generated instructions remain draft=true and machineReady=false until design, machine, controller, setup, validation, simulation or dry-run, quality, release, and signoff evidence clear",
+            "failed generation preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can choose alternate machines, split/combine parts, regenerate programs, or add human checkpoints"
+        ],
+        "programContracts": program_contracts
+    })
+}
+
 async fn instruction_generation_catalog_http() -> impl IntoResponse {
     Json(instruction_generation_catalog_response())
+}
+
+async fn instruction_generation_preflight_catalog_http() -> impl IntoResponse {
+    Json(instruction_generation_preflight_catalog_response())
 }
 
 fn machine_code_catalog_response() -> Value {
@@ -95451,8 +95578,116 @@ fn instruction_improvement_catalog_response() -> Value {
     })
 }
 
+fn instruction_improvement_preflight_catalog_response() -> Value {
+    let action_contracts = instruction_improvement_catalog_action_contracts();
+    let patch_operations = instruction_improvement_catalog_patch_operations();
+    let action_families = unique_sorted(action_contracts.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let operation_kinds = unique_sorted(patch_operations.iter().filter_map(|item| {
+        item.get("operation")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-improvement-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /improvements/preflight/catalog",
+            "GET /fabrication/improvements/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/improvements/catalog",
+            "GET /fabrication/boundaries/catalog",
+            "GET /fabrication/boundaries/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog",
+            "POST /fabrication/instructions/analyze",
+            "POST /fabrication/instructions/validate",
+            "POST /fabrication/instructions/improve",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "actionFamilyCount": action_families.len(),
+        "patchOperationCount": patch_operations.len(),
+        "actionFamilies": action_families,
+        "patchOperationKinds": operation_kinds,
+        "preflightGroups": [
+            {
+                "group": "source-program-and-finding-state",
+                "requiredEvidence": [
+                    "original program, slicer project, job sheet, or generated instruction artifact URI and checksum",
+                    "line, operation, boundary, validation finding, or human-intervention source for each proposed patch",
+                    "controller, firmware, slicer, machine profile, material, setup, and coordinate-system context for the source stream"
+                ],
+                "releaseBlockers": [
+                    "patch proposal lacks retained source instructions, finding IDs, boundary IDs, or artifact checksums",
+                    "patch changes controller state without source-system, translator, postprocessor, or machine-profile evidence",
+                    "non-G-code text, resin, powder-bed, sheet-cutting, EDM, or postprocess instruction repair lacks process-specific evidence"
+                ]
+            },
+            {
+                "group": "patch-review-and-simulation-state",
+                "requiredEvidence": [
+                    "patch manifest operation kind, insertion point, human-review flag, and learning observation for every changed program",
+                    "validation rerun, dry-run or simulation review, controller/postprocessor compatibility, and setup/workholding recheck evidence",
+                    "operator or automation signoff for review checkpoints, manual stops, split/combine edits, or regenerated instructions"
+                ],
+                "releaseBlockers": [
+                    "improved program is promoted without validation, simulation or dry-run, controller/postprocessor, setup, or signoff evidence",
+                    "patch manifest includes human-review operations without retained reviewer disposition",
+                    "patched instructions bypass a machine-failure, human-intervention, split/combine, quality, or release preflight gate"
+                ]
+            },
+            {
+                "group": "learning-and-release-feedback-state",
+                "requiredEvidence": [
+                    "patch action hints, blocker hints, retained improved-program artifacts, and release package references",
+                    "learning outcome draft or observation labels showing whether the patch reduced risk, added evidence, split work, or required human intervention",
+                    "machineReady=false release status until all downstream validation, simulation, quality, and release gates clear"
+                ],
+                "releaseBlockers": [
+                    "patch outcome is not visible to DES, MDP/POMDP, and neural workers",
+                    "improved program lacks retained artifact, checksum, release-package, or learning-observation evidence",
+                    "machine-ready release requested while patched-program evidence remains advisory"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "improvements",
+            "improvedPrograms",
+            "improvedPrograms.patchManifest",
+            "improvedPrograms.patchManifest.operations",
+            "improvedPrograms.patchManifest.learningObservations",
+            "validation.findings",
+            "validation.failureBoundaries",
+            "resolutionPlan.steps",
+            "interventionMap",
+            "machineRelease.blockers",
+            "releasePackagePlan.requiredArtifacts",
+            "learning.outcomeDraft"
+        ],
+        "releasePolicy": [
+            "instruction-improvement preflight entries describe evidence required before a patch draft can move to release review; they do not certify controller output",
+            "improved programs remain machineReady=false until source provenance, patch review, validation, simulation or dry-run, controller/postprocessor, setup, quality, release, and signoff evidence clear",
+            "failed preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can add evidence, split jobs, regenerate instructions, or require human intervention earlier"
+        ],
+        "patchManifestSchema": "dd.fabrication.instruction-patch-manifest.v1",
+        "actionContracts": action_contracts,
+        "patchOperationContracts": patch_operations
+    })
+}
+
 async fn instruction_improvement_catalog_http() -> impl IntoResponse {
     Json(instruction_improvement_catalog_response())
+}
+
+async fn instruction_improvement_preflight_catalog_http() -> impl IntoResponse {
+    Json(instruction_improvement_preflight_catalog_response())
 }
 
 fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String> {
@@ -104074,6 +104309,7 @@ async fn request_schema() -> impl IntoResponse {
             "designGeneration": ["POST /design/generate", "POST /fabrication/design/generate"],
             "instructionLanguages": ["GET /instructions/languages", "GET /fabrication/instructions/languages"],
             "instructionGenerationCatalog": ["GET /instructions/generation/catalog", "GET /fabrication/instructions/generation/catalog"],
+            "instructionGenerationPreflightCatalog": ["GET /instructions/generation/preflight/catalog", "GET /fabrication/instructions/generation/preflight/catalog"],
             "instructionGeneration": ["POST /instructions/generate", "POST /fabrication/instructions/generate"],
             "instructionGenerationResult": ["POST /instructions/generation/result", "POST /fabrication/instructions/generation/result"],
             "instructionReviewResult": ["POST /instructions/review/result", "POST /fabrication/instructions/review/result"],
@@ -104084,6 +104320,7 @@ async fn request_schema() -> impl IntoResponse {
             "toolpathPlan": ["POST /toolpaths/plan", "POST /fabrication/toolpaths/plan"],
             "toolpathResult": ["POST /toolpaths/result", "POST /fabrication/toolpaths/result"],
             "instructionImprovementCatalog": ["GET /improvements/catalog", "GET /fabrication/improvements/catalog"],
+            "instructionImprovementPreflightCatalog": ["GET /improvements/preflight/catalog", "GET /fabrication/improvements/preflight/catalog"],
             "boundaryCatalog": ["GET /boundaries/catalog", "GET /fabrication/boundaries/catalog"],
             "boundaryPreflightCatalog": ["GET /boundaries/preflight/catalog", "GET /fabrication/boundaries/preflight/catalog"],
             "boundaryRemediationCatalog": ["GET /remediation/catalog", "GET /fabrication/remediation/catalog"],
@@ -106794,6 +107031,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/instructions/generation/catalog",
             get(instruction_generation_catalog_http),
         )
+        .route(
+            "/instructions/generation/preflight/catalog",
+            get(instruction_generation_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/instructions/generation/preflight/catalog",
+            get(instruction_generation_preflight_catalog_http),
+        )
         .route("/instructions/generate", post(instruction_generate_http))
         .route(
             "/fabrication/instructions/generate",
@@ -106851,6 +107096,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/improvements/catalog",
             get(instruction_improvement_catalog_http),
+        )
+        .route(
+            "/improvements/preflight/catalog",
+            get(instruction_improvement_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/improvements/preflight/catalog",
+            get(instruction_improvement_preflight_catalog_http),
         )
         .route("/boundaries/catalog", get(boundary_catalog_http))
         .route(
@@ -111761,6 +112014,64 @@ mod tests {
     }
 
     #[test]
+    fn instruction_generation_preflight_catalog_endpoint_exposes_draft_release_gates() {
+        let payload = instruction_generation_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-generation-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/instructions/generation/preflight/catalog")
+            })));
+        assert!(payload
+            .get("programFamilyCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 10));
+        assert!(payload
+            .get("generatedLanguageCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 20));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("instruction generation preflight groups should be present");
+        for group in [
+            "request-design-and-machine-state",
+            "program-draft-and-controller-state",
+            "validation-simulation-release-and-learning-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing instruction generation preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("validation, dry-run or simulation"))))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("generatedPrograms.instructions"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
+    }
+
+    #[test]
     fn instruction_generation_endpoint_returns_generated_program_package() {
         let policy = LearningPolicySnapshot {
             outcome_count: 0,
@@ -113592,6 +113903,70 @@ mod tests {
             .is_some_and(|actions| actions
                 .iter()
                 .any(|action| action.as_str() == Some("add-slicer-profile-record"))));
+    }
+
+    #[test]
+    fn instruction_improvement_preflight_catalog_endpoint_exposes_patch_release_gates() {
+        let payload = instruction_improvement_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-improvement-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/improvements/preflight/catalog")
+            })));
+        assert!(payload
+            .get("actionFamilyCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 6));
+        assert!(payload
+            .get("actionFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("assembly-postprocess-monitoring-and-structured-text")
+            })));
+        assert!(payload
+            .get("patchOperationCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 6));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("improvement preflight groups should be present");
+        for group in [
+            "source-program-and-finding-state",
+            "patch-review-and-simulation-state",
+            "learning-and-release-feedback-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing improvement preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("validation, simulation or dry-run"))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("improvedPrograms.patchManifest.operations")
+            })));
     }
 
     #[test]
