@@ -2774,8 +2774,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn stored_execution_result_job/);
   assert.match(source, /fn store_execution_result_response/);
   assert.match(source, /dd\.fabrication\.execution-result-review\.v1/);
+  assert.match(source, /dd\.fabrication\.execution-learning-outcome-draft\.v1/);
   assert.match(source, /"POST \/fabrication\/execution\/result"/);
+  assert.match(source, /"sourceKind": "execution-result"/);
   assert.match(source, /"executionResultJobId"/);
+  assert.match(source, /"operatorActionHints"/);
+  assert.match(source, /"splitCombineHints"/);
   assert.match(source, /FABRICATION_EXECUTION_TELEMETRY_RESULTS_SUBJECT/);
   assert.match(source, /"executionResult"/);
   assert.match(source, /"execution-run-segments"/);
@@ -4796,9 +4800,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/execution\/result`/);
   assert.match(readme, /`POST \/fabrication\/execution\/result`/);
   assert.match(readme, /dd\.fabrication\.execution-result-review\.v1/);
+  assert.match(readme, /dd\.fabrication\.execution-learning-outcome-draft\.v1/);
   assert.match(readme, /dd\.remote\.fabrication\.execution\.telemetry\.results/);
   assert.match(readme, /`executionResult`/);
   assert.match(readme, /`executionResultJobId`/);
+  assert.match(readme, /stop, operator-action, split\/combine, artifact, reward/);
+  assert.match(readme, /`POST \/fabrication\/learning\/outcomes`/);
   assert.match(readme, /`blockingMachineStopCount`/);
   assert.match(readme, /`restartBlockingOperatorInterventionCount`/);
   assert.match(readme, /`splitCombineBlockerCount`/);
