@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 256,
+  "routeCount": 258,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 246,
+    "user-generated": 248,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -2636,6 +2636,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/utilities/result",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "utilities_result_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/workflow/catalog",
       "methods": [
         "GET"
@@ -4314,6 +4331,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "utilities_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/utilities/result",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "utilities_result_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"

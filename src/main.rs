@@ -2251,6 +2251,83 @@ struct MonitoringResultArtifact {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct UtilitiesResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    run_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    utility_checks: Option<Vec<UtilitiesResultCheck>>,
+    recovery_actions: Option<Vec<UtilitiesResultRecoveryAction>>,
+    outage_events: Option<Vec<UtilitiesResultOutageEvent>>,
+    artifacts: Option<Vec<UtilitiesResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UtilitiesResultCheck {
+    check_id: String,
+    utility_family: String,
+    utility_kind: String,
+    status: String,
+    available: Option<bool>,
+    within_limits: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_recovery: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UtilitiesResultRecoveryAction {
+    action_id: String,
+    action_kind: String,
+    status: String,
+    completed: Option<bool>,
+    restart_verified: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UtilitiesResultOutageEvent {
+    event_id: String,
+    event_kind: String,
+    status: String,
+    affected_utility: Option<String>,
+    recovered: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_replan: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UtilitiesResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct TelemetryResultReviewRequest {
     request_id: Option<String>,
     plan_request_id: Option<String>,
@@ -55659,6 +55736,604 @@ async fn utilities_catalog_http() -> impl IntoResponse {
     Json(utilities_catalog_response())
 }
 
+fn validate_utilities_result_checks(
+    checks: Option<Vec<UtilitiesResultCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "utilityChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id =
+                validate_label(&check.check_id, &format!("utilityChecks[{index}].checkId"))?;
+            let utility_family = validate_label(
+                &check.utility_family,
+                &format!("utilityChecks[{index}].utilityFamily"),
+            )?;
+            let utility_kind = validate_label(
+                &check.utility_kind,
+                &format!("utilityChecks[{index}].utilityKind"),
+            )?;
+            let status = validate_label(&check.status, &format!("utilityChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "utilityChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "utilityFamily": utility_family,
+                "utilityKind": utility_kind,
+                "status": status,
+                "available": check.available.unwrap_or(false),
+                "withinLimits": check.within_limits.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresRecovery": check.requires_recovery.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_utilities_result_recovery_actions(
+    actions: Option<Vec<UtilitiesResultRecoveryAction>>,
+) -> Result<Vec<Value>, String> {
+    let actions = actions.unwrap_or_default();
+    if actions.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "recoveryActions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    actions
+        .into_iter()
+        .enumerate()
+        .map(|(index, action)| {
+            let action_id = validate_label(
+                &action.action_id,
+                &format!("recoveryActions[{index}].actionId"),
+            )?;
+            let action_kind = validate_label(
+                &action.action_kind,
+                &format!("recoveryActions[{index}].actionKind"),
+            )?;
+            let status =
+                validate_label(&action.status, &format!("recoveryActions[{index}].status"))?;
+            let evidence =
+                validate_signal_list(action.evidence, "recoveryActions.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "actionId": action_id,
+                "actionKind": action_kind,
+                "status": status,
+                "completed": action.completed.unwrap_or(false),
+                "restartVerified": action.restart_verified.unwrap_or(false),
+                "releaseBlocker": action.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": action.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_utilities_result_outage_events(
+    events: Option<Vec<UtilitiesResultOutageEvent>>,
+) -> Result<Vec<Value>, String> {
+    let events = events.unwrap_or_default();
+    if events.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "outageEvents must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    events
+        .into_iter()
+        .enumerate()
+        .map(|(index, event)| {
+            let event_id =
+                validate_label(&event.event_id, &format!("outageEvents[{index}].eventId"))?;
+            let event_kind = validate_label(
+                &event.event_kind,
+                &format!("outageEvents[{index}].eventKind"),
+            )?;
+            let status = validate_label(&event.status, &format!("outageEvents[{index}].status"))?;
+            let affected_utility =
+                validate_optional_label(event.affected_utility, "outageEvents.affectedUtility")?;
+            let evidence =
+                validate_signal_list(event.evidence, "outageEvents.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "eventId": event_id,
+                "eventKind": event_kind,
+                "status": status,
+                "affectedUtility": affected_utility,
+                "recovered": event.recovered.unwrap_or(false),
+                "releaseBlocker": event.release_blocker.unwrap_or(true),
+                "requiresReplan": event.requires_replan.unwrap_or(false),
+                "requiresHumanIntervention": event.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_utilities_result_artifacts(
+    artifacts: Option<Vec<UtilitiesResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn utilities_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("outage")
+        || status.contains("recovery")
+        || status.contains("required")
+}
+
+fn utilities_result_check_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("available")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !check
+            .get("withinLimits")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresRecovery")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || utilities_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn utilities_result_recovery_blocks_release(action: &Value) -> bool {
+    action
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !action
+            .get("completed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !action
+            .get("restartVerified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || action
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || utilities_result_status_blocks_release(
+            action.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn utilities_result_outage_blocks_release(event: &Value) -> bool {
+    event
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !event
+            .get("recovered")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || event
+            .get("requiresReplan")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || event
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || utilities_result_status_blocks_release(
+            event.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn utilities_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn utilities_result_review_response(
+    request: UtilitiesResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "utilities-result");
+    let generated_at_ms = now_ms();
+    let utilities_result_job_id = safe_job_id("utilities-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let run_id = validate_optional_label(request.run_id, "runId")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let utility_checks = validate_utilities_result_checks(request.utility_checks)?;
+    let recovery_actions = validate_utilities_result_recovery_actions(request.recovery_actions)?;
+    let outage_events = validate_utilities_result_outage_events(request.outage_events)?;
+    let artifacts = validate_utilities_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let utility_blocker_count = utility_checks
+        .iter()
+        .filter(|check| utilities_result_check_blocks_release(check))
+        .count();
+    let recovery_blocker_count = recovery_actions
+        .iter()
+        .filter(|action| utilities_result_recovery_blocks_release(action))
+        .count();
+    let outage_blocker_count = outage_events
+        .iter()
+        .filter(|event| utilities_result_outage_blocks_release(event))
+        .count();
+    let recovery_required = utility_checks.iter().any(|check| {
+        check
+            .get("requiresRecovery")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let replan_required = outage_events.iter().any(|event| {
+        event
+            .get("requiresReplan")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let human_intervention_required = utility_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || recovery_actions.iter().any(|action| {
+        action
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || outage_events.iter().any(|event| {
+        event
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| utilities_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || utility_checks.is_empty()
+        || utility_blocker_count > 0
+        || recovery_blocker_count > 0
+        || outage_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if utility_checks.is_empty() {
+        "utilities-result-checks-required"
+    } else if !request.success {
+        "utilities-result-worker-failed-release-blocked"
+    } else if utility_blocker_count > 0 {
+        "utilities-result-utilities-release-blocked"
+    } else if recovery_blocker_count > 0 {
+        "utilities-result-recovery-release-blocked"
+    } else if outage_blocker_count > 0 {
+        "utilities-result-outage-release-blocked"
+    } else if artifact_evidence_missing {
+        "utilities-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "utilities-result-machine-ready-review-required"
+    } else if !release_ready {
+        "utilities-result-release-ready-review-required"
+    } else {
+        "utilities-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("utilities-worker:{worker_id}"),
+        format!("utilities-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "utilities-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("utilities:release-blocked".to_string());
+    }
+    if recovery_required {
+        learning_observations.push("utilities:recovery-required".to_string());
+    }
+    if replan_required {
+        learning_observations.push("utilities:replan-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("utilities:human-intervention-required".to_string());
+    }
+    learning_observations.extend(utility_checks.iter().filter_map(|check| {
+        check
+            .get("utilityFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("utilities-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(utility_checks.iter().filter_map(|check| {
+        check
+            .get("utilityKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("utilities-kind:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(recovery_actions.iter().filter_map(|action| {
+        action
+            .get("actionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("utilities-recovery-action:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(outage_events.iter().filter_map(|event| {
+        event
+            .get("eventKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("utilities-outage:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.utilities-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "utilitiesResultJobId": utilities_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /utilities/result", "POST /fabrication/utilities/result"],
+        "catalogRoutes": ["GET /utilities/catalog", "GET /fabrication/utilities/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "utilityCheckCount": utility_checks.len(),
+        "utilityBlockerCount": utility_blocker_count,
+        "recoveryActionCount": recovery_actions.len(),
+        "recoveryBlockerCount": recovery_blocker_count,
+        "outageEventCount": outage_events.len(),
+        "outageBlockerCount": outage_blocker_count,
+        "recoveryRequired": recovery_required,
+        "replanRequired": replan_required,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "utilitiesResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "runId": run_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "utilityChecks": utility_checks,
+            "recoveryActions": recovery_actions,
+            "outageEvents": outage_events,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "process support utilities are available, within limits, and linked to retained evidence",
+                "coolant, chip, dust, gas, pump, vacuum, fixture, robot, network, power, or environment recovery actions are complete and restart-verified",
+                "outages are recovered, replanned, or routed to human intervention before machine release",
+                "utilities result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "utilities-result",
+            "utilities-checks",
+            "utilities-recovery-actions",
+            "utilities-outage-events",
+            "utilities-artifacts",
+            "utilities-learning-observations",
+            "mdp-request.artifacts.utilitiesResult"
+        ]
+    }))
+}
+
+fn utilities_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("utilities-release-blocked")
+        || status.contains("recovery-release-blocked")
+        || status.contains("outage-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_utilities_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "utilities-result");
+    let job_id = response_str_field(
+        response,
+        "utilitiesResultJobId",
+        &safe_job_id("utilities-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "utilities-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("utilitiesResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let utility_checks = result
+        .get("utilityChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let recovery_actions = result
+        .get("recoveryActions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let outage_events = result
+        .get("outageEvents")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let utilities_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "utilities-result".to_string(),
+            "utilities-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "utilities-checks".to_string(),
+            "utilities-checks",
+            utility_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "utilities-recovery-actions".to_string(),
+            "utilities-recovery-actions",
+            recovery_actions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "utilities-outage-events".to_string(),
+            "utilities-outage-events",
+            outage_events,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "utilities-artifacts".to_string(),
+            "utilities-artifacts",
+            utilities_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "utilities-learning-observations".to_string(),
+            "utilities-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "utilities-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: utilities_result_job_severity(response),
+            summary: format!("utilities result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_utilities_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_utilities_result_job(response));
+}
+
 fn telemetry_catalog_entries() -> Vec<Value> {
     vec![
         json!({
@@ -55822,8 +56497,10 @@ fn validate_telemetry_result_sensor_windows(
         .into_iter()
         .enumerate()
         .map(|(index, window)| {
-            let window_id =
-                validate_label(&window.window_id, &format!("sensorWindows[{index}].windowId"))?;
+            let window_id = validate_label(
+                &window.window_id,
+                &format!("sensorWindows[{index}].windowId"),
+            )?;
             let telemetry_family = validate_label(
                 &window.telemetry_family,
                 &format!("sensorWindows[{index}].telemetryFamily"),
@@ -55832,8 +56509,7 @@ fn validate_telemetry_result_sensor_windows(
                 &window.channel_kind,
                 &format!("sensorWindows[{index}].channelKind"),
             )?;
-            let status =
-                validate_label(&window.status, &format!("sensorWindows[{index}].status"))?;
+            let status = validate_label(&window.status, &format!("sensorWindows[{index}].status"))?;
             let evidence =
                 validate_signal_list(window.evidence, "sensorWindows.evidence", MAX_TEXT_LEN)?;
             Ok(json!({
@@ -55863,8 +56539,7 @@ fn validate_telemetry_result_machine_stops(
         .into_iter()
         .enumerate()
         .map(|(index, stop)| {
-            let stop_id =
-                validate_label(&stop.stop_id, &format!("machineStops[{index}].stopId"))?;
+            let stop_id = validate_label(&stop.stop_id, &format!("machineStops[{index}].stopId"))?;
             let stop_kind =
                 validate_label(&stop.stop_kind, &format!("machineStops[{index}].stopKind"))?;
             let status = validate_label(&stop.status, &format!("machineStops[{index}].status"))?;
@@ -69124,6 +69799,23 @@ async fn monitoring_result_http(
     }
 }
 
+async fn utilities_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<UtilitiesResultReviewRequest>,
+) -> Response {
+    match utilities_result_review_response(request) {
+        Ok(response) => {
+            store_utilities_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 async fn telemetry_result_http(
     State(state): State<AppState>,
     Json(request): Json<TelemetryResultReviewRequest>,
@@ -81295,16 +81987,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/utilities/catalog",
             get(utilities_catalog_http),
         )
+        .route("/utilities/result", post(utilities_result_http))
+        .route("/fabrication/utilities/result", post(utilities_result_http))
         .route("/telemetry/catalog", get(telemetry_catalog_http))
         .route(
             "/fabrication/telemetry/catalog",
             get(telemetry_catalog_http),
         )
         .route("/telemetry/result", post(telemetry_result_http))
-        .route(
-            "/fabrication/telemetry/result",
-            post(telemetry_result_http),
-        )
+        .route("/fabrication/telemetry/result", post(telemetry_result_http))
         .route("/quality/plan", post(quality_plan_http))
         .route("/fabrication/quality/plan", post(quality_plan_http))
         .route("/quality/result", post(quality_result_http))
@@ -90252,6 +90943,170 @@ mod tests {
     }
 
     #[test]
+    fn utilities_result_endpoint_reviews_outages_recovery_and_learning() {
+        let response = utilities_result_review_response(UtilitiesResultReviewRequest {
+            request_id: Some("utilities-result-001".to_string()),
+            plan_request_id: Some("plan-utilities-001".to_string()),
+            job_id: Some("job-utilities-001".to_string()),
+            worker_id: "utilities-review-worker".to_string(),
+            reviewer: Some("utility-release-reviewer".to_string()),
+            reviewer_version: Some("2026.06-utilities".to_string()),
+            machine_id: Some("router-cell-01".to_string()),
+            machine_kind: Some("cnc-router".to_string()),
+            run_id: Some("run-utility-outage-001".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            utility_checks: Some(vec![UtilitiesResultCheck {
+                check_id: "utility-check-001".to_string(),
+                utility_family: "subtractive-coolant-chip-dust-and-fixture-support".to_string(),
+                utility_kind: "vacuum-hold-down".to_string(),
+                status: "recovery-required".to_string(),
+                available: Some(false),
+                within_limits: Some(false),
+                release_blocker: Some(true),
+                requires_recovery: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "vacuum hold-down dropped below retained router release limit".to_string(),
+                    "profile cut must not restart until fixture vacuum is verified".to_string(),
+                ]),
+            }]),
+            recovery_actions: Some(vec![UtilitiesResultRecoveryAction {
+                action_id: "utility-recovery-001".to_string(),
+                action_kind: "vacuum-restart-and-fixture-recheck".to_string(),
+                status: "restart-verification-required".to_string(),
+                completed: Some(false),
+                restart_verified: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "operator must reseat stock and verify vacuum before continuing".to_string(),
+                ]),
+            }]),
+            outage_events: Some(vec![UtilitiesResultOutageEvent {
+                event_id: "utility-outage-001".to_string(),
+                event_kind: "fixture-vacuum-dropout".to_string(),
+                status: "unrecovered-outage".to_string(),
+                affected_utility: Some("vacuum-hold-down".to_string()),
+                recovered: Some(false),
+                release_blocker: Some(true),
+                requires_replan: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "outage occurred before final contour and may require tab strategy change"
+                        .to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![UtilitiesResultArtifact {
+                artifact_id: "utilities-report-001".to_string(),
+                artifact_kind: "utility-readiness-record".to_string(),
+                source_ref_id: Some("utility-check-001".to_string()),
+                uri: Some("s3://fabrication/utilities-report-001.json".to_string()),
+                sha256: Some("c".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained vacuum outage, recovery, and replan evidence".to_string(),
+                ]),
+            }]),
+            warnings: Some(vec![
+                "router job remains blocked until utility recovery is verified".to_string(),
+            ]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("utilities result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.utilities-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/utilities/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("utilities-result-utilities-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("utilityBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("recoveryBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("outageBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("recoveryRequired").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("replanRequired").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "utilities:release-blocked",
+            "utilities:recovery-required",
+            "utilities:replan-required",
+            "utilities:human-intervention-required",
+            "utilities-family:subtractive-coolant-chip-dust-and-fixture-support",
+            "utilities-kind:vacuum-hold-down",
+            "utilities-recovery-action:vacuum-restart-and-fixture-recheck",
+            "utilities-outage:fixture-vacuum-dropout",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_utilities_result_job(&response);
+        assert_eq!(job.record.kind, "utilities-result");
+        assert_eq!(
+            job.record.status,
+            "utilities-result-utilities-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "utilities-result",
+            "utilities-checks",
+            "utilities-recovery-actions",
+            "utilities-outage-events",
+            "utilities-artifacts",
+            "utilities-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
+    }
+
+    #[test]
     fn telemetry_catalog_endpoint_exposes_runtime_boundary_and_learning_contract() {
         let payload = telemetry_catalog_response();
         assert_eq!(
@@ -90373,12 +91228,11 @@ mod tests {
                 sha256: Some("b".repeat(64)),
                 format: Some("json".to_string()),
                 evidence: Some(vec![
-                    "runtime telemetry, stop, and boundary correlation ledger retained"
-                        .to_string(),
+                    "runtime telemetry, stop, and boundary correlation ledger retained".to_string(),
                 ]),
             }]),
             warnings: Some(vec![
-                "telemetry boundary correlation blocks learning release".to_string()
+                "telemetry boundary correlation blocks learning release".to_string(),
             ]),
             review_metadata: Some(json!({"source": "unit-test"})),
         })
