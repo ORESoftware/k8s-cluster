@@ -194,6 +194,7 @@ spec:
                 '"path": "/fabrication/decomposition/plan"' \
                 '"path": "/fabrication/decomposition/result"' \
                 '"path": "/fabrication/assembly/catalog"' \
+                '"path": "/fabrication/assembly/preflight/catalog"' \
                 '"path": "/fabrication/assembly/plan"' \
                 '"path": "/fabrication/assembly/result"' \
                 '"path": "/fabrication/release/catalog"' \

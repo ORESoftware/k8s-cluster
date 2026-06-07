@@ -203,6 +203,7 @@ Currently opted-in:
   `/fabrication/subjects/catalog`, `/fabrication/workers/catalog`,
   `/fabrication/results/catalog`,
   `/fabrication/assembly/catalog`,
+  `/fabrication/assembly/preflight/catalog`,
   `/fabrication/calibration/plan`, `/fabrication/calibration/result`,
   `/fabrication/instructions/generation/catalog`,
   `/fabrication/instructions/languages`,

@@ -138,6 +138,8 @@ outcomes.
 - `POST /fabrication/decomposition/result`
 - `GET /assembly/catalog`
 - `GET /fabrication/assembly/catalog`
+- `GET /assembly/preflight/catalog`
+- `GET /fabrication/assembly/preflight/catalog`
 - `POST /assembly/plan`
 - `POST /fabrication/assembly/plan`
 - `POST /assembly/result`
@@ -2057,6 +2059,23 @@ or operator signoff, final inspection, and outcome feedback are retained.
 Assembly, interface, quality, release, and outcome observations feed
 MDP/POMDP/neural workers so future plans can learn when to split, combine,
 recompose, or keep a part single-piece.
+
+## `GET /fabrication/assembly/preflight/catalog`
+
+`GET /assembly/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/assembly/preflight/catalog` return the live
+`dd.fabrication.assembly-preflight-catalog.v1` release checklist before printed,
+milled, turned, sheet-cut, EDM, robotic, or special-process child routes are
+combined into one released object. The catalog groups required evidence into
+child-route package and interface state, join-recipe fixture and process state,
+and final-fit quality release plus learning state.
+
+Preflight entries describe required release evidence, not certified assembly,
+robot-cell, or joining instructions. Machine-ready release remains blocked while
+child route packages, interface controls, join recipes, fixtures, final fit,
+quality, disposition, or operator/automation signoff evidence is absent. Failed
+checks feed DES, MDP/POMDP, and neural workers so future planners can split,
+combine, recompose, redesign, reroute, or require human intervention earlier.
 
 ## `POST /fabrication/assembly/plan`
 
