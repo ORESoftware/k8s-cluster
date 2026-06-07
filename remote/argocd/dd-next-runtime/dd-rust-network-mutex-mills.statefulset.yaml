@@ -1,0 +1,156 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dd-rust-network-mutex-mills
+  namespace: default
+  labels:
+    app: dd-rust-network-mutex-mills
+    role: live-mutex-broker
+    variant: mills-quorum-rs
+spec:
+  serviceName: dd-rust-network-mutex-mills-peer
+  # Quorum/vote (Maekawa-style) consensus from github.com/ORESoftware/live-mutex-mills.rs.
+  # Five voters -> quorum is 3, tolerating 2 node failures. Unlike the Raft
+  # variant this engine is in-memory (no disk), so there are no data volumes;
+  # a crashed holder is recovered via vote leases + fencing tokens. Keep
+  # `replicas` odd and equal to the peer count built into the args below.
+  replicas: 5
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: dd-rust-network-mutex-mills
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-07-rust-network-mutex-mills'
+      labels:
+        app: dd-rust-network-mutex-mills
+        role: live-mutex-broker
+        variant: mills-quorum-rs
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: rust-network-mutex-mills
+          # Source-build bootstrap (mirrors dd-rust-network-mutex-raft) until a
+          # published Dockerfile image exists. Clones the mills crate at start,
+          # falling back to the mounted submodule, then runs the `lmxd` peer.
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              source_src="/opt/dd-next-1/remote/submodules/live-mutex-mills.rs"
+              if [ -n "${LMX_MILLS_GIT_URL:-}" ]; then
+                rm -rf /tmp/mills-source
+                if git clone --depth 1 --branch "${LMX_MILLS_GIT_REF:-main}" "${LMX_MILLS_GIT_URL}" /tmp/mills-source; then
+                  source_src=/tmp/mills-source
+                  echo "[mills] cloned ${LMX_MILLS_GIT_URL}@${LMX_MILLS_GIT_REF:-main} ($(git -C /tmp/mills-source rev-parse --short HEAD))"
+                else
+                  echo "[mills] source clone failed; using mounted source at ${source_src}" >&2
+                fi
+              fi
+              rm -rf /tmp/mills-build
+              mkdir -p /tmp/mills-build
+              cp -a "${source_src}/." /tmp/mills-build/
+              rm -rf /tmp/mills-build/target
+              cd /tmp/mills-build
+              ord="${POD_NAME##*-}"
+              peer_svc="dd-rust-network-mutex-mills-peer.default.svc.cluster.local"
+              port="${LMX_MILLS_PORT:-7990}"
+              peers=""
+              for i in $(seq 0 $((LMX_MILLS_REPLICAS - 1))); do
+                peers="${peers} dd-rust-network-mutex-mills-${i}.${peer_svc}:${port}"
+              done
+              self="dd-rust-network-mutex-mills-${ord}.${peer_svc}"
+              until getent hosts "${self}" >/dev/null 2>&1; do
+                echo "[mills] waiting for own DNS ${self}"; sleep 1;
+              done
+              echo "[mills] node ${ord} peers:${peers}"
+              exec /usr/local/cargo/bin/cargo run --release --bin lmxd -- "${ord}" ${peers}
+          env:
+            - name: LMX_MILLS_GIT_URL
+              value: https://github.com/ORESoftware/live-mutex-mills.rs.git
+            - name: LMX_MILLS_GIT_REF
+              value: main
+            - name: LMX_MILLS_REPLICAS
+              value: '5'
+            - name: LMX_MILLS_PORT
+              value: '7990'
+            # Self-test workload: every pod contends for the same 3-key
+            # composite, so `kubectl logs` shows exclusive multi-key handoff
+            # across the cluster with monotonic per-key fences. Set to '0' once
+            # a real client/broker front-end drives the cluster instead.
+            - name: LMX_DEMO
+              value: '1'
+            - name: LMX_DEMO_KEYS
+              value: cap,mid,zed
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/mills-target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: RUST_LOG
+              value: info
+          ports:
+            - name: peer
+              containerPort: 7990
+          resources:
+            requests:
+              cpu: 100m
+              memory: 1Gi
+            limits:
+              cpu: '2'
+              memory: 4Gi
+          startupProbe:
+            tcpSocket:
+              port: peer
+            periodSeconds: 5
+            failureThreshold: 180
+          readinessProbe:
+            tcpSocket:
+              port: peer
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            tcpSocket:
+              port: peer
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: tmp
+          emptyDir: {}

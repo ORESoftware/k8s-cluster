@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-live-mutex-distributed
+  namespace: default
+  labels:
+    app: dd-live-mutex-distributed
+    role: live-mutex-broker
+    variant: distributed-quorum-node
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-live-mutex-distributed
+  ports:
+    - name: peer
+      port: 7991
+      targetPort: peer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-live-mutex-distributed-peer
+  namespace: default
+  labels:
+    app: dd-live-mutex-distributed
+    role: live-mutex-broker
+    variant: distributed-quorum-node
+spec:
+  # Headless: stable per-pod DNS for the FIFO peer mesh.
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: dd-live-mutex-distributed
+  ports:
+    - name: peer
+      port: 7991
+      targetPort: peer
