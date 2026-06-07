@@ -7043,6 +7043,101 @@ fn job_release_bundle_response(job: &StoredFabricationJob) -> Value {
                 .map(|analysis| analysis.machine_release.machine_release_blocked)
         })
         .unwrap_or(true);
+    let manifest_entry = |category: &str, required: Vec<&str>, blocks: Vec<&str>| {
+        let artifact_ids = job
+            .artifacts
+            .values()
+            .filter(|artifact| required.iter().any(|kind| artifact.kind == *kind))
+            .map(|artifact| artifact.artifact_id.clone())
+            .collect::<Vec<_>>();
+        let present = !artifact_ids.is_empty();
+        json!({
+            "category": category,
+            "requiredArtifactKinds": required,
+            "presentArtifactIds": artifact_ids,
+            "present": present,
+            "machineReady": !machine_release_blocked && present,
+            "blocks": blocks
+        })
+    };
+    let bundle_manifest = vec![
+        manifest_entry(
+            "design-and-source-definition",
+            vec![
+                "design-package",
+                "design-export-bundle",
+                "generated-design-export",
+                "generated-assembly-design-export",
+                "design-input-review",
+            ],
+            vec![
+                "releasePackagePlan.requiredArtifacts",
+                "machineRelease.blockers",
+            ],
+        ),
+        manifest_entry(
+            "machine-code-and-instruction-programs",
+            vec![
+                "generated-machine-program",
+                "improved-instruction-program",
+                "controller-plan",
+                "postprocess-plan",
+            ],
+            vec![
+                "controllerPlan.releaseGates",
+                "machineRelease.generatedProgramsBlocked",
+            ],
+        ),
+        manifest_entry(
+            "setup-process-and-execution-evidence",
+            vec![
+                "tooling-plan",
+                "fixture-plan",
+                "material-plan",
+                "execution-plan",
+                "operator-intervention-plan",
+            ],
+            vec![
+                "executionPlan.stopPoints",
+                "operatorInterventionPlan.requiredOperatorActions",
+            ],
+        ),
+        manifest_entry(
+            "simulation-quality-and-release-review",
+            vec![
+                "validation-report",
+                "simulation-report",
+                "quality-plan",
+                "machine-release",
+                "release-package-plan",
+            ],
+            vec![
+                "validation.failureBoundaries",
+                "simulation.programs",
+                "releasePackagePlan.releaseGates",
+            ],
+        ),
+        manifest_entry(
+            "learning-and-policy-feedback",
+            vec![
+                "learning-plan",
+                "pomdp-belief-state",
+                "release-probe-plan",
+                "neural-training-corpus",
+                "mdp-request",
+            ],
+            vec![
+                "learning.outcomes",
+                "policyImpactPreview",
+                "mdp-request.artifacts",
+            ],
+        ),
+    ];
+    let manifest_present_count = bundle_manifest
+        .iter()
+        .filter(|entry| entry.get("present").and_then(Value::as_bool) == Some(true))
+        .count();
+    let manifest_missing_count = bundle_manifest.len().saturating_sub(manifest_present_count);
 
     json!({
         "ok": true,
@@ -7062,6 +7157,9 @@ fn job_release_bundle_response(job: &StoredFabricationJob) -> Value {
             "releaseBlockerCount": release_blocker_count,
             "draftArtifactCount": draft_artifact_count,
             "machineReadyArtifactCount": machine_ready_artifact_count,
+            "manifestCategoryCount": bundle_manifest.len(),
+            "manifestPresentCount": manifest_present_count,
+            "manifestMissingCount": manifest_missing_count,
             "machineReleaseBlocked": machine_release_blocked
         },
         "releaseSurfaces": [
@@ -7091,6 +7189,7 @@ fn job_release_bundle_response(job: &StoredFabricationJob) -> Value {
             "mdp-request"
         ],
         "artifactSummaries": artifact_summaries,
+        "bundleManifest": bundle_manifest,
         "artifacts": artifacts,
         "plan": job.plan,
         "analysis": job.analysis,
@@ -155002,6 +155101,45 @@ mod tests {
             .get("machineReleaseBlocked")
             .and_then(Value::as_bool)
             .is_some_and(|blocked| blocked));
+        assert_eq!(
+            summary.get("manifestCategoryCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert_eq!(
+            summary.get("manifestMissingCount").and_then(Value::as_u64),
+            Some(0)
+        );
+        let manifest = bundle
+            .get("bundleManifest")
+            .and_then(Value::as_array)
+            .expect("release bundle manifest should be present");
+        for category in [
+            "design-and-source-definition",
+            "machine-code-and-instruction-programs",
+            "setup-process-and-execution-evidence",
+            "simulation-quality-and-release-review",
+            "learning-and-policy-feedback",
+        ] {
+            assert!(
+                manifest.iter().any(|entry| {
+                    entry.get("category").and_then(Value::as_str) == Some(category)
+                        && entry.get("present").and_then(Value::as_bool) == Some(true)
+                }),
+                "release bundle manifest should include present category {category}"
+            );
+        }
+        assert!(manifest.iter().any(|entry| entry
+            .get("requiredArtifactKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|kinds| kinds
+                .iter()
+                .any(|kind| kind.as_str() == Some("generated-machine-program")))));
+        assert!(manifest.iter().any(|entry| entry
+            .get("blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| blocks
+                .iter()
+                .any(|block| block.as_str() == Some("policyImpactPreview")))));
         assert!(bundle
             .get("releaseSurfaces")
             .and_then(Value::as_array)
