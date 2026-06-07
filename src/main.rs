@@ -56922,6 +56922,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/subtractive/catalog",
         "GET /subtractive/preflight/catalog",
         "GET /fabrication/subtractive/preflight/catalog",
+        "GET /cleanliness/preflight/catalog",
+        "GET /fabrication/cleanliness/preflight/catalog",
         "GET /cnc/catalog",
         "GET /fabrication/cnc/catalog",
         "GET /cells/catalog",
@@ -95968,6 +95970,91 @@ async fn subtractive_preflight_catalog_http() -> impl IntoResponse {
     Json(subtractive_preflight_catalog_response())
 }
 
+fn cleanliness_preflight_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.cleanliness-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /cleanliness/preflight/catalog",
+            "GET /fabrication/cleanliness/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/printers/preflight/catalog",
+            "GET /fabrication/subtractive/preflight/catalog",
+            "GET /fabrication/assembly/catalog",
+            "GET /fabrication/postprocess/catalog",
+            "POST /fabrication/instructions/analyze",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "preflightGroups": [
+            {
+                "group": "additive-residue-and-powder-state",
+                "requiredEvidence": [
+                    "resin drip, wash bath, IPA or solvent saturation, UV cure, support-removal, and tack-free surface evidence",
+                    "powder-bed depowder, trapped-powder removal, sieving, recovery lot, blast media, and respirable-dust control evidence",
+                    "FDM support-interface, purge tower, stringing, brim, raft, soluble support, drying, and moisture-sensitive material evidence"
+                ],
+                "releaseBlockers": [
+                    "joining, coating, packaging, or inspection before resin wash/cure or powder-removal evidence",
+                    "trapped powder, uncured resin, support residue, or soluble-support moisture where assembly fit or human handling is required",
+                    "cross-material contamination between food, medical, electronics, optical, or high-temperature part classes"
+                ]
+            },
+            {
+                "group": "machining-coolant-chip-and-fod-state",
+                "requiredEvidence": [
+                    "coolant, oil, cutting fluid, abrasive, dielectric, EDM debris, swarf, chip, burr, and FOD removal evidence",
+                    "blind-hole, thread, lattice, channel, cavity, pocket, tube, and internal-passage cleaning evidence",
+                    "drying, corrosion-prevention, passivation, inhibitor, solvent compatibility, and residue inspection evidence"
+                ],
+                "releaseBlockers": [
+                    "assembly, bonding, welding, coating, bearing, seal, or electronics install before chips/coolant/FOD are cleared",
+                    "uncleaned blind holes, internal channels, lattices, or cavities that can shed debris after release",
+                    "cleaning chemistry incompatible with polymer, elastomer, coating, plating, adhesive, or additive material"
+                ]
+            },
+            {
+                "group": "assembly-interface-and-release-cleanliness",
+                "requiredEvidence": [
+                    "critical surface, datum, thread, bearing bore, seal land, bondline, weld, paint, plating, and electrical contact cleanliness evidence",
+                    "glove, wipe, swab, particle count, blacklight, residue, conductivity, torque-slip, leak, or adhesion proof evidence",
+                    "packout cleanliness class, bagging, desiccant, cap/plug, label, traveler, photo, and release owner evidence"
+                ],
+                "releaseBlockers": [
+                    "combining printed and milled parts before interface cleanliness or dryness evidence is retained",
+                    "contaminated bondline, weld, seal, bearing, or electrical-contact surface requiring operator disposition",
+                    "packaging without cleanliness class, protective caps/plugs, desiccant, traveler, or release-owner evidence"
+                ]
+            }
+        ],
+        "boundarySignals": [
+            "cleanliness-additive-residue-boundary",
+            "cleanliness-machining-fod-boundary",
+            "cleanliness-assembly-release-boundary"
+        ],
+        "responseSurfaces": [
+            "instructionAnalysis.failureBoundaries",
+            "qualityResult.metrologyChecks",
+            "releaseReadiness.releaseBlockers",
+            "postprocessPlan.targets",
+            "learningOutcome.observations"
+        ],
+        "releasePolicy": [
+            "cleanliness preflight entries describe evidence required before machine-ready release, assembly, packaging, or human handling; they are not a substitute for a released cleaning specification",
+            "cleanliness evidence must remain attached to the generated or imported program, postprocess traveler, quality result, release bundle, and learning outcome",
+            "failed cleanliness checks should feed DES, MDP/POMDP, and neural workers so future plans can split, combine, clean, reroute, or require human intervention before contaminated parts are joined"
+        ]
+    })
+}
+
+async fn cleanliness_preflight_catalog_http() -> impl IntoResponse {
+    Json(cleanliness_preflight_catalog_response())
+}
+
 fn cnc_catalog_response() -> Value {
     let machines = default_machines();
     let cnc_machines = machines
@@ -105920,6 +106007,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/subtractive/preflight/catalog",
             get(subtractive_preflight_catalog_http),
+        )
+        .route(
+            "/cleanliness/preflight/catalog",
+            get(cleanliness_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/cleanliness/preflight/catalog",
+            get(cleanliness_preflight_catalog_http),
         )
         .route("/machines/select", post(machine_select_http))
         .route("/fabrication/machines/select", post(machine_select_http))
@@ -126927,6 +127022,62 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+    }
+
+    #[test]
+    fn cleanliness_preflight_catalog_endpoint_exposes_residue_fod_and_release_gates() {
+        let payload = cleanliness_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.cleanliness-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/cleanliness/preflight/catalog")
+            })));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("cleanliness preflight groups should be present");
+        for group in [
+            "additive-residue-and-powder-state",
+            "machining-coolant-chip-and-fod-state",
+            "assembly-interface-and-release-cleanliness",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing cleanliness preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("resin drip, wash bath"))))));
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("chips/coolant/FOD"))))));
+        assert!(payload
+            .get("boundarySignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|signal| {
+                signal.as_str() == Some("cleanliness-assembly-release-boundary")
+            })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("split, combine, clean, reroute")))));
     }
 
     #[test]
