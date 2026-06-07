@@ -57118,6 +57118,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/consumables/result",
         "GET /workholding/catalog",
         "GET /fabrication/workholding/catalog",
+        "GET /workholding/preflight/catalog",
+        "GET /fabrication/workholding/preflight/catalog",
         "POST /workholding/result",
         "POST /fabrication/workholding/result",
         "GET /nesting/catalog",
@@ -75528,8 +75530,117 @@ fn workholding_catalog_response() -> Value {
     })
 }
 
+fn workholding_preflight_catalog_response() -> Value {
+    let entries = workholding_catalog_entries();
+    let workholding_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("workholdingFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.workholding-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /workholding/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/workholding/catalog",
+            "GET /fabrication/setup/catalog",
+            "GET /fabrication/tooling/catalog",
+            "GET /fabrication/interfaces/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "POST /fabrication/workholding/result",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "workholdingFamilyCount": entries.len(),
+        "workholdingFamilies": workholding_families,
+        "machineKinds": machine_kinds,
+        "preflightGroups": [
+            {
+                "group": "stock-build-surface-and-primary-hold-state",
+                "requiredEvidence": [
+                    "build plate, vacuum table, vise, chuck, collet, pallet, fixture, nest, or support surface evidence",
+                    "clamp force, adhesive tape, tab, brim, raft, tailstock, steady rest, or pin/support proof before the first material-removal or deposition move",
+                    "stock stick-out, overhang, collision envelope, thermal drift, chip/debris clearance, and access-for-inspection evidence"
+                ],
+                "releaseBlockers": [
+                    "machine motion begins before primary hold and support evidence is retained",
+                    "part, stock, printed layer, slug, or cutoff can shift, tip, lift, vibrate, or collide without a retained mitigation",
+                    "operator is expected to recover or re-clamp without a planned stop, re-probe, and release-owner signoff"
+                ]
+            },
+            {
+                "group": "datum-transfer-reprobe-and-clearance-state",
+                "requiredEvidence": [
+                    "datum scheme, work offset, probe/touch-off, fixture coordinate frame, orientation key, and setup-revision evidence",
+                    "tool, nozzle, head, gripper, spindle, jaw, clamp, fixture, support, and robot path clearance proof",
+                    "re-probe, re-zero, thermal soak, fixture-change, material-change, and machine-pause restart evidence"
+                ],
+                "releaseBlockers": [
+                    "datum or work offset changes after setup without re-probe or operator/automation confirmation",
+                    "toolpath, printhead, spindle, cutter, robot, slug, or transfer path can intersect the fixture or support hardware",
+                    "restart after pause, tool change, media change, or fixture adjustment lacks retained verification"
+                ]
+            },
+            {
+                "group": "split-combine-fixture-and-human-intervention-state",
+                "requiredEvidence": [
+                    "assembly jig, bond clamp, press fixture, heat-set support, datum-transfer fixture, or recomposition nest proof",
+                    "interface control, dry-fit, torque, cure, adhesive, vision/fiducial, gripper, and final metrology evidence for recomposed parts",
+                    "human intervention stop point, operator instruction, hold/release authority, and learning observation for recoveries or failures"
+                ],
+                "releaseBlockers": [
+                    "printed, milled, cut, or postprocessed pieces are combined before fixture and datum-transfer evidence",
+                    "bond, press, torque, cure, heat-set, or robotic assembly operation lacks a retained hold and inspection plan",
+                    "split/combine recovery or manual fit is expected but not represented as an intervention, disposition, and learning outcome"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "fixturePlan.setups",
+            "fixturePlan.setups.requiredEvidence",
+            "fixturePlan.setups.clearanceChecks",
+            "fixturePlan.datumTransfers",
+            "toolingPlan.requirements.workholding",
+            "simulation.riskProfile.programRisks",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "interfaceControlPlan.interfaces",
+            "assemblyPlan.requiredEvidence",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.releaseBlockers",
+            "learningOutcome.observations"
+        ],
+        "releasePolicy": [
+            "workholding preflight entries describe evidence required before machine-ready release, unattended motion, recomposition, or human handoff; they are not certified fixture designs",
+            "release remains blocked while stock, build plate, clamp, vacuum, chuck, support, datum transfer, clearance, or split/combine fixture evidence is absent",
+            "failed workholding preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can split jobs, add fixtures, insert re-probes, or require human intervention earlier"
+        ],
+        "workholdingFamiliesDetailed": entries
+    })
+}
+
 async fn workholding_catalog_http() -> impl IntoResponse {
     Json(workholding_catalog_response())
+}
+
+async fn workholding_preflight_catalog_http() -> impl IntoResponse {
+    Json(workholding_preflight_catalog_response())
 }
 
 fn validate_workholding_result_fixture_checks(
@@ -103687,6 +103798,7 @@ async fn request_schema() -> impl IntoResponse {
             "setupCatalog": ["GET /setup/catalog", "GET /fabrication/setup/catalog"],
             "toolingCatalog": ["GET /tooling/catalog", "GET /fabrication/tooling/catalog"],
             "workholdingCatalog": ["GET /workholding/catalog", "GET /fabrication/workholding/catalog"],
+            "workholdingPreflightCatalog": ["GET /workholding/preflight/catalog", "GET /fabrication/workholding/preflight/catalog"],
             "nestingCatalog": ["GET /nesting/catalog", "GET /fabrication/nesting/catalog"],
             "nestingResult": ["POST /nesting/result", "POST /fabrication/nesting/result"],
             "supportStrategyCatalog": ["GET /support-strategies/catalog", "GET /fabrication/support-strategies/catalog"],
@@ -106608,6 +106720,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/workholding/catalog",
             get(workholding_catalog_http),
+        )
+        .route(
+            "/workholding/preflight/catalog",
+            get(workholding_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/workholding/preflight/catalog",
+            get(workholding_preflight_catalog_http),
         )
         .route("/workholding/result", post(workholding_result_http))
         .route(
@@ -122030,6 +122150,68 @@ mod tests {
                 .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
                     .as_str()
                     .is_some_and(|blocker| blocker.contains("part-off")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified fixture designs")))));
+    }
+
+    #[test]
+    fn workholding_preflight_catalog_endpoint_exposes_fixture_release_gates() {
+        let payload = workholding_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.workholding-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/workholding/preflight/catalog")
+            })));
+        assert_eq!(
+            payload
+                .get("workholdingFamilyCount")
+                .and_then(Value::as_u64),
+            Some(5)
+        );
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("workholding preflight groups should be present");
+        for group in [
+            "stock-build-surface-and-primary-hold-state",
+            "datum-transfer-reprobe-and-clearance-state",
+            "split-combine-fixture-and-human-intervention-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing workholding preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("datum or work offset changes"))))));
+        assert!(groups.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("human intervention stop point"))))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("fixturePlan.setups.clearanceChecks")
+            })));
         assert!(payload
             .get("releasePolicy")
             .and_then(Value::as_array)

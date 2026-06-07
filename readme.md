@@ -230,6 +230,8 @@ outcomes.
 - `POST /fabrication/consumables/result`
 - `GET /workholding/catalog`
 - `GET /fabrication/workholding/catalog`
+- `GET /workholding/preflight/catalog`
+- `GET /fabrication/workholding/preflight/catalog`
 - `POST /workholding/result`
 - `POST /fabrication/workholding/result`
 - `GET /nesting/catalog`
@@ -3162,6 +3164,23 @@ split/combine fixture evidence is unresolved. Workholding failures and
 successful fixture choices are retained as MDP/POMDP/neural learning signals so
 future planners can split jobs, change fixtures, add probes, or require human
 intervention earlier.
+
+## `GET /fabrication/workholding/preflight/catalog`
+
+`GET /workholding/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/workholding/preflight/catalog` return the live
+`dd.fabrication.workholding-preflight-catalog.v1` release checklist for fixture,
+stock, build-surface, datum-transfer, clearance, split/combine fixture, and
+operator handoff evidence before unattended motion or machine-ready release. The
+catalog groups required evidence into stock/build-surface primary hold state,
+datum-transfer/re-probe/clearance state, and split-combine fixture plus
+human-intervention state.
+
+Preflight entries describe required release evidence, not certified fixture
+designs. Release remains blocked while stock, build plate, clamp, vacuum, chuck,
+support, datum transfer, clearance, or split/combine fixture evidence is absent.
+Failed checks feed DES, MDP/POMDP, and neural workers so future plans can split
+jobs, add fixtures, insert re-probes, or require human intervention earlier.
 
 ## `POST /fabrication/workholding/result`
 
