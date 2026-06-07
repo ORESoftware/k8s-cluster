@@ -1551,6 +1551,11 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
   const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const threadRuntimeBlock = restServer.match(
+    /fn thread_runtime_image\(\) -> String[\s\S]*?async fn scale_thread_runtime/,
+  );
+  assert.ok(threadRuntimeBlock, 'expected thread runtime deployment renderer block');
+  const threadRuntime = threadRuntimeBlock?.[0] ?? '';
 
   assert.match(dockerfile, /apt-get install -y --no-install-recommends[\s\S]*git openssh-client/);
   assert.match(dockerfile, /USER node/);
@@ -1568,11 +1573,11 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
   assert.doesNotMatch(bootstrapDeployment, /\/opt\/dd-next-1/);
   assert.match(restServer, /fn thread_runtime_image\(\) -> String/);
   assert.match(restServer, /docker\.io\/library\/dd-dev-server:dev/);
-  assert.match(restServer, /"initContainers"/);
-  assert.match(restServer, /"runAsUser": 1000/);
-  assert.match(restServer, /"IDLE_TIMEOUT_MS", "value": "0"/);
+  assert.match(threadRuntime, /"initContainers"/);
+  assert.match(threadRuntime, /"runAsUser": 1000/);
+  assert.match(threadRuntime, /"IDLE_TIMEOUT_MS", "value": "0"/);
   assert.match(
-    restServer,
+    threadRuntime,
     /"EVENT_INGEST_URL", "value": "http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082\/api\/agents\/events"/,
   );
   assert.match(restServer, /struct AgentEventIngestRequest/);
@@ -1581,9 +1586,9 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
   assert.match(restServer, /if !authorized_internal_request\(&headers\) \{/);
   assert.match(restServer, /Json\(json!\(\{ "error": "event\.kind is required" \}\)\)/);
   assert.match(restServer, /persist_agent_event_to_postgres/);
-  assert.doesNotMatch(restServer, /apt-get update/);
-  assert.doesNotMatch(restServer, /node:22-bookworm-slim/);
-  assert.doesNotMatch(restServer, /\/root\/\.ssh/);
+  assert.doesNotMatch(threadRuntime, /apt-get update/);
+  assert.doesNotMatch(threadRuntime, /node:22-bookworm-slim/);
+  assert.doesNotMatch(threadRuntime, /\/root\/\.ssh/);
   assert.match(restServer, /Some\(json!\(\{ "spec": deployment\["spec"\]\.clone\(\) \}\)\)/);
 });
 
