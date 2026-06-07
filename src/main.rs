@@ -3904,6 +3904,78 @@ struct ScheduleResultArtifact {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct InterfaceResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    interface_plan_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    interfaces: Option<Vec<InterfaceResultCheck>>,
+    join_evidence: Option<Vec<InterfaceResultJoinEvidence>>,
+    split_combine_decisions: Option<Vec<InterfaceResultDecision>>,
+    artifacts: Option<Vec<InterfaceResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InterfaceResultCheck {
+    interface_id: String,
+    interface_kind: String,
+    status: String,
+    source_part_ids: Option<Vec<String>>,
+    target_part_ids: Option<Vec<String>>,
+    datum_evidence: Option<Vec<String>>,
+    fit_evidence: Option<Vec<String>>,
+    tolerance_mm: Option<f64>,
+    gap_mm: Option<f64>,
+    requires_human_intervention: Option<bool>,
+    release_blocker: Option<bool>,
+    message: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InterfaceResultJoinEvidence {
+    evidence_id: String,
+    interface_id: Option<String>,
+    join_kind: String,
+    status: String,
+    recipe_ref: Option<String>,
+    operator_signoff: Option<bool>,
+    automation_verified: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InterfaceResultDecision {
+    decision_id: String,
+    decision_kind: String,
+    status: String,
+    interface_id: Option<String>,
+    required_action: Option<String>,
+    human_intervention_required: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InterfaceResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    interface_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ExecutionResultReviewRequest {
     request_id: Option<String>,
     plan_request_id: Option<String>,
@@ -18103,6 +18175,586 @@ fn stored_assembly_planning_result_job(response: &Value) -> StoredFabricationJob
 
 fn store_assembly_planning_result_response(state: &AppState, response: &Value) {
     store_job(state, stored_assembly_planning_result_job(response));
+}
+
+fn validate_interface_result_checks(
+    checks: Option<Vec<InterfaceResultCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "interfaces must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let interface_id =
+                validate_label(&check.interface_id, &format!("interfaces[{index}].interfaceId"))?;
+            if !seen.insert(interface_id.clone()) {
+                return Err(format!(
+                    "interfaces must have unique interfaceId values; duplicate {interface_id}"
+                ));
+            }
+            Ok(json!({
+                "interfaceId": interface_id,
+                "interfaceKind": validate_label(&check.interface_kind, &format!("interfaces[{index}].interfaceKind"))?,
+                "status": validate_label(&check.status, &format!("interfaces[{index}].status"))?,
+                "sourcePartIds": validate_signal_list(check.source_part_ids, &format!("interfaces[{index}].sourcePartIds"), MAX_LABEL_LEN)?,
+                "targetPartIds": validate_signal_list(check.target_part_ids, &format!("interfaces[{index}].targetPartIds"), MAX_LABEL_LEN)?,
+                "datumEvidence": validate_signal_list(check.datum_evidence, &format!("interfaces[{index}].datumEvidence"), MAX_TEXT_LEN)?,
+                "fitEvidence": validate_signal_list(check.fit_evidence, &format!("interfaces[{index}].fitEvidence"), MAX_TEXT_LEN)?,
+                "toleranceMm": check.tolerance_mm.map(|value| finite_non_negative(value, &format!("interfaces[{index}].toleranceMm"))).transpose()?,
+                "gapMm": check.gap_mm.map(|value| finite_non_negative(value, &format!("interfaces[{index}].gapMm"))).transpose()?,
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(false),
+                "message": validate_optional_text(check.message, &format!("interfaces[{index}].message"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_interface_result_join_evidence(
+    entries: Option<Vec<InterfaceResultJoinEvidence>>,
+) -> Result<Vec<Value>, String> {
+    let entries = entries.unwrap_or_default();
+    if entries.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "joinEvidence must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    entries
+        .into_iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let evidence_id =
+                validate_label(&entry.evidence_id, &format!("joinEvidence[{index}].evidenceId"))?;
+            if !seen.insert(evidence_id.clone()) {
+                return Err(format!(
+                    "joinEvidence must have unique evidenceId values; duplicate {evidence_id}"
+                ));
+            }
+            Ok(json!({
+                "evidenceId": evidence_id,
+                "interfaceId": validate_optional_label(entry.interface_id, &format!("joinEvidence[{index}].interfaceId"))?,
+                "joinKind": validate_label(&entry.join_kind, &format!("joinEvidence[{index}].joinKind"))?,
+                "status": validate_label(&entry.status, &format!("joinEvidence[{index}].status"))?,
+                "recipeRef": validate_optional_label(entry.recipe_ref, &format!("joinEvidence[{index}].recipeRef"))?,
+                "operatorSignoff": entry.operator_signoff.unwrap_or(false),
+                "automationVerified": entry.automation_verified.unwrap_or(false),
+                "evidence": validate_signal_list(entry.evidence, &format!("joinEvidence[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_interface_result_decisions(
+    decisions: Option<Vec<InterfaceResultDecision>>,
+) -> Result<Vec<Value>, String> {
+    let decisions = decisions.unwrap_or_default();
+    if decisions.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "splitCombineDecisions must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    decisions
+        .into_iter()
+        .enumerate()
+        .map(|(index, decision)| {
+            let decision_id = validate_label(
+                &decision.decision_id,
+                &format!("splitCombineDecisions[{index}].decisionId"),
+            )?;
+            if !seen.insert(decision_id.clone()) {
+                return Err(format!(
+                    "splitCombineDecisions must have unique decisionId values; duplicate {decision_id}"
+                ));
+            }
+            Ok(json!({
+                "decisionId": decision_id,
+                "decisionKind": validate_label(&decision.decision_kind, &format!("splitCombineDecisions[{index}].decisionKind"))?,
+                "status": validate_label(&decision.status, &format!("splitCombineDecisions[{index}].status"))?,
+                "interfaceId": validate_optional_label(decision.interface_id, &format!("splitCombineDecisions[{index}].interfaceId"))?,
+                "requiredAction": validate_optional_label(decision.required_action, &format!("splitCombineDecisions[{index}].requiredAction"))?,
+                "humanInterventionRequired": decision.human_intervention_required.unwrap_or(false),
+                "evidence": validate_signal_list(decision.evidence, &format!("splitCombineDecisions[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_interface_result_artifacts(
+    artifacts: Option<Vec<InterfaceResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id =
+                validate_label(&artifact.artifact_id, &format!("artifacts[{index}].artifactId"))?;
+            if !seen.insert(artifact_id.clone()) {
+                return Err(format!(
+                    "artifacts must have unique artifactId values; duplicate {artifact_id}"
+                ));
+            }
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": validate_label(&artifact.artifact_kind, &format!("artifacts[{index}].artifactKind"))?,
+                "interfaceId": validate_optional_label(artifact.interface_id, &format!("artifacts[{index}].interfaceId"))?,
+                "uri": validate_optional_text(artifact.uri, &format!("artifacts[{index}].uri"), MAX_TEXT_LEN)?,
+                "sha256": validate_optional_text(artifact.sha256, &format!("artifacts[{index}].sha256"), MAX_LABEL_LEN)?,
+                "format": validate_optional_label(artifact.format, &format!("artifacts[{index}].format"))?,
+                "evidence": validate_signal_list(artifact.evidence, &format!("artifacts[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn interface_result_status_blocks_release(status: &str) -> bool {
+    assembly_status_blocks_release(status)
+}
+
+fn interface_result_check_blocks_release(check: &Value) -> bool {
+    let status = check
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    check
+        .get("requiresHumanIntervention")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || check
+            .get("releaseBlocker")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("datumEvidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+        || check
+            .get("fitEvidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+        || interface_result_status_blocks_release(status)
+}
+
+fn interface_join_evidence_blocks_release(entry: &Value) -> bool {
+    let status = entry
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    let has_human_or_automation = entry
+        .get("operatorSignoff")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || entry
+            .get("automationVerified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+    !has_human_or_automation
+        || entry
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+        || interface_result_status_blocks_release(status)
+}
+
+fn interface_decision_blocks_release(decision: &Value) -> bool {
+    let status = decision
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    decision
+        .get("humanInterventionRequired")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || interface_result_status_blocks_release(status)
+}
+
+fn interface_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact.get("uri").and_then(Value::as_str).is_none()
+        || artifact.get("sha256").and_then(Value::as_str).is_none()
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn interface_result_review_response(
+    request: InterfaceResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "interface-result");
+    let generated_at_ms = now_ms();
+    let interface_result_job_id = safe_job_id("interface-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let interface_plan_id = validate_optional_label(request.interface_plan_id, "interfacePlanId")?;
+    let interfaces = validate_interface_result_checks(request.interfaces)?;
+    let join_evidence = validate_interface_result_join_evidence(request.join_evidence)?;
+    let split_combine_decisions =
+        validate_interface_result_decisions(request.split_combine_decisions)?;
+    let artifacts = validate_interface_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let interface_blocker_count = interfaces
+        .iter()
+        .filter(|check| interface_result_check_blocks_release(check))
+        .count();
+    let human_intervention_interface_count = interfaces
+        .iter()
+        .filter(|check| {
+            check
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let join_blocker_count = join_evidence
+        .iter()
+        .filter(|entry| interface_join_evidence_blocks_release(entry))
+        .count();
+    let decision_blocker_count = split_combine_decisions
+        .iter()
+        .filter(|decision| interface_decision_blocks_release(decision))
+        .count();
+    let human_intervention_decision_count = split_combine_decisions
+        .iter()
+        .filter(|decision| {
+            decision
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| interface_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let human_intervention_required =
+        human_intervention_interface_count > 0 || human_intervention_decision_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || interfaces.is_empty()
+        || interface_blocker_count > 0
+        || join_blocker_count > 0
+        || decision_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if !request.success {
+        "interface-result-worker-failed-release-blocked"
+    } else if interfaces.is_empty() {
+        "interface-result-checks-required"
+    } else if interface_blocker_count > 0 {
+        "interface-result-fit-datum-release-blocked"
+    } else if join_blocker_count > 0 {
+        "interface-result-join-evidence-release-blocked"
+    } else if decision_blocker_count > 0 {
+        "interface-result-split-combine-release-blocked"
+    } else if artifact_evidence_missing {
+        "interface-result-artifact-evidence-required"
+    } else if request.machine_ready {
+        "interface-result-ready-for-release-review"
+    } else {
+        "interface-result-machine-ready-review-required"
+    };
+
+    let mut learning_observations = vec![
+        format!("interface-result-worker:{worker_id}"),
+        format!("interface-result:{review_status}"),
+    ];
+    if release_blocked {
+        learning_observations.push("interface-result:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("interface-result:human-intervention-required".to_string());
+    }
+    if artifact_evidence_missing {
+        learning_observations.push("interface-result:artifact-evidence-missing".to_string());
+    }
+    learning_observations.extend(interfaces.iter().filter_map(|check| {
+        check
+            .get("interfaceKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("interface-kind:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(join_evidence.iter().filter_map(|entry| {
+        entry
+            .get("joinKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("interface-join:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(split_combine_decisions.iter().filter_map(|decision| {
+        decision
+            .get("decisionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("interface-split-combine:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(artifacts.iter().filter_map(|artifact| {
+        artifact
+            .get("artifactKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("interface-artifact:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.interface-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "interfaceResultJobId": interface_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /interfaces/result", "POST /fabrication/interfaces/result"],
+        "interfaceRoutes": [
+            "GET /interfaces/preflight/catalog",
+            "GET /fabrication/interfaces/preflight/catalog",
+            "POST /assembly/result",
+            "POST /fabrication/assembly/result",
+            "POST /decomposition/result",
+            "POST /fabrication/decomposition/result"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "interfaceCount": interfaces.len(),
+        "interfaceBlockerCount": interface_blocker_count,
+        "humanInterventionInterfaceCount": human_intervention_interface_count,
+        "joinEvidenceCount": join_evidence.len(),
+        "joinBlockerCount": join_blocker_count,
+        "splitCombineDecisionCount": split_combine_decisions.len(),
+        "splitCombineBlockerCount": decision_blocker_count,
+        "humanInterventionDecisionCount": human_intervention_decision_count,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "humanInterventionRequired": human_intervention_required,
+        "warningCount": warnings.len(),
+        "interfaceResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "interfacePlanId": interface_plan_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "interfaces": interfaces,
+            "joinEvidence": join_evidence,
+            "splitCombineDecisions": split_combine_decisions,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "datum-transfer evidence and fit evidence are retained for every split/combine interface",
+                "join evidence includes recipe, operator signoff or automation verification, and evidence labels",
+                "split/combine decisions are cleared or converted to explicit human-intervention gates",
+                "interface artifacts carry URI, checksum, and evidence labels before release-package or learning attachment"
+            ],
+            "targetSurfaces": [
+                "interfaceControlPlan",
+                "decompositionPlan",
+                "assembly",
+                "hybridMakePlan",
+                "qualityResult",
+                "releasePackagePlan",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.interface-learning-outcome-draft.v1",
+                "sourceKind": "interface-result",
+                "sourceJobId": interface_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.74 } else { 0.64 },
+                "interfaceKindHints": interfaces
+                    .iter()
+                    .filter_map(|check| check.get("interfaceKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "joinKindHints": join_evidence
+                    .iter()
+                    .filter_map(|entry| entry.get("joinKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "splitCombineHints": split_combine_decisions
+                    .iter()
+                    .filter_map(|decision| decision.get("decisionKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "artifactHints": artifacts
+                    .iter()
+                    .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("interface-blockers:{interface_blocker_count}"),
+                    format!("join-blockers:{join_blocker_count}"),
+                    format!("split-combine-blockers:{decision_blocker_count}"),
+                    format!("human-intervention-required:{human_intervention_required}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
+        },
+        "artifactSurfaces": [
+            "interface-result",
+            "interface-checks",
+            "interface-join-evidence",
+            "interface-split-combine-decisions",
+            "interface-artifacts",
+            "interface-learning-observations",
+            "interface-control-plan",
+            "assembly-plan",
+            "decomposition-plan",
+            "release-package-plan"
+        ],
+        "interfacePolicy": [
+            "interface results are retained evidence for datum transfer, fit, joining, and split/combine boundaries; they are not a release waiver",
+            "machine-ready release remains blocked until every interface has retained datum, fit, join, artifact, and operator or automation evidence",
+            "interface result observations feed MDP/POMDP/neural learning so future plans can choose safer split locations, joining methods, and human-intervention gates"
+        ]
+    }))
+}
+
+fn interface_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("fit-datum-release-blocked")
+        || status.contains("join-evidence-release-blocked")
+        || status.contains("split-combine-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_interface_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "interface-result");
+    let job_id = response_str_field(
+        response,
+        "interfaceResultJobId",
+        &safe_job_id("interface-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "interface-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("interfaceResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let interfaces = result
+        .get("interfaces")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let join_evidence = result
+        .get("joinEvidence")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let split_combine_decisions = result
+        .get("splitCombineDecisions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let interface_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "interface-result".to_string(),
+            "interface-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "interface-checks".to_string(),
+            "interface-checks",
+            interfaces,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "interface-join-evidence".to_string(),
+            "interface-join-evidence",
+            join_evidence,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "interface-split-combine-decisions".to_string(),
+            "interface-split-combine-decisions",
+            split_combine_decisions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "interface-artifacts".to_string(),
+            "interface-artifacts",
+            interface_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "interface-learning-observations".to_string(),
+            "interface-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "interface-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: interface_result_job_severity(response),
+            summary: format!("interface result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_interface_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_interface_result_job(response));
 }
 
 fn validate_execution_run_segments(
@@ -56990,6 +57642,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/instructions/languages",
         "GET /instructions/import/catalog",
         "GET /fabrication/instructions/import/catalog",
+        "GET /instructions/import/preflight/catalog",
+        "GET /fabrication/instructions/import/preflight/catalog",
         "GET /instructions/validation/catalog",
         "GET /fabrication/instructions/validation/catalog",
         "GET /instructions/generation/catalog",
@@ -57054,6 +57708,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/assembly/plan",
         "POST /assembly/result",
         "POST /fabrication/assembly/result",
+        "POST /interfaces/result",
+        "POST /fabrication/interfaces/result",
         "GET /hybrid/catalog",
         "GET /fabrication/hybrid/catalog",
         "GET /strategy/catalog",
@@ -93213,8 +93869,131 @@ fn instruction_import_catalog_response() -> Value {
     })
 }
 
+fn instruction_import_preflight_catalog_response() -> Value {
+    let languages = instruction_language_catalog();
+    let language_families = unique_sorted(languages.iter().filter_map(|item| {
+        item.get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_classes = unique_sorted(languages.iter().flat_map(|item| {
+        item.get("machineClasses")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-import-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /instructions/import/preflight/catalog",
+            "GET /fabrication/instructions/import/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/instructions/import/catalog",
+            "GET /fabrication/instructions/languages",
+            "GET /fabrication/instructions/validation/catalog",
+            "GET /fabrication/improvements/preflight/catalog",
+            "GET /fabrication/simulation/preflight/catalog",
+            "GET /fabrication/controllers/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog",
+            "POST /fabrication/instructions/analyze",
+            "POST /fabrication/instructions/validate",
+            "POST /fabrication/instructions/improve",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "acceptedLanguageCount": languages.len(),
+        "languageFamilies": language_families,
+        "machineClasses": machine_classes,
+        "preflightGroups": [
+            {
+                "group": "source-provenance-language-and-artifact-state",
+                "requiredEvidence": [
+                    "raw submitted instruction artifact, URI or inline payload, checksum, source system, revision, author or exporter, and import timestamp",
+                    "declared or inferred language family, controller dialect, slicer/printer firmware, CAM intermediate type, setup-sheet type, or operator instruction family",
+                    "redacted external URIs, retained original artifact, parsed line or step count, and immutable review copy before modification"
+                ],
+                "releaseBlockers": [
+                    "imported instructions lack checksum, source provenance, language family, machine/controller target, or retained artifact evidence",
+                    "ambiguous extension or dialect could be CNC, slicer, printer, setup-sheet, postprocess, assembly, or operator text without review evidence",
+                    "instruction artifact cannot be linked to design/import evidence, generated design package, or release package provenance"
+                ]
+            },
+            {
+                "group": "machine-controller-setup-and-process-state",
+                "requiredEvidence": [
+                    "selected machine profile, controller/postprocessor, firmware, work envelope, units, coordinate mode, work offset, stock, fixture, tool/nozzle/process support, and material/feedstock context",
+                    "modal/process state proof for additive thermal/extrusion/bed/material, CNC spindle/feed/tool/workholding/coolant, sheet-cutting assist media, or text job-sheet setup as applicable",
+                    "human-intervention, automation, recovery, restart, split/combine, postprocess, and quality checkpoints discovered from imported instructions"
+                ],
+                "releaseBlockers": [
+                    "submitted instructions can move or process material before machine, setup, process-start, support-media, or workholding evidence is known",
+                    "controller or firmware state is unknown, postprocessor compatibility is unreviewed, or setup-sheet assumptions conflict with selected machine profile",
+                    "manual stops, operator rescues, fixture transfers, or split/combine boundaries are hidden inside imported text or machine code"
+                ]
+            },
+            {
+                "group": "analysis-validation-simulation-improvement-and-learning-state",
+                "requiredEvidence": [
+                    "analysis result, validation findings, simulation or dry-run evidence, improvement patch policy, release-package links, and operator or automation signoff",
+                    "failure boundaries, remediation actions, validation checks, improved program artifacts, patch manifest, and retained before/after checksums",
+                    "DES, MDP/POMDP, and neural learning labels for accepted, rejected, patched, regenerated, rerouted, split/combine, and human-intervention outcomes"
+                ],
+                "releaseBlockers": [
+                    "machine-ready release requested before analysis, validation, simulation or dry-run, controller/setup, quality, and release preflight evidence clears",
+                    "improvement or patch output is not traceable to the original imported artifact, boundary class, validation finding, and retained checksum",
+                    "learning workers cannot observe whether imported instructions were accepted, rejected, patched, regenerated, split, rerouted, or required human intervention"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "programs",
+            "programs.language",
+            "programs.instructions",
+            "validation.findings",
+            "validation.failureBoundaries",
+            "simulation.programs",
+            "simulation.riskProfile",
+            "improvements",
+            "improvedPrograms.patchManifest",
+            "interventionMap",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "machineRelease.blockers",
+            "releasePackagePlan.requiredArtifacts",
+            "learning.outcomeDraft",
+            "neuralTrainingCorpus.examples"
+        ],
+        "artifactSurfaces": [
+            "imported-instruction-artifact",
+            "imported-controller-program",
+            "imported-slicer-job",
+            "imported-setup-sheet",
+            "imported-operator-checklist",
+            "analysis-validation-report",
+            "analysis-simulation-report",
+            "analysis-improvements",
+            "patch-manifest",
+            "analysis-mdp-request"
+        ],
+        "releasePolicy": [
+            "instruction import preflight entries describe evidence required before submitted instruction streams can enter release review; they do not trust imported code as machine-ready",
+            "machineReady remains false until provenance, checksum, language/dialect, machine, controller, setup, process-state, analysis, validation, simulation or dry-run, improvement, release-package, and signoff evidence clear",
+            "failed import preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can reject, patch, regenerate, split/combine, reroute, or require human intervention earlier"
+        ]
+    })
+}
+
 async fn instruction_import_catalog_http() -> impl IntoResponse {
     Json(instruction_import_catalog_response())
+}
+
+async fn instruction_import_preflight_catalog_http() -> impl IntoResponse {
+    Json(instruction_import_preflight_catalog_response())
 }
 
 fn instruction_validation_catalog_check_contracts() -> Vec<Value> {
@@ -104684,6 +105463,7 @@ async fn request_schema() -> impl IntoResponse {
             "designGeneration": ["POST /design/generate", "POST /fabrication/design/generate"],
             "instructionLanguages": ["GET /instructions/languages", "GET /fabrication/instructions/languages"],
             "instructionImportCatalog": ["GET /instructions/import/catalog", "GET /fabrication/instructions/import/catalog"],
+            "instructionImportPreflightCatalog": ["GET /instructions/import/preflight/catalog", "GET /fabrication/instructions/import/preflight/catalog"],
             "instructionGenerationCatalog": ["GET /instructions/generation/catalog", "GET /fabrication/instructions/generation/catalog"],
             "instructionGenerationPreflightCatalog": ["GET /instructions/generation/preflight/catalog", "GET /fabrication/instructions/generation/preflight/catalog"],
             "instructionGeneration": ["POST /instructions/generate", "POST /fabrication/instructions/generate"],
@@ -104709,6 +105489,7 @@ async fn request_schema() -> impl IntoResponse {
             "assemblyPreflightCatalog": ["GET /assembly/preflight/catalog", "GET /fabrication/assembly/preflight/catalog"],
             "assemblyPlan": ["POST /assembly/plan", "POST /fabrication/assembly/plan"],
             "assemblyPlanningResult": ["POST /assembly/result", "POST /fabrication/assembly/result"],
+            "interfaceResult": ["POST /interfaces/result", "POST /fabrication/interfaces/result"],
             "releaseCatalog": ["GET /release/catalog", "GET /fabrication/release/catalog"],
             "releasePreflightCatalog": ["GET /release/preflight/catalog", "GET /fabrication/release/preflight/catalog"],
             "releaseReadinessResult": ["POST /release/result", "POST /fabrication/release/result"],
@@ -105960,6 +106741,23 @@ async fn assembly_planning_result_http(
     match assembly_planning_result_review_response(request) {
         Ok(response) => {
             store_assembly_planning_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn interface_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<InterfaceResultReviewRequest>,
+) -> Response {
+    match interface_result_review_response(request) {
+        Ok(response) => {
+            store_interface_result_response(&state, &response);
             Json(response).into_response()
         }
         Err(error) => (
@@ -107399,6 +108197,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/instructions/import/catalog",
             get(instruction_import_catalog_http),
         )
+        .route(
+            "/instructions/import/preflight/catalog",
+            get(instruction_import_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/instructions/import/preflight/catalog",
+            get(instruction_import_preflight_catalog_http),
+        )
         .route("/cnc/catalog", get(cnc_catalog_http))
         .route("/fabrication/cnc/catalog", get(cnc_catalog_http))
         .route(
@@ -107556,6 +108362,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/assembly/result",
             post(assembly_planning_result_http),
+        )
+        .route("/interfaces/result", post(interface_result_http))
+        .route(
+            "/fabrication/interfaces/result",
+            post(interface_result_http),
         )
         .route("/release/catalog", get(release_catalog_http))
         .route("/fabrication/release/catalog", get(release_catalog_http))
@@ -112209,6 +113020,66 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not trusted machine-ready code")))));
+    }
+
+    #[test]
+    fn instruction_import_preflight_catalog_endpoint_exposes_evidence_gates() {
+        let payload = instruction_import_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-import-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/instructions/import/preflight/catalog")
+            })));
+        assert_eq!(
+            payload.get("acceptedLanguageCount").and_then(Value::as_u64),
+            Some(accepted_instruction_languages().len() as u64)
+        );
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("preflight groups should be exposed");
+        for group in [
+            "source-provenance-language-and-artifact-state",
+            "machine-controller-setup-and-process-state",
+            "analysis-validation-simulation-improvement-and-learning-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing preflight group {group}"
+            );
+        }
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("improvedPrograms.patchManifest"))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("imported-instruction-artifact"))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("patch-manifest"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady remains false")))));
     }
 
     #[test]
@@ -117177,6 +118048,193 @@ mod tests {
             assert!(
                 job.artifacts.contains_key(artifact_id),
                 "missing assembly result artifact {artifact_id}"
+            );
+        }
+    }
+
+    #[test]
+    fn interface_result_endpoint_reviews_fit_join_decisions_and_learning() {
+        let payload = interface_result_review_response(InterfaceResultReviewRequest {
+            request_id: Some("unit-interface-result".to_string()),
+            plan_request_id: Some("unit-assembly-plan".to_string()),
+            job_id: Some("interface-job-789".to_string()),
+            worker_id: "interface-control-reviewer-01".to_string(),
+            interface_plan_id: Some("interface-control-plan".to_string()),
+            success: true,
+            machine_ready: false,
+            interfaces: Some(vec![InterfaceResultCheck {
+                interface_id: "bearing-insert-interface".to_string(),
+                interface_kind: "printed-machined-press-fit".to_string(),
+                status: "blocked".to_string(),
+                source_part_ids: Some(vec!["printed-housing".to_string()]),
+                target_part_ids: Some(vec!["turned-bearing-insert".to_string()]),
+                datum_evidence: Some(vec!["CMM datum report retained".to_string()]),
+                fit_evidence: Some(vec!["dry-fit shows high press force".to_string()]),
+                tolerance_mm: Some(0.025),
+                gap_mm: Some(0.01),
+                requires_human_intervention: Some(true),
+                release_blocker: Some(true),
+                message: Some("operator must approve reamed bore before recomposition".to_string()),
+            }]),
+            join_evidence: Some(vec![InterfaceResultJoinEvidence {
+                evidence_id: "press-fit-evidence".to_string(),
+                interface_id: Some("bearing-insert-interface".to_string()),
+                join_kind: "press-fit-insert".to_string(),
+                status: "pending-operator-signoff".to_string(),
+                recipe_ref: Some("press-fit-window-v2".to_string()),
+                operator_signoff: Some(false),
+                automation_verified: Some(false),
+                evidence: Some(vec!["press force curve retained".to_string()]),
+            }]),
+            split_combine_decisions: Some(vec![InterfaceResultDecision {
+                decision_id: "split-combine-interface-review".to_string(),
+                decision_kind: "combine-after-ream-and-fit-check".to_string(),
+                status: "blocked".to_string(),
+                interface_id: Some("bearing-insert-interface".to_string()),
+                required_action: Some("ream-bore-and-repeat-dry-fit".to_string()),
+                human_intervention_required: Some(true),
+                evidence: Some(vec!["split route needs manual disposition".to_string()]),
+            }]),
+            artifacts: Some(vec![InterfaceResultArtifact {
+                artifact_id: "interface-report".to_string(),
+                artifact_kind: "interface-fit-report".to_string(),
+                interface_id: Some("bearing-insert-interface".to_string()),
+                uri: Some("s3://fabrication/interface-fit-report.json".to_string()),
+                sha256: Some("b".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec!["interface report checksum retained".to_string()]),
+            }]),
+            warnings: Some(vec![
+                "manual recomposition release gate remains open".to_string()
+            ]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("interface result review should succeed");
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.interface-result-review.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/interfaces/result"))));
+        assert_eq!(
+            payload.get("reviewStatus").and_then(Value::as_str),
+            Some("interface-result-fit-datum-release-blocked")
+        );
+        assert_eq!(
+            payload.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("interfaceBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("joinBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("splitCombineBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("missingArtifactEvidenceCount")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert!(payload
+            .get("interfaceResult")
+            .and_then(|result| result.get("interfaces"))
+            .and_then(Value::as_array)
+            .is_some_and(|interfaces| interfaces.iter().any(|interface| {
+                interface.get("interfaceKind").and_then(Value::as_str)
+                    == Some("printed-machined-press-fit")
+            })));
+        let observations = payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("interface learning observations should be retained");
+        for expected in [
+            "interface-result:human-intervention-required",
+            "interface-kind:printed-machined-press-fit",
+            "interface-join:press-fit-insert",
+            "interface-split-combine:combine-after-ream-and-fit-check",
+            "interface-artifact:interface-fit-report",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|observation| observation.as_str() == Some(expected)),
+                "missing interface learning observation {expected}"
+            );
+        }
+        let outcome_draft = payload
+            .pointer("/learning/outcomeDraft")
+            .expect("interface learning outcome draft");
+        assert_eq!(
+            outcome_draft.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.interface-learning-outcome-draft.v1")
+        );
+        assert_eq!(
+            outcome_draft.get("sourceKind").and_then(Value::as_str),
+            Some("interface-result")
+        );
+        assert_eq!(
+            outcome_draft
+                .get("recommendedSubmitRoute")
+                .and_then(Value::as_str),
+            Some("POST /fabrication/learning/outcomes")
+        );
+        assert!(outcome_draft
+            .get("splitCombineHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("combine-after-ream-and-fit-check"))));
+        assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("join-blockers:1"))));
+
+        let interface_result_job_id = payload
+            .get("interfaceResultJobId")
+            .and_then(Value::as_str)
+            .expect("interface result should expose a retained job id");
+        assert!(interface_result_job_id.starts_with("interface-result-unit-interface-result-"));
+        let job = stored_interface_result_job(&payload);
+        assert_eq!(job.record.job_id, interface_result_job_id);
+        assert_eq!(job.record.kind, "interface-result");
+        assert_eq!(
+            job.record.status,
+            "interface-result-fit-datum-release-blocked"
+        );
+        assert_eq!(job.record.ok, false);
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "interface-result",
+            "interface-checks",
+            "interface-join-evidence",
+            "interface-split-combine-decisions",
+            "interface-artifacts",
+            "interface-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing interface result artifact {artifact_id}"
             );
         }
     }
