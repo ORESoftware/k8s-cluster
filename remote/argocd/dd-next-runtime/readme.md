@@ -123,6 +123,7 @@ Gateway path map:
   `/fabrication/instructions/languages`, `/fabrication/instructions/import/catalog`,
   `/fabrication/instructions/import/preflight/catalog`,
   `/fabrication/instructions/validation/catalog`,
+  `/fabrication/instructions/validation/preflight/catalog`,
   `/fabrication/instructions/generation/catalog`,
   `/fabrication/instructions/generation/preflight/catalog`,
   `POST /fabrication/instructions/generate`,

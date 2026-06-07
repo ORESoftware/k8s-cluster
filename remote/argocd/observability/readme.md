@@ -218,6 +218,7 @@ Currently opted-in:
   `/fabrication/instructions/import/preflight/catalog`,
   `/fabrication/instructions/languages`,
   `/fabrication/instructions/validation/catalog`,
+  `/fabrication/instructions/validation/preflight/catalog`,
   `/fabrication/instructions/generate`,
   `/fabrication/instructions/generation/result`,
   `/fabrication/instructions/review/result`,

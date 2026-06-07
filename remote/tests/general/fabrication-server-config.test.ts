@@ -2995,8 +2995,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /machine_selection_endpoint_returns_candidates_and_release_contract/);
   assert.match(source, /async fn controller_catalog_http/);
   assert.match(source, /fn controller_postprocessor_catalog_response/);
+  assert.match(source, /fn controller_dialect_assumption_checklist/);
   assert.match(source, /dd\.fabrication\.controller-postprocessor-catalog\.v1/);
   assert.match(source, /"GET \/fabrication\/controllers\/catalog"/);
+  assert.match(source, /"dialectAssumptionChecklist"/);
+  assert.match(source, /modal-defaults-and-reset-state/);
+  assert.match(source, /offset-table-and-compensation-state/);
+  assert.match(source, /macro-subprogram-and-controller-state/);
+  assert.match(source, /postprocessed-output-and-dry-run-proof/);
   assert.match(source, /controller_postprocessor_catalog_endpoint_exposes_controller_release_contract/);
   assert.match(source, /async fn controller_preflight_catalog_http/);
   assert.match(source, /fn controller_preflight_catalog_response/);
@@ -3080,17 +3086,29 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"resultReviewFamilies"/);
   assert.match(source, /result_review_catalog_endpoint_exposes_worker_review_routes_and_release_gates/);
   assert.match(source, /async fn instruction_validation_catalog_http/);
+  assert.match(source, /async fn instruction_validation_preflight_catalog_http/);
   assert.match(source, /fn instruction_validation_catalog_response/);
+  assert.match(source, /fn instruction_validation_preflight_catalog_response/);
   assert.match(source, /fn instruction_validation_catalog_check_contracts/);
   assert.match(source, /dd\.fabrication\.instruction-validation-catalog\.v1/);
+  assert.match(source, /dd\.fabrication\.instruction-validation-preflight-catalog\.v1/);
   assert.match(source, /"GET \/fabrication\/instructions\/validation\/catalog"/);
+  assert.match(source, /"GET \/fabrication\/instructions\/validation\/preflight\/catalog"/);
   assert.match(source, /"instructionValidationCatalog"/);
+  assert.match(source, /"instructionValidationPreflightCatalog"/);
+  assert.match(source, /source-provenance-language-and-dialect-state/);
+  assert.match(source, /machine-process-simulation-and-setup-state/);
+  assert.match(source, /boundary-improvement-release-and-learning-state/);
   assert.match(source, /"validation\.failureBoundaries"/);
   assert.match(source, /"additive-printer-state"/);
   assert.match(source, /"split-combine-and-release-review"/);
   assert.match(
     source,
     /instruction_validation_catalog_endpoint_exposes_validation_boundary_and_learning_contract/,
+  );
+  assert.match(
+    source,
+    /instruction_validation_preflight_catalog_endpoint_exposes_release_blocking_gates/,
   );
   assert.match(source, /async fn instruction_generation_catalog_http/);
   assert.match(source, /fn instruction_generation_catalog_response/);
@@ -5341,6 +5359,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   );
   assert.match(
     source,
+    /\.route\(\s*"\/instructions\/validation\/preflight\/catalog",\s*get\(instruction_validation_preflight_catalog_http\),\s*\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/instructions\/validation\/preflight\/catalog",\s*get\(instruction_validation_preflight_catalog_http\),\s*\)/,
+  );
+  assert.match(
+    source,
     /\.route\(\s*"\/instructions\/generation\/catalog",\s*get\(instruction_generation_catalog_http\),\s*\)/,
   );
   assert.match(
@@ -5948,6 +5974,11 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /dd\.fabrication\.controller-postprocessor-catalog\.v1/);
   assert.match(readme, /postprocessor-known counts/);
   assert.match(readme, /`controllerPlan\.compatibilityTargets`/);
+  assert.match(readme, /`dialectAssumptionChecklist`/);
+  assert.match(readme, /modal defaults and\s+reset state/);
+  assert.match(readme, /offset tables and compensation/);
+  assert.match(readme, /macro\/subprogram dependencies/);
+  assert.match(readme, /`controller-modal-defaults:\*`/);
   assert.match(readme, /`GET \/controllers\/preflight\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/controllers\/preflight\/catalog`/);
   assert.match(readme, /dd\.fabrication\.controller-preflight-catalog\.v1/);
@@ -6469,7 +6500,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /Machine-ready release remains blocked/);
   assert.match(readme, /`GET \/instructions\/validation\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/instructions\/validation\/catalog`/);
+  assert.match(readme, /`GET \/instructions\/validation\/preflight\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/instructions\/validation\/preflight\/catalog`/);
   assert.match(readme, /dd\.fabrication\.instruction-validation-catalog\.v1/);
+  assert.match(readme, /dd\.fabrication\.instruction-validation-preflight-catalog\.v1/);
+  assert.match(readme, /source provenance\/language\/dialect state/);
+  assert.match(readme, /machine\/process\/simulation\s+setup state/);
+  assert.match(readme, /boundary\/improvement\/release\/learning state/);
   assert.match(readme, /controller modal state/);
   assert.match(readme, /additive printer\s+heat\/extrusion\/material state/);
   assert.match(readme, /split\/combine release review/);
@@ -8387,6 +8424,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /Stored\s+artifacts include `machine-selection`,\s+`machine-schedule`/);
   assert.match(readme, /dd\.fabrication\.controller-postprocessor-catalog\.v1/);
   assert.match(readme, /postprocessor discovery catalog derived from the current `default_machines\(\)`/);
+  assert.match(readme, /`dialectAssumptionChecklist`/);
+  assert.match(readme, /`dry-run-proof:\*`/);
   assert.match(readme, /exact postprocessed output, controller setup sheet, dry-run or simulation/);
   assert.match(readme, /postprocessor is unknown, output is not retained, dry-run or simulation did not\s+pass/);
   assert.match(readme, /reliable postprocessors, manual-review routes, and controller\s+failure boundaries/);
@@ -8701,6 +8740,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/generation\/result"/);
   assert.match(docs, /"path": "\/instructions\/review\/result"/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/review\/result"/);
+  assert.match(docs, /"path": "\/instructions\/validation\/preflight\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/instructions\/validation\/preflight\/catalog"/);
   assert.match(docs, /"path": "\/instructions\/validation\/result"/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/validation\/result"/);
   assert.match(docs, /"path": "\/machine-code\/catalog"/);
@@ -9030,6 +9071,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/workers\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/results\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/validation\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/instructions\/validation\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/generation\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/generation\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/generate"/);
@@ -9368,6 +9410,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /instruction import catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/validation\/catalog/);
   assert.match(grafanaDashboards, /instruction validation catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/instructions\/validation\/preflight\/catalog/);
+  assert.match(grafanaDashboards, /instruction validation preflight catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/validate/);
   assert.match(grafanaDashboards, /\/fabrication\/improvements\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/boundaries\/catalog/);
