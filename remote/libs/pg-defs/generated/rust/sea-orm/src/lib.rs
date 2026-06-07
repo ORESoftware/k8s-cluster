@@ -43,6 +43,44 @@ impl ActiveModelBehavior for ActiveModel {}
 pub use app_config::Entity as AppConfigEntity;
 pub use app_config::Model as AppConfigModel;
 
+pub mod vapi_phone_call_events {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "vapi_phone_call_events")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "call_id")]
+    pub call_id: String,
+    #[sea_orm(column_name = "event_type")]
+    pub event_type: String,
+    #[sea_orm(column_name = "payload_hash")]
+    pub payload_hash: String,
+    #[sea_orm(column_name = "caller_hash")]
+    pub caller_hash: Option<String>,
+    #[sea_orm(column_name = "called_number_hash")]
+    pub called_number_hash: Option<String>,
+    #[sea_orm(column_name = "ended_reason")]
+    pub ended_reason: Option<String>,
+    #[sea_orm(column_name = "duration_seconds")]
+    pub duration_seconds: Option<i32>,
+    pub summary: Option<String>,
+    pub payload: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use vapi_phone_call_events::Entity as VapiPhoneCallEventsEntity;
+pub use vapi_phone_call_events::Model as VapiPhoneCallEventsModel;
+
 pub mod container_pool_configs {
     use super::*;
 

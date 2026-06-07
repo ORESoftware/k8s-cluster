@@ -7,6 +7,8 @@ WORKDIR /app
 # `docker build` must be the repo root, e.g.:
 #   docker build -f remote/deployments/rust-vapi-phone-rs/Dockerfile -t dd-rust-vapi-phone:dev .
 COPY remote/libs/runtime-config-client-rs /app/remote/libs/runtime-config-client-rs
+COPY remote/libs/interfaces/redis/generated/rust /app/remote/libs/interfaces/redis/generated/rust
+COPY remote/deployments/rest-api-rs/certs /app/remote/deployments/rest-api-rs/certs
 COPY remote/deployments/rust-vapi-phone-rs/Cargo.toml /app/remote/deployments/rust-vapi-phone-rs/Cargo.toml
 COPY remote/deployments/rust-vapi-phone-rs/Cargo.lock /app/remote/deployments/rust-vapi-phone-rs/Cargo.lock
 COPY remote/deployments/rust-vapi-phone-rs/src /app/remote/deployments/rust-vapi-phone-rs/src

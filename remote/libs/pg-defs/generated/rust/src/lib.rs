@@ -129,6 +129,113 @@ pub fn validate_app_config_insert(value: &AppConfigInsert) -> Result<(), String>
     Ok(())
 }
 
+pub const VAPI_PHONE_CALL_EVENTS_TABLE: &str = "vapi_phone_call_events";
+pub const VAPI_PHONE_CALL_EVENTS_COLUMNS: &[&str] = &["id", "call_id", "event_type", "payload_hash", "caller_hash", "called_number_hash", "ended_reason", "duration_seconds", "summary", "payload", "created_at"];
+pub const VAPI_PHONE_CALL_EVENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      call_id,
+      event_type,
+      payload_hash,
+      caller_hash,
+      called_number_hash,
+      ended_reason,
+      duration_seconds,
+      summary,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from vapi_phone_call_events"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct VapiPhoneCallEventsRow {
+    pub id: String,
+    pub call_id: String,
+    pub event_type: String,
+    pub payload_hash: String,
+    pub caller_hash: Option<String>,
+    pub called_number_hash: Option<String>,
+    pub ended_reason: Option<String>,
+    pub duration_seconds: Option<i32>,
+    pub summary: Option<String>,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VapiPhoneCallEventsInsert {
+    pub id: Option<String>,
+    pub call_id: Option<String>,
+    pub event_type: Option<String>,
+    pub payload_hash: Option<String>,
+    pub caller_hash: Option<String>,
+    pub called_number_hash: Option<String>,
+    pub ended_reason: Option<String>,
+    pub duration_seconds: Option<i32>,
+    pub summary: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_vapi_phone_call_events_row(value: &VapiPhoneCallEventsRow) -> Result<(), String> {
+    validate_string_length("vapi_phone_call_events.call_id", &value.call_id, None, Some(160))?;
+    if (&value.call_id).as_bytes().len() > 160 { return Err("vapi_phone_call_events.call_id exceeds 160 bytes".to_string()); }
+    validate_string_length("vapi_phone_call_events.event_type", &value.event_type, None, Some(80))?;
+    validate_string_length("vapi_phone_call_events.payload_hash", &value.payload_hash, None, Some(64))?;
+    if let Some(value) = &value.caller_hash {
+        validate_string_length("vapi_phone_call_events.caller_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.called_number_hash {
+        validate_string_length("vapi_phone_call_events.called_number_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.ended_reason {
+        validate_string_length("vapi_phone_call_events.ended_reason", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.duration_seconds {
+        if *(value) < 0 { return Err("vapi_phone_call_events.duration_seconds is below the minimum".to_string()); }
+        if *(value) > 86400 { return Err("vapi_phone_call_events.duration_seconds is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.summary {
+        if (value).as_bytes().len() > 4000 { return Err("vapi_phone_call_events.summary exceeds 4000 bytes".to_string()); }
+    }
+    if !(&value.payload).is_object() { return Err("vapi_phone_call_events.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_vapi_phone_call_events_insert(value: &VapiPhoneCallEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.call_id {
+        validate_string_length("vapi_phone_call_events.call_id", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("vapi_phone_call_events.call_id exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.event_type {
+        validate_string_length("vapi_phone_call_events.event_type", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.payload_hash {
+        validate_string_length("vapi_phone_call_events.payload_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.caller_hash {
+        validate_string_length("vapi_phone_call_events.caller_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.called_number_hash {
+        validate_string_length("vapi_phone_call_events.called_number_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.ended_reason {
+        validate_string_length("vapi_phone_call_events.ended_reason", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.duration_seconds {
+        if *(value) < 0 { return Err("vapi_phone_call_events.duration_seconds is below the minimum".to_string()); }
+        if *(value) > 86400 { return Err("vapi_phone_call_events.duration_seconds is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.summary {
+        if (value).as_bytes().len() > 4000 { return Err("vapi_phone_call_events.summary exceeds 4000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("vapi_phone_call_events.payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
 pub const CONTAINER_POOL_CONFIGS_TABLE: &str = "container_pool_configs";
 pub const CONTAINER_POOL_CONFIGS_COLUMNS: &[&str] = &["id", "slug", "display_name", "image", "command", "env", "request_path", "health_path", "container_port", "min_warm", "max_warm", "max_concurrency_per_container", "request_timeout_ms", "idle_ttl_seconds", "nats_subject", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const CONTAINER_POOL_CONFIGS_SELECT_SQL: &str = r###"select

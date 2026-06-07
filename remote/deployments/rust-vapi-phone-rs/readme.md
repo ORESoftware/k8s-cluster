@@ -42,9 +42,10 @@ for Vapi's `assistant-request` flow.
 3. Vapi runs the assistant. The model screens the caller per the system prompt.
 4. On a human pass → `transferCall` → `+17372814824`. On a fail → `endCall`.
 5. Vapi posts call lifecycle events to `POST /vapi/webhook`. The service
-   verifies the `x-vapi-secret` header, answers `assistant-request` /
-   `transfer-destination-request` inline, and records `end-of-call-report`
-   metrics.
+   verifies the `x-vapi-secret` header, answers `assistant-request`,
+   `tool-calls`, and `transfer-destination-request` inline, records
+   `end-of-call-report` metrics, and stores compact redacted call metadata in
+   RDS Postgres plus low-latency caller context in Redis.
 
 ## Env vars
 
@@ -72,6 +73,12 @@ for Vapi's `assistant-request` flow.
 | `VAPI_MODEL`               | `gpt-4o`                             | LLM model.                                                                               |
 | `VAPI_VOICE_PROVIDER`      | `vapi`                               | Voice provider.                                                                          |
 | `VAPI_VOICE_ID`            | `Elliot`                             | Voice id.                                                                                |
+| `VAPI_ENABLE_SERVER_TOOLS` | `true`                               | Adds server-side Vapi function tools for recent-caller lookup and compact screening-signal recording. |
+| `VAPI_DATABASE_URL` / `AGENT_TASKS_RDS_DATABASE_URL` / `RDS_DATABASE_URL` / `DATABASE_URL` | _unset_ | Optional RDS/Postgres URL. When set, redacted call events are inserted into `vapi_phone_call_events`. |
+| `VAPI_REDIS_URL` / `REDIS_URL` | `redis://dd-redis-cache.default.svc.cluster.local:6379/0` | Redis cache used by server tools for per-caller context and per-call screening signals. |
+| `VAPI_REDIS_KEY_PREFIX`    | `dd:vapi-phone`                      | Redis key prefix from `remote/libs/interfaces/redis`.                                    |
+| `VAPI_REDIS_CACHE_TTL_SECONDS` | `2592000`                        | TTL for caller context and per-call signal cache entries.                                |
+| `VAPI_DISABLE_REDIS`       | `false`                              | Local-dev escape hatch to skip Redis client setup.                                       |
 | `VAPI_API_BASE`            | `https://api.vapi.ai`                | Vapi REST base URL. Must be `https://` unless `VAPI_ALLOW_HTTP_API_BASE=true` is set for local testing. |
 | `VAPI_HTTP_TIMEOUT_SECONDS`| `20`                                 | Per-request Vapi API timeout.                                                            |
 | `VAPI_FLAMEGRAPH_DIR`      | `${CARGO_TARGET_DIR}/flamegraphs` or `target/flamegraphs` | Directory read by `/flamegraph` and written by the opt-in profiling helper. |
@@ -82,8 +89,10 @@ for Vapi's `assistant-request` flow.
 
 `VAPI_SERVER_SECRET`, `VAPI_API_KEY`, and optional `VAPI_SERVER_CREDENTIAL_ID`
 are pulled from the `dd-agent-secrets` Kubernetes secret (AWS Secrets Manager
-`dd/remote-dev/agent-secrets`). Add the JSON keys there; do not commit them to
-Git. See [`remote/readme.md`](../../readme.md) "Secrets And Key Rotation".
+`dd/remote-dev/agent-secrets`). RDS URLs are pulled from
+`dd-remote-rest-api-secrets`; Redis points at the in-cluster `dd-redis-cache`.
+Add or rotate JSON keys in AWS Secrets Manager; do not commit them to Git. See
+[`remote/readme.md`](../../readme.md) "Secrets And Key Rotation".
 
 ## HTTP API
 
@@ -97,7 +106,7 @@ Git. See [`remote/readme.md`](../../readme.md) "Secrets And Key Rotation".
 | GET    | `/config`      | gateway cookie     | Secret-free view of the assistant the service will install.        |
 | GET    | `/status`      | `x-server-auth`    | Live Vapi assistants + phone numbers for the configured key.       |
 | POST   | `/setup`       | `x-server-auth`    | Provision/refresh the assistant + phone number.                    |
-| POST   | `/webhook`     | `x-vapi-secret`    | Vapi server webhook (assistant-request, transfer, end-of-call).    |
+| POST   | `/webhook`     | `x-vapi-secret`    | Vapi server webhook (assistant-request, tool-calls, transfer, end-of-call). |
 | GET    | `/docs/api`, `/api/docs`, `/api/docs.json` | public | Generated API docs.                            |
 
 Behind the gateway these are served under `/vapi/...`. The webhook is the one
@@ -207,7 +216,10 @@ instead of inline Twilio creds, and is required for Telnyx/Vonage imports.
 - Vapi requires a publicly reachable **https** webhook with a trusted
   certificate. Point `VAPI_WEBHOOK_URL` at the Let's Encrypt gateway cert, not
   the self-signed bootstrap cert.
-- The service holds no call state and writes nothing durable; Vapi is the
-  system of record for calls, recordings, and transcripts.
+- RDS stores only compact, redacted call metadata in
+  `vapi_phone_call_events`. Raw transcripts, recordings, and phone numbers stay
+  out of this table; Vapi remains the system of record for full call artifacts.
+- Redis caches hashed caller context and per-call screening signals using key
+  formatters generated from `remote/libs/interfaces/redis`.
 - A natural next step is publishing `end-of-call-report` summaries to NATS
   (`dd.remote.events`) like `dd-contract-service` does, for the telemetry plane.

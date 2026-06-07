@@ -65,6 +65,55 @@ pub struct AppConfigDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    vapi_phone_call_events (id) {
+        id -> Uuid,
+        call_id -> Varchar,
+        event_type -> Varchar,
+        payload_hash -> Varchar,
+        caller_hash -> Nullable<Varchar>,
+        called_number_hash -> Nullable<Varchar>,
+        ended_reason -> Nullable<Varchar>,
+        duration_seconds -> Nullable<Int4>,
+        summary -> Nullable<Text>,
+        payload -> Jsonb,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = vapi_phone_call_events)]
+pub struct VapiPhoneCallEventsDieselRow {
+    pub id: Uuid,
+    pub call_id: String,
+    pub event_type: String,
+    pub payload_hash: String,
+    pub caller_hash: Option<String>,
+    pub called_number_hash: Option<String>,
+    pub ended_reason: Option<String>,
+    pub duration_seconds: Option<i32>,
+    pub summary: Option<String>,
+    pub payload: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = vapi_phone_call_events)]
+pub struct VapiPhoneCallEventsDieselInsert {
+    pub id: Option<Uuid>,
+    pub call_id: Option<String>,
+    pub event_type: Option<String>,
+    pub payload_hash: Option<String>,
+    pub caller_hash: Option<String>,
+    pub called_number_hash: Option<String>,
+    pub ended_reason: Option<String>,
+    pub duration_seconds: Option<i32>,
+    pub summary: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     container_pool_configs (id) {
         id -> Uuid,
         slug -> Varchar,

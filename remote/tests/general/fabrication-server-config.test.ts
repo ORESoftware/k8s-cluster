@@ -422,6 +422,19 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"GET \/fabrication\/slicers\/catalog"/);
   assert.match(source, /"slicerProfileCatalog"/);
   assert.match(source, /slicer_profile_catalog_endpoint_exposes_profile_evidence_and_release_policy/);
+  assert.match(source, /struct SlicerProfileResultReviewRequest/);
+  assert.match(source, /struct SlicerProfileResultCheck/);
+  assert.match(source, /struct SlicerProfileResultPreparation/);
+  assert.match(source, /async fn slicer_profile_result_http/);
+  assert.match(source, /fn slicer_profile_result_review_response/);
+  assert.match(source, /fn store_slicer_profile_result_response/);
+  assert.match(source, /dd\.fabrication\.slicer-profile-result-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/slicers\/result"/);
+  assert.match(source, /slicer-profile-result-print-preparation-release-blocked/);
+  assert.match(
+    source,
+    /slicer_profile_result_endpoint_reviews_print_prep_artifacts_and_learning/,
+  );
   assert.match(source, /fn mesh_repair_catalog_response/);
   assert.match(source, /fn mesh_repair_catalog_entries/);
   assert.match(source, /dd\.fabrication\.mesh-repair-catalog\.v1/);
@@ -2189,6 +2202,16 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn design_import_review_response/);
   assert.match(source, /dd\.fabrication\.design-import-review\.v1/);
   assert.match(source, /"POST \/fabrication\/design\/import\/review"/);
+  assert.match(source, /struct DesignImportResultReviewRequest/);
+  assert.match(source, /struct DesignImportResultCheck/);
+  assert.match(source, /struct DesignImportResultBoundary/);
+  assert.match(source, /struct DesignImportResultArtifact/);
+  assert.match(source, /async fn design_import_result_http/);
+  assert.match(source, /fn design_import_result_review_response/);
+  assert.match(source, /fn store_design_import_result_response/);
+  assert.match(source, /dd\.fabrication\.design-import-result-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/design\/import\/result"/);
+  assert.match(source, /design-import-result-checks-release-blocked/);
   assert.match(source, /async fn design_conversion_plan_http/);
   assert.match(source, /fn design_conversion_plan_response/);
   assert.match(source, /dd\.fabrication\.design-conversion-plan\.v1/);
@@ -2211,6 +2234,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"native-cad-translator-result-required"/);
   assert.match(source, /design_import_catalog_endpoint_exposes_native_cad_worker_lanes/);
   assert.match(source, /design_import_review_endpoint_reuses_cad_validation_and_redaction/);
+  assert.match(source, /design_import_result_endpoint_reviews_boundaries_artifacts_and_learning/);
   assert.match(source, /async fn design_generation_catalog_http/);
   assert.match(source, /fn design_generation_catalog_response/);
   assert.match(source, /fn design_generation_catalog_export_contracts/);
@@ -2737,6 +2761,18 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn strategy_recommendation_response/);
   assert.match(source, /dd\.fabrication\.strategy-recommendation\.v1/);
   assert.match(source, /"POST \/fabrication\/strategy\/recommend"/);
+  assert.match(source, /struct StrategyResultReviewRequest/);
+  assert.match(source, /struct StrategyResultRouteReview/);
+  assert.match(source, /struct StrategyResultSplitCombineDecision/);
+  assert.match(source, /struct StrategyResultLearningUpdate/);
+  assert.match(source, /struct StrategyResultArtifact/);
+  assert.match(source, /async fn strategy_result_http/);
+  assert.match(source, /fn strategy_result_review_response/);
+  assert.match(source, /fn store_strategy_result_response/);
+  assert.match(source, /dd\.fabrication\.strategy-result-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/strategy\/result"/);
+  assert.match(source, /strategy-result-routes-release-blocked/);
+  assert.match(source, /strategy_result_endpoint_reviews_routes_split_combine_and_learning/);
   assert.match(source, /strategy_recommendation_endpoint_exposes_learned_hybrid_preview/);
   assert.match(
     source,
@@ -2813,6 +2849,49 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"qualityPlan\.inspectionPoints"/);
   assert.match(source, /"interface-fit-and-assembly-lock"/);
   assert.match(source, /quality_catalog_endpoint_exposes_inspection_metrology_and_release_contract/);
+  assert.match(source, /async fn disposition_catalog_http/);
+  assert.match(source, /fn disposition_catalog_response/);
+  assert.match(source, /fn disposition_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.disposition-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/dispositions\/catalog"/);
+  assert.match(source, /"dispositionCatalog"/);
+  assert.match(
+    source,
+    /disposition_catalog_endpoint_exposes_rework_scrap_and_split_learning_contract/,
+  );
+  assert.match(source, /async fn costing_catalog_http/);
+  assert.match(source, /fn costing_catalog_response/);
+  assert.match(source, /fn costing_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.costing-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/costing\/catalog"/);
+  assert.match(source, /"material-yield-estimate"/);
+  assert.match(source, /"split-combine-route-economics"/);
+  assert.match(
+    source,
+    /costing_catalog_endpoint_exposes_yield_quote_and_split_learning_contract/,
+  );
+  assert.match(source, /async fn utilities_catalog_http/);
+  assert.match(source, /fn utilities_catalog_response/);
+  assert.match(source, /fn utilities_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.utilities-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/utilities\/catalog"/);
+  assert.match(source, /"sheet-cut-process-support"/);
+  assert.match(source, /"coolant-chip-dust-state-record"/);
+  assert.match(
+    source,
+    /utilities_catalog_endpoint_exposes_process_support_and_recovery_learning_contract/,
+  );
+  assert.match(source, /async fn telemetry_catalog_http/);
+  assert.match(source, /fn telemetry_catalog_response/);
+  assert.match(source, /fn telemetry_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.telemetry-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/telemetry\/catalog"/);
+  assert.match(source, /"runtime-boundary-correlation"/);
+  assert.match(source, /"boundary:false-negative"/);
+  assert.match(
+    source,
+    /telemetry_catalog_endpoint_exposes_runtime_boundary_and_learning_contract/,
+  );
   assert.match(source, /async fn quality_plan_http/);
   assert.match(source, /fn quality_planning_response/);
   assert.match(source, /dd\.fabrication\.quality-planning\.v1/);
@@ -2906,6 +2985,39 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"GET \/fabrication\/tooling\/catalog"/);
   assert.match(source, /"toolingCatalog"/);
   assert.match(source, /tooling_catalog_endpoint_exposes_machine_tooling_release_contract/);
+  assert.match(source, /async fn workholding_catalog_http/);
+  assert.match(source, /fn workholding_catalog_response/);
+  assert.match(source, /fn workholding_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.workholding-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/workholding\/catalog"/);
+  assert.match(source, /"workholdingCatalog"/);
+  assert.match(
+    source,
+    /workholding_catalog_endpoint_exposes_fixture_release_and_learning_contract/,
+  );
+  assert.match(source, /async fn support_strategy_catalog_http/);
+  assert.match(source, /fn support_strategy_catalog_response/);
+  assert.match(source, /fn support_strategy_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.support-strategy-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/support-strategies\/catalog"/);
+  assert.match(source, /"supportStrategyCatalog"/);
+  assert.match(
+    source,
+    /support_strategy_catalog_endpoint_exposes_orientation_split_and_learning_contract/,
+  );
+  assert.match(source, /struct SupportStrategyResultReviewRequest/);
+  assert.match(source, /struct SupportStrategyResultOrientationReview/);
+  assert.match(source, /struct SupportStrategyResultSupportReview/);
+  assert.match(source, /async fn support_strategy_result_http/);
+  assert.match(source, /fn support_strategy_result_review_response/);
+  assert.match(source, /fn store_support_strategy_result_response/);
+  assert.match(source, /dd\.fabrication\.support-strategy-result-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/support-strategies\/result"/);
+  assert.match(source, /support-strategy-result-orientation-release-blocked/);
+  assert.match(
+    source,
+    /support_strategy_result_endpoint_reviews_orientation_support_and_learning/,
+  );
   assert.match(source, /async fn process_recipe_catalog_http/);
   assert.match(source, /fn process_recipe_catalog_response/);
   assert.match(source, /fn process_recipe_catalog_entries/);
@@ -2913,6 +3025,19 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"GET \/fabrication\/process-recipes\/catalog"/);
   assert.match(source, /"processRecipeCatalog"/);
   assert.match(source, /process_recipe_catalog_endpoint_exposes_parameter_release_contract/);
+  assert.match(source, /struct ProcessRecipeResultReviewRequest/);
+  assert.match(source, /struct ProcessRecipeResultRecipeReview/);
+  assert.match(source, /struct ProcessRecipeResultParameterCheck/);
+  assert.match(source, /async fn process_recipe_result_http/);
+  assert.match(source, /fn process_recipe_result_review_response/);
+  assert.match(source, /fn store_process_recipe_result_response/);
+  assert.match(source, /dd\.fabrication\.process-recipe-result-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/process-recipes\/result"/);
+  assert.match(source, /process-recipe-result-recipes-release-blocked/);
+  assert.match(
+    source,
+    /process_recipe_result_endpoint_reviews_parameters_coupons_and_learning/,
+  );
   assert.match(source, /async fn kinematics_catalog_http/);
   assert.match(source, /fn kinematics_catalog_response/);
   assert.match(source, /fn kinematics_catalog_entries/);
@@ -2920,6 +3045,16 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"GET \/fabrication\/kinematics\/catalog"/);
   assert.match(source, /"kinematicsCatalog"/);
   assert.match(source, /kinematics_catalog_endpoint_exposes_axis_release_contract/);
+  assert.match(source, /struct KinematicsResultReviewRequest/);
+  assert.match(source, /struct KinematicsResultAxisCheck/);
+  assert.match(source, /struct KinematicsResultCoordinateReview/);
+  assert.match(source, /async fn kinematics_result_http/);
+  assert.match(source, /fn kinematics_result_review_response/);
+  assert.match(source, /fn store_kinematics_result_response/);
+  assert.match(source, /dd\.fabrication\.kinematics-result-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/kinematics\/result"/);
+  assert.match(source, /kinematics-result-axis-release-blocked/);
+  assert.match(source, /kinematics_result_endpoint_reviews_axes_frames_and_learning/);
   assert.match(source, /async fn tolerance_catalog_http/);
   assert.match(source, /fn tolerance_catalog_response/);
   assert.match(source, /fn tolerance_catalog_entries/);
@@ -2927,6 +3062,68 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"GET \/fabrication\/tolerances\/catalog"/);
   assert.match(source, /"toleranceCatalog"/);
   assert.match(source, /tolerance_catalog_endpoint_exposes_fit_stackup_release_contract/);
+  assert.match(source, /struct ToleranceResultReviewRequest/);
+  assert.match(source, /struct ToleranceResultCheck/);
+  assert.match(source, /struct ToleranceResultFitCheck/);
+  assert.match(source, /async fn tolerance_result_http/);
+  assert.match(source, /fn tolerance_result_review_response/);
+  assert.match(source, /fn store_tolerance_result_response/);
+  assert.match(source, /dd\.fabrication\.tolerance-result-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/tolerances\/result"/);
+  assert.match(source, /tolerance-result-tolerance-release-blocked/);
+  assert.match(source, /tolerance_result_endpoint_reviews_fit_compensation_and_learning/);
+  assert.match(source, /async fn process_capability_catalog_http/);
+  assert.match(source, /fn process_capability_catalog_response/);
+  assert.match(source, /fn process_capability_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.process-capability-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/process-capabilities\/catalog"/);
+  assert.match(source, /"processCapabilityCatalog"/);
+  assert.match(
+    source,
+    /process_capability_catalog_endpoint_exposes_geometry_release_boundaries/,
+  );
+  assert.match(source, /async fn manufacturability_catalog_http/);
+  assert.match(source, /fn manufacturability_catalog_response/);
+  assert.match(source, /fn manufacturability_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.manufacturability-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/manufacturability\/catalog"/);
+  assert.match(source, /"manufacturabilityCatalog"/);
+  assert.match(source, /manufacturability_catalog_endpoint_exposes_dfm_release_boundaries/);
+  assert.match(source, /struct ManufacturabilityResultReviewRequest/);
+  assert.match(source, /struct ManufacturabilityResultFinding/);
+  assert.match(source, /struct ManufacturabilityResultRouteReview/);
+  assert.match(source, /async fn manufacturability_result_http/);
+  assert.match(source, /fn manufacturability_result_review_response/);
+  assert.match(source, /fn store_manufacturability_result_response/);
+  assert.match(source, /dd\.fabrication\.manufacturability-result-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/manufacturability\/result"/);
+  assert.match(source, /manufacturability-result-findings-release-blocked/);
+  assert.match(source, /manufacturability_result_endpoint_reviews_dfm_split_and_learning/);
+  assert.match(source, /async fn failure_mode_catalog_http/);
+  assert.match(source, /fn failure_mode_catalog_response/);
+  assert.match(source, /fn failure_mode_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.failure-mode-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/failure-modes\/catalog"/);
+  assert.match(source, /"failureModeCatalog"/);
+  assert.match(
+    source,
+    /failure_mode_catalog_endpoint_exposes_process_failure_learning_contract/,
+  );
+  assert.match(source, /struct FailureModeResultReviewRequest/);
+  assert.match(source, /struct FailureModeResultEvent/);
+  assert.match(source, /struct FailureModeResultRecoveryAction/);
+  assert.match(source, /struct FailureModeResultIntervention/);
+  assert.match(source, /struct FailureModeResultArtifact/);
+  assert.match(source, /async fn failure_mode_result_http/);
+  assert.match(source, /fn failure_mode_result_review_response/);
+  assert.match(source, /fn store_failure_mode_result_response/);
+  assert.match(source, /dd\.fabrication\.failure-mode-result-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/failure-modes\/result"/);
+  assert.match(source, /failure-mode-result-events-release-blocked/);
+  assert.match(
+    source,
+    /failure_mode_result_endpoint_reviews_recovery_intervention_and_learning/,
+  );
   assert.match(source, /async fn safety_catalog_http/);
   assert.match(source, /fn safety_catalog_response/);
   assert.match(source, /fn safety_catalog_entries/);
@@ -2934,6 +3131,20 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"GET \/fabrication\/safety\/catalog"/);
   assert.match(source, /"safetyCatalog"/);
   assert.match(source, /safety_catalog_endpoint_exposes_interlock_release_contract/);
+  assert.match(source, /async fn environment_catalog_http/);
+  assert.match(source, /fn environment_catalog_response/);
+  assert.match(source, /fn environment_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.environment-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/environment\/catalog"/);
+  assert.match(source, /"environmentCatalog"/);
+  assert.match(source, /environment_catalog_endpoint_exposes_condition_release_contract/);
+  assert.match(source, /async fn provenance_catalog_http/);
+  assert.match(source, /fn provenance_catalog_response/);
+  assert.match(source, /fn provenance_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.provenance-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/provenance\/catalog"/);
+  assert.match(source, /"provenanceCatalog"/);
+  assert.match(source, /provenance_catalog_endpoint_exposes_traceability_release_contract/);
   assert.match(
     source,
     /setup_catalog_endpoint_exposes_tooling_fixture_and_monitoring_contract/,
@@ -3095,6 +3306,17 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /des_engine::des::studio::StudioModelSpec/);
   assert.match(source, /des_engine::des::general::neural_network::FeedForwardNetwork/);
   assert.match(source, /machine-ready release stays blocked/);
+  assert.match(source, /async fn learning_reward_catalog_http/);
+  assert.match(source, /fn learning_reward_catalog_response/);
+  assert.match(source, /fn learning_reward_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.learning-reward-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/learning\/rewards\/catalog"/);
+  assert.match(source, /"machine-failure:-5"/);
+  assert.match(source, /"split-combine-recovery-and-route-improvement"/);
+  assert.match(
+    source,
+    /learning_reward_catalog_endpoint_exposes_reward_terms_and_training_contract/,
+  );
   assert.match(source, /"defaultMachines": default_machines\(\)/);
   assert.match(source, /fn accepted_instruction_languages/);
   assert.match(source, /accepted_instruction_languages_cover_generated_default_program_languages/);
@@ -3213,6 +3435,22 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /\.route\("\/fabrication\/design\/formats", get\(design_formats\)\)/);
   assert.match(
     source,
+    /\.route\("\/slicers\/catalog", get\(slicer_profile_catalog_http\)\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/slicers\/catalog",\s*get\(slicer_profile_catalog_http\),\s*\)/,
+  );
+  assert.match(
+    source,
+    /\.route\("\/slicers\/result", post\(slicer_profile_result_http\)\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/slicers\/result",\s*post\(slicer_profile_result_http\),\s*\)/,
+  );
+  assert.match(
+    source,
     /\.route\("\/formats\/catalog", get\(design_import_catalog_http\)\)/,
   );
   assert.match(
@@ -3231,6 +3469,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(
     source,
     /\.route\(\s*"\/fabrication\/design\/import\/review",\s*post\(design_import_review_http\),\s*\)/,
+  );
+  assert.match(source, /\.route\("\/design\/import\/result", post\(design_import_result_http\)\)/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/design\/import\/result",\s*post\(design_import_result_http\),\s*\)/,
   );
   assert.match(
     source,
@@ -3497,6 +3740,16 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     source,
     /\.route\("\/fabrication\/safety\/catalog", get\(safety_catalog_http\)\)/,
   );
+  assert.match(source, /\.route\("\/environment\/catalog", get\(environment_catalog_http\)\)/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/environment\/catalog",\s*get\(environment_catalog_http\),\s*\)/,
+  );
+  assert.match(source, /\.route\("\/provenance\/catalog", get\(provenance_catalog_http\)\)/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/provenance\/catalog",\s*get\(provenance_catalog_http\),\s*\)/,
+  );
   assert.match(source, /\.route\("\/setup\/plan", post\(setup_plan_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/setup\/plan", post\(setup_plan_http\)\)/);
   assert.match(source, /\.route\("\/setup\/result", post\(setup_result_http\)\)/);
@@ -3591,6 +3844,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     source,
     /\.route\(\s*"\/fabrication\/strategy\/recommend",\s*post\(strategy_recommend_http\),\s*\)/,
   );
+  assert.match(source, /\.route\("\/strategy\/result", post\(strategy_result_http\)\)/);
+  assert.match(
+    source,
+    /\.route\("\/fabrication\/strategy\/result", post\(strategy_result_http\)\)/,
+  );
   assert.match(source, /\.route\("\/instructions\/analyze", post\(analyze_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/instructions\/analyze", post\(analyze_http\)\)/);
   assert.match(
@@ -3645,12 +3903,16 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`GET \/fabrication\/design\/formats`/);
   assert.match(readme, /`GET \/slicers\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/slicers\/catalog`/);
+  assert.match(readme, /`POST \/slicers\/result`/);
+  assert.match(readme, /`POST \/fabrication\/slicers\/result`/);
   assert.match(readme, /`GET \/formats\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/formats\/catalog`/);
   assert.match(readme, /`GET \/design\/import\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/design\/import\/catalog`/);
   assert.match(readme, /`POST \/design\/import\/review`/);
   assert.match(readme, /`POST \/fabrication\/design\/import\/review`/);
+  assert.match(readme, /`POST \/design\/import\/result`/);
+  assert.match(readme, /`POST \/fabrication\/design\/import\/result`/);
   assert.match(readme, /`POST \/design\/convert\/plan`/);
   assert.match(readme, /`POST \/fabrication\/design\/convert\/plan`/);
   assert.match(readme, /`POST \/design\/convert\/result`/);
@@ -3663,12 +3925,18 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/fabrication\/design\/synthesis\/result`/);
   assert.match(readme, /dd\.fabrication\.design-import-catalog\.v1/);
   assert.match(readme, /dd\.fabrication\.slicer-profile-catalog\.v1/);
+  assert.match(readme, /dd\.fabrication\.slicer-profile-result-review\.v1/);
+  assert.match(readme, /slicer-print-preparation/);
+  assert.match(readme, /slicer-machine-code-checks/);
   assert.match(readme, /PrusaSlicer, OrcaSlicer, Cura, and Bambu Studio/);
   assert.match(readme, /not certified\s+printer-ready G-code/);
   assert.match(readme, /dd\.fabrication\.mesh-repair-catalog\.v1/);
   assert.match(readme, /watertight topology repair/);
   assert.match(readme, /not certified printable geometry/);
   assert.match(readme, /dd\.fabrication\.design-import-review\.v1/);
+  assert.match(readme, /dd\.fabrication\.design-import-result-review\.v1/);
+  assert.match(readme, /design-import-failure-boundaries/);
+  assert.match(readme, /design-import-learning-observations/);
   assert.match(readme, /dd\.fabrication\.design-conversion-plan\.v1/);
   assert.match(readme, /dd\.fabrication\.design-conversion-result-review\.v1/);
   assert.match(readme, /dd\.fabrication\.design-synthesis-result-review\.v1/);
@@ -3696,22 +3964,85 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /dd\.fabrication\.tooling-catalog\.v1/);
   assert.match(readme, /subtractive cutters\/holders\/probes/);
   assert.match(readme, /not certified tooling setup sheets/);
+  assert.match(readme, /`GET \/fabrication\/workholding\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.workholding-catalog\.v1/);
+  assert.match(readme, /lathe chucks, collets, guide bushings/);
+  assert.match(readme, /not\s+certified fixture designs/);
+  assert.match(readme, /`GET \/fabrication\/support-strategies\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.support-strategy-catalog\.v1/);
+  assert.match(readme, /one-piece, split, combine, or alternate-machine routes/);
+  assert.match(readme, /not certified manufacturing instructions/);
+  assert.match(readme, /`POST \/support-strategies\/result`/);
+  assert.match(readme, /`POST \/fabrication\/support-strategies\/result`/);
+  assert.match(readme, /dd\.fabrication\.support-strategy-result-review\.v1/);
+  assert.match(readme, /support-strategy-orientation-reviews/);
+  assert.match(readme, /support-strategy-learning-observations/);
+  assert.match(readme, /support-strategy:split-combine-required/);
   assert.match(readme, /`GET \/fabrication\/process-recipes\/catalog`/);
   assert.match(readme, /dd\.fabrication\.process-recipe-catalog\.v1/);
   assert.match(readme, /subtractive feeds\/speeds and cutter engagement/);
   assert.match(readme, /not certified production recipes/);
+  assert.match(readme, /`POST \/process-recipes\/result`/);
+  assert.match(readme, /`POST \/fabrication\/process-recipes\/result`/);
+  assert.match(readme, /dd\.fabrication\.process-recipe-result-review\.v1/);
+  assert.match(readme, /process-recipe-parameter-checks/);
+  assert.match(readme, /process-recipe-learning-observations/);
+  assert.match(readme, /process-recipe:parameter-change-required/);
   assert.match(readme, /`GET \/fabrication\/kinematics\/catalog`/);
   assert.match(readme, /dd\.fabrication\.kinematics-catalog\.v1/);
   assert.match(readme, /rotary\/five-axis milling/);
   assert.match(readme, /not certified kinematic\s+calibration records/);
+  assert.match(readme, /`POST \/kinematics\/result`/);
+  assert.match(readme, /`POST \/fabrication\/kinematics\/result`/);
+  assert.match(readme, /dd\.fabrication\.kinematics-result-review\.v1/);
+  assert.match(readme, /kinematics-axis-checks/);
+  assert.match(readme, /kinematics-learning-observations/);
+  assert.match(readme, /kinematics:human-intervention-required/);
   assert.match(readme, /`GET \/fabrication\/tolerances\/catalog`/);
   assert.match(readme, /dd\.fabrication\.tolerance-catalog\.v1/);
   assert.match(readme, /hybrid assembly interface stackups/);
   assert.match(readme, /not certified inspection plans/);
+  assert.match(readme, /`POST \/tolerances\/result`/);
+  assert.match(readme, /`POST \/fabrication\/tolerances\/result`/);
+  assert.match(readme, /dd\.fabrication\.tolerance-result-review\.v1/);
+  assert.match(readme, /tolerance-compensations/);
+  assert.match(readme, /tolerance-learning-observations/);
+  assert.match(readme, /split\/combine planning, or human fit-up/);
+  assert.match(readme, /`GET \/fabrication\/process-capabilities\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.process-capability-catalog\.v1/);
+  assert.match(readme, /subtractive tool access and chip-load envelopes/);
+  assert.match(readme, /not certified machine capability\s+studies/);
+  assert.match(readme, /`GET \/fabrication\/manufacturability\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.manufacturability-catalog\.v1/);
+  assert.match(readme, /additive DFM print-or-split review/);
+  assert.match(readme, /not certified design approvals/);
+  assert.match(readme, /`POST \/manufacturability\/result`/);
+  assert.match(readme, /`POST \/fabrication\/manufacturability\/result`/);
+  assert.match(readme, /dd\.fabrication\.manufacturability-result-review\.v1/);
+  assert.match(readme, /manufacturability-split-combine-decisions/);
+  assert.match(readme, /manufacturability:split-combine-required/);
+  assert.match(readme, /`GET \/fabrication\/failure-modes\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.failure-mode-catalog\.v1/);
+  assert.match(readme, /subtractive tool and fixture failures/);
+  assert.match(readme, /not certified machine\s+diagnostics/);
+  assert.match(readme, /`POST \/failure-modes\/result`/);
+  assert.match(readme, /`POST \/fabrication\/failure-modes\/result`/);
+  assert.match(readme, /dd\.fabrication\.failure-mode-result-review\.v1/);
+  assert.match(readme, /failure-mode-recovery-actions/);
+  assert.match(readme, /failure-mode-learning-observations/);
+  assert.match(readme, /failure-mode:split-combine-required/);
   assert.match(readme, /`GET \/fabrication\/safety\/catalog`/);
   assert.match(readme, /dd\.fabrication\.safety-catalog\.v1/);
   assert.match(readme, /robotic-cell and\s+external-axis interlocks/);
   assert.match(readme, /not certified machine-safety approvals/);
+  assert.match(readme, /`GET \/fabrication\/environment\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.environment-catalog\.v1/);
+  assert.match(readme, /additive material\s+storage and printroom state/);
+  assert.match(readme, /not certified facility\s+qualifications/);
+  assert.match(readme, /`GET \/fabrication\/provenance\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.provenance-catalog\.v1/);
+  assert.match(readme, /machine-program and controller artifact lineage/);
+  assert.match(readme, /not certified quality records/);
   assert.match(readme, /`designPackage`/);
   assert.match(readme, /`designExports`/);
   assert.match(readme, /`manufacturingHandoff\.parts`/);
@@ -4018,6 +4349,28 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`qualityPlan\.inspectionPoints`/);
   assert.match(readme, /machine-ready release remains blocked while required quality\s+inspection/);
   assert.match(readme, /Quality observations are retained for MDP\/POMDP\/neural\s+workers/);
+  assert.match(readme, /`GET \/fabrication\/dispositions\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.disposition-catalog\.v1/);
+  assert.match(readme, /rework-and-reinspect/);
+  assert.match(readme, /not certified quality acceptance/);
+  assert.match(readme, /`GET \/costing\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/costing\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.costing-catalog\.v1/);
+  assert.match(readme, /material yield and scrap allowance/);
+  assert.match(readme, /not binding quotes/);
+  assert.match(readme, /Cost, yield, scrap, cycle-time,\s+and rework outcomes/);
+  assert.match(readme, /`GET \/utilities\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/utilities\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.utilities-catalog\.v1/);
+  assert.match(readme, /subtractive coolant\/chip\/dust\/air support/);
+  assert.match(readme, /not certified machine\s+safety approval/);
+  assert.match(readme, /Utility outages, restarts, operator recovery/);
+  assert.match(readme, /`GET \/telemetry\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/telemetry\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.telemetry-catalog\.v1/);
+  assert.match(readme, /simulation-to-runtime\s+boundary correlation/);
+  assert.match(readme, /not certified machine safety\s+validation/);
+  assert.match(readme, /Telemetry outcomes feed MDP\/POMDP\/neural workers/);
   assert.match(readme, /`POST \/quality\/plan`/);
   assert.match(readme, /`POST \/fabrication\/quality\/plan`/);
   assert.match(readme, /dd\.fabrication\.quality-planning\.v1/);
@@ -4138,6 +4491,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /dd\.fabrication\.learning-capability-catalog\.v1/);
   assert.match(readme, /solve_pomdp_underlying/);
   assert.match(readme, /FeedForwardNetwork/);
+  assert.match(readme, /`GET \/learning\/rewards\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/learning\/rewards\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.learning-reward-catalog\.v1/);
+  assert.match(readme, /machine-failure boundary penalties/);
+  assert.match(readme, /Positive rewards cannot bypass validation/);
   assert.match(readme, /`GET \/schema`/);
   assert.match(readme, /`GET \/fabrication\/schema`/);
   assert.match(readme, /`GET \/examples`/);
@@ -5299,6 +5657,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /GET \/formats\/catalog/);
   assert.match(readme, /GET \/fabrication\/formats\/catalog/);
   assert.match(readme, /dd\.fabrication\.design-import-review\.v1/);
+  assert.match(readme, /POST \/design\/import\/result/);
+  assert.match(readme, /POST \/fabrication\/design\/import\/result/);
+  assert.match(readme, /dd\.fabrication\.design-import-result-review\.v1/);
   assert.match(readme, /POST \/fabrication\/design\/convert\/plan/);
   assert.match(readme, /POST \/fabrication\/design\/convert\/result/);
   assert.match(readme, /MDP\/POMDP\/neural learning surfaces/);
@@ -5377,6 +5738,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /apply the current bounded learning-policy memory/);
   assert.match(readme, /top scored candidate/);
   assert.match(readme, /do not retain full plan jobs/);
+  assert.match(readme, /POST \/strategy\/result/);
+  assert.match(readme, /POST \/fabrication\/strategy\/result/);
+  assert.match(readme, /dd\.fabrication\.strategy-result-review\.v1/);
+  assert.match(readme, /strategy-route-reviews/);
+  assert.match(readme, /strategy-learning-observations/);
   assert.match(readme, /GET \/calibration\/catalog/);
   assert.match(readme, /GET \/fabrication\/calibration\/catalog/);
   assert.match(readme, /GET \/postprocess\/catalog/);
@@ -5443,6 +5809,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /dd\.fabrication\.learning-capability-catalog\.v1/);
   assert.match(readme, /canonical\s+MDP\/POMDP\/DES Studio schema names/);
   assert.match(readme, /machine-ready release stays blocked while validation\s+findings/);
+  assert.match(readme, /dd\.fabrication\.learning-reward-catalog\.v1/);
+  assert.match(readme, /Reward terms are retained so DES\/MDP\/POMDP\/neural workers/);
   assert.match(readme, /dd\.fabrication\.learning-outcome-memory\.v1/);
   assert.match(readme, /retained compact\/rich learning records/);
   assert.match(
@@ -5484,6 +5852,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/design\/formats"/);
   assert.match(docs, /"path": "\/slicers\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/slicers\/catalog"/);
+  assert.match(docs, /"path": "\/slicers\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/slicers\/result"/);
   assert.match(docs, /"path": "\/mesh-repair\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/mesh-repair\/catalog"/);
   assert.match(docs, /"path": "\/formats\/catalog"/);
@@ -5492,6 +5862,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/design\/import\/catalog"/);
   assert.match(docs, /"path": "\/design\/import\/review"/);
   assert.match(docs, /"path": "\/fabrication\/design\/import\/review"/);
+  assert.match(docs, /"path": "\/design\/import\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/design\/import\/result"/);
   assert.match(docs, /"path": "\/design\/convert\/plan"/);
   assert.match(docs, /"path": "\/fabrication\/design\/convert\/plan"/);
   assert.match(docs, /"path": "\/design\/convert\/result"/);
@@ -5570,6 +5942,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/strategy\/catalog"/);
   assert.match(docs, /"path": "\/strategy\/recommend"/);
   assert.match(docs, /"path": "\/fabrication\/strategy\/recommend"/);
+  assert.match(docs, /"path": "\/strategy\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/strategy\/result"/);
   assert.match(docs, /"path": "\/schedule\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/schedule\/catalog"/);
   assert.match(docs, /"path": "\/simulation\/catalog"/);
@@ -5580,6 +5954,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/simulation\/result"/);
   assert.match(docs, /"path": "\/quality\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/quality\/catalog"/);
+  assert.match(docs, /"path": "\/dispositions\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/dispositions\/catalog"/);
   assert.match(docs, /"path": "\/quality\/plan"/);
   assert.match(docs, /"path": "\/fabrication\/quality\/plan"/);
   assert.match(docs, /"path": "\/quality\/result"/);
@@ -5596,14 +5972,38 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/setup\/catalog"/);
   assert.match(docs, /"path": "\/tooling\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/tooling\/catalog"/);
+  assert.match(docs, /"path": "\/workholding\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/workholding\/catalog"/);
+  assert.match(docs, /"path": "\/support-strategies\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/support-strategies\/catalog"/);
+  assert.match(docs, /"path": "\/support-strategies\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/support-strategies\/result"/);
   assert.match(docs, /"path": "\/process-recipes\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/process-recipes\/catalog"/);
+  assert.match(docs, /"path": "\/process-recipes\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/process-recipes\/result"/);
   assert.match(docs, /"path": "\/kinematics\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/kinematics\/catalog"/);
+  assert.match(docs, /"path": "\/kinematics\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/kinematics\/result"/);
   assert.match(docs, /"path": "\/tolerances\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/tolerances\/catalog"/);
+  assert.match(docs, /"path": "\/process-capabilities\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/process-capabilities\/catalog"/);
+  assert.match(docs, /"path": "\/manufacturability\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/manufacturability\/catalog"/);
+  assert.match(docs, /"path": "\/manufacturability\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/manufacturability\/result"/);
+  assert.match(docs, /"path": "\/failure-modes\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/failure-modes\/catalog"/);
+  assert.match(docs, /"path": "\/failure-modes\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/failure-modes\/result"/);
   assert.match(docs, /"path": "\/safety\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/safety\/catalog"/);
+  assert.match(docs, /"path": "\/environment\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/environment\/catalog"/);
+  assert.match(docs, /"path": "\/provenance\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/provenance\/catalog"/);
   assert.match(docs, /"path": "\/setup\/plan"/);
   assert.match(docs, /"path": "\/fabrication\/setup\/plan"/);
   assert.match(docs, /"path": "\/setup\/result"/);
@@ -5718,9 +6118,11 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/materials\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/formats\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/slicers\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/slicers\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/mesh-repair\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/design\/import\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/design\/import\/review"/);
+  assert.match(deployment, /"path": "\/fabrication\/design\/import\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/design\/convert\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/design\/convert\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/validate"/);
@@ -5756,6 +6158,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/strategy\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/methods\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/strategy\/recommend"/);
+  assert.match(deployment, /"path": "\/fabrication\/strategy\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/schedule\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/schedule\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/execution\/plan"/);
@@ -5764,18 +6167,32 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/simulation\/run"/);
   assert.match(deployment, /"path": "\/fabrication\/simulation\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/quality\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/dispositions\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/quality\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/quality\/result"/);
+  assert.match(deployment, /"path": "\/fabrication\/manufacturability\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/calibration\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/calibration\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/calibration\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/interventions\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/setup\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/tooling\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/workholding\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/support-strategies\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/support-strategies\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/process-recipes\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/process-recipes\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/kinematics\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/kinematics\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/tolerances\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/process-capabilities\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/manufacturability\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/manufacturability\/result"/);
+  assert.match(deployment, /"path": "\/fabrication\/failure-modes\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/failure-modes\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/safety\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/environment\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/provenance\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/setup\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/setup\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/monitoring\/catalog"/);
@@ -5859,10 +6276,13 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/design\/formats/);
   assert.match(grafanaDashboards, /\/fabrication\/slicers\/catalog/);
   assert.match(grafanaDashboards, /slicer catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/slicers\/result/);
+  assert.match(grafanaDashboards, /slicer profile result review/);
   assert.match(grafanaDashboards, /\/fabrication\/mesh-repair\/catalog/);
   assert.match(grafanaDashboards, /mesh repair catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/design\/import\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/design\/import\/review/);
+  assert.match(grafanaDashboards, /\/fabrication\/design\/import\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/design\/convert\/plan/);
   assert.match(grafanaDashboards, /\/fabrication\/design\/convert\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/design\/generation\/catalog/);
@@ -5904,6 +6324,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/methods\/catalog/);
   assert.match(grafanaDashboards, /method catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/strategy\/recommend/);
+  assert.match(grafanaDashboards, /\/fabrication\/strategy\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/artifacts\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/jobs\/catalog/);
   assert.match(grafanaDashboards, /job evidence catalog/);
@@ -5942,18 +6363,50 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/schedule\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/simulation\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/quality\/catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/dispositions\/catalog/);
+  assert.match(grafanaDashboards, /disposition catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/costing\/catalog/);
+  assert.match(grafanaDashboards, /costing catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/utilities\/catalog/);
+  assert.match(grafanaDashboards, /utilities catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/telemetry\/catalog/);
+  assert.match(grafanaDashboards, /telemetry catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/manufacturability\/result/);
+  assert.match(grafanaDashboards, /manufacturability result review/);
   assert.match(grafanaDashboards, /\/fabrication\/interventions\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/setup\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/tooling\/catalog/);
   assert.match(grafanaDashboards, /tooling catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/workholding\/catalog/);
+  assert.match(grafanaDashboards, /workholding catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/support-strategies\/catalog/);
+  assert.match(grafanaDashboards, /support strategy catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/support-strategies\/result/);
+  assert.match(grafanaDashboards, /support strategy result review/);
   assert.match(grafanaDashboards, /\/fabrication\/process-recipes\/catalog/);
   assert.match(grafanaDashboards, /process recipe catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/process-recipes\/result/);
+  assert.match(grafanaDashboards, /process recipe result review/);
   assert.match(grafanaDashboards, /\/fabrication\/kinematics\/catalog/);
   assert.match(grafanaDashboards, /kinematics catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/kinematics\/result/);
+  assert.match(grafanaDashboards, /kinematics result review/);
   assert.match(grafanaDashboards, /\/fabrication\/tolerances\/catalog/);
   assert.match(grafanaDashboards, /tolerance catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/process-capabilities\/catalog/);
+  assert.match(grafanaDashboards, /process capability catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/manufacturability\/catalog/);
+  assert.match(grafanaDashboards, /manufacturability catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/failure-modes\/catalog/);
+  assert.match(grafanaDashboards, /failure mode catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/failure-modes\/result/);
+  assert.match(grafanaDashboards, /failure mode result review/);
   assert.match(grafanaDashboards, /\/fabrication\/safety\/catalog/);
   assert.match(grafanaDashboards, /safety catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/environment\/catalog/);
+  assert.match(grafanaDashboards, /environment catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/provenance\/catalog/);
+  assert.match(grafanaDashboards, /provenance catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/monitoring\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/postprocess\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/improve/);
@@ -5971,9 +6424,11 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /POST \/fabrication\/materials\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/materials\/result/);
   assert.match(runtimeReadme, /\/fabrication\/slicers\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/slicers\/result/);
   assert.match(runtimeReadme, /\/fabrication\/mesh-repair\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/design\/import\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/design\/import\/review/);
+  assert.match(runtimeReadme, /POST \/fabrication\/design\/import\/result/);
   assert.match(runtimeReadme, /POST \/fabrication\/design\/convert\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/design\/convert\/result/);
   assert.match(runtimeReadme, /POST \/fabrication\/instructions\/improve/);
@@ -6004,6 +6459,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /POST \/fabrication\/simulation\/result/);
   assert.match(runtimeReadme, /POST \/fabrication\/quality\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/quality\/result/);
+  assert.match(runtimeReadme, /POST \/fabrication\/manufacturability\/result/);
   assert.match(runtimeReadme, /\/fabrication\/improvements\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/remediation\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/remediation\/plan/);
@@ -6014,20 +6470,36 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/strategy\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/methods\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/strategy\/recommend/);
+  assert.match(runtimeReadme, /POST \/fabrication\/strategy\/result/);
   assert.match(runtimeReadme, /\/fabrication\/schedule\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/schedule\/result/);
   assert.match(runtimeReadme, /\/fabrication\/simulation\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/jobs\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/quality\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/dispositions\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/costing\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/utilities\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/telemetry\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/calibration\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/calibration\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/calibration\/result/);
   assert.match(runtimeReadme, /\/fabrication\/interventions\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/setup\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/workholding\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/support-strategies\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/support-strategies\/result/);
   assert.match(runtimeReadme, /\/fabrication\/process-recipes\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/process-recipes\/result/);
   assert.match(runtimeReadme, /\/fabrication\/kinematics\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/kinematics\/result/);
   assert.match(runtimeReadme, /\/fabrication\/tolerances\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/process-capabilities\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/manufacturability\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/failure-modes\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/failure-modes\/result/);
   assert.match(runtimeReadme, /\/fabrication\/safety\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/environment\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/provenance\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/setup\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/setup\/result/);
   assert.match(runtimeReadme, /\/fabrication\/monitoring\/catalog/);
@@ -6060,6 +6532,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /validation findings, machine-failure boundaries/);
   assert.match(runtimeReadme, /required operator actions, fixture\/setup\s+blockers, split\/combine reviews/);
   assert.match(runtimeReadme, /CAD\/design format discovery, design-import review/);
+  assert.match(runtimeReadme, /design-import result review/);
   assert.match(runtimeReadme, /worker result-review route traffic/);
   assert.match(runtimeReadme, /instruction-improvement review/);
   assert.match(runtimeReadme, /instruction-boundary review/);
@@ -6084,9 +6557,11 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/materials\/result/);
   assert.match(observabilityReadme, /\/fabrication\/design\/formats/);
   assert.match(observabilityReadme, /\/fabrication\/slicers\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/slicers\/result/);
   assert.match(observabilityReadme, /\/fabrication\/mesh-repair\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/design\/import\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/design\/import\/review/);
+  assert.match(observabilityReadme, /\/fabrication\/design\/import\/result/);
   assert.match(observabilityReadme, /\/fabrication\/design\/convert\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/design\/convert\/result/);
   assert.match(observabilityReadme, /\/fabrication\/design\/generation\/catalog/);
@@ -6126,6 +6601,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/release\/preview/);
   assert.match(observabilityReadme, /\/fabrication\/release\/result/);
   assert.match(observabilityReadme, /\/fabrication\/strategy\/recommend/);
+  assert.match(observabilityReadme, /\/fabrication\/strategy\/result/);
   assert.match(observabilityReadme, /\/fabrication\/artifacts\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/jobs/);
   assert.match(observabilityReadme, /\/fabrication\/jobs\/<jobId>/);
@@ -6156,13 +6632,26 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/schedule\/result/);
   assert.match(observabilityReadme, /\/fabrication\/simulation\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/quality\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/dispositions\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/manufacturability\/result/);
   assert.match(observabilityReadme, /\/fabrication\/interventions\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/setup\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/tooling\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/workholding\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/support-strategies\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/support-strategies\/result/);
   assert.match(observabilityReadme, /\/fabrication\/process-recipes\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/process-recipes\/result/);
   assert.match(observabilityReadme, /\/fabrication\/kinematics\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/kinematics\/result/);
   assert.match(observabilityReadme, /\/fabrication\/tolerances\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/process-capabilities\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/manufacturability\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/failure-modes\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/failure-modes\/result/);
   assert.match(observabilityReadme, /\/fabrication\/safety\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/environment\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/provenance\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/monitoring\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/postprocess\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/instructions\/improve/);

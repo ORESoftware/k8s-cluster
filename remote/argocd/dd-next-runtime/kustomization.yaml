@@ -41,6 +41,7 @@ resources:
   - dd-contract-service.networkpolicy.yaml
   - dd-contract-service.service.yaml
   - dd-rust-vapi-phone.deployment.yaml
+  - dd-rust-vapi-phone.networkpolicy.yaml
   - dd-rust-vapi-phone.service.yaml
   - dd-trading-server.deployment.yaml
   - dd-trading-server.service.yaml

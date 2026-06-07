@@ -16,6 +16,21 @@ update app_config set scope = $2, key = $3, value = $4, version = $5, status = $
 -- name: DeleteAppConfig :exec
 delete from app_config where id = $1;
 
+-- name: ListVapiPhoneCallEvents :many
+select id, call_id, event_type, payload_hash, caller_hash, called_number_hash, ended_reason, duration_seconds, summary, payload, created_at from vapi_phone_call_events;
+
+-- name: GetVapiPhoneCallEvents :one
+select id, call_id, event_type, payload_hash, caller_hash, called_number_hash, ended_reason, duration_seconds, summary, payload, created_at from vapi_phone_call_events where id = $1 limit 1;
+
+-- name: CreateVapiPhoneCallEvents :one
+insert into vapi_phone_call_events (id, call_id, event_type, payload_hash, caller_hash, called_number_hash, ended_reason, duration_seconds, summary, payload, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id, call_id, event_type, payload_hash, caller_hash, called_number_hash, ended_reason, duration_seconds, summary, payload, created_at;
+
+-- name: UpdateVapiPhoneCallEvents :one
+update vapi_phone_call_events set call_id = $2, event_type = $3, payload_hash = $4, caller_hash = $5, called_number_hash = $6, ended_reason = $7, duration_seconds = $8, summary = $9, payload = $10 where id = $1 returning id, call_id, event_type, payload_hash, caller_hash, called_number_hash, ended_reason, duration_seconds, summary, payload, created_at;
+
+-- name: DeleteVapiPhoneCallEvents :exec
+delete from vapi_phone_call_events where id = $1;
+
 -- name: ListContainerPoolConfigs :many
 select id, slug, display_name, image, command, env, request_path, health_path, container_port, min_warm, max_warm, max_concurrency_per_container, request_timeout_ms, idle_ttl_seconds, nats_subject, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from container_pool_configs;
 

@@ -12,6 +12,7 @@ defmodule DdPgDefs do
 
   @tables [
     DdPgDefs.AppConfig,
+    DdPgDefs.VapiPhoneCallEvents,
     DdPgDefs.ContainerPoolConfigs,
     DdPgDefs.KnownGitRepos,
     DdPgDefs.AgentContextBlobs,

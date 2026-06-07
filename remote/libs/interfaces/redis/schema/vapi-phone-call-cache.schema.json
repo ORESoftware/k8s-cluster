@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/redis/vapi-phone-call-cache.schema.json",
+  "title": "VapiPhoneCallCache",
+  "description": "Redis hot cache for the dd-rust-vapi-phone call screener. Postgres vapi_phone_call_events is the durable source of truth; Redis keeps low-latency caller context for Vapi function tools during live calls.",
+  "type": "object",
+  "$dd:redis": {
+    "service": "dd-rust-vapi-phone",
+    "summary": "Per-caller and per-call screening context used by Vapi server-side tools.",
+    "keys": [
+      {
+        "name": "VapiPhoneCallerContextKey",
+        "description": "Redis STRING containing a JSON-encoded VapiPhoneCallerContext for a hashed caller number. SET with EX TTL; missing entries can be rebuilt from Postgres.",
+        "pattern": "{prefix}:caller:{callerHash}",
+        "defaultPrefix": "dd:vapi-phone",
+        "params": [
+          { "name": "prefix", "type": "string", "description": "Configurable key prefix; defaults to 'dd:vapi-phone'." },
+          { "name": "callerHash", "type": "string", "description": "SHA-256 hex digest of the normalized caller number." }
+        ],
+        "valueType": "json",
+        "valueRef": "VapiPhoneCallerContext"
+      },
+      {
+        "name": "VapiPhoneCallSignalKey",
+        "description": "Redis STRING containing the latest JSON-encoded VapiPhoneCallSignal for a Vapi call id. SET with EX TTL and updated by server tool calls.",
+        "pattern": "{prefix}:call:{callId}:signal",
+        "defaultPrefix": "dd:vapi-phone",
+        "params": [
+          { "name": "prefix", "type": "string", "description": "Configurable key prefix; defaults to 'dd:vapi-phone'." },
+          { "name": "callId", "type": "string", "description": "Vapi call id." }
+        ],
+        "valueType": "json",
+        "valueRef": "VapiPhoneCallSignal"
+      }
+    ]
+  },
+  "$defs": {
+    "VapiPhoneCallerContext": {
+      "type": "object",
+      "title": "VapiPhoneCallerContext",
+      "description": "Low-latency context for a hashed caller number. Values intentionally avoid raw phone numbers and full transcripts.",
+      "additionalProperties": false,
+      "required": ["callerHash", "recentCallCount", "generatedAtMs"],
+      "properties": {
+        "callerHash": {
+          "type": "string",
+          "description": "SHA-256 hex digest of the normalized caller number."
+        },
+        "recentCallCount": {
+          "type": "integer",
+          "description": "Number of recent durable call events observed for this caller."
+        },
+        "lastCallId": {
+          "type": ["string", "null"],
+          "description": "Most recent Vapi call id observed for this caller, if known."
+        },
+        "lastSignal": {
+          "type": ["string", "null"],
+          "description": "Most recent assistant-recorded screening signal, e.g. human_likely or spam_likely."
+        },
+        "lastReason": {
+          "type": ["string", "null"],
+          "description": "Short assistant-provided reason for the last signal."
+        },
+        "lastEventAt": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "ISO-8601 timestamp of the last durable event if rebuilt from Postgres."
+        },
+        "generatedAtMs": {
+          "type": "integer",
+          "description": "Unix epoch milliseconds when this cache entry was generated."
+        },
+        "source": {
+          "type": ["string", "null"],
+          "description": "Where the snapshot came from, e.g. redis-write or postgres."
+        }
+      }
+    },
+    "VapiPhoneCallSignal": {
+      "type": "object",
+      "title": "VapiPhoneCallSignal",
+      "description": "Latest compact screening signal for a single call. Raw phone numbers and transcripts are excluded by contract.",
+      "additionalProperties": false,
+      "required": ["callId", "signal", "recordedAtMs"],
+      "properties": {
+        "callId": {
+          "type": "string",
+          "description": "Vapi call id."
+        },
+        "callerHash": {
+          "type": ["string", "null"],
+          "description": "SHA-256 hex digest of the normalized caller number."
+        },
+        "calledNumberHash": {
+          "type": ["string", "null"],
+          "description": "SHA-256 hex digest of the normalized called number."
+        },
+        "signal": {
+          "type": "string",
+          "description": "Assistant-provided screening signal."
+        },
+        "callerKind": {
+          "type": ["string", "null"],
+          "description": "Assistant-provided caller kind such as recruiter, vendor, scammer, or unknown."
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "description": "Short assistant-provided reason. Keep compact and non-sensitive."
+        },
+        "recordedAtMs": {
+          "type": "integer",
+          "description": "Unix epoch milliseconds when the signal was recorded."
+        }
+      }
+    }
+  }
+}
