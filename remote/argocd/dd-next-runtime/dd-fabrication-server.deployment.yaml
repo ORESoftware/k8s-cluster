@@ -9,7 +9,7 @@ metadata:
     app.kubernetes.io/part-of: dd-next-runtime
     app.kubernetes.io/component: fabrication-planner
 spec:
-  replicas: 2
+  replicas: 0
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   revisionHistoryLimit: 3

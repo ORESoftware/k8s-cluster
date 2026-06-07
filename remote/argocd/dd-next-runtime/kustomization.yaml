@@ -29,7 +29,6 @@ resources:
   - dd-fabrication-server.serviceaccount.yaml
   - dd-fabrication-server.deployment.yaml
   - dd-fabrication-server.service.yaml
-  - dd-fabrication-server.hpa.yaml
   - dd-fabrication-server.networkpolicy.yaml
   - dd-des-simulator.deployment.yaml
   - dd-des-simulator.service.yaml
