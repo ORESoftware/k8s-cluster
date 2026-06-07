@@ -40,6 +40,9 @@ resources:
   - dd-music-rs.deployment.yaml
   - dd-music-rs.networkpolicy.yaml
   - dd-music-rs.service.yaml
+  - dd-sound-recorder-rs.deployment.yaml
+  - dd-sound-recorder-rs.networkpolicy.yaml
+  - dd-sound-recorder-rs.service.yaml
   - dd-contract-service.deployment.yaml
   - dd-contract-service.networkpolicy.yaml
   - dd-contract-service.service.yaml

@@ -1,0 +1,248 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-sound-recorder-rs
+  namespace: default
+  labels:
+    app: dd-sound-recorder-rs
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-sound-recorder-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-07-sound-recorder-backend'
+      labels:
+        app: dd-sound-recorder-rs
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: sound-recorder-rs
+          image: docker.io/library/rust:1.91.1-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export CARGO_HOME=/var/cache/dd-sound-recorder-rs/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-sound-recorder-rs/target
+              export HOME=/tmp
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              source_root=/opt/dd-next-1
+              if [ -n "${SOUND_RECORDER_GIT_URL:-}" ]; then
+                clone_root="$(mktemp -d /tmp/dd-sound-recorder-rs-source.XXXXXX)"
+                if git clone --depth 1 --branch "${SOUND_RECORDER_GIT_REF:-dev}" "${SOUND_RECORDER_GIT_URL}" "$clone_root"; then
+                  source_root="$clone_root"
+                  echo "[dd-sound-recorder-rs] source: cloned ${SOUND_RECORDER_GIT_URL}@${SOUND_RECORDER_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD))"
+                else
+                  echo "[dd-sound-recorder-rs] source clone failed; using mounted source at ${source_root}" >&2
+                fi
+              fi
+              cd "$source_root/remote/deployments/dd-sound-recorder-rs"
+              exec /usr/local/cargo/bin/cargo run --release --locked
+          env:
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /var/cache/dd-sound-recorder-rs/cargo
+            - name: CARGO_TARGET_DIR
+              value: /var/cache/dd-sound-recorder-rs/target
+            - name: SOUND_RECORDER_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: SOUND_RECORDER_GIT_REF
+              value: dev
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8126'
+            - name: SOUND_RECORDER_DEFAULT_RETENTION_HOURS
+              value: '500'
+            - name: SOUND_RECORDER_DEFAULT_SEGMENT_SECONDS
+              value: '60'
+            - name: SOUND_RECORDER_MAX_SEGMENT_SECONDS
+              value: '120'
+            - name: SOUND_RECORDER_MAX_SEGMENT_BYTES
+              value: '10485760'
+            - name: SOUND_RECORDER_UPLOAD_URL_TTL_SECONDS
+              value: '300'
+            - name: SOUND_RECORDER_DOWNLOAD_URL_TTL_SECONDS
+              value: '900'
+            - name: SOUND_RECORDER_S3_KEY_PREFIX
+              value: sound-recorder/segments
+            - name: SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION
+              value: 'false'
+            - name: SOUND_RECORDER_S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_S3_BUCKET
+                  optional: true
+            - name: SOUND_RECORDER_CDN_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_CDN_BASE_URL
+                  optional: true
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: S3_BUCKET
+                  optional: true
+            - name: S3_PUBLIC_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: S3_PUBLIC_BASE_URL
+                  optional: true
+            - name: AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: AWS_REGION
+                  optional: true
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
+            - name: AWS_SESSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: AWS_SESSION_TOKEN
+                  optional: true
+            - name: SOUND_RECORDER_RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: SOUND_RECORDER_RDS_DATABASE_URL
+                  optional: true
+            - name: AGENT_TASKS_RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: AGENT_TASKS_RDS_DATABASE_URL
+                  optional: true
+            - name: RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: SOUND_RECORDER_DEVICE_TOKEN_PEPPER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_DEVICE_TOKEN_PEPPER
+                  optional: true
+            - name: SOUND_RECORDER_REGISTRATION_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_REGISTRATION_BEARER
+                  optional: true
+            - name: SOUND_RECORDER_SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_SERVER_AUTH_SECRET
+                  optional: true
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+            - name: SOUND_RECORDER_IOS_APP_STORE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_IOS_APP_STORE_URL
+                  optional: true
+            - name: SOUND_RECORDER_ANDROID_PLAY_STORE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_ANDROID_PLAY_STORE_URL
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8126
+          resources:
+            requests:
+              cpu: 75m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 180
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-sound-recorder-rs
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: build-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

@@ -531,6 +531,23 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
     gateway,
     /location\s+\/webrtc-media\/[\s\S]*dd-webrtc-media\.default\.svc\.cluster\.local:8125/,
   );
+  assert.match(gateway, /location = \/sound-recorder[\s\S]*return 302 \/sound-recorder\//);
+  assert.match(
+    gateway,
+    /location \/sound-recorder\/internal\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-sound-recorder-rs\.default\.svc\.cluster\.local:8126/,
+  );
+  assert.match(
+    gateway,
+    /location ~ \^\/sound-recorder\/\(healthz\|readyz\|metrics\|docs\/api\|api\/docs\|api\/docs\\\.json\)\$[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*dd-sound-recorder-rs\.default\.svc\.cluster\.local:8126/,
+  );
+  assert.match(
+    gateway,
+    /location \/sound-recorder\/api\/mobile\/[\s\S]*limit_req zone=dd_sound_recorder_mobile_write[\s\S]*proxy_set_header Auth ""[\s\S]*dd-sound-recorder-rs\.default\.svc\.cluster\.local:8126/,
+  );
+  assert.match(
+    gateway,
+    /location \/sound-recorder\/[\s\S]*proxy_set_header Auth ""[\s\S]*dd-sound-recorder-rs\.default\.svc\.cluster\.local:8126\//,
+  );
   assert.match(
     gateway,
     /location = \/scrape[\s\S]*dd-web-scraper\.default\.svc\.cluster\.local:8097/,

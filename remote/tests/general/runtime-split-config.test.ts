@@ -226,6 +226,7 @@ test("single-owner runtime workloads stay intentionally recreate", async () => {
     { name: "dd-live-mutex", file: "dd-live-mutex.deployment.yaml" },
     { name: "dd-live-mutex-submodule", file: "dd-live-mutex-submodule.deployment.yaml" },
     { name: "dd-music-rs", file: "dd-music-rs.deployment.yaml" },
+    { name: "dd-sound-recorder-rs", file: "dd-sound-recorder-rs.deployment.yaml" },
     { name: "dd-redis-cache", file: "dd-redis-cache.deployment.yaml" },
     { name: "dd-remote-gateway", file: "dd-remote-gateway.deployment.yaml" },
     { name: "dd-runtime-config", file: "dd-runtime-config.deployment.yaml" },
