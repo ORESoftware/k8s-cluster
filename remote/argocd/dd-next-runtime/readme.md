@@ -299,8 +299,9 @@ Prometheus alerts if those direct pod scrape targets disappear or go down while 
 scrape still looks healthy. Operators can open `/grafana/fabrication` from the web-home service
 directory to land on the dedicated `dd-fabrication-planner` dashboard for request intake,
 validation findings, machine-failure boundaries, required operator actions, fixture/setup
-blockers, split/combine reviews, CAD/design format discovery, design-import review,
-design-import result review, design-generation catalog discovery, validation-result and
+blockers, split/combine reviews, capabilities/schema/example discovery, CAD/design format
+discovery, format-import catalog discovery, design-import review, design-import result review,
+design-generation catalog discovery, strategy and calibration catalog discovery, validation-result and
 worker result-review route traffic, instruction-improvement review, instruction-boundary review,
 NATS/MDP fan-out, runtime-config delivery, HPA pressure, and logs.
 The observability stack also scrapes `dd-runtime-config` metrics so missed subscriber registration,

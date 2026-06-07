@@ -64,6 +64,77 @@ function assertLearningOutcomeDraftSubmitCoverage(source: string, readme: string
   assert.match(readme, /`joinKindHints` and\s+`splitCombineHints` to seed learned assembly strategies/);
 }
 
+function fabricationRootRoutes(source: string): Set<string> {
+  const rootMatch = source.match(/async fn root\(\)[\s\S]*?let routes = vec!\[([\s\S]*?)\];/);
+  assert.ok(rootMatch, 'expected root route inventory in dd-fabrication-server');
+
+  return new Set(
+    Array.from(rootMatch[1].matchAll(/"([^"]+)"/g), (match) => match[1]).filter((route) =>
+      route.startsWith('GET /') || route.startsWith('POST /'),
+    ),
+  );
+}
+
+function registeredFabricationRoutes(source: string): Set<string> {
+  return new Set(
+    Array.from(
+      source.matchAll(/\.route\(\s*"([^"]+)"\s*,\s*(get|post)\(/g),
+      (match) => `${match[2].toUpperCase()} ${match[1]}`,
+    ),
+  );
+}
+
+function assertRootRouteInventoryCoversRegisteredRoutes(source: string): void {
+  const rootRoutes = fabricationRootRoutes(source);
+  const registeredRoutes = registeredFabricationRoutes(source);
+  assert.ok(rootRoutes.size >= 300, `expected broad root route inventory, found ${rootRoutes.size}`);
+  assert.ok(
+    registeredRoutes.size >= 300,
+    `expected broad Axum route registration inventory, found ${registeredRoutes.size}`,
+  );
+
+  const missingRoutes = Array.from(registeredRoutes)
+    .filter((route) => !rootRoutes.has(route))
+    .sort();
+
+  assert.deepEqual(missingRoutes, []);
+}
+
+function dashboardFabricationPathLiterals(grafanaDashboards: string): Set<string> {
+  const decodedPaths = Array.from(
+    grafanaDashboards.matchAll(/\\\/fabrication(?:\\\/[A-Za-z0-9._:-]+)+/g),
+    (match) => match[0].replaceAll('\\/', '/'),
+  );
+  const plainPaths = Array.from(
+    grafanaDashboards.matchAll(/\/fabrication(?:\/[A-Za-z0-9._:-]+)+/g),
+    (match) => match[0],
+  );
+
+  return new Set([...decodedPaths, ...plainPaths]);
+}
+
+function assertGrafanaCoversFabricationRootRoutes(source: string, grafanaDashboards: string): void {
+  const rootPaths = new Set(
+    Array.from(fabricationRootRoutes(source), (route) => route.replace(/^(GET|POST) /, '')).filter(
+      (path) => path.startsWith('/fabrication/'),
+    ),
+  );
+  const dashboardPaths = dashboardFabricationPathLiterals(grafanaDashboards);
+  const patternCoveredPaths = new Set([
+    '/fabrication/jobs/:job_id',
+    '/fabrication/jobs/:job_id/artifacts/:artifact_id',
+    '/fabrication/jobs/:job_id/release-bundle',
+  ]);
+  const missingPaths = Array.from(rootPaths)
+    .filter((path) => !dashboardPaths.has(path) && !patternCoveredPaths.has(path))
+    .sort();
+
+  assert.deepEqual(missingPaths, []);
+  assert.match(grafanaDashboards, /job detail/);
+  assert.match(grafanaDashboards, /artifact detail fetch/);
+  assert.match(grafanaDashboards, /\/release-bundle/);
+}
+
 test('rust fabrication server exposes planning, analysis, nats, and learning hooks', async () => {
   const cargo = await readRepoFile('remote/deployments/fabrication-server-rs/Cargo.toml');
   const source = await readRepoFile('remote/deployments/fabrication-server-rs/src/main.rs');
@@ -77,6 +148,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
 
   assertResultReviewLearningOutcomeDraftCoverage(source);
   assertLearningOutcomeDraftSubmitCoverage(source, readme);
+  assertRootRouteInventoryCoversRegisteredRoutes(source);
 
   assert.match(cargo, /name\s*=\s*"dd-fabrication-server"/);
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
@@ -876,6 +948,18 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /pcb-fabrication-job-package/);
   assert.match(source, /pcb-assembly-job-packager/);
   assert.match(source, /pcb-assembly-job-package/);
+  assert.match(source, /fixture-tooling-job-packager/);
+  assert.match(source, /fixture-tooling-job-package/);
+  assert.match(source, /adaptive-compensation-job-packager/);
+  assert.match(source, /adaptive-compensation-job-package/);
+  assert.match(source, /insert-installation-job-packager/);
+  assert.match(source, /insert-installation-job-package/);
+  assert.match(source, /adhesive-bonding-job-packager/);
+  assert.match(source, /adhesive-bonding-job-package/);
+  assert.match(source, /fastener-installation-job-packager/);
+  assert.match(source, /fastener-installation-job-package/);
+  assert.match(source, /rivet-installation-job-packager/);
+  assert.match(source, /rivet-installation-job-package/);
   assert.match(source, /part-marking-job-packager/);
   assert.match(source, /part-marking-job-package/);
   assert.match(source, /packaging-labeling-job-packager/);
@@ -2615,12 +2699,39 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /machine_selection_prefers_profile_clear_machine/);
   assert.match(source, /machine_profile_evidence_blockers_hold_instruction_analysis_release/);
   assert.match(source, /"GET \/readyz"/);
+  assert.match(
+    source,
+    /async fn root\(\)[\s\S]*let routes = vec!\[[\s\S]*"GET \/"[\s\S]*"POST \/fabrication\/design\/generate"[\s\S]*"GET \/fabrication\/handoff\/catalog"[\s\S]*"POST \/fabrication\/remediation\/result"[\s\S]*"POST \/fabrication\/execution\/plan"[\s\S]*"POST \/fabrication\/assembly\/result"[\s\S]*\];[\s\S]*Json\(json!\(/,
+  );
+  assert.match(source, /async fn landing_page\(\) -> axum::response::Html<&'static str>/);
+  assert.match(source, /"landingPage": \{/);
+  assert.match(source, /"Human fabrication overview"/);
+  assert.match(source, /"startHere": \{/);
+  assert.match(source, /"humanOverview": "\/fabrication\/landing"/);
+  assert.match(source, /"apiDocs": "\/api\/docs"/);
+  assert.match(source, /"GET \/landing"/);
+  assert.match(source, /"GET \/fabrication\/landing"/);
+  assert.match(source, /DD Fabrication Server/);
+  assert.match(source, /Request Flow/);
+  assert.match(source, /\/fabrication\/intake\/catalog/);
+  assert.match(source, /\/fabrication\/templates\/catalog/);
+  assert.match(source, /intake guide/);
+  assert.match(source, /request templates/);
+  assert.match(source, /This service produces planning and evidence packets/);
   assert.match(source, /async fn capabilities/);
   assert.match(source, /"schemaVersion": "dd\.fabrication\.capabilities\.v1"/);
   assert.match(source, /"GET \/cells\/catalog"/);
   assert.match(source, /"GET \/fabrication\/cells\/catalog"/);
+  assert.match(source, /"GET \/fabrication\/printers\/catalog"/);
+  assert.match(source, /"GET \/fabrication\/subtractive\/catalog"/);
+  assert.match(source, /"GET \/fabrication\/cnc\/catalog"/);
+  assert.match(source, /"GET \/fabrication\/hybrid\/catalog"/);
+  assert.match(source, /"GET \/fabrication\/methods\/catalog"/);
   assert.match(source, /"GET \/fabrication\/workers\/catalog"/);
   assert.match(source, /"GET \/fabrication\/results\/catalog"/);
+  assert.match(source, /"GET \/fabrication\/machine-code\/catalog"/);
+  assert.match(source, /"GET \/fabrication\/learning\/rewards\/catalog"/);
+  assert.match(source, /"GET \/fabrication\/learning\/corpus"/);
   assert.match(source, /"strategyQualitySurfaces"/);
   assert.match(source, /"policySummary\.learnedQuality"/);
   assert.match(source, /"learningOutcomeQuality\.riskReviewRequired"/);
@@ -4415,6 +4526,31 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"thermal-postprocess-furnace"/);
   assert.match(source, /"acceptedInstructionKinds"/);
   assert.match(source, /"iso-gcode"/);
+  assert.match(source, /"siemens-sinumerik"/);
+  assert.match(source, /"heidenhain-conversational"/);
+  assert.match(source, /"mazak-mazatrol"/);
+  assert.match(source, /"okuma-osp"/);
+  assert.match(source, /"linuxcnc"/);
+  assert.match(source, /sinumerik_entry/);
+  assert.match(source, /Some\("controller-gcode"\)/);
+  assert.match(source, /siemens-sinumerik-postprocessor/);
+  assert.match(source, /heidenhain-conversational-postprocessor/);
+  assert.match(source, /mazatrol-conversational-postprocessor/);
+  assert.match(source, /okuma-osp-postprocessor/);
+  assert.match(source, /linuxcnc-gcode-postprocessor/);
+  assert.match(source, /"apt-cldata"/);
+  assert.match(source, /"cldata-toolpath"/);
+  assert.match(source, /"cutter-location-file"/);
+  assert.match(source, /"postprocessor-deck"/);
+  assert.match(source, /"cam-intermediate-instruction"/);
+  assert.match(
+    source,
+    /attach-cam-source-setup-tool-table-and-cutter-location-provenance/,
+  );
+  assert.match(
+    source,
+    /attach-postprocessor-deck-controller-target-and-translated-program-review/,
+  );
   assert.match(source, /"slicer-job"/);
   assert.match(source, /"sla-job"/);
   assert.match(source, /"ctb-resin-job"/);
@@ -4468,14 +4604,54 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"safetyBoundaryClasses"/);
   assert.match(source, /"machine-profile-evidence"/);
   assert.match(source, /"machine-profile-blocker"/);
+  assert.match(source, /fn intake_guide\(\) -> Value/);
+  assert.match(source, /async fn intake_catalog_http/);
+  assert.match(source, /"schemaVersion": "dd\.fabrication\.intake-catalog\.v1"/);
+  assert.match(source, /"routes": \["GET \/intake\/catalog", "GET \/fabrication\/intake\/catalog"\]/);
+  assert.match(source, /"releasePolicy": \[/);
+  assert.match(source, /learning observations can bias future plans but do not bypass release gates/);
+  assert.match(source, /intake_guide_exposes_release_gated_fabrication_flow/);
+  assert.match(source, /fn request_templates\(\) -> Value/);
+  assert.match(source, /async fn request_templates_catalog_http/);
+  assert.match(source, /"schemaVersion": "dd\.fabrication\.request-templates-catalog\.v1"/);
+  assert.match(source, /"routes": \["GET \/templates\/catalog", "GET \/fabrication\/templates\/catalog"\]/);
+  assert.match(source, /"releaseCatalog": "\/fabrication\/release\/catalog"/);
+  assert.match(source, /"releaseGateHints": \[/);
+  assert.match(source, /controllerPlan\.releaseGates/);
+  assert.match(source, /decompositionPlan\.releaseGates/);
+  assert.match(source, /releasePackagePlan\.releaseGates/);
+  assert.match(source, /learningFeedbackRetained/);
+  assert.match(source, /"templateId": "fdm-print-functional-part"/);
+  assert.match(source, /"templateVersion": "v1"/);
+  assert.match(source, /templateId and templateVersion are trace labels/);
+  assert.match(source, /fdm-print-functional-part/);
+  assert.match(source, /vertical-mill-fixture-plate/);
+  assert.match(source, /horizontal-mill-side-feature/);
+  assert.match(source, /clearanceSweepEvidence/);
+  assert.match(source, /lathe-turned-insert/);
+  assert.match(source, /hybrid-printed-milled-turned-assembly/);
+  assert.match(source, /request_templates_cover_core_machine_classes/);
   assert.match(source, /async fn request_schema/);
   assert.match(source, /"schemaVersion": "dd\.fabrication\.request-schema\.v1"/);
+  assert.match(source, /"intakeGuide": intake_guide\(\)/);
+  assert.match(source, /"step": "discover"/);
+  assert.match(source, /"step": "review-design-inputs"/);
+  assert.match(source, /"step": "attach-machine-profile"/);
+  assert.match(source, /"step": "analyze-or-generate-instructions"/);
+  assert.match(source, /"step": "plan-hybrid-build"/);
+  assert.match(source, /"step": "release-and-learn"/);
+  assert.match(source, /"split\/combine candidates"/);
   assert.match(source, /"planRequest"/);
   assert.match(source, /"profileEvidence"/);
   assert.match(source, /"machineProfileEvidence"/);
   assert.match(source, /"instructionProgram"/);
   assert.match(source, /async fn examples/);
   assert.match(source, /"schemaVersion": "dd\.fabrication\.examples\.v1"/);
+  assert.match(source, /"templateDrivenPlan"/);
+  assert.match(source, /"sourceCatalog": "GET \/fabrication\/templates\/catalog"/);
+  assert.match(source, /"releaseCatalog": "GET \/fabrication\/release\/catalog"/);
+  assert.match(source, /"templateTrace": \{/);
+  assert.match(source, /"retainWith": \["job", "artifacts", "releasePackagePlan", "learningOutcome"\]/);
   assert.match(source, /"hybridPlan"/);
   assert.match(source, /"instructionAnalysis"/);
   assert.match(source, /async fn list_jobs/);
@@ -4989,6 +5165,19 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /\.route\(\s*"\/fabrication\/learning\/capabilities",\s*get\(learning_capabilities\),\s*\)/,
   );
+  assert.match(source, /\.route\("\/intake\/catalog", get\(intake_catalog_http\)\)/);
+  assert.match(
+    source,
+    /\.route\("\/fabrication\/intake\/catalog", get\(intake_catalog_http\)\)/,
+  );
+  assert.match(
+    source,
+    /\.route\("\/templates\/catalog", get\(request_templates_catalog_http\)\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/templates\/catalog",\s*get\(request_templates_catalog_http\),\s*\)/,
+  );
   assert.match(source, /\.route\("\/schema", get\(request_schema\)\)/);
   assert.match(source, /\.route\("\/fabrication\/schema", get\(request_schema\)\)/);
   assert.match(source, /\.route\("\/examples", get\(examples\)\)/);
@@ -5101,8 +5290,33 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`GET \/fabrication\/jobs\/:job_id\/artifacts\/:artifact_id`/);
   assert.match(readme, /`GET \/capabilities`/);
   assert.match(readme, /`GET \/fabrication\/capabilities`/);
+  assert.match(source, /"POST \/fabrication\/machines\/select"/);
+  assert.match(readme, /`POST \/fabrication\/machines\/select`/);
   assert.match(readme, /`GET \/cells\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/cells\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/cnc\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/hybrid\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/methods\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/machine-code\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/learning\/engines\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/learning\/rewards\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/learning\/corpus`/);
+  assert.match(readme, /bounded machine-selection/);
+  assert.match(source, /"POST \/fabrication\/workflow\/plan"/);
+  assert.match(readme, /workflow route\/evidence planning/);
+  assert.match(source, /"GET \/fabrication\/costing\/catalog"/);
+  assert.match(source, /"POST \/fabrication\/costing\/result"/);
+  assert.match(source, /"GET \/fabrication\/utilities\/catalog"/);
+  assert.match(source, /"POST \/fabrication\/utilities\/result"/);
+  assert.match(source, /"GET \/fabrication\/telemetry\/catalog"/);
+  assert.match(source, /"POST \/fabrication\/telemetry\/result"/);
+  assert.match(source, /"GET \/fabrication\/consumables\/catalog"/);
+  assert.match(source, /"POST \/fabrication\/consumables\/result"/);
+  assert.match(source, /"POST \/fabrication\/process-capabilities\/result"/);
+  assert.match(source, /"POST \/fabrication\/provenance\/result"/);
+  assert.match(readme, /costing, utilities, energy,\s+availability, maintenance, telemetry, consumables/);
+  assert.match(readme, /workholding, process-capability,\s+safety\/environment, provenance/);
+  assert.match(readme, /DES engine, reward shaping,\s+and neural training-corpus\s+capabilities/);
   assert.match(readme, /`GET \/fabrication\/workers\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/results\/catalog`/);
   assert.match(readme, /result-review intake routes from the top-level capability/);
@@ -5114,11 +5328,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`learning-corpus`/);
   assert.match(readme, /`GET \/controllers\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/controllers\/catalog`/);
+  assert.match(source, /"POST \/fabrication\/controllers\/result"/);
   assert.match(readme, /dd\.fabrication\.controller-postprocessor-catalog\.v1/);
   assert.match(readme, /postprocessor-known counts/);
   assert.match(readme, /`controllerPlan\.compatibilityTargets`/);
   assert.match(readme, /`POST \/controllers\/result`/);
   assert.match(readme, /`POST \/fabrication\/controllers\/result`/);
+  assert.match(readme, /controller\/postprocessor\s+review, draft machine-code\s+generation/);
   assert.match(readme, /dd\.fabrication\.controller-postprocessor-result-review\.v1/);
   assert.match(readme, /controller-postprocessor-targets/);
   assert.match(readme, /controller-postprocessor-learning-observations/);
@@ -5130,6 +5346,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`GET \/fabrication\/slicers\/catalog`/);
   assert.match(readme, /`POST \/slicers\/result`/);
   assert.match(readme, /`POST \/fabrication\/slicers\/result`/);
+  assert.match(source, /"POST \/fabrication\/mesh-repair\/result"/);
+  assert.match(readme, /mesh\/topology repair review/);
   assert.match(readme, /`GET \/formats\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/formats\/catalog`/);
   assert.match(readme, /`GET \/design\/import\/catalog`/);
@@ -5422,10 +5640,64 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /dd\.fabrication\.result-review-catalog\.v1/);
   assert.match(readme, /worker\s+result-review intake routes/);
   assert.match(readme, /job evidence routes, and learning outcome routes/);
+  assert.match(readme, /`GET \/landing`/);
+  assert.match(readme, /`GET \/fabrication\/landing`/);
+  assert.match(readme, /`GET \/` returns the machine-readable service inventory/);
+  assert.match(readme, /`landingPage`\s+block for the human fabrication overview/);
+  assert.match(readme, /`startHere` map to\s+`\/fabrication\/landing`/);
+  assert.match(readme, /serve a human\s+landing page for operators and integration authors/);
+  assert.match(readme, /fabrication server's intake-to-release flow/);
+  assert.match(readme, /CAD\/model\/slicer and CAM\s+intermediate intake/);
+  assert.match(readme, /MDP\/POMDP\/DES\/neural learning/);
+  assert.match(readme, /controller\/postprocessor review, setup, quality/);
+  assert.match(readme, /`GET \/intake\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/intake\/catalog`/);
+  assert.match(readme, /`dd\.fabrication\.intake-catalog\.v1` discovery contract/);
+  assert.match(readme, /instruction analysis or generation/);
+  assert.match(readme, /reviews clear the machine-ready gates/);
+  assert.match(readme, /`GET \/templates\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/templates\/catalog`/);
+  assert.match(readme, /`dd\.fabrication\.request-templates-catalog\.v1` starter-request catalog/);
+  assert.match(readme, /FDM printed functional parts/);
+  assert.match(readme, /vertical-mill fixture plates/);
+  assert.match(readme, /horizontal-mill side-slot\/keyway work/);
+  assert.match(readme, /lathe turned inserts/);
+  assert.match(readme, /hybrid printed\/milled\/turned assemblies/);
+  assert.match(readme, /not machine-ready instructions/);
+  assert.match(readme, /`templateId` and `templateVersion` trace labels/);
+  assert.match(readme, /job, artifact, release, and learning evidence/);
+  assert.match(readme, /`releaseGateHints`/);
+  assert.match(readme, /tooling\/workholding evidence/);
+  assert.match(readme, /decomposition\/interface-control gates/);
+  assert.match(readme, /release-package gates/);
+  assert.match(readme, /`\/fabrication\/release\/catalog` contract/);
+  assert.match(readme, /The schema also includes an `intakeGuide`/);
+  assert.match(readme, /template-driven FDM request/);
+  assert.match(readme, /`templateId`\/`templateVersion` trace labels/);
+  assert.match(readme, /release-gate hints/);
+  assert.match(readme, /review CAD\/model\/slicer inputs/);
+  assert.match(readme, /plan hybrid\s+split\/combine builds/);
+  assert.match(readme, /release and learn from retained outcome evidence/);
   assert.match(readme, /`GET \/instructions\/languages`/);
   assert.match(readme, /`GET \/fabrication\/instructions\/languages`/);
   assert.match(readme, /`dd\.fabrication\.instruction-language-catalog\.v1` intake catalog/);
-  assert.match(readme, /imported CNC,\s+printer, slicer, cutting, EDM, assembly/);
+  assert.match(readme, /imported CNC,\s+CAM intermediate, printer, slicer, cutting, EDM/);
+  assert.match(readme, /`siemens-sinumerik`/);
+  assert.match(readme, /`heidenhain-conversational`/);
+  assert.match(readme, /`mazatrol`/);
+  assert.match(readme, /`okuma-osp`/);
+  assert.match(readme, /`linuxcnc`/);
+  assert.match(readme, /controller-specific modal-state,\s+postprocessor, dry-run/);
+  assert.match(readme, /`siemens-sinumerik-postprocessor`/);
+  assert.match(readme, /`heidenhain-conversational-postprocessor`/);
+  assert.match(readme, /`mazatrol-conversational-postprocessor`/);
+  assert.match(readme, /`okuma-osp-postprocessor`/);
+  assert.match(readme, /`linuxcnc-gcode-postprocessor`/);
+  assert.match(readme, /`apt-cldata`/);
+  assert.match(readme, /`cldata-toolpath`/);
+  assert.match(readme, /`postprocessor-deck`/);
+  assert.match(readme, /APT\/CLDATA, cutter-location, and postprocessor deck handoffs/);
+  assert.match(readme, /tool-axis\/contact-point, controller target/);
   assert.match(readme, /analysis route aliases/);
   assert.match(readme, /Machine-ready release remains blocked/);
   assert.match(readme, /`GET \/instructions\/validation\/catalog`/);
@@ -7281,7 +7553,7 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /exposure image stack, peel\/lift\/recoat/);
   assert.match(readme, /language families, family counts, machine classes/);
   assert.match(readme, /analysis route aliases/);
-  assert.match(readme, /part-separation, setup, and operator\s+instruction streams/);
+  assert.match(readme, /part-separation,\s+setup, and operator instruction streams/);
   assert.match(readme, /parse or review evidence, simulation or\s+equivalent controller review/);
   assert.match(readme, /dd\.fabrication\.boundary-catalog\.v1/);
   assert.match(readme, /representative detection sources, release evidence requirements/);
@@ -8005,6 +8277,14 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /Catalog Discovery, CAD Intake, Design Export, and Instruction Review/);
   assert.match(grafanaDashboards, /CAD Intake, Design Export, and Instruction Review/);
   assert.match(grafanaDashboards, /Worker Result Review/);
+  assert.match(grafanaDashboards, /\/fabrication\/capabilities/);
+  assert.match(grafanaDashboards, /capabilities discovery/);
+  assert.match(grafanaDashboards, /\/fabrication\/schema/);
+  assert.match(grafanaDashboards, /schema discovery/);
+  assert.match(grafanaDashboards, /\/fabrication\/examples/);
+  assert.match(grafanaDashboards, /example discovery/);
+  assert.match(grafanaDashboards, /\/fabrication\/formats\/catalog/);
+  assert.match(grafanaDashboards, /format import catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/results\/catalog/);
   assert.match(grafanaDashboards, /result review catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/machines\/catalog/);
@@ -8104,6 +8384,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/workers\/catalog/);
   assert.match(grafanaDashboards, /worker catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/assembly\/catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/calibration\/catalog/);
+  assert.match(grafanaDashboards, /calibration catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/calibration\/plan/);
   assert.match(grafanaDashboards, /\/fabrication\/calibration\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/generation\/catalog/);
@@ -8231,8 +8513,12 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /learning model result review/);
   assert.match(grafanaDashboards, /\/fabrication\/learning\/optimizers\/result/);
   assert.match(grafanaDashboards, /learning optimizer result review/);
+  assert.match(grafanaDashboards, /\/fabrication\/strategy\/catalog/);
+  assert.match(grafanaDashboards, /strategy catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/improve/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/boundaries\/review/);
+  const source = await readRepoFile('remote/deployments/fabrication-server-rs/src/main.rs');
+  assertGrafanaCoversFabricationRootRoutes(source, grafanaDashboards);
   assert.match(home, /dd-fabrication-server/);
   assert.match(home, /\/fabrication\/jobs/);
   assert.match(home, /POST \/fabrication\/plan/);
@@ -8242,6 +8528,9 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/capabilities/);
   assert.match(runtimeReadme, /\/fabrication\/schema/);
   assert.match(runtimeReadme, /\/fabrication\/examples/);
+  assert.match(runtimeReadme, /capabilities\/schema\/example discovery/);
+  assert.match(runtimeReadme, /format-import catalog discovery/);
+  assert.match(runtimeReadme, /strategy and calibration catalog discovery/);
   assert.match(runtimeReadme, /\/fabrication\/printers\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/cells\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/machines\/select/);
@@ -8395,7 +8684,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /dd-fabrication-planner/);
   assert.match(runtimeReadme, /validation findings, machine-failure boundaries/);
   assert.match(runtimeReadme, /required operator actions, fixture\/setup\s+blockers, split\/combine reviews/);
-  assert.match(runtimeReadme, /CAD\/design format discovery, design-import review/);
+  assert.match(runtimeReadme, /capabilities\/schema\/example discovery, CAD\/design format\s+discovery, format-import catalog discovery, design-import review/);
   assert.match(runtimeReadme, /design-import result review/);
   assert.match(runtimeReadme, /worker result-review route traffic/);
   assert.match(runtimeReadme, /instruction-improvement review/);

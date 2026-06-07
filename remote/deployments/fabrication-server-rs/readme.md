@@ -6,7 +6,13 @@ mill-turn/swiss-turning, and hybrid machine workflows.
 
 It exposes:
 
+`GET /` returns the machine-readable service inventory with a `landingPage`
+block for the human fabrication overview and a compact `startHere` map to
+`/fabrication/landing`, capabilities, schema, examples, and generated API docs.
+
 - `GET /`
+- `GET /landing`
+- `GET /fabrication/landing`
 - `GET /healthz`
 - `GET /readyz`
 - `GET /metrics`
@@ -288,6 +294,10 @@ It exposes:
 - `POST /fabrication/learning/models/result`
 - `POST /learning/optimizers/result`
 - `POST /fabrication/learning/optimizers/result`
+- `GET /intake/catalog`
+- `GET /fabrication/intake/catalog`
+- `GET /templates/catalog`
+- `GET /fabrication/templates/catalog`
 - `GET /schema`
 - `GET /fabrication/schema`
 - `GET /examples`
@@ -688,12 +698,25 @@ families, generated artifact families including `learning-policy-snapshot`,
 bounded `profileEvidence` buckets for submitted machine profiles, and safety boundary
 classes. Discovery routes include
 `GET /machines/catalog`,
-`GET /fabrication/machines/catalog`, `GET /printers/catalog`,
+`GET /fabrication/machines/catalog`, `POST /fabrication/machines/select`,
+`GET /printers/catalog`,
 `GET /fabrication/printers/catalog`, `GET /subtractive/catalog`,
-`GET /fabrication/subtractive/catalog`, `GET /cells/catalog`, and
-`GET /fabrication/cells/catalog` so clients can inspect default machine,
-additive-printer, subtractive machining/cutting, and hybrid-cell capabilities
-before planning. The capability contract also advertises
+`GET /fabrication/subtractive/catalog`, `GET /cnc/catalog`,
+`GET /fabrication/cnc/catalog`, `GET /cells/catalog`,
+`GET /fabrication/cells/catalog`, `GET /hybrid/catalog`,
+`GET /fabrication/hybrid/catalog`, `GET /methods/catalog`,
+`GET /fabrication/methods/catalog`, `POST /fabrication/controllers/result`,
+plus `GET /fabrication/machine-code/catalog`,
+`GET /fabrication/learning/engines/catalog`,
+`GET /fabrication/learning/rewards/catalog`, and
+`GET /fabrication/learning/corpus` so clients can inspect default machine,
+bounded machine-selection,
+additive-printer, mesh/topology repair review, CNC/subtractive machining/cutting,
+hybrid split/combine, workflow route/evidence planning, manufacturing-method,
+controller/postprocessor review, draft machine-code generation, costing, utilities, energy,
+availability, maintenance, telemetry, consumables, workholding, process-capability,
+safety/environment, provenance, DES engine, reward shaping, and neural training-corpus
+capabilities before planning. The capability contract also advertises
 `strategyQualitySurfaces` such as `policySummary.successRate`,
 `policySummary.failureRate`, `policySummary.learnedQuality`,
 `learningOutcomeQuality.riskReviewRequired`, and
@@ -1322,20 +1345,34 @@ simulation, quality, operator or automation, and final release reviews clear.
 `GET /instructions/languages` and the gateway-prefixed
 `GET /fabrication/instructions/languages` return the live
 `dd.fabrication.instruction-language-catalog.v1` intake catalog for imported CNC,
-printer, slicer, cutting, EDM, assembly, part-separation, setup, and operator
-instruction streams before a caller submits analysis or planning work. The
+CAM intermediate, printer, slicer, cutting, EDM, assembly, part-separation,
+setup, and operator instruction streams before a caller submits analysis or planning work. The
 payload exposes language families, family counts, machine classes, analysis
 focus areas, analysis route aliases, draft-only release policy notes, and
-per-language release gates. Resin package languages such as `ctb-resin-job`,
+per-language release gates. Controller dialect languages such as
+`siemens-sinumerik`, `heidenhain`, `heidenhain-conversational`, `mazatrol`,
+`mazak-mazatrol`, `okuma-osp`, and `linuxcnc` are advertised as imported
+machine-code/controller streams for mills, routers, lathes, five-axis machines,
+and mill-turn centers while retaining controller-specific modal-state,
+postprocessor, dry-run, and operator or automation review gates. The deterministic
+controller labels map to `siemens-sinumerik-postprocessor`,
+`heidenhain-conversational-postprocessor`, `mazatrol-conversational-postprocessor`,
+`okuma-osp-postprocessor`, or `linuxcnc-gcode-postprocessor` before release
+evidence is reviewed. Resin package languages such as `ctb-resin-job`,
 `photon-resin-job`, `lychee-resin-job`, and `chitubox-resin-job` are advertised as
 SLA/MSLA resin-printer intake so Lychee/Chitubox/Photon/CTB slice packages can
 carry exposure image stack, peel/lift/recoat, resin profile, wash/cure, resin lot,
-and PPE release evidence. Machine-ready release remains blocked until the
-submitted instruction stream has parse or review evidence, simulation or
-equivalent controller review when machine code is present, improved program or
-patch retention when repairable, and controller/postprocess/operator signoff
-evidence for any machine-failure, human-intervention, split/combine, setup, or
-handoff boundary.
+and PPE release evidence. CAM intermediate languages such as `apt-cldata`,
+`apt-source`, `cldata-toolpath`, `cutter-location-file`, `postprocessor-deck`,
+and `cam-intermediate-job` are advertised separately from controller G-code so
+APT/CLDATA, cutter-location, and postprocessor deck handoffs retain source
+CAD/CAM setup identity, tool table, tool-axis/contact-point, controller target,
+translated program, dry-run, and operator or automation release evidence.
+Machine-ready release remains blocked until the submitted instruction stream has
+parse or review evidence, simulation or equivalent controller review when
+machine code is present, improved program or patch retention when repairable,
+and controller/postprocess/operator signoff evidence for any machine-failure,
+human-intervention, split/combine, setup, or handoff boundary.
 
 ## `GET /fabrication/cnc/catalog`
 
@@ -1390,7 +1427,7 @@ job-sheet catalog for plan responses. The payload exposes generated program
 families for FDM printing, resin and powder-bed additive, pellet FGF, robotic/gantry additive, paste/clay
 extrusion, bound-metal filament FFF, material jetting, DED/WAAM, continuous-fiber, composite layup/vacuum-bag/autoclave, hot-wire foam cutting, binder jet, vertical/horizontal/indexed
 milling, routing, laser/waterjet/plasma/wire EDM sheet cutting, sinker EDM,
-precision grinding/lapping/honing, CMM/vision dimensional inspection, thermal postprocess furnace/oven release, surface finishing/coating/plating/anodizing/media-blasting/powder-coating/deburr release, metal-joining/welding/brazing/soldering release, molding/casting/vacuum-casting/urethane/silicone release, composite layup/prepreg/wet-layup/vacuum-bag/autoclave/resin-infusion release, hot-wire foam cutting release, press-brake/sheet-forming release, gear/spline cutting release, lathe, mill-turn, Swiss/sliding-headstock turning, robotic assembly, part separation, and fallback manual
+precision grinding/lapping/honing, CMM/vision dimensional inspection, thermal postprocess furnace/oven release, surface finishing/coating/plating/anodizing/media-blasting/powder-coating/deburr release, metal-joining/welding/brazing/soldering release, molding/casting/vacuum-casting/urethane/silicone release, fixture tooling/soft jaws/drill jigs/vacuum fixtures, closed-loop machining/adaptive compensation/in-process probing/inspection feedback/offset and tool-wear updates, insert installation/threaded inserts/heat-set inserts/press-fit bushings/helicoils/dowel pins, adhesive bonding/structural adhesives/epoxy bonding/bondline control/cure and coupon release, fastener installation/mechanical fastening/screw and bolt torque/threadlocker/witness-mark/retorque release, rivet installation/blind-rivet/solid-rivet/clinch/stake/swage/peen release, composite layup/prepreg/wet-layup/vacuum-bag/autoclave/resin-infusion release, hot-wire foam cutting release, press-brake/sheet-forming release, gear/spline cutting release, lathe, mill-turn, Swiss/sliding-headstock turning, robotic assembly, part separation, and fallback manual
 instructions. It lists generated languages such as `marlin-gcode`,
 `ctb-resin-job`, `photon-resin-job`, `lychee-resin-job`,
 `chitubox-resin-job`, `haas-gcode`, `indexed-mill-gcode`, `waterjet-job`, `wire-edm-job`,
@@ -1406,6 +1443,21 @@ instructions. It lists generated languages such as `marlin-gcode`,
 `isolation-milling-job`, `excellon-drill-job`,
 `pcb-assembly-job`, `electronics-assembly-job`, `smt-assembly-job`,
 `pick-and-place-job`, `reflow-job`,
+`fixture-tooling-job`, `soft-jaw-job`, `fixture-plate-job`, `drill-jig-job`,
+`inspection-fixture-job`, `assembly-fixture-job`, `vacuum-fixture-job`,
+`adaptive-compensation-job`, `closed-loop-machining-job`,
+`in-process-probing-job`, `inspection-feedback-job`, `offset-update-job`,
+`tool-wear-update-job`, `compensated-rerun-job`,
+`insert-installation-job`, `threaded-insert-job`, `heat-set-insert-job`,
+`press-fit-insert-job`, `helicoil-installation-job`,
+`dowel-pin-installation-job`, `bushing-installation-job`,
+`adhesive-bonding-job`, `structural-adhesive-job`, `epoxy-bonding-job`,
+`bondline-control-job`, `adhesive-cure-job`, `lap-shear-peel-test-job`,
+`fastener-installation-job`, `mechanical-fastening-job`,
+`screw-installation-job`, `bolt-installation-job`, `torque-sequence-job`,
+`threadlocker-job`, `retorque-inspection-job`,
+`rivet-installation-job`, `blind-rivet-job`, `solid-rivet-job`,
+`clinch-stake-job`, `swage-peen-job`, `rivet-inspection-job`,
 `part-marking-job`, `laser-marking-job`, `laser-engraving-job`,
 `dot-peen-job`, `data-matrix-marking-job`, `udi-marking-job`,
 `packaging-labeling-job`, `packout-job`, `carton-packout-job`,
@@ -3978,16 +4030,58 @@ selected candidate, replay verification, simulation verification, retained
 artifacts, satisfied constraints, and cleared promotion blockers; candidate
 scores remain advisory and keep `machineReady=false`.
 
+## `GET /fabrication/landing`
+
+`GET /landing` and the gateway-prefixed `GET /fabrication/landing` serve a human
+landing page for operators and integration authors. The page explains the
+fabrication server's intake-to-release flow: CAD/model/slicer and CAM
+intermediate intake, design and machine-code generation, instruction validation
+and improvement, split/combine planning, MDP/POMDP/DES/neural learning, retained
+job artifacts, and the release gates that keep draft plans from becoming
+machine-ready until simulation, controller/postprocessor review, setup, quality,
+and operator or automation signoff evidence clear.
+
+## `GET /fabrication/intake/catalog`
+
+`GET /intake/catalog` and `GET /fabrication/intake/catalog` return the
+`dd.fabrication.intake-catalog.v1` discovery contract for first-time clients.
+The catalog exposes the same `intakeGuide` used by `/fabrication/schema`, with
+steps for discovery, CAD/model/slicer review, machine-profile evidence,
+instruction analysis or generation, hybrid split/combine planning, and release
+plus learning feedback. It also states that intake evidence stays advisory until
+retained design, instruction, setup, simulation, quality, release, and learning
+reviews clear the machine-ready gates.
+
+## `GET /fabrication/templates/catalog`
+
+`GET /templates/catalog` and `GET /fabrication/templates/catalog` return the
+`dd.fabrication.request-templates-catalog.v1` starter-request catalog. The
+templates cover FDM printed functional parts, vertical-mill fixture plates, horizontal-mill side-slot/keyway work, lathe turned inserts, and hybrid printed/milled/turned assemblies. Each template
+names the target `POST /fabrication/plan` route, preferred manufacturing
+methods, machine class, required evidence labels, and a minimal request skeleton
+while making clear that templates are not machine-ready instructions. Template
+request skeletons include `templateId` and `templateVersion` trace labels for
+job, artifact, release, and learning evidence. Template entries also include
+`releaseGateHints` that point to slicer or controller review,
+tooling/workholding evidence, decomposition/interface-control gates,
+release-package gates, and the `/fabrication/release/catalog` contract.
+
 ## `GET /fabrication/schema` And `GET /fabrication/examples`
 
 `GET /schema` and `GET /fabrication/schema` return a compact request contract for
 planning, instruction analysis, learning observations, compact learning outcomes,
 machine profiles, optional machine-profile evidence, instruction programs, and
 response highlights. `GET /examples` and `GET /fabrication/examples` return
-ready-to-edit JSON examples for a hybrid printed/milled/turned plan with
-calibration/tool/fixture/material/process evidence, existing CNC and resin-job
-instruction analysis, outcome learning, compact learning outcomes, and a NATS
-instruction-analysis envelope.
+ready-to-edit JSON examples for a template-driven FDM request with
+`templateId`/`templateVersion` trace labels and release-gate hints, a hybrid
+printed/milled/turned plan with calibration/tool/fixture/material/process
+evidence, existing CNC and resin-job instruction analysis, outcome learning,
+compact learning outcomes, and a NATS instruction-analysis envelope.
+
+The schema also includes an `intakeGuide` for first-time clients: discover the
+landing/capabilities/schema/examples routes, review CAD/model/slicer inputs,
+attach machine-profile evidence, analyze or generate instructions, plan hybrid
+split/combine builds, then release and learn from retained outcome evidence.
 
 Submitted `profileEvidence.blockers` are promoted into validation findings,
 `machine-profile-blocker` failure boundaries, resolution steps, machine-release
