@@ -5,6 +5,8 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use aes_gcm::aead::{Aead, KeyInit, Payload};
+use aes_gcm::{Aes256Gcm, Nonce};
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{config::Region, presigning::PresigningConfig, types::ServerSideEncryption};
 use axum::{
@@ -14,11 +16,15 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{
+    engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD},
+    Engine as _,
+};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
 use rand::{rngs::OsRng, RngCore};
+use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -80,11 +86,25 @@ const DEFAULT_DOWNLOAD_URL_TTL_SECONDS: u64 = 900;
 const DEFAULT_SESSION_TTL_HOURS: i64 = 24;
 const MAX_TIMELINE_LIMIT: i64 = 500;
 const MAX_EXPORT_SEGMENTS: i64 = 240;
+const MAX_META_BYTES: usize = 4096;
+const MAX_CAPTURE_CLOCK_SKEW_SECONDS: i64 = 300;
+const DEFAULT_OAUTH_STATE_TTL_SECONDS: u64 = 600;
+const DEFAULT_CLOUD_COPY_BATCH_SIZE: i64 = 25;
+const MAX_CLOUD_COPY_BATCH_SIZE: i64 = 100;
+const DEFAULT_CLOUD_COPY_MAX_ATTEMPTS: i32 = 3;
+const DEFAULT_CLOUD_COPY_MAX_BYTES: i64 = 25 * 1024 * 1024;
+const MAX_CLOUD_COPY_MAX_BYTES: i64 = 200 * 1024 * 1024;
+const DEFAULT_CLOUD_BACKFILL_SEGMENTS: i64 = 240;
+const MAX_CLOUD_BACKFILL_SEGMENTS: i64 = 1000;
+const GOOGLE_DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive.file";
+const MICROSOFT_ONEDRIVE_SCOPE: &str = "offline_access Files.ReadWrite.AppFolder";
 
 #[derive(Clone)]
 struct AppState {
     config: Arc<Config>,
     s3: Option<aws_sdk_s3::Client>,
+    http: reqwest::Client,
+    cloud_sealer: Option<CloudTokenSealer>,
 }
 
 #[derive(Clone)]
@@ -105,6 +125,13 @@ struct Config {
     default_segment_seconds: i32,
     max_segment_seconds: i32,
     max_segment_bytes: i32,
+    oauth_state_ttl: Duration,
+    cloud_copy_batch_size: i64,
+    cloud_copy_max_attempts: i32,
+    cloud_copy_max_bytes: i64,
+    cloud_backfill_segments: i64,
+    google_oauth: OAuthProviderConfig,
+    microsoft_oauth: OAuthProviderConfig,
 }
 
 #[derive(Clone)]
@@ -112,6 +139,26 @@ struct S3StorageConfig {
     bucket: String,
     key_prefix: String,
     cdn_base_url: Option<String>,
+}
+
+#[derive(Clone)]
+struct OAuthProviderConfig {
+    client_id: Option<String>,
+    client_secret: Option<String>,
+}
+
+#[derive(Clone)]
+struct CloudTokenSealer {
+    cipher: Arc<Aes256Gcm>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SealedTokenEnvelope {
+    ciphertext_b64: String,
+    nonce_b64: String,
+    aad_tag: String,
+    version: i32,
 }
 
 #[derive(Debug)]
@@ -177,6 +224,9 @@ struct HealthResponse {
     token_pepper_configured: bool,
     registration_configured: bool,
     server_auth_configured: bool,
+    cloud_token_sealer_configured: bool,
+    google_drive_configured: bool,
+    microsoft_onedrive_configured: bool,
     retention_hours: i32,
 }
 
@@ -216,6 +266,7 @@ struct MobilePolicy {
     max_segment_bytes: i32,
     upload_url_ttl_seconds: u64,
     download_url_ttl_seconds: u64,
+    cloud_copy_supported_providers: Vec<&'static str>,
 }
 
 #[derive(Deserialize)]
@@ -401,6 +452,163 @@ struct RetentionSweepResponse {
     expired_segments: u64,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StartCloudLinkRequest {
+    provider: String,
+    redirect_uri: Option<String>,
+    folder_path: Option<String>,
+    root_folder_id: Option<String>,
+    display_name: Option<String>,
+    meta_data: Option<Value>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StartCloudLinkResponse {
+    ok: bool,
+    provider: String,
+    link_mode: String,
+    state: String,
+    authorization_url: Option<String>,
+    expires_at: DateTime<Utc>,
+    required_scope: Option<&'static str>,
+    client_managed: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompleteCloudLinkRequest {
+    provider: String,
+    state: String,
+    authorization_code: Option<String>,
+    redirect_uri: Option<String>,
+    display_name: Option<String>,
+    provider_account_id: Option<String>,
+    root_folder_id: Option<String>,
+    folder_path: Option<String>,
+    client_managed_acknowledged: Option<bool>,
+    meta_data: Option<Value>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompleteCloudLinkResponse {
+    ok: bool,
+    connection: CloudConnectionResponse,
+    backfilled_jobs: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ListCloudConnectionsResponse {
+    ok: bool,
+    connections: Vec<CloudConnectionResponse>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CloudConnectionResponse {
+    id: String,
+    provider: String,
+    link_mode: String,
+    status: String,
+    display_name: Option<String>,
+    provider_account_id: Option<String>,
+    root_folder_id: Option<String>,
+    folder_path: String,
+    token_expires_at: Option<DateTime<Utc>>,
+    last_sync_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RevokeCloudConnectionResponse {
+    ok: bool,
+    connection_id: String,
+    status: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListCloudCopyJobsQuery {
+    provider: Option<String>,
+    limit: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ListCloudCopyJobsResponse {
+    ok: bool,
+    jobs: Vec<CloudCopyJobWithDownload>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CloudCopyJobWithDownload {
+    job: CloudCopyJobResponse,
+    segment: SegmentResponse,
+    download: PresignedTransfer,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CloudCopyJobResponse {
+    id: String,
+    connection_id: String,
+    segment_id: String,
+    provider: String,
+    status: String,
+    destination_key: String,
+    provider_file_id: Option<String>,
+    attempts: i32,
+    completed_at: Option<DateTime<Utc>>,
+    last_error: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompleteCloudCopyJobRequest {
+    provider_file_id: Option<String>,
+    destination_key: Option<String>,
+    meta_data: Option<Value>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompleteCloudCopyJobResponse {
+    ok: bool,
+    job: CloudCopyJobResponse,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DrainCloudCopyRequest {
+    max_jobs: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DrainCloudCopyResponse {
+    ok: bool,
+    attempted: usize,
+    completed: usize,
+    failed: usize,
+    skipped: usize,
+    results: Vec<CloudCopyDrainResult>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CloudCopyDrainResult {
+    job_id: String,
+    provider: String,
+    status: String,
+    message: Option<String>,
+}
+
 struct SessionPolicy {
     status: String,
     storage_bucket: String,
@@ -409,6 +617,81 @@ struct SessionPolicy {
     codec: Option<String>,
     segment_duration_seconds: i32,
     max_segment_bytes: i32,
+}
+
+#[derive(Clone)]
+struct CloudConnectionRecord {
+    id: String,
+    account_id: String,
+    provider: String,
+    link_mode: String,
+    status: String,
+    display_name: Option<String>,
+    provider_account_id: Option<String>,
+    root_folder_id: Option<String>,
+    folder_path: String,
+    token_ciphertext: Option<String>,
+    token_nonce: Option<String>,
+    token_aad: Option<String>,
+    token_version: Option<i32>,
+    token_expires_at: Option<DateTime<Utc>>,
+    last_sync_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone)]
+struct CloudCopyJobRecord {
+    id: String,
+    account_id: String,
+    connection_id: String,
+    segment_id: String,
+    provider: String,
+    status: String,
+    destination_key: String,
+    provider_file_id: Option<String>,
+    attempts: i32,
+    completed_at: Option<DateTime<Utc>>,
+    last_error: Option<String>,
+}
+
+struct CloudCopyWorkItem {
+    job: CloudCopyJobRecord,
+    connection: CloudConnectionRecord,
+    segment: SegmentResponse,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloudTokenSet {
+    access_token: String,
+    refresh_token: Option<String>,
+    token_type: Option<String>,
+    scope: Option<String>,
+    expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OAuthTokenResponse {
+    access_token: Option<String>,
+    refresh_token: Option<String>,
+    token_type: Option<String>,
+    scope: Option<String>,
+    expires_in: Option<i64>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleDriveProfile {
+    resource_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MicrosoftDriveProfile {
+    id: Option<String>,
+    web_url: Option<String>,
 }
 
 fn first_env(keys: &[&str]) -> Option<String> {
@@ -454,12 +737,16 @@ fn env_u64(name: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
+fn env_duration_clamped(name: &str, default: u64, min: u64, max: u64) -> Duration {
+    Duration::from_secs(env_u64(name, default).clamp(min, max))
+}
+
+fn env_i64_clamped(name: &str, default: i64, min: i64, max: i64) -> i64 {
+    env_i64(name, default).clamp(min, max)
+}
+
 fn config_from_env() -> Config {
-    let token_pepper = first_env(&[
-        "SOUND_RECORDER_DEVICE_TOKEN_PEPPER",
-        "SOUND_RECORDER_SERVER_AUTH_SECRET",
-        "SERVER_AUTH_SECRET",
-    ]);
+    let token_pepper = first_env(&["SOUND_RECORDER_DEVICE_TOKEN_PEPPER"]);
     let token_pepper_configured = token_pepper.is_some();
     let token_pepper =
         token_pepper.unwrap_or_else(|| format!("dd-sound-recorder-local-{}", Uuid::new_v4()));
@@ -517,14 +804,18 @@ fn config_from_env() -> Config {
         ios_app_store_url: first_env(&["SOUND_RECORDER_IOS_APP_STORE_URL"]),
         android_play_store_url: first_env(&["SOUND_RECORDER_ANDROID_PLAY_STORE_URL"]),
         default_retention_hours,
-        upload_url_ttl: Duration::from_secs(env_u64(
+        upload_url_ttl: env_duration_clamped(
             "SOUND_RECORDER_UPLOAD_URL_TTL_SECONDS",
             DEFAULT_UPLOAD_URL_TTL_SECONDS,
-        )),
-        download_url_ttl: Duration::from_secs(env_u64(
+            30,
+            900,
+        ),
+        download_url_ttl: env_duration_clamped(
             "SOUND_RECORDER_DOWNLOAD_URL_TTL_SECONDS",
             DEFAULT_DOWNLOAD_URL_TTL_SECONDS,
-        )),
+            60,
+            3600,
+        ),
         session_ttl_hours: env_i64(
             "SOUND_RECORDER_SESSION_TTL_HOURS",
             DEFAULT_SESSION_TTL_HOURS,
@@ -532,6 +823,43 @@ fn config_from_env() -> Config {
         default_segment_seconds,
         max_segment_seconds,
         max_segment_bytes,
+        oauth_state_ttl: env_duration_clamped(
+            "SOUND_RECORDER_OAUTH_STATE_TTL_SECONDS",
+            DEFAULT_OAUTH_STATE_TTL_SECONDS,
+            60,
+            3600,
+        ),
+        cloud_copy_batch_size: env_i64_clamped(
+            "SOUND_RECORDER_CLOUD_COPY_BATCH_SIZE",
+            DEFAULT_CLOUD_COPY_BATCH_SIZE,
+            1,
+            MAX_CLOUD_COPY_BATCH_SIZE,
+        ),
+        cloud_copy_max_attempts: env_i32(
+            "SOUND_RECORDER_CLOUD_COPY_MAX_ATTEMPTS",
+            DEFAULT_CLOUD_COPY_MAX_ATTEMPTS,
+        )
+        .clamp(1, 10),
+        cloud_copy_max_bytes: env_i64_clamped(
+            "SOUND_RECORDER_CLOUD_COPY_MAX_BYTES",
+            DEFAULT_CLOUD_COPY_MAX_BYTES,
+            1,
+            MAX_CLOUD_COPY_MAX_BYTES,
+        ),
+        cloud_backfill_segments: env_i64_clamped(
+            "SOUND_RECORDER_CLOUD_BACKFILL_SEGMENTS",
+            DEFAULT_CLOUD_BACKFILL_SEGMENTS,
+            0,
+            MAX_CLOUD_BACKFILL_SEGMENTS,
+        ),
+        google_oauth: OAuthProviderConfig {
+            client_id: first_env(&["SOUND_RECORDER_GOOGLE_CLIENT_ID"]),
+            client_secret: first_env(&["SOUND_RECORDER_GOOGLE_CLIENT_SECRET"]),
+        },
+        microsoft_oauth: OAuthProviderConfig {
+            client_id: first_env(&["SOUND_RECORDER_MICROSOFT_CLIENT_ID"]),
+            client_secret: first_env(&["SOUND_RECORDER_MICROSOFT_CLIENT_SECRET"]),
+        },
     }
 }
 
@@ -559,9 +887,194 @@ async fn state_from_config(config: Config) -> AppState {
         None
     };
 
+    let cloud_sealer = match first_env(&["SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY"]) {
+        Some(key) => match CloudTokenSealer::from_base64_key(&key) {
+            Ok(sealer) => Some(sealer),
+            Err(err) => {
+                warn!(error = ?err, "SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY is invalid; cloud OAuth linking is disabled");
+                None
+            }
+        },
+        None => None,
+    };
+
+    let http = reqwest::Client::builder()
+        .user_agent("dd-sound-recorder-rs/0.1")
+        .timeout(Duration::from_secs(30))
+        .build()
+        .expect("reqwest client can be built");
+
     AppState {
         config: Arc::new(config),
         s3,
+        http,
+        cloud_sealer,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CloudProvider {
+    GoogleDrive,
+    MicrosoftOneDrive,
+    AppleICloud,
+}
+
+impl CloudProvider {
+    fn parse(value: &str) -> Result<Self, ServiceError> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "google_drive" | "googledrive" | "google" => Ok(Self::GoogleDrive),
+            "microsoft_onedrive" | "onedrive" | "microsoft" => Ok(Self::MicrosoftOneDrive),
+            "apple_icloud" | "icloud" | "apple" => Ok(Self::AppleICloud),
+            _ => Err(ServiceError::BadRequest(
+                "provider must be google_drive, microsoft_onedrive, or apple_icloud".to_string(),
+            )),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::GoogleDrive => "google_drive",
+            Self::MicrosoftOneDrive => "microsoft_onedrive",
+            Self::AppleICloud => "apple_icloud",
+        }
+    }
+
+    fn link_mode(self) -> &'static str {
+        match self {
+            Self::AppleICloud => "client_managed",
+            Self::GoogleDrive | Self::MicrosoftOneDrive => "server_oauth",
+        }
+    }
+
+    fn required_scope(self) -> Option<&'static str> {
+        match self {
+            Self::GoogleDrive => Some(GOOGLE_DRIVE_SCOPE),
+            Self::MicrosoftOneDrive => Some(MICROSOFT_ONEDRIVE_SCOPE),
+            Self::AppleICloud => None,
+        }
+    }
+
+    fn oauth_config<'a>(self, config: &'a Config) -> Option<&'a OAuthProviderConfig> {
+        match self {
+            Self::GoogleDrive => Some(&config.google_oauth),
+            Self::MicrosoftOneDrive => Some(&config.microsoft_oauth),
+            Self::AppleICloud => None,
+        }
+    }
+
+    fn authorization_endpoint(self) -> Option<&'static str> {
+        match self {
+            Self::GoogleDrive => Some("https://accounts.google.com/o/oauth2/v2/auth"),
+            Self::MicrosoftOneDrive => {
+                Some("https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize")
+            }
+            Self::AppleICloud => None,
+        }
+    }
+
+    fn token_endpoint(self) -> Option<&'static str> {
+        match self {
+            Self::GoogleDrive => Some("https://oauth2.googleapis.com/token"),
+            Self::MicrosoftOneDrive => {
+                Some("https://login.microsoftonline.com/consumers/oauth2/v2.0/token")
+            }
+            Self::AppleICloud => None,
+        }
+    }
+
+    fn is_server_managed(self) -> bool {
+        matches!(self, Self::GoogleDrive | Self::MicrosoftOneDrive)
+    }
+}
+
+impl CloudTokenSealer {
+    fn from_base64_key(key: &str) -> Result<Self, ServiceError> {
+        let raw = BASE64_STANDARD.decode(key.trim()).map_err(|_| {
+            ServiceError::Unavailable(
+                "SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY must be base64".to_string(),
+            )
+        })?;
+        if raw.len() != 32 {
+            return Err(ServiceError::Unavailable(
+                "SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY must decode to 32 bytes".to_string(),
+            ));
+        }
+        let cipher = Aes256Gcm::new_from_slice(&raw).map_err(|_| {
+            ServiceError::Unavailable(
+                "SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY is invalid".to_string(),
+            )
+        })?;
+        Ok(Self {
+            cipher: Arc::new(cipher),
+        })
+    }
+
+    fn seal(
+        &self,
+        account_id: &str,
+        provider: CloudProvider,
+        plaintext: &[u8],
+    ) -> Result<SealedTokenEnvelope, ServiceError> {
+        let mut nonce_bytes = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let aad = format!(
+            "dd-sound-recorder-rs/v1|account={account_id}|provider={}",
+            provider.as_str()
+        );
+        let ciphertext = self
+            .cipher
+            .encrypt(
+                nonce,
+                Payload {
+                    msg: plaintext,
+                    aad: aad.as_bytes(),
+                },
+            )
+            .map_err(|_| ServiceError::Internal("cloud credential seal failed".to_string()))?;
+        Ok(SealedTokenEnvelope {
+            ciphertext_b64: BASE64_STANDARD.encode(ciphertext),
+            nonce_b64: BASE64_STANDARD.encode(nonce_bytes),
+            aad_tag: aad,
+            version: 1,
+        })
+    }
+
+    fn unseal(
+        &self,
+        account_id: &str,
+        provider: CloudProvider,
+        envelope: &SealedTokenEnvelope,
+    ) -> Result<Vec<u8>, ServiceError> {
+        let expected_aad = format!(
+            "dd-sound-recorder-rs/v1|account={account_id}|provider={}",
+            provider.as_str()
+        );
+        if envelope.aad_tag != expected_aad {
+            return Err(ServiceError::Internal(
+                "cloud credential envelope is scoped to another account/provider".to_string(),
+            ));
+        }
+        let nonce_bytes = BASE64_STANDARD
+            .decode(&envelope.nonce_b64)
+            .map_err(|_| ServiceError::Internal("cloud credential nonce is invalid".to_string()))?;
+        if nonce_bytes.len() != 12 {
+            return Err(ServiceError::Internal(
+                "cloud credential nonce has invalid length".to_string(),
+            ));
+        }
+        let ciphertext = BASE64_STANDARD.decode(&envelope.ciphertext_b64).map_err(|_| {
+            ServiceError::Internal("cloud credential ciphertext is invalid".to_string())
+        })?;
+        self.cipher
+            .decrypt(
+                Nonce::from_slice(&nonce_bytes),
+                Payload {
+                    msg: &ciphertext,
+                    aad: envelope.aad_tag.as_bytes(),
+                },
+            )
+            .map_err(|_| ServiceError::Internal("cloud credential unseal failed".to_string()))
     }
 }
 
@@ -642,6 +1155,13 @@ fn clean_string(value: Option<String>, max_len: usize) -> Option<String> {
         })
 }
 
+fn clean_optional_nonempty(value: Option<String>, max_len: usize) -> Result<Option<String>, ServiceError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    Ok(Some(validate_nonempty(&value, "value", max_len)?))
+}
+
 fn validate_nonempty(value: &str, field: &str, max_len: usize) -> Result<String, ServiceError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -653,6 +1173,12 @@ fn validate_nonempty(value: &str, field: &str, max_len: usize) -> Result<String,
         )));
     }
     Ok(trimmed.to_string())
+}
+
+fn validate_uuid(value: &str, field: &str) -> Result<String, ServiceError> {
+    Uuid::parse_str(value)
+        .map(|uuid| uuid.to_string())
+        .map_err(|_| ServiceError::BadRequest(format!("{field} must be a UUID")))
 }
 
 fn normalize_platform(value: &str) -> Result<String, ServiceError> {
@@ -713,11 +1239,73 @@ fn validate_content_type(value: Option<String>, default: &str) -> Result<String,
 fn validate_meta(value: Option<Value>) -> Result<Value, ServiceError> {
     match value {
         None => Ok(json!({})),
-        Some(value) if value.is_object() => Ok(value),
+        Some(value) if value.is_object() => {
+            let size = serde_json::to_vec(&value)
+                .map(|bytes| bytes.len())
+                .unwrap_or(MAX_META_BYTES + 1);
+            if size > MAX_META_BYTES {
+                return Err(ServiceError::BadRequest(format!(
+                    "metaData must be at most {MAX_META_BYTES} bytes"
+                )));
+            }
+            Ok(value)
+        }
         Some(_) => Err(ServiceError::BadRequest(
             "metaData must be a JSON object".to_string(),
         )),
     }
+}
+
+fn validate_redirect_uri(provider: CloudProvider, value: Option<String>) -> Result<String, ServiceError> {
+    if provider == CloudProvider::AppleICloud {
+        return Ok("client-managed://apple-icloud".to_string());
+    }
+    let value = value.ok_or_else(|| {
+        ServiceError::BadRequest("redirectUri is required for OAuth cloud links".to_string())
+    })?;
+    let uri = validate_nonempty(&value, "redirectUri", 512)?;
+    let lower = uri.to_ascii_lowercase();
+    if lower.starts_with("https://")
+        || lower.starts_with("http://localhost")
+        || lower.starts_with("http://127.0.0.1")
+    {
+        Ok(uri)
+    } else {
+        Err(ServiceError::BadRequest(
+            "redirectUri must be https or local loopback http".to_string(),
+        ))
+    }
+}
+
+fn validate_folder_path(value: Option<String>) -> Result<String, ServiceError> {
+    let path = clean_string(value, 512).unwrap_or_else(|| "sound-recorder".to_string());
+    if path.contains("..")
+        || path.starts_with('/')
+        || path
+            .chars()
+            .any(|ch| ch.is_control() || matches!(ch, '\\' | '<' | '>' | '"' | '|' | '?' | '*'))
+    {
+        return Err(ServiceError::BadRequest(
+            "folderPath must be a relative cloud folder path".to_string(),
+        ));
+    }
+    let path = path.trim_matches('/').to_string();
+    if path.is_empty() {
+        Ok("sound-recorder".to_string())
+    } else {
+        Ok(path)
+    }
+}
+
+fn validate_provider_account_id(value: Option<String>) -> Result<Option<String>, ServiceError> {
+    clean_optional_nonempty(value, 240).map(|value| {
+        value.map(|provider_account_id| {
+            provider_account_id
+                .chars()
+                .filter(|ch| !ch.is_control())
+                .collect::<String>()
+        })
+    })
 }
 
 fn extension_for_content_type(content_type: &str) -> &'static str {
@@ -754,6 +1342,64 @@ fn cdn_url(config: &Config, key: &str) -> Option<String> {
     })
 }
 
+fn query_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(*byte, b'-' | b'_' | b'.' | b'~') {
+            escaped.push(*byte as char);
+        } else {
+            escaped.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    escaped
+}
+
+fn graph_path_escape(path: &str) -> String {
+    path.split('/')
+        .filter(|part| !part.is_empty())
+        .map(query_escape)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn authorization_url(
+    provider: CloudProvider,
+    oauth: &OAuthProviderConfig,
+    redirect_uri: &str,
+    state: &str,
+) -> Result<String, ServiceError> {
+    let client_id = oauth.client_id.as_deref().ok_or_else(|| {
+        ServiceError::Unavailable(format!("{} OAuth client id is not configured", provider.as_str()))
+    })?;
+    let endpoint = provider.authorization_endpoint().ok_or_else(|| {
+        ServiceError::BadRequest("provider does not use server OAuth".to_string())
+    })?;
+    let scope = provider.required_scope().unwrap_or_default();
+    let mut params = vec![
+        ("client_id", client_id.to_string()),
+        ("redirect_uri", redirect_uri.to_string()),
+        ("response_type", "code".to_string()),
+        ("scope", scope.to_string()),
+        ("state", state.to_string()),
+    ];
+    match provider {
+        CloudProvider::GoogleDrive => {
+            params.push(("access_type", "offline".to_string()));
+            params.push(("prompt", "consent".to_string()));
+        }
+        CloudProvider::MicrosoftOneDrive => {
+            params.push(("response_mode", "query".to_string()));
+        }
+        CloudProvider::AppleICloud => {}
+    }
+    let query = params
+        .into_iter()
+        .map(|(key, value)| format!("{}={}", query_escape(key), query_escape(&value)))
+        .collect::<Vec<_>>()
+        .join("&");
+    Ok(format!("{endpoint}?{query}"))
+}
+
 fn policy(config: &Config, retention_hours: i32) -> MobilePolicy {
     MobilePolicy {
         retention_hours,
@@ -762,6 +1408,11 @@ fn policy(config: &Config, retention_hours: i32) -> MobilePolicy {
         max_segment_bytes: config.max_segment_bytes,
         upload_url_ttl_seconds: config.upload_url_ttl.as_secs(),
         download_url_ttl_seconds: config.download_url_ttl.as_secs(),
+        cloud_copy_supported_providers: vec![
+            CloudProvider::GoogleDrive.as_str(),
+            CloudProvider::MicrosoftOneDrive.as_str(),
+            CloudProvider::AppleICloud.as_str(),
+        ],
     }
 }
 
@@ -1014,6 +1665,11 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
         registration_configured: state.config.registration_bearer.is_some()
             || state.config.allow_public_device_registration,
         server_auth_configured: state.config.server_auth_secret.is_some(),
+        cloud_token_sealer_configured: state.cloud_sealer.is_some(),
+        google_drive_configured: state.config.google_oauth.client_id.is_some()
+            && state.config.google_oauth.client_secret.is_some(),
+        microsoft_onedrive_configured: state.config.microsoft_oauth.client_id.is_some()
+            && state.config.microsoft_oauth.client_secret.is_some(),
         retention_hours: state.config.default_retention_hours,
     })
 }
@@ -1044,6 +1700,11 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
             registration_configured: state.config.registration_bearer.is_some()
                 || state.config.allow_public_device_registration,
             server_auth_configured: state.config.server_auth_secret.is_some(),
+            cloud_token_sealer_configured: state.cloud_sealer.is_some(),
+            google_drive_configured: state.config.google_oauth.client_id.is_some()
+                && state.config.google_oauth.client_secret.is_some(),
+            microsoft_onedrive_configured: state.config.microsoft_oauth.client_id.is_some()
+                && state.config.microsoft_oauth.client_secret.is_some(),
             retention_hours: state.config.default_retention_hours,
         }),
     )
@@ -1277,6 +1938,7 @@ async fn presign_segment(
     Json(req): Json<PresignSegmentRequest>,
 ) -> Result<Json<PresignSegmentResponse>, ServiceError> {
     let (auth, client) = authenticate_device(&state, &headers).await?;
+    let session_id = validate_uuid(&session_id, "sessionId")?;
     let session = load_session_policy(&client, &auth, &session_id).await?;
     if session.status != "active" {
         return Err(ServiceError::Conflict(
@@ -1309,9 +1971,18 @@ async fn presign_segment(
     }
     let sha256_hex = validate_sha256(req.sha256_hex)?;
     let meta_data = validate_meta(req.meta_data)?;
-    let retention_cutoff = Utc::now()
+    let now = Utc::now();
+    let max_future_capture = now
+        .checked_add_signed(ChronoDuration::seconds(MAX_CAPTURE_CLOCK_SKEW_SECONDS))
+        .unwrap_or(now);
+    if req.captured_started_at > max_future_capture {
+        return Err(ServiceError::BadRequest(
+            "capturedStartedAt is too far in the future".to_string(),
+        ));
+    }
+    let retention_cutoff = now
         .checked_sub_signed(ChronoDuration::hours(auth.retention_hours as i64))
-        .unwrap_or_else(Utc::now);
+        .unwrap_or(now);
     if req.captured_started_at < retention_cutoff {
         return Err(ServiceError::BadRequest(
             "capturedStartedAt is outside the rolling retention window".to_string(),
@@ -1431,12 +2102,46 @@ async fn complete_segment(
     Json(req): Json<CompleteSegmentRequest>,
 ) -> Result<Json<CompleteSegmentResponse>, ServiceError> {
     let (auth, client) = authenticate_device(&state, &headers).await?;
+    let session_id = validate_uuid(&session_id, "sessionId")?;
+    let segment_id = validate_uuid(&segment_id, "segmentId")?;
     let sha256_hex = validate_sha256(req.sha256_hex)?;
     let etag = clean_string(req.etag, 160);
+    let policy_row = client
+        .query_opt(
+            "select s.captured_started_at, s.duration_millis, us.max_segment_bytes
+             from sound_recorder_segments s
+             join sound_recorder_upload_sessions us on us.id = s.session_id
+             where s.id = $1::uuid
+               and s.session_id = $2::uuid
+               and s.account_id = $3::uuid
+               and s.device_id = $4::uuid
+               and s.status <> 'deleted'",
+            &[&segment_id, &session_id, &auth.account_id, &auth.device_id],
+        )
+        .await
+        .map_err(db_error)?;
+    let Some(policy_row) = policy_row else {
+        return Err(ServiceError::NotFound("segment not found".to_string()));
+    };
+    let max_segment_bytes: i32 = policy_row.get("max_segment_bytes");
     if let Some(byte_count) = req.byte_count {
-        if !(0..=MAX_SEGMENT_BYTES).contains(&byte_count) {
+        if byte_count < 0 || byte_count > max_segment_bytes {
+            return Err(ServiceError::BadRequest(format!(
+                "byteCount must be between 0 and {max_segment_bytes}"
+            )));
+        }
+    }
+    if let Some(captured_ended_at) = req.captured_ended_at {
+        let captured_started_at: DateTime<Utc> = policy_row.get("captured_started_at");
+        let duration_millis: i32 = policy_row.get("duration_millis");
+        let max_end = captured_started_at
+            .checked_add_signed(ChronoDuration::milliseconds(
+                duration_millis as i64 + (MAX_CAPTURE_CLOCK_SKEW_SECONDS * 1000),
+            ))
+            .unwrap_or(captured_started_at);
+        if captured_ended_at < captured_started_at || captured_ended_at > max_end {
             return Err(ServiceError::BadRequest(
-                "byteCount is outside allowed range".to_string(),
+                "capturedEndedAt is outside the segment capture window".to_string(),
             ));
         }
     }
@@ -1484,6 +2189,8 @@ async fn complete_segment(
             &[&session_id],
         )
         .await;
+    let cloud_jobs_queued =
+        enqueue_cloud_copy_jobs_for_segment(&client, &state.config, &auth.account_id, &row).await?;
     audit_event(
         &client,
         Some(&auth.account_id),
@@ -1492,7 +2199,8 @@ async fn complete_segment(
         json!({
             "sessionId": session_id,
             "segmentId": segment_id,
-            "byteCount": req.byte_count
+            "byteCount": req.byte_count,
+            "cloudCopyJobsQueued": cloud_jobs_queued
         }),
     )
     .await;
@@ -1513,6 +2221,7 @@ async fn heartbeat_session(
     Path(session_id): Path<String>,
 ) -> Result<Json<HeartbeatResponse>, ServiceError> {
     let (auth, client) = authenticate_device(&state, &headers).await?;
+    let session_id = validate_uuid(&session_id, "sessionId")?;
     let updated = client
         .execute(
             "update sound_recorder_upload_sessions
@@ -1558,6 +2267,7 @@ async fn close_session(
     Path(session_id): Path<String>,
 ) -> Result<Json<CloseSessionResponse>, ServiceError> {
     let (auth, client) = authenticate_device(&state, &headers).await?;
+    let session_id = validate_uuid(&session_id, "sessionId")?;
     let updated = client
         .execute(
             "update sound_recorder_upload_sessions
@@ -1660,12 +2370,12 @@ async fn create_evidence_export(
             "to must be later than from".to_string(),
         ));
     }
-    if let Some(device_id) = &req.device_id {
-        if !uuid_like(device_id) {
-            return Err(ServiceError::BadRequest(
-                "deviceId must be a UUID".to_string(),
-            ));
-        }
+    let device_id = req
+        .device_id
+        .as_deref()
+        .map(|device_id| validate_uuid(device_id, "deviceId"))
+        .transpose()?;
+    if let Some(device_id) = &device_id {
         let owns_device = client
             .query_opt(
                 "select 1
@@ -1684,7 +2394,7 @@ async fn create_evidence_export(
         .max_segments
         .unwrap_or(120)
         .clamp(1, MAX_EXPORT_SEGMENTS);
-    let rows = if let Some(device_id) = &req.device_id {
+    let rows = if let Some(device_id) = &device_id {
         client
             .query(
                 "select id::text, account_id::text, device_id::text, session_id::text,
@@ -1759,7 +2469,7 @@ async fn create_evidence_export(
             &[
                 &export_id,
                 &auth.account_id,
-                &req.device_id,
+                &device_id,
                 &auth.device_id,
                 &req.from,
                 &req.to,
@@ -1791,6 +2501,835 @@ async fn create_evidence_export(
         segment_count: links.len(),
         segments: links,
     }))
+}
+
+async fn list_cloud_connections(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ListCloudConnectionsResponse>, ServiceError> {
+    let (auth, client) = authenticate_device(&state, &headers).await?;
+    let rows = client
+        .query(
+            "select id::text, provider, link_mode, status, display_name, provider_account_id,
+                    root_folder_id, folder_path, token_expires_at, last_sync_at,
+                    created_at, updated_at
+             from sound_recorder_cloud_connections
+             where account_id = $1::uuid and status <> 'revoked'
+             order by provider asc, updated_at desc",
+            &[&auth.account_id],
+        )
+        .await
+        .map_err(db_error)?;
+    record_request("GET", "/api/mobile/v1/cloud-connections", StatusCode::OK);
+    Ok(Json(ListCloudConnectionsResponse {
+        ok: true,
+        connections: rows.iter().map(cloud_connection_from_row).collect(),
+    }))
+}
+
+async fn start_cloud_link(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<StartCloudLinkRequest>,
+) -> Result<Json<StartCloudLinkResponse>, ServiceError> {
+    let (auth, client) = authenticate_device(&state, &headers).await?;
+    let provider = CloudProvider::parse(&req.provider)?;
+    let redirect_uri = validate_redirect_uri(provider, req.redirect_uri)?;
+    let folder_path = validate_folder_path(req.folder_path)?;
+    let root_folder_id = clean_optional_nonempty(req.root_folder_id, 512)?;
+    let display_name = clean_string(req.display_name, 160);
+    let meta_data = validate_meta(req.meta_data)?;
+    let state_token = new_oauth_state();
+    let state_hash = oauth_state_hash(&state.config, &state_token);
+    let expires_at = Utc::now()
+        .checked_add_signed(chrono_duration_from_std(state.config.oauth_state_ttl)?)
+        .unwrap_or_else(Utc::now);
+    client
+        .execute(
+            "insert into sound_recorder_oauth_states
+              (id, account_id, device_id, provider, state_hash, redirect_uri,
+               folder_path, expires_at, meta_data)
+             values
+              ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9)",
+            &[
+                &Uuid::new_v4().to_string(),
+                &auth.account_id,
+                &auth.device_id,
+                &provider.as_str(),
+                &state_hash,
+                &redirect_uri,
+                &folder_path,
+                &expires_at,
+                &json!({
+                    "rootFolderId": root_folder_id,
+                    "displayName": display_name,
+                    "clientMeta": meta_data
+                }),
+            ],
+        )
+        .await
+        .map_err(db_error)?;
+    let authorization_url = if let Some(oauth) = provider.oauth_config(&state.config) {
+        Some(authorization_url(
+            provider,
+            oauth,
+            &redirect_uri,
+            &state_token,
+        )?)
+    } else {
+        None
+    };
+    audit_event(
+        &client,
+        Some(&auth.account_id),
+        Some(&auth.device_id),
+        "sound_recorder.cloud_link.started",
+        json!({
+            "provider": provider.as_str(),
+            "linkMode": provider.link_mode(),
+            "folderPath": folder_path
+        }),
+    )
+    .await;
+    record_request(
+        "POST",
+        "/api/mobile/v1/cloud-connections/oauth/start",
+        StatusCode::OK,
+    );
+    Ok(Json(StartCloudLinkResponse {
+        ok: true,
+        provider: provider.as_str().to_string(),
+        link_mode: provider.link_mode().to_string(),
+        state: state_token,
+        authorization_url,
+        expires_at,
+        required_scope: provider.required_scope(),
+        client_managed: provider == CloudProvider::AppleICloud,
+    }))
+}
+
+async fn complete_cloud_link(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<CompleteCloudLinkRequest>,
+) -> Result<Json<CompleteCloudLinkResponse>, ServiceError> {
+    let (auth, client) = authenticate_device(&state, &headers).await?;
+    let provider = CloudProvider::parse(&req.provider)?;
+    let state_token = validate_nonempty(&req.state, "state", 160)?;
+    let state_hash = oauth_state_hash(&state.config, &state_token);
+    let state_row = client
+        .query_opt(
+            "select id::text, redirect_uri, folder_path, meta_data
+             from sound_recorder_oauth_states
+             where account_id = $1::uuid
+               and device_id = $2::uuid
+               and provider = $3
+               and state_hash = $4
+               and status = 'pending'
+               and expires_at > now()",
+            &[&auth.account_id, &auth.device_id, &provider.as_str(), &state_hash],
+        )
+        .await
+        .map_err(db_error)?;
+    let Some(state_row) = state_row else {
+        return Err(ServiceError::Unauthorized);
+    };
+    let oauth_state_id: String = state_row.get("id");
+    let redirect_uri: String = state_row.get("redirect_uri");
+    if let Some(req_redirect_uri) = req.redirect_uri.as_deref() {
+        if req_redirect_uri.trim() != redirect_uri {
+            return Err(ServiceError::BadRequest(
+                "redirectUri does not match the started OAuth flow".to_string(),
+            ));
+        }
+    }
+    let state_meta: Value = state_row.get("meta_data");
+    let folder_path = validate_folder_path(
+        req.folder_path
+            .or_else(|| state_row.get::<_, Option<String>>("folder_path")),
+    )?;
+    let root_folder_id = clean_optional_nonempty(req.root_folder_id, 512)?.or_else(|| {
+        state_meta
+            .get("rootFolderId")
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+    });
+    let display_name = clean_string(req.display_name, 160).or_else(|| {
+        state_meta
+            .get("displayName")
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+    });
+    let request_meta = validate_meta(req.meta_data)?;
+    let provider_account_id = validate_provider_account_id(req.provider_account_id)?
+        .unwrap_or_else(|| format!("{}-default", provider.as_str()));
+
+    let (sealed, token_expires_at, oauth_scope) = if provider.is_server_managed() {
+        let sealer = state.cloud_sealer.as_ref().ok_or_else(|| {
+            ServiceError::Unavailable(
+                "SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY is required for server-managed cloud links".to_string(),
+            )
+        })?;
+        let authorization_code = validate_nonempty(
+            req.authorization_code.as_deref().unwrap_or(""),
+            "authorizationCode",
+            4096,
+        )?;
+        let token_set =
+            exchange_authorization_code(&state, provider, &authorization_code, &redirect_uri)
+                .await?;
+        let plaintext = serde_json::to_vec(&token_set)
+            .map_err(|_| ServiceError::Internal("cloud token encode failed".to_string()))?;
+        let sealed = sealer.seal(&auth.account_id, provider, &plaintext)?;
+        (Some(sealed), token_set.expires_at, token_set.scope.clone())
+    } else {
+        if !req.client_managed_acknowledged.unwrap_or(false) {
+            return Err(ServiceError::BadRequest(
+                "clientManagedAcknowledged must be true for apple_icloud links".to_string(),
+            ));
+        }
+        (None, None, None)
+    };
+
+    let connection = upsert_cloud_connection(
+        &client,
+        &auth,
+        provider,
+        display_name,
+        Some(provider_account_id),
+        root_folder_id,
+        folder_path,
+        oauth_scope,
+        sealed,
+        token_expires_at,
+        request_meta,
+    )
+    .await?;
+    client
+        .execute(
+            "update sound_recorder_oauth_states
+             set status = 'consumed', consumed_at = now(), updated_at = now()
+             where id = $1::uuid",
+            &[&oauth_state_id],
+        )
+        .await
+        .map_err(db_error)?;
+    let backfilled =
+        enqueue_retained_cloud_copy_jobs(&client, &state.config, &auth.account_id, &connection)
+            .await?;
+    audit_event(
+        &client,
+        Some(&auth.account_id),
+        Some(&auth.device_id),
+        "sound_recorder.cloud_link.completed",
+        json!({
+            "provider": provider.as_str(),
+            "connectionId": connection.id,
+            "linkMode": provider.link_mode(),
+            "backfilledJobs": backfilled
+        }),
+    )
+    .await;
+    record_request(
+        "POST",
+        "/api/mobile/v1/cloud-connections/oauth/complete",
+        StatusCode::OK,
+    );
+    Ok(Json(CompleteCloudLinkResponse {
+        ok: true,
+        connection: CloudConnectionResponse {
+            id: connection.id,
+            provider: connection.provider,
+            link_mode: connection.link_mode,
+            status: connection.status,
+            display_name: connection.display_name,
+            provider_account_id: connection.provider_account_id,
+            root_folder_id: connection.root_folder_id,
+            folder_path: connection.folder_path,
+            token_expires_at: connection.token_expires_at,
+            last_sync_at: connection.last_sync_at,
+            created_at: connection.created_at,
+            updated_at: connection.updated_at,
+        },
+        backfilled_jobs: backfilled,
+    }))
+}
+
+async fn revoke_cloud_connection(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(connection_id): Path<String>,
+) -> Result<Json<RevokeCloudConnectionResponse>, ServiceError> {
+    let (auth, client) = authenticate_device(&state, &headers).await?;
+    let connection_id = validate_uuid(&connection_id, "connectionId")?;
+    let updated = client
+        .execute(
+            "update sound_recorder_cloud_connections
+             set status = 'revoked',
+                 token_ciphertext = null,
+                 token_nonce = null,
+                 token_aad = null,
+                 token_version = null,
+                 token_expires_at = null,
+                 updated_at = now()
+             where id = $1::uuid and account_id = $2::uuid and status <> 'revoked'",
+            &[&connection_id, &auth.account_id],
+        )
+        .await
+        .map_err(db_error)?;
+    if updated == 0 {
+        return Err(ServiceError::NotFound(
+            "cloud connection not found".to_string(),
+        ));
+    }
+    client
+        .execute(
+            "update sound_recorder_cloud_copy_jobs
+             set status = 'skipped', updated_at = now()
+             where connection_id = $1::uuid and status in ('pending', 'waiting_client', 'running')",
+            &[&connection_id],
+        )
+        .await
+        .map_err(db_error)?;
+    audit_event(
+        &client,
+        Some(&auth.account_id),
+        Some(&auth.device_id),
+        "sound_recorder.cloud_link.revoked",
+        json!({ "connectionId": connection_id }),
+    )
+    .await;
+    record_request(
+        "POST",
+        "/api/mobile/v1/cloud-connections/:connection_id/revoke",
+        StatusCode::OK,
+    );
+    Ok(Json(RevokeCloudConnectionResponse {
+        ok: true,
+        connection_id,
+        status: "revoked".to_string(),
+    }))
+}
+
+async fn list_client_cloud_copy_jobs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ListCloudCopyJobsQuery>,
+) -> Result<Json<ListCloudCopyJobsResponse>, ServiceError> {
+    let (auth, client) = authenticate_device(&state, &headers).await?;
+    let provider = query
+        .provider
+        .as_deref()
+        .map(CloudProvider::parse)
+        .transpose()?
+        .unwrap_or(CloudProvider::AppleICloud);
+    if provider != CloudProvider::AppleICloud {
+        return Err(ServiceError::BadRequest(
+            "client-managed copy jobs are currently only available for apple_icloud".to_string(),
+        ));
+    }
+    let limit = query.limit.unwrap_or(25).clamp(1, 100);
+    let rows = client
+        .query(
+            "select j.id::text as job_id, j.connection_id::text, j.segment_id::text,
+                    j.provider as job_provider, j.status as job_status, j.destination_key,
+                    j.provider_file_id, j.attempts, j.completed_at, j.last_error,
+                    s.id::text, s.account_id::text, s.device_id::text, s.session_id::text,
+                    s.sequence_number, s.status, s.storage_provider, s.storage_bucket,
+                    s.storage_key, s.content_type, s.codec, s.captured_started_at,
+                    s.captured_ended_at, s.duration_millis, s.byte_count, s.sha256_hex,
+                    s.upload_url_expires_at, s.uploaded_at, s.expires_at
+             from sound_recorder_cloud_copy_jobs j
+             join sound_recorder_segments s on s.id = j.segment_id
+             join sound_recorder_cloud_connections c on c.id = j.connection_id
+             where j.account_id = $1::uuid
+               and j.provider = $2
+               and j.status = 'waiting_client'
+               and c.status = 'active'
+               and s.status = 'uploaded'
+             order by j.created_at asc
+             limit $3",
+            &[&auth.account_id, &provider.as_str(), &limit],
+        )
+        .await
+        .map_err(db_error)?;
+    let download_expires_at = Utc::now()
+        .checked_add_signed(chrono_duration_from_std(state.config.download_url_ttl)?)
+        .unwrap_or_else(Utc::now);
+    let mut jobs = Vec::with_capacity(rows.len());
+    for row in rows {
+        let segment = segment_from_row(&state.config, &row);
+        let download = presign_get(
+            &state,
+            &segment.storage_bucket,
+            &segment.storage_key,
+            download_expires_at,
+        )
+        .await?;
+        let job = CloudCopyJobResponse {
+            id: row.get("job_id"),
+            connection_id: row.get("connection_id"),
+            segment_id: row.get("segment_id"),
+            provider: row.get("job_provider"),
+            status: row.get("job_status"),
+            destination_key: row.get("destination_key"),
+            provider_file_id: row.get("provider_file_id"),
+            attempts: row.get("attempts"),
+            completed_at: row.get("completed_at"),
+            last_error: row.get("last_error"),
+        };
+        jobs.push(CloudCopyJobWithDownload {
+            job,
+            segment,
+            download,
+        });
+    }
+    record_request("GET", "/api/mobile/v1/cloud-copy-jobs", StatusCode::OK);
+    Ok(Json(ListCloudCopyJobsResponse { ok: true, jobs }))
+}
+
+async fn complete_client_cloud_copy_job(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(job_id): Path<String>,
+    Json(req): Json<CompleteCloudCopyJobRequest>,
+) -> Result<Json<CompleteCloudCopyJobResponse>, ServiceError> {
+    let (auth, client) = authenticate_device(&state, &headers).await?;
+    let job_id = validate_uuid(&job_id, "jobId")?;
+    let provider_file_id = clean_optional_nonempty(req.provider_file_id, 512)?;
+    let destination_key = clean_optional_nonempty(req.destination_key, 2048)?;
+    let meta_data = validate_meta(req.meta_data)?;
+    let row = client
+        .query_opt(
+            "update sound_recorder_cloud_copy_jobs
+             set status = 'completed',
+                 provider_file_id = coalesce($3, provider_file_id),
+                 destination_key = coalesce($4, destination_key),
+                 completed_at = now(),
+                 meta_data = meta_data || $5::jsonb,
+                 updated_at = now()
+             where id = $1::uuid
+               and account_id = $2::uuid
+               and status = 'waiting_client'
+             returning id::text, account_id::text, connection_id::text, segment_id::text,
+                       provider, status, destination_key, provider_file_id, attempts,
+                       completed_at, last_error",
+            &[
+                &job_id,
+                &auth.account_id,
+                &provider_file_id,
+                &destination_key,
+                &meta_data,
+            ],
+        )
+        .await
+        .map_err(db_error)?;
+    let Some(row) = row else {
+        return Err(ServiceError::NotFound(
+            "client-managed cloud copy job not found".to_string(),
+        ));
+    };
+    audit_event(
+        &client,
+        Some(&auth.account_id),
+        Some(&auth.device_id),
+        "sound_recorder.cloud_copy.client_completed",
+        json!({ "jobId": job_id }),
+    )
+    .await;
+    record_request(
+        "POST",
+        "/api/mobile/v1/cloud-copy-jobs/:job_id/complete",
+        StatusCode::OK,
+    );
+    Ok(Json(CompleteCloudCopyJobResponse {
+        ok: true,
+        job: cloud_copy_job_from_row(&row),
+    }))
+}
+
+async fn drain_cloud_copy_jobs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<DrainCloudCopyRequest>,
+) -> Result<Json<DrainCloudCopyResponse>, ServiceError> {
+    require_internal_auth(&state.config, &headers)?;
+    let client = connect_postgres(&state.config).await?;
+    let limit = req
+        .max_jobs
+        .unwrap_or(state.config.cloud_copy_batch_size)
+        .clamp(1, MAX_CLOUD_COPY_BATCH_SIZE);
+    let rows = client
+        .query(
+            "select j.id::text as job_id, j.account_id::text as job_account_id,
+                    j.connection_id::text, j.segment_id::text, j.provider as job_provider,
+                    j.status as job_status, j.destination_key, j.provider_file_id,
+                    j.attempts, j.completed_at, j.last_error,
+                    c.id::text as connection_id, c.account_id::text as connection_account_id,
+                    c.provider as connection_provider, c.link_mode, c.status as connection_status,
+                    c.display_name, c.provider_account_id, c.root_folder_id, c.folder_path,
+                    c.token_ciphertext, c.token_nonce, c.token_aad, c.token_version,
+                    c.token_expires_at, c.last_sync_at, c.created_at as connection_created_at,
+                    c.updated_at as connection_updated_at,
+                    s.id::text, s.account_id::text, s.device_id::text, s.session_id::text,
+                    s.sequence_number, s.status, s.storage_provider, s.storage_bucket,
+                    s.storage_key, s.content_type, s.codec, s.captured_started_at,
+                    s.captured_ended_at, s.duration_millis, s.byte_count, s.sha256_hex,
+                    s.upload_url_expires_at, s.uploaded_at, s.expires_at
+             from sound_recorder_cloud_copy_jobs j
+             join sound_recorder_cloud_connections c on c.id = j.connection_id
+             join sound_recorder_segments s on s.id = j.segment_id
+             where j.status = 'pending'
+               and (j.locked_until is null or j.locked_until < now())
+               and c.status = 'active'
+               and c.link_mode = 'server_oauth'
+               and s.status = 'uploaded'
+             order by j.updated_at asc
+             limit $1",
+            &[&limit],
+        )
+        .await
+        .map_err(db_error)?;
+    let mut attempted = 0usize;
+    let mut completed = 0usize;
+    let mut failed = 0usize;
+    let mut skipped = 0usize;
+    let mut results = Vec::with_capacity(rows.len());
+    for row in rows {
+        let item = cloud_copy_work_item_from_row(&state.config, &row);
+        let claimed_attempts = claim_cloud_copy_job(&client, &item.job.id).await?;
+        let Some(attempts) = claimed_attempts else {
+            skipped += 1;
+            results.push(CloudCopyDrainResult {
+                job_id: item.job.id,
+                provider: item.job.provider,
+                status: "skipped".to_string(),
+                message: Some("job was already claimed".to_string()),
+            });
+            continue;
+        };
+        attempted += 1;
+        match process_cloud_copy_job(&state, &client, &item).await {
+            Ok(provider_file_id) => {
+                completed += 1;
+                mark_cloud_copy_job_success(&client, &item, &provider_file_id).await?;
+                results.push(CloudCopyDrainResult {
+                    job_id: item.job.id,
+                    provider: item.job.provider,
+                    status: "completed".to_string(),
+                    message: None,
+                });
+            }
+            Err(err) => {
+                failed += 1;
+                let message = service_error_message(&err);
+                mark_cloud_copy_job_error(&client, &item.job.id, attempts, &message, &state.config)
+                    .await?;
+                results.push(CloudCopyDrainResult {
+                    job_id: item.job.id,
+                    provider: item.job.provider,
+                    status: "failed".to_string(),
+                    message: Some(message),
+                });
+            }
+        }
+    }
+    record_request("POST", "/internal/cloud-copy/drain", StatusCode::OK);
+    Ok(Json(DrainCloudCopyResponse {
+        ok: true,
+        attempted,
+        completed,
+        failed,
+        skipped,
+        results,
+    }))
+}
+
+fn service_error_message(error: &ServiceError) -> String {
+    let message = match error {
+        ServiceError::BadRequest(message)
+        | ServiceError::NotFound(message)
+        | ServiceError::Conflict(message)
+        | ServiceError::Unavailable(message)
+        | ServiceError::Internal(message) => message.as_str(),
+        ServiceError::Unauthorized => "unauthorized",
+    };
+    message.chars().take(500).collect()
+}
+
+async fn claim_cloud_copy_job(
+    client: &tokio_postgres::Client,
+    job_id: &str,
+) -> Result<Option<i32>, ServiceError> {
+    let locked_until = Utc::now()
+        .checked_add_signed(ChronoDuration::minutes(5))
+        .unwrap_or_else(Utc::now);
+    let row = client
+        .query_opt(
+            "update sound_recorder_cloud_copy_jobs
+             set status = 'running',
+                 attempts = attempts + 1,
+                 started_at = coalesce(started_at, now()),
+                 locked_until = $2,
+                 updated_at = now()
+             where id = $1::uuid
+               and status = 'pending'
+               and (locked_until is null or locked_until < now())
+             returning attempts",
+            &[&job_id, &locked_until],
+        )
+        .await
+        .map_err(db_error)?;
+    Ok(row.map(|row| row.get("attempts")))
+}
+
+async fn process_cloud_copy_job(
+    state: &AppState,
+    client: &tokio_postgres::Client,
+    item: &CloudCopyWorkItem,
+) -> Result<String, ServiceError> {
+    let provider = CloudProvider::parse(&item.job.provider)?;
+    if !provider.is_server_managed() {
+        return Err(ServiceError::BadRequest(
+            "cloud provider is not server managed".to_string(),
+        ));
+    }
+    if item
+        .segment
+        .byte_count
+        .map(|bytes| bytes as i64 > state.config.cloud_copy_max_bytes)
+        .unwrap_or(false)
+    {
+        return Err(ServiceError::BadRequest(
+            "segment is larger than the cloud copy byte limit".to_string(),
+        ));
+    }
+    let token_set = token_set_for_connection(state, client, &item.connection).await?;
+    let bytes = download_segment_bytes(state, &item.segment).await?;
+    if bytes.len() as i64 > state.config.cloud_copy_max_bytes {
+        return Err(ServiceError::BadRequest(
+            "segment is larger than the cloud copy byte limit".to_string(),
+        ));
+    }
+    match provider {
+        CloudProvider::GoogleDrive => {
+            upload_to_google_drive(state, &item.connection, &item.segment, &item.job, bytes, &token_set)
+                .await
+        }
+        CloudProvider::MicrosoftOneDrive => {
+            upload_to_microsoft_onedrive(
+                state,
+                &item.segment,
+                &item.job,
+                bytes,
+                &token_set,
+            )
+            .await
+        }
+        CloudProvider::AppleICloud => Err(ServiceError::BadRequest(
+            "apple_icloud is client managed".to_string(),
+        )),
+    }
+}
+
+async fn download_segment_bytes(
+    state: &AppState,
+    segment: &SegmentResponse,
+) -> Result<Vec<u8>, ServiceError> {
+    let s3 = state.s3.as_ref().ok_or_else(|| {
+        ServiceError::Unavailable("S3 client is not configured".to_string())
+    })?;
+    let object = s3
+        .get_object()
+        .bucket(&segment.storage_bucket)
+        .key(&segment.storage_key)
+        .send()
+        .await
+        .map_err(|err| {
+            error!(error = %err, segment_id = segment.id, "S3 segment download failed");
+            ServiceError::Unavailable("S3 segment download failed".to_string())
+        })?;
+    let bytes = object.body.collect().await.map_err(|err| {
+        error!(error = %err, segment_id = segment.id, "S3 segment body read failed");
+        ServiceError::Unavailable("S3 segment body read failed".to_string())
+    })?;
+    Ok(bytes.into_bytes().to_vec())
+}
+
+async fn upload_to_google_drive(
+    state: &AppState,
+    connection: &CloudConnectionRecord,
+    segment: &SegmentResponse,
+    job: &CloudCopyJobRecord,
+    bytes: Vec<u8>,
+    token_set: &CloudTokenSet,
+) -> Result<String, ServiceError> {
+    let file_name = job
+        .destination_key
+        .rsplit('/')
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or("segment.m4a");
+    let mut metadata = json!({
+        "name": file_name,
+        "description": format!("Sound recorder segment {}", segment.id)
+    });
+    if let Some(root_folder_id) = &connection.root_folder_id {
+        metadata["parents"] = json!([root_folder_id]);
+    }
+    let metadata_part = Part::text(metadata.to_string())
+        .mime_str("application/json")
+        .map_err(|_| ServiceError::Internal("invalid metadata mime".to_string()))?;
+    let file_part = Part::bytes(bytes)
+        .file_name(file_name.to_string())
+        .mime_str(&segment.content_type)
+        .map_err(|_| ServiceError::BadRequest("invalid segment content type".to_string()))?;
+    let form = Form::new()
+        .part("metadata", metadata_part)
+        .part("file", file_part);
+    let response = state
+        .http
+        .post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink")
+        .bearer_auth(&token_set.access_token)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|err| {
+            error!(error = %err, segment_id = segment.id, "Google Drive upload request failed");
+            ServiceError::Unavailable("Google Drive upload failed".to_string())
+        })?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        error!(status = status.as_u16(), body = %body.chars().take(200).collect::<String>(), "Google Drive upload failed");
+        return Err(ServiceError::Unavailable(format!(
+            "Google Drive upload failed with status {}",
+            status.as_u16()
+        )));
+    }
+    let value = response.json::<Value>().await.map_err(|err| {
+        error!(error = %err, "Google Drive upload response decode failed");
+        ServiceError::Unavailable("Google Drive upload response was invalid".to_string())
+    })?;
+    value
+        .get("id")
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .ok_or_else(|| ServiceError::Unavailable("Google Drive upload did not return a file id".to_string()))
+}
+
+async fn upload_to_microsoft_onedrive(
+    state: &AppState,
+    segment: &SegmentResponse,
+    job: &CloudCopyJobRecord,
+    bytes: Vec<u8>,
+    token_set: &CloudTokenSet,
+) -> Result<String, ServiceError> {
+    let path = graph_path_escape(&job.destination_key);
+    let url = format!(
+        "https://graph.microsoft.com/v1.0/me/drive/special/approot:/{path}:/content"
+    );
+    let response = state
+        .http
+        .put(url)
+        .bearer_auth(&token_set.access_token)
+        .header("content-type", segment.content_type.as_str())
+        .body(bytes)
+        .send()
+        .await
+        .map_err(|err| {
+            error!(error = %err, segment_id = segment.id, "Microsoft OneDrive upload request failed");
+            ServiceError::Unavailable("Microsoft OneDrive upload failed".to_string())
+        })?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        error!(status = status.as_u16(), body = %body.chars().take(200).collect::<String>(), "Microsoft OneDrive upload failed");
+        return Err(ServiceError::Unavailable(format!(
+            "Microsoft OneDrive upload failed with status {}",
+            status.as_u16()
+        )));
+    }
+    let value = response.json::<Value>().await.map_err(|err| {
+        error!(error = %err, "Microsoft OneDrive upload response decode failed");
+        ServiceError::Unavailable("Microsoft OneDrive upload response was invalid".to_string())
+    })?;
+    value
+        .get("id")
+        .or_else(|| value.get("webUrl"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .ok_or_else(|| {
+            ServiceError::Unavailable(
+                "Microsoft OneDrive upload did not return a file id".to_string(),
+            )
+        })
+}
+
+async fn mark_cloud_copy_job_success(
+    client: &tokio_postgres::Client,
+    item: &CloudCopyWorkItem,
+    provider_file_id: &str,
+) -> Result<(), ServiceError> {
+    client
+        .execute(
+            "update sound_recorder_cloud_copy_jobs
+             set status = 'completed',
+                 provider_file_id = $2,
+                 completed_at = now(),
+                 locked_until = null,
+                 last_error = null,
+                 updated_at = now()
+             where id = $1::uuid",
+            &[&item.job.id, &provider_file_id],
+        )
+        .await
+        .map_err(db_error)?;
+    client
+        .execute(
+            "update sound_recorder_cloud_connections
+             set last_sync_at = now(), updated_at = now()
+             where id = $1::uuid",
+            &[&item.connection.id],
+        )
+        .await
+        .map_err(db_error)?;
+    Ok(())
+}
+
+async fn mark_cloud_copy_job_error(
+    client: &tokio_postgres::Client,
+    job_id: &str,
+    attempts: i32,
+    message: &str,
+    config: &Config,
+) -> Result<(), ServiceError> {
+    let status = if attempts >= config.cloud_copy_max_attempts {
+        "failed"
+    } else {
+        "pending"
+    };
+    let locked_until = if status == "pending" {
+        Utc::now().checked_add_signed(ChronoDuration::seconds(
+            60_i64.saturating_mul(attempts.max(1) as i64),
+        ))
+    } else {
+        None
+    };
+    let last_error = message.chars().take(500).collect::<String>();
+    client
+        .execute(
+            "update sound_recorder_cloud_copy_jobs
+             set status = $2,
+                 locked_until = $3,
+                 last_error = $4,
+                 updated_at = now()
+             where id = $1::uuid",
+            &[&job_id, &status, &locked_until, &last_error],
+        )
+        .await
+        .map_err(db_error)?;
+    Ok(())
 }
 
 async fn retention_sweep(
@@ -2005,6 +3544,576 @@ fn segment_from_row(config: &Config, row: &Row) -> SegmentResponse {
     }
 }
 
+fn cloud_connection_from_row(row: &Row) -> CloudConnectionResponse {
+    CloudConnectionResponse {
+        id: row.get("id"),
+        provider: row.get("provider"),
+        link_mode: row.get("link_mode"),
+        status: row.get("status"),
+        display_name: row.get("display_name"),
+        provider_account_id: row.get("provider_account_id"),
+        root_folder_id: row.get("root_folder_id"),
+        folder_path: row.get("folder_path"),
+        token_expires_at: row.get("token_expires_at"),
+        last_sync_at: row.get("last_sync_at"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    }
+}
+
+fn cloud_connection_record_from_row(row: &Row) -> CloudConnectionRecord {
+    CloudConnectionRecord {
+        id: row.get("id"),
+        account_id: row.get("account_id"),
+        provider: row.get("provider"),
+        link_mode: row.get("link_mode"),
+        status: row.get("status"),
+        display_name: row.get("display_name"),
+        provider_account_id: row.get("provider_account_id"),
+        root_folder_id: row.get("root_folder_id"),
+        folder_path: row.get("folder_path"),
+        token_ciphertext: row.get("token_ciphertext"),
+        token_nonce: row.get("token_nonce"),
+        token_aad: row.get("token_aad"),
+        token_version: row.get("token_version"),
+        token_expires_at: row.get("token_expires_at"),
+        last_sync_at: row.get("last_sync_at"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    }
+}
+
+fn cloud_copy_job_from_row(row: &Row) -> CloudCopyJobResponse {
+    CloudCopyJobResponse {
+        id: row.get("id"),
+        connection_id: row.get("connection_id"),
+        segment_id: row.get("segment_id"),
+        provider: row.get("provider"),
+        status: row.get("status"),
+        destination_key: row.get("destination_key"),
+        provider_file_id: row.get("provider_file_id"),
+        attempts: row.get("attempts"),
+        completed_at: row.get("completed_at"),
+        last_error: row.get("last_error"),
+    }
+}
+
+fn cloud_copy_job_record_from_row(row: &Row) -> CloudCopyJobRecord {
+    CloudCopyJobRecord {
+        id: row.get("id"),
+        account_id: row.get("account_id"),
+        connection_id: row.get("connection_id"),
+        segment_id: row.get("segment_id"),
+        provider: row.get("provider"),
+        status: row.get("status"),
+        destination_key: row.get("destination_key"),
+        provider_file_id: row.get("provider_file_id"),
+        attempts: row.get("attempts"),
+        completed_at: row.get("completed_at"),
+        last_error: row.get("last_error"),
+    }
+}
+
+fn cloud_copy_work_item_from_row(config: &Config, row: &Row) -> CloudCopyWorkItem {
+    CloudCopyWorkItem {
+        job: CloudCopyJobRecord {
+            id: row.get("job_id"),
+            account_id: row.get("job_account_id"),
+            connection_id: row.get("connection_id"),
+            segment_id: row.get("segment_id"),
+            provider: row.get("job_provider"),
+            status: row.get("job_status"),
+            destination_key: row.get("destination_key"),
+            provider_file_id: row.get("provider_file_id"),
+            attempts: row.get("attempts"),
+            completed_at: row.get("completed_at"),
+            last_error: row.get("last_error"),
+        },
+        connection: CloudConnectionRecord {
+            id: row.get("connection_id"),
+            account_id: row.get("connection_account_id"),
+            provider: row.get("connection_provider"),
+            link_mode: row.get("link_mode"),
+            status: row.get("connection_status"),
+            display_name: row.get("display_name"),
+            provider_account_id: row.get("provider_account_id"),
+            root_folder_id: row.get("root_folder_id"),
+            folder_path: row.get("folder_path"),
+            token_ciphertext: row.get("token_ciphertext"),
+            token_nonce: row.get("token_nonce"),
+            token_aad: row.get("token_aad"),
+            token_version: row.get("token_version"),
+            token_expires_at: row.get("token_expires_at"),
+            last_sync_at: row.get("last_sync_at"),
+            created_at: row.get("connection_created_at"),
+            updated_at: row.get("connection_updated_at"),
+        },
+        segment: segment_from_row(config, row),
+    }
+}
+
+fn new_oauth_state() -> String {
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    format!("sr_oauth_{}", URL_SAFE_NO_PAD.encode(bytes))
+}
+
+fn oauth_state_hash(state: &Config, token: &str) -> String {
+    hash_secret(token, &state.token_pepper)
+}
+
+fn token_set_from_response(response: OAuthTokenResponse) -> Result<CloudTokenSet, ServiceError> {
+    if let Some(error) = response.error {
+        return Err(ServiceError::Unavailable(format!(
+            "cloud OAuth token exchange failed: {}",
+            response
+                .error_description
+                .unwrap_or_else(|| error.chars().take(80).collect())
+        )));
+    }
+    let expires_at = response
+        .expires_in
+        .filter(|seconds| *seconds > 0)
+        .and_then(|seconds| Utc::now().checked_add_signed(ChronoDuration::seconds(seconds)));
+    Ok(CloudTokenSet {
+        access_token: response.access_token.ok_or_else(|| {
+            ServiceError::Unavailable("cloud OAuth token response did not include an access token".to_string())
+        })?,
+        refresh_token: response.refresh_token,
+        token_type: response.token_type,
+        scope: response.scope,
+        expires_at,
+    })
+}
+
+fn sealed_envelope_from_connection(
+    connection: &CloudConnectionRecord,
+) -> Result<SealedTokenEnvelope, ServiceError> {
+    Ok(SealedTokenEnvelope {
+        ciphertext_b64: connection.token_ciphertext.clone().ok_or_else(|| {
+            ServiceError::Unavailable("cloud connection is missing sealed credentials".to_string())
+        })?,
+        nonce_b64: connection.token_nonce.clone().ok_or_else(|| {
+            ServiceError::Unavailable("cloud connection is missing credential nonce".to_string())
+        })?,
+        aad_tag: connection.token_aad.clone().ok_or_else(|| {
+            ServiceError::Unavailable("cloud connection is missing credential aad".to_string())
+        })?,
+        version: connection.token_version.unwrap_or(1),
+    })
+}
+
+fn destination_key(folder_path: &str, segment: &SegmentResponse) -> String {
+    let file_name = segment
+        .storage_key
+        .rsplit('/')
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or("segment.m4a");
+    format!(
+        "{}/device={}/session={}/{}",
+        folder_path.trim_matches('/'),
+        segment.device_id,
+        segment.session_id,
+        file_name
+    )
+}
+
+async fn exchange_authorization_code(
+    state: &AppState,
+    provider: CloudProvider,
+    code: &str,
+    redirect_uri: &str,
+) -> Result<CloudTokenSet, ServiceError> {
+    let oauth = provider.oauth_config(&state.config).ok_or_else(|| {
+        ServiceError::BadRequest("provider does not use server OAuth".to_string())
+    })?;
+    let client_id = oauth.client_id.as_deref().ok_or_else(|| {
+        ServiceError::Unavailable(format!("{} OAuth client id is not configured", provider.as_str()))
+    })?;
+    let client_secret = oauth.client_secret.as_deref().ok_or_else(|| {
+        ServiceError::Unavailable(format!(
+            "{} OAuth client secret is not configured",
+            provider.as_str()
+        ))
+    })?;
+    let endpoint = provider.token_endpoint().ok_or_else(|| {
+        ServiceError::BadRequest("provider does not use server OAuth".to_string())
+    })?;
+    let params = [
+        ("client_id", client_id),
+        ("client_secret", client_secret),
+        ("code", code),
+        ("redirect_uri", redirect_uri),
+        ("grant_type", "authorization_code"),
+    ];
+    let response = state
+        .http
+        .post(endpoint)
+        .form(&params)
+        .send()
+        .await
+        .map_err(|err| {
+            error!(error = %err, provider = provider.as_str(), "cloud OAuth token exchange request failed");
+            ServiceError::Unavailable("cloud OAuth token exchange failed".to_string())
+        })?;
+    let status = response.status();
+    let token_response = response.json::<OAuthTokenResponse>().await.map_err(|err| {
+        error!(error = %err, provider = provider.as_str(), "cloud OAuth token response decode failed");
+        ServiceError::Unavailable("cloud OAuth token response was invalid".to_string())
+    })?;
+    if !status.is_success() {
+        return Err(ServiceError::Unavailable(format!(
+            "cloud OAuth token exchange failed with status {}",
+            status.as_u16()
+        )));
+    }
+    token_set_from_response(token_response)
+}
+
+async fn refresh_access_token(
+    state: &AppState,
+    provider: CloudProvider,
+    token_set: &CloudTokenSet,
+) -> Result<CloudTokenSet, ServiceError> {
+    let Some(refresh_token) = token_set.refresh_token.as_deref() else {
+        return Ok(token_set.clone());
+    };
+    let Some(expires_at) = token_set.expires_at else {
+        return Ok(token_set.clone());
+    };
+    let refresh_deadline = Utc::now()
+        .checked_add_signed(ChronoDuration::seconds(90))
+        .unwrap_or_else(Utc::now);
+    if expires_at > refresh_deadline {
+        return Ok(token_set.clone());
+    }
+    let oauth = provider.oauth_config(&state.config).ok_or_else(|| {
+        ServiceError::BadRequest("provider does not use server OAuth".to_string())
+    })?;
+    let client_id = oauth.client_id.as_deref().ok_or_else(|| {
+        ServiceError::Unavailable(format!("{} OAuth client id is not configured", provider.as_str()))
+    })?;
+    let client_secret = oauth.client_secret.as_deref().ok_or_else(|| {
+        ServiceError::Unavailable(format!(
+            "{} OAuth client secret is not configured",
+            provider.as_str()
+        ))
+    })?;
+    let endpoint = provider.token_endpoint().ok_or_else(|| {
+        ServiceError::BadRequest("provider does not use server OAuth".to_string())
+    })?;
+    let params = [
+        ("client_id", client_id),
+        ("client_secret", client_secret),
+        ("refresh_token", refresh_token),
+        ("grant_type", "refresh_token"),
+    ];
+    let response = state
+        .http
+        .post(endpoint)
+        .form(&params)
+        .send()
+        .await
+        .map_err(|err| {
+            error!(error = %err, provider = provider.as_str(), "cloud OAuth refresh request failed");
+            ServiceError::Unavailable("cloud OAuth refresh failed".to_string())
+        })?;
+    let status = response.status();
+    let token_response = response.json::<OAuthTokenResponse>().await.map_err(|err| {
+        error!(error = %err, provider = provider.as_str(), "cloud OAuth refresh response decode failed");
+        ServiceError::Unavailable("cloud OAuth refresh response was invalid".to_string())
+    })?;
+    if !status.is_success() {
+        return Err(ServiceError::Unavailable(format!(
+            "cloud OAuth refresh failed with status {}",
+            status.as_u16()
+        )));
+    }
+    let mut refreshed = token_set_from_response(token_response)?;
+    if refreshed.refresh_token.is_none() {
+        refreshed.refresh_token = token_set.refresh_token.clone();
+    }
+    Ok(refreshed)
+}
+
+async fn token_set_for_connection(
+    state: &AppState,
+    client: &tokio_postgres::Client,
+    connection: &CloudConnectionRecord,
+) -> Result<CloudTokenSet, ServiceError> {
+    let provider = CloudProvider::parse(&connection.provider)?;
+    let sealer = state.cloud_sealer.as_ref().ok_or_else(|| {
+        ServiceError::Unavailable(
+            "SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY is not configured".to_string(),
+        )
+    })?;
+    let envelope = sealed_envelope_from_connection(connection)?;
+    let plaintext = sealer.unseal(&connection.account_id, provider, &envelope)?;
+    let token_set: CloudTokenSet = serde_json::from_slice(&plaintext).map_err(|_| {
+        ServiceError::Internal("sealed cloud token payload is invalid".to_string())
+    })?;
+    let refreshed = refresh_access_token(state, provider, &token_set).await?;
+    if refreshed.access_token != token_set.access_token
+        || refreshed.expires_at != token_set.expires_at
+        || refreshed.refresh_token != token_set.refresh_token
+    {
+        let sealed = sealer.seal(
+            &connection.account_id,
+            provider,
+            &serde_json::to_vec(&refreshed)
+                .map_err(|_| ServiceError::Internal("cloud token encode failed".to_string()))?,
+        )?;
+        client
+            .execute(
+                "update sound_recorder_cloud_connections
+                 set token_ciphertext = $2,
+                     token_nonce = $3,
+                     token_aad = $4,
+                     token_version = $5,
+                     token_expires_at = $6,
+                     updated_at = now()
+                 where id = $1::uuid",
+                &[
+                    &connection.id,
+                    &sealed.ciphertext_b64,
+                    &sealed.nonce_b64,
+                    &sealed.aad_tag,
+                    &sealed.version,
+                    &refreshed.expires_at,
+                ],
+            )
+            .await
+            .map_err(db_error)?;
+    }
+    Ok(refreshed)
+}
+
+async fn upsert_cloud_connection(
+    client: &tokio_postgres::Client,
+    auth: &DeviceAuth,
+    provider: CloudProvider,
+    display_name: Option<String>,
+    provider_account_id: Option<String>,
+    root_folder_id: Option<String>,
+    folder_path: String,
+    oauth_scope: Option<String>,
+    sealed: Option<SealedTokenEnvelope>,
+    token_expires_at: Option<DateTime<Utc>>,
+    meta_data: Value,
+) -> Result<CloudConnectionRecord, ServiceError> {
+    let provider_name = provider.as_str();
+    let existing_id = if let Some(provider_account_id) = &provider_account_id {
+        client
+            .query_opt(
+                "select id::text
+                 from sound_recorder_cloud_connections
+                 where account_id = $1::uuid
+                   and provider = $2
+                   and provider_account_id = $3
+                   and status <> 'revoked'",
+                &[&auth.account_id, &provider_name, provider_account_id],
+            )
+            .await
+            .map_err(db_error)?
+            .map(|row| row.get::<_, String>("id"))
+    } else {
+        None
+    };
+    let link_mode = provider.link_mode();
+    let (token_ciphertext, token_nonce, token_aad, token_version) = sealed
+        .map(|sealed| {
+            (
+                Some(sealed.ciphertext_b64),
+                Some(sealed.nonce_b64),
+                Some(sealed.aad_tag),
+                Some(sealed.version),
+            )
+        })
+        .unwrap_or((None, None, None, None));
+    let row = if let Some(existing_id) = existing_id {
+        client
+            .query_one(
+                "update sound_recorder_cloud_connections
+                 set created_by_device_id = $2::uuid,
+                     link_mode = $3,
+                     status = 'active',
+                     display_name = $4,
+                     root_folder_id = $5,
+                     folder_path = $6,
+                     oauth_scope = $7,
+                     token_ciphertext = $8,
+                     token_nonce = $9,
+                     token_aad = $10,
+                     token_version = $11,
+                     token_expires_at = $12,
+                     meta_data = $13,
+                     updated_at = now()
+                 where id = $1::uuid
+                 returning id::text, account_id::text, provider, link_mode, status, display_name,
+                           provider_account_id, root_folder_id, folder_path, token_ciphertext,
+                           token_nonce, token_aad, token_version, token_expires_at, last_sync_at,
+                           created_at, updated_at",
+                &[
+                    &existing_id,
+                    &auth.device_id,
+                    &link_mode,
+                    &display_name,
+                    &root_folder_id,
+                    &folder_path,
+                    &oauth_scope,
+                    &token_ciphertext,
+                    &token_nonce,
+                    &token_aad,
+                    &token_version,
+                    &token_expires_at,
+                    &meta_data,
+                ],
+            )
+            .await
+            .map_err(db_error)?
+    } else {
+        let connection_id = Uuid::new_v4().to_string();
+        let provider_subject_hash = provider_account_id
+            .as_ref()
+            .map(|value| hash_secret(value, "sound-recorder-cloud-subject"));
+        client
+            .query_one(
+                "insert into sound_recorder_cloud_connections
+                  (id, account_id, created_by_device_id, provider, link_mode, status,
+                   display_name, provider_account_id, provider_subject_hash, root_folder_id,
+                   folder_path, oauth_scope, token_ciphertext, token_nonce, token_aad,
+                   token_version, token_expires_at, meta_data)
+                 values
+                  ($1::uuid, $2::uuid, $3::uuid, $4, $5, 'active',
+                   $6, $7, $8, $9,
+                   $10, $11, $12, $13, $14,
+                   $15, $16, $17)
+                 returning id::text, account_id::text, provider, link_mode, status, display_name,
+                           provider_account_id, root_folder_id, folder_path, token_ciphertext,
+                           token_nonce, token_aad, token_version, token_expires_at, last_sync_at,
+                           created_at, updated_at",
+                &[
+                    &connection_id,
+                    &auth.account_id,
+                    &auth.device_id,
+                    &provider_name,
+                    &link_mode,
+                    &display_name,
+                    &provider_account_id,
+                    &provider_subject_hash,
+                    &root_folder_id,
+                    &folder_path,
+                    &oauth_scope,
+                    &token_ciphertext,
+                    &token_nonce,
+                    &token_aad,
+                    &token_version,
+                    &token_expires_at,
+                    &meta_data,
+                ],
+            )
+            .await
+            .map_err(db_error)?
+    };
+    Ok(cloud_connection_record_from_row(&row))
+}
+
+async fn enqueue_cloud_copy_job_for_segment(
+    client: &tokio_postgres::Client,
+    connection: &CloudConnectionRecord,
+    segment: &SegmentResponse,
+) -> Result<u64, ServiceError> {
+    let provider = CloudProvider::parse(&connection.provider)?;
+    let status = if provider == CloudProvider::AppleICloud {
+        "waiting_client"
+    } else {
+        "pending"
+    };
+    let destination_key = destination_key(&connection.folder_path, segment);
+    let job_id = Uuid::new_v4().to_string();
+    client
+        .execute(
+            "insert into sound_recorder_cloud_copy_jobs
+              (id, account_id, connection_id, segment_id, provider, status, destination_key)
+             values
+              ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7)
+             on conflict (connection_id, segment_id) do nothing",
+            &[
+                &job_id,
+                &segment.account_id,
+                &connection.id,
+                &segment.id,
+                &connection.provider,
+                &status,
+                &destination_key,
+            ],
+        )
+        .await
+        .map_err(db_error)
+}
+
+async fn enqueue_cloud_copy_jobs_for_segment(
+    client: &tokio_postgres::Client,
+    config: &Config,
+    account_id: &str,
+    segment_row: &Row,
+) -> Result<u64, ServiceError> {
+    let segment = segment_from_row(config, segment_row);
+    let rows = client
+        .query(
+            "select id::text, account_id::text, provider, link_mode, status, display_name,
+                    provider_account_id, root_folder_id, folder_path, token_ciphertext,
+                    token_nonce, token_aad, token_version, token_expires_at, last_sync_at,
+                    created_at, updated_at
+             from sound_recorder_cloud_connections
+             where account_id = $1::uuid and status = 'active'",
+            &[&account_id],
+        )
+        .await
+        .map_err(db_error)?;
+    let mut inserted = 0;
+    for row in rows {
+        let connection = cloud_connection_record_from_row(&row);
+        inserted += enqueue_cloud_copy_job_for_segment(client, &connection, &segment).await?;
+    }
+    Ok(inserted)
+}
+
+async fn enqueue_retained_cloud_copy_jobs(
+    client: &tokio_postgres::Client,
+    config: &Config,
+    account_id: &str,
+    connection: &CloudConnectionRecord,
+) -> Result<u64, ServiceError> {
+    if config.cloud_backfill_segments <= 0 {
+        return Ok(0);
+    }
+    let rows = client
+        .query(
+            "select id::text, account_id::text, device_id::text, session_id::text,
+                    sequence_number, status, storage_provider, storage_bucket, storage_key,
+                    content_type, codec, captured_started_at, captured_ended_at,
+                    duration_millis, byte_count, sha256_hex, upload_url_expires_at,
+                    uploaded_at, expires_at
+             from sound_recorder_segments
+             where account_id = $1::uuid
+               and status = 'uploaded'
+               and expires_at > now()
+             order by captured_started_at desc
+             limit $2",
+            &[&account_id, &config.cloud_backfill_segments],
+        )
+        .await
+        .map_err(db_error)?;
+    let mut inserted = 0;
+    for row in rows {
+        let segment = segment_from_row(config, &row);
+        inserted += enqueue_cloud_copy_job_for_segment(client, connection, &segment).await?;
+    }
+    Ok(inserted)
+}
+
 fn uuid_like(value: &str) -> bool {
     Uuid::parse_str(value).is_ok()
 }
@@ -2041,7 +4150,29 @@ fn app(state: AppState) -> Router {
             "/api/mobile/v1/evidence-exports",
             post(create_evidence_export),
         )
+        .route(
+            "/api/mobile/v1/cloud-connections",
+            get(list_cloud_connections),
+        )
+        .route(
+            "/api/mobile/v1/cloud-connections/oauth/start",
+            post(start_cloud_link),
+        )
+        .route(
+            "/api/mobile/v1/cloud-connections/oauth/complete",
+            post(complete_cloud_link),
+        )
+        .route(
+            "/api/mobile/v1/cloud-connections/:connection_id/revoke",
+            post(revoke_cloud_connection),
+        )
+        .route("/api/mobile/v1/cloud-copy-jobs", get(list_client_cloud_copy_jobs))
+        .route(
+            "/api/mobile/v1/cloud-copy-jobs/:job_id/complete",
+            post(complete_client_cloud_copy_job),
+        )
         .route("/internal/retention/sweep", post(retention_sweep))
+        .route("/internal/cloud-copy/drain", post(drain_cloud_copy_jobs))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
