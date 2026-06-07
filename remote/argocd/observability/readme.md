@@ -254,7 +254,7 @@ Currently opted-in:
   `/fabrication/jobs/<jobId>`, `/fabrication/jobs/<jobId>/release-bundle`,
   `/fabrication/jobs/<jobId>/artifacts/<artifactId>`,
   `/fabrication/learning/capabilities`, `/fabrication/learning/rewards/catalog`,
-  `/fabrication/learning/policy`,
+  `/fabrication/learning/policy`, `/fabrication/learning/corpus`,
   `/fabrication/learning/observe`, `/fabrication/learning/outcomes`,
   `/fabrication/instructions/analyze`, `/fabrication/instructions/validate`,
   `/fabrication/instructions/improve`,

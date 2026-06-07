@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 288,
+  "routeCount": 290,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 278,
+    "user-generated": 280,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -1886,6 +1886,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/learning/corpus",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "learning_corpus_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/learning/observe",
       "methods": [
         "POST"
@@ -3632,6 +3649,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "learning_capabilities"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/learning/corpus",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "learning_corpus_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"

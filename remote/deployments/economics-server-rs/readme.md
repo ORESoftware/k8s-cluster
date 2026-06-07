@@ -25,13 +25,18 @@ confidence intervals.
 - `GET /macro/indicators` - fiscal, borrowing, spending, GDP, labor participation, payroll, wage, and productivity context.
 - `GET /vc/investment` - VC firm/deal/sector-flow sample context and private-market credential flags.
 - `POST /recommendations` - authenticated top 20 company invest/dump and top 30 commodity buy/sell-or-dump rankings.
+- `GET /audit/hardening` - hardening posture, request bounds, egress gates, and residual risks.
+- `GET /pipelines/catalog` - Spark, Airflow, Databricks, data lake, and NATS integration catalog.
+- `POST /pipelines/plan` - authenticated redacted big-data job intents for economics refresh work.
+- `POST /pipelines/submit` - authenticated Spark pipeline submission when explicitly enabled.
 - `POST /ingest` - authenticated normalized market series ingestion.
 - `GET /model/equations` - equation and theory catalog.
 - `GET /engine/des` - `remote/submodules/discrete-event-system.rs` SDK/service descriptor.
 - `POST /forecast` - authenticated forecast endpoint.
 
 `POST /forecast`, `POST /ingest`, `POST /sources/pull`, `POST /sentiment/analyze`,
-`POST /recommendations`, and `GET /dashboard.json` require `X-Server-Auth` or `Auth` to match
+`POST /recommendations`, `POST /pipelines/plan`, `POST /pipelines/submit`, and
+`GET /dashboard.json` require `X-Server-Auth`, `Auth`, or `Authorization: Bearer ...` to match
 `SERVER_AUTH_SECRET`, unless `ECONOMICS_ALLOW_UNAUTHENTICATED=true` is set for local development.
 
 ## Model stance
@@ -66,6 +71,14 @@ The default Kubernetes deployment runs with:
 - `ECONOMICS_FORECAST_RESULT_SUBJECT=dd.remote.economics.forecast.results`
 - `ECONOMICS_MARKET_EVENT_SUBJECT=dd.remote.economics.market.events`
 - `ECONOMICS_RUNTIME_EVENT_SUBJECT=dd.remote.events`
+- `ECONOMICS_PIPELINE_INTENT_SUBJECT=dd.remote.public_data.pipeline.jobs`
+- `ECONOMICS_SPARK_PIPELINE_URL=http://dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085`
+- `ECONOMICS_SPARK_PIPELINE_AUTH_ENV=SERVER_AUTH_SECRET`
+- `ECONOMICS_SPARK_MASTER_URL=spark://spark-master.big-data.svc.cluster.local:7077`
+- `ECONOMICS_AIRFLOW_API_URL=http://airflow.big-data.svc.cluster.local:8080`
+- `ECONOMICS_DATA_LAKE_URI=s3a://dd-economics/market-signals`
+- `ECONOMICS_ENABLE_PIPELINE_SUBMIT=false`
+- `ECONOMICS_ALLOW_EXTERNAL_PIPELINE_URLS=false`
 
 Optional sentiment-provider placeholders are mounted from `dd-agent-secrets` when present:
 
@@ -85,6 +98,8 @@ mounted from `dd-agent-secrets` when present:
 - Commodities and filings: `ECONOMICS_EIA_API_KEY`, `ECONOMICS_SEC_API_KEY`
 - VC/private markets: `ECONOMICS_CRUNCHBASE_API_KEY`, `ECONOMICS_PITCHBOOK_API_KEY`,
   `ECONOMICS_CB_INSIGHTS_API_KEY`, `ECONOMICS_DEALROOM_API_KEY`, `ECONOMICS_PREQIN_API_KEY`
+- Databricks managed workspace placeholders: `ECONOMICS_DATABRICKS_HOST`,
+  `ECONOMICS_DATABRICKS_TOKEN`
 
 Private API tokens belong in Kubernetes/AWS secrets and are referenced by env var name in
 `POST /sources/pull` or future live sentiment fetchers; token values are never returned by the
@@ -96,3 +111,17 @@ scores by source.
 `macroFiscalContext`, `ventureCapitalContext`, `sentimentContext`, and market `series` overrides,
 then returns model-signal rankings with component ledgers. Rankings are research signals, not
 financial advice or trade execution instructions.
+
+## Big-data pipeline integration
+
+`POST /pipelines/plan` turns the current economics universe into redacted job intents for:
+
+- `dd-spark-pipeline-server` `INGEST_VALIDATE_PUBLISH` and `SPARK_SUBMIT` jobs
+- the development Spark master in `big-data`
+- an Airflow `economics_market_refresh` DAG trigger blueprint
+- a Databricks Jobs API `run-now` blueprint
+- the generated NATS subject `dd.remote.public_data.pipeline.jobs`
+
+`POST /pipelines/submit` submits only the Spark pipeline server intents, only to a cluster-local
+HTTP URL by default, and only when `ECONOMICS_ENABLE_PIPELINE_SUBMIT=true`. Airflow and Databricks
+remain plan-only until their service auth and audit flows are explicitly designed.

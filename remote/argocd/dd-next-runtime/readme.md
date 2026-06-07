@@ -177,7 +177,7 @@ Gateway path map:
   `/fabrication/jobs`, `/fabrication/jobs/<jobId>`,
   `/fabrication/jobs/<jobId>/release-bundle`,
   `/fabrication/jobs/<jobId>/artifacts/<artifactId>`, `/fabrication/learning/policy`,
-  `GET /fabrication/learning/outcomes`, `POST /fabrication/learning/observe`,
+  `/fabrication/learning/corpus`, `GET /fabrication/learning/outcomes`, `POST /fabrication/learning/observe`,
   `POST /fabrication/learning/outcomes`, `POST /fabrication/plan`,
   `/fabrication/workflow/catalog`, `POST /fabrication/workflow/plan`,
   `POST /fabrication/instructions/analyze`, `POST /fabrication/instructions/validate`,
@@ -190,8 +190,9 @@ Gateway path map:
 - `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
   `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`
   (internal auth required)
-- `/escrow/`, `/escrow/types`, `/escrow/schema`, `/escrow/example`, `POST /escrow/validate`,
-  `POST /escrow/simulate-settlement`, `POST /escrow/settle` -> `dd-escrow-rs:8115`
+- `/escrow/`, `/escrow/types`, `/escrow/capabilities`, `/escrow/schema`, `/escrow/example`,
+  `POST /escrow/validate`, `POST /escrow/audit`, `POST /escrow/simulate-settlement`,
+  `POST /escrow/settle` -> `dd-escrow-rs:8115`
   (internal auth required)
 - `/ml/`, `/ml/healthz`, `/ml/metrics`, `/ml/status`, `POST /ml/analyze`, `POST /ml/ingest` ->
   `dd-ai-ml-pipeline.ai-ml:8099` (internal auth required)
@@ -201,7 +202,9 @@ Gateway path map:
   `/economics/sources`, `POST /economics/forecast`, `POST /economics/ingest`,
   `POST /economics/sources/pull`, `/economics/sentiment/sources`,
   `POST /economics/sentiment/analyze`, `/economics/macro/indicators`,
-  `/economics/vc/investment`, `POST /economics/recommendations` ->
+  `/economics/vc/investment`, `POST /economics/recommendations`,
+  `/economics/audit/hardening`, `/economics/pipelines/catalog`,
+  `POST /economics/pipelines/plan`, `POST /economics/pipelines/submit` ->
   `dd-economics-server:8114` (internal auth required)
 - `/scrape`, `/scrape/strategies`, `/scrape/healthz`, `/scrape/metrics` -> `dd-web-scraper:8097`
   (internal auth required)
@@ -667,18 +670,23 @@ egress to DNS, NATS, runtime-config, and public HTTPS Solana RPC.
 ## Solana escrow service
 
 `dd-escrow-rs` runs `remote/deployments/dd-escrow-rs` as a Rust Solana escrow intent gateway. It
-serves `/escrow/healthz`, `/escrow/metrics`, `/escrow/status`, `/escrow/types`, `/escrow/schema`,
-`/escrow/example`, `POST /escrow/validate`, `POST /escrow/simulate-settlement`, and
-`POST /escrow/settle`. The service validates `solana.escrow.v1` intents for ten escrow shapes:
-marketplace order, milestone, freelance contract, digital delivery, OTC trade, rental deposit,
-bounty, subscription release, group buy, and dispute resolution.
+serves `/escrow/healthz`, `/escrow/metrics`, `/escrow/status`, `/escrow/types`,
+`/escrow/capabilities`, `/escrow/schema`, `/escrow/example`, `POST /escrow/validate`,
+`POST /escrow/audit`, `POST /escrow/simulate-settlement`, and `POST /escrow/settle`. The service
+validates `solana.escrow.v1` intents for ten escrow shapes: marketplace order, milestone, freelance
+contract, digital delivery, OTC trade, rental deposit, bounty, subscription release, group buy, and
+dispute resolution.
 
 The service does not hold private keys or sign transactions. Settlement callers submit a signed
 Solana transaction; `POST /escrow/simulate-settlement` calls `simulateTransaction`, while
 `POST /escrow/settle` calls `sendTransaction` only when `SOLANA_SETTLEMENT_ENABLED=true` plus
 `ESCROW_SETTLEMENT_AUTH_SECRET` are configured and the request includes `x-escrow-settlement-auth`.
-Request `cluster` must match `SOLANA_CLUSTER`, private RPC URLs require
-`SOLANA_ALLOW_PRIVATE_RPC=true`, and `skipPreflight` requires `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
+Live settlement also requires an attached validated `intent` by default
+(`ESCROW_SETTLEMENT_REQUIRE_INTENT=true`), mainnet settlement has a second
+`SOLANA_MAINNET_SETTLEMENT_ENABLED=true` gate, and `ESCROW_ALLOWED_PROGRAM_IDS` can restrict
+`settlementPlan.programId` to an operator-reviewed allowlist. Request `cluster` must match
+`SOLANA_CLUSTER`, private RPC URLs require `SOLANA_ALLOW_PRIVATE_RPC=true`, and `skipPreflight`
+requires `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
 
 The deployment queue-subscribes to `dd.remote.escrow.solana.validate` with queue group
 `dd-escrow-rs`, publishes validation results to `dd.remote.escrow.solana.results`, and emits compact

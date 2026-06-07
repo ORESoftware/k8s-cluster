@@ -726,7 +726,10 @@ fn config_from_env() -> Config {
         ),
         spark_pipeline_url: optional_env("ECONOMICS_SPARK_PIPELINE_URL")
             .or_else(|| Some(DEFAULT_SPARK_PIPELINE_URL.to_string())),
-        spark_pipeline_auth_env: env_value("ECONOMICS_SPARK_PIPELINE_AUTH_ENV", "SERVER_AUTH_SECRET"),
+        spark_pipeline_auth_env: env_value(
+            "ECONOMICS_SPARK_PIPELINE_AUTH_ENV",
+            "SERVER_AUTH_SECRET",
+        ),
         spark_master_url: env_value("ECONOMICS_SPARK_MASTER_URL", DEFAULT_SPARK_MASTER_URL),
         airflow_api_url: optional_env("ECONOMICS_AIRFLOW_API_URL")
             .or_else(|| Some(DEFAULT_AIRFLOW_API_URL.to_string())),
@@ -844,7 +847,9 @@ fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), AuthFailure
         .or_else(|| headers.get("authorization"))
         .and_then(|value| value.to_str().ok());
     match provided {
-        Some(value) if constant_time_eq(value.trim_start_matches("Bearer ").trim(), secret) => Ok(()),
+        Some(value) if constant_time_eq(value.trim_start_matches("Bearer ").trim(), secret) => {
+            Ok(())
+        }
         _ => Err(AuthFailure::Unauthorized),
     }
 }
@@ -937,6 +942,30 @@ fn des_service_descriptor() -> Value {
             "POST",
             "/recommendations",
             "Rank top company and commodity buy/sell-or-dump candidates.",
+            EndpointKind::Action,
+        )
+        .endpoint(
+            "GET",
+            "/audit/hardening",
+            "Runtime hardening posture, bounds, and residual-risk audit.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/pipelines/catalog",
+            "Spark, Airflow, Databricks, data lake, and NATS pipeline integration catalog.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "POST",
+            "/pipelines/plan",
+            "Create redacted big-data pipeline job intents for economics refresh work.",
+            EndpointKind::Action,
+        )
+        .endpoint(
+            "POST",
+            "/pipelines/submit",
+            "Submit eligible job intents to the internal Spark pipeline server when enabled.",
             EndpointKind::Action,
         )
         .endpoint(
@@ -1281,6 +1310,12 @@ fn schema_descriptor() -> Value {
             "route": "POST /recommendations",
             "companies": "Returns top 20 invest candidates and top 20 dump/hedge candidates from the model universe.",
             "commodities": "Returns top 30 buy candidates and top 30 sell-or-dump candidates from major tradable commodities."
+        },
+        "pipelines": {
+            "catalog": "GET /pipelines/catalog reports Spark, Airflow, Databricks, data lake, and NATS integration status without returning secrets.",
+            "plan": "POST /pipelines/plan creates redacted job intents for Spark pipeline server, Spark feature builds, Airflow DAG triggers, Databricks run-now payloads, and NATS public-data pipeline events.",
+            "submit": "POST /pipelines/submit submits only spark-pipeline-server intents and only when ECONOMICS_ENABLE_PIPELINE_SUBMIT=true.",
+            "audit": "GET /audit/hardening reports auth, request bounds, SSRF controls, secret handling, and residual risks."
         }
     })
 }
@@ -1341,6 +1376,10 @@ fn service_descriptor(state: &AppState) -> Value {
             "macroIndicators": "GET /macro/indicators",
             "vcInvestment": "GET /vc/investment",
             "recommendations": "POST /recommendations",
+            "auditHardening": "GET /audit/hardening",
+            "pipelineCatalog": "GET /pipelines/catalog",
+            "pipelinePlan": "POST /pipelines/plan",
+            "pipelineSubmit": "POST /pipelines/submit",
             "equations": "GET /model/equations",
             "schema": "GET /schema",
             "example": "GET /example",
@@ -1354,7 +1393,8 @@ fn service_descriptor(state: &AppState) -> Value {
             "queueGroup": state.config.queue_group,
             "resultSubject": state.config.result_subject,
             "marketEventSubject": state.config.market_event_subject,
-            "runtimeEventSubject": state.config.runtime_event_subject
+            "runtimeEventSubject": state.config.runtime_event_subject,
+            "pipelineIntentSubject": state.config.pipeline_intent_subject
         },
         "desEngine": des_surface_descriptor(),
         "sentiment": {
@@ -1367,6 +1407,13 @@ fn service_descriptor(state: &AppState) -> Value {
             "macroRoute": "GET /macro/indicators",
             "vcRoute": "GET /vc/investment",
             "recommendationsRoute": "POST /recommendations"
+        },
+        "pipelines": {
+            "status": pipeline_integration_status(state),
+            "catalogRoute": "GET /pipelines/catalog",
+            "planRoute": "POST /pipelines/plan",
+            "submitRoute": "POST /pipelines/submit",
+            "auditRoute": "GET /audit/hardening"
         },
         "equationCount": equation_catalog().len(),
         "sourceCount": source_catalog().len(),
@@ -1430,7 +1477,9 @@ fn validate_optional_number(
 ) -> Result<(), String> {
     if let Some(value) = value {
         if !value.is_finite() || value < min || value > max {
-            return Err(format!("{label} must be finite and between {min} and {max}"));
+            return Err(format!(
+                "{label} must be finite and between {min} and {max}"
+            ));
         }
     }
     Ok(())
@@ -1480,7 +1529,12 @@ fn validate_macro_context(context: Option<&MacroContext>) -> Result<(), String> 
         -0.50,
         1.00,
     )?;
-    validate_optional_number(context.market_return, "macroContext.marketReturn", -1.00, 2.00)?;
+    validate_optional_number(
+        context.market_return,
+        "macroContext.marketReturn",
+        -1.00,
+        2.00,
+    )?;
     Ok(())
 }
 
@@ -1523,7 +1577,12 @@ fn validate_macro_fiscal_context(context: Option<&MacroFiscalContext>) -> Result
     )?;
     validate_optional_number(context.receipts, "macroFiscalContext.receipts", 0.0, 1.0e17)?;
     validate_optional_number(context.outlays, "macroFiscalContext.outlays", 0.0, 1.0e17)?;
-    validate_optional_number(context.borrowing, "macroFiscalContext.borrowing", 0.0, 1.0e17)?;
+    validate_optional_number(
+        context.borrowing,
+        "macroFiscalContext.borrowing",
+        0.0,
+        1.0e17,
+    )?;
     validate_optional_number(
         context.net_interest_outlays,
         "macroFiscalContext.netInterestOutlays",
@@ -1591,7 +1650,10 @@ fn validate_venture_capital_context(context: Option<&VentureCapitalContext>) -> 
         clean_token(&deal.stage, "ventureCapitalContext.deals[].stage")?;
         clean_optional_token(&deal.currency, "ventureCapitalContext.deals[].currency")?;
         clean_optional_token(&deal.country, "ventureCapitalContext.deals[].country")?;
-        clean_optional_token(&deal.announced_at, "ventureCapitalContext.deals[].announcedAt")?;
+        clean_optional_token(
+            &deal.announced_at,
+            "ventureCapitalContext.deals[].announcedAt",
+        )?;
         if !deal.amount.is_finite() || deal.amount < 0.0 || deal.amount > 1.0e13 {
             return Err(format!(
                 "ventureCapitalContext.deals[{index}].amount must be finite and between 0 and 10000000000000"
@@ -1660,7 +1722,10 @@ fn validate_sentiment_context(context: Option<&SentimentSignalContext>) -> Resul
         context.instrument_scores.as_ref(),
         "sentimentContext.instrumentScores",
     )?;
-    validate_sentiment_score_map(context.sector_scores.as_ref(), "sentimentContext.sectorScores")?;
+    validate_sentiment_score_map(
+        context.sector_scores.as_ref(),
+        "sentimentContext.sectorScores",
+    )?;
     Ok(())
 }
 
@@ -2686,6 +2751,603 @@ fn vc_investment_payload(config: &Config) -> Value {
         "recommendationsRoute": "POST /recommendations",
         "placeholderMode": "built-in sample VC flow context is returned until live provider fetchers are attached"
     })
+}
+
+fn pipeline_integration_status(state: &AppState) -> PipelineIntegrationStatus {
+    PipelineIntegrationStatus {
+        spark_pipeline_url_configured: state.config.spark_pipeline_url.is_some(),
+        spark_pipeline_auth_configured: optional_env(&state.config.spark_pipeline_auth_env)
+            .is_some(),
+        spark_pipeline_submit_enabled: state.config.allow_pipeline_submit,
+        spark_pipeline_url: state.config.spark_pipeline_url.clone(),
+        spark_pipeline_auth_env: state.config.spark_pipeline_auth_env.clone(),
+        spark_master_url: state.config.spark_master_url.clone(),
+        airflow_api_url_configured: state.config.airflow_api_url.is_some(),
+        airflow_api_url: state.config.airflow_api_url.clone(),
+        databricks_host_configured: state.config.databricks_host.is_some(),
+        databricks_token_configured: optional_env("ECONOMICS_DATABRICKS_TOKEN").is_some(),
+        data_lake_uri: state.config.data_lake_uri.clone(),
+        pipeline_intent_subject: state.config.pipeline_intent_subject.clone(),
+        nats_configured: state.nats.is_some(),
+    }
+}
+
+fn pipeline_catalog_payload(state: &AppState) -> Value {
+    json!({
+        "ok": true,
+        "schemaVersion": SCHEMA_VERSION,
+        "status": pipeline_integration_status(state),
+        "engines": [
+            {
+                "id": "spark-pipeline-server",
+                "kind": "internal-http",
+                "route": "POST /v1/jobs",
+                "supportedJobKinds": ["INGEST_VALIDATE_PUBLISH", "SPARK_SUBMIT"],
+                "defaultUrl": DEFAULT_SPARK_PIPELINE_URL,
+                "submitRoute": "POST /pipelines/submit",
+                "submitGate": "ECONOMICS_ENABLE_PIPELINE_SUBMIT must be true and SERVER_AUTH_SECRET must be available"
+            },
+            {
+                "id": "spark-standalone",
+                "kind": "spark",
+                "master": state.config.spark_master_url,
+                "namespace": "big-data",
+                "notes": "Development Spark master/worker stack from remote/argocd/big-data."
+            },
+            {
+                "id": "airflow",
+                "kind": "orchestrator",
+                "apiUrl": state.config.airflow_api_url,
+                "dagBlueprint": "economics_market_refresh",
+                "notes": "Plan output includes a DAG trigger payload; live Airflow submission is intentionally not implemented until service credentials and API auth are designed."
+            },
+            {
+                "id": "databricks",
+                "kind": "managed-external",
+                "hostConfigured": state.config.databricks_host.is_some(),
+                "tokenConfigured": optional_env("ECONOMICS_DATABRICKS_TOKEN").is_some(),
+                "credentialEnv": ["ECONOMICS_DATABRICKS_HOST", "ECONOMICS_DATABRICKS_TOKEN"],
+                "notes": "Plan output includes Databricks Jobs API run-now payloads without exposing token values."
+            },
+            {
+                "id": "nats-public-data-pipeline",
+                "kind": "nats",
+                "subject": state.config.pipeline_intent_subject,
+                "defaultSubject": PUBLIC_DATA_PIPELINE_JOBS_SUBJECT,
+                "notes": "Pipeline plans can be published as redacted job intents for downstream big-data workers."
+            }
+        ],
+        "planRoute": "POST /pipelines/plan",
+        "auditRoute": "GET /audit/hardening"
+    })
+}
+
+fn hardening_audit_payload(state: &AppState) -> Value {
+    json!({
+        "ok": true,
+        "schemaVersion": SCHEMA_VERSION,
+        "service": SERVICE_NAME,
+        "auth": {
+            "required": !state.config.allow_unauthenticated,
+            "acceptedHeaders": ["x-server-auth", "auth", "authorization"],
+            "constantTimeComparison": true,
+            "allowUnauthenticated": state.config.allow_unauthenticated
+        },
+        "requestLimits": {
+            "maxHttpBodyBytes": MAX_HTTP_BODY_BYTES,
+            "maxNatsPayloadBytes": MAX_NATS_PAYLOAD_BYTES,
+            "maxSeries": MAX_SERIES,
+            "maxObservationsPerSeries": MAX_OBSERVATIONS_PER_SERIES,
+            "maxSentimentDocuments": MAX_SENTIMENT_DOCUMENTS,
+            "maxSentimentTextBytes": MAX_SENTIMENT_TEXT_BYTES,
+            "maxSentimentContextScores": MAX_SENTIMENT_CONTEXT_SCORES,
+            "maxVentureCapitalDeals": MAX_VC_DEALS,
+            "maxVentureSectorFlows": MAX_VC_SECTOR_FLOWS,
+            "maxPipelineJobIntents": MAX_PIPELINE_JOB_INTENTS
+        },
+        "egressPolicy": {
+            "sourcePullPrivateUrlsAllowed": state.config.allow_private_source_urls,
+            "externalPipelineUrlsAllowed": state.config.allow_external_pipeline_urls,
+            "sparkPipelineSubmitEnabled": state.config.allow_pipeline_submit,
+            "sparkPipelineSubmitRequiresInternalUrl": !state.config.allow_external_pipeline_urls
+        },
+        "secretHandling": {
+            "credentialValuesReturned": false,
+            "credentialStatusOnly": true,
+            "sparkPipelineAuthEnv": state.config.spark_pipeline_auth_env,
+            "databricksTokenEnv": "ECONOMICS_DATABRICKS_TOKEN"
+        },
+        "bigData": pipeline_integration_status(state),
+        "deploymentPosture": {
+            "expectedNoServiceAccountToken": true,
+            "expectedReadOnlyRootFilesystem": true,
+            "expectedDroppedCapabilities": true,
+            "expectedRuntimeDefaultSeccomp": true,
+            "expectedBoundedWritableVolumes": true
+        },
+        "residualRisks": [
+            "live provider connectors are placeholders until per-provider rate limits, retries, and backoff are implemented",
+            "recommendation rankings are research signals, not trade execution instructions",
+            "Airflow and Databricks submission remain plan-only until their auth and audit flows are explicitly designed",
+            "Spark pipeline HTTP submission is disabled unless ECONOMICS_ENABLE_PIPELINE_SUBMIT=true"
+        ],
+        "atMs": now_ms()
+    })
+}
+
+fn pipeline_plan_from_request(
+    state: &AppState,
+    mut request: PipelinePlanRequest,
+) -> Result<PipelinePlanResponse, String> {
+    if let Some(schema) = request.schema_version.as_deref() {
+        if schema != SCHEMA_VERSION {
+            return Err(format!("schemaVersion must be {SCHEMA_VERSION}"));
+        }
+    }
+    let request_id = request_id(request.request_id.as_ref(), "economics-pipeline-plan");
+    let scenario = request
+        .scenario
+        .take()
+        .unwrap_or_else(|| "base".to_string())
+        .trim()
+        .to_ascii_lowercase();
+    clean_token(&scenario, "scenario")?;
+    let data_lake_uri = request
+        .data_lake_uri
+        .take()
+        .unwrap_or_else(|| state.config.data_lake_uri.clone());
+    validate_data_lake_uri(&data_lake_uri)?;
+    let job_kinds = normalize_pipeline_job_kinds(request.job_kinds.as_ref())?;
+    let include_recommendations = request.include_recommendations.unwrap_or(true);
+    let recommendation_summary = if include_recommendations {
+        let mut recommendation_request =
+            request
+                .recommendation_request
+                .take()
+                .unwrap_or_else(|| RecommendationRequest {
+                    request_id: Some(format!("{request_id}-recommendations")),
+                    schema_version: Some(SCHEMA_VERSION.to_string()),
+                    horizon_months: Some(state.config.projection_months),
+                    company_limit: Some(20),
+                    commodity_limit: Some(30),
+                    scenario: Some(scenario.clone()),
+                    series: Some(snapshot_series_or_sample(state)),
+                    macro_context: None,
+                    macro_fiscal_context: Some(default_macro_fiscal_context()),
+                    venture_capital_context: Some(sample_venture_capital_context()),
+                    sentiment_context: None,
+                });
+        if recommendation_request
+            .series
+            .as_ref()
+            .map(Vec::is_empty)
+            .unwrap_or(true)
+        {
+            recommendation_request.series = Some(snapshot_series_or_sample(state));
+        }
+        let recommendations = generate_recommendations(&state.config, recommendation_request)?;
+        json!({
+            "requestId": recommendations.request_id,
+            "companyBuyCount": recommendations.company_buys.len(),
+            "companyDumpCount": recommendations.company_dumps.len(),
+            "commodityBuyCount": recommendations.commodity_buys.len(),
+            "commoditySellOrDumpCount": recommendations.commodity_sells_or_dumps.len(),
+            "topCompanyBuys": recommendations.company_buys.iter().take(5).map(|item| json!({
+                "ticker": item.ticker,
+                "company": item.company,
+                "score": item.score,
+                "expectedReturn18m": item.expected_return_18m
+            })).collect::<Vec<_>>(),
+            "topCommodityBuys": recommendations.commodity_buys.iter().take(5).map(|item| json!({
+                "instrumentId": item.instrument_id,
+                "commodity": item.commodity,
+                "score": item.score,
+                "expectedReturn18m": item.expected_return_18m
+            })).collect::<Vec<_>>()
+        })
+    } else {
+        json!({ "included": false })
+    };
+
+    let mut job_intents = Vec::new();
+    if job_kinds.iter().any(|kind| kind == "ingest") {
+        job_intents.push(spark_ingest_intent(&request_id, &data_lake_uri));
+    }
+    if job_kinds.iter().any(|kind| kind == "spark-features") {
+        job_intents.push(spark_feature_intent(
+            &request_id,
+            &scenario,
+            &data_lake_uri,
+            &state.config.spark_master_url,
+        ));
+    }
+    if job_kinds.iter().any(|kind| kind == "airflow") {
+        job_intents.push(airflow_dag_intent(
+            &request_id,
+            &scenario,
+            &data_lake_uri,
+            state.config.airflow_api_url.as_deref(),
+        ));
+    }
+    if job_kinds.iter().any(|kind| kind == "databricks") {
+        job_intents.push(databricks_job_intent(
+            &request_id,
+            &scenario,
+            &data_lake_uri,
+            state.config.databricks_host.as_deref(),
+        ));
+    }
+    if job_kinds.iter().any(|kind| kind == "nats") {
+        job_intents.push(nats_pipeline_intent(
+            &request_id,
+            &scenario,
+            &data_lake_uri,
+            &state.config.pipeline_intent_subject,
+        ));
+    }
+    if job_intents.len() > MAX_PIPELINE_JOB_INTENTS {
+        return Err(format!(
+            "pipeline plan produced more than {MAX_PIPELINE_JOB_INTENTS} job intents"
+        ));
+    }
+
+    let mut warnings = vec![
+        "pipeline plans are redacted job intents; secret values are never returned".to_string(),
+        "Airflow and Databricks are plan-only until their auth flows are explicitly enabled"
+            .to_string(),
+    ];
+    if !state.config.allow_pipeline_submit {
+        warnings.push(
+            "Spark pipeline submission is disabled by ECONOMICS_ENABLE_PIPELINE_SUBMIT=false"
+                .to_string(),
+        );
+    }
+
+    Ok(PipelinePlanResponse {
+        ok: true,
+        request_id,
+        schema_version: SCHEMA_VERSION,
+        generated_at_ms: now_ms(),
+        pipeline_status: pipeline_integration_status(state),
+        recommendation_summary,
+        job_intents,
+        warnings,
+    })
+}
+
+fn normalize_pipeline_job_kinds(input: Option<&Vec<String>>) -> Result<Vec<String>, String> {
+    let values = input.cloned().unwrap_or_else(|| {
+        vec![
+            "ingest".to_string(),
+            "spark-features".to_string(),
+            "airflow".to_string(),
+            "databricks".to_string(),
+            "nats".to_string(),
+        ]
+    });
+    if values.is_empty() {
+        return Err("jobKinds must contain at least one item".to_string());
+    }
+    if values.len() > MAX_PIPELINE_JOB_INTENTS {
+        return Err(format!(
+            "jobKinds must contain at most {MAX_PIPELINE_JOB_INTENTS} items"
+        ));
+    }
+    let mut normalized = Vec::with_capacity(values.len());
+    for value in values {
+        let clean = clean_token(&value, "jobKinds[]")?.to_ascii_lowercase();
+        match clean.as_str() {
+            "ingest" | "spark-features" | "airflow" | "databricks" | "nats" => {
+                if !normalized.iter().any(|existing| existing == &clean) {
+                    normalized.push(clean);
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "jobKinds[] value `{clean}` is not supported; use ingest, spark-features, airflow, databricks, or nats"
+                ));
+            }
+        }
+    }
+    Ok(normalized)
+}
+
+fn validate_data_lake_uri(uri: &str) -> Result<(), String> {
+    let trimmed = uri.trim();
+    if trimmed.is_empty() || trimmed.len() > MAX_URL_LEN || trimmed.chars().any(char::is_control) {
+        return Err(format!(
+            "dataLakeUri must be non-empty, contain no control characters, and be at most {MAX_URL_LEN} bytes"
+        ));
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if !(lower.starts_with("s3://")
+        || lower.starts_with("s3a://")
+        || lower.starts_with("abfss://")
+        || lower.starts_with("gs://")
+        || lower.starts_with("file:///tmp/"))
+    {
+        return Err("dataLakeUri must use s3, s3a, abfss, gs, or file:///tmp/".to_string());
+    }
+    Ok(())
+}
+
+fn spark_ingest_intent(request_id: &str, data_lake_uri: &str) -> PipelineJobIntent {
+    PipelineJobIntent {
+        id: format!("{request_id}-ingest-validate-publish"),
+        engine: "spark-pipeline-server".to_string(),
+        target: "dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085".to_string(),
+        kind: "INGEST_VALIDATE_PUBLISH".to_string(),
+        endpoint: Some("/v1/jobs".to_string()),
+        auth_required: true,
+        submit_eligible: true,
+        params: json!({
+            "source": SERVICE_NAME,
+            "dataset": "economics-market-history",
+            "schemaVersion": SCHEMA_VERSION,
+            "requestId": request_id,
+            "dataLakeUri": data_lake_uri,
+            "inputRoutes": ["POST /sources/pull", "POST /ingest"],
+            "qualityChecks": [
+                "schema-check",
+                "finite-price-volume-check",
+                "duplicate-date-check",
+                "asset-class-partition-check"
+            ],
+            "outputs": [
+                format!("{data_lake_uri}/bronze/market_series"),
+                format!("{data_lake_uri}/manifests/economics-market-history.json")
+            ]
+        }),
+        notes: vec![
+            "compatible with dd-spark-pipeline-server JobKind.INGEST_VALIDATE_PUBLISH".to_string(),
+        ],
+    }
+}
+
+fn spark_feature_intent(
+    request_id: &str,
+    scenario: &str,
+    data_lake_uri: &str,
+    spark_master_url: &str,
+) -> PipelineJobIntent {
+    PipelineJobIntent {
+        id: format!("{request_id}-spark-feature-build"),
+        engine: "spark-pipeline-server".to_string(),
+        target: "dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085".to_string(),
+        kind: "SPARK_SUBMIT".to_string(),
+        endpoint: Some("/v1/jobs".to_string()),
+        auth_required: true,
+        submit_eligible: true,
+        params: json!({
+            "source": SERVICE_NAME,
+            "appName": "economics-feature-build",
+            "requestId": request_id,
+            "master": spark_master_url,
+            "mainClass": "com.oresoftware.dd.economics.FeatureBuildJob",
+            "appResource": format!("{data_lake_uri}/jobs/economics-feature-build.jar"),
+            "args": [
+                "--scenario", scenario,
+                "--input", format!("{data_lake_uri}/bronze/market_series"),
+                "--output", format!("{data_lake_uri}/silver/features"),
+                "--recommendations", format!("{data_lake_uri}/gold/recommendations")
+            ],
+            "conf": {
+                "spark.sql.shuffle.partitions": "96",
+                "spark.sql.adaptive.enabled": "true",
+                "spark.serializer": "org.apache.spark.serializer.KryoSerializer"
+            }
+        }),
+        notes: vec![
+            "placeholder Spark application contract; appResource is a data-lake artifact path, not bundled in this Rust service".to_string(),
+        ],
+    }
+}
+
+fn airflow_dag_intent(
+    request_id: &str,
+    scenario: &str,
+    data_lake_uri: &str,
+    airflow_api_url: Option<&str>,
+) -> PipelineJobIntent {
+    PipelineJobIntent {
+        id: format!("{request_id}-airflow-refresh"),
+        engine: "airflow".to_string(),
+        target: airflow_api_url
+            .unwrap_or(DEFAULT_AIRFLOW_API_URL)
+            .to_string(),
+        kind: "TRIGGER_DAG".to_string(),
+        endpoint: Some("/api/v1/dags/economics_market_refresh/dagRuns".to_string()),
+        auth_required: true,
+        submit_eligible: false,
+        params: json!({
+            "dagRunId": format!("{request_id}-economics-market-refresh"),
+            "conf": {
+                "source": SERVICE_NAME,
+                "schemaVersion": SCHEMA_VERSION,
+                "scenario": scenario,
+                "dataLakeUri": data_lake_uri,
+                "sparkPipelineJobKinds": ["INGEST_VALIDATE_PUBLISH", "SPARK_SUBMIT"]
+            }
+        }),
+        notes: vec![
+            "Airflow submission is plan-only until a service-account auth path is configured"
+                .to_string(),
+        ],
+    }
+}
+
+fn databricks_job_intent(
+    request_id: &str,
+    scenario: &str,
+    data_lake_uri: &str,
+    databricks_host: Option<&str>,
+) -> PipelineJobIntent {
+    PipelineJobIntent {
+        id: format!("{request_id}-databricks-run-now"),
+        engine: "databricks".to_string(),
+        target: databricks_host
+            .unwrap_or("databricks-managed-workspace")
+            .to_string(),
+        kind: "DATABRICKS_RUN_NOW".to_string(),
+        endpoint: Some("/api/2.1/jobs/run-now".to_string()),
+        auth_required: true,
+        submit_eligible: false,
+        params: json!({
+            "idempotencyToken": request_id,
+            "jobName": "economics-feature-and-recommendation-refresh",
+            "notebookParams": {
+                "source": SERVICE_NAME,
+                "schemaVersion": SCHEMA_VERSION,
+                "scenario": scenario,
+                "dataLakeUri": data_lake_uri
+            },
+            "credentialEnv": ["ECONOMICS_DATABRICKS_HOST", "ECONOMICS_DATABRICKS_TOKEN"]
+        }),
+        notes: vec![
+            "Databricks token status is exposed only as a boolean; token values are never returned"
+                .to_string(),
+        ],
+    }
+}
+
+fn nats_pipeline_intent(
+    request_id: &str,
+    scenario: &str,
+    data_lake_uri: &str,
+    subject: &str,
+) -> PipelineJobIntent {
+    PipelineJobIntent {
+        id: format!("{request_id}-nats-public-data-pipeline"),
+        engine: "nats".to_string(),
+        target: subject.to_string(),
+        kind: "PUBLIC_DATA_PIPELINE_INTENT".to_string(),
+        endpoint: None,
+        auth_required: false,
+        submit_eligible: false,
+        params: json!({
+            "messageKind": "economics.pipeline.intent",
+            "source": SERVICE_NAME,
+            "requestId": request_id,
+            "schemaVersion": SCHEMA_VERSION,
+            "scenario": scenario,
+            "dataLakeUri": data_lake_uri,
+            "createdAtMs": now_ms()
+        }),
+        notes: vec![
+            "published to dd.remote.public_data.pipeline.jobs or ECONOMICS_PIPELINE_INTENT_SUBJECT when NATS is configured".to_string(),
+        ],
+    }
+}
+
+async fn publish_pipeline_plan(state: &AppState, plan: &PipelinePlanResponse) {
+    let Some(nats) = state.nats.as_ref() else {
+        return;
+    };
+    let payload = match serde_json::to_vec(&json!({
+        "messageKind": "economics.pipeline.plan",
+        "source": SERVICE_NAME,
+        "plan": plan
+    })) {
+        Ok(payload) => payload,
+        Err(error) => {
+            eprintln!("economics server failed to encode pipeline plan: {error}");
+            return;
+        }
+    };
+    if nats
+        .publish(state.config.pipeline_intent_subject.clone(), payload.into())
+        .await
+        .is_ok()
+    {
+        state
+            .metrics
+            .nats_published_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+fn validate_pipeline_submit_url(config: &Config) -> Result<String, String> {
+    let Some(base) = config.spark_pipeline_url.as_deref() else {
+        return Err("ECONOMICS_SPARK_PIPELINE_URL is not configured".to_string());
+    };
+    let parsed = reqwest::Url::parse(base)
+        .map_err(|error| format!("spark pipeline URL is invalid: {error}"))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        _ => return Err("spark pipeline URL must use http or https".to_string()),
+    }
+    let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
+    let internal = host.ends_with(".svc.cluster.local")
+        || host == "localhost"
+        || host == "127.0.0.1"
+        || host == "::1";
+    if !internal && !config.allow_external_pipeline_urls {
+        return Err(
+            "spark pipeline URL must be cluster-local unless ECONOMICS_ALLOW_EXTERNAL_PIPELINE_URLS=true"
+                .to_string(),
+        );
+    }
+    Ok(format!("{}/v1/jobs", base.trim_end_matches('/')))
+}
+
+async fn submit_pipeline_plan(
+    state: &AppState,
+    plan: &PipelinePlanResponse,
+) -> Result<Vec<PipelineSubmittedJob>, String> {
+    if !state.config.allow_pipeline_submit {
+        return Err(
+            "pipeline submission is disabled; set ECONOMICS_ENABLE_PIPELINE_SUBMIT=true"
+                .to_string(),
+        );
+    }
+    let submit_url = validate_pipeline_submit_url(&state.config)?;
+    let auth_value = optional_env(&state.config.spark_pipeline_auth_env).ok_or_else(|| {
+        format!(
+            "spark pipeline auth env {} is not configured",
+            state.config.spark_pipeline_auth_env
+        )
+    })?;
+    let mut submitted = Vec::new();
+    for intent in plan
+        .job_intents
+        .iter()
+        .filter(|intent| intent.engine == "spark-pipeline-server" && intent.submit_eligible)
+    {
+        let payload = json!({
+            "kind": intent.kind,
+            "params": intent.params
+        });
+        let response = state
+            .http
+            .post(&submit_url)
+            .header("x-server-auth", &auth_value)
+            .json(&payload)
+            .send()
+            .await;
+        match response {
+            Ok(response) => {
+                let status = response.status().as_u16();
+                let body = response.json::<Value>().await.ok();
+                submitted.push(PipelineSubmittedJob {
+                    intent_id: intent.id.clone(),
+                    target: submit_url.clone(),
+                    http_status: Some(status),
+                    accepted: (200..300).contains(&status),
+                    response: body,
+                    error: None,
+                });
+            }
+            Err(error) => submitted.push(PipelineSubmittedJob {
+                intent_id: intent.id.clone(),
+                target: submit_url.clone(),
+                http_status: None,
+                accepted: false,
+                response: None,
+                error: Some(error.to_string()),
+            }),
+        }
+    }
+    Ok(submitted)
 }
 
 fn generate_recommendations(
@@ -5014,7 +5676,11 @@ async fn sources() -> impl IntoResponse {
         "sentimentSourcesRoute": "GET /sentiment/sources",
         "macroIndicatorsRoute": "GET /macro/indicators",
         "vcInvestmentRoute": "GET /vc/investment",
-        "recommendationsRoute": "POST /recommendations"
+        "recommendationsRoute": "POST /recommendations",
+        "pipelineCatalogRoute": "GET /pipelines/catalog",
+        "pipelinePlanRoute": "POST /pipelines/plan",
+        "pipelineSubmitRoute": "POST /pipelines/submit",
+        "auditHardeningRoute": "GET /audit/hardening"
     }))
 }
 
@@ -5030,6 +5696,14 @@ async fn macro_indicators(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn vc_investment(State(state): State<AppState>) -> impl IntoResponse {
     Json(vc_investment_payload(&state.config))
+}
+
+async fn pipeline_catalog(State(state): State<AppState>) -> impl IntoResponse {
+    Json(pipeline_catalog_payload(&state))
+}
+
+async fn hardening_audit(State(state): State<AppState>) -> impl IntoResponse {
+    Json(hardening_audit_payload(&state))
 }
 
 async fn des_engine_descriptor() -> impl IntoResponse {
@@ -5095,6 +5769,99 @@ async fn recommendations_http(
             (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn pipeline_plan_http(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<PipelinePlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return auth_failure_response(&state, failure);
+    }
+    state
+        .metrics
+        .pipeline_plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let publish_to_nats = request.publish_to_nats.unwrap_or(true);
+    match pipeline_plan_from_request(&state, request) {
+        Ok(plan) => {
+            if publish_to_nats {
+                publish_pipeline_plan(&state, &plan).await;
+            }
+            Json(plan).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn pipeline_submit_http(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<PipelinePlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return auth_failure_response(&state, failure);
+    }
+    state
+        .metrics
+        .pipeline_submit_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let publish_to_nats = request.publish_to_nats.unwrap_or(true);
+    let plan = match pipeline_plan_from_request(&state, request) {
+        Ok(plan) => plan,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    if publish_to_nats {
+        publish_pipeline_plan(&state, &plan).await;
+    }
+    match submit_pipeline_plan(&state, &plan).await {
+        Ok(submitted_jobs) => {
+            let ok = submitted_jobs.iter().all(|job| job.accepted);
+            Json(PipelineSubmitResponse {
+                ok,
+                request_id: plan.request_id.clone(),
+                schema_version: SCHEMA_VERSION,
+                generated_at_ms: now_ms(),
+                plan,
+                submitted_jobs,
+                warnings: vec![
+                    "only spark-pipeline-server intents are submitted; Airflow and Databricks remain plan-only".to_string(),
+                ],
+            })
+            .into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error, "plan": plan })),
             )
                 .into_response()
         }
@@ -5461,6 +6228,12 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_economics_server_recommendation_requests_total Recommendation requests accepted.\n\
          # TYPE dd_economics_server_recommendation_requests_total counter\n\
          dd_economics_server_recommendation_requests_total {}\n\
+         # HELP dd_economics_server_pipeline_plan_requests_total Pipeline plan requests accepted.\n\
+         # TYPE dd_economics_server_pipeline_plan_requests_total counter\n\
+         dd_economics_server_pipeline_plan_requests_total {}\n\
+         # HELP dd_economics_server_pipeline_submit_requests_total Pipeline submit requests accepted.\n\
+         # TYPE dd_economics_server_pipeline_submit_requests_total counter\n\
+         dd_economics_server_pipeline_submit_requests_total {}\n\
          # HELP dd_economics_server_auth_failures_total Rejected requests with missing or invalid auth.\n\
          # TYPE dd_economics_server_auth_failures_total counter\n\
          dd_economics_server_auth_failures_total {}\n\
@@ -5481,6 +6254,14 @@ async fn metrics(State(state): State<AppState>) -> Response {
         state
             .metrics
             .recommendation_requests_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_plan_requests_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_submit_requests_total
             .load(Ordering::Relaxed),
         state.metrics.auth_failures_total.load(Ordering::Relaxed),
         state.metrics.errors_total.load(Ordering::Relaxed),
@@ -5543,6 +6324,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/macro/indicators", get(macro_indicators))
         .route("/vc/investment", get(vc_investment))
         .route("/recommendations", post(recommendations_http))
+        .route("/audit/hardening", get(hardening_audit))
+        .route("/pipelines/catalog", get(pipeline_catalog))
+        .route("/pipelines/plan", post(pipeline_plan_http))
+        .route("/pipelines/submit", post(pipeline_submit_http))
         .route("/model/equations", get(equations))
         .route("/engine/des", get(des_engine_descriptor))
         .route("/forecast", post(forecast_http))
@@ -5936,6 +6721,25 @@ mod tests {
             result_subject: ECONOMICS_FORECAST_RESULT_SUBJECT.to_string(),
             market_event_subject: ECONOMICS_MARKET_EVENT_SUBJECT.to_string(),
             runtime_event_subject: RUNTIME_EVENTS_SUBJECT.to_string(),
+            pipeline_intent_subject: PUBLIC_DATA_PIPELINE_JOBS_SUBJECT.to_string(),
+            spark_pipeline_url: Some(DEFAULT_SPARK_PIPELINE_URL.to_string()),
+            spark_pipeline_auth_env: "SERVER_AUTH_SECRET".to_string(),
+            spark_master_url: DEFAULT_SPARK_MASTER_URL.to_string(),
+            airflow_api_url: Some(DEFAULT_AIRFLOW_API_URL.to_string()),
+            databricks_host: Some("https://example.cloud.databricks.com".to_string()),
+            data_lake_uri: DEFAULT_DATA_LAKE_URI.to_string(),
+            allow_pipeline_submit: false,
+            allow_external_pipeline_urls: false,
+        }
+    }
+
+    fn test_state() -> AppState {
+        AppState {
+            config: Arc::new(test_config()),
+            metrics: Arc::new(Metrics::default()),
+            nats: None,
+            http: reqwest::Client::new(),
+            series_store: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 
@@ -6117,5 +6921,81 @@ mod tests {
             .methodology
             .iter()
             .any(|item| item.contains("VC sector flow")));
+    }
+
+    #[test]
+    fn pipeline_plan_emits_spark_airflow_databricks_and_nats_intents() {
+        let state = test_state();
+        let plan = pipeline_plan_from_request(
+            &state,
+            PipelinePlanRequest {
+                request_id: Some("pipeline-unit".to_string()),
+                schema_version: Some(SCHEMA_VERSION.to_string()),
+                scenario: Some("soft-landing".to_string()),
+                data_lake_uri: Some("s3a://dd-economics/unit".to_string()),
+                include_recommendations: Some(true),
+                publish_to_nats: Some(false),
+                job_kinds: None,
+                recommendation_request: None,
+            },
+        )
+        .expect("pipeline plan succeeds");
+
+        assert_eq!(plan.request_id, "pipeline-unit");
+        assert_eq!(plan.job_intents.len(), 5);
+        assert!(plan
+            .job_intents
+            .iter()
+            .any(|intent| intent.engine == "spark-pipeline-server"
+                && intent.kind == "INGEST_VALIDATE_PUBLISH"
+                && intent.submit_eligible));
+        assert!(plan
+            .job_intents
+            .iter()
+            .any(|intent| intent.engine == "airflow" && !intent.submit_eligible));
+        assert!(plan
+            .job_intents
+            .iter()
+            .any(|intent| intent.engine == "databricks" && !intent.submit_eligible));
+        assert_eq!(
+            plan.pipeline_status.pipeline_intent_subject,
+            PUBLIC_DATA_PIPELINE_JOBS_SUBJECT
+        );
+    }
+
+    #[test]
+    fn recommendation_validation_rejects_unbounded_vc_context() {
+        let mut context = sample_venture_capital_context();
+        context.deals[0].amount = f64::INFINITY;
+        let error = generate_recommendations(
+            &test_config(),
+            RecommendationRequest {
+                request_id: Some("bad-vc".to_string()),
+                schema_version: Some(SCHEMA_VERSION.to_string()),
+                horizon_months: Some(18),
+                company_limit: Some(20),
+                commodity_limit: Some(30),
+                scenario: Some("base".to_string()),
+                series: Some(sample_market_series()),
+                macro_context: None,
+                macro_fiscal_context: Some(default_macro_fiscal_context()),
+                venture_capital_context: Some(context),
+                sentiment_context: None,
+            },
+        )
+        .expect_err("invalid vc amount rejected");
+
+        assert!(error.contains("ventureCapitalContext.deals"));
+    }
+
+    #[test]
+    fn pipeline_submit_url_rejects_external_hosts_by_default() {
+        let mut config = test_config();
+        config.spark_pipeline_url = Some("https://spark.example.com".to_string());
+        config.allow_external_pipeline_urls = false;
+
+        let error = validate_pipeline_submit_url(&config).expect_err("external URL rejected");
+
+        assert!(error.contains("cluster-local"));
     }
 }

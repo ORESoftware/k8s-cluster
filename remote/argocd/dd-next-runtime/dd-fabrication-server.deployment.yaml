@@ -272,6 +272,7 @@ spec:
                 '"path": "/jobs/:job_id/artifacts/:artifact_id"' \
                 '"path": "/fabrication/jobs/:job_id/artifacts/:artifact_id"' \
                 '"path": "/fabrication/learning/policy"' \
+                '"path": "/fabrication/learning/corpus"' \
                 '"path": "/fabrication/learning/observe"' \
                 '"path": "/fabrication/learning/outcomes"'
               do

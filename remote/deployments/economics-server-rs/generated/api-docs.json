@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "economics-server-rs",
   "language": "rust",
-  "routeCount": 25,
+  "routeCount": 29,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 15,
+    "user-generated": 19,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -60,6 +60,23 @@
       "purpose": "Machine-readable generated API route metadata.",
       "handlers": [
         "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/economics-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/audit/hardening",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "hardening_audit"
       ],
       "sourceFiles": [
         "remote/deployments/economics-server-rs/src/main.rs"
@@ -298,6 +315,57 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "equations"
+      ],
+      "sourceFiles": [
+        "remote/deployments/economics-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/pipelines/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "pipeline_catalog"
+      ],
+      "sourceFiles": [
+        "remote/deployments/economics-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/pipelines/plan",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "pipeline_plan_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/economics-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/pipelines/submit",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "pipeline_submit_http"
       ],
       "sourceFiles": [
         "remote/deployments/economics-server-rs/src/main.rs"
