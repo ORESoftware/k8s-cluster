@@ -243,6 +243,80 @@ model SoundRecorderAuditEvents {
   @@map("sound_recorder_audit_events")
 }
 
+model SoundRecorderOauthStates {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  deviceId String @map("device_id") @db.Uuid
+  provider String @db.VarChar(32)
+  stateHash String @map("state_hash") @db.VarChar(64)
+  redirectUri String @map("redirect_uri") @db.VarChar(512)
+  folderPath String? @map("folder_path") @db.VarChar(512)
+  status String @default("pending") @db.VarChar(32)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([stateHash], map: "sound_recorder_oauth_states_hash_uq")
+  @@index([accountId, provider, createdAt], map: "sound_recorder_oauth_states_account_provider_idx")
+  // sound_recorder_oauth_states_expiry_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sound_recorder_oauth_states")
+}
+
+model SoundRecorderCloudConnections {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  createdByDeviceId String? @map("created_by_device_id") @db.Uuid
+  provider String @db.VarChar(32)
+  linkMode String @map("link_mode") @default("server_oauth") @db.VarChar(32)
+  status String @default("active") @db.VarChar(32)
+  displayName String? @map("display_name") @db.VarChar(160)
+  providerAccountId String? @map("provider_account_id") @db.VarChar(240)
+  providerSubjectHash String? @map("provider_subject_hash") @db.VarChar(64)
+  rootFolderId String? @map("root_folder_id") @db.VarChar(512)
+  folderPath String @map("folder_path") @default("sound-recorder") @db.VarChar(512)
+  oauthScope String? @map("oauth_scope") @db.Text
+  tokenCiphertext String? @map("token_ciphertext") @db.Text
+  tokenNonce String? @map("token_nonce") @db.VarChar(64)
+  tokenAad String? @map("token_aad") @db.VarChar(512)
+  tokenVersion Int? @map("token_version")
+  tokenExpiresAt DateTime? @map("token_expires_at") @db.Timestamptz(6)
+  lastSyncAt DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  // sound_recorder_cloud_connections_active_account_provider_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([accountId, status, updatedAt], map: "sound_recorder_cloud_connections_account_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sound_recorder_cloud_connections")
+}
+
+model SoundRecorderCloudCopyJobs {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  connectionId String @map("connection_id") @db.Uuid
+  segmentId String @map("segment_id") @db.Uuid
+  provider String @db.VarChar(32)
+  status String @default("pending") @db.VarChar(32)
+  destinationKey String @map("destination_key") @db.VarChar(2048)
+  providerFileId String? @map("provider_file_id") @db.VarChar(512)
+  attempts Int @default(0)
+  lockedUntil DateTime? @map("locked_until") @db.Timestamptz(6)
+  startedAt DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  lastError String? @map("last_error") @db.VarChar(500)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([connectionId, segmentId], map: "sound_recorder_cloud_copy_jobs_connection_segment_uq")
+  @@index([accountId, status, updatedAt], map: "sound_recorder_cloud_copy_jobs_account_status_idx")
+  @@index([connectionId, status, updatedAt], map: "sound_recorder_cloud_copy_jobs_connection_status_idx")
+  @@index([segmentId], map: "sound_recorder_cloud_copy_jobs_segment_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sound_recorder_cloud_copy_jobs")
+}
+
 model ContainerPoolConfigs {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   slug String @db.VarChar(120)

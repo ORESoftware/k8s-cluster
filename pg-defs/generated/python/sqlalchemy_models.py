@@ -1076,6 +1076,367 @@ class SoundRecorderAuditEventsInsert(BaseModel):
     payload: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
 
+SoundRecorderOauthStatesProvider = Literal["google_drive", "microsoft_onedrive", "apple_icloud"]
+SoundRecorderOauthStatesStatus = Literal["pending", "consumed", "expired", "revoked"]
+
+class SoundRecorderOauthStates(Base):
+    __tablename__ = "sound_recorder_oauth_states"
+    __table_args__ = (
+        CheckConstraint("provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud')", name="sound_recorder_oauth_states_provider_chk"),
+        CheckConstraint("status in ('pending', 'consumed', 'expired', 'revoked')", name="sound_recorder_oauth_states_status_chk"),
+        CheckConstraint("state_hash ~ '^[a-f0-9]{64}$'", name="sound_recorder_oauth_states_hash_chk"),
+        CheckConstraint("octet_length(redirect_uri) between 1 and 512", name="sound_recorder_oauth_states_redirect_uri_size_chk"),
+        CheckConstraint("folder_path is null or octet_length(folder_path) between 1 and 512", name="sound_recorder_oauth_states_folder_path_size_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="sound_recorder_oauth_states_meta_object_chk"),
+        Index("sound_recorder_oauth_states_hash_uq", "state_hash", unique=True),
+        Index("sound_recorder_oauth_states_account_provider_idx", "account_id", "provider", text("created_at desc")),
+        Index("sound_recorder_oauth_states_expiry_idx", text("expires_at asc"), postgresql_where=text("status = 'pending'")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    account_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    device_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    state_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    redirect_uri: Mapped[str] = mapped_column(String(512), nullable=False)
+    folder_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'pending'"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class SoundRecorderOauthStatesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    accountId: UUID
+    deviceId: UUID
+    provider: SoundRecorderOauthStatesProvider
+    stateHash: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    redirectUri: str = Field(..., max_length=512)
+    folderPath: str | None = Field(None, max_length=512)
+    status: SoundRecorderOauthStatesStatus
+    expiresAt: datetime
+    consumedAt: datetime | None = None
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("redirectUri")
+    @classmethod
+    def validate_redirect_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes")
+        return value
+
+    @field_validator("folderPath")
+    @classmethod
+    def validate_folder_path(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("sound_recorder_oauth_states.folder_path exceeds 512 bytes")
+        return value
+
+class SoundRecorderOauthStatesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    accountId: UUID
+    deviceId: UUID
+    provider: SoundRecorderOauthStatesProvider
+    stateHash: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    redirectUri: str = Field(..., max_length=512)
+    folderPath: str | None = Field(None, max_length=512)
+    status: SoundRecorderOauthStatesStatus | None = "pending"
+    expiresAt: datetime
+    consumedAt: datetime | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("redirectUri")
+    @classmethod
+    def validate_redirect_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes")
+        return value
+
+    @field_validator("folderPath")
+    @classmethod
+    def validate_folder_path(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("sound_recorder_oauth_states.folder_path exceeds 512 bytes")
+        return value
+
+SoundRecorderCloudConnectionsProvider = Literal["google_drive", "microsoft_onedrive", "apple_icloud"]
+SoundRecorderCloudConnectionsLinkMode = Literal["server_oauth", "client_managed"]
+SoundRecorderCloudConnectionsStatus = Literal["active", "paused", "revoked", "failed"]
+
+class SoundRecorderCloudConnections(Base):
+    __tablename__ = "sound_recorder_cloud_connections"
+    __table_args__ = (
+        CheckConstraint("provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud')", name="sound_recorder_cloud_connections_provider_chk"),
+        CheckConstraint("link_mode in ('server_oauth', 'client_managed')", name="sound_recorder_cloud_connections_link_mode_chk"),
+        CheckConstraint("status in ('active', 'paused', 'revoked', 'failed')", name="sound_recorder_cloud_connections_status_chk"),
+        CheckConstraint("display_name is null or octet_length(display_name) between 1 and 160", name="sound_recorder_cloud_connections_display_name_size_chk"),
+        CheckConstraint("provider_account_id is null or octet_length(provider_account_id) between 1 and 240", name="sound_recorder_cloud_connections_provider_account_id_size_chk"),
+        CheckConstraint("provider_subject_hash is null or provider_subject_hash ~ '^[a-f0-9]{64}$'", name="sound_recorder_cloud_connections_subject_hash_chk"),
+        CheckConstraint("root_folder_id is null or octet_length(root_folder_id) between 1 and 512", name="sound_recorder_cloud_connections_root_folder_id_size_chk"),
+        CheckConstraint("octet_length(folder_path) between 1 and 512", name="sound_recorder_cloud_connections_folder_path_size_chk"),
+        CheckConstraint("token_version is null or token_version > 0", name="sound_recorder_cloud_connections_token_version_chk"),
+        CheckConstraint("status = 'revoked'\n      or link_mode = 'client_managed'\n      or (token_ciphertext is not null and token_nonce is not null and token_aad is not null and token_version is not null)", name="sound_recorder_cloud_connections_token_shape_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="sound_recorder_cloud_connections_meta_object_chk"),
+        Index("sound_recorder_cloud_connections_active_account_provider_uq", "account_id", "provider", "provider_account_id", unique=True, postgresql_where=text("status <> 'revoked' and provider_account_id is not null")),
+        Index("sound_recorder_cloud_connections_account_status_idx", "account_id", "status", text("updated_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    account_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    created_by_device_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    link_mode: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'server_oauth'"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    display_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    provider_account_id: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    provider_subject_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    root_folder_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    folder_path: Mapped[str] = mapped_column(String(512), nullable=False, server_default=text("'sound-recorder'"))
+    oauth_scope: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    token_ciphertext: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    token_nonce: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    token_aad: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    token_version: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class SoundRecorderCloudConnectionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    accountId: UUID
+    createdByDeviceId: UUID | None = None
+    provider: SoundRecorderCloudConnectionsProvider
+    linkMode: SoundRecorderCloudConnectionsLinkMode
+    status: SoundRecorderCloudConnectionsStatus
+    displayName: str | None = Field(None, max_length=160)
+    providerAccountId: str | None = Field(None, max_length=240)
+    providerSubjectHash: str | None = Field(None, max_length=64, pattern="^[a-f0-9]{64}$")
+    rootFolderId: str | None = Field(None, max_length=512)
+    folderPath: str = Field(..., max_length=512)
+    oauthScope: str | None = None
+    tokenCiphertext: str | None = None
+    tokenNonce: str | None = Field(None, max_length=64)
+    tokenAad: str | None = Field(None, max_length=512)
+    tokenVersion: int | None = Field(None, ge=1)
+    tokenExpiresAt: datetime | None = None
+    lastSyncAt: datetime | None = None
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("sound_recorder_cloud_connections.display_name exceeds 160 bytes")
+        return value
+
+    @field_validator("providerAccountId")
+    @classmethod
+    def validate_provider_account_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes")
+        return value
+
+    @field_validator("rootFolderId")
+    @classmethod
+    def validate_root_folder_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes")
+        return value
+
+    @field_validator("folderPath")
+    @classmethod
+    def validate_folder_path(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("sound_recorder_cloud_connections.folder_path exceeds 512 bytes")
+        return value
+
+class SoundRecorderCloudConnectionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    accountId: UUID
+    createdByDeviceId: UUID | None = None
+    provider: SoundRecorderCloudConnectionsProvider
+    linkMode: SoundRecorderCloudConnectionsLinkMode | None = "server_oauth"
+    status: SoundRecorderCloudConnectionsStatus | None = "active"
+    displayName: str | None = Field(None, max_length=160)
+    providerAccountId: str | None = Field(None, max_length=240)
+    providerSubjectHash: str | None = Field(None, max_length=64, pattern="^[a-f0-9]{64}$")
+    rootFolderId: str | None = Field(None, max_length=512)
+    folderPath: str | None = Field("sound-recorder", max_length=512)
+    oauthScope: str | None = None
+    tokenCiphertext: str | None = None
+    tokenNonce: str | None = Field(None, max_length=64)
+    tokenAad: str | None = Field(None, max_length=512)
+    tokenVersion: int | None = Field(None, ge=1)
+    tokenExpiresAt: datetime | None = None
+    lastSyncAt: datetime | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("sound_recorder_cloud_connections.display_name exceeds 160 bytes")
+        return value
+
+    @field_validator("providerAccountId")
+    @classmethod
+    def validate_provider_account_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes")
+        return value
+
+    @field_validator("rootFolderId")
+    @classmethod
+    def validate_root_folder_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes")
+        return value
+
+    @field_validator("folderPath")
+    @classmethod
+    def validate_folder_path(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("sound_recorder_cloud_connections.folder_path exceeds 512 bytes")
+        return value
+
+SoundRecorderCloudCopyJobsProvider = Literal["google_drive", "microsoft_onedrive", "apple_icloud"]
+SoundRecorderCloudCopyJobsStatus = Literal["pending", "running", "waiting_client", "completed", "failed", "skipped"]
+
+class SoundRecorderCloudCopyJobs(Base):
+    __tablename__ = "sound_recorder_cloud_copy_jobs"
+    __table_args__ = (
+        CheckConstraint("provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud')", name="sound_recorder_cloud_copy_jobs_provider_chk"),
+        CheckConstraint("status in ('pending', 'running', 'waiting_client', 'completed', 'failed', 'skipped')", name="sound_recorder_cloud_copy_jobs_status_chk"),
+        CheckConstraint("octet_length(destination_key) between 1 and 2048", name="sound_recorder_cloud_copy_jobs_destination_key_size_chk"),
+        CheckConstraint("provider_file_id is null or octet_length(provider_file_id) between 1 and 512", name="sound_recorder_cloud_copy_jobs_provider_file_id_size_chk"),
+        CheckConstraint("attempts >= 0 and attempts <= 50", name="sound_recorder_cloud_copy_jobs_attempts_chk"),
+        CheckConstraint("last_error is null or octet_length(last_error) between 1 and 500", name="sound_recorder_cloud_copy_jobs_last_error_size_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="sound_recorder_cloud_copy_jobs_meta_object_chk"),
+        Index("sound_recorder_cloud_copy_jobs_connection_segment_uq", "connection_id", "segment_id", unique=True),
+        Index("sound_recorder_cloud_copy_jobs_account_status_idx", "account_id", "status", text("updated_at asc")),
+        Index("sound_recorder_cloud_copy_jobs_connection_status_idx", "connection_id", "status", text("updated_at asc")),
+        Index("sound_recorder_cloud_copy_jobs_segment_idx", "segment_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    account_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    connection_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    segment_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'pending'"))
+    destination_key: Mapped[str] = mapped_column(String(2048), nullable=False)
+    provider_file_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class SoundRecorderCloudCopyJobsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    accountId: UUID
+    connectionId: UUID
+    segmentId: UUID
+    provider: SoundRecorderCloudCopyJobsProvider
+    status: SoundRecorderCloudCopyJobsStatus
+    destinationKey: str = Field(..., max_length=2048)
+    providerFileId: str | None = Field(None, max_length=512)
+    attempts: int = Field(..., ge=0, le=50)
+    lockedUntil: datetime | None = None
+    startedAt: datetime | None = None
+    completedAt: datetime | None = None
+    lastError: str | None = Field(None, max_length=500)
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("destinationKey")
+    @classmethod
+    def validate_destination_key(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes")
+        return value
+
+    @field_validator("providerFileId")
+    @classmethod
+    def validate_provider_file_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes")
+        return value
+
+    @field_validator("lastError")
+    @classmethod
+    def validate_last_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 500:
+            raise ValueError("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes")
+        return value
+
+class SoundRecorderCloudCopyJobsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    accountId: UUID
+    connectionId: UUID
+    segmentId: UUID
+    provider: SoundRecorderCloudCopyJobsProvider
+    status: SoundRecorderCloudCopyJobsStatus | None = "pending"
+    destinationKey: str = Field(..., max_length=2048)
+    providerFileId: str | None = Field(None, max_length=512)
+    attempts: int | None = Field(0, ge=0, le=50)
+    lockedUntil: datetime | None = None
+    startedAt: datetime | None = None
+    completedAt: datetime | None = None
+    lastError: str | None = Field(None, max_length=500)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("destinationKey")
+    @classmethod
+    def validate_destination_key(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes")
+        return value
+
+    @field_validator("providerFileId")
+    @classmethod
+    def validate_provider_file_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes")
+        return value
+
+    @field_validator("lastError")
+    @classmethod
+    def validate_last_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 500:
+            raise ValueError("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes")
+        return value
+
 ContainerPoolConfigsStatus = Literal["active", "paused", "archived"]
 
 class ContainerPoolConfigs(Base):

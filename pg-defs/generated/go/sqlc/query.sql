@@ -151,6 +151,51 @@ update sound_recorder_audit_events set account_id = $2, device_id = $3, event_ty
 -- name: DeleteSoundRecorderAuditEvents :exec
 delete from sound_recorder_audit_events where id = $1;
 
+-- name: ListSoundRecorderOauthStates :many
+select id, account_id, device_id, provider, state_hash, redirect_uri, folder_path, status, expires_at, consumed_at, meta_data, created_at, updated_at from sound_recorder_oauth_states;
+
+-- name: GetSoundRecorderOauthStates :one
+select id, account_id, device_id, provider, state_hash, redirect_uri, folder_path, status, expires_at, consumed_at, meta_data, created_at, updated_at from sound_recorder_oauth_states where id = $1 limit 1;
+
+-- name: CreateSoundRecorderOauthStates :one
+insert into sound_recorder_oauth_states (id, account_id, device_id, provider, state_hash, redirect_uri, folder_path, status, expires_at, consumed_at, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, account_id, device_id, provider, state_hash, redirect_uri, folder_path, status, expires_at, consumed_at, meta_data, created_at, updated_at;
+
+-- name: UpdateSoundRecorderOauthStates :one
+update sound_recorder_oauth_states set account_id = $2, device_id = $3, provider = $4, state_hash = $5, redirect_uri = $6, folder_path = $7, status = $8, expires_at = $9, consumed_at = $10, meta_data = $11, updated_at = $12 where id = $1 returning id, account_id, device_id, provider, state_hash, redirect_uri, folder_path, status, expires_at, consumed_at, meta_data, created_at, updated_at;
+
+-- name: DeleteSoundRecorderOauthStates :exec
+delete from sound_recorder_oauth_states where id = $1;
+
+-- name: ListSoundRecorderCloudConnections :many
+select id, account_id, created_by_device_id, provider, link_mode, status, display_name, provider_account_id, provider_subject_hash, root_folder_id, folder_path, oauth_scope, token_ciphertext, token_nonce, token_aad, token_version, token_expires_at, last_sync_at, meta_data, created_at, updated_at from sound_recorder_cloud_connections;
+
+-- name: GetSoundRecorderCloudConnections :one
+select id, account_id, created_by_device_id, provider, link_mode, status, display_name, provider_account_id, provider_subject_hash, root_folder_id, folder_path, oauth_scope, token_ciphertext, token_nonce, token_aad, token_version, token_expires_at, last_sync_at, meta_data, created_at, updated_at from sound_recorder_cloud_connections where id = $1 limit 1;
+
+-- name: CreateSoundRecorderCloudConnections :one
+insert into sound_recorder_cloud_connections (id, account_id, created_by_device_id, provider, link_mode, status, display_name, provider_account_id, provider_subject_hash, root_folder_id, folder_path, oauth_scope, token_ciphertext, token_nonce, token_aad, token_version, token_expires_at, last_sync_at, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) returning id, account_id, created_by_device_id, provider, link_mode, status, display_name, provider_account_id, provider_subject_hash, root_folder_id, folder_path, oauth_scope, token_ciphertext, token_nonce, token_aad, token_version, token_expires_at, last_sync_at, meta_data, created_at, updated_at;
+
+-- name: UpdateSoundRecorderCloudConnections :one
+update sound_recorder_cloud_connections set account_id = $2, created_by_device_id = $3, provider = $4, link_mode = $5, status = $6, display_name = $7, provider_account_id = $8, provider_subject_hash = $9, root_folder_id = $10, folder_path = $11, oauth_scope = $12, token_ciphertext = $13, token_nonce = $14, token_aad = $15, token_version = $16, token_expires_at = $17, last_sync_at = $18, meta_data = $19, updated_at = $20 where id = $1 returning id, account_id, created_by_device_id, provider, link_mode, status, display_name, provider_account_id, provider_subject_hash, root_folder_id, folder_path, oauth_scope, token_ciphertext, token_nonce, token_aad, token_version, token_expires_at, last_sync_at, meta_data, created_at, updated_at;
+
+-- name: DeleteSoundRecorderCloudConnections :exec
+delete from sound_recorder_cloud_connections where id = $1;
+
+-- name: ListSoundRecorderCloudCopyJobs :many
+select id, account_id, connection_id, segment_id, provider, status, destination_key, provider_file_id, attempts, locked_until, started_at, completed_at, last_error, meta_data, created_at, updated_at from sound_recorder_cloud_copy_jobs;
+
+-- name: GetSoundRecorderCloudCopyJobs :one
+select id, account_id, connection_id, segment_id, provider, status, destination_key, provider_file_id, attempts, locked_until, started_at, completed_at, last_error, meta_data, created_at, updated_at from sound_recorder_cloud_copy_jobs where id = $1 limit 1;
+
+-- name: CreateSoundRecorderCloudCopyJobs :one
+insert into sound_recorder_cloud_copy_jobs (id, account_id, connection_id, segment_id, provider, status, destination_key, provider_file_id, attempts, locked_until, started_at, completed_at, last_error, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning id, account_id, connection_id, segment_id, provider, status, destination_key, provider_file_id, attempts, locked_until, started_at, completed_at, last_error, meta_data, created_at, updated_at;
+
+-- name: UpdateSoundRecorderCloudCopyJobs :one
+update sound_recorder_cloud_copy_jobs set account_id = $2, connection_id = $3, segment_id = $4, provider = $5, status = $6, destination_key = $7, provider_file_id = $8, attempts = $9, locked_until = $10, started_at = $11, completed_at = $12, last_error = $13, meta_data = $14, updated_at = $15 where id = $1 returning id, account_id, connection_id, segment_id, provider, status, destination_key, provider_file_id, attempts, locked_until, started_at, completed_at, last_error, meta_data, created_at, updated_at;
+
+-- name: DeleteSoundRecorderCloudCopyJobs :exec
+delete from sound_recorder_cloud_copy_jobs where id = $1;
+
 -- name: ListContainerPoolConfigs :many
 select id, slug, display_name, image, command, env, request_path, health_path, container_port, min_warm, max_warm, max_concurrency_per_container, request_timeout_ms, idle_ttl_seconds, nats_subject, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from container_pool_configs;
 

@@ -285,6 +285,95 @@ class SoundRecorderAuditEventsTable extends Table {
   };
 }
 
+@DataClassName("SoundRecorderOauthStatesData")
+class SoundRecorderOauthStatesTable extends Table {
+  @override String get tableName => "sound_recorder_oauth_states";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get accountId => text().named("account_id").customConstraint("UUID REFERENCES sound_recorder_accounts (id)")();
+  TextColumn get deviceId => text().named("device_id").customConstraint("UUID REFERENCES sound_recorder_devices (id)")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get stateHash => text().named("state_hash").withLength(max: 64)();
+  TextColumn get redirectUri => text().named("redirect_uri").withLength(max: 512)();
+  TextColumn get folderPath => text().named("folder_path").withLength(max: 512).nullable()();
+  TextColumn get status => text().named("status").clientDefault(() => 'pending')();
+  DateTimeColumn get expiresAt => dateTime().named("expires_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get consumedAt => dateTime().named("consumed_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("SoundRecorderCloudConnectionsData")
+class SoundRecorderCloudConnectionsTable extends Table {
+  @override String get tableName => "sound_recorder_cloud_connections";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get accountId => text().named("account_id").customConstraint("UUID REFERENCES sound_recorder_accounts (id)")();
+  TextColumn get createdByDeviceId => text().named("created_by_device_id").nullable().customConstraint("UUID REFERENCES sound_recorder_devices (id)")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get linkMode => text().named("link_mode").clientDefault(() => 'server_oauth')();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get displayName => text().named("display_name").withLength(max: 160).nullable()();
+  TextColumn get providerAccountId => text().named("provider_account_id").withLength(max: 240).nullable()();
+  TextColumn get providerSubjectHash => text().named("provider_subject_hash").withLength(max: 64).nullable()();
+  TextColumn get rootFolderId => text().named("root_folder_id").withLength(max: 512).nullable()();
+  TextColumn get folderPath => text().named("folder_path").withLength(max: 512).clientDefault(() => 'sound-recorder')();
+  TextColumn get oauthScope => text().named("oauth_scope").nullable()();
+  TextColumn get tokenCiphertext => text().named("token_ciphertext").nullable()();
+  TextColumn get tokenNonce => text().named("token_nonce").withLength(max: 64).nullable()();
+  TextColumn get tokenAad => text().named("token_aad").withLength(max: 512).nullable()();
+  IntColumn get tokenVersion => integer().named("token_version").nullable()();
+  DateTimeColumn get tokenExpiresAt => dateTime().named("token_expires_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSyncAt => dateTime().named("last_sync_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("SoundRecorderCloudCopyJobsData")
+class SoundRecorderCloudCopyJobsTable extends Table {
+  @override String get tableName => "sound_recorder_cloud_copy_jobs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get accountId => text().named("account_id").customConstraint("UUID REFERENCES sound_recorder_accounts (id)")();
+  TextColumn get connectionId => text().named("connection_id").customConstraint("UUID REFERENCES sound_recorder_cloud_connections (id)")();
+  TextColumn get segmentId => text().named("segment_id").customConstraint("UUID REFERENCES sound_recorder_segments (id)")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get status => text().named("status").clientDefault(() => 'pending')();
+  TextColumn get destinationKey => text().named("destination_key").withLength(max: 2048)();
+  TextColumn get providerFileId => text().named("provider_file_id").withLength(max: 512).nullable()();
+  IntColumn get attempts => integer().named("attempts").clientDefault(() => 0)();
+  DateTimeColumn get lockedUntil => dateTime().named("locked_until").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get startedAt => dateTime().named("started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get completedAt => dateTime().named("completed_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get lastError => text().named("last_error").withLength(max: 500).nullable()();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("ContainerPoolConfigsData")
 class ContainerPoolConfigsTable extends Table {
   @override String get tableName => "container_pool_configs";
@@ -1176,6 +1265,9 @@ const List<Type> registeredDriftTables = <Type>[
   SoundRecorderSegmentsTable,
   SoundRecorderEvidenceExportsTable,
   SoundRecorderAuditEventsTable,
+  SoundRecorderOauthStatesTable,
+  SoundRecorderCloudConnectionsTable,
+  SoundRecorderCloudCopyJobsTable,
   ContainerPoolConfigsTable,
   KnownGitRepoTable,
   AgentContextBlobsTable,

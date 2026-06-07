@@ -620,6 +620,204 @@ pub struct SoundRecorderAuditEventsDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    sound_recorder_oauth_states (id) {
+        id -> Uuid,
+        account_id -> Uuid,
+        device_id -> Uuid,
+        provider -> Varchar,
+        state_hash -> Varchar,
+        redirect_uri -> Varchar,
+        folder_path -> Nullable<Varchar>,
+        status -> Varchar,
+        expires_at -> Timestamptz,
+        consumed_at -> Nullable<Timestamptz>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_oauth_states)]
+pub struct SoundRecorderOauthStatesDieselRow {
+    pub id: Uuid,
+    pub account_id: Uuid,
+    pub device_id: Uuid,
+    pub provider: String,
+    pub state_hash: String,
+    pub redirect_uri: String,
+    pub folder_path: Option<String>,
+    pub status: String,
+    pub expires_at: DateTime<Utc>,
+    pub consumed_at: Option<DateTime<Utc>>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_oauth_states)]
+pub struct SoundRecorderOauthStatesDieselInsert {
+    pub id: Option<Uuid>,
+    pub account_id: Option<Uuid>,
+    pub device_id: Option<Uuid>,
+    pub provider: Option<String>,
+    pub state_hash: Option<String>,
+    pub redirect_uri: Option<String>,
+    pub folder_path: Option<String>,
+    pub status: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub consumed_at: Option<DateTime<Utc>>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    sound_recorder_cloud_connections (id) {
+        id -> Uuid,
+        account_id -> Uuid,
+        created_by_device_id -> Nullable<Uuid>,
+        provider -> Varchar,
+        link_mode -> Varchar,
+        status -> Varchar,
+        display_name -> Nullable<Varchar>,
+        provider_account_id -> Nullable<Varchar>,
+        provider_subject_hash -> Nullable<Varchar>,
+        root_folder_id -> Nullable<Varchar>,
+        folder_path -> Varchar,
+        oauth_scope -> Nullable<Text>,
+        token_ciphertext -> Nullable<Text>,
+        token_nonce -> Nullable<Varchar>,
+        token_aad -> Nullable<Varchar>,
+        token_version -> Nullable<Int4>,
+        token_expires_at -> Nullable<Timestamptz>,
+        last_sync_at -> Nullable<Timestamptz>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_cloud_connections)]
+pub struct SoundRecorderCloudConnectionsDieselRow {
+    pub id: Uuid,
+    pub account_id: Uuid,
+    pub created_by_device_id: Option<Uuid>,
+    pub provider: String,
+    pub link_mode: String,
+    pub status: String,
+    pub display_name: Option<String>,
+    pub provider_account_id: Option<String>,
+    pub provider_subject_hash: Option<String>,
+    pub root_folder_id: Option<String>,
+    pub folder_path: String,
+    pub oauth_scope: Option<String>,
+    pub token_ciphertext: Option<String>,
+    pub token_nonce: Option<String>,
+    pub token_aad: Option<String>,
+    pub token_version: Option<i32>,
+    pub token_expires_at: Option<DateTime<Utc>>,
+    pub last_sync_at: Option<DateTime<Utc>>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_cloud_connections)]
+pub struct SoundRecorderCloudConnectionsDieselInsert {
+    pub id: Option<Uuid>,
+    pub account_id: Option<Uuid>,
+    pub created_by_device_id: Option<Uuid>,
+    pub provider: Option<String>,
+    pub link_mode: Option<String>,
+    pub status: Option<String>,
+    pub display_name: Option<String>,
+    pub provider_account_id: Option<String>,
+    pub provider_subject_hash: Option<String>,
+    pub root_folder_id: Option<String>,
+    pub folder_path: Option<String>,
+    pub oauth_scope: Option<String>,
+    pub token_ciphertext: Option<String>,
+    pub token_nonce: Option<String>,
+    pub token_aad: Option<String>,
+    pub token_version: Option<i32>,
+    pub token_expires_at: Option<DateTime<Utc>>,
+    pub last_sync_at: Option<DateTime<Utc>>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    sound_recorder_cloud_copy_jobs (id) {
+        id -> Uuid,
+        account_id -> Uuid,
+        connection_id -> Uuid,
+        segment_id -> Uuid,
+        provider -> Varchar,
+        status -> Varchar,
+        destination_key -> Varchar,
+        provider_file_id -> Nullable<Varchar>,
+        attempts -> Int4,
+        locked_until -> Nullable<Timestamptz>,
+        started_at -> Nullable<Timestamptz>,
+        completed_at -> Nullable<Timestamptz>,
+        last_error -> Nullable<Varchar>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_cloud_copy_jobs)]
+pub struct SoundRecorderCloudCopyJobsDieselRow {
+    pub id: Uuid,
+    pub account_id: Uuid,
+    pub connection_id: Uuid,
+    pub segment_id: Uuid,
+    pub provider: String,
+    pub status: String,
+    pub destination_key: String,
+    pub provider_file_id: Option<String>,
+    pub attempts: i32,
+    pub locked_until: Option<DateTime<Utc>>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_cloud_copy_jobs)]
+pub struct SoundRecorderCloudCopyJobsDieselInsert {
+    pub id: Option<Uuid>,
+    pub account_id: Option<Uuid>,
+    pub connection_id: Option<Uuid>,
+    pub segment_id: Option<Uuid>,
+    pub provider: Option<String>,
+    pub status: Option<String>,
+    pub destination_key: Option<String>,
+    pub provider_file_id: Option<String>,
+    pub attempts: Option<i32>,
+    pub locked_until: Option<DateTime<Utc>>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     container_pool_configs (id) {
         id -> Uuid,
         slug -> Varchar,

@@ -1542,6 +1542,611 @@ pub fn validate_sound_recorder_audit_events_insert(value: &SoundRecorderAuditEve
     Ok(())
 }
 
+pub const SOUND_RECORDER_OAUTH_STATES_TABLE: &str = "sound_recorder_oauth_states";
+pub const SOUND_RECORDER_OAUTH_STATES_COLUMNS: &[&str] = &["id", "account_id", "device_id", "provider", "state_hash", "redirect_uri", "folder_path", "status", "expires_at", "consumed_at", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_OAUTH_STATES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      provider,
+      state_hash,
+      redirect_uri,
+      folder_path,
+      status,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consumed_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_oauth_states"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderOauthStatesProvider {
+    GoogleDrive,
+    MicrosoftOnedrive,
+    AppleIcloud,
+}
+
+impl SoundRecorderOauthStatesProvider {
+    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::GoogleDrive => "google_drive",
+            Self::MicrosoftOnedrive => "microsoft_onedrive",
+            Self::AppleIcloud => "apple_icloud",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderOauthStatesProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "google_drive" => Ok(Self::GoogleDrive),
+            "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
+            "apple_icloud" => Ok(Self::AppleIcloud),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderOauthStatesStatus {
+    Pending,
+    Consumed,
+    Expired,
+    Revoked,
+}
+
+impl SoundRecorderOauthStatesStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "consumed", "expired", "revoked"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Consumed => "consumed",
+            Self::Expired => "expired",
+            Self::Revoked => "revoked",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderOauthStatesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "consumed" => Ok(Self::Consumed),
+            "expired" => Ok(Self::Expired),
+            "revoked" => Ok(Self::Revoked),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderOauthStatesRow {
+    pub id: String,
+    pub account_id: String,
+    pub device_id: String,
+    pub provider: String,
+    pub state_hash: String,
+    pub redirect_uri: String,
+    pub folder_path: Option<String>,
+    pub status: String,
+    pub expires_at: String,
+    pub consumed_at: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderOauthStatesInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub provider: Option<String>,
+    pub state_hash: Option<String>,
+    pub redirect_uri: Option<String>,
+    pub folder_path: Option<String>,
+    pub status: Option<String>,
+    pub expires_at: Option<String>,
+    pub consumed_at: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_oauth_states_row(value: &SoundRecorderOauthStatesRow) -> Result<(), String> {
+    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.provider: {}", &value.provider)); }
+    validate_string_length("sound_recorder_oauth_states.state_hash", &value.state_hash, None, Some(64))?;
+    validate_string_length("sound_recorder_oauth_states.redirect_uri", &value.redirect_uri, None, Some(512))?;
+    if (&value.redirect_uri).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes".to_string()); }
+    if let Some(value) = &value.folder_path {
+        validate_string_length("sound_recorder_oauth_states.folder_path", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.folder_path exceeds 512 bytes".to_string()); }
+    }
+    if !["pending", "consumed", "expired", "revoked"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.status: {}", &value.status)); }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_oauth_states.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_oauth_states_insert(value: &SoundRecorderOauthStatesInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.provider: {}", value)); }
+    }
+    if let Some(value) = &value.state_hash {
+        validate_string_length("sound_recorder_oauth_states.state_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.redirect_uri {
+        validate_string_length("sound_recorder_oauth_states.redirect_uri", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.folder_path {
+        validate_string_length("sound_recorder_oauth_states.folder_path", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.folder_path exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "consumed", "expired", "revoked"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.status: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_oauth_states.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_CLOUD_CONNECTIONS_TABLE: &str = "sound_recorder_cloud_connections";
+pub const SOUND_RECORDER_CLOUD_CONNECTIONS_COLUMNS: &[&str] = &["id", "account_id", "created_by_device_id", "provider", "link_mode", "status", "display_name", "provider_account_id", "provider_subject_hash", "root_folder_id", "folder_path", "oauth_scope", "token_ciphertext", "token_nonce", "token_aad", "token_version", "token_expires_at", "last_sync_at", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_CLOUD_CONNECTIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      created_by_device_id::text as created_by_device_id,
+      provider,
+      link_mode,
+      status,
+      display_name,
+      provider_account_id,
+      provider_subject_hash,
+      root_folder_id,
+      folder_path,
+      oauth_scope,
+      token_ciphertext,
+      token_nonce,
+      token_aad,
+      token_version,
+      to_char(token_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as token_expires_at,
+      to_char(last_sync_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_sync_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_cloud_connections"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudConnectionsProvider {
+    GoogleDrive,
+    MicrosoftOnedrive,
+    AppleIcloud,
+}
+
+impl SoundRecorderCloudConnectionsProvider {
+    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::GoogleDrive => "google_drive",
+            Self::MicrosoftOnedrive => "microsoft_onedrive",
+            Self::AppleIcloud => "apple_icloud",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudConnectionsProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "google_drive" => Ok(Self::GoogleDrive),
+            "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
+            "apple_icloud" => Ok(Self::AppleIcloud),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudConnectionsLinkMode {
+    ServerOauth,
+    ClientManaged,
+}
+
+impl SoundRecorderCloudConnectionsLinkMode {
+    pub const VALUES: &'static [&'static str] = &["server_oauth", "client_managed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ServerOauth => "server_oauth",
+            Self::ClientManaged => "client_managed",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudConnectionsLinkMode {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "server_oauth" => Ok(Self::ServerOauth),
+            "client_managed" => Ok(Self::ClientManaged),
+            _ => Err(format!("unsupported link_mode: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudConnectionsStatus {
+    Active,
+    Paused,
+    Revoked,
+    Failed,
+}
+
+impl SoundRecorderCloudConnectionsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "paused", "revoked", "failed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Revoked => "revoked",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudConnectionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "revoked" => Ok(Self::Revoked),
+            "failed" => Ok(Self::Failed),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudConnectionsRow {
+    pub id: String,
+    pub account_id: String,
+    pub created_by_device_id: Option<String>,
+    pub provider: String,
+    pub link_mode: String,
+    pub status: String,
+    pub display_name: Option<String>,
+    pub provider_account_id: Option<String>,
+    pub provider_subject_hash: Option<String>,
+    pub root_folder_id: Option<String>,
+    pub folder_path: String,
+    pub oauth_scope: Option<String>,
+    pub token_ciphertext: Option<String>,
+    pub token_nonce: Option<String>,
+    pub token_aad: Option<String>,
+    pub token_version: Option<i32>,
+    pub token_expires_at: Option<String>,
+    pub last_sync_at: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudConnectionsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub created_by_device_id: Option<String>,
+    pub provider: Option<String>,
+    pub link_mode: Option<String>,
+    pub status: Option<String>,
+    pub display_name: Option<String>,
+    pub provider_account_id: Option<String>,
+    pub provider_subject_hash: Option<String>,
+    pub root_folder_id: Option<String>,
+    pub folder_path: Option<String>,
+    pub oauth_scope: Option<String>,
+    pub token_ciphertext: Option<String>,
+    pub token_nonce: Option<String>,
+    pub token_aad: Option<String>,
+    pub token_version: Option<i32>,
+    pub token_expires_at: Option<String>,
+    pub last_sync_at: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_cloud_connections_row(value: &SoundRecorderCloudConnectionsRow) -> Result<(), String> {
+    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.provider: {}", &value.provider)); }
+    if !["server_oauth", "client_managed"].contains(&(&value.link_mode).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.link_mode: {}", &value.link_mode)); }
+    if !["active", "paused", "revoked", "failed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.status: {}", &value.status)); }
+    if let Some(value) = &value.display_name {
+        validate_string_length("sound_recorder_cloud_connections.display_name", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_cloud_connections.display_name exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_account_id {
+        validate_string_length("sound_recorder_cloud_connections.provider_account_id", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_subject_hash {
+        validate_string_length("sound_recorder_cloud_connections.provider_subject_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.root_folder_id {
+        validate_string_length("sound_recorder_cloud_connections.root_folder_id", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes".to_string()); }
+    }
+    validate_string_length("sound_recorder_cloud_connections.folder_path", &value.folder_path, None, Some(512))?;
+    if (&value.folder_path).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.folder_path exceeds 512 bytes".to_string()); }
+    if let Some(value) = &value.token_nonce {
+        validate_string_length("sound_recorder_cloud_connections.token_nonce", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.token_aad {
+        validate_string_length("sound_recorder_cloud_connections.token_aad", value, None, Some(512))?;
+    }
+    if let Some(value) = &value.token_version {
+        if *(value) < 1 { return Err("sound_recorder_cloud_connections.token_version is below the minimum".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_cloud_connections.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_cloud_connections_insert(value: &SoundRecorderCloudConnectionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.provider: {}", value)); }
+    }
+    if let Some(value) = &value.link_mode {
+        if !["server_oauth", "client_managed"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.link_mode: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "paused", "revoked", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.status: {}", value)); }
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("sound_recorder_cloud_connections.display_name", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_cloud_connections.display_name exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_account_id {
+        validate_string_length("sound_recorder_cloud_connections.provider_account_id", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_subject_hash {
+        validate_string_length("sound_recorder_cloud_connections.provider_subject_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.root_folder_id {
+        validate_string_length("sound_recorder_cloud_connections.root_folder_id", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.folder_path {
+        validate_string_length("sound_recorder_cloud_connections.folder_path", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.folder_path exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.token_nonce {
+        validate_string_length("sound_recorder_cloud_connections.token_nonce", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.token_aad {
+        validate_string_length("sound_recorder_cloud_connections.token_aad", value, None, Some(512))?;
+    }
+    if let Some(value) = &value.token_version {
+        if *(value) < 1 { return Err("sound_recorder_cloud_connections.token_version is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_cloud_connections.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_CLOUD_COPY_JOBS_TABLE: &str = "sound_recorder_cloud_copy_jobs";
+pub const SOUND_RECORDER_CLOUD_COPY_JOBS_COLUMNS: &[&str] = &["id", "account_id", "connection_id", "segment_id", "provider", "status", "destination_key", "provider_file_id", "attempts", "locked_until", "started_at", "completed_at", "last_error", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_CLOUD_COPY_JOBS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      connection_id::text as connection_id,
+      segment_id::text as segment_id,
+      provider,
+      status,
+      destination_key,
+      provider_file_id,
+      attempts,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as completed_at,
+      last_error,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_cloud_copy_jobs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudCopyJobsProvider {
+    GoogleDrive,
+    MicrosoftOnedrive,
+    AppleIcloud,
+}
+
+impl SoundRecorderCloudCopyJobsProvider {
+    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::GoogleDrive => "google_drive",
+            Self::MicrosoftOnedrive => "microsoft_onedrive",
+            Self::AppleIcloud => "apple_icloud",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudCopyJobsProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "google_drive" => Ok(Self::GoogleDrive),
+            "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
+            "apple_icloud" => Ok(Self::AppleIcloud),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudCopyJobsStatus {
+    Pending,
+    Running,
+    WaitingClient,
+    Completed,
+    Failed,
+    Skipped,
+}
+
+impl SoundRecorderCloudCopyJobsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "running", "waiting_client", "completed", "failed", "skipped"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::WaitingClient => "waiting_client",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudCopyJobsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "running" => Ok(Self::Running),
+            "waiting_client" => Ok(Self::WaitingClient),
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            "skipped" => Ok(Self::Skipped),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudCopyJobsRow {
+    pub id: String,
+    pub account_id: String,
+    pub connection_id: String,
+    pub segment_id: String,
+    pub provider: String,
+    pub status: String,
+    pub destination_key: String,
+    pub provider_file_id: Option<String>,
+    pub attempts: i32,
+    pub locked_until: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub last_error: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudCopyJobsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub connection_id: Option<String>,
+    pub segment_id: Option<String>,
+    pub provider: Option<String>,
+    pub status: Option<String>,
+    pub destination_key: Option<String>,
+    pub provider_file_id: Option<String>,
+    pub attempts: Option<i32>,
+    pub locked_until: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub last_error: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_cloud_copy_jobs_row(value: &SoundRecorderCloudCopyJobsRow) -> Result<(), String> {
+    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.provider: {}", &value.provider)); }
+    if !["pending", "running", "waiting_client", "completed", "failed", "skipped"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.status: {}", &value.status)); }
+    validate_string_length("sound_recorder_cloud_copy_jobs.destination_key", &value.destination_key, None, Some(2048))?;
+    if (&value.destination_key).as_bytes().len() > 2048 { return Err("sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes".to_string()); }
+    if let Some(value) = &value.provider_file_id {
+        validate_string_length("sound_recorder_cloud_copy_jobs.provider_file_id", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes".to_string()); }
+    }
+    if *(&value.attempts) < 0 { return Err("sound_recorder_cloud_copy_jobs.attempts is below the minimum".to_string()); }
+    if *(&value.attempts) > 50 { return Err("sound_recorder_cloud_copy_jobs.attempts is above the maximum".to_string()); }
+    if let Some(value) = &value.last_error {
+        validate_string_length("sound_recorder_cloud_copy_jobs.last_error", value, None, Some(500))?;
+        if (value).as_bytes().len() > 500 { return Err("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_cloud_copy_jobs.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_cloud_copy_jobs_insert(value: &SoundRecorderCloudCopyJobsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.provider: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "running", "waiting_client", "completed", "failed", "skipped"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.status: {}", value)); }
+    }
+    if let Some(value) = &value.destination_key {
+        validate_string_length("sound_recorder_cloud_copy_jobs.destination_key", value, None, Some(2048))?;
+        if (value).as_bytes().len() > 2048 { return Err("sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_file_id {
+        validate_string_length("sound_recorder_cloud_copy_jobs.provider_file_id", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.attempts {
+        if *(value) < 0 { return Err("sound_recorder_cloud_copy_jobs.attempts is below the minimum".to_string()); }
+        if *(value) > 50 { return Err("sound_recorder_cloud_copy_jobs.attempts is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.last_error {
+        validate_string_length("sound_recorder_cloud_copy_jobs.last_error", value, None, Some(500))?;
+        if (value).as_bytes().len() > 500 { return Err("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_cloud_copy_jobs.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
 pub const CONTAINER_POOL_CONFIGS_TABLE: &str = "container_pool_configs";
 pub const CONTAINER_POOL_CONFIGS_COLUMNS: &[&str] = &["id", "slug", "display_name", "image", "command", "env", "request_path", "health_path", "container_port", "min_warm", "max_warm", "max_concurrency_per_container", "request_timeout_ms", "idle_ttl_seconds", "nats_subject", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const CONTAINER_POOL_CONFIGS_SELECT_SQL: &str = r###"select

@@ -581,7 +581,7 @@ create table if not exists sound_recorder_cloud_connections (
   constraint sound_recorder_cloud_connections_link_mode_chk
     check (link_mode in ('server_oauth', 'client_managed')),
   constraint sound_recorder_cloud_connections_status_chk
-    check (status in ('active', 'paused', 'revoked', 'error')),
+    check (status in ('active', 'paused', 'revoked', 'failed')),
   constraint sound_recorder_cloud_connections_display_name_size_chk
     check (display_name is null or octet_length(display_name) between 1 and 160),
   constraint sound_recorder_cloud_connections_provider_account_id_size_chk
@@ -596,7 +596,8 @@ create table if not exists sound_recorder_cloud_connections (
     check (token_version is null or token_version > 0),
   constraint sound_recorder_cloud_connections_token_shape_chk
     check (
-      link_mode = 'client_managed'
+      status = 'revoked'
+      or link_mode = 'client_managed'
       or (token_ciphertext is not null and token_nonce is not null and token_aad is not null and token_version is not null)
     ),
   constraint sound_recorder_cloud_connections_meta_object_chk

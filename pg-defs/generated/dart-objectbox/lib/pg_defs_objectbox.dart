@@ -958,6 +958,316 @@ class SoundRecorderAuditEventsObjectBox {
 }
 
 @Entity()
+class SoundRecorderOauthStatesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String accountId;
+
+  String deviceId;
+
+  String provider;
+
+  String stateHash;
+
+  String redirectUri;
+
+  String? folderPath;
+
+  String status;
+
+  String expiresAt;
+
+  String? consumedAt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  SoundRecorderOauthStatesObjectBox({
+    required this.id,
+    required this.accountId,
+    required this.deviceId,
+    required this.provider,
+    required this.stateHash,
+    required this.redirectUri,
+    this.folderPath,
+    required this.status,
+    required this.expiresAt,
+    this.consumedAt,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceId": deviceId,
+    "provider": provider,
+    "stateHash": stateHash,
+    "redirectUri": redirectUri,
+    "folderPath": folderPath,
+    "status": status,
+    "expiresAt": expiresAt,
+    "consumedAt": consumedAt,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static SoundRecorderOauthStatesObjectBox fromJson(Map<String, Object?> json) {
+    return SoundRecorderOauthStatesObjectBox(
+      id: json["id"] as String,
+      accountId: json["accountId"] as String,
+      deviceId: json["deviceId"] as String,
+      provider: json["provider"] as String,
+      stateHash: json["stateHash"] as String,
+      redirectUri: json["redirectUri"] as String,
+      folderPath: json["folderPath"] as String?,
+      status: json["status"] as String,
+      expiresAt: json["expiresAt"] as String,
+      consumedAt: json["consumedAt"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class SoundRecorderCloudConnectionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String accountId;
+
+  String? createdByDeviceId;
+
+  String provider;
+
+  String linkMode;
+
+  String status;
+
+  String? displayName;
+
+  String? providerAccountId;
+
+  String? providerSubjectHash;
+
+  String? rootFolderId;
+
+  String folderPath;
+
+  String? oauthScope;
+
+  String? tokenCiphertext;
+
+  String? tokenNonce;
+
+  String? tokenAad;
+
+  int? tokenVersion;
+
+  String? tokenExpiresAt;
+
+  String? lastSyncAt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  SoundRecorderCloudConnectionsObjectBox({
+    required this.id,
+    required this.accountId,
+    this.createdByDeviceId,
+    required this.provider,
+    required this.linkMode,
+    required this.status,
+    this.displayName,
+    this.providerAccountId,
+    this.providerSubjectHash,
+    this.rootFolderId,
+    required this.folderPath,
+    this.oauthScope,
+    this.tokenCiphertext,
+    this.tokenNonce,
+    this.tokenAad,
+    this.tokenVersion,
+    this.tokenExpiresAt,
+    this.lastSyncAt,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "createdByDeviceId": createdByDeviceId,
+    "provider": provider,
+    "linkMode": linkMode,
+    "status": status,
+    "displayName": displayName,
+    "providerAccountId": providerAccountId,
+    "providerSubjectHash": providerSubjectHash,
+    "rootFolderId": rootFolderId,
+    "folderPath": folderPath,
+    "oauthScope": oauthScope,
+    "tokenCiphertext": tokenCiphertext,
+    "tokenNonce": tokenNonce,
+    "tokenAad": tokenAad,
+    "tokenVersion": tokenVersion,
+    "tokenExpiresAt": tokenExpiresAt,
+    "lastSyncAt": lastSyncAt,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static SoundRecorderCloudConnectionsObjectBox fromJson(Map<String, Object?> json) {
+    return SoundRecorderCloudConnectionsObjectBox(
+      id: json["id"] as String,
+      accountId: json["accountId"] as String,
+      createdByDeviceId: json["createdByDeviceId"] as String?,
+      provider: json["provider"] as String,
+      linkMode: json["linkMode"] as String,
+      status: json["status"] as String,
+      displayName: json["displayName"] as String?,
+      providerAccountId: json["providerAccountId"] as String?,
+      providerSubjectHash: json["providerSubjectHash"] as String?,
+      rootFolderId: json["rootFolderId"] as String?,
+      folderPath: json["folderPath"] as String,
+      oauthScope: json["oauthScope"] as String?,
+      tokenCiphertext: json["tokenCiphertext"] as String?,
+      tokenNonce: json["tokenNonce"] as String?,
+      tokenAad: json["tokenAad"] as String?,
+      tokenVersion: json["tokenVersion"] == null ? null : (json["tokenVersion"] as num).toInt(),
+      tokenExpiresAt: json["tokenExpiresAt"] as String?,
+      lastSyncAt: json["lastSyncAt"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class SoundRecorderCloudCopyJobsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String accountId;
+
+  String connectionId;
+
+  String segmentId;
+
+  String provider;
+
+  String status;
+
+  String destinationKey;
+
+  String? providerFileId;
+
+  int attempts;
+
+  String? lockedUntil;
+
+  String? startedAt;
+
+  String? completedAt;
+
+  String? lastError;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  SoundRecorderCloudCopyJobsObjectBox({
+    required this.id,
+    required this.accountId,
+    required this.connectionId,
+    required this.segmentId,
+    required this.provider,
+    required this.status,
+    required this.destinationKey,
+    this.providerFileId,
+    required this.attempts,
+    this.lockedUntil,
+    this.startedAt,
+    this.completedAt,
+    this.lastError,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "connectionId": connectionId,
+    "segmentId": segmentId,
+    "provider": provider,
+    "status": status,
+    "destinationKey": destinationKey,
+    "providerFileId": providerFileId,
+    "attempts": attempts,
+    "lockedUntil": lockedUntil,
+    "startedAt": startedAt,
+    "completedAt": completedAt,
+    "lastError": lastError,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static SoundRecorderCloudCopyJobsObjectBox fromJson(Map<String, Object?> json) {
+    return SoundRecorderCloudCopyJobsObjectBox(
+      id: json["id"] as String,
+      accountId: json["accountId"] as String,
+      connectionId: json["connectionId"] as String,
+      segmentId: json["segmentId"] as String,
+      provider: json["provider"] as String,
+      status: json["status"] as String,
+      destinationKey: json["destinationKey"] as String,
+      providerFileId: json["providerFileId"] as String?,
+      attempts: (json["attempts"] as num).toInt(),
+      lockedUntil: json["lockedUntil"] as String?,
+      startedAt: json["startedAt"] as String?,
+      completedAt: json["completedAt"] as String?,
+      lastError: json["lastError"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class ContainerPoolConfigsObjectBox {
   @Id()
   int obxId = 0;

@@ -460,6 +460,153 @@ impl ActiveModelBehavior for ActiveModel {}
 pub use sound_recorder_audit_events::Entity as SoundRecorderAuditEventsEntity;
 pub use sound_recorder_audit_events::Model as SoundRecorderAuditEventsModel;
 
+pub mod sound_recorder_oauth_states {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "sound_recorder_oauth_states")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "account_id")]
+    pub account_id: Uuid,
+    #[sea_orm(column_name = "device_id")]
+    pub device_id: Uuid,
+    pub provider: String,
+    #[sea_orm(column_name = "state_hash")]
+    pub state_hash: String,
+    #[sea_orm(column_name = "redirect_uri")]
+    pub redirect_uri: String,
+    #[sea_orm(column_name = "folder_path")]
+    pub folder_path: Option<String>,
+    pub status: String,
+    #[sea_orm(column_name = "expires_at")]
+    pub expires_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "consumed_at")]
+    pub consumed_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use sound_recorder_oauth_states::Entity as SoundRecorderOauthStatesEntity;
+pub use sound_recorder_oauth_states::Model as SoundRecorderOauthStatesModel;
+
+pub mod sound_recorder_cloud_connections {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "sound_recorder_cloud_connections")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "account_id")]
+    pub account_id: Uuid,
+    #[sea_orm(column_name = "created_by_device_id")]
+    pub created_by_device_id: Option<Uuid>,
+    pub provider: String,
+    #[sea_orm(column_name = "link_mode")]
+    pub link_mode: String,
+    pub status: String,
+    #[sea_orm(column_name = "display_name")]
+    pub display_name: Option<String>,
+    #[sea_orm(column_name = "provider_account_id")]
+    pub provider_account_id: Option<String>,
+    #[sea_orm(column_name = "provider_subject_hash")]
+    pub provider_subject_hash: Option<String>,
+    #[sea_orm(column_name = "root_folder_id")]
+    pub root_folder_id: Option<String>,
+    #[sea_orm(column_name = "folder_path")]
+    pub folder_path: String,
+    #[sea_orm(column_name = "oauth_scope")]
+    pub oauth_scope: Option<String>,
+    #[sea_orm(column_name = "token_ciphertext")]
+    pub token_ciphertext: Option<String>,
+    #[sea_orm(column_name = "token_nonce")]
+    pub token_nonce: Option<String>,
+    #[sea_orm(column_name = "token_aad")]
+    pub token_aad: Option<String>,
+    #[sea_orm(column_name = "token_version")]
+    pub token_version: Option<i32>,
+    #[sea_orm(column_name = "token_expires_at")]
+    pub token_expires_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_sync_at")]
+    pub last_sync_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use sound_recorder_cloud_connections::Entity as SoundRecorderCloudConnectionsEntity;
+pub use sound_recorder_cloud_connections::Model as SoundRecorderCloudConnectionsModel;
+
+pub mod sound_recorder_cloud_copy_jobs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "sound_recorder_cloud_copy_jobs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "account_id")]
+    pub account_id: Uuid,
+    #[sea_orm(column_name = "connection_id")]
+    pub connection_id: Uuid,
+    #[sea_orm(column_name = "segment_id")]
+    pub segment_id: Uuid,
+    pub provider: String,
+    pub status: String,
+    #[sea_orm(column_name = "destination_key")]
+    pub destination_key: String,
+    #[sea_orm(column_name = "provider_file_id")]
+    pub provider_file_id: Option<String>,
+    pub attempts: i32,
+    #[sea_orm(column_name = "locked_until")]
+    pub locked_until: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "started_at")]
+    pub started_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "completed_at")]
+    pub completed_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_error")]
+    pub last_error: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use sound_recorder_cloud_copy_jobs::Entity as SoundRecorderCloudCopyJobsEntity;
+pub use sound_recorder_cloud_copy_jobs::Model as SoundRecorderCloudCopyJobsModel;
+
 pub mod container_pool_configs {
     use super::*;
 
