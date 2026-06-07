@@ -1250,6 +1250,14 @@ release remains blocked until conversion results, topology/scale/profile review,
 neutral export checksums, simulation, and operator or automation signoff are
 retained.
 
+The same payload includes a `translatorReadinessChecklist` for native CAD
+translator provenance, neutral-kernel/PMI preservation, mesh or slicer profile
+readiness, and sheet-profile/CAM handoff. Each checklist entry names required
+evidence, response or artifact surfaces it blocks, and learning signals such as
+`cad-translator:*`, `pmi-preservation:*`, `mesh-readiness:*`, and
+`cam-handoff:*` so import failures can train later DES, MDP/POMDP, and neural
+routing choices.
+
 ## `GET /fabrication/design/preflight/catalog`
 
 `GET /design/preflight/catalog` and the gateway-prefixed

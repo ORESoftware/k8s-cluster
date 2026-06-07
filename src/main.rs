@@ -103784,6 +103784,59 @@ fn design_import_catalog_contracts() -> Vec<Value> {
         .collect()
 }
 
+fn design_import_translator_readiness_checklist() -> Vec<Value> {
+    vec![
+        json!({
+            "checkId": "native-cad-translator-provenance",
+            "appliesTo": ["PTC Creo / Pro/ENGINEER", "SOLIDWORKS", "Autodesk Fusion", "Siemens NX", "CATIA", "Onshape"],
+            "requiredEvidence": [
+                "source system and version",
+                "translator or export worker identity",
+                "configuration, assembly, and suppressed-feature review",
+                "neutral export checksum or conversion result artifact"
+            ],
+            "blocks": ["designInputReview.conversionPlan", "machineRelease.blockers"],
+            "learningSignals": ["cad-translator:*", "native-cad-version:*", "suppressed-feature-review:*"]
+        }),
+        json!({
+            "checkId": "neutral-kernel-and-pmi-preservation",
+            "appliesTo": ["STEP", "IGES", "Parasolid", "ACIS", "JT"],
+            "requiredEvidence": [
+                "units, coordinate frame, and body count",
+                "PMI/GD&T and tolerance preservation review",
+                "kernel version or schema version",
+                "topology healing and B-rep comparison result"
+            ],
+            "blocks": ["designExports.partExports", "manufacturingHandoff.parts"],
+            "learningSignals": ["neutral-kernel:*", "pmi-preservation:*", "topology-healing:*"]
+        }),
+        json!({
+            "checkId": "mesh-slicer-profile-readiness",
+            "appliesTo": ["STL", "3MF", "OBJ", "AMF", "PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio", "Lychee Slicer", "Chitubox"],
+            "requiredEvidence": [
+                "mesh scale, watertightness, normals, and wall-thickness review",
+                "material, color, or resin profile preservation when present",
+                "slicer machine/material profile checksum",
+                "support, orientation, first-layer or exposure review"
+            ],
+            "blocks": ["designExports.partExports", "generated-machine-program", "machineRelease.blockers"],
+            "learningSignals": ["mesh-readiness:*", "slicer-profile:*", "support-orientation:*"]
+        }),
+        json!({
+            "checkId": "sheet-profile-and-cam-handoff",
+            "appliesTo": ["DXF", "DWG", "CAM setup JSON", "APT/CLDATA"],
+            "requiredEvidence": [
+                "drawing units, layer purpose, and revision",
+                "closed contour, kerf, lead-in/out, tab, and nesting review",
+                "stock thickness and sheet process recipe",
+                "postprocessor/controller target or CAM setup lineage"
+            ],
+            "blocks": ["designExports.partExports", "machine-code-generation", "machineRelease.blockers"],
+            "learningSignals": ["sheet-profile:*", "cam-handoff:*", "kerf-nesting:*"]
+        }),
+    ]
+}
+
 fn design_import_catalog_response() -> Value {
     let contracts = design_import_catalog_contracts();
     let worker_lanes = unique_sorted(contracts.iter().filter_map(|contract| {
@@ -103855,6 +103908,7 @@ fn design_import_catalog_response() -> Value {
             "sourceUri values are retained without userinfo, query strings, or fragments",
             "ambiguous native extensions such as .prt or .asm stay release-blocked until sourceSystem, translator, or neutral-export evidence is attached"
         ],
+        "translatorReadinessChecklist": design_import_translator_readiness_checklist(),
         "releasePolicy": [
             "CAD/model/slicer import contracts describe review and conversion worker lanes, not certified fabrication geometry",
             "machine-ready release remains blocked until conversion results, topology/scale/profile review, neutral export checksums, simulation, and operator or automation signoff are retained",
@@ -112784,6 +112838,41 @@ mod tests {
             .is_some_and(|policy| policy
                 .iter()
                 .any(|item| item.as_str().is_some_and(|item| item.contains(".prt")))));
+        let readiness = payload
+            .get("translatorReadinessChecklist")
+            .and_then(Value::as_array)
+            .expect("translator readiness checklist should be present");
+        for check_id in [
+            "native-cad-translator-provenance",
+            "neutral-kernel-and-pmi-preservation",
+            "mesh-slicer-profile-readiness",
+            "sheet-profile-and-cam-handoff",
+        ] {
+            assert!(
+                readiness
+                    .iter()
+                    .any(|item| item.get("checkId").and_then(Value::as_str) == Some(check_id)),
+                "missing translator readiness check {check_id}"
+            );
+        }
+        assert!(readiness.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("translator or export worker identity"))))));
+        assert!(readiness.iter().any(|item| item
+            .get("blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| blocks
+                .iter()
+                .any(|entry| entry.as_str() == Some("machine-code-generation")))));
+        assert!(readiness.iter().any(|item| item
+            .get("learningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("cad-translator"))))));
         assert!(payload
             .get("releasePolicy")
             .and_then(Value::as_array)
