@@ -16,6 +16,7 @@ use std::{
 };
 
 use axum::{
+    body::Body,
     extract::{DefaultBodyLimit, Path as AxumPath, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
@@ -100,6 +101,7 @@ struct AppState {
     control_subject: String,
     events_subject: String,
     sessions: Arc<Mutex<HashMap<String, LiveSession>>>,
+    problems: Arc<Mutex<HashMap<String, MipProblemSpec>>>,
     workers: Arc<Mutex<HashMap<String, WorkerNodeStatus>>>,
     solves: Arc<Mutex<HashMap<String, SolveRegistryEntry>>>,
     tasks: Arc<Mutex<HashMap<String, RuntimeTaskRecord>>>,
@@ -312,6 +314,13 @@ struct SolveHttpRequest {
     options: Option<SolveOptions>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredProblemSolveRequest {
+    request_id: Option<String>,
+    options: Option<SolveOptions>,
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CancelSolveRequest {
@@ -498,15 +507,34 @@ struct SubproblemJob {
     job_uuid: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     problem_id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    problem_stored: bool,
     revision: u64,
     depth: usize,
     master_node: String,
-    problem: MipProblemSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    problem: Option<MipProblemSpec>,
     extra_constraints: Vec<BranchConstraint>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     avoid_worker_nodes: Vec<String>,
     options: SolveOptions,
     submitted_at_ms: u128,
+}
+
+impl SubproblemJob {
+    fn problem(&self) -> Result<&MipProblemSpec, String> {
+        self.problem.as_ref().ok_or_else(|| {
+            format!(
+                "subproblem {} has no embedded problem payload and could not be hydrated",
+                self.job_id
+            )
+        })
+    }
+
+    fn without_problem_payload(mut self) -> Self {
+        self.problem = None;
+        self
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -671,6 +699,7 @@ struct RedisPersistenceContract {
     enabled: bool,
     url_env: Option<String>,
     key_prefix: String,
+    problem_model_key: String,
     solve_snapshot_key: String,
     solve_frontier_key: String,
     session_model_key: String,
@@ -732,6 +761,10 @@ enum SubproblemSolveOutcome {
 
 fn default_sense() -> String {
     "max".to_string()
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
@@ -968,6 +1001,14 @@ fn mip_solver_solve_frontier_key(prefix: &str, solve_id: &str) -> String {
     format!("{prefix}:solve:{solve_id}:frontier")
 }
 
+fn mip_solver_problem_model_key(prefix: &str, problem_id: &str, revision: u64) -> String {
+    format!("{prefix}:problem:{problem_id}:revision:{revision}")
+}
+
+fn local_problem_model_key(problem_id: &str, revision: u64) -> String {
+    format!("{problem_id}:{revision}")
+}
+
 fn mip_solver_session_model_key(prefix: &str, session_id: &str) -> String {
     format!("{prefix}:session:{session_id}:model")
 }
@@ -1023,6 +1064,7 @@ fn persistence_contract() -> PersistenceContract {
             enabled: redis_url_env.is_some(),
             url_env: redis_url_env,
             key_prefix: prefix.clone(),
+            problem_model_key: mip_solver_problem_model_key(&prefix, "{problemId}", 0),
             solve_snapshot_key: mip_solver_solve_snapshot_key(&prefix, "{solveId}"),
             solve_frontier_key: mip_solver_solve_frontier_key(&prefix, "{solveId}"),
             session_model_key: mip_solver_session_model_key(&prefix, "{sessionId}"),
@@ -1051,6 +1093,7 @@ fn persistence_contract() -> PersistenceContract {
         },
         in_memory: vec![
             "active solve registry".to_string(),
+            "recent problem model cache".to_string(),
             "live session problem snapshot".to_string(),
             "current master-owned frontier".to_string(),
             "observed worker registry".to_string(),
@@ -2144,17 +2187,18 @@ fn split_subproblem_children(
     if job.depth >= split_depth {
         return Ok(None);
     }
+    let problem = job.problem()?;
     let lp_max_iters = job.options.lp_max_iters.unwrap_or(5_000);
     let int_tol = job.options.int_tol.unwrap_or(1e-6);
-    let relaxation = solve_lp_relaxation(&job.problem, &job.extra_constraints, lp_max_iters)?;
+    let relaxation = solve_lp_relaxation(problem, &job.extra_constraints, lp_max_iters)?;
     if relaxation.status != LPStatus::Optimal {
         return Ok(None);
     }
-    let Some((var, value)) = first_fractional(&job.problem, &relaxation.x, int_tol) else {
+    let Some((var, value)) = first_fractional(problem, &relaxation.x, int_tol) else {
         return Ok(None);
     };
 
-    let [left, right] = branch_constraints(var, value, job.problem.c.len(), job.depth);
+    let [left, right] = branch_constraints(var, value, problem.c.len(), job.depth);
     let next_depth = job.depth + 1;
     let mut left_constraints = job.extra_constraints.clone();
     left_constraints.push(left);
@@ -2162,6 +2206,11 @@ fn split_subproblem_children(
     right_constraints.push(right);
     let now = now_ms();
     let root = job_retry_root(&job.job_id);
+    let child_problem = if job.problem_stored {
+        None
+    } else {
+        job.problem.clone()
+    };
     let children = vec![
         SubproblemJob {
             solve_id: job.solve_id.clone(),
@@ -2169,10 +2218,11 @@ fn split_subproblem_children(
             job_id: format!("{root}-split-d{next_depth}-left"),
             job_uuid: new_uuid_string(),
             problem_id: job.problem_id.clone(),
+            problem_stored: job.problem_stored,
             revision: job.revision,
             depth: next_depth,
             master_node: job.master_node.clone(),
-            problem: job.problem.clone(),
+            problem: child_problem.clone(),
             extra_constraints: left_constraints,
             avoid_worker_nodes: job.avoid_worker_nodes.clone(),
             options: job.options.clone(),
@@ -2184,10 +2234,11 @@ fn split_subproblem_children(
             job_id: format!("{root}-split-d{next_depth}-right"),
             job_uuid: new_uuid_string(),
             problem_id: job.problem_id.clone(),
+            problem_stored: job.problem_stored,
             revision: job.revision,
             depth: next_depth,
             master_node: job.master_node.clone(),
-            problem: job.problem.clone(),
+            problem: child_problem,
             extra_constraints: right_constraints,
             avoid_worker_nodes: job.avoid_worker_nodes.clone(),
             options: job.options.clone(),
@@ -2211,6 +2262,7 @@ fn build_frontier_jobs(
     revision: u64,
     master_node: &str,
     options: &SolveOptions,
+    problem_stored: bool,
 ) -> Result<(Vec<SubproblemJob>, Vec<String>), String> {
     let split_depth = options.split_depth.unwrap_or(1).min(8);
     let lp_max_iters = options.lp_max_iters.unwrap_or(5_000);
@@ -2278,10 +2330,15 @@ fn build_frontier_jobs(
             job_id,
             job_uuid: new_uuid_string(),
             problem_id: Some(problem_id.to_string()),
+            problem_stored,
             revision,
             depth: node.depth,
             master_node: master_node.to_string(),
-            problem: problem.clone(),
+            problem: if problem_stored {
+                None
+            } else {
+                Some(problem.clone())
+            },
             extra_constraints: node.extra_constraints,
             avoid_worker_nodes: Vec::new(),
             options: options.clone(),
@@ -2296,18 +2353,19 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
     let started = Instant::now();
     let mut accelerator = AcceleratorReport::runtime();
     let result = catch_unwind(AssertUnwindSafe(|| {
-        let preprocess = preprocess_bounds(&job.problem, &job.extra_constraints)?;
+        let problem = job.problem()?;
+        let preprocess = preprocess_bounds(problem, &job.extra_constraints)?;
         accelerator = preprocess.accelerator;
         if let Some(reason) = preprocess.infeasible_reason {
             return Ok(SubproblemSolveOutcome::Pruned(reason));
         }
-        if !is_pure_lp(&job.problem)? {
+        if !is_pure_lp(problem)? {
             if let Some((children, reason)) = split_subproblem_children(&job)? {
                 return Ok(SubproblemSolveOutcome::Split { children, reason });
             }
         }
-        if is_pure_lp(&job.problem)? {
-            let lp = to_lp_problem(&job.problem, &job.extra_constraints)?;
+        if is_pure_lp(problem)? {
+            let lp = to_lp_problem(problem, &job.extra_constraints)?;
             let solution = solve_lp_internal(
                 &lp,
                 &InternalSimplexOptions {
@@ -2321,7 +2379,7 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
                 solution,
             });
         }
-        let problem = to_ipmip_problem(&job.problem, &job.extra_constraints)?;
+        let problem = to_ipmip_problem(problem, &job.extra_constraints)?;
         let solution = solve_ipmip_with_des(problem, job.options.to_ipmip_options());
         Ok::<_, String>(SubproblemSolveOutcome::IpMip(solution))
     }));
@@ -3893,6 +3951,103 @@ fn session_problem_from_json(problem: Value) -> Option<MipProblemSpec> {
     serde_json::from_value::<MipProblemSpec>(problem).ok()
 }
 
+fn remember_problem_model(
+    state: &AppState,
+    problem_id: &str,
+    revision: u64,
+    problem: MipProblemSpec,
+) -> MipProblemSpec {
+    state
+        .problems
+        .lock()
+        .expect("problems mutex poisoned")
+        .insert(
+            local_problem_model_key(problem_id, revision),
+            problem.clone(),
+        );
+    problem
+}
+
+fn cached_problem_model(
+    state: &AppState,
+    problem_id: &str,
+    revision: u64,
+) -> Option<MipProblemSpec> {
+    state
+        .problems
+        .lock()
+        .expect("problems mutex poisoned")
+        .get(&local_problem_model_key(problem_id, revision))
+        .cloned()
+}
+
+async fn store_problem_model(
+    state: &AppState,
+    problem_id: &str,
+    revision: u64,
+    problem: &MipProblemSpec,
+) -> Result<(), String> {
+    remember_problem_model(state, problem_id, revision, problem.clone());
+    let prefix = redis_key_prefix();
+    redis_set_json_checked(
+        state,
+        mip_solver_problem_model_key(&prefix, problem_id, revision),
+        json!({
+            "schema": "dd.mip-solver.problem-model.v1",
+            "service": SERVICE_NAME,
+            "problemId": problem_id,
+            "revision": revision,
+            "problem": problem,
+            "generatedAtMs": now_ms(),
+        }),
+    )
+    .await
+}
+
+async fn load_problem_model(
+    state: &AppState,
+    problem_id: &str,
+    revision: u64,
+) -> Option<MipProblemSpec> {
+    if let Some(problem) = cached_problem_model(state, problem_id, revision) {
+        return Some(problem);
+    }
+    let prefix = redis_key_prefix();
+    let value = redis_get_json(
+        state,
+        mip_solver_problem_model_key(&prefix, problem_id, revision),
+    )
+    .await?;
+    let problem = value
+        .get("problem")
+        .cloned()
+        .and_then(session_problem_from_json)
+        .and_then(|problem| normalized_problem(problem).ok())?;
+    Some(remember_problem_model(state, problem_id, revision, problem))
+}
+
+async fn hydrate_subproblem_job(state: &AppState, job: &mut SubproblemJob) -> Result<(), String> {
+    if job.problem.is_some() {
+        return Ok(());
+    }
+    let problem_id = job.problem_id.clone().ok_or_else(|| {
+        format!(
+            "subproblem {} omitted problem payload but has no problemId",
+            job.job_id
+        )
+    })?;
+    let problem = load_problem_model(state, &problem_id, job.revision)
+        .await
+        .ok_or_else(|| {
+            format!(
+                "subproblem {} could not load problem {} revision {}",
+                job.job_id, problem_id, job.revision
+            )
+        })?;
+    job.problem = Some(problem);
+    Ok(())
+}
+
 async fn load_pg_session_model(
     state: &AppState,
     session_id: &str,
@@ -4060,27 +4215,17 @@ async fn persist_session_model(state: &AppState, session_id: &str, session: &Liv
     }
 }
 
-async fn redis_set_json(state: &AppState, key: String, value: Value) {
+async fn redis_set_json_checked(state: &AppState, key: String, value: Value) -> Result<(), String> {
     let Some(client) = &state.redis else {
-        return;
+        return Err("Redis is not configured".to_string());
     };
     let ttl_seconds = env_u64("MIP_SOLVER_REDIS_TTL_SECONDS", 86_400);
-    let payload = match serde_json::to_string(&value) {
-        Ok(payload) => payload,
-        Err(error) => {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("mip solver redis payload serialization failed for {key}: {error}");
-            return;
-        }
-    };
-    let mut connection = match client.get_multiplexed_async_connection().await {
-        Ok(connection) => connection,
-        Err(error) => {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("mip solver redis connection failed for {key}: {error}");
-            return;
-        }
-    };
+    let payload = serde_json::to_string(&value)
+        .map_err(|error| format!("Redis payload serialization failed for {key}: {error}"))?;
+    let mut connection = client
+        .get_multiplexed_async_connection()
+        .await
+        .map_err(|error| format!("Redis connection failed for {key}: {error}"))?;
     let result: redis::RedisResult<()> = redis::cmd("SET")
         .arg(&key)
         .arg(payload)
@@ -4088,9 +4233,13 @@ async fn redis_set_json(state: &AppState, key: String, value: Value) {
         .arg(ttl_seconds)
         .query_async(&mut connection)
         .await;
-    if let Err(error) = result {
+    result.map_err(|error| format!("Redis SET failed for {key}: {error}"))
+}
+
+async fn redis_set_json(state: &AppState, key: String, value: Value) {
+    if let Err(error) = redis_set_json_checked(state, key, value).await {
         state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-        eprintln!("mip solver redis SET failed for {key}: {error}");
+        eprintln!("mip solver {error}");
     }
 }
 
@@ -5145,10 +5294,11 @@ async fn solve_pure_lp_local(
         job_id: format!("{solve_id}-lp"),
         job_uuid: new_uuid_string(),
         problem_id: Some(problem_id.clone()),
+        problem_stored: false,
         revision,
         depth: 0,
         master_node: state.node_id.clone(),
-        problem: problem.clone(),
+        problem: Some(problem.clone()),
         extra_constraints: Vec::new(),
         avoid_worker_nodes: Vec::new(),
         options: options.clone(),
@@ -5420,7 +5570,22 @@ async fn solve_problem_distributed(
             .await;
     }
     let solve_id = format!("solve-{}", Uuid::new_v4());
-    let (jobs, mut warnings) = build_frontier_jobs(
+    let mut warnings = Vec::new();
+    let problem_stored = if state.nats.is_some() && state.redis.is_some() {
+        match store_problem_model(&state, &problem_id, revision, &problem).await {
+            Ok(()) => true,
+            Err(error) => {
+                warnings.push(format!(
+                    "problem model storage unavailable; embedding problem in jobs: {error}"
+                ));
+                false
+            }
+        }
+    } else {
+        remember_problem_model(&state, &problem_id, revision, problem.clone());
+        false
+    };
+    let (jobs, frontier_warnings) = build_frontier_jobs(
         &problem,
         &solve_id,
         &request_id,
@@ -5428,7 +5593,9 @@ async fn solve_problem_distributed(
         revision,
         &state.node_id,
         &options,
+        problem_stored,
     )?;
+    warnings.extend(frontier_warnings);
     track_solve_started(
         &state,
         &solve_id,
@@ -6166,6 +6333,8 @@ fn links_document() -> Value {
         "solves": "/mip-solver-cluster/solves",
         "metrics": "/metrics",
         "exampleModel": "/model/example",
+        "uploadProblem": "/problems/{problemId}",
+        "solveProblem": "/problems/{problemId}/solve",
         "solve": "/solve",
     })
 }
@@ -6245,6 +6414,8 @@ fn api_docs_document(state: &AppState) -> Value {
             {"method": "POST", "path": "/mip-solver-cluster/requests/:request_id/cancel", "kind": "json", "description": "Cancel a running solve by request id."},
             {"method": "GET", "path": "/workers", "kind": "json", "description": "Compatibility alias for /mip-solver-cluster/workers."},
             {"method": "GET", "path": "/model/example", "kind": "json", "description": "Example knapsack MIP request payload."},
+            {"method": "POST", "path": "/problems/:problem_id", "kind": "json", "description": "Stream and store a problem model by UUID for later solve-by-reference requests."},
+            {"method": "POST", "path": "/problems/:problem_id/solve", "kind": "json", "description": "Solve a previously stored problem model by UUID."},
             {"method": "POST", "path": "/solve", "kind": "json", "description": "Submit a MIP/IP/LP solve request to a master node."},
             {"method": "GET", "path": "/sessions/:session_id", "kind": "json", "description": "Read a live session model snapshot."},
             {"method": "POST", "path": "/sessions/:session_id/events", "kind": "json", "description": "Apply live model editing events to a session."},
@@ -6590,6 +6761,117 @@ async fn example() -> impl IntoResponse {
     }))
 }
 
+async fn read_limited_body(body: Body) -> Result<Vec<u8>, String> {
+    let mut stream = body.into_data_stream();
+    let mut bytes = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| format!("read request body: {error}"))?;
+        let next_len = bytes
+            .len()
+            .checked_add(chunk.len())
+            .ok_or_else(|| "request body is too large".to_string())?;
+        if next_len > MAX_HTTP_BODY_BYTES {
+            return Err(format!(
+                "request body exceeds {} bytes",
+                MAX_HTTP_BODY_BYTES
+            ));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+fn problem_from_upload_bytes(bytes: &[u8]) -> Result<MipProblemSpec, String> {
+    if let Ok(problem) = serde_json::from_slice::<MipProblemSpec>(bytes) {
+        return normalized_problem(problem);
+    }
+    let value: Value =
+        serde_json::from_slice(bytes).map_err(|error| format!("parse problem JSON: {error}"))?;
+    let problem = value
+        .get("problem")
+        .cloned()
+        .ok_or_else(|| {
+            "problem upload must be a problem object or contain a problem field".to_string()
+        })
+        .and_then(|problem| {
+            serde_json::from_value::<MipProblemSpec>(problem)
+                .map_err(|error| format!("parse problem field: {error}"))
+        })?;
+    normalized_problem(problem)
+}
+
+async fn upload_problem(
+    State(state): State<AppState>,
+    AxumPath(problem_id): AxumPath<String>,
+    body: Body,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if state.role != NodeRole::Master {
+        return response_json(
+            StatusCode::CONFLICT,
+            json!({"ok":false,"error":"this pod booted as slave and will not store problems"}),
+        );
+    }
+    let problem_id = match Uuid::parse_str(problem_id.trim()) {
+        Ok(uuid) => uuid.to_string(),
+        Err(_) => {
+            return response_json(
+                StatusCode::BAD_REQUEST,
+                json!({"ok":false,"error":"problem id must be a UUID"}),
+            )
+        }
+    };
+    let body = match read_limited_body(body).await {
+        Ok(body) => body,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return response_json(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                json!({"ok":false,"error":error}),
+            );
+        }
+    };
+    let problem = match problem_from_upload_bytes(&body) {
+        Ok(problem) => problem,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return response_json(StatusCode::BAD_REQUEST, json!({"ok":false,"error":error}));
+        }
+    };
+    let revision = 0;
+    let redis_stored = match store_problem_model(&state, &problem_id, revision, &problem).await {
+        Ok(()) => true,
+        Err(error) if state.redis.is_none() => {
+            eprintln!("mip solver problem {problem_id} stored only in memory: {error}");
+            false
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return response_json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                json!({"ok":false,"error":error}),
+            );
+        }
+    };
+    response_json(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "problemId": problem_id,
+            "revision": revision,
+            "stored": true,
+            "redisStored": redis_stored,
+            "distributedReady": redis_stored,
+            "bytes": body.len(),
+            "variables": problem.c.len(),
+            "constraints": problem.a.len(),
+        }),
+    )
+}
+
 async fn solve_http(
     State(state): State<AppState>,
     Json(input): Json<SolveHttpRequest>,
@@ -6634,6 +6916,64 @@ async fn solve_http(
         );
     };
 
+    match run_problem_task_with_coordination(
+        state.clone(),
+        request_id,
+        problem_id,
+        revision,
+        problem,
+        options,
+    )
+    .await
+    {
+        Ok(response) => response_json(StatusCode::OK, response),
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            response_json(
+                solve_error_status(&error),
+                json!({"ok":false,"error":error}),
+            )
+        }
+    }
+}
+
+async fn solve_stored_problem(
+    State(state): State<AppState>,
+    AxumPath(problem_id): AxumPath<String>,
+    Json(input): Json<StoredProblemSolveRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .solve_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if state.role != NodeRole::Master {
+        return response_json(
+            StatusCode::CONFLICT,
+            json!({"ok":false,"error":"this pod booted as slave and will not act as master"}),
+        );
+    }
+    let problem_id = match Uuid::parse_str(problem_id.trim()) {
+        Ok(uuid) => uuid.to_string(),
+        Err(_) => {
+            return response_json(
+                StatusCode::BAD_REQUEST,
+                json!({"ok":false,"error":"problem id must be a UUID"}),
+            )
+        }
+    };
+    let revision = 0;
+    let Some(problem) = load_problem_model(&state, &problem_id, revision).await else {
+        return response_json(
+            StatusCode::NOT_FOUND,
+            json!({"ok":false,"error":"stored problem not found"}),
+        );
+    };
+    let request_id = request_id(input.request_id);
+    let options = SolveOptions::merged(input.options);
     match run_problem_task_with_coordination(
         state.clone(),
         request_id,
@@ -7407,65 +7747,77 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                 tokio::time::Instant::now() + worker_heartbeat_interval,
                 worker_heartbeat_interval,
             );
-            let mut solve_task =
-                tokio::task::spawn_blocking(move || solve_subproblem(job, worker_node));
-            let result = loop {
-                tokio::select! {
-                    joined = &mut solve_task => {
-                        break match joined {
-                            Ok(result) => result,
-                            Err(error) => {
-                                eprintln!("mip solver worker task failed: {error}");
-                                    let _ = message
-                                        .ack_with(async_nats::jetstream::AckKind::Nak(Some(
-                                            Duration::from_secs(5),
-                                        )))
-                                        .await;
-                                    track_runtime_task_finished(
+            let mut job = job;
+            let result = match hydrate_subproblem_job(&state_for_task, &mut job).await {
+                Ok(()) => {
+                    let mut solve_task =
+                        tokio::task::spawn_blocking(move || solve_subproblem(job, worker_node));
+                    loop {
+                        tokio::select! {
+                            joined = &mut solve_task => {
+                                break match joined {
+                                    Ok(result) => result,
+                                    Err(error) => {
+                                        eprintln!("mip solver worker task failed: {error}");
+                                            let _ = message
+                                                .ack_with(async_nats::jetstream::AckKind::Nak(Some(
+                                                    Duration::from_secs(5),
+                                                )))
+                                                .await;
+                                            track_runtime_task_finished(
+                                                &state_for_task,
+                                                &task_id_for_task,
+                                                "error",
+                                            );
+                                            return;
+                                        }
+                                };
+                            }
+                            _ = tokio::time::sleep(cancel_poll) => {
+                                if solve_cancel_requested_for(
+                                    &state_for_task,
+                                    &solve_id_for_cancel,
+                                    problem_id_for_cancel.as_deref(),
+                                ) {
+                                    publish_control(
                                         &state_for_task,
-                                        &task_id_for_task,
-                                        "error",
-                                    );
-                                    return;
-                                }
-                        };
-                    }
-                    _ = tokio::time::sleep(cancel_poll) => {
-                        if solve_cancel_requested_for(
-                            &state_for_task,
-                            &solve_id_for_cancel,
-                            problem_id_for_cancel.as_deref(),
-                        ) {
-                            publish_control(
-                                &state_for_task,
-                                "worker-stopped-cancelled",
-                                json!({
-                                    "consumer": &consumer_name_for_task,
-                                    "jobId": &job_id_for_cancel,
-                                    "jobUuid": &job_uuid_for_cancel,
-                                    "solveId": &solve_id_for_cancel,
-                                    "problemId": &problem_id_for_cancel,
-                                }),
+                                        "worker-stopped-cancelled",
+                                        json!({
+                                            "consumer": &consumer_name_for_task,
+                                            "jobId": &job_id_for_cancel,
+                                            "jobUuid": &job_uuid_for_cancel,
+                                            "solveId": &solve_id_for_cancel,
+                                            "problemId": &problem_id_for_cancel,
+                                        }),
+                                        )
+                                        .await;
+                                        track_runtime_task_finished(
+                                            &state_for_task,
+                                            &task_id_for_task,
+                                            "cancelled",
+                                        );
+                                        let _ = message.ack().await;
+                                        return;
+                                    }
+                            }
+                            _ = progress_tick.tick() => {
+                                publish_control(
+                                    &state_for_task,
+                                    "worker-progress",
+                                    progress_payload.clone(),
                                 )
                                 .await;
-                                track_runtime_task_finished(
-                                    &state_for_task,
-                                    &task_id_for_task,
-                                    "cancelled",
-                                );
-                                let _ = message.ack().await;
-                                return;
                             }
-                    }
-                    _ = progress_tick.tick() => {
-                        publish_control(
-                            &state_for_task,
-                            "worker-progress",
-                            progress_payload.clone(),
-                        )
-                        .await;
+                        }
                     }
                 }
+                Err(error) => failed_subproblem(
+                    job,
+                    worker_node,
+                    AcceleratorReport::runtime(),
+                    error,
+                    Instant::now(),
+                ),
             };
             if solve_cancel_requested_for(
                 &state_for_task,
@@ -7701,6 +8053,8 @@ fn app_router(state: AppState) -> Router {
             post(cancel_request),
         )
         .route("/problems/:problem_id/cancel", post(cancel_problem))
+        .route("/problems/:problem_id", post(upload_problem))
+        .route("/problems/:problem_id/solve", post(solve_stored_problem))
         .route("/model/example", get(example))
         .route("/solve", post(solve_http))
         .route("/sessions/:session_id", get(get_session))
@@ -7764,6 +8118,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         control_subject: env_value("MIP_SOLVER_CONTROL_SUBJECT", MIP_SOLVER_CONTROL_SUBJECT),
         events_subject: env_value("MIP_SOLVER_EVENTS_SUBJECT", MIP_SOLVER_EVENTS_SUBJECT),
         sessions: Arc::new(Mutex::new(HashMap::new())),
+        problems: Arc::new(Mutex::new(HashMap::new())),
         workers: Arc::new(Mutex::new(HashMap::new())),
         solves: Arc::new(Mutex::new(HashMap::new())),
         tasks: Arc::new(Mutex::new(HashMap::new())),
@@ -7829,6 +8184,7 @@ mod tests {
             control_subject: MIP_SOLVER_CONTROL_SUBJECT.to_string(),
             events_subject: MIP_SOLVER_EVENTS_SUBJECT.to_string(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            problems: Arc::new(Mutex::new(HashMap::new())),
             workers: Arc::new(Mutex::new(HashMap::new())),
             solves: Arc::new(Mutex::new(HashMap::new())),
             tasks: Arc::new(Mutex::new(HashMap::new())),
@@ -7987,10 +8343,11 @@ mod tests {
             job_id: "job-test".to_string(),
             job_uuid: new_uuid_string(),
             problem_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
+            problem_stored: false,
             revision: 0,
             depth: 0,
             master_node: "master-test".to_string(),
-            problem,
+            problem: Some(problem),
             extra_constraints: Vec::new(),
             avoid_worker_nodes: Vec::new(),
             options: SolveOptions {
@@ -8167,6 +8524,7 @@ mod tests {
             7,
             "master-a",
             &options,
+            false,
         )
         .unwrap();
         assert!(warnings.is_empty());
@@ -8182,6 +8540,54 @@ mod tests {
         assert_eq!(jobs[0].extra_constraints[0].coefs, vec![1.0]);
         assert_eq!(jobs[0].extra_constraints[0].rhs, 1.0);
         assert_eq!(jobs[0].depth, 1);
+    }
+
+    #[test]
+    fn frontier_builder_can_emit_ref_only_jobs() {
+        let problem = normalized_problem(binary_knapsack_problem()).unwrap();
+        let options = SolveOptions {
+            split_depth: Some(1),
+            ..SolveOptions::default()
+        };
+
+        let (jobs, warnings) = build_frontier_jobs(
+            &problem,
+            "solve-ref-test",
+            "request-ref-test",
+            "77777777-7777-4777-8777-777777777777",
+            3,
+            "master-a",
+            &options,
+            true,
+        )
+        .unwrap();
+
+        assert!(warnings.is_empty());
+        assert!(!jobs.is_empty());
+        assert!(jobs.iter().all(|job| job.problem_stored));
+        assert!(jobs.iter().all(|job| job.problem.is_none()));
+        let payload = json_value(&jobs[0]);
+        assert!(payload.get("problem").is_none());
+        assert_eq!(payload.get("problemStored"), Some(&json!(true)));
+    }
+
+    #[tokio::test]
+    async fn hydrate_subproblem_job_loads_problem_from_cache() {
+        let state = test_state(NodeRole::Slave);
+        let problem = normalized_problem(binary_knapsack_problem()).unwrap();
+        let problem_id = "88888888-8888-4888-8888-888888888888";
+        remember_problem_model(&state, problem_id, 4, problem.clone());
+        let mut job = test_job(problem.clone()).without_problem_payload();
+        job.problem_id = Some(problem_id.to_string());
+        job.problem_stored = true;
+        job.revision = 4;
+
+        hydrate_subproblem_job(&state, &mut job).await.unwrap();
+
+        assert_eq!(
+            job.problem.as_ref().map(|problem| &problem.c),
+            Some(&problem.c)
+        );
     }
 
     #[test]
@@ -8322,6 +8728,7 @@ mod tests {
             7,
             "master-a",
             &options,
+            false,
         )
         .unwrap();
 
@@ -9140,6 +9547,7 @@ mod tests {
             11,
             "master-test",
             &options,
+            false,
         )
         .unwrap();
         assert!(
@@ -9259,6 +9667,7 @@ mod tests {
             12,
             "master-test",
             &options,
+            false,
         )
         .unwrap();
         assert!(
@@ -9453,6 +9862,44 @@ mod tests {
         assert_eq!(body.get("distributed"), Some(&json!(false)));
         assert_eq!(body.get("problemId"), Some(&json!(problem_id)));
         assert_eq!(body.pointer("/role"), Some(&json!("master")));
+    }
+
+    #[tokio::test]
+    async fn http_problem_upload_then_solve_uses_stored_model() {
+        let app = app_router(test_state(NodeRole::Master));
+        let problem_id = "99999999-9999-4999-8999-999999999999";
+
+        let (upload_status, upload_body) = post_json(
+            app.clone(),
+            &format!("/problems/{problem_id}"),
+            json!({
+                "problem": binary_knapsack_problem()
+            }),
+        )
+        .await;
+        assert_eq!(upload_status, StatusCode::OK);
+        assert_eq!(upload_body.get("ok"), Some(&json!(true)));
+        assert_eq!(upload_body.get("problemId"), Some(&json!(problem_id)));
+        assert_eq!(upload_body.get("redisStored"), Some(&json!(false)));
+
+        let (solve_status, solve_body) = post_json(
+            app,
+            &format!("/problems/{problem_id}/solve"),
+            json!({
+                "requestId": "stored-problem-http-test",
+                "options": {
+                    "splitDepth": 2,
+                    "maxNodes": 10000
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(solve_status, StatusCode::OK);
+        assert_eq!(solve_body.get("ok"), Some(&json!(true)));
+        assert_eq!(solve_body.get("status"), Some(&json!("optimal")));
+        assert_eq!(solve_body.get("z"), Some(&json!(90.0)));
+        assert_eq!(solve_body.get("problemId"), Some(&json!(problem_id)));
     }
 
     #[tokio::test]
@@ -10289,7 +10736,10 @@ mod tests {
         assert_eq!(retry.solve_id, job.solve_id);
         assert_eq!(retry.request_id, job.request_id);
         assert_eq!(retry.revision, job.revision);
-        assert_eq!(retry.problem.c, job.problem.c);
+        assert_eq!(
+            retry.problem.as_ref().map(|problem| &problem.c),
+            job.problem.as_ref().map(|problem| &problem.c)
+        );
         assert_eq!(retry.extra_constraints, job.extra_constraints);
         assert_ne!(retry.job_uuid, job.job_uuid);
         assert_eq!(retry.problem_id, job.problem_id);
