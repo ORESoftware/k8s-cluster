@@ -40,7 +40,7 @@ data:
         "dd-in-house-mip-solver-node-slave,dd-jaeger,dd-k8s-resource-exporter,dd-live-mutex,"
         "dd-live-mutex-submodule,dd-lock-loadtest-gleam,dd-lock-loadtest-rs,"
         "dd-lock-loadtest-trigger,dd-loki,dd-mdp-optimizer,dd-mlflow-postgresql,dd-music-rs,dd-nats,"
-        "dd-nodejs-ws-loadtest-gcs,dd-otel-collector,dd-prometheus,dd-promtail,dd-public-data-server,"
+        "dd-nodejs-ws-loadtest-gcs,dd-otel-collector,dd-patent-filing-rs,dd-prometheus,dd-promtail,dd-public-data-server,"
         "dd-redis-cache,dd-remote-auth,dd-remote-gateway,dd-remote-queue-consumer,"
         "dd-remote-rest-api,dd-remote-web-home,dd-runtime-config,dd-rust-network-mutex,"
         "dd-rust-network-mutex-raft,"

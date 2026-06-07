@@ -25,6 +25,9 @@ Today there are several key runtime services:
 - [`deployments/trading-server-rs/`](./deployments/trading-server-rs/) — Rust trading decision service that turns scraper,
   AI/ML, market, and MDP/POMDP inputs into risk-gated NATS order intents. Broker metadata is seeded
   through [`databases/pg/seeds/trading-platform-app-config.sql`](./databases/pg/seeds/trading-platform-app-config.sql).
+- [`deployments/patent-filing-rs/`](./deployments/patent-filing-rs/) — Rust/Axum patent filing
+  workbench with an htmx home page, invention intake, readiness scoring, provisional draft package
+  generation, prior-art search planning, and Patent Center handoff checklists.
 - [`deployments/economics-server-rs/`](./deployments/economics-server-rs/) — Rust economics dashboard and projection
   service that blends public/private market history, social/news sentiment placeholders, and transparent theory priors
   from accepted macro, asset-pricing, commodity, FX, bond, and stochastic-process equations.

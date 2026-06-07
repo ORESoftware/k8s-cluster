@@ -23,6 +23,7 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-contract-service` (Rust Solana contract gateway for `solana.contract.v1` validation)
 - `dd-escrow-rs` (Rust Solana escrow gateway for `solana.escrow.v1` validation and settlement)
 - `dd-trading-server` (Rust trading decision service for `trading.decision.v1` risk-gated order intents)
+- `dd-patent-filing-rs` (Rust/Axum patent filing preparation workbench with htmx intake and package generation)
 - `dd-economics-server` (Rust economics dashboard and `economics.forecast.v1` theory/data projection service)
 - `dd-dev-server-api` (bootstrap Node.js coding-agent task manager for `/tasks`, `/stream`,
   `/status`, `/agents`, `/healthz`)
@@ -197,6 +198,9 @@ Gateway path map:
   `dd-ai-ml-pipeline.ai-ml:8099` (internal auth required)
 - `/trading/`, `/trading/schema`, `/trading/example`, `POST /trading/decide` ->
   `dd-trading-server:8103` (internal auth required)
+- `/patents/`, `/patents/schema`, `/patents/example`, `POST /patents/packages/provisional`,
+  `POST /patents/ui/packages`, `POST /patents/readiness`, `POST /patents/search/plan` ->
+  `dd-patent-filing-rs:8116` (internal auth required)
 - `/economics/`, `/economics/dashboard.json`, `/economics/model/equations`,
   `/economics/sources`, `POST /economics/forecast`, `POST /economics/ingest`,
   `POST /economics/sources/pull`, `/economics/sentiment/sources`,
