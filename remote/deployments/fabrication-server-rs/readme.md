@@ -5296,9 +5296,12 @@ runtime inspection boundary while the database contract is still being designed.
   full design-package/export, generated machine-code, improved-program,
   release-package, machine-release, simulation, setup, quality, controller,
   postprocess, POMDP belief, release-probe, neural-corpus, and `mdp-request`
-  artifacts. `GET /fabrication/jobs/:job_id/release-bundle` is the prefixed
-  alias. Bundles are draft operator/worker evidence packets and remain blocked
-  until release gates clear.
+  artifacts. The bundle also includes `bundleManifest`, a compact category
+  checklist for design/source, machine-code/instruction, setup/execution,
+  simulation/quality/release, and learning/policy feedback evidence, with
+  present/missing counts in `summary`. `GET /fabrication/jobs/:job_id/release-bundle`
+  is the prefixed alias. Bundles are draft operator/worker evidence packets and
+  remain blocked until release gates clear.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
   with `GET /fabrication/jobs/:job_id/artifacts/:artifact_id` as the prefixed
   alias,
