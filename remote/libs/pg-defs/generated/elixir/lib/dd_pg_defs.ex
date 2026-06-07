@@ -13,6 +13,8 @@ defmodule DdPgDefs do
   @tables [
     DdPgDefs.AppConfig,
     DdPgDefs.VapiPhoneCallEvents,
+    DdPgDefs.MusicSongs,
+    DdPgDefs.MusicSongVotes,
     DdPgDefs.ContainerPoolConfigs,
     DdPgDefs.KnownGitRepos,
     DdPgDefs.AgentContextBlobs,

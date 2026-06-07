@@ -81,6 +81,106 @@ impl ActiveModelBehavior for ActiveModel {}
 pub use vapi_phone_call_events::Entity as VapiPhoneCallEventsEntity;
 pub use vapi_phone_call_events::Model as VapiPhoneCallEventsModel;
 
+pub mod music_songs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "music_songs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub title: String,
+    pub slug: String,
+    pub status: String,
+    pub seed: i64,
+    #[sea_orm(column_name = "generation_date")]
+    pub generation_date: String,
+    #[sea_orm(column_name = "storage_provider")]
+    pub storage_provider: Option<String>,
+    #[sea_orm(column_name = "storage_bucket")]
+    pub storage_bucket: Option<String>,
+    #[sea_orm(column_name = "storage_key")]
+    pub storage_key: Option<String>,
+    #[sea_orm(column_name = "audio_url")]
+    pub audio_url: Option<String>,
+    #[sea_orm(column_name = "content_type")]
+    pub content_type: Option<String>,
+    #[sea_orm(column_name = "duration_millis")]
+    pub duration_millis: i32,
+    #[sea_orm(column_name = "sample_rate")]
+    pub sample_rate: i32,
+    #[sea_orm(column_name = "bpm_millis")]
+    pub bpm_millis: i32,
+    pub genre: String,
+    #[sea_orm(column_name = "peak_micros")]
+    pub peak_micros: i32,
+    #[sea_orm(column_name = "rms_micros")]
+    pub rms_micros: i32,
+    #[sea_orm(column_name = "spectral_centroid_millihz")]
+    pub spectral_centroid_millihz: i64,
+    #[sea_orm(column_name = "listenability_score_micros")]
+    pub listenability_score_micros: i32,
+    #[sea_orm(column_name = "vote_score")]
+    pub vote_score: i32,
+    #[sea_orm(column_name = "up_votes")]
+    pub up_votes: i32,
+    #[sea_orm(column_name = "down_votes")]
+    pub down_votes: i32,
+    #[sea_orm(column_name = "play_count")]
+    pub play_count: i32,
+    pub summary: Json,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "published_at")]
+    pub published_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use music_songs::Entity as MusicSongsEntity;
+pub use music_songs::Model as MusicSongsModel;
+
+pub mod music_song_votes {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "music_song_votes")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "song_id")]
+    pub song_id: Uuid,
+    #[sea_orm(column_name = "visitor_hash")]
+    pub visitor_hash: String,
+    #[sea_orm(column_name = "user_agent_hash")]
+    pub user_agent_hash: Option<String>,
+    #[sea_orm(column_name = "vote_value")]
+    pub vote_value: i32,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use music_song_votes::Entity as MusicSongVotesEntity;
+pub use music_song_votes::Model as MusicSongVotesModel;
+
 pub mod container_pool_configs {
     use super::*;
 

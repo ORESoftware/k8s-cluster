@@ -114,6 +114,143 @@ pub struct VapiPhoneCallEventsDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    music_songs (id) {
+        id -> Uuid,
+        title -> Varchar,
+        slug -> Varchar,
+        status -> Varchar,
+        seed -> Int8,
+        generation_date -> Varchar,
+        storage_provider -> Nullable<Varchar>,
+        storage_bucket -> Nullable<Varchar>,
+        storage_key -> Nullable<Text>,
+        audio_url -> Nullable<Text>,
+        content_type -> Nullable<Varchar>,
+        duration_millis -> Int4,
+        sample_rate -> Int4,
+        bpm_millis -> Int4,
+        genre -> Varchar,
+        peak_micros -> Int4,
+        rms_micros -> Int4,
+        spectral_centroid_millihz -> Int8,
+        listenability_score_micros -> Int4,
+        vote_score -> Int4,
+        up_votes -> Int4,
+        down_votes -> Int4,
+        play_count -> Int4,
+        summary -> Jsonb,
+        meta_data -> Jsonb,
+        published_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = music_songs)]
+pub struct MusicSongsDieselRow {
+    pub id: Uuid,
+    pub title: String,
+    pub slug: String,
+    pub status: String,
+    pub seed: i64,
+    pub generation_date: String,
+    pub storage_provider: Option<String>,
+    pub storage_bucket: Option<String>,
+    pub storage_key: Option<String>,
+    pub audio_url: Option<String>,
+    pub content_type: Option<String>,
+    pub duration_millis: i32,
+    pub sample_rate: i32,
+    pub bpm_millis: i32,
+    pub genre: String,
+    pub peak_micros: i32,
+    pub rms_micros: i32,
+    pub spectral_centroid_millihz: i64,
+    pub listenability_score_micros: i32,
+    pub vote_score: i32,
+    pub up_votes: i32,
+    pub down_votes: i32,
+    pub play_count: i32,
+    pub summary: Value,
+    pub meta_data: Value,
+    pub published_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = music_songs)]
+pub struct MusicSongsDieselInsert {
+    pub id: Option<Uuid>,
+    pub title: Option<String>,
+    pub slug: Option<String>,
+    pub status: Option<String>,
+    pub seed: Option<i64>,
+    pub generation_date: Option<String>,
+    pub storage_provider: Option<String>,
+    pub storage_bucket: Option<String>,
+    pub storage_key: Option<String>,
+    pub audio_url: Option<String>,
+    pub content_type: Option<String>,
+    pub duration_millis: Option<i32>,
+    pub sample_rate: Option<i32>,
+    pub bpm_millis: Option<i32>,
+    pub genre: Option<String>,
+    pub peak_micros: Option<i32>,
+    pub rms_micros: Option<i32>,
+    pub spectral_centroid_millihz: Option<i64>,
+    pub listenability_score_micros: Option<i32>,
+    pub vote_score: Option<i32>,
+    pub up_votes: Option<i32>,
+    pub down_votes: Option<i32>,
+    pub play_count: Option<i32>,
+    pub summary: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    music_song_votes (id) {
+        id -> Uuid,
+        song_id -> Uuid,
+        visitor_hash -> Varchar,
+        user_agent_hash -> Nullable<Varchar>,
+        vote_value -> Int4,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = music_song_votes)]
+pub struct MusicSongVotesDieselRow {
+    pub id: Uuid,
+    pub song_id: Uuid,
+    pub visitor_hash: String,
+    pub user_agent_hash: Option<String>,
+    pub vote_value: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = music_song_votes)]
+pub struct MusicSongVotesDieselInsert {
+    pub id: Option<Uuid>,
+    pub song_id: Option<Uuid>,
+    pub visitor_hash: Option<String>,
+    pub user_agent_hash: Option<String>,
+    pub vote_value: Option<i32>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     container_pool_configs (id) {
         id -> Uuid,
         slug -> Varchar,

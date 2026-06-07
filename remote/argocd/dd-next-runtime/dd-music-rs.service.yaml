@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-music-rs
+  namespace: default
+  labels:
+    app: dd-music-rs
+spec:
+  selector:
+    app: dd-music-rs
+  ports:
+    - name: http
+      port: 8115
+      targetPort: http

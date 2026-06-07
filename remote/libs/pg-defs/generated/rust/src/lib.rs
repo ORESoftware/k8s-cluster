@@ -236,6 +236,367 @@ pub fn validate_vapi_phone_call_events_insert(value: &VapiPhoneCallEventsInsert)
     Ok(())
 }
 
+pub const MUSIC_SONGS_TABLE: &str = "music_songs";
+pub const MUSIC_SONGS_COLUMNS: &[&str] = &["id", "title", "slug", "status", "seed", "generation_date", "storage_provider", "storage_bucket", "storage_key", "audio_url", "content_type", "duration_millis", "sample_rate", "bpm_millis", "genre", "peak_micros", "rms_micros", "spectral_centroid_millihz", "listenability_score_micros", "vote_score", "up_votes", "down_votes", "play_count", "summary", "meta_data", "published_at", "created_at", "updated_at"];
+pub const MUSIC_SONGS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      title,
+      slug,
+      status,
+      seed,
+      generation_date,
+      storage_provider,
+      storage_bucket,
+      storage_key,
+      audio_url,
+      content_type,
+      duration_millis,
+      sample_rate,
+      bpm_millis,
+      genre,
+      peak_micros,
+      rms_micros,
+      spectral_centroid_millihz,
+      listenability_score_micros,
+      vote_score,
+      up_votes,
+      down_votes,
+      play_count,
+      summary,
+      meta_data,
+      to_char(published_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as published_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from music_songs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MusicSongsStatus {
+    Generated,
+    Published,
+    Discarded,
+    Failed,
+    Archived,
+}
+
+impl MusicSongsStatus {
+    pub const VALUES: &'static [&'static str] = &["generated", "published", "discarded", "failed", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Generated => "generated",
+            Self::Published => "published",
+            Self::Discarded => "discarded",
+            Self::Failed => "failed",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for MusicSongsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "generated" => Ok(Self::Generated),
+            "published" => Ok(Self::Published),
+            "discarded" => Ok(Self::Discarded),
+            "failed" => Ok(Self::Failed),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MusicSongsStorageProvider {
+    S3,
+    R2,
+    Gcs,
+    Drive,
+    Local,
+}
+
+impl MusicSongsStorageProvider {
+    pub const VALUES: &'static [&'static str] = &["s3", "r2", "gcs", "drive", "local"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::S3 => "s3",
+            Self::R2 => "r2",
+            Self::Gcs => "gcs",
+            Self::Drive => "drive",
+            Self::Local => "local",
+        }
+    }
+}
+
+impl TryFrom<&str> for MusicSongsStorageProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "s3" => Ok(Self::S3),
+            "r2" => Ok(Self::R2),
+            "gcs" => Ok(Self::Gcs),
+            "drive" => Ok(Self::Drive),
+            "local" => Ok(Self::Local),
+            _ => Err(format!("unsupported storage_provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MusicSongsRow {
+    pub id: String,
+    pub title: String,
+    pub slug: String,
+    pub status: String,
+    pub seed: i64,
+    pub generation_date: String,
+    pub storage_provider: Option<String>,
+    pub storage_bucket: Option<String>,
+    pub storage_key: Option<String>,
+    pub audio_url: Option<String>,
+    pub content_type: Option<String>,
+    pub duration_millis: i32,
+    pub sample_rate: i32,
+    pub bpm_millis: i32,
+    pub genre: String,
+    pub peak_micros: i32,
+    pub rms_micros: i32,
+    pub spectral_centroid_millihz: i64,
+    pub listenability_score_micros: i32,
+    pub vote_score: i32,
+    pub up_votes: i32,
+    pub down_votes: i32,
+    pub play_count: i32,
+    pub summary: Value,
+    pub meta_data: Value,
+    pub published_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicSongsInsert {
+    pub id: Option<String>,
+    pub title: Option<String>,
+    pub slug: Option<String>,
+    pub status: Option<String>,
+    pub seed: Option<i64>,
+    pub generation_date: Option<String>,
+    pub storage_provider: Option<String>,
+    pub storage_bucket: Option<String>,
+    pub storage_key: Option<String>,
+    pub audio_url: Option<String>,
+    pub content_type: Option<String>,
+    pub duration_millis: Option<i32>,
+    pub sample_rate: Option<i32>,
+    pub bpm_millis: Option<i32>,
+    pub genre: Option<String>,
+    pub peak_micros: Option<i32>,
+    pub rms_micros: Option<i32>,
+    pub spectral_centroid_millihz: Option<i64>,
+    pub listenability_score_micros: Option<i32>,
+    pub vote_score: Option<i32>,
+    pub up_votes: Option<i32>,
+    pub down_votes: Option<i32>,
+    pub play_count: Option<i32>,
+    pub summary: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub published_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_music_songs_row(value: &MusicSongsRow) -> Result<(), String> {
+    validate_string_length("music_songs.title", &value.title, None, Some(200))?;
+    if (&value.title).as_bytes().len() > 200 { return Err("music_songs.title exceeds 200 bytes".to_string()); }
+    validate_slug("music_songs.slug", &value.slug)?;
+    if !["generated", "published", "discarded", "failed", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported music_songs.status: {}", &value.status)); }
+    validate_string_length("music_songs.generation_date", &value.generation_date, None, Some(10))?;
+    if let Some(value) = &value.storage_provider {
+        if !["s3", "r2", "gcs", "drive", "local"].contains(&(value).as_str()) { return Err(format!("unsupported music_songs.storage_provider: {}", value)); }
+    }
+    if let Some(value) = &value.storage_bucket {
+        validate_string_length("music_songs.storage_bucket", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("music_songs.storage_bucket exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.storage_key {
+        if (value).as_bytes().len() > 2048 { return Err("music_songs.storage_key exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.audio_url {
+        if (value).as_bytes().len() > 4096 { return Err("music_songs.audio_url exceeds 4096 bytes".to_string()); }
+    }
+    if let Some(value) = &value.content_type {
+        validate_string_length("music_songs.content_type", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("music_songs.content_type exceeds 120 bytes".to_string()); }
+    }
+    if *(&value.duration_millis) < 1 { return Err("music_songs.duration_millis is below the minimum".to_string()); }
+    if *(&value.duration_millis) > 1800000 { return Err("music_songs.duration_millis is above the maximum".to_string()); }
+    if *(&value.sample_rate) < 8000 { return Err("music_songs.sample_rate is below the minimum".to_string()); }
+    if *(&value.sample_rate) > 192000 { return Err("music_songs.sample_rate is above the maximum".to_string()); }
+    if *(&value.bpm_millis) < 1 { return Err("music_songs.bpm_millis is below the minimum".to_string()); }
+    if *(&value.bpm_millis) > 300000 { return Err("music_songs.bpm_millis is above the maximum".to_string()); }
+    validate_string_length("music_songs.genre", &value.genre, None, Some(80))?;
+    if (&value.genre).as_bytes().len() > 80 { return Err("music_songs.genre exceeds 80 bytes".to_string()); }
+    if *(&value.peak_micros) < 0 { return Err("music_songs.peak_micros is below the minimum".to_string()); }
+    if *(&value.rms_micros) < 0 { return Err("music_songs.rms_micros is below the minimum".to_string()); }
+    if *(&value.spectral_centroid_millihz) < 0 { return Err("music_songs.spectral_centroid_millihz is below the minimum".to_string()); }
+    if *(&value.listenability_score_micros) < 0 { return Err("music_songs.listenability_score_micros is below the minimum".to_string()); }
+    if *(&value.listenability_score_micros) > 1000000 { return Err("music_songs.listenability_score_micros is above the maximum".to_string()); }
+    if *(&value.up_votes) < 0 { return Err("music_songs.up_votes is below the minimum".to_string()); }
+    if *(&value.down_votes) < 0 { return Err("music_songs.down_votes is below the minimum".to_string()); }
+    if *(&value.play_count) < 0 { return Err("music_songs.play_count is below the minimum".to_string()); }
+    if !(&value.summary).is_object() { return Err("music_songs.summary must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("music_songs.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_music_songs_insert(value: &MusicSongsInsert) -> Result<(), String> {
+    if let Some(value) = &value.title {
+        validate_string_length("music_songs.title", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("music_songs.title exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.slug {
+        validate_slug("music_songs.slug", value)?;
+    }
+    if let Some(value) = &value.status {
+        if !["generated", "published", "discarded", "failed", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported music_songs.status: {}", value)); }
+    }
+    if let Some(value) = &value.generation_date {
+        validate_string_length("music_songs.generation_date", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.storage_provider {
+        if !["s3", "r2", "gcs", "drive", "local"].contains(&(value).as_str()) { return Err(format!("unsupported music_songs.storage_provider: {}", value)); }
+    }
+    if let Some(value) = &value.storage_bucket {
+        validate_string_length("music_songs.storage_bucket", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("music_songs.storage_bucket exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.storage_key {
+        if (value).as_bytes().len() > 2048 { return Err("music_songs.storage_key exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.audio_url {
+        if (value).as_bytes().len() > 4096 { return Err("music_songs.audio_url exceeds 4096 bytes".to_string()); }
+    }
+    if let Some(value) = &value.content_type {
+        validate_string_length("music_songs.content_type", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("music_songs.content_type exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.duration_millis {
+        if *(value) < 1 { return Err("music_songs.duration_millis is below the minimum".to_string()); }
+        if *(value) > 1800000 { return Err("music_songs.duration_millis is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.sample_rate {
+        if *(value) < 8000 { return Err("music_songs.sample_rate is below the minimum".to_string()); }
+        if *(value) > 192000 { return Err("music_songs.sample_rate is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.bpm_millis {
+        if *(value) < 1 { return Err("music_songs.bpm_millis is below the minimum".to_string()); }
+        if *(value) > 300000 { return Err("music_songs.bpm_millis is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.genre {
+        validate_string_length("music_songs.genre", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("music_songs.genre exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.peak_micros {
+        if *(value) < 0 { return Err("music_songs.peak_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.rms_micros {
+        if *(value) < 0 { return Err("music_songs.rms_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.spectral_centroid_millihz {
+        if *(value) < 0 { return Err("music_songs.spectral_centroid_millihz is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.listenability_score_micros {
+        if *(value) < 0 { return Err("music_songs.listenability_score_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("music_songs.listenability_score_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.up_votes {
+        if *(value) < 0 { return Err("music_songs.up_votes is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.down_votes {
+        if *(value) < 0 { return Err("music_songs.down_votes is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.play_count {
+        if *(value) < 0 { return Err("music_songs.play_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.summary {
+        if !(value).is_object() { return Err("music_songs.summary must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("music_songs.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const MUSIC_SONG_VOTES_TABLE: &str = "music_song_votes";
+pub const MUSIC_SONG_VOTES_COLUMNS: &[&str] = &["id", "song_id", "visitor_hash", "user_agent_hash", "vote_value", "created_at", "updated_at"];
+pub const MUSIC_SONG_VOTES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      song_id::text as song_id,
+      visitor_hash,
+      user_agent_hash,
+      vote_value,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from music_song_votes"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MusicSongVotesRow {
+    pub id: String,
+    pub song_id: String,
+    pub visitor_hash: String,
+    pub user_agent_hash: Option<String>,
+    pub vote_value: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicSongVotesInsert {
+    pub id: Option<String>,
+    pub song_id: Option<String>,
+    pub visitor_hash: Option<String>,
+    pub user_agent_hash: Option<String>,
+    pub vote_value: Option<i32>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_music_song_votes_row(value: &MusicSongVotesRow) -> Result<(), String> {
+    validate_string_length("music_song_votes.visitor_hash", &value.visitor_hash, None, Some(64))?;
+    if let Some(value) = &value.user_agent_hash {
+        validate_string_length("music_song_votes.user_agent_hash", value, None, Some(64))?;
+    }
+    if *(&value.vote_value) < -1 { return Err("music_song_votes.vote_value is below the minimum".to_string()); }
+    if *(&value.vote_value) > 1 { return Err("music_song_votes.vote_value is above the maximum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_music_song_votes_insert(value: &MusicSongVotesInsert) -> Result<(), String> {
+    if let Some(value) = &value.visitor_hash {
+        validate_string_length("music_song_votes.visitor_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.user_agent_hash {
+        validate_string_length("music_song_votes.user_agent_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.vote_value {
+        if *(value) < -1 { return Err("music_song_votes.vote_value is below the minimum".to_string()); }
+        if *(value) > 1 { return Err("music_song_votes.vote_value is above the maximum".to_string()); }
+    }
+    Ok(())
+}
+
 pub const CONTAINER_POOL_CONFIGS_TABLE: &str = "container_pool_configs";
 pub const CONTAINER_POOL_CONFIGS_COLUMNS: &[&str] = &["id", "slug", "display_name", "image", "command", "env", "request_path", "health_path", "container_port", "min_warm", "max_warm", "max_concurrency_per_container", "request_timeout_ms", "idle_ttl_seconds", "nats_subject", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const CONTAINER_POOL_CONFIGS_SELECT_SQL: &str = r###"select

@@ -148,6 +148,183 @@ export type VapiPhoneCallEventsRow = z.infer<typeof vapiPhoneCallEventsRowSchema
 export type VapiPhoneCallEventsInsert = z.infer<typeof vapiPhoneCallEventsInsertSchema>;
 export type VapiPhoneCallEventsUpdate = z.infer<typeof vapiPhoneCallEventsUpdateSchema>;
 
+export const musicSongsStatusValues = ["generated","published","discarded","failed","archived"] as const;
+export const musicSongsStatusSchema = z.enum(musicSongsStatusValues);
+export type MusicSongsStatus = z.infer<typeof musicSongsStatusSchema>;
+
+export const musicSongsStorageProviderValues = ["s3","r2","gcs","drive","local"] as const;
+export const musicSongsStorageProviderSchema = z.enum(musicSongsStorageProviderValues);
+export type MusicSongsStorageProvider = z.infer<typeof musicSongsStorageProviderSchema>;
+
+export const musicSongs = pgTable(
+  "music_songs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    title: varchar("title", { length: 200 }).notNull(),
+    slug: varchar("slug", { length: 220 }).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'generated'`).notNull(),
+    seed: bigint("seed", { mode: "number" }).notNull(),
+    generationDate: varchar("generation_date", { length: 10 }).default(sql`to_char(current_date, 'YYYY-MM-DD')`).notNull(),
+    storageProvider: varchar("storage_provider", { length: 32 }),
+    storageBucket: varchar("storage_bucket", { length: 200 }),
+    storageKey: text("storage_key"),
+    audioUrl: text("audio_url"),
+    contentType: varchar("content_type", { length: 120 }),
+    durationMillis: integer("duration_millis").default(sql`180000`).notNull(),
+    sampleRate: integer("sample_rate").default(sql`44100`).notNull(),
+    bpmMillis: integer("bpm_millis").default(sql`128000`).notNull(),
+    genre: varchar("genre", { length: 80 }).default(sql`'electronica'`).notNull(),
+    peakMicros: integer("peak_micros").default(sql`0`).notNull(),
+    rmsMicros: integer("rms_micros").default(sql`0`).notNull(),
+    spectralCentroidMillihz: bigint("spectral_centroid_millihz", { mode: "number" }).default(sql`0`).notNull(),
+    listenabilityScoreMicros: integer("listenability_score_micros").default(sql`0`).notNull(),
+    voteScore: integer("vote_score").default(sql`0`).notNull(),
+    upVotes: integer("up_votes").default(sql`0`).notNull(),
+    downVotes: integer("down_votes").default(sql`0`).notNull(),
+    playCount: integer("play_count").default(sql`0`).notNull(),
+    summary: jsonb("summary").default(sql`'{}'::jsonb`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    musicSongsTitleSizeChk: check("music_songs_title_size_chk", sql.raw("octet_length(title) between 1 and 200")),
+    musicSongsSlugFormatChk: check("music_songs_slug_format_chk", sql.raw("slug ~ '^[a-z0-9][a-z0-9-]{0,218}[a-z0-9]$'")),
+    musicSongsStatusChk: check("music_songs_status_chk", sql.raw("status in ('generated', 'published', 'discarded', 'failed', 'archived')")),
+    musicSongsGenerationDateChk: check("music_songs_generation_date_chk", sql.raw("generation_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'")),
+    musicSongsStorageProviderChk: check("music_songs_storage_provider_chk", sql.raw("storage_provider is null or storage_provider in ('s3', 'r2', 'gcs', 'drive', 'local')")),
+    musicSongsStorageBucketSizeChk: check("music_songs_storage_bucket_size_chk", sql.raw("storage_bucket is null or octet_length(storage_bucket) <= 200")),
+    musicSongsStorageKeySizeChk: check("music_songs_storage_key_size_chk", sql.raw("storage_key is null or octet_length(storage_key) <= 2048")),
+    musicSongsAudioUrlSizeChk: check("music_songs_audio_url_size_chk", sql.raw("audio_url is null or octet_length(audio_url) <= 4096")),
+    musicSongsContentTypeSizeChk: check("music_songs_content_type_size_chk", sql.raw("content_type is null or octet_length(content_type) <= 120")),
+    musicSongsDurationChk: check("music_songs_duration_chk", sql.raw("duration_millis between 1 and 1800000")),
+    musicSongsSampleRateChk: check("music_songs_sample_rate_chk", sql.raw("sample_rate between 8000 and 192000")),
+    musicSongsBpmChk: check("music_songs_bpm_chk", sql.raw("bpm_millis between 1 and 300000")),
+    musicSongsGenreSizeChk: check("music_songs_genre_size_chk", sql.raw("octet_length(genre) between 1 and 80")),
+    musicSongsMetricNonnegativeChk: check("music_songs_metric_nonnegative_chk", sql.raw("peak_micros >= 0\n      and rms_micros >= 0\n      and spectral_centroid_millihz >= 0\n      and listenability_score_micros between 0 and 1000000\n      and up_votes >= 0\n      and down_votes >= 0\n      and play_count >= 0")),
+    musicSongsSummaryObjectChk: check("music_songs_summary_object_chk", sql.raw("jsonb_typeof(summary) = 'object'")),
+    musicSongsMetaObjectChk: check("music_songs_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    musicSongsPublishedAudioChk: check("music_songs_published_audio_chk", sql.raw("status <> 'published' or audio_url is not null")),
+    musicSongsSlugUq: uniqueIndex("music_songs_slug_uq").on(table.slug),
+    musicSongsPublishedAtIdx: index("music_songs_published_at_idx").on(table.publishedAt.desc()).where(sql.raw("status = 'published'")),
+    musicSongsGenerationDateStatusIdx: index("music_songs_generation_date_status_idx").on(table.generationDate.desc(), table.status),
+    musicSongsVoteScoreIdx: index("music_songs_vote_score_idx").on(table.voteScore.desc(), table.publishedAt.desc()).where(sql.raw("status = 'published'")),
+  }),
+);
+
+export const musicSongsRowSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  slug: z.string().max(220).regex(new RegExp("^[a-z0-9][a-z0-9-]{0,218}[a-z0-9]$")),
+  status: musicSongsStatusSchema,
+  seed: z.number().int(),
+  generationDate: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")),
+  storageProvider: musicSongsStorageProviderSchema.nullable(),
+  storageBucket: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable(),
+  storageKey: z.string().refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes").nullable(),
+  audioUrl: z.string().refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes").nullable(),
+  contentType: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable(),
+  durationMillis: z.number().int().min(1).max(1800000),
+  sampleRate: z.number().int().min(8000).max(192000),
+  bpmMillis: z.number().int().min(1).max(300000),
+  genre: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  peakMicros: z.number().int().min(0),
+  rmsMicros: z.number().int().min(0),
+  spectralCentroidMillihz: z.number().int().min(0),
+  listenabilityScoreMicros: z.number().int().min(0).max(1000000),
+  voteScore: z.number().int(),
+  upVotes: z.number().int().min(0),
+  downVotes: z.number().int().min(0),
+  playCount: z.number().int().min(0),
+  summary: jsonObjectSchema,
+  metaData: jsonObjectSchema,
+  publishedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const musicSongsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  title: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  slug: z.string().max(220).regex(new RegExp("^[a-z0-9][a-z0-9-]{0,218}[a-z0-9]$")),
+  status: musicSongsStatusSchema.optional().default("generated"),
+  seed: z.number().int(),
+  generationDate: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")).optional(),
+  storageProvider: musicSongsStorageProviderSchema.nullable().optional(),
+  storageBucket: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable().optional(),
+  storageKey: z.string().refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes").nullable().optional(),
+  audioUrl: z.string().refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes").nullable().optional(),
+  contentType: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable().optional(),
+  durationMillis: z.number().int().min(1).max(1800000).optional().default(180000),
+  sampleRate: z.number().int().min(8000).max(192000).optional().default(44100),
+  bpmMillis: z.number().int().min(1).max(300000).optional().default(128000),
+  genre: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").optional().default("electronica"),
+  peakMicros: z.number().int().min(0).optional().default(0),
+  rmsMicros: z.number().int().min(0).optional().default(0),
+  spectralCentroidMillihz: z.number().int().min(0).optional().default(0),
+  listenabilityScoreMicros: z.number().int().min(0).max(1000000).optional().default(0),
+  voteScore: z.number().int().optional().default(0),
+  upVotes: z.number().int().min(0).optional().default(0),
+  downVotes: z.number().int().min(0).optional().default(0),
+  playCount: z.number().int().min(0).optional().default(0),
+  summary: jsonObjectSchema.optional().default({}),
+  metaData: jsonObjectSchema.optional().default({}),
+  publishedAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const musicSongsUpdateSchema = musicSongsInsertSchema.partial();
+export type MusicSongsRow = z.infer<typeof musicSongsRowSchema>;
+export type MusicSongsInsert = z.infer<typeof musicSongsInsertSchema>;
+export type MusicSongsUpdate = z.infer<typeof musicSongsUpdateSchema>;
+
+export const musicSongVotes = pgTable(
+  "music_song_votes",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    songId: uuid("song_id").notNull(),
+    visitorHash: varchar("visitor_hash", { length: 64 }).notNull(),
+    userAgentHash: varchar("user_agent_hash", { length: 64 }),
+    voteValue: integer("vote_value").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    musicSongVotesVisitorHashChk: check("music_song_votes_visitor_hash_chk", sql.raw("visitor_hash ~ '^[a-f0-9]{64}$'")),
+    musicSongVotesUserAgentHashChk: check("music_song_votes_user_agent_hash_chk", sql.raw("user_agent_hash is null or user_agent_hash ~ '^[a-f0-9]{64}$'")),
+    musicSongVotesValueChk: check("music_song_votes_value_chk", sql.raw("vote_value >= -1 and vote_value <= 1 and vote_value <> 0")),
+    musicSongVotesSongVisitorUq: uniqueIndex("music_song_votes_song_visitor_uq").on(table.songId, table.visitorHash),
+    musicSongVotesSongCreatedAtIdx: index("music_song_votes_song_created_at_idx").on(table.songId, table.createdAt.desc()),
+  }),
+);
+
+export const musicSongVotesRowSchema = z.object({
+  id: z.string().uuid(),
+  songId: z.string().uuid(),
+  visitorHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  userAgentHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")).nullable(),
+  voteValue: z.number().int().min(-1).max(1),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const musicSongVotesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  songId: z.string().uuid(),
+  visitorHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  userAgentHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")).nullable().optional(),
+  voteValue: z.number().int().min(-1).max(1),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const musicSongVotesUpdateSchema = musicSongVotesInsertSchema.partial();
+export type MusicSongVotesRow = z.infer<typeof musicSongVotesRowSchema>;
+export type MusicSongVotesInsert = z.infer<typeof musicSongVotesInsertSchema>;
+export type MusicSongVotesUpdate = z.infer<typeof musicSongVotesUpdateSchema>;
+
 export const containerPoolConfigsStatusValues = ["active","paused","archived"] as const;
 export const containerPoolConfigsStatusSchema = z.enum(containerPoolConfigsStatusValues);
 export type ContainerPoolConfigsStatus = z.infer<typeof containerPoolConfigsStatusSchema>;
