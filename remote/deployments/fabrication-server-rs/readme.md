@@ -2593,7 +2593,11 @@ is stale, depleted, below projected program demand, not lot-traceable, expired,
 outside dry-state requirements, or missing support-media restart evidence. The
 result is stored with `consumables-result`, `consumables-inventory-checks`,
 `consumables-tool-life-checks`, `consumables-support-media-checks`,
-`consumables-artifacts`, and `consumables-learning-observations` artifacts so
+`consumables-artifacts`, and `consumables-learning-observations` artifacts. Its
+learning section includes a
+`dd.fabrication.consumables-learning-outcome-draft.v1` `outcomeDraft` with
+inventory, tool-life, support-media, artifact, split/combine, human-intervention,
+and blocker hints ready for `POST /fabrication/learning/outcomes`, so
 MDP/POMDP/neural planners can learn tool-life risk, material capacity,
 support-media depletion, split/combine reroutes, and operator refill checkpoints.
 
@@ -2634,6 +2638,10 @@ intervention earlier.
 outcomes for fixture/build-surface/chuck/support checks, datum transfers,
 clearance checks, split/combine fixture holds, retained artifacts, and release
 warnings. The response uses `dd.fabrication.workholding-result-review.v1`.
+Its learning section emits a
+`dd.fabrication.workholding-learning-outcome-draft.v1` `outcomeDraft` with
+fixture, datum-transfer, clearance, split/combine, artifact, human-intervention,
+blocker, reward, and submit-route hints for `POST /fabrication/learning/outcomes`.
 
 Machine-ready and unattended release remain blocked while fixture or build
 surface holding is unverified, datum transfer or re-probe evidence is missing,
@@ -2693,7 +2701,11 @@ observations. Responses retain `support-strategy-result`,
 `support-strategy-orientation-reviews`, `support-strategy-support-reviews`,
 `support-strategy-split-combine-decisions`, `support-strategy-interventions`,
 `support-strategy-artifacts`, and `support-strategy-learning-observations`
-artifacts on the fabrication job. Machine-ready release remains blocked while
+artifacts on the fabrication job. The learning section includes a
+`dd.fabrication.support-strategy-learning-outcome-draft.v1` `outcomeDraft` with
+orientation, support, split/combine, intervention, artifact, support-change,
+human-intervention, and blocker hints ready for
+`POST /fabrication/learning/outcomes`. Machine-ready release remains blocked while
 orientation, support removal, postprocess access, split/combine, intervention,
 artifact, or human dispositions are unresolved. Learning observations such as
 `support-strategy-family:*`, `support-orientation:*`, `support-removal:*`,
@@ -2740,9 +2752,13 @@ results, artifacts, warnings, and learning observations. Responses retain
 `process-recipe-result`, `process-recipe-reviews`,
 `process-recipe-parameter-checks`, `process-recipe-coupon-results`,
 `process-recipe-artifacts`, and `process-recipe-learning-observations` artifacts
-on the fabrication job. Machine-ready release remains blocked while recipe
-provenance, feed/speed, thermal, cut-chart, support media, coupon, artifact, or
-human signoff evidence is unresolved. Learning observations such as
+on the fabrication job. The learning section includes a
+`dd.fabrication.process-recipe-learning-outcome-draft.v1` `outcomeDraft` with
+recipe, parameter, coupon, artifact, parameter-change, human-signoff, and blocker
+hints ready for `POST /fabrication/learning/outcomes`. Machine-ready release
+remains blocked while recipe provenance, feed/speed, thermal, cut-chart, support
+media, coupon, artifact, or human signoff evidence is unresolved. Learning
+observations such as
 `process-recipe-family:*`, `process-recipe-kind:*`,
 `process-recipe-parameter:*`, `process-recipe-coupon:*`,
 `process-recipe:parameter-change-required`, and
@@ -2788,6 +2804,10 @@ warnings, and learning observations. Responses retain `kinematics-result`,
 `kinematics-axis-checks`, `kinematics-coordinate-reviews`,
 `kinematics-frame-checks`, `kinematics-artifacts`, and
 `kinematics-learning-observations` artifacts on the fabrication job.
+The learning section includes a
+`dd.fabrication.kinematics-learning-outcome-draft.v1` `outcomeDraft` with axis,
+coordinate-state, frame, artifact, human-intervention, and blocker hints ready
+for `POST /fabrication/learning/outcomes`.
 Machine-ready release remains blocked while axis envelope, homing, modal state,
 work offsets, TCP/frame, rotary/robot sync, probe calibration, artifact, or human
 intervention evidence is unresolved. Learning observations such as
@@ -2875,7 +2895,11 @@ turning, and hybrid split/combine reviewers. The response uses
 `dd.fabrication.process-capability-result-review.v1` and captures capability
 findings, alternate route decisions, measured coupon or first-article results,
 retained artifacts, release blockers, warning counts, and MDP/POMDP/neural
-learning observations.
+learning observations. The learning section also emits a
+`dd.fabrication.process-capability-learning-outcome-draft.v1` `outcomeDraft`
+with capability-family, capability-scope, alternate-route, measurement,
+artifact, split/combine, redesign, human-intervention, blocker, reward, and
+submit-route hints for `POST /fabrication/learning/outcomes`.
 
 Machine-ready and release-ready status remains blocked when requested geometry
 exceeds a reviewed process envelope, alternate routes are not accepted,
@@ -2937,6 +2961,11 @@ evidence, or human intervention is still required. Observations such as
 `manufacturability:split-combine-required` feed the bounded MDP/POMDP/neural
 policy memory so future planners can redesign, split, combine, reroute, or
 request human review before machine-code generation.
+The `learning.outcomeDraft` uses
+`dd.fabrication.manufacturability-learning-outcome-draft.v1` and carries
+review-family, check-scope, route, split/combine decision, artifact, blocker,
+redesign, human-intervention, reward, and submit-route hints for
+`POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/failure-modes/catalog`
 
