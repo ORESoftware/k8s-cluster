@@ -273,6 +273,21 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
   );
 });
 
+test('gateway regex locations with nginx quantifiers are quoted', async () => {
+  const gateway = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
+  );
+  const unsafeLocations = gateway
+    .split('\n')
+    .filter((line) => /^\s*location\s+~\s+[^"]/.test(line) && /\{\d+(?:,\d*)?\}/.test(line));
+
+  assert.deepEqual(
+    unsafeLocations,
+    [],
+    'nginx parses unquoted regex quantifier braces as config blocks',
+  );
+});
+
 test('gateway exposes public task pages and protects ops/data paths behind temporary Auth header', async () => {
   const gateway = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',

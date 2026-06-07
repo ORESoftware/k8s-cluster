@@ -1150,7 +1150,7 @@ data:
         proxy_pass http://dd-music-rs.default.svc.cluster.local:8115;
       }
 
-      location ~ ^/music/songs/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/votes$ {
+      location ~ "^/music/songs/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/votes$" {
         if ($request_method != POST) {
           return 405;
         }
