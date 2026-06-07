@@ -334,7 +334,7 @@ struct ClusterSolvesQuery {
     problem: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MipProblemSpec {
     #[serde(default = "default_sense")]
@@ -533,7 +533,23 @@ impl SubproblemJob {
 
     fn without_problem_payload(mut self) -> Self {
         self.problem = None;
+        self.problem_stored = true;
         self
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProblemStoreStatus {
+    Created,
+    Existing,
+}
+
+impl ProblemStoreStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            ProblemStoreStatus::Created => "created",
+            ProblemStoreStatus::Existing => "existing",
+        }
     }
 }
 
@@ -3968,6 +3984,26 @@ fn remember_problem_model(
     problem
 }
 
+fn ensure_local_problem_model(
+    state: &AppState,
+    problem_id: &str,
+    revision: u64,
+    problem: &MipProblemSpec,
+) -> Result<ProblemStoreStatus, String> {
+    let key = local_problem_model_key(problem_id, revision);
+    let mut problems = state.problems.lock().expect("problems mutex poisoned");
+    if let Some(existing) = problems.get(&key) {
+        if existing == problem {
+            return Ok(ProblemStoreStatus::Existing);
+        }
+        return Err(format!(
+            "stored problem {problem_id} revision {revision} already exists with a different model"
+        ));
+    }
+    problems.insert(key, problem.clone());
+    Ok(ProblemStoreStatus::Created)
+}
+
 fn cached_problem_model(
     state: &AppState,
     problem_id: &str,
@@ -3981,15 +4017,48 @@ fn cached_problem_model(
         .cloned()
 }
 
+fn problem_model_from_value(value: Value) -> Option<MipProblemSpec> {
+    value
+        .get("problem")
+        .cloned()
+        .and_then(session_problem_from_json)
+        .and_then(|problem| normalized_problem(problem).ok())
+}
+
+async fn load_redis_problem_model(
+    state: &AppState,
+    problem_id: &str,
+    revision: u64,
+) -> Option<MipProblemSpec> {
+    let prefix = redis_key_prefix();
+    redis_get_json(
+        state,
+        mip_solver_problem_model_key(&prefix, problem_id, revision),
+    )
+    .await
+    .and_then(problem_model_from_value)
+}
+
 async fn store_problem_model(
     state: &AppState,
     problem_id: &str,
     revision: u64,
     problem: &MipProblemSpec,
-) -> Result<(), String> {
-    remember_problem_model(state, problem_id, revision, problem.clone());
+) -> Result<ProblemStoreStatus, String> {
+    if state.redis.is_none() {
+        return ensure_local_problem_model(state, problem_id, revision, problem);
+    }
+    if let Some(existing) = load_redis_problem_model(state, problem_id, revision).await {
+        if &existing == problem {
+            remember_problem_model(state, problem_id, revision, existing);
+            return Ok(ProblemStoreStatus::Existing);
+        }
+        return Err(format!(
+            "stored problem {problem_id} revision {revision} already exists with a different model"
+        ));
+    }
     let prefix = redis_key_prefix();
-    redis_set_json_checked(
+    let stored = redis_set_json_nx_checked(
         state,
         mip_solver_problem_model_key(&prefix, problem_id, revision),
         json!({
@@ -4001,7 +4070,23 @@ async fn store_problem_model(
             "generatedAtMs": now_ms(),
         }),
     )
-    .await
+    .await?;
+    if stored {
+        remember_problem_model(state, problem_id, revision, problem.clone());
+        return Ok(ProblemStoreStatus::Created);
+    }
+    let Some(existing) = load_redis_problem_model(state, problem_id, revision).await else {
+        return Err(format!(
+            "stored problem {problem_id} revision {revision} already exists but could not be reloaded"
+        ));
+    };
+    if &existing != problem {
+        return Err(format!(
+            "stored problem {problem_id} revision {revision} already exists with a different model"
+        ));
+    }
+    remember_problem_model(state, problem_id, revision, existing);
+    Ok(ProblemStoreStatus::Existing)
 }
 
 async fn load_problem_model(
@@ -4018,16 +4103,12 @@ async fn load_problem_model(
         mip_solver_problem_model_key(&prefix, problem_id, revision),
     )
     .await?;
-    let problem = value
-        .get("problem")
-        .cloned()
-        .and_then(session_problem_from_json)
-        .and_then(|problem| normalized_problem(problem).ok())?;
+    let problem = problem_model_from_value(value)?;
     Some(remember_problem_model(state, problem_id, revision, problem))
 }
 
 async fn hydrate_subproblem_job(state: &AppState, job: &mut SubproblemJob) -> Result<(), String> {
-    if job.problem.is_some() {
+    if job.problem.is_some() && !job.problem_stored {
         return Ok(());
     }
     let problem_id = job.problem_id.clone().ok_or_else(|| {
@@ -4234,6 +4315,34 @@ async fn redis_set_json_checked(state: &AppState, key: String, value: Value) -> 
         .query_async(&mut connection)
         .await;
     result.map_err(|error| format!("Redis SET failed for {key}: {error}"))
+}
+
+async fn redis_set_json_nx_checked(
+    state: &AppState,
+    key: String,
+    value: Value,
+) -> Result<bool, String> {
+    let Some(client) = &state.redis else {
+        return Err("Redis is not configured".to_string());
+    };
+    let ttl_seconds = env_u64("MIP_SOLVER_REDIS_TTL_SECONDS", 86_400);
+    let payload = serde_json::to_string(&value)
+        .map_err(|error| format!("Redis payload serialization failed for {key}: {error}"))?;
+    let mut connection = client
+        .get_multiplexed_async_connection()
+        .await
+        .map_err(|error| format!("Redis connection failed for {key}: {error}"))?;
+    let result: redis::RedisResult<Option<String>> = redis::cmd("SET")
+        .arg(&key)
+        .arg(payload)
+        .arg("EX")
+        .arg(ttl_seconds)
+        .arg("NX")
+        .query_async(&mut connection)
+        .await;
+    result
+        .map(|value| value.is_some())
+        .map_err(|error| format!("Redis SET NX failed for {key}: {error}"))
 }
 
 async fn redis_set_json(state: &AppState, key: String, value: Value) {
@@ -5184,8 +5293,34 @@ async fn publish_subproblem_job(
     jobs_subject: &str,
     job: &SubproblemJob,
 ) -> Result<u64, String> {
+    validate_subproblem_job_payload(job)?;
     let payload = serde_json::to_vec(job).map_err(|err| format!("serialize job: {err}"))?;
     jetstream_publish_ack(client, jobs_subject, payload).await
+}
+
+fn validate_subproblem_job_payload(job: &SubproblemJob) -> Result<(), String> {
+    if job.problem_stored {
+        if job.problem_id.is_none() {
+            return Err(format!(
+                "job {} marked problemStored but has no problemId",
+                job.job_id
+            ));
+        }
+        if job.problem.is_some() {
+            return Err(format!(
+                "job {} marked problemStored but still carries an embedded problem",
+                job.job_id
+            ));
+        }
+        return Ok(());
+    }
+    if job.problem.is_none() {
+        return Err(format!(
+            "job {} has no stored problem reference and no embedded problem",
+            job.job_id
+        ));
+    }
+    Ok(())
 }
 
 fn result_consumer_name(solve_id: &str) -> String {
@@ -5573,7 +5708,8 @@ async fn solve_problem_distributed(
     let mut warnings = Vec::new();
     let problem_stored = if state.nats.is_some() && state.redis.is_some() {
         match store_problem_model(&state, &problem_id, revision, &problem).await {
-            Ok(()) => true,
+            Ok(_) => true,
+            Err(error) if is_problem_model_conflict(&error) => return Err(error),
             Err(error) => {
                 warnings.push(format!(
                     "problem model storage unavailable; embedding problem in jobs: {error}"
@@ -6270,8 +6406,15 @@ fn response_json<T: Serialize>(status: StatusCode, value: T) -> Response {
     (status, Json(value)).into_response()
 }
 
+fn is_problem_model_conflict(error: &str) -> bool {
+    error.contains("already exists with a different model")
+}
+
 fn solve_error_status(error: &str) -> StatusCode {
-    if error.contains("already has running solve") || error.contains("coordination lock busy") {
+    if error.contains("already has running solve")
+        || error.contains("coordination lock busy")
+        || is_problem_model_conflict(error)
+    {
         StatusCode::CONFLICT
     } else if error.contains("coordination")
         || error.contains("live-mutex")
@@ -6842,20 +6985,24 @@ async fn upload_problem(
         }
     };
     let revision = 0;
-    let redis_stored = match store_problem_model(&state, &problem_id, revision, &problem).await {
-        Ok(()) => true,
+    let store_status = match store_problem_model(&state, &problem_id, revision, &problem).await {
+        Ok(status) => status,
         Err(error) if state.redis.is_none() => {
-            eprintln!("mip solver problem {problem_id} stored only in memory: {error}");
-            false
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return response_json(
+                solve_error_status(&error),
+                json!({"ok":false,"error":error}),
+            );
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             return response_json(
-                StatusCode::SERVICE_UNAVAILABLE,
+                solve_error_status(&error),
                 json!({"ok":false,"error":error}),
             );
         }
     };
+    let redis_stored = state.redis.is_some();
     response_json(
         StatusCode::OK,
         json!({
@@ -6863,6 +7010,7 @@ async fn upload_problem(
             "problemId": problem_id,
             "revision": revision,
             "stored": true,
+            "storeStatus": store_status.as_str(),
             "redisStored": redis_stored,
             "distributedReady": redis_stored,
             "bytes": body.len(),
@@ -8579,7 +8727,6 @@ mod tests {
         remember_problem_model(&state, problem_id, 4, problem.clone());
         let mut job = test_job(problem.clone()).without_problem_payload();
         job.problem_id = Some(problem_id.to_string());
-        job.problem_stored = true;
         job.revision = 4;
 
         hydrate_subproblem_job(&state, &mut job).await.unwrap();
@@ -8588,6 +8735,69 @@ mod tests {
             job.problem.as_ref().map(|problem| &problem.c),
             Some(&problem.c)
         );
+    }
+
+    #[tokio::test]
+    async fn hydrate_subproblem_job_uses_stored_model_over_embedded_payload() {
+        let state = test_state(NodeRole::Slave);
+        let stored = normalized_problem(binary_knapsack_problem()).unwrap();
+        let problem_id = "8aaaaaaa-8888-4888-8888-888888888888";
+        remember_problem_model(&state, problem_id, 0, stored.clone());
+        let mut embedded = stored.clone();
+        embedded.c[0] = 999.0;
+        let mut job = test_job(embedded);
+        job.problem_id = Some(problem_id.to_string());
+        job.problem_stored = true;
+
+        hydrate_subproblem_job(&state, &mut job).await.unwrap();
+
+        assert_eq!(
+            job.problem.as_ref().map(|problem| &problem.c),
+            Some(&stored.c)
+        );
+    }
+
+    #[tokio::test]
+    async fn store_problem_model_rejects_same_id_with_different_model() {
+        let state = test_state(NodeRole::Master);
+        let problem_id = "8bbbbbbb-8888-4888-8888-888888888888";
+        let first = normalized_problem(binary_knapsack_problem()).unwrap();
+        let mut second = first.clone();
+        second.c[0] = 11.0;
+
+        let created = store_problem_model(&state, problem_id, 0, &first)
+            .await
+            .unwrap();
+        let existing = store_problem_model(&state, problem_id, 0, &first)
+            .await
+            .unwrap();
+        let conflict = store_problem_model(&state, problem_id, 0, &second)
+            .await
+            .unwrap_err();
+
+        assert_eq!(created, ProblemStoreStatus::Created);
+        assert_eq!(existing, ProblemStoreStatus::Existing);
+        assert!(is_problem_model_conflict(&conflict));
+    }
+
+    #[test]
+    fn validate_subproblem_job_payload_enforces_reference_contract() {
+        let problem = normalized_problem(binary_knapsack_problem()).unwrap();
+        let mut ref_job = test_job(problem.clone()).without_problem_payload();
+        ref_job.problem_id = Some("8ccccccc-8888-4888-8888-888888888888".to_string());
+        assert!(validate_subproblem_job_payload(&ref_job).is_ok());
+
+        let mut leaked_ref_job = ref_job.clone();
+        leaked_ref_job.problem = Some(problem);
+        assert!(validate_subproblem_job_payload(&leaked_ref_job)
+            .unwrap_err()
+            .contains("embedded problem"));
+
+        let mut missing_embedded = test_job(binary_knapsack_problem());
+        missing_embedded.problem = None;
+        assert!(validate_subproblem_job_payload(&missing_embedded)
+            .unwrap_err()
+            .contains("no stored problem reference"));
     }
 
     #[test]
@@ -9880,6 +10090,7 @@ mod tests {
         assert_eq!(upload_status, StatusCode::OK);
         assert_eq!(upload_body.get("ok"), Some(&json!(true)));
         assert_eq!(upload_body.get("problemId"), Some(&json!(problem_id)));
+        assert_eq!(upload_body.get("storeStatus"), Some(&json!("created")));
         assert_eq!(upload_body.get("redisStored"), Some(&json!(false)));
 
         let (solve_status, solve_body) = post_json(
@@ -9900,6 +10111,36 @@ mod tests {
         assert_eq!(solve_body.get("status"), Some(&json!("optimal")));
         assert_eq!(solve_body.get("z"), Some(&json!(90.0)));
         assert_eq!(solve_body.get("problemId"), Some(&json!(problem_id)));
+    }
+
+    #[tokio::test]
+    async fn http_problem_upload_rejects_different_model_for_existing_problem_id() {
+        let app = app_router(test_state(NodeRole::Master));
+        let problem_id = "9aaaaaaa-9999-4999-8999-999999999999";
+        let mut changed = binary_knapsack_problem();
+        changed.c[0] = 11.0;
+
+        let (first_status, first_body) = post_json(
+            app.clone(),
+            &format!("/problems/{problem_id}"),
+            json!({"problem": binary_knapsack_problem()}),
+        )
+        .await;
+        let (second_status, second_body) = post_json(
+            app,
+            &format!("/problems/{problem_id}"),
+            json!({"problem": changed}),
+        )
+        .await;
+
+        assert_eq!(first_status, StatusCode::OK);
+        assert_eq!(first_body.get("storeStatus"), Some(&json!("created")));
+        assert_eq!(second_status, StatusCode::CONFLICT);
+        assert_eq!(second_body.get("ok"), Some(&json!(false)));
+        assert!(second_body
+            .get("error")
+            .and_then(Value::as_str)
+            .is_some_and(is_problem_model_conflict));
     }
 
     #[tokio::test]
