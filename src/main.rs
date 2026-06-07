@@ -24397,6 +24397,11 @@ fn has_text_ded_context(language: &str, line: &str) -> bool {
                 "powder-fed deposition",
                 "blown powder",
                 "melt pool",
+                "prep_substrate",
+                "plan_beads",
+                "start_deposition",
+                "monitor_melt_pool",
+                "inspect_deposit",
             ],
         )
 }
@@ -24412,15 +24417,22 @@ fn has_text_ded_feedstock_path_evidence(line: &str) -> bool {
             "wire feed",
             "powder feed",
             "bead path",
+            "bead_path",
             "bead width",
+            "bead_width_mm",
             "bead height",
+            "bead_height_mm",
             "overlap",
+            "overlap_pct",
             "standoff",
             "tool center",
             "deposition path",
             "path strategy",
+            "path_strategy",
             "finish allowance",
+            "finish_allowance_mm",
             "machining allowance",
+            "finish_machining_allowance",
             "substrate",
             "fixture",
             "datum",
@@ -24436,16 +24448,22 @@ fn has_text_ded_energy_shielding_evidence(line: &str) -> bool {
             "arc current",
             "arc voltage",
             "travel speed",
+            "travel_speed",
             "feed rate",
             "energy density",
             "heat input",
             "shielding gas",
+            "shielding_gas",
+            "shielding_gas_flow",
             "argon",
             "oxygen ppm",
+            "oxygen_ppm",
             "gas flow",
             "melt pool",
+            "melt_pool",
             "pyrometer",
             "coaxial camera",
+            "coaxial_camera",
             "preheat",
             "fire control",
         ],
@@ -24458,6 +24476,7 @@ fn has_text_ded_thermal_inspection_evidence(line: &str) -> bool {
         &[
             "interpass",
             "interpass temperature",
+            "interpass_temperature",
             "cooldown",
             "thermal log",
             "distortion",
@@ -85068,6 +85087,115 @@ fn machine_catalog_response() -> Value {
     })
 }
 
+fn cell_catalog_family(kind: &str) -> Option<&'static str> {
+    if is_robotic_additive_printer_kind(kind) {
+        Some("robotic-additive")
+    } else if is_directed_energy_deposition_kind(kind) {
+        Some("directed-energy-deposition")
+    } else if is_assembly_cell_kind(kind) {
+        Some("robotic-assembly")
+    } else if is_inspection_cell_kind(kind) {
+        Some("inspection-metrology")
+    } else if is_thermal_postprocess_kind(kind) {
+        Some("thermal-postprocess")
+    } else if is_surface_finishing_kind(kind) {
+        Some("surface-finishing")
+    } else if is_metal_joining_kind(kind) {
+        Some("metal-joining")
+    } else if is_molding_casting_kind(kind) {
+        Some("molding-casting")
+    } else if is_composite_layup_kind(kind) {
+        Some("composite-layup")
+    } else if is_sheet_forming_kind(kind) {
+        Some("sheet-forming")
+    } else if is_gear_cutting_kind(kind) {
+        Some("gear-cutting")
+    } else if is_sinker_edm_kind(kind) {
+        Some("sinker-edm")
+    } else {
+        None
+    }
+}
+
+fn cell_catalog_response() -> Value {
+    let machines = default_machines();
+    let cells = machines
+        .iter()
+        .filter_map(|machine| {
+            cell_catalog_family(&machine.kind).map(|family| {
+                json!({
+                    "id": machine.id,
+                    "kind": machine.kind,
+                    "cellFamily": family,
+                    "processClass": machine_class_name(machine_class(&machine.kind)),
+                    "controller": machine.controller,
+                    "materials": machine.materials,
+                    "workEnvelopeMm": machine.work_envelope_mm,
+                    "axes": machine.axes,
+                    "operations": machine.operations,
+                    "acceptedInstructionLanguages": machine_catalog_instruction_languages(machine),
+                    "releaseGates": machine_catalog_release_gates(machine),
+                    "requiredEvidence": [
+                        "cell capability profile",
+                        "controller or job-sheet dialect review",
+                        "fixture/workholding or end-effector proof",
+                        "dry-run, simulation, or operator release evidence",
+                        "handoff and learning outcome retention"
+                    ]
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let cell_families = unique_sorted(cells.iter().filter_map(|cell| {
+        cell.get("cellFamily")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let cell_kinds = unique_sorted(cells.iter().filter_map(|cell| {
+        cell.get("kind").and_then(Value::as_str).map(str::to_string)
+    }));
+    let operations = unique_sorted(cells.iter().flat_map(|cell| {
+        cell.get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.cell-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /cells/catalog", "GET /fabrication/cells/catalog"],
+        "machineCatalogRoutes": ["GET /machines/catalog", "GET /fabrication/machines/catalog"],
+        "cellCount": cells.len(),
+        "cellFamilies": cell_families,
+        "cellKinds": cell_kinds,
+        "operations": operations,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "resultReviewRoutes": [
+            "POST /fabrication/machines/select",
+            "POST /fabrication/setup/result",
+            "POST /fabrication/monitoring/result",
+            "POST /fabrication/telemetry/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "cell catalog entries are default planning cell profiles, not certified robot, furnace, joining, metrology, or process-cell approvals",
+            "machine-ready release remains blocked until cell capability, controller dialect, fixture or end-effector, dry-run or simulation, interlock, and operator or automation evidence are retained",
+            "cell execution, handoff, telemetry, costing, and learning outcomes should be posted back so MDP/POMDP/neural policy workers can prefer or avoid future hybrid cells"
+        ],
+        "cells": cells
+    })
+}
+
+async fn cell_catalog_http() -> impl IntoResponse {
+    Json(cell_catalog_response())
+}
+
 fn machine_selection_response(
     response: &FabricationPlanResponse,
     policy: &LearningPolicySnapshot,
@@ -92090,6 +92218,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/capabilities", get(capabilities))
         .route("/machines/catalog", get(machine_catalog))
         .route("/fabrication/machines/catalog", get(machine_catalog))
+        .route("/cells/catalog", get(cell_catalog_http))
+        .route("/fabrication/cells/catalog", get(cell_catalog_http))
         .route("/machines/select", post(machine_select_http))
         .route("/fabrication/machines/select", post(machine_select_http))
         .route("/controllers/catalog", get(controller_catalog_http))
@@ -122579,6 +122709,86 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.starts_with("CHECKPOINT [bound-metal-fff-")));
+    }
+
+    #[test]
+    fn generated_ded_jobs_require_feedstock_energy_thermal_and_inspection_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("generated-ded-missing-feedstock-path".to_string()),
+                machine_id: Some("ded-1".to_string()),
+                machine_kind: Some("directed-energy-deposition-cell".to_string()),
+                language: Some("directed-energy-deposition-job".to_string()),
+                instructions: vec![
+                    "START_DEPOSITION source=laser_or_arc feedstock=wire_or_powder power=operator-reviewed travel_speed=operator-reviewed".to_string(),
+                    "MONITOR_MELT_POOL coaxial_camera=required pyrometer=required shielding_gas_flow=verified oxygen_ppm=operator-reviewed".to_string(),
+                    "CHECKPOINT [interpass-boundary]: record interpass temperature, distortion, and stop/restart tie-in before next layer".to_string(),
+                    "INSPECT_DEPOSIT nde=operator-reviewed coupon=installed dimensional inspection recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-ded-missing-energy-thermal".to_string()),
+                machine_id: Some("ded-1".to_string()),
+                machine_kind: Some("directed-energy-deposition-cell".to_string()),
+                language: Some("directed-energy-deposition-job".to_string()),
+                instructions: vec![
+                    "PREP_SUBSTRATE clean=true preheat=operator-reviewed datum=operator-reviewed finish_allowance_mm=operator-reviewed".to_string(),
+                    "PLAN_BEADS bead_width_mm=operator-reviewed overlap_pct=operator-reviewed path_strategy=operator-reviewed collision_clearance=simulated".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-ded-with-evidence".to_string()),
+                machine_id: Some("ded-1".to_string()),
+                machine_kind: Some("directed-energy-deposition-cell".to_string()),
+                language: Some("directed-energy-deposition-job".to_string()),
+                instructions: vec![
+                    "PREP_SUBSTRATE clean=true substrate=verified fixture=verified preheat=operator-reviewed datum=operator-reviewed finish_allowance_mm=operator-reviewed".to_string(),
+                    "PLAN_BEADS bead_width_mm=operator-reviewed overlap_pct=operator-reviewed path_strategy=operator-reviewed collision_clearance=simulated".to_string(),
+                    "START_DEPOSITION source=laser_or_arc feedstock=wire_or_powder feed_rate=operator-reviewed power=operator-reviewed travel_speed=operator-reviewed".to_string(),
+                    "MONITOR_MELT_POOL coaxial_camera=required pyrometer=required shielding_gas_flow=verified oxygen_ppm=operator-reviewed".to_string(),
+                    "CHECKPOINT [interpass-boundary]: record interpass temperature, distortion, bead height, and stop/restart tie-in before next layer".to_string(),
+                    "INSPECT_DEPOSIT nde=operator-reviewed coupon=installed finish_machining_allowance=verified dimensional inspection recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "ded-feedstock-path-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-ded-missing-feedstock-path")
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "ded-energy-thermal-inspection-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-ded-missing-energy-thermal")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code.starts_with("ded-")
+                && finding.program_id.as_deref() == Some("generated-ded-with-evidence")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-ded-feedstock-path-evidence"
+                && improvement.program_id.as_deref()
+                    == Some("generated-ded-missing-feedstock-path")
+        }));
+        assert!(improvements.iter().any(|improvement| {
+            improvement.action == "add-ded-energy-thermal-inspection-evidence"
+                && improvement.program_id.as_deref() == Some("generated-ded-missing-energy-thermal")
+        }));
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [ded-feedstock-path-boundary]")));
+        assert!(improved[1].instructions.iter().any(|line| {
+            line.starts_with("CHECKPOINT [ded-energy-thermal-inspection-boundary]")
+        }));
+        assert!(!improved[2]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [ded-")));
     }
 
     #[test]
