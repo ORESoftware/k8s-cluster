@@ -643,16 +643,8 @@ struct CloudConnectionRecord {
 #[derive(Clone)]
 struct CloudCopyJobRecord {
     id: String,
-    account_id: String,
-    connection_id: String,
-    segment_id: String,
     provider: String,
-    status: String,
     destination_key: String,
-    provider_file_id: Option<String>,
-    attempts: i32,
-    completed_at: Option<DateTime<Utc>>,
-    last_error: Option<String>,
 }
 
 struct CloudCopyWorkItem {
@@ -680,18 +672,6 @@ struct OAuthTokenResponse {
     expires_in: Option<i64>,
     error: Option<String>,
     error_description: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GoogleDriveProfile {
-    resource_key: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MicrosoftDriveProfile {
-    id: Option<String>,
-    web_url: Option<String>,
 }
 
 fn first_env(keys: &[&str]) -> Option<String> {
@@ -1063,9 +1043,11 @@ impl CloudTokenSealer {
                 "cloud credential nonce has invalid length".to_string(),
             ));
         }
-        let ciphertext = BASE64_STANDARD.decode(&envelope.ciphertext_b64).map_err(|_| {
-            ServiceError::Internal("cloud credential ciphertext is invalid".to_string())
-        })?;
+        let ciphertext = BASE64_STANDARD
+            .decode(&envelope.ciphertext_b64)
+            .map_err(|_| {
+                ServiceError::Internal("cloud credential ciphertext is invalid".to_string())
+            })?;
         self.cipher
             .decrypt(
                 Nonce::from_slice(&nonce_bytes),
@@ -1155,7 +1137,10 @@ fn clean_string(value: Option<String>, max_len: usize) -> Option<String> {
         })
 }
 
-fn clean_optional_nonempty(value: Option<String>, max_len: usize) -> Result<Option<String>, ServiceError> {
+fn clean_optional_nonempty(
+    value: Option<String>,
+    max_len: usize,
+) -> Result<Option<String>, ServiceError> {
     let Some(value) = value else {
         return Ok(None);
     };
@@ -1256,7 +1241,10 @@ fn validate_meta(value: Option<Value>) -> Result<Value, ServiceError> {
     }
 }
 
-fn validate_redirect_uri(provider: CloudProvider, value: Option<String>) -> Result<String, ServiceError> {
+fn validate_redirect_uri(
+    provider: CloudProvider,
+    value: Option<String>,
+) -> Result<String, ServiceError> {
     if provider == CloudProvider::AppleICloud {
         return Ok("client-managed://apple-icloud".to_string());
     }
@@ -1362,6 +1350,27 @@ fn graph_path_escape(path: &str) -> String {
         .join("/")
 }
 
+fn google_drive_file_name(destination_key: &str) -> String {
+    let mut name = String::with_capacity(destination_key.len().min(512));
+    for part in destination_key.split('/').filter(|part| !part.is_empty()) {
+        if !name.is_empty() {
+            name.push_str("__");
+        }
+        for ch in part.chars() {
+            if ch.is_control() || matches!(ch, '/' | '\\') {
+                name.push('_');
+            } else {
+                name.push(ch);
+            }
+        }
+    }
+    if name.is_empty() {
+        "segment.m4a".to_string()
+    } else {
+        name
+    }
+}
+
 fn authorization_url(
     provider: CloudProvider,
     oauth: &OAuthProviderConfig,
@@ -1369,7 +1378,10 @@ fn authorization_url(
     state: &str,
 ) -> Result<String, ServiceError> {
     let client_id = oauth.client_id.as_deref().ok_or_else(|| {
-        ServiceError::Unavailable(format!("{} OAuth client id is not configured", provider.as_str()))
+        ServiceError::Unavailable(format!(
+            "{} OAuth client id is not configured",
+            provider.as_str()
+        ))
     })?;
     let endpoint = provider.authorization_endpoint().ok_or_else(|| {
         ServiceError::BadRequest("provider does not use server OAuth".to_string())
@@ -2627,7 +2639,12 @@ async fn complete_cloud_link(
                and state_hash = $4
                and status = 'pending'
                and expires_at > now()",
-            &[&auth.account_id, &auth.device_id, &provider.as_str(), &state_hash],
+            &[
+                &auth.account_id,
+                &auth.device_id,
+                &provider.as_str(),
+                &state_hash,
+            ],
         )
         .await
         .map_err(db_error)?;
@@ -3113,18 +3130,18 @@ async fn process_cloud_copy_job(
     }
     match provider {
         CloudProvider::GoogleDrive => {
-            upload_to_google_drive(state, &item.connection, &item.segment, &item.job, bytes, &token_set)
-                .await
-        }
-        CloudProvider::MicrosoftOneDrive => {
-            upload_to_microsoft_onedrive(
+            upload_to_google_drive(
                 state,
+                &item.connection,
                 &item.segment,
                 &item.job,
                 bytes,
                 &token_set,
             )
             .await
+        }
+        CloudProvider::MicrosoftOneDrive => {
+            upload_to_microsoft_onedrive(state, &item.segment, &item.job, bytes, &token_set).await
         }
         CloudProvider::AppleICloud => Err(ServiceError::BadRequest(
             "apple_icloud is client managed".to_string(),
@@ -3136,9 +3153,10 @@ async fn download_segment_bytes(
     state: &AppState,
     segment: &SegmentResponse,
 ) -> Result<Vec<u8>, ServiceError> {
-    let s3 = state.s3.as_ref().ok_or_else(|| {
-        ServiceError::Unavailable("S3 client is not configured".to_string())
-    })?;
+    let s3 = state
+        .s3
+        .as_ref()
+        .ok_or_else(|| ServiceError::Unavailable("S3 client is not configured".to_string()))?;
     let object = s3
         .get_object()
         .bucket(&segment.storage_bucket)
@@ -3164,12 +3182,7 @@ async fn upload_to_google_drive(
     bytes: Vec<u8>,
     token_set: &CloudTokenSet,
 ) -> Result<String, ServiceError> {
-    let file_name = job
-        .destination_key
-        .rsplit('/')
-        .next()
-        .filter(|value| !value.is_empty())
-        .unwrap_or("segment.m4a");
+    let file_name = google_drive_file_name(&job.destination_key);
     let mut metadata = json!({
         "name": file_name,
         "description": format!("Sound recorder segment {}", segment.id)
@@ -3181,7 +3194,7 @@ async fn upload_to_google_drive(
         .mime_str("application/json")
         .map_err(|_| ServiceError::Internal("invalid metadata mime".to_string()))?;
     let file_part = Part::bytes(bytes)
-        .file_name(file_name.to_string())
+        .file_name(file_name)
         .mime_str(&segment.content_type)
         .map_err(|_| ServiceError::BadRequest("invalid segment content type".to_string()))?;
     let form = Form::new()
@@ -3215,7 +3228,9 @@ async fn upload_to_google_drive(
         .get("id")
         .and_then(Value::as_str)
         .map(ToString::to_string)
-        .ok_or_else(|| ServiceError::Unavailable("Google Drive upload did not return a file id".to_string()))
+        .ok_or_else(|| {
+            ServiceError::Unavailable("Google Drive upload did not return a file id".to_string())
+        })
 }
 
 async fn upload_to_microsoft_onedrive(
@@ -3226,9 +3241,7 @@ async fn upload_to_microsoft_onedrive(
     token_set: &CloudTokenSet,
 ) -> Result<String, ServiceError> {
     let path = graph_path_escape(&job.destination_key);
-    let url = format!(
-        "https://graph.microsoft.com/v1.0/me/drive/special/approot:/{path}:/content"
-    );
+    let url = format!("https://graph.microsoft.com/v1.0/me/drive/special/approot:/{path}:/content");
     let response = state
         .http
         .put(url)
@@ -3598,36 +3611,12 @@ fn cloud_copy_job_from_row(row: &Row) -> CloudCopyJobResponse {
     }
 }
 
-fn cloud_copy_job_record_from_row(row: &Row) -> CloudCopyJobRecord {
-    CloudCopyJobRecord {
-        id: row.get("id"),
-        account_id: row.get("account_id"),
-        connection_id: row.get("connection_id"),
-        segment_id: row.get("segment_id"),
-        provider: row.get("provider"),
-        status: row.get("status"),
-        destination_key: row.get("destination_key"),
-        provider_file_id: row.get("provider_file_id"),
-        attempts: row.get("attempts"),
-        completed_at: row.get("completed_at"),
-        last_error: row.get("last_error"),
-    }
-}
-
 fn cloud_copy_work_item_from_row(config: &Config, row: &Row) -> CloudCopyWorkItem {
     CloudCopyWorkItem {
         job: CloudCopyJobRecord {
             id: row.get("job_id"),
-            account_id: row.get("job_account_id"),
-            connection_id: row.get("connection_id"),
-            segment_id: row.get("segment_id"),
             provider: row.get("job_provider"),
-            status: row.get("job_status"),
             destination_key: row.get("destination_key"),
-            provider_file_id: row.get("provider_file_id"),
-            attempts: row.get("attempts"),
-            completed_at: row.get("completed_at"),
-            last_error: row.get("last_error"),
         },
         connection: CloudConnectionRecord {
             id: row.get("connection_id"),
@@ -3677,7 +3666,9 @@ fn token_set_from_response(response: OAuthTokenResponse) -> Result<CloudTokenSet
         .and_then(|seconds| Utc::now().checked_add_signed(ChronoDuration::seconds(seconds)));
     Ok(CloudTokenSet {
         access_token: response.access_token.ok_or_else(|| {
-            ServiceError::Unavailable("cloud OAuth token response did not include an access token".to_string())
+            ServiceError::Unavailable(
+                "cloud OAuth token response did not include an access token".to_string(),
+            )
         })?,
         refresh_token: response.refresh_token,
         token_type: response.token_type,
@@ -3729,7 +3720,10 @@ async fn exchange_authorization_code(
         ServiceError::BadRequest("provider does not use server OAuth".to_string())
     })?;
     let client_id = oauth.client_id.as_deref().ok_or_else(|| {
-        ServiceError::Unavailable(format!("{} OAuth client id is not configured", provider.as_str()))
+        ServiceError::Unavailable(format!(
+            "{} OAuth client id is not configured",
+            provider.as_str()
+        ))
     })?;
     let client_secret = oauth.client_secret.as_deref().ok_or_else(|| {
         ServiceError::Unavailable(format!(
@@ -3792,7 +3786,10 @@ async fn refresh_access_token(
         ServiceError::BadRequest("provider does not use server OAuth".to_string())
     })?;
     let client_id = oauth.client_id.as_deref().ok_or_else(|| {
-        ServiceError::Unavailable(format!("{} OAuth client id is not configured", provider.as_str()))
+        ServiceError::Unavailable(format!(
+            "{} OAuth client id is not configured",
+            provider.as_str()
+        ))
     })?;
     let client_secret = oauth.client_secret.as_deref().ok_or_else(|| {
         ServiceError::Unavailable(format!(
@@ -3850,9 +3847,8 @@ async fn token_set_for_connection(
     })?;
     let envelope = sealed_envelope_from_connection(connection)?;
     let plaintext = sealer.unseal(&connection.account_id, provider, &envelope)?;
-    let token_set: CloudTokenSet = serde_json::from_slice(&plaintext).map_err(|_| {
-        ServiceError::Internal("sealed cloud token payload is invalid".to_string())
-    })?;
+    let token_set: CloudTokenSet = serde_json::from_slice(&plaintext)
+        .map_err(|_| ServiceError::Internal("sealed cloud token payload is invalid".to_string()))?;
     let refreshed = refresh_access_token(state, provider, &token_set).await?;
     if refreshed.access_token != token_set.access_token
         || refreshed.expires_at != token_set.expires_at
@@ -4114,10 +4110,6 @@ async fn enqueue_retained_cloud_copy_jobs(
     Ok(inserted)
 }
 
-fn uuid_like(value: &str) -> bool {
-    Uuid::parse_str(value).is_ok()
-}
-
 fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(home))
@@ -4166,7 +4158,10 @@ fn app(state: AppState) -> Router {
             "/api/mobile/v1/cloud-connections/:connection_id/revoke",
             post(revoke_cloud_connection),
         )
-        .route("/api/mobile/v1/cloud-copy-jobs", get(list_client_cloud_copy_jobs))
+        .route(
+            "/api/mobile/v1/cloud-copy-jobs",
+            get(list_client_cloud_copy_jobs),
+        )
         .route(
             "/api/mobile/v1/cloud-copy-jobs/:job_id/complete",
             post(complete_client_cloud_copy_job),
@@ -4221,6 +4216,60 @@ async fn main() {
 
 async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_aliases_normalize() {
+        assert_eq!(
+            CloudProvider::parse("google").unwrap().as_str(),
+            "google_drive"
+        );
+        assert_eq!(
+            CloudProvider::parse("onedrive").unwrap().as_str(),
+            "microsoft_onedrive"
+        );
+        assert_eq!(
+            CloudProvider::parse("icloud").unwrap().link_mode(),
+            "client_managed"
+        );
+    }
+
+    #[test]
+    fn folder_path_rejects_unsafe_paths() {
+        assert!(validate_folder_path(Some("../x".to_string())).is_err());
+        assert!(validate_folder_path(Some("/absolute".to_string())).is_err());
+        assert!(validate_folder_path(Some("sound-recorder\\bad".to_string())).is_err());
+        assert_eq!(
+            validate_folder_path(Some("sound-recorder/day".to_string())).unwrap(),
+            "sound-recorder/day"
+        );
+    }
+
+    #[test]
+    fn query_escape_encodes_reserved_bytes() {
+        assert_eq!(query_escape("a b/c?d"), "a%20b%2Fc%3Fd");
+        assert_eq!(graph_path_escape("a b/c?d"), "a%20b/c%3Fd");
+    }
+
+    #[test]
+    fn google_drive_file_name_keeps_destination_context() {
+        assert_eq!(
+            google_drive_file_name("sound-recorder/device=dev/session=s/segment-0000000001.m4a"),
+            "sound-recorder__device=dev__session=s__segment-0000000001.m4a"
+        );
+        assert_eq!(google_drive_file_name("/"), "segment.m4a");
+    }
+
+    #[test]
+    fn metadata_has_size_limit() {
+        let oversized = json!({ "x": "a".repeat(MAX_META_BYTES + 1) });
+        assert!(validate_meta(Some(oversized)).is_err());
+        assert!(validate_meta(Some(json!({ "ok": true }))).is_ok());
+    }
 }
 
 fn render_home(config: &Config) -> String {

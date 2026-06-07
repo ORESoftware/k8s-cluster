@@ -93,6 +93,16 @@ spec:
               value: '900'
             - name: SOUND_RECORDER_S3_KEY_PREFIX
               value: sound-recorder/segments
+            - name: SOUND_RECORDER_OAUTH_STATE_TTL_SECONDS
+              value: '600'
+            - name: SOUND_RECORDER_CLOUD_COPY_BATCH_SIZE
+              value: '25'
+            - name: SOUND_RECORDER_CLOUD_COPY_MAX_ATTEMPTS
+              value: '3'
+            - name: SOUND_RECORDER_CLOUD_COPY_MAX_BYTES
+              value: '26214400'
+            - name: SOUND_RECORDER_CLOUD_BACKFILL_SEGMENTS
+              value: '240'
             - name: SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION
               value: 'false'
             - name: SOUND_RECORDER_S3_BUCKET
@@ -180,6 +190,36 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SOUND_RECORDER_SERVER_AUTH_SECRET
+                  optional: true
+            - name: SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY
+                  optional: true
+            - name: SOUND_RECORDER_GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_GOOGLE_CLIENT_ID
+                  optional: true
+            - name: SOUND_RECORDER_GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_GOOGLE_CLIENT_SECRET
+                  optional: true
+            - name: SOUND_RECORDER_MICROSOFT_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_MICROSOFT_CLIENT_ID
+                  optional: true
+            - name: SOUND_RECORDER_MICROSOFT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_MICROSOFT_CLIENT_SECRET
                   optional: true
             - name: SERVER_AUTH_SECRET
               valueFrom:

@@ -514,6 +514,174 @@ alter table if exists sound_recorder_audit_events
   add constraint sound_recorder_audit_events_device_fk
   foreign key (device_id) references sound_recorder_devices(id);
 
+create table if not exists sound_recorder_oauth_states (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null,
+  device_id uuid not null,
+  provider varchar(32) not null,
+  state_hash varchar(64) not null,
+  redirect_uri varchar(512) not null,
+  folder_path varchar(512),
+  status varchar(32) default 'pending' not null,
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint sound_recorder_oauth_states_provider_chk
+    check (provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud')),
+  constraint sound_recorder_oauth_states_status_chk
+    check (status in ('pending', 'consumed', 'expired', 'revoked')),
+  constraint sound_recorder_oauth_states_hash_chk
+    check (state_hash ~ '^[a-f0-9]{64}$'),
+  constraint sound_recorder_oauth_states_redirect_uri_size_chk
+    check (octet_length(redirect_uri) between 1 and 512),
+  constraint sound_recorder_oauth_states_folder_path_size_chk
+    check (folder_path is null or octet_length(folder_path) between 1 and 512),
+  constraint sound_recorder_oauth_states_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists sound_recorder_oauth_states_hash_uq
+  on sound_recorder_oauth_states (state_hash);
+
+create index if not exists sound_recorder_oauth_states_account_provider_idx
+  on sound_recorder_oauth_states (account_id, provider, created_at desc);
+
+create index if not exists sound_recorder_oauth_states_expiry_idx
+  on sound_recorder_oauth_states (expires_at asc)
+  where status = 'pending';
+
+alter table if exists sound_recorder_oauth_states
+  add constraint sound_recorder_oauth_states_account_fk
+  foreign key (account_id) references sound_recorder_accounts(id);
+
+alter table if exists sound_recorder_oauth_states
+  add constraint sound_recorder_oauth_states_device_fk
+  foreign key (device_id) references sound_recorder_devices(id);
+
+create table if not exists sound_recorder_cloud_connections (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null,
+  created_by_device_id uuid,
+  provider varchar(32) not null,
+  link_mode varchar(32) default 'server_oauth' not null,
+  status varchar(32) default 'active' not null,
+  display_name varchar(160),
+  provider_account_id varchar(240),
+  provider_subject_hash varchar(64),
+  root_folder_id varchar(512),
+  folder_path varchar(512) default 'sound-recorder' not null,
+  oauth_scope text,
+  token_ciphertext text,
+  token_nonce varchar(64),
+  token_aad varchar(512),
+  token_version integer,
+  token_expires_at timestamptz,
+  last_sync_at timestamptz,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint sound_recorder_cloud_connections_provider_chk
+    check (provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud')),
+  constraint sound_recorder_cloud_connections_link_mode_chk
+    check (link_mode in ('server_oauth', 'client_managed')),
+  constraint sound_recorder_cloud_connections_status_chk
+    check (status in ('active', 'paused', 'revoked', 'failed')),
+  constraint sound_recorder_cloud_connections_display_name_size_chk
+    check (display_name is null or octet_length(display_name) between 1 and 160),
+  constraint sound_recorder_cloud_connections_provider_account_id_size_chk
+    check (provider_account_id is null or octet_length(provider_account_id) between 1 and 240),
+  constraint sound_recorder_cloud_connections_subject_hash_chk
+    check (provider_subject_hash is null or provider_subject_hash ~ '^[a-f0-9]{64}$'),
+  constraint sound_recorder_cloud_connections_root_folder_id_size_chk
+    check (root_folder_id is null or octet_length(root_folder_id) between 1 and 512),
+  constraint sound_recorder_cloud_connections_folder_path_size_chk
+    check (octet_length(folder_path) between 1 and 512),
+  constraint sound_recorder_cloud_connections_token_version_chk
+    check (token_version is null or token_version > 0),
+  constraint sound_recorder_cloud_connections_token_shape_chk
+    check (
+      status = 'revoked'
+      or link_mode = 'client_managed'
+      or (token_ciphertext is not null and token_nonce is not null and token_aad is not null and token_version is not null)
+    ),
+  constraint sound_recorder_cloud_connections_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists sound_recorder_cloud_connections_active_account_provider_uq
+  on sound_recorder_cloud_connections (account_id, provider, provider_account_id)
+  where status <> 'revoked' and provider_account_id is not null;
+
+create index if not exists sound_recorder_cloud_connections_account_status_idx
+  on sound_recorder_cloud_connections (account_id, status, updated_at desc);
+
+alter table if exists sound_recorder_cloud_connections
+  add constraint sound_recorder_cloud_connections_account_fk
+  foreign key (account_id) references sound_recorder_accounts(id);
+
+alter table if exists sound_recorder_cloud_connections
+  add constraint sound_recorder_cloud_connections_created_by_device_fk
+  foreign key (created_by_device_id) references sound_recorder_devices(id);
+
+create table if not exists sound_recorder_cloud_copy_jobs (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null,
+  connection_id uuid not null,
+  segment_id uuid not null,
+  provider varchar(32) not null,
+  status varchar(32) default 'pending' not null,
+  destination_key varchar(2048) not null,
+  provider_file_id varchar(512),
+  attempts integer default 0 not null,
+  locked_until timestamptz,
+  started_at timestamptz,
+  completed_at timestamptz,
+  last_error varchar(500),
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint sound_recorder_cloud_copy_jobs_provider_chk
+    check (provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud')),
+  constraint sound_recorder_cloud_copy_jobs_status_chk
+    check (status in ('pending', 'running', 'waiting_client', 'completed', 'failed', 'skipped')),
+  constraint sound_recorder_cloud_copy_jobs_destination_key_size_chk
+    check (octet_length(destination_key) between 1 and 2048),
+  constraint sound_recorder_cloud_copy_jobs_provider_file_id_size_chk
+    check (provider_file_id is null or octet_length(provider_file_id) between 1 and 512),
+  constraint sound_recorder_cloud_copy_jobs_attempts_chk
+    check (attempts >= 0 and attempts <= 50),
+  constraint sound_recorder_cloud_copy_jobs_last_error_size_chk
+    check (last_error is null or octet_length(last_error) between 1 and 500),
+  constraint sound_recorder_cloud_copy_jobs_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists sound_recorder_cloud_copy_jobs_connection_segment_uq
+  on sound_recorder_cloud_copy_jobs (connection_id, segment_id);
+
+create index if not exists sound_recorder_cloud_copy_jobs_account_status_idx
+  on sound_recorder_cloud_copy_jobs (account_id, status, updated_at asc);
+
+create index if not exists sound_recorder_cloud_copy_jobs_connection_status_idx
+  on sound_recorder_cloud_copy_jobs (connection_id, status, updated_at asc);
+
+create index if not exists sound_recorder_cloud_copy_jobs_segment_idx
+  on sound_recorder_cloud_copy_jobs (segment_id);
+
+alter table if exists sound_recorder_cloud_copy_jobs
+  add constraint sound_recorder_cloud_copy_jobs_account_fk
+  foreign key (account_id) references sound_recorder_accounts(id);
+
+alter table if exists sound_recorder_cloud_copy_jobs
+  add constraint sound_recorder_cloud_copy_jobs_connection_fk
+  foreign key (connection_id) references sound_recorder_cloud_connections(id);
+
+alter table if exists sound_recorder_cloud_copy_jobs
+  add constraint sound_recorder_cloud_copy_jobs_segment_fk
+  foreign key (segment_id) references sound_recorder_segments(id);
+
 create table if not exists container_pool_configs (
   id uuid primary key default gen_random_uuid(),
   slug varchar(120) not null,

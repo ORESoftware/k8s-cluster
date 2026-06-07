@@ -2,7 +2,8 @@
 
 Rust backend for a mobile sound-recorder "dashcam" product. It serves the public product pages,
 device registration, rolling audio segment upload sessions, S3 presigned upload URLs, and
-short-lived evidence export download links.
+short-lived evidence export download links. Users can also link user-owned cloud storage
+destinations so completed segments are mirrored out of the centralized S3 bucket.
 
 ## Shape
 
@@ -10,6 +11,12 @@ short-lived evidence export download links.
   each segment.
 - The service stores metadata in Postgres and stores audio bytes in S3. It does not proxy audio
   through the Rust process.
+- Google Drive and Microsoft OneDrive links use server-side OAuth tokens sealed with AES-256-GCM.
+  The server stores only sealed token envelopes in Postgres and refreshes access tokens inside the
+  internal copy drain.
+- Apple iCloud is client-managed because Apple does not expose a general server-side iCloud Drive
+  OAuth/write API. The backend tracks the linked iCloud destination and exposes copy jobs with
+  short-lived S3 download URLs for the iOS client to copy into its iCloud/CloudKit container.
 - CloudFront belongs on the playback/download side. Uploads are presigned S3 `PUT`s; evidence
   exports use short-lived S3 `GET` URLs until a CloudFront-signing layer is added.
 - Device auth uses opaque bearer tokens. Tokens are returned only on registration and stored as
@@ -38,7 +45,20 @@ short-lived evidence export download links.
   window.
 - `POST /api/mobile/v1/evidence-exports` — returns short-lived download links for an account/time
   range and writes an audit row.
+- `GET /api/mobile/v1/cloud-connections` — lists linked user cloud destinations.
+- `POST /api/mobile/v1/cloud-connections/oauth/start` — starts a Google Drive, OneDrive, or
+  client-managed iCloud link flow.
+- `POST /api/mobile/v1/cloud-connections/oauth/complete` — completes a link, seals OAuth tokens
+  for server-managed providers, and backfills recent uploaded segments into copy jobs.
+- `POST /api/mobile/v1/cloud-connections/:connection_id/revoke` — revokes a linked destination,
+  clears sealed credentials, and skips pending copy jobs.
+- `GET /api/mobile/v1/cloud-copy-jobs` — lists iCloud client-managed copy jobs with short-lived
+  S3 download links.
+- `POST /api/mobile/v1/cloud-copy-jobs/:job_id/complete` — marks a client-managed cloud copy
+  complete.
 - `POST /internal/retention/sweep` — server-authenticated marker sweep for expired segment rows.
+- `POST /internal/cloud-copy/drain` — server-authenticated worker drain for pending Google Drive
+  and OneDrive copy jobs.
 - `GET /healthz`, `GET /readyz`, `GET /metrics`.
 - `GET /docs/api`, `GET /api/docs`, `GET /api/docs.json`.
 
@@ -62,6 +82,14 @@ short-lived evidence export download links.
 | `SOUND_RECORDER_MAX_SEGMENT_BYTES` | `10485760` | Upper bound accepted by the API. |
 | `SOUND_RECORDER_UPLOAD_URL_TTL_SECONDS` | `300` | Short-lived S3 PUT URL TTL. |
 | `SOUND_RECORDER_DOWNLOAD_URL_TTL_SECONDS` | `900` | Short-lived evidence GET URL TTL. |
+| `SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY` | unset | Base64-encoded 32-byte AES-GCM key required for server-managed Google Drive and OneDrive links. |
+| `SOUND_RECORDER_GOOGLE_CLIENT_ID` / `SOUND_RECORDER_GOOGLE_CLIENT_SECRET` | unset | OAuth client for Google Drive `drive.file` links. |
+| `SOUND_RECORDER_MICROSOFT_CLIENT_ID` / `SOUND_RECORDER_MICROSOFT_CLIENT_SECRET` | unset | OAuth client for Microsoft OneDrive AppFolder links. |
+| `SOUND_RECORDER_OAUTH_STATE_TTL_SECONDS` | `600` | OAuth link state TTL, clamped to `60..3600`. |
+| `SOUND_RECORDER_CLOUD_COPY_BATCH_SIZE` | `25` | Internal copy drain batch size, clamped to `1..100`. |
+| `SOUND_RECORDER_CLOUD_COPY_MAX_ATTEMPTS` | `3` | Retry attempts before a server-managed copy job is marked failed. |
+| `SOUND_RECORDER_CLOUD_COPY_MAX_BYTES` | `26214400` | Per-segment server-managed copy byte limit, clamped to `1..209715200`. |
+| `SOUND_RECORDER_CLOUD_BACKFILL_SEGMENTS` | `240` | Uploaded retained segments to enqueue when a cloud destination is linked. |
 | `SOUND_RECORDER_IOS_APP_STORE_URL` | unset | `/download/ios` target. |
 | `SOUND_RECORDER_ANDROID_PLAY_STORE_URL` | unset | `/download/android` target. |
 
@@ -74,7 +102,9 @@ The app stores should be treated as part of the product contract, not a deploy a
 clients need a visible active-recording state, clear onboarding consent, user controls to stop
 recording and export/delete data, and jurisdiction-aware guidance because recording consent laws vary.
 On Android, the recorder will likely need a microphone foreground service. On iOS, background audio
-capture must fit Apple's background-audio rules and review expectations.
+capture must fit Apple's background-audio rules and review expectations. For iCloud mirroring, the
+iOS client must use Apple-approved iCloud/CloudKit APIs and report copy completion back to the
+backend because the server cannot directly write to a user's arbitrary iCloud Drive account.
 
 ## Local Smoke
 
@@ -82,6 +112,7 @@ capture must fit Apple's background-audio rules and review expectations.
 cd remote/deployments/dd-sound-recorder-rs
 SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION=true \
 SOUND_RECORDER_DEVICE_TOKEN_PEPPER=local-dev-pepper \
+SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
 SOUND_RECORDER_SERVER_AUTH_SECRET=local-dev-secret \
 cargo run
 ```

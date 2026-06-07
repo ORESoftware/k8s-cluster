@@ -1164,6 +1164,372 @@ class SoundRecorderAuditEventsRow {
   }
 }
 
+const soundRecorderOauthStatesTable = "sound_recorder_oauth_states";
+const soundRecorderOauthStatesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      provider,\n      state_hash,\n      redirect_uri,\n      folder_path,\n      status,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_oauth_states";
+
+const soundRecorderOauthStatesProviderValues = <String>["google_drive", "microsoft_onedrive", "apple_icloud"];
+const soundRecorderOauthStatesStatusValues = <String>["pending", "consumed", "expired", "revoked"];
+
+class SoundRecorderOauthStatesRow {
+  const SoundRecorderOauthStatesRow({
+    required this.id,
+    required this.accountId,
+    required this.deviceId,
+    required this.provider,
+    required this.stateHash,
+    required this.redirectUri,
+    this.folderPath,
+    required this.status,
+    required this.expiresAt,
+    this.consumedAt,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String accountId;
+  final String deviceId;
+  final String provider;
+  final String stateHash;
+  final String redirectUri;
+  final String? folderPath;
+  final String status;
+  final String expiresAt;
+  final String? consumedAt;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory SoundRecorderOauthStatesRow.fromJson(Map<String, Object?> json) {
+    return SoundRecorderOauthStatesRow(
+      id: _readRequiredString(json, "id"),
+      accountId: _readRequiredString(json, "accountId"),
+      deviceId: _readRequiredString(json, "deviceId"),
+      provider: _readRequiredString(json, "provider"),
+      stateHash: _readRequiredString(json, "stateHash"),
+      redirectUri: _readRequiredString(json, "redirectUri"),
+      folderPath: _readOptionalString(json, "folderPath"),
+      status: _readRequiredString(json, "status"),
+      expiresAt: _readRequiredString(json, "expiresAt"),
+      consumedAt: _readOptionalString(json, "consumedAt"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceId": deviceId,
+    "provider": provider,
+    "stateHash": stateHash,
+    "redirectUri": redirectUri,
+    "folderPath": folderPath,
+    "status": status,
+    "expiresAt": expiresAt,
+    "consumedAt": consumedAt,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!soundRecorderOauthStatesProviderValues.contains(provider)) {
+      errors.add("unsupported sound_recorder_oauth_states.provider");
+    }
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(stateHash)) {
+      errors.add("sound_recorder_oauth_states.state_hash does not match the required pattern");
+    }
+    if (utf8.encode(redirectUri).length > 512) {
+      errors.add("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes");
+    }
+    if (utf8.encode(redirectUri).length < 1) {
+      errors.add("sound_recorder_oauth_states.redirect_uri is below 1 bytes");
+    }
+    if (folderPath != null && utf8.encode(folderPath!).length > 512) {
+      errors.add("sound_recorder_oauth_states.folder_path exceeds 512 bytes");
+    }
+    if (folderPath != null && utf8.encode(folderPath!).length < 1) {
+      errors.add("sound_recorder_oauth_states.folder_path is below 1 bytes");
+    }
+    if (!soundRecorderOauthStatesStatusValues.contains(status)) {
+      errors.add("unsupported sound_recorder_oauth_states.status");
+    }
+    return errors;
+  }
+}
+
+const soundRecorderCloudConnectionsTable = "sound_recorder_cloud_connections";
+const soundRecorderCloudConnectionsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      created_by_device_id::text as created_by_device_id,\n      provider,\n      link_mode,\n      status,\n      display_name,\n      provider_account_id,\n      provider_subject_hash,\n      root_folder_id,\n      folder_path,\n      oauth_scope,\n      token_ciphertext,\n      token_nonce,\n      token_aad,\n      token_version,\n      to_char(token_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as token_expires_at,\n      to_char(last_sync_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_sync_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_connections";
+
+const soundRecorderCloudConnectionsProviderValues = <String>["google_drive", "microsoft_onedrive", "apple_icloud"];
+const soundRecorderCloudConnectionsLinkModeValues = <String>["server_oauth", "client_managed"];
+const soundRecorderCloudConnectionsStatusValues = <String>["active", "paused", "revoked", "failed"];
+
+class SoundRecorderCloudConnectionsRow {
+  const SoundRecorderCloudConnectionsRow({
+    required this.id,
+    required this.accountId,
+    this.createdByDeviceId,
+    required this.provider,
+    required this.linkMode,
+    required this.status,
+    this.displayName,
+    this.providerAccountId,
+    this.providerSubjectHash,
+    this.rootFolderId,
+    required this.folderPath,
+    this.oauthScope,
+    this.tokenCiphertext,
+    this.tokenNonce,
+    this.tokenAad,
+    this.tokenVersion,
+    this.tokenExpiresAt,
+    this.lastSyncAt,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String accountId;
+  final String? createdByDeviceId;
+  final String provider;
+  final String linkMode;
+  final String status;
+  final String? displayName;
+  final String? providerAccountId;
+  final String? providerSubjectHash;
+  final String? rootFolderId;
+  final String folderPath;
+  final String? oauthScope;
+  final String? tokenCiphertext;
+  final String? tokenNonce;
+  final String? tokenAad;
+  final int? tokenVersion;
+  final String? tokenExpiresAt;
+  final String? lastSyncAt;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory SoundRecorderCloudConnectionsRow.fromJson(Map<String, Object?> json) {
+    return SoundRecorderCloudConnectionsRow(
+      id: _readRequiredString(json, "id"),
+      accountId: _readRequiredString(json, "accountId"),
+      createdByDeviceId: _readOptionalString(json, "createdByDeviceId"),
+      provider: _readRequiredString(json, "provider"),
+      linkMode: _readRequiredString(json, "linkMode"),
+      status: _readRequiredString(json, "status"),
+      displayName: _readOptionalString(json, "displayName"),
+      providerAccountId: _readOptionalString(json, "providerAccountId"),
+      providerSubjectHash: _readOptionalString(json, "providerSubjectHash"),
+      rootFolderId: _readOptionalString(json, "rootFolderId"),
+      folderPath: _readRequiredString(json, "folderPath"),
+      oauthScope: _readOptionalString(json, "oauthScope"),
+      tokenCiphertext: _readOptionalString(json, "tokenCiphertext"),
+      tokenNonce: _readOptionalString(json, "tokenNonce"),
+      tokenAad: _readOptionalString(json, "tokenAad"),
+      tokenVersion: _readOptionalInt(json, "tokenVersion"),
+      tokenExpiresAt: _readOptionalString(json, "tokenExpiresAt"),
+      lastSyncAt: _readOptionalString(json, "lastSyncAt"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "createdByDeviceId": createdByDeviceId,
+    "provider": provider,
+    "linkMode": linkMode,
+    "status": status,
+    "displayName": displayName,
+    "providerAccountId": providerAccountId,
+    "providerSubjectHash": providerSubjectHash,
+    "rootFolderId": rootFolderId,
+    "folderPath": folderPath,
+    "oauthScope": oauthScope,
+    "tokenCiphertext": tokenCiphertext,
+    "tokenNonce": tokenNonce,
+    "tokenAad": tokenAad,
+    "tokenVersion": tokenVersion,
+    "tokenExpiresAt": tokenExpiresAt,
+    "lastSyncAt": lastSyncAt,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!soundRecorderCloudConnectionsProviderValues.contains(provider)) {
+      errors.add("unsupported sound_recorder_cloud_connections.provider");
+    }
+    if (!soundRecorderCloudConnectionsLinkModeValues.contains(linkMode)) {
+      errors.add("unsupported sound_recorder_cloud_connections.link_mode");
+    }
+    if (!soundRecorderCloudConnectionsStatusValues.contains(status)) {
+      errors.add("unsupported sound_recorder_cloud_connections.status");
+    }
+    if (displayName != null && utf8.encode(displayName!).length > 160) {
+      errors.add("sound_recorder_cloud_connections.display_name exceeds 160 bytes");
+    }
+    if (displayName != null && utf8.encode(displayName!).length < 1) {
+      errors.add("sound_recorder_cloud_connections.display_name is below 1 bytes");
+    }
+    if (providerAccountId != null && utf8.encode(providerAccountId!).length > 240) {
+      errors.add("sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes");
+    }
+    if (providerAccountId != null && utf8.encode(providerAccountId!).length < 1) {
+      errors.add("sound_recorder_cloud_connections.provider_account_id is below 1 bytes");
+    }
+    if (providerSubjectHash != null && !RegExp(r'^[a-f0-9]{64}$').hasMatch(providerSubjectHash!)) {
+      errors.add("sound_recorder_cloud_connections.provider_subject_hash does not match the required pattern");
+    }
+    if (rootFolderId != null && utf8.encode(rootFolderId!).length > 512) {
+      errors.add("sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes");
+    }
+    if (rootFolderId != null && utf8.encode(rootFolderId!).length < 1) {
+      errors.add("sound_recorder_cloud_connections.root_folder_id is below 1 bytes");
+    }
+    if (utf8.encode(folderPath).length > 512) {
+      errors.add("sound_recorder_cloud_connections.folder_path exceeds 512 bytes");
+    }
+    if (utf8.encode(folderPath).length < 1) {
+      errors.add("sound_recorder_cloud_connections.folder_path is below 1 bytes");
+    }
+    if (tokenVersion != null && tokenVersion! < 1) {
+      errors.add("sound_recorder_cloud_connections.token_version is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const soundRecorderCloudCopyJobsTable = "sound_recorder_cloud_copy_jobs";
+const soundRecorderCloudCopyJobsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      connection_id::text as connection_id,\n      segment_id::text as segment_id,\n      provider,\n      status,\n      destination_key,\n      provider_file_id,\n      attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      last_error,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_copy_jobs";
+
+const soundRecorderCloudCopyJobsProviderValues = <String>["google_drive", "microsoft_onedrive", "apple_icloud"];
+const soundRecorderCloudCopyJobsStatusValues = <String>["pending", "running", "waiting_client", "completed", "failed", "skipped"];
+
+class SoundRecorderCloudCopyJobsRow {
+  const SoundRecorderCloudCopyJobsRow({
+    required this.id,
+    required this.accountId,
+    required this.connectionId,
+    required this.segmentId,
+    required this.provider,
+    required this.status,
+    required this.destinationKey,
+    this.providerFileId,
+    required this.attempts,
+    this.lockedUntil,
+    this.startedAt,
+    this.completedAt,
+    this.lastError,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String accountId;
+  final String connectionId;
+  final String segmentId;
+  final String provider;
+  final String status;
+  final String destinationKey;
+  final String? providerFileId;
+  final int attempts;
+  final String? lockedUntil;
+  final String? startedAt;
+  final String? completedAt;
+  final String? lastError;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory SoundRecorderCloudCopyJobsRow.fromJson(Map<String, Object?> json) {
+    return SoundRecorderCloudCopyJobsRow(
+      id: _readRequiredString(json, "id"),
+      accountId: _readRequiredString(json, "accountId"),
+      connectionId: _readRequiredString(json, "connectionId"),
+      segmentId: _readRequiredString(json, "segmentId"),
+      provider: _readRequiredString(json, "provider"),
+      status: _readRequiredString(json, "status"),
+      destinationKey: _readRequiredString(json, "destinationKey"),
+      providerFileId: _readOptionalString(json, "providerFileId"),
+      attempts: _readRequiredInt(json, "attempts"),
+      lockedUntil: _readOptionalString(json, "lockedUntil"),
+      startedAt: _readOptionalString(json, "startedAt"),
+      completedAt: _readOptionalString(json, "completedAt"),
+      lastError: _readOptionalString(json, "lastError"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "connectionId": connectionId,
+    "segmentId": segmentId,
+    "provider": provider,
+    "status": status,
+    "destinationKey": destinationKey,
+    "providerFileId": providerFileId,
+    "attempts": attempts,
+    "lockedUntil": lockedUntil,
+    "startedAt": startedAt,
+    "completedAt": completedAt,
+    "lastError": lastError,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!soundRecorderCloudCopyJobsProviderValues.contains(provider)) {
+      errors.add("unsupported sound_recorder_cloud_copy_jobs.provider");
+    }
+    if (!soundRecorderCloudCopyJobsStatusValues.contains(status)) {
+      errors.add("unsupported sound_recorder_cloud_copy_jobs.status");
+    }
+    if (utf8.encode(destinationKey).length > 2048) {
+      errors.add("sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes");
+    }
+    if (utf8.encode(destinationKey).length < 1) {
+      errors.add("sound_recorder_cloud_copy_jobs.destination_key is below 1 bytes");
+    }
+    if (providerFileId != null && utf8.encode(providerFileId!).length > 512) {
+      errors.add("sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes");
+    }
+    if (providerFileId != null && utf8.encode(providerFileId!).length < 1) {
+      errors.add("sound_recorder_cloud_copy_jobs.provider_file_id is below 1 bytes");
+    }
+    if (attempts < 0) {
+      errors.add("sound_recorder_cloud_copy_jobs.attempts is below the minimum");
+    }
+    if (attempts > 50) {
+      errors.add("sound_recorder_cloud_copy_jobs.attempts is above the maximum");
+    }
+    if (lastError != null && utf8.encode(lastError!).length > 500) {
+      errors.add("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes");
+    }
+    if (lastError != null && utf8.encode(lastError!).length < 1) {
+      errors.add("sound_recorder_cloud_copy_jobs.last_error is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
 const containerPoolConfigsTable = "container_pool_configs";
 const containerPoolConfigsSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      image,\n      command::text as command_json,\n      env::text as env_json,\n      request_path,\n      health_path,\n      container_port,\n      min_warm,\n      max_warm,\n      max_concurrency_per_container,\n      request_timeout_ms,\n      idle_ttl_seconds,\n      nats_subject,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_configs";
 

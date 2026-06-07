@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-sound-recorder-rs",
   "language": "rust",
-  "routeCount": 19,
+  "routeCount": 26,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 12
+    "user-generated": 19
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -59,6 +59,108 @@
       "purpose": "Machine-readable generated API route metadata.",
       "handlers": [
         "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/mobile/v1/cloud-connections",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_cloud_connections"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/mobile/v1/cloud-connections/:connection_id/revoke",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "revoke_cloud_connection"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/mobile/v1/cloud-connections/oauth/complete",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "complete_cloud_link"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/mobile/v1/cloud-connections/oauth/start",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "start_cloud_link"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/mobile/v1/cloud-copy-jobs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_client_cloud_copy_jobs"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/mobile/v1/cloud-copy-jobs/:job_id/complete",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "complete_client_cloud_copy_job"
       ],
       "sourceFiles": [
         "remote/deployments/dd-sound-recorder-rs/src/main.rs"
@@ -263,6 +365,23 @@
       "purpose": "Health check.",
       "handlers": [
         "healthz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/cloud-copy/drain",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "drain_cloud_copy_jobs"
       ],
       "sourceFiles": [
         "remote/deployments/dd-sound-recorder-rs/src/main.rs"
