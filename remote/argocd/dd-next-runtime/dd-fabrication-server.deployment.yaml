@@ -151,6 +151,7 @@ spec:
                 '"path": "/fabrication/slicers/catalog"' \
                 '"path": "/fabrication/slicers/result"' \
                 '"path": "/fabrication/mesh-repair/catalog"' \
+                '"path": "/fabrication/mesh-repair/result"' \
                 '"path": "/fabrication/design/import/catalog"' \
                 '"path": "/fabrication/design/import/review"' \
                 '"path": "/fabrication/design/import/result"' \
@@ -197,9 +198,16 @@ spec:
                 '"path": "/fabrication/dispositions/catalog"' \
                 '"path": "/fabrication/dispositions/result"' \
                 '"path": "/fabrication/costing/catalog"' \
+                '"path": "/fabrication/costing/result"' \
                 '"path": "/fabrication/utilities/catalog"' \
+                '"path": "/fabrication/energy/catalog"' \
+                '"path": "/fabrication/energy/result"' \
                 '"path": "/fabrication/utilities/result"' \
                 '"path": "/fabrication/telemetry/catalog"' \
+                '"path": "/fabrication/availability/catalog"' \
+                '"path": "/fabrication/availability/result"' \
+                '"path": "/fabrication/maintenance/catalog"' \
+                '"path": "/fabrication/maintenance/result"' \
                 '"path": "/fabrication/telemetry/result"' \
                 '"path": "/fabrication/quality/plan"' \
                 '"path": "/fabrication/quality/result"' \
@@ -210,7 +218,10 @@ spec:
                 '"path": "/fabrication/interventions/catalog"' \
                 '"path": "/fabrication/setup/catalog"' \
                 '"path": "/fabrication/tooling/catalog"' \
+                '"path": "/fabrication/consumables/catalog"' \
+                '"path": "/fabrication/consumables/result"' \
                 '"path": "/fabrication/workholding/catalog"' \
+                '"path": "/fabrication/workholding/result"' \
                 '"path": "/fabrication/support-strategies/catalog"' \
                 '"path": "/fabrication/support-strategies/result"' \
                 '"path": "/fabrication/process-recipes/catalog"' \
