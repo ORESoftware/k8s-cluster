@@ -56916,6 +56916,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/machines/catalog",
         "GET /printers/catalog",
         "GET /fabrication/printers/catalog",
+        "GET /printers/preflight/catalog",
+        "GET /fabrication/printers/preflight/catalog",
         "GET /subtractive/catalog",
         "GET /fabrication/subtractive/catalog",
         "GET /cnc/catalog",
@@ -56926,6 +56928,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/machines/select",
         "GET /controllers/catalog",
         "GET /fabrication/controllers/catalog",
+        "GET /controllers/preflight/catalog",
+        "GET /fabrication/controllers/preflight/catalog",
         "POST /controllers/result",
         "POST /fabrication/controllers/result",
         "GET /materials/catalog",
@@ -57178,6 +57182,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/learning/engines/catalog",
         "GET /learning/models/catalog",
         "GET /fabrication/learning/models/catalog",
+        "GET /learning/beliefs/catalog",
+        "GET /fabrication/learning/beliefs/catalog",
         "GET /learning/optimizers/catalog",
         "GET /fabrication/learning/optimizers/catalog",
         "GET /learning/rewards/catalog",
@@ -57410,7 +57416,8 @@ async fn landing_page() -> axum::response::Html<&'static str> {
     </div>
 
     <section>
-      <h2>Request Flow</h2>
+      <h2>How It Works</h2>
+      <p>The service turns a submitted fabrication goal into evidence-backed choices: it imports or generates geometry, chooses candidate machines and materials, decomposes or combines parts when a single process is risky, generates or reviews instructions, simulates and validates release blockers, then records outcomes so later jobs can learn from the route.</p>
       <div class="flow">
         <div class="step"><strong>1. Discover</strong><br>Use <code>/fabrication/capabilities</code>, <code>/fabrication/intake/catalog</code>, <code>/fabrication/templates/catalog</code>, schema, and examples.</div>
         <div class="step"><strong>2. Intake</strong><br>Provide design inputs, instructions, machines, materials, and review evidence.</div>
@@ -89452,6 +89459,102 @@ async fn controller_catalog_http() -> impl IntoResponse {
     Json(controller_postprocessor_catalog_response())
 }
 
+fn controller_preflight_catalog_response() -> Value {
+    let targets = controller_catalog_targets();
+    let dialect_families = unique_sorted(targets.iter().filter_map(|item| {
+        item.get("dialectFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let postprocessors = unique_sorted(targets.iter().filter_map(|item| {
+        item.get("postprocessor")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.controller-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /controllers/preflight/catalog",
+            "GET /fabrication/controllers/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/controllers/catalog",
+            "POST /fabrication/controllers/result",
+            "POST /fabrication/machine-code/generate",
+            "POST /fabrication/machine-code/result",
+            "POST /fabrication/simulation/run"
+        ],
+        "targetCount": targets.len(),
+        "dialectFamilies": dialect_families,
+        "postprocessors": postprocessors,
+        "preflightGroups": [
+            {
+                "group": "modal-state",
+                "requiredEvidence": [
+                    "units mode G20/G21 or controller equivalent",
+                    "absolute or incremental positioning mode",
+                    "active plane and arc-center convention",
+                    "cutter, tool-nose, and tool-length compensation cancel/activate state"
+                ],
+                "releaseBlockers": [
+                    "unverified modal state before feed or rapid plunge",
+                    "compensation active at program end",
+                    "arc interpolation without plane or center/radius evidence"
+                ]
+            },
+            {
+                "group": "offset-and-setup-state",
+                "requiredEvidence": [
+                    "work offset or datum proof",
+                    "tool length and tool radius/geometry offset table review",
+                    "fixture and workholding proof",
+                    "probe, touch-off, or setup-sheet trace"
+                ],
+                "releaseBlockers": [
+                    "G10/work-offset writes without controller offset-table review",
+                    "tool change with stale tool-length compensation",
+                    "cutting or negative-Z rapid before datum/workholding evidence"
+                ]
+            },
+            {
+                "group": "program-dependency-state",
+                "requiredEvidence": [
+                    "macro/subprogram package retained with checksums",
+                    "postprocessor version and controller dialect record",
+                    "tool/magazine map or operator-loaded tool evidence",
+                    "dry-run or simulation result for the exact output artifact"
+                ],
+                "releaseBlockers": [
+                    "M98/M99 or controller macro dependency without submitted review evidence",
+                    "unknown postprocessor or controller dialect",
+                    "dry-run/simulation not retained for the generated machine code"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "controllerPlan.releaseGates",
+            "controllerPlan.compatibilityTargets",
+            "machineCodeResult.controllerChecks",
+            "instructionAnalysis.failureBoundaries",
+            "releasePackagePlan.requiredArtifacts"
+        ],
+        "releasePolicy": [
+            "controller preflight catalog entries describe evidence required before generated or imported machine code can be considered for release",
+            "preflight evidence cannot bypass validation, simulation, setup, quality, or operator/automation signoff",
+            "failed preflight checks should be retained through POST /fabrication/controllers/result and POST /fabrication/machine-code/result so MDP/POMDP/neural workers can learn reliable controller routes"
+        ],
+        "targets": targets
+    })
+}
+
+async fn controller_preflight_catalog_http() -> impl IntoResponse {
+    Json(controller_preflight_catalog_response())
+}
+
 fn validate_controller_postprocessor_result_targets(
     targets: Option<Vec<ControllerPostprocessorResultTarget>>,
 ) -> Result<Vec<Value>, String> {
@@ -95554,6 +95657,97 @@ async fn printer_catalog_http() -> impl IntoResponse {
     Json(printer_catalog_response())
 }
 
+fn printer_preflight_catalog_response() -> Value {
+    let printer_payload = printer_catalog_response();
+    let printers = printer_payload
+        .get("printers")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.printer-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /printers/preflight/catalog",
+            "GET /fabrication/printers/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/printers/catalog",
+            "GET /fabrication/slicers/catalog",
+            "POST /fabrication/slicers/result",
+            "POST /fabrication/instructions/validate",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/quality/result"
+        ],
+        "printerCount": printers.len(),
+        "preflightGroups": [
+            {
+                "group": "thermal-and-motion-state",
+                "requiredEvidence": [
+                    "G28 or verified homing/position restore",
+                    "M109/nozzle temperature wait or explicit hotend-at-temperature proof",
+                    "M190/bed temperature wait or explicit bed-at-temperature proof",
+                    "bed mesh, Z-offset, or first-layer probe evidence"
+                ],
+                "releaseBlockers": [
+                    "positive extrusion before nozzle or bed wait evidence",
+                    "motion/extrusion after disabled steppers without re-home or restart evidence",
+                    "negative-Z extrusion without measured Z-offset or probe proof"
+                ]
+            },
+            {
+                "group": "extrusion-material-and-resume-state",
+                "requiredEvidence": [
+                    "material lot, dry-storage, resin, powder, pellet, paste, or feedstock conditioning",
+                    "extrusion mode and G92 E reset proof",
+                    "purge, prime, wipe-tower, or flow-calibration evidence",
+                    "runout, remaining-material, vat, hopper, cartridge, or powder capacity proof"
+                ],
+                "releaseBlockers": [
+                    "extrusion after material/tool change without purge/prime/resume evidence",
+                    "extrusion mode switch without a fresh extrusion reset",
+                    "material capacity or conditioning evidence absent"
+                ]
+            },
+            {
+                "group": "support-orientation-and-first-article-state",
+                "requiredEvidence": [
+                    "slicer profile checksum or printer/job profile",
+                    "support, orientation, brim/raft, first-layer, or first-slice preview",
+                    "build surface, vat, powder bed, sheet stack, or fixture readiness",
+                    "simulation, dry run, first-article, telemetry, or operator signoff"
+                ],
+                "releaseBlockers": [
+                    "support/orientation assumptions not reviewed",
+                    "first-layer, exposure, recoater, peel, or registration evidence absent",
+                    "generated printer code lacks retained profile and release package evidence"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "slicerProfileResult.printPreparation",
+            "instructionAnalysis.failureBoundaries",
+            "materialPlan.routeRequirements",
+            "qualityPlan.inspectionPoints",
+            "monitoringPlan.monitoringPoints",
+            "machineRelease.releaseBlockers"
+        ],
+        "releasePolicy": [
+            "printer preflight catalog entries describe additive release evidence, not certified live printer approval",
+            "preflight evidence cannot bypass instruction validation, simulation, setup, quality, telemetry, or operator/automation signoff",
+            "failed printer preflight checks should be retained through slicer, material, quality, telemetry, and learning outcome routes so MDP/POMDP/neural workers can learn safer print strategies"
+        ],
+        "printers": printers
+    })
+}
+
+async fn printer_preflight_catalog_http() -> impl IntoResponse {
+    Json(printer_preflight_catalog_response())
+}
+
 fn subtractive_catalog_response() -> Value {
     let machines = default_machines();
     let subtractive = machines
@@ -96711,6 +96905,91 @@ fn learning_model_catalog_response() -> Value {
 
 async fn learning_model_catalog_http() -> impl IntoResponse {
     Json(learning_model_catalog_response())
+}
+
+fn learning_belief_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.learning-belief-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /learning/beliefs/catalog",
+            "GET /fabrication/learning/beliefs/catalog"
+        ],
+        "engine": {
+            "crateName": "des_engine",
+            "sourceCrate": "remote/submodules/discrete-event-system.rs",
+            "pomdpSchema": POMDP_SCHEMA,
+            "primitive": "des_engine::des::decision::solve_pomdp_underlying"
+        },
+        "beliefSurfaces": [
+            {
+                "surface": "pomdpBeliefState.hiddenStates",
+                "schema": "dd.fabrication.pomdp-belief-state.v1",
+                "signals": [
+                    "hidden machine-failure probability",
+                    "hidden human-intervention probability",
+                    "hidden split/combine uncertainty",
+                    "missing setup, quality, thermal, probe, or controller evidence"
+                ],
+                "usedFor": [
+                    "prioritize release probes before machine-ready handoff",
+                    "rank uncertain routes that may need human intervention",
+                    "feed POMDP workers without treating belief as proof"
+                ]
+            },
+            {
+                "surface": "releaseProbePlan.probes",
+                "schema": "dd.fabrication.release-probe-plan.v1",
+                "signals": [
+                    "probe id",
+                    "probe kind",
+                    "information gain",
+                    "required evidence",
+                    "machine-ready blocker state"
+                ],
+                "usedFor": [
+                    "request direct evidence that can collapse hidden-state uncertainty",
+                    "keep unresolved probes attached to machineRelease.releaseBlockers",
+                    "teach outcome memory which probes cleared or blocked future work"
+                ]
+            },
+            {
+                "surface": "mdp-request.desPomdpSpec",
+                "schema": "des.fabrication.pomdp.v1",
+                "signals": [
+                    "states",
+                    "actions",
+                    "observations",
+                    "transition model",
+                    "observation model",
+                    "reward model"
+                ],
+                "usedFor": [
+                    "hand off replayable POMDP previews to external DES workers",
+                    "compare QMDP/POMDP advisory actions against retained outcomes",
+                    "bound policy updates to retained evidence"
+                ]
+            }
+        ],
+        "releasePolicy": [
+            "POMDP belief probabilities are advisory priors, not machine-ready proof",
+            "unresolved release probes, validation findings, setup gaps, quality gaps, or human-intervention gates block release regardless of belief score",
+            "belief and probe outcomes should be submitted through POST /fabrication/learning/outcomes before influencing future printed, milled, turned, split, or combined jobs"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/learning/models/catalog",
+            "GET /fabrication/learning/optimizers/catalog",
+            "GET /fabrication/learning/corpus",
+            "GET /fabrication/learning/outcomes",
+            "POST /fabrication/learning/outcomes"
+        ]
+    })
+}
+
+async fn learning_belief_catalog_http() -> impl IntoResponse {
+    Json(learning_belief_catalog_response())
 }
 
 fn learning_optimizer_catalog_response() -> Value {
@@ -102551,6 +102830,242 @@ fn request_templates() -> Value {
             }
         },
         {
+            "id": "runtime-monitoring-result-feedback",
+            "label": "Review runtime monitoring, safe-stop, and unattended restart blockers",
+            "route": "POST /fabrication/monitoring/result",
+            "machineKind": "cnc-router",
+            "preferredMethods": ["monitoring-result", "unattended-run-review", "safe-stop-recovery", "operator-checkpoint-review"],
+            "requiredEvidence": ["monitoring channel heartbeat", "critical alert acknowledgement", "safe-stop and restart review", "operator check-in state", "retained runtime monitoring artifact checksum"],
+            "releaseGateHints": ["monitoringResult.channels", "monitoringResult.alerts", "monitoringResult.recoveryActions", "monitoringResult.operatorInterventions", "monitoringLearningOutcomeDraft", "machineRelease.blockers"],
+            "request": {
+                "templateId": "runtime-monitoring-result-feedback",
+                "templateVersion": "v1",
+                "requestId": "monitoring-result-001",
+                "planRequestId": "monitoring-plan-001",
+                "jobId": "monitoring-job-001",
+                "workerId": "monitoring-worker-01",
+                "machineId": "router-cell",
+                "machineKind": "cnc-router",
+                "monitorId": "monitor-router-panel",
+                "runId": "run-42",
+                "success": true,
+                "machineReady": false,
+                "unattendedReady": false,
+                "channels": [
+                    {
+                        "channelId": "router-spindle-load-heartbeat",
+                        "channelKind": "spindle-load",
+                        "status": "blocked",
+                        "heartbeatOk": false,
+                        "signalWithinEnvelope": false,
+                        "safeStopVerified": false,
+                        "restartAuthorized": false,
+                        "releaseBlocker": true,
+                        "requiresHumanIntervention": true,
+                        "evidence": ["spindle load channel dropped heartbeat"]
+                    }
+                ],
+                "alerts": [
+                    {
+                        "alertId": "alert-spindle-load",
+                        "ruleId": "monitor-alert-router-spindle-load",
+                        "monitorId": "monitor-router-panel",
+                        "channelId": "router-spindle-load-heartbeat",
+                        "severity": "critical",
+                        "status": "active",
+                        "condition": "spindle load outside reviewed process envelope",
+                        "message": "feed hold issued before unattended restart",
+                        "acknowledged": false,
+                        "safeStopTriggered": true,
+                        "requiresHumanIntervention": true,
+                        "evidence": ["controller feed-hold event captured"]
+                    }
+                ],
+                "recoveryActions": [
+                    {
+                        "actionId": "feed-hold-restart-review",
+                        "actionKind": "feed-hold-safe-stop",
+                        "status": "blocked",
+                        "owner": "shift-lead",
+                        "safeStopVerified": false,
+                        "restartBlocked": true,
+                        "requiresHumanIntervention": true,
+                        "evidence": ["restart authority withheld pending review"]
+                    }
+                ],
+                "operatorInterventions": [
+                    {
+                        "interventionId": "operator-check-in",
+                        "interventionKind": "restart-authorization",
+                        "status": "open",
+                        "required": true,
+                        "completed": false,
+                        "message": "operator must inspect workholding and clear restart",
+                        "evidence": ["operator check-in not completed"]
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": "runtime-monitoring-record",
+                        "artifactKind": "runtime-monitoring-record",
+                        "sourceRefId": "monitor-router-panel",
+                        "uri": "s3://fabrication/monitoring/router-run-42.json",
+                        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                        "format": "json",
+                        "evidence": ["heartbeat trace, alert, safe-stop, and operator check-in evidence retained"]
+                    }
+                ],
+                "warnings": ["runtime monitoring result requires release review"],
+                "reviewMetadata": { "cell": "router" }
+            }
+        },
+        {
+            "id": "quality-metrology-result-feedback",
+            "label": "Review inspection, metrology, and split/combine quality blockers",
+            "route": "POST /fabrication/quality/result",
+            "machineKind": "inspection-cell",
+            "preferredMethods": ["quality-result", "metrology-review", "first-article-inspection", "split-combine-quality-review"],
+            "requiredEvidence": ["measurement target and instrument", "out-of-tolerance finding disposition", "inspection gate status", "retained metrology artifact checksum", "human disposition or rework decision"],
+            "releaseGateHints": ["qualityResult.measurements", "qualityResult.findings", "qualityResult.inspectionGates", "qualityLearningOutcomeDraft", "machineRelease.blockers"],
+            "request": {
+                "templateId": "quality-metrology-result-feedback",
+                "templateVersion": "v1",
+                "requestId": "quality-result-001",
+                "planRequestId": "quality-plan-001",
+                "jobId": "quality-job-001",
+                "workerId": "quality-worker-01",
+                "inspector": "cmm-fit-inspector",
+                "inspectorVersion": "2026.06",
+                "success": true,
+                "machineReady": false,
+                "measurements": [
+                    {
+                        "measurementId": "datum-bore-measurement",
+                        "targetId": "critical-datum-bore",
+                        "partId": "printed-body",
+                        "featureId": "datum-bore",
+                        "instrument": "cmm-probe",
+                        "nominalMm": 20.0,
+                        "measuredMm": 20.18,
+                        "toleranceMm": 0.05,
+                        "status": "out-of-tolerance",
+                        "evidence": ["cmm-run-331", "datum-bore-profile"]
+                    }
+                ],
+                "findings": [
+                    {
+                        "findingId": "datum-bore-finding",
+                        "severity": "nonconformance",
+                        "code": "datum-bore-oversize",
+                        "message": "Measured datum bore is outside the release tolerance window",
+                        "partId": "printed-body",
+                        "operationId": "final-fit",
+                        "machineId": "cmm-cell-1",
+                        "requiresHumanIntervention": true,
+                        "recommendedAction": "rework-or-split-insert",
+                        "evidence": ["operator-disposition-required"]
+                    }
+                ],
+                "inspectionGates": [
+                    {
+                        "gateId": "final-fit-gate",
+                        "gateKind": "final-fit-metrology",
+                        "status": "blocked",
+                        "required": true,
+                        "humanInterventionRequired": true,
+                        "message": "Final fit metrology is blocked pending human disposition",
+                        "evidence": ["quality-gate-review"]
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": "first-article-record",
+                        "artifactKind": "first-article-metrology-record",
+                        "sourceRefId": "cmm-run-331",
+                        "uri": "s3://fabrication-quality/quality-result-001/cmm.json",
+                        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "format": "json",
+                        "evidence": ["retained-metrology-report"]
+                    }
+                ],
+                "warnings": ["quality disposition required before release"],
+                "reviewMetadata": { "cell": "inspection", "reviewer": "template" }
+            }
+        },
+        {
+            "id": "release-readiness-result-feedback",
+            "label": "Review final machine-ready release blockers and retained manifest evidence",
+            "route": "POST /fabrication/release/result",
+            "machineKind": "hybrid-fleet",
+            "preferredMethods": ["release-readiness-result", "machine-release-review", "release-manifest-review", "human-intervention-review"],
+            "requiredEvidence": ["release decision for selected route", "retained manifest URI and checksum", "blocking machine-release evidence", "operator or automation signoff state", "split/combine release condition review"],
+            "releaseGateHints": ["releaseReadinessResult.decisions", "releaseReadinessResult.manifestArtifacts", "releaseReadinessResult.blockers", "releaseReadinessResult.humanInterventions", "releaseReadinessLearningOutcomeDraft", "machineRelease.blockers"],
+            "request": {
+                "templateId": "release-readiness-result-feedback",
+                "templateVersion": "v1",
+                "requestId": "release-readiness-result-001",
+                "planRequestId": "release-plan-001",
+                "jobId": "release-job-001",
+                "workerId": "release-gate-worker-01",
+                "releaseGate": "hybrid-fabrication-release-gate",
+                "releaseGateVersion": "2026.06.06",
+                "success": true,
+                "machineReady": false,
+                "decisions": [
+                    {
+                        "decisionId": "decision-selected-plan",
+                        "scope": "selected-plan",
+                        "machineReady": false,
+                        "releaseStatus": "blocked",
+                        "blockers": ["blocker-mill-workholding", "blocker-datum-transfer"],
+                        "message": "Selected hybrid plan waits for workholding and datum evidence"
+                    }
+                ],
+                "manifestArtifacts": [
+                    {
+                        "artifactId": "release-manifest-blocked",
+                        "artifactKind": "release-manifest",
+                        "sourceRefId": "split-print-machine-insert-plan",
+                        "uri": "s3://operator-controlled-cad/release/manifest.json",
+                        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                        "format": "json",
+                        "releaseRole": "release-summary",
+                        "evidence": ["evidence-instruction-review", "evidence-simulation-result"]
+                    }
+                ],
+                "blockers": [
+                    {
+                        "blockerId": "blocker-mill-workholding",
+                        "code": "workholding-release-required",
+                        "message": "Mill feed moves require operator fixture proof",
+                        "severity": "blocker",
+                        "machineReadyImpact": "blocks-machine-ready",
+                        "evidenceRequired": ["evidence-operator-fixture-photo", "workholding-release-required"],
+                        "operationId": "op-machine-bearing-bores",
+                        "partId": "milled-bearing-insert",
+                        "machineId": "haas-vf2-01"
+                    }
+                ],
+                "humanInterventions": [
+                    {
+                        "interventionId": "intervention-fixture-confirmation",
+                        "interventionKind": "workholding-confirmation",
+                        "description": "Operator must attach fixture proof before feed moves are released",
+                        "required": true,
+                        "status": "pending",
+                        "operationId": "op-machine-bearing-bores",
+                        "partId": "milled-bearing-insert",
+                        "evidenceRequired": ["evidence-operator-fixture-photo", "workholding-release-required"]
+                    }
+                ],
+                "warnings": ["split plan remains preferred but release gate keeps machineReady false"],
+                "reviewMetadata": {
+                    "selectedPlanId": "split-print-machine-insert-plan",
+                    "releaseManifestId": "release-manifest-blocked"
+                }
+            }
+        },
+        {
             "id": "hybrid-outcome-learning-feedback",
             "label": "Hybrid fabrication outcome learning feedback",
             "route": "POST /fabrication/learning/outcomes",
@@ -105185,6 +105700,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/cells/catalog", get(cell_catalog_http))
         .route("/printers/catalog", get(printer_catalog_http))
         .route("/fabrication/printers/catalog", get(printer_catalog_http))
+        .route(
+            "/printers/preflight/catalog",
+            get(printer_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/printers/preflight/catalog",
+            get(printer_preflight_catalog_http),
+        )
         .route("/subtractive/catalog", get(subtractive_catalog_http))
         .route(
             "/fabrication/subtractive/catalog",
@@ -105196,6 +105719,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/controllers/catalog",
             get(controller_catalog_http),
+        )
+        .route(
+            "/controllers/preflight/catalog",
+            get(controller_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/controllers/preflight/catalog",
+            get(controller_preflight_catalog_http),
         )
         .route(
             "/controllers/result",
@@ -105740,6 +106271,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             get(learning_model_catalog_http),
         )
         .route(
+            "/learning/beliefs/catalog",
+            get(learning_belief_catalog_http),
+        )
+        .route(
+            "/fabrication/learning/beliefs/catalog",
+            get(learning_belief_catalog_http),
+        )
+        .route(
             "/learning/optimizers/catalog",
             get(learning_optimizer_catalog_http),
         )
@@ -105893,7 +106432,10 @@ mod tests {
 
         for expected in [
             "DD Fabrication Server",
-            "Request Flow",
+            "How It Works",
+            "submitted fabrication goal into evidence-backed choices",
+            "decomposes or combines parts when a single process is risky",
+            "records outcomes so later jobs can learn from the route",
             "3D printing",
             "CNC mills and routers",
             "CAM intermediate files such as APT/CLDATA",
@@ -105981,6 +106523,9 @@ mod tests {
             "hybrid-assembly-plan",
             "hybrid-route-costing-result",
             "operator-intervention-result-feedback",
+            "runtime-monitoring-result-feedback",
+            "quality-metrology-result-feedback",
+            "release-readiness-result-feedback",
             "hybrid-outcome-learning-feedback",
             "boundary-failure-learning-feedback",
             "POST /fabrication/design/generate",
@@ -105994,6 +106539,9 @@ mod tests {
             "POST /fabrication/assembly/plan",
             "POST /fabrication/costing/result",
             "POST /fabrication/interventions/result",
+            "POST /fabrication/monitoring/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
             "POST /fabrication/learning/outcomes",
             "machine-code-generation",
             "design-import-review",
@@ -106010,6 +106558,15 @@ mod tests {
             "operator-checkpoint-review",
             "automation-fallback-review",
             "split-combine-review",
+            "monitoring-result",
+            "unattended-run-review",
+            "safe-stop-recovery",
+            "quality-result",
+            "metrology-review",
+            "split-combine-quality-review",
+            "release-readiness-result",
+            "machine-release-review",
+            "release-manifest-review",
             "instruction-improvement",
             "controller-patch-review",
             "instruction-generation",
@@ -106032,6 +106589,15 @@ mod tests {
             "interventionResult.operatorActions",
             "interventionResult.automationHandoffs",
             "interventionLearningOutcomeDraft",
+            "monitoringResult.channels",
+            "monitoringResult.alerts",
+            "monitoringLearningOutcomeDraft",
+            "qualityResult.measurements",
+            "qualityResult.inspectionGates",
+            "qualityLearningOutcomeDraft",
+            "releaseReadinessResult.decisions",
+            "releaseReadinessResult.blockers",
+            "releaseReadinessLearningOutcomeDraft",
             "improvedPrograms.patchManifest",
             "machine-code-improvement",
             "slicer-gcode-validation",
@@ -106664,6 +107230,230 @@ mod tests {
                             .is_some_and(|evidence| !evidence.is_empty())
                 })),
             "intervention result template should retain artifact checksums and evidence"
+        );
+    }
+
+    #[test]
+    fn request_template_monitoring_result_body_matches_review_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str)
+                    == Some("runtime-monitoring-result-feedback")
+            })
+            .expect("runtime monitoring result template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/monitoring/result")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("monitoring result template should include request body");
+        let parsed: MonitoringResultReviewRequest = serde_json::from_value(request)
+            .expect("monitoring result template should match review schema");
+        assert_eq!(parsed.unattended_ready, Some(false));
+        assert!(
+            parsed
+                .channels
+                .as_ref()
+                .is_some_and(|channels| channels.iter().any(|channel| {
+                    channel.heartbeat_ok == Some(false)
+                        && channel.release_blocker == Some(true)
+                        && channel.requires_human_intervention == Some(true)
+                })),
+            "monitoring result template should retain channel blockers"
+        );
+        assert!(
+            parsed
+                .alerts
+                .as_ref()
+                .is_some_and(|alerts| alerts.iter().any(|alert| {
+                    alert.severity == "critical"
+                        && alert.acknowledged == Some(false)
+                        && alert.safe_stop_triggered == Some(true)
+                })),
+            "monitoring result template should retain critical alerts"
+        );
+        assert!(
+            parsed
+                .recovery_actions
+                .as_ref()
+                .is_some_and(|actions| actions.iter().any(|action| {
+                    action.restart_blocked == Some(true)
+                        && action.requires_human_intervention == Some(true)
+                })),
+            "monitoring result template should retain restart blockers"
+        );
+        assert!(
+            parsed
+                .operator_interventions
+                .as_ref()
+                .is_some_and(|interventions| interventions.iter().any(|intervention| {
+                    intervention.required == Some(true) && intervention.completed == Some(false)
+                })),
+            "monitoring result template should retain operator check-in blockers"
+        );
+        assert!(
+            parsed
+                .artifacts
+                .as_ref()
+                .is_some_and(|artifacts| artifacts.iter().any(|artifact| {
+                    artifact.sha256.as_ref().is_some_and(|sha| sha.len() == 64)
+                        && artifact
+                            .evidence
+                            .as_ref()
+                            .is_some_and(|evidence| !evidence.is_empty())
+                })),
+            "monitoring result template should retain artifact checksums and evidence"
+        );
+    }
+
+    #[test]
+    fn request_template_quality_result_body_matches_review_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str)
+                    == Some("quality-metrology-result-feedback")
+            })
+            .expect("quality metrology result template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/quality/result")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("quality result template should include request body");
+        let parsed: QualityResultReviewRequest = serde_json::from_value(request)
+            .expect("quality result template should match review schema");
+        assert_eq!(parsed.machine_ready, false);
+        assert!(
+            parsed
+                .measurements
+                .as_ref()
+                .is_some_and(|measurements| measurements.iter().any(|measurement| {
+                    measurement.status == "out-of-tolerance"
+                        && measurement.measured_mm.is_some()
+                        && measurement.tolerance_mm.is_some()
+                })),
+            "quality result template should retain out-of-tolerance measurements"
+        );
+        assert!(
+            parsed
+                .findings
+                .as_ref()
+                .is_some_and(|findings| findings.iter().any(|finding| {
+                    finding.severity == "nonconformance"
+                        && finding.requires_human_intervention == Some(true)
+                        && finding.recommended_action.as_deref() == Some("rework-or-split-insert")
+                })),
+            "quality result template should retain human-disposition findings"
+        );
+        assert!(
+            parsed
+                .inspection_gates
+                .as_ref()
+                .is_some_and(|gates| gates.iter().any(|gate| {
+                    gate.status == "blocked"
+                        && gate.required == Some(true)
+                        && gate.human_intervention_required == Some(true)
+                })),
+            "quality result template should retain blocked inspection gates"
+        );
+        assert!(
+            parsed
+                .artifacts
+                .as_ref()
+                .is_some_and(|artifacts| artifacts.iter().any(|artifact| {
+                    artifact.sha256.as_ref().is_some_and(|sha| sha.len() == 64)
+                        && artifact
+                            .evidence
+                            .as_ref()
+                            .is_some_and(|evidence| !evidence.is_empty())
+                })),
+            "quality result template should retain artifact checksums and evidence"
+        );
+    }
+
+    #[test]
+    fn request_template_release_result_body_matches_review_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str)
+                    == Some("release-readiness-result-feedback")
+            })
+            .expect("release readiness result template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/release/result")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("release result template should include request body");
+        let parsed: ReleaseReadinessResultReviewRequest = serde_json::from_value(request)
+            .expect("release result template should match review schema");
+        assert_eq!(parsed.machine_ready, false);
+        assert!(
+            parsed
+                .decisions
+                .as_ref()
+                .is_some_and(|decisions| decisions.iter().any(|decision| {
+                    !decision.machine_ready
+                        && decision.release_status == "blocked"
+                        && decision
+                            .blockers
+                            .as_ref()
+                            .is_some_and(|blockers| !blockers.is_empty())
+                })),
+            "release result template should retain blocked release decisions"
+        );
+        assert!(
+            parsed
+                .manifest_artifacts
+                .as_ref()
+                .is_some_and(|artifacts| artifacts.iter().any(|artifact| {
+                    artifact.sha256.as_ref().is_some_and(|sha| sha.len() == 64)
+                        && artifact
+                            .evidence
+                            .as_ref()
+                            .is_some_and(|evidence| !evidence.is_empty())
+                })),
+            "release result template should retain manifest artifact evidence"
+        );
+        assert!(
+            parsed
+                .blockers
+                .as_ref()
+                .is_some_and(|blockers| blockers.iter().any(|blocker| {
+                    blocker.severity == "blocker"
+                        && blocker.machine_ready_impact == "blocks-machine-ready"
+                })),
+            "release result template should retain machine-ready blockers"
+        );
+        assert!(
+            parsed
+                .human_interventions
+                .as_ref()
+                .is_some_and(|interventions| interventions.iter().any(|intervention| {
+                    intervention.required && intervention.status == "pending"
+                })),
+            "release result template should retain pending human interventions"
         );
     }
 
@@ -112103,6 +112893,53 @@ mod tests {
             postprocessor_for("linuxcnc", "linuxcnc", "cnc-router"),
             "linuxcnc-gcode-postprocessor"
         );
+    }
+
+    #[test]
+    fn controller_preflight_catalog_endpoint_exposes_modal_offset_and_macro_gates() {
+        let payload = controller_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.controller-preflight-catalog.v1")
+        );
+        assert_eq!(
+            payload.get("targetCount").and_then(Value::as_u64),
+            Some(default_machines().len() as u64)
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/controllers/preflight/catalog")
+            })));
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("preflight groups should be present");
+        for group in [
+            "modal-state",
+            "offset-and-setup-state",
+            "program-dependency-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("postprocessor version"))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("cannot bypass validation")))));
     }
 
     #[test]
@@ -125587,6 +126424,53 @@ mod tests {
     }
 
     #[test]
+    fn printer_preflight_catalog_endpoint_exposes_thermal_extrusion_and_first_layer_gates() {
+        let payload = printer_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.printer-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/printers/preflight/catalog")
+            })));
+        assert!(payload
+            .get("printerCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 8));
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("printer preflight groups should be present");
+        for group in [
+            "thermal-and-motion-state",
+            "extrusion-material-and-resume-state",
+            "support-orientation-and-first-article-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing printer preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("purge, prime"))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("cannot bypass instruction validation")))));
+    }
+
+    #[test]
     fn subtractive_catalog_endpoint_exposes_machining_fleet_and_release_contract() {
         let payload = subtractive_catalog_response();
         assert_eq!(
@@ -126273,6 +127157,57 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("cannot bypass validation findings")))));
+    }
+
+    #[test]
+    fn learning_belief_catalog_endpoint_exposes_pomdp_probe_contract() {
+        let payload = learning_belief_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.learning-belief-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/learning/beliefs/catalog")
+            })));
+        assert_eq!(
+            payload
+                .get("engine")
+                .and_then(|engine| engine.get("crateName"))
+                .and_then(Value::as_str),
+            Some("des_engine")
+        );
+        assert_eq!(
+            payload
+                .get("engine")
+                .and_then(|engine| engine.get("pomdpSchema"))
+                .and_then(Value::as_str),
+            Some(POMDP_SCHEMA)
+        );
+        let surfaces = payload
+            .get("beliefSurfaces")
+            .and_then(Value::as_array)
+            .expect("belief catalog should expose surfaces");
+        for surface in [
+            "pomdpBeliefState.hiddenStates",
+            "releaseProbePlan.probes",
+            "mdp-request.desPomdpSpec",
+        ] {
+            assert!(
+                surfaces
+                    .iter()
+                    .any(|entry| entry.get("surface").and_then(Value::as_str) == Some(surface)),
+                "missing belief surface {surface}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("advisory priors")))));
     }
 
     #[test]
