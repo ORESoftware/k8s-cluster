@@ -146,6 +146,8 @@ outcomes.
 - `POST /fabrication/assembly/result`
 - `GET /release/catalog`
 - `GET /fabrication/release/catalog`
+- `GET /release/preflight/catalog`
+- `GET /fabrication/release/preflight/catalog`
 - `POST /release/preview`
 - `POST /fabrication/release/preview`
 - `POST /release/result`
@@ -2154,6 +2156,26 @@ interface gates, and operator or automation signoff clear. Release package
 observations are emitted for MDP/POMDP/neural workers so future planning can
 learn which evidence cleared or blocked printed, milled, turned, sheet-cut, EDM,
 and recomposed routes.
+
+## `GET /fabrication/release/preflight/catalog`
+
+`GET /release/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/release/preflight/catalog` return the
+`dd.fabrication.release-preflight-catalog.v1` evidence checklist for the final
+machine-ready handoff. The catalog groups release blockers across
+manifest/artifact/checksum state, machine/controller/simulation/process state, and
+quality/disposition/signoff/learning state. It names required response surfaces
+such as `releasePackagePlan.requiredArtifacts`,
+`releaseReadinessResult.manifestArtifacts`, `machineRelease.blockers`,
+`validation.failureBoundaries`, `qualityResult.findings`,
+`dispositionResult.decisions`, and `learningOutcome.observations`.
+
+Release preflight entries are evidence requirements, not equipment safety
+certifications. Machine-ready release remains blocked while artifact provenance,
+controller/postprocessor compatibility, dry-run or simulation evidence,
+workholding/setup, monitoring, split/combine traceability, quality disposition,
+operator or automation signoff, or DES/MDP/POMDP/neural learning feedback is
+missing.
 
 ## `POST /fabrication/release/preview`
 

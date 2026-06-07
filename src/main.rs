@@ -57028,6 +57028,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/decomposition/result",
         "GET /release/catalog",
         "GET /fabrication/release/catalog",
+        "GET /release/preflight/catalog",
+        "GET /fabrication/release/preflight/catalog",
         "POST /release/preview",
         "POST /fabrication/release/preview",
         "POST /release/result",
@@ -60033,8 +60035,116 @@ fn release_catalog_response() -> Value {
     })
 }
 
+fn release_preflight_catalog_response() -> Value {
+    let gate_contracts = release_catalog_gate_contracts();
+    let gate_types = unique_sorted(gate_contracts.iter().filter_map(|item| {
+        item.get("gateType")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let package_kinds = release_catalog_package_kinds();
+    let package_kind_names = unique_sorted(package_kinds.iter().filter_map(|item| {
+        item.get("packageKind")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.release-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/release/catalog",
+            "GET /fabrication/design/preflight/catalog",
+            "GET /fabrication/controllers/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /fabrication/assembly/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "POST /fabrication/release/preview",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "packageKindCount": package_kinds.len(),
+        "gateCount": gate_contracts.len(),
+        "packageKinds": package_kind_names,
+        "gateTypes": gate_types,
+        "preflightGroups": [
+            {
+                "group": "manifest-artifact-and-checksum-state",
+                "requiredEvidence": [
+                    "design package, generated or imported program, machine code, controller plan, setup, fixture, simulation, quality, and release-package artifact URIs",
+                    "checksums, revision IDs, material lot, machine profile, worker version, route package ID, and retained source request evidence",
+                    "trace from printed, milled, turned, cut, EDM, postprocessed, and recomposed child artifacts into the release bundle"
+                ],
+                "releaseBlockers": [
+                    "release bundle lacks artifact URI, checksum, revision, route package, or retained source request evidence",
+                    "generated and improved instructions are mixed without explicit provenance and acceptance evidence",
+                    "split/combine child packages cannot be traced to final assembly, inspection, and disposition artifacts"
+                ]
+            },
+            {
+                "group": "machine-controller-simulation-and-process-state",
+                "requiredEvidence": [
+                    "controller/postprocessor compatibility, machine envelope, modal state, coordinate frame, tool/nozzle/spindle state, and dry-run or simulation evidence",
+                    "workholding, setup, calibration, consumables, process recipe, utility, environment, safety, maintenance, and monitoring release gates",
+                    "machine-failure, human-intervention, hidden-state, and POMDP belief evidence for uncertain release boundaries"
+                ],
+                "releaseBlockers": [
+                    "machine-ready release requested before controller, calibration, setup, simulation, monitoring, or process support gates clear",
+                    "failure boundary predicts collision, out-of-envelope motion, missing consumable, unsafe process state, or hidden manual recovery",
+                    "operator, automation, or robot handoff lacks a retained stop point and release owner"
+                ]
+            },
+            {
+                "group": "quality-disposition-signoff-and-learning-state",
+                "requiredEvidence": [
+                    "quality inspection, final fit, surface finish, cleanliness, first article, material witness, and acceptance-band evidence",
+                    "nonconformance, rework, waiver, scrap/remake, split/combine redesign, and release-owner disposition evidence",
+                    "learning outcome draft with release blockers, cleared gates, reward hint, route risk, and future planning signals"
+                ],
+                "releaseBlockers": [
+                    "quality, cleanliness, final fit, disposition, or release owner evidence is missing before machine-ready handoff",
+                    "failed gate is accepted without reinspection, waiver, or disposition authority",
+                    "release outcome is not available to DES, MDP/POMDP, and neural workers for future route selection"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "releasePackagePlan.packages",
+            "releasePackagePlan.releaseGates",
+            "releasePackagePlan.requiredArtifacts",
+            "releaseReadinessResult.manifestArtifacts",
+            "releaseReadinessResult.decisions",
+            "releaseReadinessResult.blockers",
+            "machineRelease.blockers",
+            "validation.failureBoundaries",
+            "qualityResult.findings",
+            "dispositionResult.decisions",
+            "learningOutcome.observations"
+        ],
+        "releasePolicy": [
+            "release preflight entries describe evidence required before machine-ready handoff, not certified equipment safety or production approval",
+            "machine-ready release remains blocked while manifest, checksum, controller, simulation, workholding, quality, disposition, split/combine, signoff, or learning evidence is absent",
+            "failed release preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can add evidence gates, split jobs, reroute manufacturing, or require human intervention earlier"
+        ],
+        "requiredArtifacts": release_catalog_required_artifacts(),
+        "blockerSources": release_catalog_blocker_sources(),
+        "packageKindContracts": package_kinds,
+        "gateContracts": gate_contracts
+    })
+}
+
 async fn release_catalog_http() -> impl IntoResponse {
     Json(release_catalog_response())
+}
+
+async fn release_preflight_catalog_http() -> impl IntoResponse {
+    Json(release_preflight_catalog_response())
 }
 
 fn release_preview_response(
@@ -103886,6 +103996,7 @@ async fn request_schema() -> impl IntoResponse {
             "assemblyPlan": ["POST /assembly/plan", "POST /fabrication/assembly/plan"],
             "assemblyPlanningResult": ["POST /assembly/result", "POST /fabrication/assembly/result"],
             "releaseCatalog": ["GET /release/catalog", "GET /fabrication/release/catalog"],
+            "releasePreflightCatalog": ["GET /release/preflight/catalog", "GET /fabrication/release/preflight/catalog"],
             "releaseReadinessResult": ["POST /release/result", "POST /fabrication/release/result"],
             "executionPlan": ["POST /execution/plan", "POST /fabrication/execution/plan"],
             "executionResult": ["POST /execution/result", "POST /fabrication/execution/result"],
@@ -106700,6 +106811,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/release/catalog", get(release_catalog_http))
         .route("/fabrication/release/catalog", get(release_catalog_http))
+        .route(
+            "/release/preflight/catalog",
+            get(release_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/release/preflight/catalog",
+            get(release_preflight_catalog_http),
+        )
         .route("/workflow/catalog", get(workflow_catalog_http))
         .route("/fabrication/workflow/catalog", get(workflow_catalog_http))
         .route("/hybrid/catalog", get(hybrid_catalog_http))
@@ -116164,6 +116283,64 @@ mod tests {
                 "missing required release artifact {artifact}"
             );
         }
+    }
+
+    #[test]
+    fn release_preflight_catalog_endpoint_exposes_machine_ready_handoff_gates() {
+        let payload = release_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.release-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/release/preflight/catalog")
+            })));
+        assert!(payload
+            .get("gateCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+        assert!(payload
+            .get("packageKindCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 2));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("release preflight groups should be present");
+        for group in [
+            "manifest-artifact-and-checksum-state",
+            "machine-controller-simulation-and-process-state",
+            "quality-disposition-signoff-and-learning-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing release preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("releaseBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("machine-ready release requested"))))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("releaseReadinessResult.manifestArtifacts")
+            })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified equipment safety")))));
     }
 
     #[test]
