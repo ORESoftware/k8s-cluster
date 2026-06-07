@@ -956,7 +956,11 @@ failure boundaries that require human intervention, split/combine, conversion,
 or regeneration; verifies retained artifacts have URI, checksum, format, and
 evidence; and stores `design-import-result`, `design-import-checks`,
 `design-import-failure-boundaries`, `design-import-artifacts`, and
-`design-import-learning-observations` artifacts.
+`design-import-learning-observations` artifacts. The learning section also emits
+a `dd.fabrication.design-import-learning-outcome-draft.v1` `outcomeDraft` with
+worker-lane, source-format, check, boundary, recommended-action, artifact,
+split/combine, human-intervention, and blocker hints ready for
+`POST /fabrication/learning/outcomes`.
 
 Machine-ready release remains blocked when import workers fail, checks are
 missing or blocked, failure boundaries remain unresolved, split/combine or human
@@ -1569,8 +1573,11 @@ hybrid route is release-ready.
 The response exposes `decompositionResult`, `decompositionResultJobId`,
 `generatedAtMs`, `releaseBlocked`, target, route, interface, split/combine, and
 human-intervention blocker counts, missing artifact evidence, and follow-up
-assembly, release, and learning routes. Successful reviews are retained under
-`decompositionResultJobId`; `/jobs/:job_id` and
+assembly, release, and learning routes. The learning section also emits a
+`dd.fabrication.decomposition-learning-outcome-draft.v1` `outcomeDraft` with
+target, route, interface, split/combine, artifact, blocker, redesign, and
+human-intervention hints ready for `POST /fabrication/learning/outcomes`.
+Successful reviews are retained under `decompositionResultJobId`; `/jobs/:job_id` and
 `/jobs/:job_id/artifacts/:artifact_id` can inspect `decomposition-result`,
 `decomposition-targets`, `decomposition-route-reviews`,
 `decomposition-interfaces`, `decomposition-split-combine-decisions`,
@@ -1640,7 +1647,10 @@ The response exposes `assemblyPlanningResult`, `assemblyResultJobId`,
 `generatedAtMs`, `releaseBlocked`, `routeBlockerCount`, `joinBlockerCount`,
 `splitCombineBlockerCount`, `interfaceBlockerCount`,
 `missingArtifactEvidenceCount`, and the assembly-planning request/queue/result
-subjects. Successful reviews are retained in the bounded job ledger under
+subjects. It also includes a
+`dd.fabrication.assembly-planning-learning-outcome-draft.v1` payload with route,
+join, split/combine, interface-check, artifact, human-intervention, reward, and
+submit-route hints for `POST /fabrication/learning/outcomes`. Successful reviews are retained in the bounded job ledger under
 `assemblyResultJobId`; `/jobs/:job_id` and
 `/jobs/:job_id/artifacts/:artifact_id` can inspect
 `assembly-planning-result`, `assembly-part-routes`, `assembly-join-operations`,
@@ -1709,9 +1719,11 @@ machine-release gate.
 The response exposes `releaseReadinessResult`, `releaseResultJobId`,
 `generatedAtMs`, `releaseBlocked`, `blockedDecisionCount`, `blockerCount`,
 `pendingHumanInterventionCount`, `missingManifestEvidenceCount`, and the
-release-readiness request/queue/result subjects. Successful reviews are retained
-in the bounded job ledger under `releaseResultJobId`; `/jobs/:job_id` and
-`/jobs/:job_id/artifacts/:artifact_id` can inspect
+release-readiness request/queue/result subjects plus a
+`dd.fabrication.release-readiness-learning-outcome-draft.v1` payload that callers
+can send to `POST /fabrication/learning/outcomes`. Successful reviews are
+retained in the bounded job ledger under `releaseResultJobId`; `/jobs/:job_id`
+and `/jobs/:job_id/artifacts/:artifact_id` can inspect
 `release-readiness-result`, `release-readiness-decisions`,
 `release-readiness-manifest-artifacts`, `release-readiness-blockers`,
 `release-readiness-human-interventions`, and
@@ -1857,7 +1869,11 @@ split/combine decisions, MDP/POMDP/neural learning updates, retained artifacts,
 warning text, and optimizer metadata, then stores a `strategy-result` job with
 `strategy-route-reviews`, `strategy-split-combine-decisions`,
 `strategy-learning-updates`, `strategy-artifacts`, and
-`strategy-learning-observations` artifacts.
+`strategy-learning-observations` artifacts. The learning section emits a
+`dd.fabrication.strategy-learning-outcome-draft.v1` `outcomeDraft` with
+optimizer, selected-strategy, method, machine-kind, route, split/combine,
+policy-update, artifact, blocker, redesign, and human-intervention hints ready
+for `POST /fabrication/learning/outcomes`.
 
 Machine-ready release remains blocked when the optimizer failed, no route review
 was supplied, a route is infeasible, split/combine or redesign decisions are
@@ -1897,9 +1913,10 @@ reduce blocked starts or human intervention.
 or dispatch worker results for production batches, machine lanes, operation
 windows, dependency holds, and queue models. They normalize those records into
 `dd.fabrication.schedule-result-review.v1`, retain a bounded review job, and
-expose release blocker counts for blocked lanes, overcapacity, invalid operation
-windows, unresolved holds, unstable DES models, missing artifact evidence, and
-human interventions.
+expose a `dd.fabrication.schedule-learning-outcome-draft.v1` payload that
+callers can send to `POST /fabrication/learning/outcomes` plus release blocker
+counts for blocked lanes, overcapacity, invalid operation windows, unresolved
+holds, unstable DES models, missing artifact evidence, and human interventions.
 
 Schedule result reviews are retained production and DES evidence, not certified
 MES dispatch authorization. Machine-ready release remains blocked until machine
@@ -3184,10 +3201,12 @@ instructions, or require human intervention.
 `POST /fabrication/setup/result` accept setup worker results, normalize them into
 `dd.fabrication.setup-result-review.v1`, and store a bounded review job with
 retained setup-check, datum-transfer, monitoring-channel, artifact, and
-learning-observation surfaces. The response reports blocker counts for failed or
-human-intervention setup checks, out-of-tolerance datum transfers, monitoring
-channels without heartbeat or safe-stop evidence, restart blockers, and missing
-setup artifact evidence.
+learning-observation surfaces plus a
+`dd.fabrication.setup-learning-outcome-draft.v1` payload that callers can send to
+`POST /fabrication/learning/outcomes`. The response reports blocker counts for
+failed or human-intervention setup checks, out-of-tolerance datum transfers,
+monitoring channels without heartbeat or safe-stop evidence, restart blockers,
+and missing setup artifact evidence.
 
 Setup result reviews are retained tooling, fixture, datum, workholding, and
 monitoring evidence, not certified fixture design or a machine-safety waiver.
@@ -3264,10 +3283,12 @@ jobs, require operators, add automation, or improve generated instructions.
 `POST /fabrication/monitoring/result` accept runtime monitoring worker results,
 normalize them into `dd.fabrication.monitoring-result-review.v1`, and store a
 bounded review job with retained channel, alert, recovery-action,
-operator-intervention, artifact, and learning-observation surfaces. The
-response reports blocker counts for missing channel heartbeat or signal-envelope
-evidence, unresolved critical alerts, safe-stop triggers, restart blockers,
-operator interventions, and missing monitoring artifact evidence.
+operator-intervention, artifact, and learning-observation surfaces plus a
+`dd.fabrication.monitoring-learning-outcome-draft.v1` payload that callers can
+send to `POST /fabrication/learning/outcomes`. The response reports blocker
+counts for missing channel heartbeat or signal-envelope evidence, unresolved
+critical alerts, safe-stop triggers, restart blockers, operator interventions,
+and missing monitoring artifact evidence.
 
 Monitoring result reviews are retained runtime telemetry, alert, safe-stop,
 recovery, restart-authority, and operator-check-in evidence, not certified safety

@@ -2228,7 +2228,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn design_import_result_review_response/);
   assert.match(source, /fn store_design_import_result_response/);
   assert.match(source, /dd\.fabrication\.design-import-result-review\.v1/);
+  assert.match(source, /dd\.fabrication\.design-import-learning-outcome-draft\.v1/);
   assert.match(source, /"POST \/fabrication\/design\/import\/result"/);
+  assert.match(source, /"recommendedActionHints"/);
   assert.match(source, /design-import-result-checks-release-blocked/);
   assert.match(source, /async fn design_conversion_plan_http/);
   assert.match(source, /fn design_conversion_plan_response/);
@@ -2638,6 +2640,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn stored_decomposition_result_job/);
   assert.match(source, /fn store_decomposition_result_response/);
   assert.match(source, /dd\.fabrication\.decomposition-result-review\.v1/);
+  assert.match(source, /dd\.fabrication\.decomposition-learning-outcome-draft\.v1/);
   assert.match(source, /"POST \/decomposition\/result"/);
   assert.match(source, /"POST \/fabrication\/decomposition\/result"/);
   assert.match(
@@ -2653,6 +2656,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"decomposition-route-reviews"/);
   assert.match(source, /"decomposition-split-combine-decisions"/);
   assert.match(source, /"decomposition-learning-observations"/);
+  assert.match(source, /"splitCombineHints"/);
   assert.match(source, /decomposition-route:/);
   assert.match(source, /decomposition-decision:/);
   assert.match(source, /decomposition-artifact:/);
@@ -2677,8 +2681,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn stored_assembly_planning_result_job/);
   assert.match(source, /fn store_assembly_planning_result_response/);
   assert.match(source, /dd\.fabrication\.assembly-planning-result-review\.v1/);
+  assert.match(source, /dd\.fabrication\.assembly-planning-learning-outcome-draft\.v1/);
   assert.match(source, /"POST \/fabrication\/assembly\/result"/);
+  assert.match(source, /"sourceKind": "assembly-planning-result"/);
   assert.match(source, /"assemblyResultJobId"/);
+  assert.match(source, /"joinKindHints"/);
+  assert.match(source, /"interfaceCheckHints"/);
   assert.match(source, /FABRICATION_ASSEMBLY_PLANNING_RESULTS_SUBJECT/);
   assert.match(source, /"assemblyPlanningResult"/);
   assert.match(source, /"assembly-part-routes"/);
@@ -2741,6 +2749,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn stored_release_readiness_result_job/);
   assert.match(source, /fn store_release_readiness_result_response/);
   assert.match(source, /dd\.fabrication\.release-readiness-result-review\.v1/);
+  assert.match(source, /dd\.fabrication\.release-readiness-learning-outcome-draft\.v1/);
   assert.match(source, /"POST \/fabrication\/release\/result"/);
   assert.match(source, /"releaseResultJobId"/);
   assert.match(source, /FABRICATION_RELEASE_READINESS_RESULTS_SUBJECT/);
@@ -2837,7 +2846,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn strategy_result_review_response/);
   assert.match(source, /fn store_strategy_result_response/);
   assert.match(source, /dd\.fabrication\.strategy-result-review\.v1/);
+  assert.match(source, /dd\.fabrication\.strategy-learning-outcome-draft\.v1/);
   assert.match(source, /"POST \/fabrication\/strategy\/result"/);
+  assert.match(source, /"recommendedMethodHints"/);
+  assert.match(source, /"learningUpdateHints"/);
   assert.match(source, /strategy-result-routes-release-blocked/);
   assert.match(source, /strategy_result_endpoint_reviews_routes_split_combine_and_learning/);
   assert.match(source, /strategy_recommendation_endpoint_exposes_learned_hybrid_preview/);
@@ -2859,6 +2871,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn stored_schedule_result_job/);
   assert.match(source, /fn store_schedule_result_response/);
   assert.match(source, /dd\.fabrication\.schedule-result-review\.v1/);
+  assert.match(source, /dd\.fabrication\.schedule-learning-outcome-draft\.v1/);
   assert.match(source, /"POST \/fabrication\/schedule\/result"/);
   assert.match(source, /"scheduleResultJobId"/);
   assert.match(source, /"scheduleResult"/);
@@ -3529,6 +3542,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn stored_setup_result_job/);
   assert.match(source, /fn store_setup_result_response/);
   assert.match(source, /dd\.fabrication\.setup-result-review\.v1/);
+  assert.match(source, /dd\.fabrication\.setup-learning-outcome-draft\.v1/);
   assert.match(source, /"POST \/fabrication\/setup\/result"/);
   assert.match(source, /"setupResultJobId"/);
   assert.match(source, /"setupResult"/);
@@ -3573,6 +3587,7 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn stored_monitoring_result_job/);
   assert.match(source, /fn store_monitoring_result_response/);
   assert.match(source, /dd\.fabrication\.monitoring-result-review\.v1/);
+  assert.match(source, /dd\.fabrication\.monitoring-learning-outcome-draft\.v1/);
   assert.match(source, /"POST \/fabrication\/monitoring\/result"/);
   assert.match(source, /"monitoringResultJobId"/);
   assert.match(source, /"monitoringResult"/);
@@ -4384,8 +4399,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /mesh-repair-learning-observations/);
   assert.match(readme, /dd\.fabrication\.design-import-review\.v1/);
   assert.match(readme, /dd\.fabrication\.design-import-result-review\.v1/);
+  assert.match(readme, /dd\.fabrication\.design-import-learning-outcome-draft\.v1/);
   assert.match(readme, /design-import-failure-boundaries/);
   assert.match(readme, /design-import-learning-observations/);
+  assert.match(readme, /source-format, check, boundary, recommended-action/);
   assert.match(readme, /dd\.fabrication\.design-conversion-plan\.v1/);
   assert.match(readme, /dd\.fabrication\.design-conversion-result-review\.v1/);
   assert.match(readme, /dd\.fabrication\.design-synthesis-result-review\.v1/);
@@ -4736,12 +4753,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/decomposition\/result`/);
   assert.match(readme, /`POST \/fabrication\/decomposition\/result`/);
   assert.match(readme, /dd\.fabrication\.decomposition-result-review\.v1/);
+  assert.match(readme, /dd\.fabrication\.decomposition-learning-outcome-draft\.v1/);
   assert.match(readme, /`decompositionResult`/);
   assert.match(readme, /`decompositionResultJobId`/);
   assert.match(readme, /`releaseBlocked`/);
   assert.match(readme, /`decomposition-route-reviews`/);
   assert.match(readme, /`decomposition-split-combine-decisions`/);
   assert.match(readme, /`decomposition-learning-observations`/);
+  assert.match(readme, /target, route, interface, split\/combine, artifact, blocker/);
   assert.match(readme, /`decomposition-decision:\*`/);
   assert.match(readme, /`GET \/assembly\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/assembly\/catalog`/);
@@ -4760,9 +4779,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/assembly\/result`/);
   assert.match(readme, /`POST \/fabrication\/assembly\/result`/);
   assert.match(readme, /dd\.fabrication\.assembly-planning-result-review\.v1/);
+  assert.match(readme, /dd\.fabrication\.assembly-planning-learning-outcome-draft\.v1/);
   assert.match(readme, /dd\.remote\.fabrication\.assembly\.planning\.results/);
   assert.match(readme, /`assemblyPlanningResult`/);
   assert.match(readme, /`assemblyResultJobId`/);
+  assert.match(readme, /join, split\/combine, interface-check, artifact/);
+  assert.match(readme, /`POST \/fabrication\/learning\/outcomes`/);
   assert.match(readme, /`joinBlockerCount`/);
   assert.match(readme, /`interfaceBlockerCount`/);
   assert.match(readme, /`assembly-join-operations`/);
@@ -4782,9 +4804,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/release\/result`/);
   assert.match(readme, /`POST \/fabrication\/release\/result`/);
   assert.match(readme, /dd\.fabrication\.release-readiness-result-review\.v1/);
+  assert.match(readme, /dd\.fabrication\.release-readiness-learning-outcome-draft\.v1/);
   assert.match(readme, /dd\.remote\.fabrication\.release\.readiness\.results/);
   assert.match(readme, /`releaseReadinessResult`/);
   assert.match(readme, /`releaseResultJobId`/);
+  assert.match(readme, /`POST \/fabrication\/learning\/outcomes`/);
   assert.match(readme, /`blockedDecisionCount`/);
   assert.match(readme, /`missingManifestEvidenceCount`/);
   assert.match(readme, /`pendingHumanInterventionCount`/);
@@ -4828,6 +4852,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/schedule\/result`/);
   assert.match(readme, /`POST \/fabrication\/schedule\/result`/);
   assert.match(readme, /dd\.fabrication\.schedule-result-review\.v1/);
+  assert.match(readme, /dd\.fabrication\.schedule-learning-outcome-draft\.v1/);
+  assert.match(readme, /POST \/fabrication\/learning\/outcomes/);
   assert.match(readme, /blocked lanes, overcapacity, invalid operation\s+windows/);
   assert.match(readme, /unstable DES models/);
   assert.match(readme, /`schedule-lanes`/);
@@ -5049,6 +5075,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/setup\/result`/);
   assert.match(readme, /`POST \/fabrication\/setup\/result`/);
   assert.match(readme, /dd\.fabrication\.setup-result-review\.v1/);
+  assert.match(readme, /dd\.fabrication\.setup-learning-outcome-draft\.v1/);
+  assert.match(readme, /POST \/fabrication\/learning\/outcomes/);
   assert.match(readme, /out-of-tolerance datum transfers/);
   assert.match(readme, /monitoring\s+channels without heartbeat or safe-stop evidence/);
   assert.match(readme, /`setup-result`/);
@@ -5075,6 +5103,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /`POST \/monitoring\/result`/);
   assert.match(readme, /`POST \/fabrication\/monitoring\/result`/);
   assert.match(readme, /dd\.fabrication\.monitoring-result-review\.v1/);
+  assert.match(readme, /dd\.fabrication\.monitoring-learning-outcome-draft\.v1/);
+  assert.match(readme, /POST \/fabrication\/learning\/outcomes/);
   assert.match(readme, /missing channel heartbeat or signal-envelope\s+evidence/);
   assert.match(readme, /safe-stop triggers, restart blockers/);
   assert.match(readme, /`monitoring-alerts`/);
@@ -6355,8 +6385,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(readme, /POST \/strategy\/result/);
   assert.match(readme, /POST \/fabrication\/strategy\/result/);
   assert.match(readme, /dd\.fabrication\.strategy-result-review\.v1/);
+  assert.match(readme, /dd\.fabrication\.strategy-learning-outcome-draft\.v1/);
   assert.match(readme, /strategy-route-reviews/);
   assert.match(readme, /strategy-learning-observations/);
+  assert.match(readme, /method, machine-kind, route, split\/combine/);
   assert.match(readme, /GET \/calibration\/catalog/);
   assert.match(readme, /GET \/fabrication\/calibration\/catalog/);
   assert.match(readme, /GET \/postprocess\/catalog/);
