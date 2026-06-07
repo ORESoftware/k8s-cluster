@@ -58521,6 +58521,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/release/preview",
         "POST /release/result",
         "POST /fabrication/release/result",
+        "GET /execution/preflight/catalog",
+        "GET /fabrication/execution/preflight/catalog",
         "POST /execution/plan",
         "POST /fabrication/execution/plan",
         "POST /execution/result",
@@ -61736,6 +61738,111 @@ async fn release_catalog_http() -> impl IntoResponse {
 
 async fn release_preflight_catalog_http() -> impl IntoResponse {
     Json(release_preflight_catalog_response())
+}
+
+fn execution_preflight_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.execution-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /execution/preflight/catalog",
+            "GET /fabrication/execution/preflight/catalog"
+        ],
+        "executionPlanRoutes": ["POST /execution/plan", "POST /fabrication/execution/plan"],
+        "executionResultRoutes": ["POST /execution/result", "POST /fabrication/execution/result"],
+        "relatedRoutes": [
+            "GET /fabrication/machine-code/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog",
+            "GET /fabrication/monitoring/catalog",
+            "GET /fabrication/interventions/catalog",
+            "GET /fabrication/setup/catalog",
+            "GET /fabrication/learning/preflight/catalog",
+            "POST /fabrication/release/preview",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "preflightGroups": [
+            {
+                "group": "program-run-and-machine-state",
+                "requiredEvidence": [
+                    "generated or imported machine program, controller dialect, postprocessor checksum, tool/nozzle/spindle state, and machine profile are retained",
+                    "executionPlan.programRuns map every generated printer, mill, router, lathe, sheet-cut, EDM, assembly, and special-process program to a reviewed machine and setup",
+                    "machineSchedule dependency holds, setup order, and process handoff boundaries are visible before any run can start"
+                ],
+                "blocks": ["executionPlan.programRuns", "machineSchedule.dependencyHolds", "controllerPlan.releaseGates"]
+            },
+            {
+                "group": "stop-point-human-intervention-and-automation-state",
+                "requiredEvidence": [
+                    "executionPlan.stopPoints and checkpoints identify manual setup, inspection, material change, part combine/separate, or recovery boundaries",
+                    "operatorInterventionPlan.requiredOperatorActions, evidenceGates, automationCandidates, and splitCombineReviews have owners and retained acceptance evidence",
+                    "interventionMap human and automation paths describe when the job must pause rather than pretending unattended completion is possible"
+                ],
+                "blocks": ["executionPlan.stopPoints", "operatorInterventionPlan.requiredOperatorActions", "interventionMap.humanInterventionPoints"]
+            },
+            {
+                "group": "monitoring-recovery-and-release-state",
+                "requiredEvidence": [
+                    "monitoringPlan monitor points, alert rules, recovery actions, and unattended-run release gates cover thermal, motion, extrusion, spindle, coolant, fixturing, and process-specific failure modes",
+                    "simulation, validation, quality, release package, and machineRelease blockers have been reviewed before execution is declared machine-ready",
+                    "execution result, monitoring result, and learning outcome routes are linked so failed runs feed MDP/POMDP/neural policy updates"
+                ],
+                "blocks": ["monitoringPlan.releaseGates", "machineRelease.blockers", "releasePackagePlan.releaseGates"]
+            }
+        ],
+        "responseSurfaces": [
+            "executionPlan.programRuns",
+            "executionPlan.checkpoints",
+            "executionPlan.stopPoints",
+            "executionPlan.canStart",
+            "executionPlan.canRunUnattended",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "operatorInterventionPlan.evidenceGates",
+            "operatorInterventionPlan.automationCandidates",
+            "operatorInterventionPlan.splitCombineReviews",
+            "interventionMap.humanInterventionPoints",
+            "interventionMap.automationPaths",
+            "machineSchedule.dependencyHolds",
+            "monitoringPlan.monitorPoints",
+            "monitoringPlan.alertRules",
+            "monitoringPlan.recoveryActions",
+            "machineRelease.blockers",
+            "releasePackagePlan.releaseGates",
+            "learning.interventionSignals"
+        ],
+        "artifactSurfaces": [
+            "execution-plan",
+            "operator-intervention-plan",
+            "machine-schedule",
+            "monitoring-plan",
+            "machine-release",
+            "release-package-plan",
+            "simulation-report",
+            "mdp-request.artifacts.executionPlan",
+            "mdp-request.artifacts.operatorInterventionPlan",
+            "mdp-request.artifacts.monitoringPlan"
+        ],
+        "learningSurfaces": [
+            "executionPlan.learningObservations",
+            "operatorInterventionPlan.learningObservations",
+            "interventionMap.learningObservations",
+            "machineSchedule.learningObservations",
+            "monitoringPlan.learningObservations",
+            "executionResult.learningOutcomeDraft",
+            "learning.interventionSignals",
+            "neuralTrainingCorpus.examples"
+        ],
+        "executionPolicy": [
+            "execution preflight catalog entries describe conservative run-readiness evidence, not certified shop-floor authorization or controller safety",
+            "machine-ready execution remains blocked while stop points, required operator actions, dependency holds, monitoring recovery gaps, split/combine evidence, release blockers, or learning handoff links are missing",
+            "failed execution preflight gates should feed DES, MDP/POMDP, and neural workers so future plans can reroute, split jobs, regenerate instructions, or ask for human intervention earlier"
+        ]
+    })
+}
+
+async fn execution_preflight_catalog_http() -> impl IntoResponse {
+    Json(execution_preflight_catalog_response())
 }
 
 fn release_preview_response(
@@ -106604,6 +106711,7 @@ async fn request_schema() -> impl IntoResponse {
             "releaseCatalog": ["GET /release/catalog", "GET /fabrication/release/catalog"],
             "releasePreflightCatalog": ["GET /release/preflight/catalog", "GET /fabrication/release/preflight/catalog"],
             "releaseReadinessResult": ["POST /release/result", "POST /fabrication/release/result"],
+            "executionPreflightCatalog": ["GET /execution/preflight/catalog", "GET /fabrication/execution/preflight/catalog"],
             "executionPlan": ["POST /execution/plan", "POST /fabrication/execution/plan"],
             "executionResult": ["POST /execution/result", "POST /fabrication/execution/result"],
             "strategyCatalog": ["GET /strategy/catalog", "GET /fabrication/strategy/catalog"],
@@ -109554,6 +109662,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/release/preflight/catalog",
             get(release_preflight_catalog_http),
+        )
+        .route(
+            "/execution/preflight/catalog",
+            get(execution_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/execution/preflight/catalog",
+            get(execution_preflight_catalog_http),
         )
         .route("/workflow/catalog", get(workflow_catalog_http))
         .route("/fabrication/workflow/catalog", get(workflow_catalog_http))
@@ -119822,6 +119938,62 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified equipment safety")))));
+    }
+
+    #[test]
+    fn execution_preflight_catalog_endpoint_exposes_run_readiness_gates() {
+        let payload = execution_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.execution-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/execution/preflight/catalog")
+            })));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("execution preflight groups should be present");
+        for group in [
+            "program-run-and-machine-state",
+            "stop-point-human-intervention-and-automation-state",
+            "monitoring-recovery-and-release-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing execution preflight group {group}"
+            );
+        }
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("operatorInterventionPlan.requiredOperatorActions")
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("mdp-request.artifacts.executionPlan")
+            })));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("executionResult.learningOutcomeDraft")
+            })));
+        assert!(payload
+            .get("executionPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified shop-floor authorization")))));
     }
 
     #[test]

@@ -170,6 +170,8 @@ outcomes.
 - `POST /fabrication/release/preview`
 - `POST /release/result`
 - `POST /fabrication/release/result`
+- `GET /execution/preflight/catalog`
+- `GET /fabrication/execution/preflight/catalog`
 - `POST /execution/plan`
 - `POST /fabrication/execution/plan`
 - `POST /execution/result`
@@ -2432,6 +2434,18 @@ are complete. Result observations include `release-readiness-decision:*`,
 which final gates cleared or blocked hardware execution.
 
 ## `POST /fabrication/execution/plan`
+
+`GET /execution/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/execution/preflight/catalog` expose the
+`dd.fabrication.execution-preflight-catalog.v1` run-readiness contract before a
+planner request is submitted. The catalog groups required evidence for
+program-run/machine state, stop-point/human-intervention/automation state, and
+monitoring/recovery/release state. It names the `executionPlan`,
+`operatorInterventionPlan`, `interventionMap`, `machineSchedule`,
+`monitoringPlan`, `machineRelease`, `releasePackagePlan`, and learning surfaces
+that must be reviewable before generated or imported printer, mill, lathe,
+router, sheet-cutting, assembly, or special-process instructions are considered
+ready to run.
 
 `POST /execution/plan` and the gateway-prefixed
 `POST /fabrication/execution/plan` accept the same request body as
