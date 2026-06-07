@@ -3377,6 +3377,21 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /boundary_remediation_plan_endpoint_derives_actions_and_handoffs_from_boundaries/,
   );
+  assert.match(source, /async fn boundary_analysis_result_http/);
+  assert.match(source, /fn boundary_analysis_result_review_response/);
+  assert.match(source, /fn stored_boundary_analysis_result_job/);
+  assert.match(source, /dd\.fabrication\.boundary-analysis-result-review\.v1/);
+  assert.match(source, /dd\.fabrication\.boundary-analysis-learning-outcome-draft\.v1/);
+  assert.match(source, /"POST \/fabrication\/boundaries\/result"/);
+  assert.match(source, /"sourceKind": "boundary-analysis-result"/);
+  assert.match(source, /"boundaryAnalysisResult"/);
+  assert.match(source, /"boundaryResultJobId"/);
+  assert.match(source, /"machineFailureBoundaryCount"/);
+  assert.match(source, /"splitCombineDecisionCount"/);
+  assert.match(
+    source,
+    /boundary_analysis_result_endpoint_reviews_machine_failure_split_and_learning/,
+  );
   assert.match(source, /async fn boundary_remediation_result_http/);
   assert.match(source, /fn boundary_remediation_result_review_response/);
   assert.match(source, /fn stored_boundary_remediation_result_job/);
@@ -4861,12 +4876,22 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"machine-profile-evidence"/);
   assert.match(source, /"machine-profile-blocker"/);
   assert.match(source, /fn intake_guide\(\) -> Value/);
+  assert.match(source, /fn intake_request_package_checklist\(\) -> Value/);
   assert.match(source, /async fn intake_catalog_http/);
   assert.match(source, /"schemaVersion": "dd\.fabrication\.intake-catalog\.v1"/);
   assert.match(source, /"routes": \["GET \/intake\/catalog", "GET \/fabrication\/intake\/catalog"\]/);
+  assert.match(source, /"requestPackageChecklist": intake_request_package_checklist\(\)/);
+  assert.match(source, /design-source-and-intent/);
+  assert.match(source, /instruction-source-and-controller-state/);
+  assert.match(source, /analysis-simulation-and-boundary-review/);
+  assert.match(source, /release-package-and-learning-feedback/);
   assert.match(source, /"releasePolicy": \[/);
   assert.match(source, /learning observations can bias future plans but do not bypass release gates/);
   assert.match(source, /intake_guide_exposes_release_gated_fabrication_flow/);
+  assert.match(
+    source,
+    /intake_request_package_checklist_exposes_design_instruction_release_and_learning_evidence/,
+  );
   assert.match(source, /fn request_templates\(\) -> Value/);
   assert.match(source, /async fn request_templates_catalog_http/);
   assert.match(source, /"schemaVersion": "dd\.fabrication\.request-templates-catalog\.v1"/);
@@ -5442,6 +5467,11 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(
     source,
     /\.route\(\s*"\/fabrication\/instructions\/import\/preflight\/catalog",\s*get\(instruction_import_preflight_catalog_http\),\s*\)/,
+  );
+  assert.match(source, /\.route\("\/boundaries\/result", post\(boundary_analysis_result_http\)\)/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/boundaries\/result",\s*post\(boundary_analysis_result_http\),\s*\)/,
   );
   assert.match(source, /\.route\("\/release\/catalog", get\(release_catalog_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/release\/catalog", get\(release_catalog_http\)\)/);
@@ -6510,6 +6540,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /machine-failure boundary evidence state/);
   assert.match(readme, /human-intervention and automation\s+gap state/);
   assert.match(readme, /split-combine\/remediation boundary state/);
+  assert.match(readme, /`POST \/boundaries\/result`/);
+  assert.match(readme, /`POST \/fabrication\/boundaries\/result`/);
+  assert.match(readme, /dd\.fabrication\.boundary-analysis-result-review\.v1/);
+  assert.match(readme, /dd\.fabrication\.boundary-analysis-learning-outcome-draft\.v1/);
+  assert.match(readme, /boundary-analysis result job/);
+  assert.match(readme, /split work earlier, combine parts\s+deliberately/);
   assert.match(readme, /`GET \/remediation\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/remediation\/catalog`/);
   assert.match(readme, /dd\.fabrication\.boundary-remediation-catalog\.v1/);
@@ -8886,6 +8922,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/improvements\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/improvements\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/boundaries\/preflight\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/boundaries\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/remediation\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/remediation\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/remediation\/result"/);
@@ -9528,8 +9565,10 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /worker result-review route traffic/);
   assert.match(runtimeReadme, /instruction-improvement review/);
   assert.match(runtimeReadme, /instruction-boundary review/);
+  assert.match(runtimeReadme, /POST \/fabrication\/boundaries\/result/);
   assert.match(observabilityReadme, /Fabrication Planner/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/corpus/);
+  assert.match(observabilityReadme, /\/fabrication\/boundaries\/result/);
   assert.match(observabilityReadme, /\/fabrication\/remediation\/result/);
   assert.match(observabilityReadme, /uid `dd-fabrication-planner`/);
   assert.match(
@@ -9552,6 +9591,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/cnc\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/hybrid\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/cells\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/boundaries\/result/);
   assert.match(observabilityReadme, /\/fabrication\/machines\/select/);
   assert.match(observabilityReadme, /\/fabrication\/controllers\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/controllers\/result/);

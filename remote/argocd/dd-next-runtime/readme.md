@@ -135,6 +135,7 @@ Gateway path map:
   `POST /fabrication/toolpaths/result`,
   `/fabrication/improvements/catalog`, `/fabrication/improvements/preflight/catalog`,
   `/fabrication/boundaries/catalog`, `/fabrication/boundaries/preflight/catalog`,
+  `POST /fabrication/boundaries/result`,
   `/fabrication/remediation/catalog`,
   `POST /fabrication/remediation/plan`, `POST /fabrication/remediation/result`,
   `/fabrication/decomposition/catalog`,
