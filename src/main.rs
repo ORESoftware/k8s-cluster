@@ -57204,6 +57204,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/learning/capabilities",
         "GET /learning/engines/catalog",
         "GET /fabrication/learning/engines/catalog",
+        "GET /learning/preflight/catalog",
+        "GET /fabrication/learning/preflight/catalog",
         "GET /learning/models/catalog",
         "GET /fabrication/learning/models/catalog",
         "GET /learning/beliefs/catalog",
@@ -97701,6 +97703,111 @@ async fn learning_capabilities() -> impl IntoResponse {
     Json(learning_capability_catalog_response())
 }
 
+fn learning_preflight_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.learning-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /learning/preflight/catalog",
+            "GET /fabrication/learning/preflight/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/learning/capabilities",
+            "GET /fabrication/learning/rewards/catalog",
+            "GET /fabrication/learning/models/catalog",
+            "GET /fabrication/learning/beliefs/catalog",
+            "GET /fabrication/learning/optimizers/catalog",
+            "POST /fabrication/learning/models/result",
+            "POST /fabrication/learning/optimizers/result",
+            "POST /fabrication/learning/outcomes",
+            "GET /fabrication/learning/outcomes",
+            "POST /fabrication/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "engineTargets": ["DES", "MDP", "POMDP", "neural"],
+        "decisionSchemas": {
+            "mdp": MDP_SCHEMA,
+            "pomdp": POMDP_SCHEMA,
+            "studioGraph": STUDIO_GRAPH_SCHEMA
+        },
+        "preflightGroups": [
+            {
+                "group": "learning-outcome-artifact-and-reward-state",
+                "requiredEvidence": [
+                    "learning outcome request id, source job id, source kind, reward, reward terms, and retained artifact checksums",
+                    "state/action feature vectors mapped to generated design, instruction, toolpath, simulation, quality, telemetry, split/combine, and release surfaces",
+                    "positive and negative reward evidence tied to validation findings, failure boundaries, human intervention, runtime telemetry, and release package disposition"
+                ],
+                "promotionBlockers": [
+                    "outcome has reward without retained artifact provenance, checksum, feature map, or source job link",
+                    "positive reward attempts to bypass validation, simulation, setup, quality, operator, or release-package gates",
+                    "machine-failure, human-intervention, split/combine, or remediation evidence is missing from the learning example"
+                ]
+            },
+            {
+                "group": "mdp-pomdp-belief-and-policy-state",
+                "requiredEvidence": [
+                    "MDP state/action/reward schema and policy snapshot produced by the local des_engine solver",
+                    "POMDP hidden-state names, belief probabilities, observation labels, probe plan, and QMDP preview are retained before policy use",
+                    "release probe or operator review evidence shows hidden machine-failure, human-intervention, and split/combine risks were checked"
+                ],
+                "promotionBlockers": [
+                    "policy snapshot lacks MDP schema version, source outcomes, reward terms, or action provenance",
+                    "POMDP belief state lacks hidden-state probabilities, observation evidence, or release probes",
+                    "learned policy asks for machineReady=true while validation findings, boundaries, probes, or operator gates remain open"
+                ]
+            },
+            {
+                "group": "neural-corpus-quality-and-promotion-state",
+                "requiredEvidence": [
+                    "neural training corpus examples include bounded feature vectors, labels, action candidates, result labels, and artifact references",
+                    "model or optimizer result includes quality summary, validation split, promotion blockers, rollback owner, and release-package handoff",
+                    "neural scores remain subordinate to deterministic validation, simulation, release, and human-intervention evidence"
+                ],
+                "promotionBlockers": [
+                    "neural corpus lacks labels, feature bounds, artifact links, or train/validation quality evidence",
+                    "model or optimizer candidate has unresolved promotion blockers, missing rollback path, or unclear owner",
+                    "neural score is used as controller approval, safety certification, or autonomous release authority"
+                ]
+            }
+        ],
+        "responseSurfaces": [
+            "learning.outcomes",
+            "learningPolicySnapshot",
+            "learningPolicySnapshot.actionScores",
+            "learningOutcomes.qualitySummary",
+            "learningOutcomes.qualityBuckets.policyUse",
+            "reward_terms",
+            "mdp_update",
+            "mdp-request.desMdpSpec",
+            "mdp-request.desMdpSolution",
+            "mdp-request.desPomdpSpec",
+            "mdp-request.desPomdpSolution",
+            "pomdpBeliefState.hiddenStates",
+            "releaseProbePlan.probes",
+            "neuralTrainingCorpus.examples",
+            "neural_example",
+            "learningModelResult.promotionBlockers",
+            "learningOptimizerResult.candidates",
+            "validation.failureBoundaries",
+            "boundaryRemediationPlan.actions",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "releasePackagePlan.releaseGates"
+        ],
+        "releasePolicy": [
+            "learning preflight entries describe evidence required before DES, MDP, POMDP, or neural outputs can influence planning; they do not certify machine execution or controller release",
+            "machineReady and releaseReady stay false while learning artifacts, reward terms, MDP/POMDP schemas, belief probes, neural corpus quality, promotion blockers, validation, simulation, setup, quality, or operator gates remain unresolved",
+            "failed learning preflight checks must feed DES, MDP/POMDP, and neural workers so future plans can add evidence, split or combine work, choose safer machines, regenerate instructions, or require human intervention earlier"
+        ]
+    })
+}
+
+async fn learning_preflight_catalog_http() -> impl IntoResponse {
+    Json(learning_preflight_catalog_response())
+}
+
 fn learning_reward_catalog_entries() -> Vec<Value> {
     vec![
         json!({
@@ -104388,6 +104495,7 @@ async fn request_schema() -> impl IntoResponse {
             "artifactCatalog": ["GET /artifacts/catalog", "GET /fabrication/artifacts/catalog"],
             "jobEvidenceCatalog": ["GET /jobs/catalog", "GET /fabrication/jobs/catalog"],
             "learningCapabilities": ["GET /learning/capabilities", "GET /fabrication/learning/capabilities"],
+            "learningPreflightCatalog": ["GET /learning/preflight/catalog", "GET /fabrication/learning/preflight/catalog"],
             "plan": ["POST /plan", "POST /fabrication/plan"],
             "workflowCatalog": ["GET /workflow/catalog", "GET /fabrication/workflow/catalog"],
             "workflowPlan": ["POST /workflow/plan", "POST /fabrication/workflow/plan"],
@@ -107492,6 +107600,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/learning/engines/catalog",
             get(learning_capabilities),
+        )
+        .route(
+            "/learning/preflight/catalog",
+            get(learning_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/learning/preflight/catalog",
+            get(learning_preflight_catalog_http),
         )
         .route(
             "/learning/rewards/catalog",
@@ -128939,6 +129055,75 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+    }
+
+    #[test]
+    fn learning_preflight_catalog_endpoint_exposes_policy_promotion_gates() {
+        let payload = learning_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.learning-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/learning/preflight/catalog")
+            })));
+        assert_eq!(
+            payload
+                .get("decisionSchemas")
+                .and_then(|schemas| schemas.get("mdp"))
+                .and_then(Value::as_str),
+            Some(MDP_SCHEMA)
+        );
+        assert_eq!(
+            payload
+                .get("decisionSchemas")
+                .and_then(|schemas| schemas.get("pomdp"))
+                .and_then(Value::as_str),
+            Some(POMDP_SCHEMA)
+        );
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("learning preflight groups should be exposed");
+        for group in [
+            "learning-outcome-artifact-and-reward-state",
+            "mdp-pomdp-belief-and-policy-state",
+            "neural-corpus-quality-and-promotion-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing learning preflight group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("promotionBlockers")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                .as_str()
+                .is_some_and(|blocker| blocker.contains("machineReady=true"))))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("pomdpBeliefState.hiddenStates") })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("neuralTrainingCorpus.examples") })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("do not certify machine execution")))));
     }
 
     #[test]
