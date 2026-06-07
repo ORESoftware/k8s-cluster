@@ -38570,6 +38570,70 @@ fn analyze_instruction_programs(
                             .to_string(),
                 });
             }
+            if has_text_plastic_joining_context && !has_text_plastic_joining_setup_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "plastic-joining-setup-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "plastic-joining text job lacks polymer compatibility, joint design, energy-director or staking-boss geometry, fixture nest, weld/stake/solvent recipe, amplitude/force/time or solvent-dwell, collapse/melt-flow, cooling/clamp, or stop-criteria evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "plastic-joining-setup-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Plastic joining can crack printed bosses, craze solvent-sensitive polymers, misalign joints, under-weld, over-collapse, or require operator recovery when polymer compatibility, joint geometry, energy directors or staking bosses, fixture nest, recipe, melt-flow/collapse limits, and cooling/clamp plans are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record part revisions, polymer compatibility, joint design, energy-director or staking-boss geometry, fixture nest, weld/stake/solvent recipe, amplitude/force/time or solvent dwell limits, collapse or melt-flow target, cooling/clamp plan, and stop criteria before joining"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-plastic-joining-setup-evidence".to_string(),
+                    reason:
+                        "plastic-joining instructions should retain polymer, joint, energy-director/boss, fixture, recipe, collapse, cooling, and stop evidence before joining"
+                            .to_string(),
+                });
+            }
+            if has_text_plastic_joining_context && !has_text_plastic_joining_release_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "plastic-joining-release-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "plastic-joining text job lacks weld collapse or stake-head, flash, cracks/crazing, pull/peel/torsion proof, leak/visual inspection, dimensional fit, cosmetic, first-article, or release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "plastic-joining-release-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Joined polymer assemblies can hide cold welds, flash, cracks, crazing, leaks, cosmetic damage, or poor fit when collapse/stake evidence, defect inspection, proof test, dimensional fit, first article, and release ownership are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record weld collapse or stake-head measurement, flash, cracks/crazing inspection, pull/peel/torsion proof, leak or visual inspection, dimensional fit, cosmetic disposition, first article, and release owner"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-plastic-joining-release-evidence".to_string(),
+                    reason:
+                        "plastic-joining instructions should retain collapse/stake, flash, cracks/crazing, proof-test, visual/leak, fit, first-article, and release evidence"
+                            .to_string(),
+                });
+            }
             if has_text_fastener_installation_context
                 && !has_text_fastener_installation_setup_evidence
             {
@@ -39467,6 +39531,16 @@ fn instruction_patch_content_for_improvement(
             "CHECKPOINT [adhesive-bonding-cure-release-boundary]: record clamp pressure, cure time, temperature/humidity, handling strength, void and squeeze-out inspection, lap-shear or peel coupon, dimensional fit, first article, rework limit, and bonded-assembly release owner"
                 .to_string(),
         ]
+    } else if action == "add-plastic-joining-setup-evidence" {
+        vec![
+            "CHECKPOINT [plastic-joining-setup-boundary]: record part revisions, polymer compatibility, joint design, energy-director or staking-boss geometry, fixture nest, weld/stake/solvent recipe, amplitude/force/time or solvent dwell limits, collapse or melt-flow target, cooling/clamp plan, and stop criteria before joining"
+                .to_string(),
+        ]
+    } else if action == "add-plastic-joining-release-evidence" {
+        vec![
+            "CHECKPOINT [plastic-joining-release-boundary]: record weld collapse or stake-head measurement, flash, cracks/crazing inspection, pull/peel/torsion proof, leak or visual inspection, dimensional fit, cosmetic disposition, first article, and plastic-join release owner"
+                .to_string(),
+        ]
     } else if action == "add-fastener-installation-setup-evidence" {
         vec![
             "CHECKPOINT [fastener-installation-setup-boundary]: record part revisions, fastener specification, hardware lot, washer/spacer stack, joint stack thickness, prepared threads or inserts, access, torque tool calibration, threadlocker, and torque sequence before installation"
@@ -40063,6 +40137,26 @@ fn improve_instruction_programs(
                 ) {
                     notes.push(
                         "Adhesive-bonding job needs clamp pressure, cure time/environment, void or squeeze-out inspection, coupon proof, dimensional fit, first article, rework limit, and release-owner evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-plastic-joining-setup-evidence",
+                ) {
+                    notes.push(
+                        "Plastic-joining job needs polymer compatibility, joint design, energy-director or staking-boss geometry, fixture nest, recipe, collapse/melt-flow, cooling/clamp, and stop-criteria evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-plastic-joining-release-evidence",
+                ) {
+                    notes.push(
+                        "Plastic-joining job needs collapse or stake-head, flash, cracks/crazing, proof-test, leak or visual inspection, dimensional fit, cosmetic, first article, and release-owner evidence"
                             .to_string(),
                     );
                 }
@@ -43475,6 +43569,8 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "insert-installation-job-packager"
     } else if wants_adhesive_bonding(&token) {
         "adhesive-bonding-job-packager"
+    } else if wants_plastic_joining(&token) {
+        "plastic-joining-job-packager"
     } else if wants_fastener_installation(&token) {
         "fastener-installation-job-packager"
     } else if wants_rivet_installation(&token) {
@@ -43587,6 +43683,8 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "insert-installation-job-packager"
     } else if wants_adhesive_bonding(&token) {
         "adhesive-bonding-job-packager"
+    } else if wants_plastic_joining(&token) {
+        "plastic-joining-job-packager"
     } else if wants_fastener_installation(&token) {
         "fastener-installation-job-packager"
     } else if wants_rivet_installation(&token) {
@@ -43645,6 +43743,8 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "insert-installation-job-package".to_string()
     } else if wants_adhesive_bonding(&token) {
         "adhesive-bonding-job-package".to_string()
+    } else if wants_plastic_joining(&token) {
+        "plastic-joining-job-package".to_string()
     } else if wants_fastener_installation(&token) {
         "fastener-installation-job-package".to_string()
     } else if wants_rivet_installation(&token) {
@@ -43741,6 +43841,8 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "insert-installation-job-package".to_string()
     } else if wants_adhesive_bonding(&token) {
         "adhesive-bonding-job-package".to_string()
+    } else if wants_plastic_joining(&token) {
+        "plastic-joining-job-package".to_string()
     } else if wants_fastener_installation(&token) {
         "fastener-installation-job-package".to_string()
     } else if wants_rivet_installation(&token) {
@@ -43841,6 +43943,17 @@ fn postprocess_required_artifacts(targets: &[PostprocessTarget]) -> Vec<String> 
             artifacts.insert("adhesive-lot-mix-open-time-and-bondline-record".to_string());
             artifacts.insert("adhesive-fixture-clamp-cure-and-environment-record".to_string());
             artifacts.insert("adhesive-coupon-fit-first-article-and-release-record".to_string());
+            continue;
+        }
+        if is_plastic_joining_kind(&target.machine_kind)
+            || wants_plastic_joining(&target.output_format)
+            || wants_plastic_joining(&target.controller)
+        {
+            artifacts.insert("plastic-material-compatibility-and-joint-design-record".to_string());
+            artifacts.insert("energy-director-stake-boss-and-fixture-nest-record".to_string());
+            artifacts.insert("weld-stake-solvent-recipe-and-collapse-record".to_string());
+            artifacts
+                .insert("plastic-proof-visual-leak-first-article-and-release-record".to_string());
             continue;
         }
         if is_fastener_installation_kind(&target.machine_kind)
@@ -44468,6 +44581,8 @@ fn controller_dialect_family(
         "insert-installation-controller-dialect".to_string()
     } else if wants_adhesive_bonding(&token) {
         "adhesive-bonding-controller-dialect".to_string()
+    } else if wants_plastic_joining(&token) {
+        "plastic-joining-controller-dialect".to_string()
     } else if wants_fastener_installation(&token) {
         "fastener-installation-controller-dialect".to_string()
     } else if wants_rivet_installation(&token) {
@@ -45810,6 +45925,8 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         let class = machine_class(&machine.kind);
         let method = if is_adhesive_bonding_kind(&machine.kind) {
             "adhesive-bonding"
+        } else if is_plastic_joining_kind(&machine.kind) {
+            "plastic-joining"
         } else if is_fastener_installation_kind(&machine.kind) {
             "fastener-installation"
         } else if is_rivet_installation_kind(&machine.kind) {
@@ -49282,6 +49399,9 @@ fn material_feedstock_kind(part: &PartPlan) -> &'static str {
         }
         MachineClass::Other if is_adhesive_bonding_kind(&part.machine_kind) => {
             "adhesive-substrate-prep-fixture-cure-and-coupon-kit"
+        }
+        MachineClass::Other if is_plastic_joining_kind(&part.machine_kind) => {
+            "polymer-joint-fixture-weld-stake-solvent-and-proof-kit"
         }
         MachineClass::Other if is_fastener_installation_kind(&part.machine_kind) => {
             "fastener-hardware-threadlocker-torque-tool-and-witness-mark-kit"
@@ -91516,6 +91636,13 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "bondline-control-job",
         "adhesive-cure-job",
         "lap-shear-peel-test-job",
+        "plastic-joining-job",
+        "plastic-welding-job",
+        "ultrasonic-welding-job",
+        "heat-staking-job",
+        "solvent-welding-job",
+        "hot-plate-welding-job",
+        "vibration-welding-job",
         "fastener-installation-job",
         "mechanical-fastening-job",
         "screw-installation-job",
@@ -91682,6 +91809,8 @@ fn instruction_language_family(language: &str) -> &'static str {
         "insert-installation-job-sheet"
     } else if wants_adhesive_bonding(&token) {
         "adhesive-bonding-job-sheet"
+    } else if wants_plastic_joining(&token) {
+        "plastic-joining-job-sheet"
     } else if wants_fastener_installation(&token) {
         "fastener-installation-job-sheet"
     } else if wants_rivet_installation(&token) {
@@ -91784,6 +91913,8 @@ fn instruction_language_machine_classes(language: &str) -> Vec<String> {
         vec!["insert-installation-cell", "manual-or-special-process"]
     } else if wants_adhesive_bonding(&token) {
         vec!["adhesive-bonding-cell", "manual-or-special-process"]
+    } else if wants_plastic_joining(&token) {
+        vec!["plastic-joining-cell", "manual-or-special-process"]
     } else if wants_fastener_installation(&token) {
         vec!["fastener-installation-cell", "manual-or-special-process"]
     } else if wants_rivet_installation(&token) {
@@ -91933,6 +92064,9 @@ fn instruction_language_analysis_focus(language: &str) -> Vec<String> {
         "adhesive-bonding-job-sheet" => focus.extend([
             "part revisions, substrate compatibility, adhesive specification, lot, shelf life, mix ratio, surface cleaning, abrasion or activation, primer, bondline thickness, fixture, open time, clamp pressure, cure environment, coupon proof, dimensional fit, first article, rework limit, and release evidence".to_string(),
         ]),
+        "plastic-joining-job-sheet" => focus.extend([
+            "part revisions, polymer compatibility, joint design, energy director or staking boss geometry, fixture nest, weld/stake/solvent recipe, amplitude, force, time, solvent dwell, melt flow, collapse target, cooling/clamp plan, flash, cracks/crazing, pull/peel/torsion proof, leak or visual inspection, dimensional fit, first article, and plastic-join release evidence".to_string(),
+        ]),
         "fastener-installation-job-sheet" => focus.extend([
             "part revisions, fastener specification, hardware lot, washer or spacer stack, joint stack thickness, prepared threads or inserts, access, calibrated torque tool, threadlocker, torque sequence, final torque or angle, witness mark, clamp gap, thread engagement, retorque, first article, and release evidence".to_string(),
         ]),
@@ -92047,6 +92181,11 @@ fn instruction_language_release_gates(language: &str) -> Vec<String> {
         gates.push("attach-substrate-adhesive-lot-surface-prep-and-bondline-evidence".to_string());
         gates.push(
             "attach-cure-environment-coupon-fit-first-article-and-release-evidence".to_string(),
+        );
+    } else if family == "plastic-joining-job-sheet" {
+        gates.push("attach-polymer-joint-energy-director-fixture-and-recipe-evidence".to_string());
+        gates.push(
+            "attach-collapse-proof-visual-leak-first-article-and-release-evidence".to_string(),
         );
     } else if family == "fastener-installation-job-sheet" {
         gates.push(
@@ -92531,6 +92670,16 @@ fn instruction_generation_catalog_program_contracts() -> Vec<Value> {
             "releaseGates": ["part revisions", "substrate compatibility", "adhesive specification", "lot and shelf life", "mix ratio", "surface preparation", "activation or primer", "bondline thickness", "fixture and clamp pressure", "open time", "cure environment", "coupon proof", "dimensional fit", "first article", "bond release"],
             "boundarySignals": ["adhesive-bonding-prep-boundary", "adhesive-bonding-cure-release-boundary"],
             "artifactKinds": ["generated-machine-program", "program-*", "adhesive-substrate-prep-and-compatibility-record", "adhesive-lot-mix-open-time-and-bondline-record", "adhesive-fixture-clamp-cure-and-environment-record", "adhesive-coupon-fit-first-article-and-release-record"]
+        }),
+        json!({
+            "family": "plastic-joining-release",
+            "generatedLanguages": ["plastic-joining-job", "plastic-welding-job", "ultrasonic-welding-job", "heat-staking-job", "solvent-welding-job", "hot-plate-welding-job", "vibration-welding-job"],
+            "machineClasses": ["plastic-joining-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other plastic joining cell",
+            "generatedInstructionKinds": ["part revision, polymer compatibility, joint design, energy-director or staking-boss geometry, fixture nest, and recipe review", "ultrasonic weld, heat stake, solvent weld, hot-plate weld, vibration weld, or spin weld with collapse/melt-flow control", "flash, cracks/crazing, pull/peel/torsion proof, leak or visual inspection, dimensional fit, first article, and release"],
+            "releaseGates": ["part revisions", "polymer compatibility", "joint design", "energy director or staking boss", "fixture nest", "weld/stake/solvent recipe", "amplitude force time or solvent dwell", "collapse or melt-flow target", "cooling/clamp plan", "flash and crack inspection", "proof test", "visual or leak inspection", "first article", "plastic join release"],
+            "boundarySignals": ["plastic-joining-setup-boundary", "plastic-joining-release-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "plastic-material-compatibility-and-joint-design-record", "energy-director-stake-boss-and-fixture-nest-record", "weld-stake-solvent-recipe-and-collapse-record", "plastic-proof-visual-leak-first-article-and-release-record"]
         }),
         json!({
             "family": "fastener-installation-release",
@@ -94509,6 +94658,8 @@ fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
                 "add-insert-installation-release-evidence",
                 "add-adhesive-bonding-prep-evidence",
                 "add-adhesive-bonding-cure-release-evidence",
+                "add-plastic-joining-setup-evidence",
+                "add-plastic-joining-release-evidence",
                 "add-fastener-installation-setup-evidence",
                 "add-fastener-installation-release-evidence",
                 "add-rivet-installation-setup-evidence",
@@ -94530,7 +94681,7 @@ fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
                 "add-indexed-setup-evidence",
                 "add-structured-text-checkpoints"
             ],
-            "appliesTo": ["operator-checklist", "assembly-cell-job", "part-separation-checklist", "thermal-postprocess", "surface-finishing", "metal-joining", "welding-job", "brazing-job", "soldering-job", "molding-casting", "molding-casting-job", "casting-job", "molding-job", "urethane-casting-job", "silicone-molding-job", "vacuum-casting-job", "fixture-tooling", "fixture-tooling-job", "soft-jaw-job", "fixture-plate-job", "drill-jig-job", "inspection-fixture-job", "assembly-fixture-job", "vacuum-fixture-job", "adaptive-compensation", "adaptive-compensation-job", "closed-loop-machining-job", "in-process-probing-job", "inspection-feedback-job", "offset-update-job", "tool-wear-update-job", "compensated-rerun-job", "insert-installation", "insert-installation-job", "threaded-insert-job", "heat-set-insert-job", "press-fit-insert-job", "helicoil-installation-job", "dowel-pin-installation-job", "bushing-installation-job", "adhesive-bonding", "adhesive-bonding-job", "structural-adhesive-job", "epoxy-bonding-job", "bondline-control-job", "adhesive-cure-job", "lap-shear-peel-test-job", "fastener-installation", "fastener-installation-job", "mechanical-fastening-job", "screw-installation-job", "bolt-installation-job", "torque-sequence-job", "threadlocker-job", "retorque-inspection-job", "rivet-installation", "rivet-installation-job", "blind-rivet-job", "solid-rivet-job", "clinch-stake-job", "swage-peen-job", "rivet-inspection-job", "seal-installation", "seal-installation-job", "gasket-installation-job", "oring-installation-job", "o-ring-installation-job", "rtv-sealant-job", "leak-test-job", "pressure-test-job", "bearing-installation", "bearing-installation-job", "bearing-press-job", "interference-fit-job", "shrink-fit-job", "bearing-preload-job", "runout-check-job", "rotation-torque-job", "dynamic-balancing", "dynamic-balancing-job", "rotor-balancing-job", "impeller-balancing-job", "fan-balancing-job", "wheel-balancing-job", "spin-balance-job", "vibration-analysis-job", "part-marking", "part-marking-job", "laser-marking-job", "laser-engraving-job", "dot-peen-job", "data-matrix-marking-job", "udi-marking-job", "composite-layup", "composite-layup-job", "wet-layup-job", "prepreg-layup-job", "vacuum-bag-job", "autoclave-cure-job", "resin-infusion-job", "hot-wire-foam", "hot-wire-foam-job", "hot-wire-job", "foam-cutting-job", "foam-core-job", "wing-core-job", "press-brake", "sheet-forming", "gear-cutting", "gear-cutting-job", "gear-hobbing-job", "spline-broaching-job", "indexed-setup"],
+            "appliesTo": ["operator-checklist", "assembly-cell-job", "part-separation-checklist", "thermal-postprocess", "surface-finishing", "metal-joining", "welding-job", "brazing-job", "soldering-job", "molding-casting", "molding-casting-job", "casting-job", "molding-job", "urethane-casting-job", "silicone-molding-job", "vacuum-casting-job", "fixture-tooling", "fixture-tooling-job", "soft-jaw-job", "fixture-plate-job", "drill-jig-job", "inspection-fixture-job", "assembly-fixture-job", "vacuum-fixture-job", "adaptive-compensation", "adaptive-compensation-job", "closed-loop-machining-job", "in-process-probing-job", "inspection-feedback-job", "offset-update-job", "tool-wear-update-job", "compensated-rerun-job", "insert-installation", "insert-installation-job", "threaded-insert-job", "heat-set-insert-job", "press-fit-insert-job", "helicoil-installation-job", "dowel-pin-installation-job", "bushing-installation-job", "adhesive-bonding", "adhesive-bonding-job", "structural-adhesive-job", "epoxy-bonding-job", "bondline-control-job", "adhesive-cure-job", "lap-shear-peel-test-job", "plastic-joining", "plastic-joining-job", "plastic-welding-job", "ultrasonic-welding-job", "heat-staking-job", "solvent-welding-job", "hot-plate-welding-job", "vibration-welding-job", "fastener-installation", "fastener-installation-job", "mechanical-fastening-job", "screw-installation-job", "bolt-installation-job", "torque-sequence-job", "threadlocker-job", "retorque-inspection-job", "rivet-installation", "rivet-installation-job", "blind-rivet-job", "solid-rivet-job", "clinch-stake-job", "swage-peen-job", "rivet-inspection-job", "seal-installation", "seal-installation-job", "gasket-installation-job", "oring-installation-job", "o-ring-installation-job", "rtv-sealant-job", "leak-test-job", "pressure-test-job", "bearing-installation", "bearing-installation-job", "bearing-press-job", "interference-fit-job", "shrink-fit-job", "bearing-preload-job", "runout-check-job", "rotation-torque-job", "dynamic-balancing", "dynamic-balancing-job", "rotor-balancing-job", "impeller-balancing-job", "fan-balancing-job", "wheel-balancing-job", "spin-balance-job", "vibration-analysis-job", "part-marking", "part-marking-job", "laser-marking-job", "laser-engraving-job", "dot-peen-job", "data-matrix-marking-job", "udi-marking-job", "composite-layup", "composite-layup-job", "wet-layup-job", "prepreg-layup-job", "vacuum-bag-job", "autoclave-cure-job", "resin-infusion-job", "hot-wire-foam", "hot-wire-foam-job", "hot-wire-job", "foam-cutting-job", "foam-core-job", "wing-core-job", "press-brake", "sheet-forming", "gear-cutting", "gear-cutting-job", "gear-hobbing-job", "spline-broaching-job", "indexed-setup"],
             "operationKinds": ["insert-review-checkpoint", "review-line"],
             "generatedContent": ["setup-boundary, process-boundary, and completion-boundary checkpoints"],
             "sourceSurfaces": ["improvements", "improvedPrograms.instructions", "operatorInterventionPlan.requiredOperatorActions"],
@@ -94859,6 +95010,16 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
             languages.insert("bondline-control-job".to_string());
             languages.insert("adhesive-cure-job".to_string());
             languages.insert("lap-shear-peel-test-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_plastic_joining_kind(&machine.kind) => {
+            languages.insert("plastic-joining-job".to_string());
+            languages.insert("plastic-welding-job".to_string());
+            languages.insert("ultrasonic-welding-job".to_string());
+            languages.insert("heat-staking-job".to_string());
+            languages.insert("solvent-welding-job".to_string());
+            languages.insert("hot-plate-welding-job".to_string());
+            languages.insert("vibration-welding-job".to_string());
             languages.insert("operator-checklist".to_string());
         }
         MachineClass::Other if is_fastener_installation_kind(&machine.kind) => {
@@ -101812,6 +101973,118 @@ fn request_templates() -> Value {
             }
         },
         {
+            "id": "generated-fdm-instruction-handoff",
+            "label": "Generate printer instructions from a retained design package",
+            "route": "POST /fabrication/instructions/generate",
+            "machineKind": "fdm-printer",
+            "preferredMethods": ["instruction-generation", "slicer-profile-handoff", "additive-print"],
+            "requiredEvidence": ["retained 3MF or STL export", "printer and slicer profile", "filament lot and color", "nozzle and bed temperature verification", "purge or prime evidence", "simulation or dry-run required"],
+            "releaseGateHints": ["instructionGeneration.generatedPrograms", "slicerProfileReview", "temperatureStateEvidence", "extrusionStateEvidence", "simulation.programs", "machineRelease.blockers"],
+            "request": {
+                "templateId": "generated-fdm-instruction-handoff",
+                "templateVersion": "v1",
+                "requestId": "generate-fdm-instructions-001",
+                "objective": "Generate printer setup sheets and draft Marlin G-code handoff for a PETG bracket from retained 3MF/STL evidence",
+                "material": { "name": "PETG", "family": "polymer" },
+                "parts": [
+                    {
+                        "id": "printed-bracket",
+                        "description": "PETG printed bracket requiring first-layer verification, purge evidence, and retained slicer settings",
+                        "role": "printed-functional-part",
+                        "quantity": 1,
+                        "toleranceMm": 0.20,
+                        "preferredMethod": "additive-print"
+                    }
+                ],
+                "constraints": {
+                    "preferredMethods": ["additive-print", "instruction-generation"],
+                    "requireDryRun": true
+                }
+            }
+        },
+        {
+            "id": "generated-cnc-instruction-handoff",
+            "label": "Generate CNC setup and controller instructions",
+            "route": "POST /fabrication/instructions/generate",
+            "machineKind": "cnc-subtractive",
+            "preferredMethods": ["instruction-generation", "postprocessor-handoff", "milling"],
+            "requiredEvidence": ["retained STEP or CAM source", "controller and postprocessor target", "tooling and workholding evidence", "work offset and tool length offset review", "chip evacuation or coolant readiness", "simulation or dry-run required"],
+            "releaseGateHints": ["instructionGeneration.generatedPrograms", "controllerPlan.releaseGates", "postprocessPlan.controllerTargets", "toolingPlan.releaseGates", "workholdingPlan.releaseGates", "machineRelease.blockers"],
+            "request": {
+                "templateId": "generated-cnc-instruction-handoff",
+                "templateVersion": "v1",
+                "requestId": "generate-cnc-instructions-001",
+                "objective": "Generate Fanuc-style setup sheets and conservative milling instructions for a 6061 pocket plate from retained CAM evidence",
+                "material": { "name": "6061 aluminum", "family": "metal" },
+                "parts": [
+                    {
+                        "id": "milled-pocket-plate",
+                        "description": "6061 aluminum pocket plate requiring fixture proof, work offset review, and controller dry-run before release",
+                        "role": "milled-functional-part",
+                        "quantity": 1,
+                        "toleranceMm": 0.05,
+                        "preferredMethod": "milling"
+                    }
+                ],
+                "constraints": {
+                    "preferredMethods": ["milling", "instruction-generation"],
+                    "requireDryRun": true
+                }
+            }
+        },
+        {
+            "id": "imported-cnc-dry-run-simulation",
+            "label": "Dry-run imported CNC instructions for release boundaries",
+            "route": "POST /fabrication/simulation/run",
+            "machineKind": "cnc-router",
+            "preferredMethods": ["simulation-dry-run", "instruction-validation", "routing"],
+            "requiredEvidence": ["machine profile and work envelope", "controller dialect known", "retained imported program", "fixture and work offset review", "simulation or dry-run artifact required"],
+            "releaseGateHints": ["simulation.programs.axisExtents", "simulation.riskProfile.programRisks", "simulation.failureBoundaries", "machineRelease.blockers", "executionPlan.stopPoints", "learning.releaseProbePlan"],
+            "request": {
+                "templateId": "imported-cnc-dry-run-simulation",
+                "templateVersion": "v1",
+                "requestId": "simulate-imported-cnc-001",
+                "objective": "Dry-run an imported router profile against the declared machine envelope before release",
+                "material": { "name": "birch plywood", "family": "wood" },
+                "stock": { "form": "sheet", "dimensionsMm": [180.0, 80.0, 12.0] },
+                "machines": [
+                    {
+                        "id": "router-1",
+                        "kind": "cnc-router",
+                        "controller": "grbl-gcode",
+                        "materials": ["wood"],
+                        "workEnvelopeMm": [150.0, 90.0, 60.0],
+                        "axes": 3,
+                        "operations": ["profile", "pocket"]
+                    }
+                ],
+                "parts": [
+                    {
+                        "id": "router-profile",
+                        "description": "imported plywood router profile requiring envelope, clearance, workholding, and dry-run review",
+                        "role": "imported-cnc-profile",
+                        "quantity": 1,
+                        "toleranceMm": 0.20,
+                        "preferredMethod": "routing"
+                    }
+                ],
+                "existingInstructions": [
+                    {
+                        "id": "imported-router-program",
+                        "machineId": "router-1",
+                        "machineKind": "cnc-router",
+                        "language": "grbl-gcode",
+                        "instructions": ["G21 G90 G54", "S18000 M3", "G0 X0 Y0 Z8", "G1 X145 Y20 Z-2 F800", "M30"]
+                    }
+                ],
+                "constraints": {
+                    "preferredMethods": ["routing", "simulation-dry-run"],
+                    "allowHumanIntervention": true,
+                    "requireDryRun": true
+                }
+            }
+        },
+        {
             "id": "imported-cnc-program-review",
             "label": "Imported CNC program validation and improvement",
             "route": "POST /fabrication/instructions/analyze",
@@ -101830,6 +102103,29 @@ fn request_templates() -> Value {
                         "machineKind": "vertical-mill",
                         "language": "fanuc-gcode",
                         "instructions": ["G21 G90 G54", "T1 M6", "S8000 M3", "G1 X25.0 Y12.0 F250", "M30"]
+                    }
+                ]
+            }
+        },
+        {
+            "id": "imported-cnc-improvement-review",
+            "label": "Generate conservative improvement patches for imported CNC",
+            "route": "POST /fabrication/instructions/improve",
+            "machineKind": "cnc-subtractive",
+            "preferredMethods": ["instruction-improvement", "machine-code-improvement", "controller-patch-review"],
+            "requiredEvidence": ["machine profile attached", "controller dialect known", "blocking findings retained", "patch manifest review required", "simulation or dry-run required"],
+            "releaseGateHints": ["improvements", "improvedPrograms.patchManifest", "validation.failureBoundaries", "simulation.programs", "machineRelease.blockers"],
+            "request": {
+                "templateId": "imported-cnc-improvement-review",
+                "templateVersion": "v1",
+                "requestId": "improve-imported-cnc-001",
+                "material": { "name": "6061 aluminum", "family": "metal" },
+                "programs": [
+                    {
+                        "id": "legacy-mill-program-needs-patches",
+                        "machineKind": "vertical-mill",
+                        "language": "fanuc-gcode",
+                        "instructions": ["G21 G90 G54", "T1 M6", "S8000 M3", "G1 X25.0 Y12.0", "G2 X35.0 Y12.0", "M30"]
                     }
                 ]
             }
@@ -101972,12 +102268,286 @@ fn request_templates() -> Value {
                 "templateId": "hybrid-printed-milled-turned-assembly",
                 "templateVersion": "v1",
                 "objective": "Make a printed fixture body with milled datum pads and a turned threaded insert",
+                "material": { "name": "PETG plus aluminum and brass", "family": "hybrid" },
+                "parts": [
+                    {
+                        "id": "printed-fixture-body",
+                        "description": "printed PETG fixture body with support-removal and datum-transfer allowances",
+                        "material": { "name": "PETG", "family": "polymer" },
+                        "preferredMethod": "additive-print",
+                        "toleranceMm": 0.20
+                    },
+                    {
+                        "id": "milled-datum-pad",
+                        "description": "milled aluminum datum pad bonded or fastened into the printed body",
+                        "material": { "name": "6061 aluminum", "family": "metal" },
+                        "preferredMethod": "milling",
+                        "toleranceMm": 0.04
+                    },
+                    {
+                        "id": "turned-threaded-insert",
+                        "description": "turned brass threaded insert pressed or bonded into the hybrid fixture",
+                        "material": { "name": "brass", "family": "metal" },
+                        "preferredMethod": "turning",
+                        "toleranceMm": 0.05
+                    }
+                ],
                 "constraints": {
                     "preferredMethods": ["additive-print", "milling", "turning"],
                     "allowMultiPartAssembly": true,
                     "allowHumanIntervention": true,
                     "requireDryRun": true
                 }
+            }
+        },
+        {
+            "id": "hybrid-decomposition-plan",
+            "label": "Plan split/combine decomposition for a hybrid assembly",
+            "route": "POST /fabrication/decomposition/plan",
+            "machineKind": "hybrid-fleet",
+            "preferredMethods": ["decomposition-planning", "additive-print", "milling", "turning", "interface-control"],
+            "requiredEvidence": ["split rationale", "child geometry ownership", "per-route machine evidence", "datum transfer plan", "interface-control review required"],
+            "releaseGateHints": ["decompositionPlan.targets", "decompositionPlan.routeContracts", "decompositionPlan.recompositionInterfaces", "interfaceControlPlan.releaseGates", "machineRelease.blockers"],
+            "request": {
+                "templateId": "hybrid-decomposition-plan",
+                "templateVersion": "v1",
+                "objective": "Decompose a hybrid fixture into printed, milled, and turned child routes with retained interface-control gates",
+                "material": { "name": "PETG plus aluminum and brass", "family": "hybrid" },
+                "parts": [
+                    {
+                        "id": "printed-fixture-body",
+                        "description": "printed PETG fixture body with support-removal and datum-transfer allowances",
+                        "material": { "name": "PETG", "family": "polymer" },
+                        "preferredMethod": "additive-print",
+                        "toleranceMm": 0.20
+                    },
+                    {
+                        "id": "milled-datum-pad",
+                        "description": "milled aluminum datum pad requiring interface metrology before recomposition",
+                        "material": { "name": "6061 aluminum", "family": "metal" },
+                        "preferredMethod": "milling",
+                        "toleranceMm": 0.04
+                    },
+                    {
+                        "id": "turned-threaded-insert",
+                        "description": "turned brass threaded insert with press-fit or bonded interface evidence",
+                        "material": { "name": "brass", "family": "metal" },
+                        "preferredMethod": "turning",
+                        "toleranceMm": 0.05
+                    }
+                ],
+                "constraints": {
+                    "preferredMethods": ["additive-print", "milling", "turning"],
+                    "preferredAssemblyStrategy": "printed body plus milled datum pad plus turned insert",
+                    "allowMultiPartAssembly": true,
+                    "allowHumanIntervention": true,
+                    "requireDryRun": true
+                }
+            }
+        },
+        {
+            "id": "hybrid-assembly-plan",
+            "label": "Plan recomposition and interface-control assembly gates",
+            "route": "POST /fabrication/assembly/plan",
+            "machineKind": "hybrid-fleet",
+            "preferredMethods": ["assembly-planning", "interface-control", "fit-up-inspection", "operator-review"],
+            "requiredEvidence": ["child part release evidence", "datum transfer evidence", "fit-up and fastener or adhesive plan", "interface metrology", "operator intervention plan"],
+            "releaseGateHints": ["assemblyPlan.joinOperations", "assemblyPlan.splitCombineDecisions", "interfaceControlPlan.controls", "qualityPlan.inspectionGates", "machineRelease.blockers"],
+            "request": {
+                "templateId": "hybrid-assembly-plan",
+                "templateVersion": "v1",
+                "objective": "Plan recomposition of a printed fixture body, milled datum pad, and turned insert after child-route fabrication",
+                "material": { "name": "PETG plus aluminum and brass", "family": "hybrid" },
+                "parts": [
+                    {
+                        "id": "printed-fixture-body",
+                        "description": "released printed fixture body ready for datum-pad and insert recomposition",
+                        "material": { "name": "PETG", "family": "polymer" },
+                        "preferredMethod": "additive-print",
+                        "toleranceMm": 0.20
+                    },
+                    {
+                        "id": "milled-datum-pad",
+                        "description": "released milled datum pad with metrology report and interface fit evidence",
+                        "material": { "name": "6061 aluminum", "family": "metal" },
+                        "preferredMethod": "milling",
+                        "toleranceMm": 0.04
+                    },
+                    {
+                        "id": "turned-threaded-insert",
+                        "description": "released turned brass threaded insert with torque or pullout evidence",
+                        "material": { "name": "brass", "family": "metal" },
+                        "preferredMethod": "turning",
+                        "toleranceMm": 0.05
+                    }
+                ],
+                "constraints": {
+                    "preferredMethods": ["assembly", "fit-up-inspection", "milling", "turning"],
+                    "preferredAssemblyStrategy": "fit-up, datum transfer, then fasten or bond child routes",
+                    "allowMultiPartAssembly": true,
+                    "allowHumanIntervention": true,
+                    "requireDryRun": true
+                }
+            }
+        },
+        {
+            "id": "hybrid-route-costing-result",
+            "label": "Review hybrid route cost, yield, and split/combine economics",
+            "route": "POST /fabrication/costing/result",
+            "machineKind": "hybrid-fleet",
+            "preferredMethods": ["costing-result", "split-combine-route-economics", "mdp-pomdp-feedback"],
+            "requiredEvidence": ["machine-time and setup estimate", "material yield and scrap allowance", "route comparison evidence", "human-intervention cost review", "retained costing artifact checksum"],
+            "releaseGateHints": ["costingResult.costReviews", "costingResult.yieldReviews", "costingResult.routeComparisons", "costingLearningOutcomeDraft", "machineRelease.blockers"],
+            "request": {
+                "templateId": "hybrid-route-costing-result",
+                "templateVersion": "v1",
+                "requestId": "cost-hybrid-route-001",
+                "planRequestId": "plan-hybrid-route-001",
+                "jobId": "job-hybrid-route-001",
+                "workerId": "costing-review-worker",
+                "reviewer": "hybrid-route-costing-reviewer",
+                "reviewerVersion": "2026.06",
+                "machineKind": "hybrid-print-mill-route",
+                "routeId": "printed-milled-turned-split-route",
+                "success": true,
+                "machineReady": false,
+                "customerReady": false,
+                "costReviews": [
+                    {
+                        "reviewId": "cost-review-001",
+                        "costFamily": "split-combine-route-economics",
+                        "status": "overrun-review-required",
+                        "estimateKind": "assembly-and-rework-labor",
+                        "estimatedValue": 120.0,
+                        "actualValue": 260.0,
+                        "unit": "minutes",
+                        "releaseBlocker": true,
+                        "requiresHumanIntervention": true,
+                        "evidence": ["reviewed traveler labor variance"]
+                    }
+                ],
+                "yieldReviews": [
+                    {
+                        "yieldId": "yield-review-001",
+                        "materialKind": "aluminum-billet",
+                        "status": "scrap-allowance-exceeded",
+                        "estimatedScrapPercent": 8.0,
+                        "actualScrapPercent": 22.0,
+                        "materialAvailable": false,
+                        "releaseBlocker": true,
+                        "evidence": ["verified billet shortage"]
+                    }
+                ],
+                "routeComparisons": [
+                    {
+                        "comparisonId": "route-comparison-001",
+                        "routeKind": "split-combine-hybrid-route",
+                        "status": "route-economics-blocked",
+                        "selected": true,
+                        "cheaperThanBaseline": false,
+                        "saferThanBaseline": true,
+                        "requiresSplitCombine": true,
+                        "releaseBlocker": true,
+                        "evidence": ["hybrid fixture route estimate retained"]
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": "costing-artifact-001",
+                        "artifactKind": "split-combine-route-comparison",
+                        "sourceRefId": "route-comparison-001",
+                        "uri": "s3://fabrication-costing/job-hybrid-route-001.json",
+                        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                        "format": "json",
+                        "evidence": ["checksum verified"]
+                    }
+                ],
+                "warnings": ["requires commercial review before release"],
+                "reviewMetadata": { "currency": "USD", "plant": "alpha" }
+            }
+        },
+        {
+            "id": "operator-intervention-result-feedback",
+            "label": "Review operator checkpoint, automation fallback, and split/combine intervention outcome",
+            "route": "POST /fabrication/interventions/result",
+            "machineKind": "hybrid-cell",
+            "preferredMethods": ["intervention-result", "operator-checkpoint-review", "automation-fallback-review", "split-combine-review"],
+            "requiredEvidence": ["operator action completion state", "automation handoff verification", "split/combine interface review", "execution stop-point acknowledgement", "retained intervention artifact checksum"],
+            "releaseGateHints": ["interventionResult.operatorActions", "interventionResult.automationHandoffs", "interventionResult.splitCombineReviews", "interventionResult.evidenceGates", "interventionLearningOutcomeDraft", "machineRelease.blockers"],
+            "request": {
+                "templateId": "operator-intervention-result-feedback",
+                "templateVersion": "v1",
+                "requestId": "intervention-result-001",
+                "planRequestId": "plan-intervention-001",
+                "jobId": "job-intervention-001",
+                "workerId": "intervention-review-worker",
+                "reviewer": "operator-release-reviewer",
+                "reviewerVersion": "2026.06-intervention",
+                "machineId": "hybrid-cell-01",
+                "machineKind": "hybrid-cell",
+                "programId": "hybrid-program-01",
+                "runId": "run-operator-gate-01",
+                "success": true,
+                "machineReady": false,
+                "releaseReady": false,
+                "operatorActions": [
+                    {
+                        "actionId": "operator-action-001",
+                        "actionKind": "human-review",
+                        "status": "operator-signoff-pending",
+                        "operatorId": "operator-7",
+                        "completed": false,
+                        "releaseBlocker": true,
+                        "requiresHumanIntervention": true,
+                        "evidence": ["operator has not acknowledged fixture reload and safe restart"]
+                    }
+                ],
+                "automationHandoffs": [
+                    {
+                        "handoffId": "automation-handoff-001",
+                        "automationKind": "operator-gate-automation",
+                        "status": "fallback-required",
+                        "verified": false,
+                        "fallbackRequired": true,
+                        "releaseBlocker": true,
+                        "evidence": ["camera and clamp sensors do not cover the manual reload checkpoint"]
+                    }
+                ],
+                "splitCombineReviews": [
+                    {
+                        "reviewId": "split-review-001",
+                        "reviewKind": "hybrid-recomposition-interface-review",
+                        "status": "interface-metrology-pending",
+                        "interfaceVerified": false,
+                        "recompositionReady": false,
+                        "releaseBlocker": true,
+                        "requiresHumanIntervention": true,
+                        "evidence": ["printed insert and milled pocket need final-fit inspection"]
+                    }
+                ],
+                "evidenceGates": [
+                    {
+                        "gateId": "evidence-gate-001",
+                        "gateKind": "execution-stop-point",
+                        "status": "acknowledgement-required",
+                        "acknowledged": false,
+                        "releaseBlocker": true,
+                        "evidence": ["execution stop point requires restart authorization"]
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": "intervention-artifact-001",
+                        "artifactKind": "operator-checkpoint-record",
+                        "sourceRefId": "stop-point-01",
+                        "uri": "s3://fabrication-interventions/hybrid-cell/stop-point-01.json",
+                        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "format": "json",
+                        "evidence": ["retained checkpoint record links operator action, automation fallback, and recomposition review"]
+                    }
+                ],
+                "warnings": ["manual restart remains blocked"],
+                "reviewMetadata": { "shift": "night", "cell": "hybrid" }
             }
         },
         {
@@ -105395,7 +105965,11 @@ mod tests {
             "design-to-machine-code-generation",
             "machine-code-fdm-slicer-handoff",
             "machine-code-cnc-controller-handoff",
+            "generated-fdm-instruction-handoff",
+            "generated-cnc-instruction-handoff",
+            "imported-cnc-dry-run-simulation",
             "imported-cnc-program-review",
+            "imported-cnc-improvement-review",
             "imported-printer-gcode-review",
             "imported-resin-job-review",
             "imported-powder-bed-build-review",
@@ -105403,12 +105977,23 @@ mod tests {
             "horizontal-mill-side-feature",
             "lathe-turned-insert",
             "hybrid-printed-milled-turned-assembly",
+            "hybrid-decomposition-plan",
+            "hybrid-assembly-plan",
+            "hybrid-route-costing-result",
+            "operator-intervention-result-feedback",
             "hybrid-outcome-learning-feedback",
             "boundary-failure-learning-feedback",
             "POST /fabrication/design/generate",
             "POST /fabrication/design/import/review",
             "POST /fabrication/machine-code/generate",
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/simulation/run",
             "POST /fabrication/instructions/analyze",
+            "POST /fabrication/instructions/improve",
+            "POST /fabrication/decomposition/plan",
+            "POST /fabrication/assembly/plan",
+            "POST /fabrication/costing/result",
+            "POST /fabrication/interventions/result",
             "POST /fabrication/learning/outcomes",
             "machine-code-generation",
             "design-import-review",
@@ -105416,13 +106001,38 @@ mod tests {
             "neutral-export-review",
             "slicer-profile-handoff",
             "postprocessor-handoff",
+            "decomposition-planning",
+            "assembly-planning",
+            "interface-control",
+            "costing-result",
+            "split-combine-route-economics",
+            "intervention-result",
+            "operator-checkpoint-review",
+            "automation-fallback-review",
+            "split-combine-review",
+            "instruction-improvement",
+            "controller-patch-review",
             "instruction-generation",
+            "instructionGeneration.generatedPrograms",
+            "simulation-dry-run",
+            "simulation.programs.axisExtents",
+            "simulation.riskProfile.programRisks",
+            "learning.releaseProbePlan",
             "designExports.reviewGates",
             "designInputReview.supportedFormats",
             "translationWorkerEvidence",
             "postprocessPlan.releaseGates",
             "machineCode.releaseGates",
             "postprocessPlan.controllerTargets",
+            "workholdingPlan.releaseGates",
+            "decompositionPlan.routeContracts",
+            "assemblyPlan.splitCombineDecisions",
+            "costingResult.routeComparisons",
+            "costingLearningOutcomeDraft",
+            "interventionResult.operatorActions",
+            "interventionResult.automationHandoffs",
+            "interventionLearningOutcomeDraft",
+            "improvedPrograms.patchManifest",
             "machine-code-improvement",
             "slicer-gcode-validation",
             "resin-job-validation",
@@ -105440,6 +106050,7 @@ mod tests {
             "improvedProgramReview",
             "temperatureStateEvidence",
             "extrusionStateEvidence",
+            "purge evidence",
             "resinPostprocessEvidence",
             "recoaterClearanceEvidence",
             "powderHandlingEvidence",
@@ -105471,6 +106082,10 @@ mod tests {
             "POST /fabrication/plan",
             "POST /fabrication/design/generate",
             "POST /fabrication/machine-code/generate",
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/decomposition/plan",
+            "POST /fabrication/assembly/plan",
         ];
         let mut checked = 0;
 
@@ -105503,8 +106118,119 @@ mod tests {
         }
 
         assert!(
-            checked >= 5,
-            "expected plan/design/machine-code starter requests to parse"
+            checked >= 8,
+            "expected plan/design/machine-code/simulation starter requests to parse"
+        );
+    }
+
+    #[test]
+    fn request_template_instruction_generation_bodies_match_plan_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let mut part_methods = BTreeSet::new();
+        let mut checked = 0;
+
+        for template in template_entries {
+            let route = template
+                .get("route")
+                .and_then(Value::as_str)
+                .expect("template should expose route");
+            if route != "POST /fabrication/instructions/generate" {
+                continue;
+            }
+            let request = template
+                .get("request")
+                .cloned()
+                .expect("instruction generation template should include request body");
+            let parsed: FabricationPlanRequest = serde_json::from_value(request)
+                .expect("instruction generation template should match plan schema");
+            assert!(
+                parsed
+                    .constraints
+                    .as_ref()
+                    .and_then(|constraints| constraints.require_dry_run)
+                    .unwrap_or(false),
+                "instruction generation template should require dry run"
+            );
+            for part in parsed
+                .parts
+                .expect("instruction generation template should include parts")
+            {
+                assert!(
+                    !part.description.trim().is_empty(),
+                    "instruction generation part {} should include description",
+                    part.id
+                );
+                if let Some(method) = part.preferred_method {
+                    part_methods.insert(method);
+                }
+            }
+            checked += 1;
+        }
+
+        assert_eq!(
+            checked, 2,
+            "expected direct instruction generation templates"
+        );
+        for expected in ["additive-print", "milling"] {
+            assert!(
+                part_methods.contains(expected),
+                "instruction generation templates should include {expected} part route"
+            );
+        }
+    }
+
+    #[test]
+    fn request_template_simulation_run_body_matches_plan_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str)
+                    == Some("imported-cnc-dry-run-simulation")
+            })
+            .expect("imported CNC dry-run simulation template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/simulation/run")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("simulation template should include request body");
+        let parsed: FabricationPlanRequest =
+            serde_json::from_value(request).expect("simulation template should match plan schema");
+        assert!(
+            parsed
+                .constraints
+                .as_ref()
+                .and_then(|constraints| constraints.require_dry_run)
+                .unwrap_or(false),
+            "simulation template should require dry run"
+        );
+        assert!(
+            parsed
+                .machines
+                .as_ref()
+                .is_some_and(|machines| machines.iter().any(|machine| {
+                    machine.kind == "cnc-router" && machine.work_envelope_mm.is_some()
+                })),
+            "simulation template should include a machine envelope"
+        );
+        assert!(
+            parsed
+                .existing_instructions
+                .as_ref()
+                .is_some_and(|programs| programs.iter().any(|program| {
+                    program.language.as_deref() == Some("grbl-gcode")
+                        && !program.instructions.is_empty()
+                })),
+            "simulation template should include imported instructions"
         );
     }
 
@@ -105610,6 +106336,142 @@ mod tests {
     }
 
     #[test]
+    fn request_template_instruction_improvement_body_matches_analysis_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str)
+                    == Some("imported-cnc-improvement-review")
+            })
+            .expect("imported CNC improvement starter should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/instructions/improve")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("instruction improvement template should include request body");
+        let parsed: InstructionAnalysisRequest = serde_json::from_value(request)
+            .expect("instruction improvement template should match analysis schema");
+        let program = parsed
+            .programs
+            .first()
+            .expect("instruction improvement template should include a program");
+        assert_eq!(program.language.as_deref(), Some("fanuc-gcode"));
+        assert!(
+            program
+                .instructions
+                .iter()
+                .any(|line| line.starts_with("G2")),
+            "instruction improvement template should include arc geometry needing review"
+        );
+    }
+
+    #[test]
+    fn hybrid_request_template_keeps_split_combine_part_routes() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str)
+                    == Some("hybrid-printed-milled-turned-assembly")
+            })
+            .expect("hybrid starter template should exist");
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("hybrid template should include request body");
+        let parsed: FabricationPlanRequest =
+            serde_json::from_value(request).expect("hybrid template should match plan schema");
+        let constraints = parsed
+            .constraints
+            .expect("hybrid template should include constraints");
+        assert_eq!(constraints.allow_multi_part_assembly, Some(true));
+        let parts = parsed.parts.expect("hybrid template should include parts");
+        let part_methods: BTreeSet<String> = parts
+            .iter()
+            .filter_map(|part| part.preferred_method.clone())
+            .collect();
+
+        for expected in ["additive-print", "milling", "turning"] {
+            assert!(
+                part_methods.contains(expected),
+                "hybrid template should include {expected} part route"
+            );
+        }
+        for part in parts {
+            assert!(
+                part.tolerance_mm.is_some(),
+                "hybrid part {} should include toleranceMm",
+                part.id
+            );
+        }
+    }
+
+    #[test]
+    fn split_combine_route_templates_match_plan_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let mut routes = BTreeSet::new();
+
+        for template in template_entries {
+            let route = template
+                .get("route")
+                .and_then(Value::as_str)
+                .expect("template should expose route");
+            if route != "POST /fabrication/decomposition/plan"
+                && route != "POST /fabrication/assembly/plan"
+            {
+                continue;
+            }
+            let request = template
+                .get("request")
+                .cloned()
+                .expect("split/combine route template should include request body");
+            let parsed: FabricationPlanRequest = serde_json::from_value(request)
+                .expect("split/combine route template should match plan schema");
+            assert_eq!(
+                parsed
+                    .constraints
+                    .as_ref()
+                    .and_then(|constraints| constraints.allow_multi_part_assembly),
+                Some(true)
+            );
+            let part_methods: BTreeSet<String> = parsed
+                .parts
+                .expect("split/combine route template should include parts")
+                .into_iter()
+                .filter_map(|part| part.preferred_method)
+                .collect();
+            for expected in ["additive-print", "milling", "turning"] {
+                assert!(
+                    part_methods.contains(expected),
+                    "split/combine route template should include {expected} part route"
+                );
+            }
+            routes.insert(route.to_string());
+        }
+
+        assert_eq!(
+            routes,
+            BTreeSet::from([
+                "POST /fabrication/assembly/plan".to_string(),
+                "POST /fabrication/decomposition/plan".to_string(),
+            ])
+        );
+    }
+
+    #[test]
     fn request_template_learning_bodies_match_outcome_contract() {
         let templates = request_templates();
         let template_entries = templates
@@ -105659,6 +106521,150 @@ mod tests {
                 "learning templates should include {expected}"
             );
         }
+    }
+
+    #[test]
+    fn request_template_costing_result_body_matches_review_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str) == Some("hybrid-route-costing-result")
+            })
+            .expect("hybrid costing result template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/costing/result")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("costing result template should include request body");
+        let parsed: CostingResultReviewRequest = serde_json::from_value(request)
+            .expect("costing result template should match review schema");
+        assert_eq!(
+            parsed
+                .cost_reviews
+                .as_ref()
+                .and_then(|reviews| reviews.first())
+                .map(|review| review.cost_family.as_str()),
+            Some("split-combine-route-economics")
+        );
+        assert!(
+            parsed
+                .route_comparisons
+                .as_ref()
+                .is_some_and(|comparisons| comparisons.iter().any(|comparison| {
+                    comparison.requires_split_combine == Some(true)
+                        && comparison.release_blocker == Some(true)
+                })),
+            "costing result template should retain split/combine route blockers"
+        );
+        assert!(
+            parsed
+                .yield_reviews
+                .as_ref()
+                .is_some_and(|reviews| reviews.iter().any(|review| {
+                    review.release_blocker == Some(true)
+                        && review.estimated_scrap_percent.is_some()
+                        && review.actual_scrap_percent.is_some()
+                })),
+            "costing result template should retain yield and scrap blockers"
+        );
+        assert!(
+            parsed
+                .artifacts
+                .as_ref()
+                .is_some_and(|artifacts| artifacts.iter().any(|artifact| {
+                    artifact.sha256.as_ref().is_some_and(|sha| sha.len() == 64)
+                        && artifact
+                            .evidence
+                            .as_ref()
+                            .is_some_and(|evidence| !evidence.is_empty())
+                })),
+            "costing result template should retain artifact checksums and evidence"
+        );
+    }
+
+    #[test]
+    fn request_template_intervention_result_body_matches_review_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str)
+                    == Some("operator-intervention-result-feedback")
+            })
+            .expect("operator intervention result template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/interventions/result")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("intervention result template should include request body");
+        let parsed: InterventionResultReviewRequest = serde_json::from_value(request)
+            .expect("intervention result template should match review schema");
+        assert!(
+            parsed
+                .operator_actions
+                .as_ref()
+                .is_some_and(|actions| actions.iter().any(|action| {
+                    action.requires_human_intervention == Some(true)
+                        && action.release_blocker == Some(true)
+                        && action.completed == Some(false)
+                })),
+            "intervention result template should retain blocking operator actions"
+        );
+        assert!(
+            parsed
+                .automation_handoffs
+                .as_ref()
+                .is_some_and(|handoffs| handoffs.iter().any(|handoff| {
+                    handoff.fallback_required == Some(true) && handoff.release_blocker == Some(true)
+                })),
+            "intervention result template should retain automation fallback blockers"
+        );
+        assert!(
+            parsed
+                .split_combine_reviews
+                .as_ref()
+                .is_some_and(|reviews| reviews.iter().any(|review| {
+                    review.requires_human_intervention == Some(true)
+                        && review.release_blocker == Some(true)
+                        && review.interface_verified == Some(false)
+                })),
+            "intervention result template should retain split/combine blockers"
+        );
+        assert!(
+            parsed
+                .evidence_gates
+                .as_ref()
+                .is_some_and(|gates| gates.iter().any(|gate| {
+                    gate.acknowledged == Some(false) && gate.release_blocker == Some(true)
+                })),
+            "intervention result template should retain unacknowledged evidence gates"
+        );
+        assert!(
+            parsed
+                .artifacts
+                .as_ref()
+                .is_some_and(|artifacts| artifacts.iter().any(|artifact| {
+                    artifact.sha256.as_ref().is_some_and(|sha| sha.len() == 64)
+                        && artifact
+                            .evidence
+                            .as_ref()
+                            .is_some_and(|evidence| !evidence.is_empty())
+                })),
+            "intervention result template should retain artifact checksums and evidence"
+        );
     }
 
     #[test]
@@ -128147,6 +129153,86 @@ mod tests {
                     .required_artifacts
                     .contains(&artifact.to_string()),
                 "missing adhesive bonding artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_plastic_joining_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-plastic-joining".to_string()),
+            objective:
+                "Ultrasonic welding and heat staking for printed ABS enclosure halves with plastic joining, polymer compatibility, joint design, energy director, staking boss, fixture nest, weld recipe, amplitude, force, time, collapse target, melt flow, cooling clamp plan, flash inspection, cracks crazing inspection, pull proof, peel proof, leak visual inspection, dimensional fit, first article, and plastic join release"
+                    .to_string(),
+            material: Some(material("printed ABS enclosure", "polymer")),
+            stock: Some(StockSpec {
+                form: "printed enclosure halves and weld fixture".to_string(),
+                dimensions_mm: Some(vec![260.0, 180.0, 80.0]),
+            }),
+            tolerance_mm: Some(0.12),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("plastic joining plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "plastic-joining-release"
+                && part.machine_kind == "plastic-joining-cell"
+                && part.manufacturing_method == "plastic-joining"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "plastic-joining-cell"
+                && step.operation.contains("verify polymer compatibility")
+        }));
+        let plastic_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "plastic-joining-cell")
+            .expect("plastic joining program should be generated");
+        assert_eq!(plastic_program.language, "plastic-joining-job");
+        for expected in [
+            "draft plastic joining / ultrasonic welding / heat staking job",
+            "plastic-joining-setup-boundary",
+            "VERIFY_PLASTIC_JOIN_SETUP",
+            "RUN_PLASTIC_JOIN",
+            "plastic-joining-release-boundary",
+            "VERIFY_PLASTIC_JOIN_RELEASE",
+            "COMPLETE record material compatibility",
+        ] {
+            assert!(
+                plastic_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing plastic joining instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "plastic-joining-cell"
+                    && target.postprocessor == "plastic-joining-job-packager"
+                    && target.output_format == "plastic-joining-job-package"
+            }));
+        for artifact in [
+            "plastic-material-compatibility-and-joint-design-record",
+            "energy-director-stake-boss-and-fixture-nest-record",
+            "weld-stake-solvent-recipe-and-collapse-record",
+            "plastic-proof-visual-leak-first-article-and-release-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing plastic joining artifact {artifact}"
             );
         }
     }
