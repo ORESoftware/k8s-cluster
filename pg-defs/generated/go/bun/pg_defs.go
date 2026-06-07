@@ -20,6 +20,10 @@ var vapiPhoneCallEventsEventTypePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{
 var vapiPhoneCallEventsPayloadHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var vapiPhoneCallEventsCallerHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var vapiPhoneCallEventsCalledNumberHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var musicSongsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,218}[a-z0-9]$`)
+var musicSongsGenerationDatePattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var musicSongVotesVisitorHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var musicSongVotesUserAgentHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var containerPoolConfigsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var containerPoolConfigsRequestPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
 var containerPoolConfigsHealthPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
@@ -141,6 +145,147 @@ func (value VapiPhoneCallEventsBun) Validate() error {
 		if len([]byte(*value.Summary)) > 4000 { return errors.New("vapi_phone_call_events.summary exceeds 4000 bytes") }
 	}
 	if !validateRawJSON(value.Payload) { return errors.New("vapi_phone_call_events.payload must be valid JSON") }
+	return nil
+}
+
+const MusicSongsTable = "music_songs"
+const MusicSongsSelectSQL = `select
+      id::text as id,
+      title,
+      slug,
+      status,
+      seed,
+      generation_date,
+      storage_provider,
+      storage_bucket,
+      storage_key,
+      audio_url,
+      content_type,
+      duration_millis,
+      sample_rate,
+      bpm_millis,
+      genre,
+      peak_micros,
+      rms_micros,
+      spectral_centroid_millihz,
+      listenability_score_micros,
+      vote_score,
+      up_votes,
+      down_votes,
+      play_count,
+      summary,
+      meta_data,
+      to_char(published_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as published_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from music_songs`
+
+var MusicSongsStatusValues = []string{"generated", "published", "discarded", "failed", "archived"}
+var MusicSongsStorageProviderValues = []string{"s3", "r2", "gcs", "drive", "local"}
+
+type MusicSongsBun struct {
+	bun.BaseModel `bun:"table:music_songs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Title string `bun:"title,type:varchar(200)" json:"title"`
+	Slug string `bun:"slug,type:varchar(220)" json:"slug"`
+	Status string `bun:"status,type:varchar(32),default:'generated'" json:"status"`
+	Seed int64 `bun:"seed,type:bigint" json:"seed"`
+	GenerationDate string `bun:"generation_date,type:varchar(10),default:to_char(current_date, 'YYYY-MM-DD')" json:"generationDate"`
+	StorageProvider *string `bun:"storage_provider,type:varchar(32),nullzero" json:"storageProvider,omitempty"`
+	StorageBucket *string `bun:"storage_bucket,type:varchar(200),nullzero" json:"storageBucket,omitempty"`
+	StorageKey *string `bun:"storage_key,type:text,nullzero" json:"storageKey,omitempty"`
+	AudioUrl *string `bun:"audio_url,type:text,nullzero" json:"audioUrl,omitempty"`
+	ContentType *string `bun:"content_type,type:varchar(120),nullzero" json:"contentType,omitempty"`
+	DurationMillis int32 `bun:"duration_millis,type:integer,default:180000" json:"durationMillis"`
+	SampleRate int32 `bun:"sample_rate,type:integer,default:44100" json:"sampleRate"`
+	BpmMillis int32 `bun:"bpm_millis,type:integer,default:128000" json:"bpmMillis"`
+	Genre string `bun:"genre,type:varchar(80),default:'electronica'" json:"genre"`
+	PeakMicros int32 `bun:"peak_micros,type:integer,default:0" json:"peakMicros"`
+	RmsMicros int32 `bun:"rms_micros,type:integer,default:0" json:"rmsMicros"`
+	SpectralCentroidMillihz int64 `bun:"spectral_centroid_millihz,type:bigint,default:0" json:"spectralCentroidMillihz"`
+	ListenabilityScoreMicros int32 `bun:"listenability_score_micros,type:integer,default:0" json:"listenabilityScoreMicros"`
+	VoteScore int32 `bun:"vote_score,type:integer,default:0" json:"voteScore"`
+	UpVotes int32 `bun:"up_votes,type:integer,default:0" json:"upVotes"`
+	DownVotes int32 `bun:"down_votes,type:integer,default:0" json:"downVotes"`
+	PlayCount int32 `bun:"play_count,type:integer,default:0" json:"playCount"`
+	Summary json.RawMessage `bun:"summary,type:jsonb,default:'{}'::jsonb" json:"summary"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	PublishedAt *time.Time `bun:"published_at,type:timestamptz,nullzero" json:"publishedAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value MusicSongsBun) Validate() error {
+	if len([]byte(value.Title)) > 200 { return errors.New("music_songs.title exceeds 200 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("music_songs.title is below 1 bytes") }
+	if !musicSongsSlugPattern.MatchString(value.Slug) { return errors.New("music_songs.slug does not match the required pattern") }
+	if !containsString(MusicSongsStatusValues, value.Status) { return errors.New("unsupported music_songs.status") }
+	if !musicSongsGenerationDatePattern.MatchString(value.GenerationDate) { return errors.New("music_songs.generation_date does not match the required pattern") }
+	if value.StorageProvider != nil {
+		if !containsString(MusicSongsStorageProviderValues, *value.StorageProvider) { return errors.New("unsupported music_songs.storage_provider") }
+	}
+	if value.StorageBucket != nil {
+		if len([]byte(*value.StorageBucket)) > 200 { return errors.New("music_songs.storage_bucket exceeds 200 bytes") }
+	}
+	if value.StorageKey != nil {
+		if len([]byte(*value.StorageKey)) > 2048 { return errors.New("music_songs.storage_key exceeds 2048 bytes") }
+	}
+	if value.AudioUrl != nil {
+		if len([]byte(*value.AudioUrl)) > 4096 { return errors.New("music_songs.audio_url exceeds 4096 bytes") }
+	}
+	if value.ContentType != nil {
+		if len([]byte(*value.ContentType)) > 120 { return errors.New("music_songs.content_type exceeds 120 bytes") }
+	}
+	if value.DurationMillis < 1 { return errors.New("music_songs.duration_millis is below the minimum") }
+	if value.DurationMillis > 1800000 { return errors.New("music_songs.duration_millis is above the maximum") }
+	if value.SampleRate < 8000 { return errors.New("music_songs.sample_rate is below the minimum") }
+	if value.SampleRate > 192000 { return errors.New("music_songs.sample_rate is above the maximum") }
+	if value.BpmMillis < 1 { return errors.New("music_songs.bpm_millis is below the minimum") }
+	if value.BpmMillis > 300000 { return errors.New("music_songs.bpm_millis is above the maximum") }
+	if len([]byte(value.Genre)) > 80 { return errors.New("music_songs.genre exceeds 80 bytes") }
+	if len([]byte(value.Genre)) < 1 { return errors.New("music_songs.genre is below 1 bytes") }
+	if value.PeakMicros < 0 { return errors.New("music_songs.peak_micros is below the minimum") }
+	if value.RmsMicros < 0 { return errors.New("music_songs.rms_micros is below the minimum") }
+	if value.SpectralCentroidMillihz < 0 { return errors.New("music_songs.spectral_centroid_millihz is below the minimum") }
+	if value.ListenabilityScoreMicros < 0 { return errors.New("music_songs.listenability_score_micros is below the minimum") }
+	if value.ListenabilityScoreMicros > 1000000 { return errors.New("music_songs.listenability_score_micros is above the maximum") }
+	if value.UpVotes < 0 { return errors.New("music_songs.up_votes is below the minimum") }
+	if value.DownVotes < 0 { return errors.New("music_songs.down_votes is below the minimum") }
+	if value.PlayCount < 0 { return errors.New("music_songs.play_count is below the minimum") }
+	if !validateRawJSON(value.Summary) { return errors.New("music_songs.summary must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("music_songs.meta_data must be valid JSON") }
+	return nil
+}
+
+const MusicSongVotesTable = "music_song_votes"
+const MusicSongVotesSelectSQL = `select
+      id::text as id,
+      song_id::text as song_id,
+      visitor_hash,
+      user_agent_hash,
+      vote_value,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from music_song_votes`
+
+type MusicSongVotesBun struct {
+	bun.BaseModel `bun:"table:music_song_votes"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	SongId uuid.UUID `bun:"song_id,type:uuid" json:"songId"`
+	VisitorHash string `bun:"visitor_hash,type:varchar(64)" json:"visitorHash"`
+	UserAgentHash *string `bun:"user_agent_hash,type:varchar(64),nullzero" json:"userAgentHash,omitempty"`
+	VoteValue int32 `bun:"vote_value,type:integer" json:"voteValue"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value MusicSongVotesBun) Validate() error {
+	if !musicSongVotesVisitorHashPattern.MatchString(value.VisitorHash) { return errors.New("music_song_votes.visitor_hash does not match the required pattern") }
+	if value.UserAgentHash != nil {
+		if !musicSongVotesUserAgentHashPattern.MatchString(*value.UserAgentHash) { return errors.New("music_song_votes.user_agent_hash does not match the required pattern") }
+	}
+	if value.VoteValue < -1 { return errors.New("music_song_votes.vote_value is below the minimum") }
+	if value.VoteValue > 1 { return errors.New("music_song_votes.vote_value is above the maximum") }
 	return nil
 }
 

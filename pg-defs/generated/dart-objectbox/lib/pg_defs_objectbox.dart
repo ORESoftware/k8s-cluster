@@ -169,6 +169,221 @@ class VapiPhoneCallEventsObjectBox {
 }
 
 @Entity()
+class MusicSongsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String title;
+
+  String slug;
+
+  String status;
+
+  int seed;
+
+  String generationDate;
+
+  String? storageProvider;
+
+  String? storageBucket;
+
+  String? storageKey;
+
+  String? audioUrl;
+
+  String? contentType;
+
+  int durationMillis;
+
+  int sampleRate;
+
+  int bpmMillis;
+
+  String genre;
+
+  int peakMicros;
+
+  int rmsMicros;
+
+  int spectralCentroidMillihz;
+
+  int listenabilityScoreMicros;
+
+  int voteScore;
+
+  int upVotes;
+
+  int downVotes;
+
+  int playCount;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String summary;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String? publishedAt;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  MusicSongsObjectBox({
+    required this.id,
+    required this.title,
+    required this.slug,
+    required this.status,
+    required this.seed,
+    required this.generationDate,
+    this.storageProvider,
+    this.storageBucket,
+    this.storageKey,
+    this.audioUrl,
+    this.contentType,
+    required this.durationMillis,
+    required this.sampleRate,
+    required this.bpmMillis,
+    required this.genre,
+    required this.peakMicros,
+    required this.rmsMicros,
+    required this.spectralCentroidMillihz,
+    required this.listenabilityScoreMicros,
+    required this.voteScore,
+    required this.upVotes,
+    required this.downVotes,
+    required this.playCount,
+    required this.summary,
+    required this.metaData,
+    this.publishedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "title": title,
+    "slug": slug,
+    "status": status,
+    "seed": seed,
+    "generationDate": generationDate,
+    "storageProvider": storageProvider,
+    "storageBucket": storageBucket,
+    "storageKey": storageKey,
+    "audioUrl": audioUrl,
+    "contentType": contentType,
+    "durationMillis": durationMillis,
+    "sampleRate": sampleRate,
+    "bpmMillis": bpmMillis,
+    "genre": genre,
+    "peakMicros": peakMicros,
+    "rmsMicros": rmsMicros,
+    "spectralCentroidMillihz": spectralCentroidMillihz,
+    "listenabilityScoreMicros": listenabilityScoreMicros,
+    "voteScore": voteScore,
+    "upVotes": upVotes,
+    "downVotes": downVotes,
+    "playCount": playCount,
+    "summary": jsonDecode(summary),
+    "metaData": jsonDecode(metaData),
+    "publishedAt": publishedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static MusicSongsObjectBox fromJson(Map<String, Object?> json) {
+    return MusicSongsObjectBox(
+      id: json["id"] as String,
+      title: json["title"] as String,
+      slug: json["slug"] as String,
+      status: json["status"] as String,
+      seed: (json["seed"] as num).toInt(),
+      generationDate: json["generationDate"] as String,
+      storageProvider: json["storageProvider"] as String?,
+      storageBucket: json["storageBucket"] as String?,
+      storageKey: json["storageKey"] as String?,
+      audioUrl: json["audioUrl"] as String?,
+      contentType: json["contentType"] as String?,
+      durationMillis: (json["durationMillis"] as num).toInt(),
+      sampleRate: (json["sampleRate"] as num).toInt(),
+      bpmMillis: (json["bpmMillis"] as num).toInt(),
+      genre: json["genre"] as String,
+      peakMicros: (json["peakMicros"] as num).toInt(),
+      rmsMicros: (json["rmsMicros"] as num).toInt(),
+      spectralCentroidMillihz: (json["spectralCentroidMillihz"] as num).toInt(),
+      listenabilityScoreMicros: (json["listenabilityScoreMicros"] as num).toInt(),
+      voteScore: (json["voteScore"] as num).toInt(),
+      upVotes: (json["upVotes"] as num).toInt(),
+      downVotes: (json["downVotes"] as num).toInt(),
+      playCount: (json["playCount"] as num).toInt(),
+      summary: json["summary"] is String ? json["summary"] as String : jsonEncode(json["summary"]),
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      publishedAt: json["publishedAt"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class MusicSongVotesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String songId;
+
+  String visitorHash;
+
+  String? userAgentHash;
+
+  int voteValue;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  MusicSongVotesObjectBox({
+    required this.id,
+    required this.songId,
+    required this.visitorHash,
+    this.userAgentHash,
+    required this.voteValue,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "songId": songId,
+    "visitorHash": visitorHash,
+    "userAgentHash": userAgentHash,
+    "voteValue": voteValue,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static MusicSongVotesObjectBox fromJson(Map<String, Object?> json) {
+    return MusicSongVotesObjectBox(
+      id: json["id"] as String,
+      songId: json["songId"] as String,
+      visitorHash: json["visitorHash"] as String,
+      userAgentHash: json["userAgentHash"] as String?,
+      voteValue: (json["voteValue"] as num).toInt(),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class ContainerPoolConfigsObjectBox {
   @Id()
   int obxId = 0;

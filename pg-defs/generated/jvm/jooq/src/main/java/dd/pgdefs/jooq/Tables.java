@@ -54,6 +54,47 @@ public final class Tables {
     public static final Field<JSONB> VAPI_PHONE_CALL_EVENTS_PAYLOAD = DSL.field(DSL.name("vapi_phone_call_events", "payload"), SQLDataType.JSONB);
     public static final Field<OffsetDateTime> VAPI_PHONE_CALL_EVENTS_CREATED_AT = DSL.field(DSL.name("vapi_phone_call_events", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
+    public static final Name MUSIC_SONGS_NAME = DSL.name("music_songs");
+    public static final Table<org.jooq.Record> MUSIC_SONGS = DSL.table(MUSIC_SONGS_NAME);
+    public static final Field<UUID> MUSIC_SONGS_ID = DSL.field(DSL.name("music_songs", "id"), SQLDataType.UUID);
+    public static final Field<String> MUSIC_SONGS_TITLE = DSL.field(DSL.name("music_songs", "title"), SQLDataType.VARCHAR(200));
+    public static final Field<String> MUSIC_SONGS_SLUG = DSL.field(DSL.name("music_songs", "slug"), SQLDataType.VARCHAR(220));
+    public static final Field<String> MUSIC_SONGS_STATUS = DSL.field(DSL.name("music_songs", "status"), SQLDataType.VARCHAR(32));
+    public static final Field<Long> MUSIC_SONGS_SEED = DSL.field(DSL.name("music_songs", "seed"), SQLDataType.BIGINT);
+    public static final Field<String> MUSIC_SONGS_GENERATION_DATE = DSL.field(DSL.name("music_songs", "generation_date"), SQLDataType.VARCHAR(10));
+    public static final Field<String> MUSIC_SONGS_STORAGE_PROVIDER = DSL.field(DSL.name("music_songs", "storage_provider"), SQLDataType.VARCHAR(32));
+    public static final Field<String> MUSIC_SONGS_STORAGE_BUCKET = DSL.field(DSL.name("music_songs", "storage_bucket"), SQLDataType.VARCHAR(200));
+    public static final Field<String> MUSIC_SONGS_STORAGE_KEY = DSL.field(DSL.name("music_songs", "storage_key"), SQLDataType.CLOB);
+    public static final Field<String> MUSIC_SONGS_AUDIO_URL = DSL.field(DSL.name("music_songs", "audio_url"), SQLDataType.CLOB);
+    public static final Field<String> MUSIC_SONGS_CONTENT_TYPE = DSL.field(DSL.name("music_songs", "content_type"), SQLDataType.VARCHAR(120));
+    public static final Field<Integer> MUSIC_SONGS_DURATION_MILLIS = DSL.field(DSL.name("music_songs", "duration_millis"), SQLDataType.INTEGER);
+    public static final Field<Integer> MUSIC_SONGS_SAMPLE_RATE = DSL.field(DSL.name("music_songs", "sample_rate"), SQLDataType.INTEGER);
+    public static final Field<Integer> MUSIC_SONGS_BPM_MILLIS = DSL.field(DSL.name("music_songs", "bpm_millis"), SQLDataType.INTEGER);
+    public static final Field<String> MUSIC_SONGS_GENRE = DSL.field(DSL.name("music_songs", "genre"), SQLDataType.VARCHAR(80));
+    public static final Field<Integer> MUSIC_SONGS_PEAK_MICROS = DSL.field(DSL.name("music_songs", "peak_micros"), SQLDataType.INTEGER);
+    public static final Field<Integer> MUSIC_SONGS_RMS_MICROS = DSL.field(DSL.name("music_songs", "rms_micros"), SQLDataType.INTEGER);
+    public static final Field<Long> MUSIC_SONGS_SPECTRAL_CENTROID_MILLIHZ = DSL.field(DSL.name("music_songs", "spectral_centroid_millihz"), SQLDataType.BIGINT);
+    public static final Field<Integer> MUSIC_SONGS_LISTENABILITY_SCORE_MICROS = DSL.field(DSL.name("music_songs", "listenability_score_micros"), SQLDataType.INTEGER);
+    public static final Field<Integer> MUSIC_SONGS_VOTE_SCORE = DSL.field(DSL.name("music_songs", "vote_score"), SQLDataType.INTEGER);
+    public static final Field<Integer> MUSIC_SONGS_UP_VOTES = DSL.field(DSL.name("music_songs", "up_votes"), SQLDataType.INTEGER);
+    public static final Field<Integer> MUSIC_SONGS_DOWN_VOTES = DSL.field(DSL.name("music_songs", "down_votes"), SQLDataType.INTEGER);
+    public static final Field<Integer> MUSIC_SONGS_PLAY_COUNT = DSL.field(DSL.name("music_songs", "play_count"), SQLDataType.INTEGER);
+    public static final Field<JSONB> MUSIC_SONGS_SUMMARY = DSL.field(DSL.name("music_songs", "summary"), SQLDataType.JSONB);
+    public static final Field<JSONB> MUSIC_SONGS_META_DATA = DSL.field(DSL.name("music_songs", "meta_data"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> MUSIC_SONGS_PUBLISHED_AT = DSL.field(DSL.name("music_songs", "published_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> MUSIC_SONGS_CREATED_AT = DSL.field(DSL.name("music_songs", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> MUSIC_SONGS_UPDATED_AT = DSL.field(DSL.name("music_songs", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name MUSIC_SONG_VOTES_NAME = DSL.name("music_song_votes");
+    public static final Table<org.jooq.Record> MUSIC_SONG_VOTES = DSL.table(MUSIC_SONG_VOTES_NAME);
+    public static final Field<UUID> MUSIC_SONG_VOTES_ID = DSL.field(DSL.name("music_song_votes", "id"), SQLDataType.UUID);
+    public static final Field<UUID> MUSIC_SONG_VOTES_SONG_ID = DSL.field(DSL.name("music_song_votes", "song_id"), SQLDataType.UUID);
+    public static final Field<String> MUSIC_SONG_VOTES_VISITOR_HASH = DSL.field(DSL.name("music_song_votes", "visitor_hash"), SQLDataType.VARCHAR(64));
+    public static final Field<String> MUSIC_SONG_VOTES_USER_AGENT_HASH = DSL.field(DSL.name("music_song_votes", "user_agent_hash"), SQLDataType.VARCHAR(64));
+    public static final Field<Integer> MUSIC_SONG_VOTES_VOTE_VALUE = DSL.field(DSL.name("music_song_votes", "vote_value"), SQLDataType.INTEGER);
+    public static final Field<OffsetDateTime> MUSIC_SONG_VOTES_CREATED_AT = DSL.field(DSL.name("music_song_votes", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> MUSIC_SONG_VOTES_UPDATED_AT = DSL.field(DSL.name("music_song_votes", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
     public static final Name CONTAINER_POOL_CONFIGS_NAME = DSL.name("container_pool_configs");
     public static final Table<org.jooq.Record> CONTAINER_POOL_CONFIGS = DSL.table(CONTAINER_POOL_CONFIGS_NAME);
     public static final Field<UUID> CONTAINER_POOL_CONFIGS_ID = DSL.field(DSL.name("container_pool_configs", "id"), SQLDataType.UUID);
