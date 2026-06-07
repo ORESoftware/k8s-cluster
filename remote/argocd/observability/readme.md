@@ -221,7 +221,7 @@ Currently opted-in:
   `/fabrication/support-strategies/catalog`, `/fabrication/support-strategies/result`,
   `/fabrication/process-recipes/catalog`, `/fabrication/process-recipes/result`,
   `/fabrication/kinematics/catalog`, `/fabrication/kinematics/result`,
-  `/fabrication/tolerances/catalog`,
+  `/fabrication/tolerances/catalog`, `/fabrication/tolerances/result`,
   `/fabrication/process-capabilities/catalog`, `/fabrication/manufacturability/catalog`,
   `/fabrication/failure-modes/catalog`, `/fabrication/failure-modes/result`,
   `/fabrication/safety/catalog`, `/fabrication/environment/catalog`,

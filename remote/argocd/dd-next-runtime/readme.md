@@ -145,7 +145,7 @@ Gateway path map:
   `/fabrication/support-strategies/catalog`, `POST /fabrication/support-strategies/result`,
   `/fabrication/process-recipes/catalog`, `POST /fabrication/process-recipes/result`,
   `/fabrication/kinematics/catalog`, `POST /fabrication/kinematics/result`,
-  `/fabrication/tolerances/catalog`,
+  `/fabrication/tolerances/catalog`, `POST /fabrication/tolerances/result`,
   `/fabrication/process-capabilities/catalog`, `/fabrication/manufacturability/catalog`,
   `/fabrication/failure-modes/catalog`, `POST /fabrication/failure-modes/result`,
   `/fabrication/safety/catalog`, `/fabrication/environment/catalog`,

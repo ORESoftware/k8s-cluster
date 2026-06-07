@@ -3735,6 +3735,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
     source,
     /\.route\(\s*"\/fabrication\/tolerances\/catalog",\s*get\(tolerance_catalog_http\),\s*\)/,
   );
+  assert.match(source, /\.route\("\/tolerances\/result", post\(tolerance_result_http\)\)/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/tolerances\/result",\s*post\(tolerance_result_http\),\s*\)/,
+  );
   assert.match(source, /\.route\("\/safety\/catalog", get\(safety_catalog_http\)\)/);
   assert.match(
     source,
@@ -5988,6 +5993,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(docs, /"path": "\/fabrication\/kinematics\/result"/);
   assert.match(docs, /"path": "\/tolerances\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/tolerances\/catalog"/);
+  assert.match(docs, /"path": "\/tolerances\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/tolerances\/result"/);
   assert.match(docs, /"path": "\/process-capabilities\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/process-capabilities\/catalog"/);
   assert.match(docs, /"path": "\/manufacturability\/catalog"/);
@@ -6185,6 +6192,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/kinematics\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/kinematics\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/tolerances\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/tolerances\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/process-capabilities\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/manufacturability\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/manufacturability\/result"/);
@@ -6393,6 +6401,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /kinematics result review/);
   assert.match(grafanaDashboards, /\/fabrication\/tolerances\/catalog/);
   assert.match(grafanaDashboards, /tolerance catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/tolerances\/result/);
+  assert.match(grafanaDashboards, /tolerance result review/);
   assert.match(grafanaDashboards, /\/fabrication\/process-capabilities\/catalog/);
   assert.match(grafanaDashboards, /process capability catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/manufacturability\/catalog/);
@@ -6409,6 +6419,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /provenance catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/monitoring\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/postprocess\/catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/learning\/rewards\/catalog/);
+  assert.match(grafanaDashboards, /learning reward catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/improve/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/boundaries\/review/);
   assert.match(home, /dd-fabrication-server/);
@@ -6493,6 +6505,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/kinematics\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/kinematics\/result/);
   assert.match(runtimeReadme, /\/fabrication\/tolerances\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/tolerances\/result/);
   assert.match(runtimeReadme, /\/fabrication\/process-capabilities\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/manufacturability\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/failure-modes\/catalog/);
@@ -6511,6 +6524,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /POST \/fabrication\/postprocess\/result/);
   assert.match(runtimeReadme, /\/fabrication\/artifacts\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/jobs/);
+  assert.match(runtimeReadme, /\/fabrication\/learning\/rewards\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/jobs\/<jobId>\/release-bundle/);
   assert.match(runtimeReadme, /`POST \/fabrication\/plan`/);
   assert.match(runtimeReadme, /\/fabrication\/workflow\/catalog/);
@@ -6645,6 +6659,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/kinematics\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/kinematics\/result/);
   assert.match(observabilityReadme, /\/fabrication\/tolerances\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/tolerances\/result/);
   assert.match(observabilityReadme, /\/fabrication\/process-capabilities\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/manufacturability\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/failure-modes\/catalog/);

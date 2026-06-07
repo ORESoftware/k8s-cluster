@@ -215,6 +215,7 @@ spec:
                 '"path": "/fabrication/kinematics/catalog"' \
                 '"path": "/fabrication/kinematics/result"' \
                 '"path": "/fabrication/tolerances/catalog"' \
+                '"path": "/fabrication/tolerances/result"' \
                 '"path": "/fabrication/process-capabilities/catalog"' \
                 '"path": "/fabrication/manufacturability/catalog"' \
                 '"path": "/fabrication/failure-modes/catalog"' \
