@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     env,
     error::Error,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, RwLock,
@@ -556,14 +556,35 @@ fn validate_public_url(raw: &str) -> Result<(), String> {
     let Some(host) = url.host_str() else {
         return Err("url must include a host".to_string());
     };
-    if host.eq_ignore_ascii_case("localhost")
-        || host.ends_with(".local")
-        || host.starts_with("127.")
-        || host == "0.0.0.0"
-    {
+    if blocked_public_data_host(host) {
         return Err("private or local targets are not allowed".to_string());
     }
     Ok(())
+}
+
+fn blocked_public_data_host(host: &str) -> bool {
+    let host = host.trim().trim_matches(['[', ']']).to_ascii_lowercase();
+    if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
+        return true;
+    }
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(addr)) => {
+            addr.is_private()
+                || addr.is_loopback()
+                || addr.is_link_local()
+                || addr.is_broadcast()
+                || addr.is_documentation()
+                || addr.is_unspecified()
+        }
+        Ok(IpAddr::V6(addr)) => {
+            addr.is_loopback()
+                || addr.is_unspecified()
+                || addr.is_unique_local()
+                || addr.is_unicast_link_local()
+                || addr.is_multicast()
+        }
+        Err(_) => false,
+    }
 }
 
 fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), AuthFailure> {
@@ -2544,4 +2565,165 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         })
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_record(
+        record_id: &str,
+        dataset_id: &str,
+        source: &str,
+        tags: &[&str],
+        metrics: &[(&str, f64)],
+        grant: Option<GrantOpportunity>,
+    ) -> DataRecord {
+        DataRecord {
+            record_id: record_id.to_string(),
+            dataset_id: dataset_id.to_string(),
+            source: source.to_string(),
+            source_url: Some("https://www.sbir.gov/".to_string()),
+            title: Some(record_id.to_string()),
+            summary: Some("energy public data analytics grant research".to_string()),
+            published_at: Some("2026-01-01".to_string()),
+            collected_at_ms: 1,
+            authors: Vec::new(),
+            tags: tags.iter().map(|tag| tag.to_string()).collect(),
+            metrics: metrics
+                .iter()
+                .map(|(name, value)| (name.to_string(), *value))
+                .collect(),
+            grant,
+            raw: None,
+        }
+    }
+
+    #[test]
+    fn public_url_validation_blocks_private_local_and_credential_targets() {
+        for url in [
+            "http://localhost/data",
+            "https://127.0.0.1/data",
+            "https://10.2.3.4/data",
+            "https://172.16.1.2/data",
+            "https://192.168.1.2/data",
+            "https://[::1]/data",
+            "https://[fc00::1]/data",
+            "https://user@example.gov/data",
+            "ftp://data.gov/file",
+        ] {
+            assert!(validate_public_url(url).is_err(), "{url} should be blocked");
+        }
+        assert!(validate_public_url("https://www.data.gov/").is_ok());
+        assert!(validate_public_url("https://pubmed.ncbi.nlm.nih.gov/").is_ok());
+    }
+
+    #[test]
+    fn trend_and_correlation_summaries_detect_linear_relationships() {
+        let records = vec![
+            test_record(
+                "r1",
+                "science",
+                "pubmed",
+                &["science"],
+                &[("citations", 1.0), ("funding", 2.0)],
+                None,
+            ),
+            test_record(
+                "r2",
+                "science",
+                "pubmed",
+                &["science"],
+                &[("citations", 2.0), ("funding", 4.0)],
+                None,
+            ),
+            test_record(
+                "r3",
+                "science",
+                "pubmed",
+                &["science"],
+                &[("citations", 3.0), ("funding", 6.0)],
+                None,
+            ),
+        ];
+        let trends = trend_summaries(&records, &Some(vec!["citations".to_string()]));
+        assert_eq!(trends.len(), 1);
+        assert_eq!(trends[0].direction, "up");
+        assert!((trends[0].slope_per_record - 1.0).abs() < 1e-9);
+
+        let correlations = correlation_summaries(&records, &None);
+        let strongest = correlations
+            .iter()
+            .find(|item| {
+                (item.left_metric == "citations" && item.right_metric == "funding")
+                    || (item.left_metric == "funding" && item.right_metric == "citations")
+            })
+            .expect("expected citations/funding correlation");
+        assert!((strongest.pearson - 1.0).abs() < 1e-9);
+        assert_eq!(strongest.strength, "very-strong");
+    }
+
+    #[test]
+    fn grant_matching_respects_focus_terms_and_minimum_amount() {
+        let strong_grant = GrantOpportunity {
+            grant_id: Some("sbir-energy-ai".to_string()),
+            title: "Energy AI public data grant".to_string(),
+            agency: Some("DOE".to_string()),
+            program: Some("SBIR".to_string()),
+            amount: Some(250_000.0),
+            due_date: Some("2026-09-15".to_string()),
+            eligibility: Some("US small business research teams".to_string()),
+            topics: vec![
+                "energy".to_string(),
+                "ai".to_string(),
+                "analytics".to_string(),
+            ],
+            url: Some("https://www.sbir.gov/".to_string()),
+        };
+        let small_grant = GrantOpportunity {
+            grant_id: Some("tiny".to_string()),
+            title: "Tiny archive grant".to_string(),
+            agency: Some("Library".to_string()),
+            program: None,
+            amount: Some(1_000.0),
+            due_date: None,
+            eligibility: None,
+            topics: vec!["archives".to_string()],
+            url: None,
+        };
+        let records = vec![
+            test_record(
+                "grant-1",
+                "sbir",
+                "sbir",
+                &["energy", "ai", "grant"],
+                &[("awardAmountUsd", 250_000.0)],
+                Some(strong_grant),
+            ),
+            test_record(
+                "grant-2",
+                "libraries",
+                "state-libraries",
+                &["archives", "grant"],
+                &[("awardAmountUsd", 1_000.0)],
+                Some(small_grant),
+            ),
+        ];
+        let request = GrantMatchRequest {
+            request_id: Some("match".to_string()),
+            applicant_profile: "small business building AI public data models".to_string(),
+            focus_areas: vec!["energy".to_string(), "ai".to_string()],
+            dataset_ids: None,
+            min_amount: Some(50_000.0),
+            limit: Some(5),
+        };
+        let matches = grant_matches_from_records(&records, &request);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].record_id, "grant-1");
+        assert!(matches[0].score > 0.0);
+        assert!(matches[0]
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("focus-area")));
+    }
 }
