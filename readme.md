@@ -18,6 +18,8 @@ It exposes:
 - `POST /fabrication/machines/select`
 - `GET /controllers/catalog`
 - `GET /fabrication/controllers/catalog`
+- `POST /controllers/result`
+- `POST /fabrication/controllers/result`
 - `GET /materials/catalog`
 - `GET /fabrication/materials/catalog`
 - `POST /materials/plan`
@@ -706,6 +708,28 @@ exact postprocessed output, controller setup sheet, dry-run or simulation
 evidence, postprocessor version, and operator or automation signoff are retained;
 unknown controller/postprocessor combinations stay routed to manual controller
 review.
+
+## `POST /fabrication/controllers/result`
+
+`POST /controllers/result` and the gateway-prefixed
+`POST /fabrication/controllers/result` accept controller/postprocessor worker
+reviews for generated printer, mill, router, lathe, sheet-cutting, and special
+process outputs. The request uses
+`dd.fabrication.controller-postprocessor-result-review.v1` style fields for
+controller targets, known-postprocessor status, retained postprocessed output,
+dry-run or simulation checks, controller/modal checks, artifacts, warnings, and
+review metadata.
+
+The response keeps `machineReady=false` and `releaseBlocked=true` while a
+postprocessor is unknown, output is not retained, dry-run or simulation did not
+pass, modal/units/offset/macro/kinematic checks fail, retained artifacts lack
+URI/checksum/evidence, or a human controller review remains open. Stored
+artifacts include `controller-postprocessor-result`,
+`controller-postprocessor-targets`, `controller-postprocessor-checks`,
+`controller-postprocessor-artifacts`, and
+`controller-postprocessor-learning-observations`, feeding MDP/POMDP/neural
+learning about reliable postprocessors, manual-review routes, and controller
+failure boundaries before machine release.
 
 ## `GET /fabrication/materials/catalog`
 

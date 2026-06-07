@@ -1632,6 +1632,83 @@ struct ProvenanceResultArtifact {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct AsBuiltResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    source_part_id: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    measurement_checks: Option<Vec<AsBuiltResultMeasurementCheck>>,
+    deviation_maps: Option<Vec<AsBuiltResultDeviationMap>>,
+    interface_checks: Option<Vec<AsBuiltResultInterfaceCheck>>,
+    artifacts: Option<Vec<AsBuiltResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AsBuiltResultMeasurementCheck {
+    check_id: String,
+    as_built_family: String,
+    evidence_scope: String,
+    status: String,
+    measured: Option<bool>,
+    in_tolerance: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_remeasure: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AsBuiltResultDeviationMap {
+    map_id: String,
+    source_ref_id: Option<String>,
+    status: String,
+    max_deviation_mm: Option<f64>,
+    tolerance_mm: Option<f64>,
+    aligned: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AsBuiltResultInterfaceCheck {
+    interface_id: String,
+    interface_kind: String,
+    status: String,
+    fit_verified: Option<bool>,
+    datum_transfer_verified: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_rework: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AsBuiltResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct FailureModeResultReviewRequest {
     request_id: Option<String>,
     plan_request_id: Option<String>,
@@ -77265,7 +77342,9 @@ fn validate_controller_postprocessor_result_targets(
 ) -> Result<Vec<Value>, String> {
     let targets = targets.unwrap_or_default();
     if targets.len() > MAX_PROGRAMS {
-        return Err(format!("targets must contain at most {MAX_PROGRAMS} entries"));
+        return Err(format!(
+            "targets must contain at most {MAX_PROGRAMS} entries"
+        ));
     }
     targets
         .into_iter()
@@ -77306,14 +77385,15 @@ fn validate_controller_postprocessor_result_checks(
 ) -> Result<Vec<Value>, String> {
     let checks = checks.unwrap_or_default();
     if checks.len() > MAX_PROGRAMS {
-        return Err(format!("checks must contain at most {MAX_PROGRAMS} entries"));
+        return Err(format!(
+            "checks must contain at most {MAX_PROGRAMS} entries"
+        ));
     }
     checks
         .into_iter()
         .enumerate()
         .map(|(index, check)| {
-            let check_id =
-                validate_label(&check.check_id, &format!("checks[{index}].checkId"))?;
+            let check_id = validate_label(&check.check_id, &format!("checks[{index}].checkId"))?;
             let check_kind =
                 validate_label(&check.check_kind, &format!("checks[{index}].checkKind"))?;
             let status = validate_label(&check.status, &format!("checks[{index}].status"))?;
@@ -77344,8 +77424,10 @@ fn validate_controller_postprocessor_result_artifacts(
         .into_iter()
         .enumerate()
         .map(|(index, artifact)| {
-            let artifact_id =
-                validate_label(&artifact.artifact_id, &format!("artifacts[{index}].artifactId"))?;
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
             let artifact_kind = validate_label(
                 &artifact.artifact_kind,
                 &format!("artifacts[{index}].artifactKind"),
@@ -77434,10 +77516,16 @@ fn controller_postprocessor_result_artifact_missing_release_evidence(artifact: &
 fn controller_postprocessor_result_review_response(
     request: ControllerPostprocessorResultReviewRequest,
 ) -> Result<Value, String> {
-    let request_id = request_id(request.request_id.as_ref(), "controller-postprocessor-result");
+    let request_id = request_id(
+        request.request_id.as_ref(),
+        "controller-postprocessor-result",
+    );
     let generated_at_ms = now_ms();
-    let controller_postprocessor_result_job_id =
-        safe_job_id("controller-postprocessor-result", &request_id, generated_at_ms);
+    let controller_postprocessor_result_job_id = safe_job_id(
+        "controller-postprocessor-result",
+        &request_id,
+        generated_at_ms,
+    );
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -77480,7 +77568,9 @@ fn controller_postprocessor_result_review_response(
         .count();
     let missing_artifact_evidence_count = artifacts
         .iter()
-        .filter(|artifact| controller_postprocessor_result_artifact_missing_release_evidence(artifact))
+        .filter(|artifact| {
+            controller_postprocessor_result_artifact_missing_release_evidence(artifact)
+        })
         .count();
     let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
     let human_intervention_required =
@@ -77555,24 +77645,29 @@ fn controller_postprocessor_result_review_response(
             })
     }));
     learning_observations.extend(targets.iter().filter_map(|target| {
-        target
-            .get("status")
-            .and_then(Value::as_str)
-            .map(|status| format!("controller-postprocessor-target-status:{}", normalize_token(status)))
-    }));
-    learning_observations.extend(checks.iter().filter_map(|check| {
-        check.get("checkKind").and_then(Value::as_str).map(|kind| {
+        target.get("status").and_then(Value::as_str).map(|status| {
             format!(
-                "controller-postprocessor-check:{}",
-                normalize_token(kind)
+                "controller-postprocessor-target-status:{}",
+                normalize_token(status)
             )
         })
+    }));
+    learning_observations.extend(checks.iter().filter_map(|check| {
+        check
+            .get("checkKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("controller-postprocessor-check:{}", normalize_token(kind)))
     }));
     learning_observations.extend(artifacts.iter().filter_map(|artifact| {
         artifact
             .get("artifactKind")
             .and_then(Value::as_str)
-            .map(|kind| format!("controller-postprocessor-artifact:{}", normalize_token(kind)))
+            .map(|kind| {
+                format!(
+                    "controller-postprocessor-artifact:{}",
+                    normalize_token(kind)
+                )
+            })
     }));
     learning_observations.sort();
     learning_observations.dedup();
@@ -77690,9 +77785,14 @@ fn stored_controller_postprocessor_result_job(response: &Value) -> StoredFabrica
     let job_id = response_str_field(
         response,
         "controllerPostprocessorResultJobId",
-        &safe_job_id("controller-postprocessor-result", &request_id, generated_at_ms),
+        &safe_job_id(
+            "controller-postprocessor-result",
+            &request_id,
+            generated_at_ms,
+        ),
     );
-    let review_status = response_str_field(response, "reviewStatus", "controller-postprocessor-result");
+    let review_status =
+        response_str_field(response, "reviewStatus", "controller-postprocessor-result");
     let release_blocked = response
         .get("releaseBlocked")
         .and_then(Value::as_bool)
@@ -77701,14 +77801,8 @@ fn stored_controller_postprocessor_result_job(response: &Value) -> StoredFabrica
         .get("controllerPostprocessorResult")
         .cloned()
         .unwrap_or(Value::Null);
-    let targets = result
-        .get("targets")
-        .cloned()
-        .unwrap_or_else(|| json!([]));
-    let checks = result
-        .get("checks")
-        .cloned()
-        .unwrap_or_else(|| json!([]));
+    let targets = result.get("targets").cloned().unwrap_or_else(|| json!([]));
+    let checks = result.get("checks").cloned().unwrap_or_else(|| json!([]));
     let controller_artifacts = result
         .get("artifacts")
         .cloned()
@@ -89110,10 +89204,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             get(provenance_catalog_http),
         )
         .route("/as-built/catalog", get(as_built_catalog_http))
-        .route(
-            "/fabrication/as-built/catalog",
-            get(as_built_catalog_http),
-        )
+        .route("/fabrication/as-built/catalog", get(as_built_catalog_http))
         .route("/provenance/result", post(provenance_result_http))
         .route(
             "/fabrication/provenance/result",
@@ -93833,6 +93924,147 @@ mod tests {
             waterjet.get("dialectFamily").and_then(Value::as_str),
             Some("sheet-cutting-controller-dialect")
         );
+    }
+
+    #[test]
+    fn controller_postprocessor_result_endpoint_reviews_targets_checks_and_learning() {
+        let payload = controller_postprocessor_result_review_response(
+            ControllerPostprocessorResultReviewRequest {
+                request_id: Some("controller-result-001".to_string()),
+                plan_request_id: Some("plan-controller-001".to_string()),
+                job_id: Some("job-controller-001".to_string()),
+                worker_id: "controller-postprocessor-worker".to_string(),
+                machine_id: Some("haas-vf2-01".to_string()),
+                machine_kind: Some("vertical-mill".to_string()),
+                controller: Some("haas-ngc".to_string()),
+                postprocessor: Some("haas-mill-gcode-postprocessor".to_string()),
+                output_format: Some("haas-gcode".to_string()),
+                success: true,
+                machine_ready: false,
+                release_ready: Some(false),
+                targets: Some(vec![ControllerPostprocessorResultTarget {
+                    target_id: "controller-target-001".to_string(),
+                    program_id: Some("finish-datum-pocket".to_string()),
+                    controller: Some("haas-ngc".to_string()),
+                    postprocessor: Some("haas-mill-gcode-postprocessor".to_string()),
+                    language: Some("haas-gcode".to_string()),
+                    output_format: Some("nc".to_string()),
+                    status: "dry-run-failed-release-blocked".to_string(),
+                    postprocessor_known: Some(true),
+                    output_retained: Some(true),
+                    dry_run_passed: Some(false),
+                    release_blocker: Some(true),
+                    requires_human_intervention: Some(true),
+                    evidence: Some(vec![
+                        "inverse-time rotary move exceeded retained machine limit".to_string(),
+                        "operator must review G93/G94 transition before release".to_string(),
+                    ]),
+                }]),
+                checks: Some(vec![ControllerPostprocessorResultCheck {
+                    check_id: "modal-state-check".to_string(),
+                    check_kind: "modal-state-and-units".to_string(),
+                    status: "blocked".to_string(),
+                    passed: Some(false),
+                    release_blocker: Some(true),
+                    requires_human_intervention: Some(true),
+                    evidence: Some(vec![
+                        "postprocessor left inverse-time feed active".to_string()
+                    ]),
+                }]),
+                artifacts: Some(vec![ControllerPostprocessorResultArtifact {
+                    artifact_id: "controller-output-package".to_string(),
+                    artifact_kind: "controller-output-package".to_string(),
+                    source_ref_id: Some("finish-datum-pocket".to_string()),
+                    uri: Some("s3://fabrication/controller/finish-datum-pocket.nc".to_string()),
+                    sha256: Some("c".repeat(64)),
+                    format: Some("nc".to_string()),
+                    evidence: Some(vec![
+                        "postprocessed output and dry-run log retained".to_string()
+                    ]),
+                }]),
+                warnings: Some(vec![
+                    "hold machine-ready release until modal-state dry-run passes".to_string(),
+                ]),
+                review_metadata: Some(json!({"source": "unit-test"})),
+            },
+        )
+        .expect("controller postprocessor result should validate");
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.controller-postprocessor-result-review.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/controllers/result"))));
+        assert_eq!(
+            payload.get("reviewStatus").and_then(Value::as_str),
+            Some("controller-postprocessor-result-target-release-blocked")
+        );
+        assert_eq!(
+            payload.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload.get("targetBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("checkBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let observations = payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("controller postprocessor learning observations");
+        for expected in [
+            "controller-postprocessor-controller:haas-ngc",
+            "controller-postprocessor-postprocessor:haas-mill-gcode-postprocessor",
+            "controller-postprocessor-machine-kind:vertical-mill",
+            "controller-postprocessor-target-postprocessor:haas-mill-gcode-postprocessor",
+            "controller-postprocessor-target-status:dry-run-failed-release-blocked",
+            "controller-postprocessor-check:modal-state-and-units",
+            "controller-postprocessor:human-intervention-required",
+            "controller-postprocessor:release-blocked",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|observation| observation.as_str() == Some(expected)),
+                "missing controller postprocessor observation {expected}"
+            );
+        }
+
+        let job = stored_controller_postprocessor_result_job(&payload);
+        assert_eq!(job.record.kind, "controller-postprocessor-result");
+        assert_eq!(
+            job.record.status,
+            "controller-postprocessor-result-target-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "controller-postprocessor-result",
+            "controller-postprocessor-targets",
+            "controller-postprocessor-checks",
+            "controller-postprocessor-artifacts",
+            "controller-postprocessor-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing controller postprocessor artifact {artifact_id}"
+            );
+        }
     }
 
     #[test]
@@ -102137,7 +102369,10 @@ mod tests {
             .is_some_and(|routes| routes
                 .iter()
                 .any(|route| route.as_str() == Some("GET /fabrication/as-built/catalog"))));
-        assert_eq!(payload.get("asBuiltFamilyCount").and_then(Value::as_u64), Some(4));
+        assert_eq!(
+            payload.get("asBuiltFamilyCount").and_then(Value::as_u64),
+            Some(4)
+        );
         assert!(payload
             .get("asBuiltFamilies")
             .and_then(Value::as_array)
@@ -102156,15 +102391,16 @@ mod tests {
             .is_some_and(|surfaces| surfaces
                 .iter()
                 .any(|surface| surface.as_str() == Some("qualityResult.measurements"))));
-        assert!(payload
+        let as_built_contracts = payload
             .get("asBuiltContracts")
             .and_then(Value::as_array)
-            .is_some_and(|contracts| contracts.iter().any(|contract| contract
-                .get("learningSignals")
-                .and_then(Value::as_array)
-                .is_some_and(|signals| signals.iter().any(|signal| signal
-                    .as_str()
-                    .is_some_and(|signal| signal == "deviation:hybrid-interface:*")))))));
+            .expect("as-built contracts should be present");
+        assert!(as_built_contracts.iter().any(|contract| contract
+            .get("learningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|signal| signal
+                .as_str()
+                .is_some_and(|signal| signal == "deviation:hybrid-interface:*")))));
         assert!(payload
             .get("releasePolicy")
             .and_then(Value::as_array)
