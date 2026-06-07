@@ -165,10 +165,10 @@
     {
       "service": "dd-music-rs",
       "language": "rust",
-      "routeCount": 12,
+      "routeCount": 13,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 5
+        "user-generated": 6
       },
       "generated": [
         "remote/deployments/dd-music-rs/generated/api-docs.json",

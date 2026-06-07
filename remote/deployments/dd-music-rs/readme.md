@@ -8,7 +8,8 @@ music-production module.
 - Generates WAV songs in-process through `des_engine::des::general::music_production`.
 - Curates candidates with a simple listenability score and stores discarded attempts in Postgres.
 - Uploads published audio to S3 by default with S3-managed server-side encryption.
-- Serves a public HTML page with a native browser audio player, not an embedded third-party player.
+- Serves a public HTMX landing page with native browser audio players, not an embedded third-party
+  player.
 - Stores song metadata and anonymous votes in RDS Postgres through the canonical
   `remote/libs/pg-defs/schema/schema.sql` contract.
 - Uses Redis only for short-lived coordination: daily target cache, generation lock, and vote
@@ -16,11 +17,13 @@ music-production module.
 
 ## Routes
 
-- `GET /` — public song shelf and player.
+- `GET /` — public landing page, song shelf, and player.
 - `GET /songs` — latest published songs.
+- `GET /songs/shelf` — HTMX-rendered latest-song shelf.
 - `GET /songs/:song_id` — one song.
 - `GET /songs/:song_id/audio` — increments `play_count` and redirects to the stored audio URL.
 - `POST /songs/:song_id/votes` — anonymous up/down vote; durable state is one vote per visitor hash.
+  JSON clients receive JSON, while HTMX requests receive an updated song card.
 - `POST /internal/generate` — server-authenticated manual generation.
 - `GET /healthz`, `GET /readyz`, `GET /metrics`.
 - `GET /docs/api`, `GET /api/docs`, `GET /api/docs.json`.
