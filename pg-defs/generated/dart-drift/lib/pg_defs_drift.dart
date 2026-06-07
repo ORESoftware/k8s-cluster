@@ -31,6 +31,30 @@ class AppConfigTable extends Table {
   };
 }
 
+@DataClassName("VapiPhoneCallEventsData")
+class VapiPhoneCallEventsTable extends Table {
+  @override String get tableName => "vapi_phone_call_events";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get callId => text().named("call_id").withLength(max: 160)();
+  TextColumn get eventType => text().named("event_type").withLength(max: 80)();
+  TextColumn get payloadHash => text().named("payload_hash").withLength(max: 64)();
+  TextColumn get callerHash => text().named("caller_hash").withLength(max: 64).nullable()();
+  TextColumn get calledNumberHash => text().named("called_number_hash").withLength(max: 64).nullable()();
+  TextColumn get endedReason => text().named("ended_reason").withLength(max: 160).nullable()();
+  IntColumn get durationSeconds => integer().named("duration_seconds").nullable()();
+  TextColumn get summary => text().named("summary").nullable()();
+  TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("ContainerPoolConfigsData")
 class ContainerPoolConfigsTable extends Table {
   @override String get tableName => "container_pool_configs";
@@ -913,6 +937,7 @@ class DesFelElevatorPomdpBeliefsTable extends Table {
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
   AppConfigTable,
+  VapiPhoneCallEventsTable,
   ContainerPoolConfigsTable,
   KnownGitRepoTable,
   AgentContextBlobsTable,

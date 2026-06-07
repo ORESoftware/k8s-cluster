@@ -3,6 +3,7 @@
   "schemas": [
     "agent-thread-breadcrumb-cache.schema.json",
     "container-pool-affinity-lock.schema.json",
-    "runtime-config-redis.schema.json"
+    "runtime-config-redis.schema.json",
+    "vapi-phone-call-cache.schema.json"
   ]
 }

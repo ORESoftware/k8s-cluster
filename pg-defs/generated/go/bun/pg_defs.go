@@ -16,6 +16,10 @@ import (
 
 var appConfigScopePattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var appConfigKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
+var vapiPhoneCallEventsEventTypePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var vapiPhoneCallEventsPayloadHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var vapiPhoneCallEventsCallerHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var vapiPhoneCallEventsCalledNumberHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var containerPoolConfigsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var containerPoolConfigsRequestPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
 var containerPoolConfigsHealthPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
@@ -85,6 +89,58 @@ func (value AppConfigBun) Validate() error {
 	if !containsString(AppConfigStatusValues, value.Status) { return errors.New("unsupported app_config.status") }
 	if !validateRawJSON(value.Labels) { return errors.New("app_config.labels must be valid JSON") }
 	if !validateRawJSON(value.MetaData) { return errors.New("app_config.meta_data must be valid JSON") }
+	return nil
+}
+
+const VapiPhoneCallEventsTable = "vapi_phone_call_events"
+const VapiPhoneCallEventsSelectSQL = `select
+      id::text as id,
+      call_id,
+      event_type,
+      payload_hash,
+      caller_hash,
+      called_number_hash,
+      ended_reason,
+      duration_seconds,
+      summary,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from vapi_phone_call_events`
+
+type VapiPhoneCallEventsBun struct {
+	bun.BaseModel `bun:"table:vapi_phone_call_events"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	CallId string `bun:"call_id,type:varchar(160)" json:"callId"`
+	EventType string `bun:"event_type,type:varchar(80)" json:"eventType"`
+	PayloadHash string `bun:"payload_hash,type:varchar(64)" json:"payloadHash"`
+	CallerHash *string `bun:"caller_hash,type:varchar(64),nullzero" json:"callerHash,omitempty"`
+	CalledNumberHash *string `bun:"called_number_hash,type:varchar(64),nullzero" json:"calledNumberHash,omitempty"`
+	EndedReason *string `bun:"ended_reason,type:varchar(160),nullzero" json:"endedReason,omitempty"`
+	DurationSeconds *int32 `bun:"duration_seconds,type:integer,nullzero" json:"durationSeconds,omitempty"`
+	Summary *string `bun:"summary,type:text,nullzero" json:"summary,omitempty"`
+	Payload json.RawMessage `bun:"payload,type:jsonb,default:'{}'::jsonb" json:"payload"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value VapiPhoneCallEventsBun) Validate() error {
+	if len([]byte(value.CallId)) > 160 { return errors.New("vapi_phone_call_events.call_id exceeds 160 bytes") }
+	if len([]byte(value.CallId)) < 1 { return errors.New("vapi_phone_call_events.call_id is below 1 bytes") }
+	if !vapiPhoneCallEventsEventTypePattern.MatchString(value.EventType) { return errors.New("vapi_phone_call_events.event_type does not match the required pattern") }
+	if !vapiPhoneCallEventsPayloadHashPattern.MatchString(value.PayloadHash) { return errors.New("vapi_phone_call_events.payload_hash does not match the required pattern") }
+	if value.CallerHash != nil {
+		if !vapiPhoneCallEventsCallerHashPattern.MatchString(*value.CallerHash) { return errors.New("vapi_phone_call_events.caller_hash does not match the required pattern") }
+	}
+	if value.CalledNumberHash != nil {
+		if !vapiPhoneCallEventsCalledNumberHashPattern.MatchString(*value.CalledNumberHash) { return errors.New("vapi_phone_call_events.called_number_hash does not match the required pattern") }
+	}
+	if value.DurationSeconds != nil {
+		if *value.DurationSeconds < 0 { return errors.New("vapi_phone_call_events.duration_seconds is below the minimum") }
+		if *value.DurationSeconds > 86400 { return errors.New("vapi_phone_call_events.duration_seconds is above the maximum") }
+	}
+	if value.Summary != nil {
+		if len([]byte(*value.Summary)) > 4000 { return errors.New("vapi_phone_call_events.summary exceeds 4000 bytes") }
+	}
+	if !validateRawJSON(value.Payload) { return errors.New("vapi_phone_call_events.payload must be valid JSON") }
 	return nil
 }
 

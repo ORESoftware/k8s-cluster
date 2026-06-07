@@ -52,6 +52,49 @@ create index if not exists app_config_updated_at_idx
 create index if not exists app_config_labels_gin_idx
   on app_config using gin (labels);
 
+create table if not exists vapi_phone_call_events (
+  id uuid primary key default gen_random_uuid(),
+  call_id varchar(160) not null,
+  event_type varchar(80) not null,
+  payload_hash varchar(64) not null,
+  caller_hash varchar(64),
+  called_number_hash varchar(64),
+  ended_reason varchar(160),
+  duration_seconds integer,
+  summary text,
+  payload jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint vapi_phone_call_events_call_id_size_chk
+    check (octet_length(call_id) between 1 and 160),
+  constraint vapi_phone_call_events_event_type_format_chk
+    check (event_type ~ '^[A-Za-z0-9._:/-]{1,80}$'),
+  constraint vapi_phone_call_events_payload_hash_chk
+    check (payload_hash ~ '^[a-f0-9]{64}$'),
+  constraint vapi_phone_call_events_caller_hash_chk
+    check (caller_hash is null or caller_hash ~ '^[a-f0-9]{64}$'),
+  constraint vapi_phone_call_events_called_number_hash_chk
+    check (called_number_hash is null or called_number_hash ~ '^[a-f0-9]{64}$'),
+  constraint vapi_phone_call_events_duration_chk
+    check (duration_seconds is null or duration_seconds between 0 and 86400),
+  constraint vapi_phone_call_events_summary_size_chk
+    check (summary is null or octet_length(summary) <= 4000),
+  constraint vapi_phone_call_events_payload_object_chk
+    check (jsonb_typeof(payload) = 'object')
+);
+
+create unique index if not exists vapi_phone_call_events_payload_hash_uq
+  on vapi_phone_call_events (payload_hash);
+
+create index if not exists vapi_phone_call_events_call_id_created_at_idx
+  on vapi_phone_call_events (call_id, created_at desc);
+
+create index if not exists vapi_phone_call_events_caller_hash_created_at_idx
+  on vapi_phone_call_events (caller_hash, created_at desc)
+  where caller_hash is not null;
+
+create index if not exists vapi_phone_call_events_event_type_created_at_idx
+  on vapi_phone_call_events (event_type, created_at desc);
+
 create table if not exists container_pool_configs (
   id uuid primary key default gen_random_uuid(),
   slug varchar(120) not null,
@@ -1818,6 +1861,7 @@ begin
   if not exists (select 1 from pg_publication where pubname = 'cdc_pub') then
     create publication cdc_pub for table
       app_config,
+      vapi_phone_call_events,
       container_pool_configs,
       lambda_functions,
       known_git_repos,
@@ -1832,6 +1876,16 @@ begin
       and tablename = 'agent_remote_dev_events'
   ) then
     alter publication cdc_pub add table agent_remote_dev_events;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'cdc_pub'
+      and schemaname = 'public'
+      and tablename = 'vapi_phone_call_events'
+  ) then
+    alter publication cdc_pub add table vapi_phone_call_events;
   end if;
 end;
 $$;

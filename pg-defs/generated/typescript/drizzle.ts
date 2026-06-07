@@ -84,6 +84,70 @@ export type AppConfigRow = z.infer<typeof appConfigRowSchema>;
 export type AppConfigInsert = z.infer<typeof appConfigInsertSchema>;
 export type AppConfigUpdate = z.infer<typeof appConfigUpdateSchema>;
 
+export const vapiPhoneCallEvents = pgTable(
+  "vapi_phone_call_events",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    callId: varchar("call_id", { length: 160 }).notNull(),
+    eventType: varchar("event_type", { length: 80 }).notNull(),
+    payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+    callerHash: varchar("caller_hash", { length: 64 }),
+    calledNumberHash: varchar("called_number_hash", { length: 64 }),
+    endedReason: varchar("ended_reason", { length: 160 }),
+    durationSeconds: integer("duration_seconds"),
+    summary: text("summary"),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    vapiPhoneCallEventsCallIdSizeChk: check("vapi_phone_call_events_call_id_size_chk", sql.raw("octet_length(call_id) between 1 and 160")),
+    vapiPhoneCallEventsEventTypeFormatChk: check("vapi_phone_call_events_event_type_format_chk", sql.raw("event_type ~ '^[A-Za-z0-9._:/-]{1,80}$'")),
+    vapiPhoneCallEventsPayloadHashChk: check("vapi_phone_call_events_payload_hash_chk", sql.raw("payload_hash ~ '^[a-f0-9]{64}$'")),
+    vapiPhoneCallEventsCallerHashChk: check("vapi_phone_call_events_caller_hash_chk", sql.raw("caller_hash is null or caller_hash ~ '^[a-f0-9]{64}$'")),
+    vapiPhoneCallEventsCalledNumberHashChk: check("vapi_phone_call_events_called_number_hash_chk", sql.raw("called_number_hash is null or called_number_hash ~ '^[a-f0-9]{64}$'")),
+    vapiPhoneCallEventsDurationChk: check("vapi_phone_call_events_duration_chk", sql.raw("duration_seconds is null or duration_seconds between 0 and 86400")),
+    vapiPhoneCallEventsSummarySizeChk: check("vapi_phone_call_events_summary_size_chk", sql.raw("summary is null or octet_length(summary) <= 4000")),
+    vapiPhoneCallEventsPayloadObjectChk: check("vapi_phone_call_events_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
+    vapiPhoneCallEventsPayloadHashUq: uniqueIndex("vapi_phone_call_events_payload_hash_uq").on(table.payloadHash),
+    vapiPhoneCallEventsCallIdCreatedAtIdx: index("vapi_phone_call_events_call_id_created_at_idx").on(table.callId, table.createdAt.desc()),
+    vapiPhoneCallEventsCallerHashCreatedAtIdx: index("vapi_phone_call_events_caller_hash_created_at_idx").on(table.callerHash, table.createdAt.desc()).where(sql.raw("caller_hash is not null")),
+    vapiPhoneCallEventsEventTypeCreatedAtIdx: index("vapi_phone_call_events_event_type_created_at_idx").on(table.eventType, table.createdAt.desc()),
+  }),
+);
+
+export const vapiPhoneCallEventsRowSchema = z.object({
+  id: z.string().uuid(),
+  callId: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes"),
+  eventType: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")),
+  payloadHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  callerHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")).nullable(),
+  calledNumberHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")).nullable(),
+  endedReason: z.string().max(160).nullable(),
+  durationSeconds: z.number().int().min(0).max(86400).nullable(),
+  summary: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes").nullable(),
+  payload: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const vapiPhoneCallEventsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  callId: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes"),
+  eventType: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")),
+  payloadHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  callerHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")).nullable().optional(),
+  calledNumberHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")).nullable().optional(),
+  endedReason: z.string().max(160).nullable().optional(),
+  durationSeconds: z.number().int().min(0).max(86400).nullable().optional(),
+  summary: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes").nullable().optional(),
+  payload: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const vapiPhoneCallEventsUpdateSchema = vapiPhoneCallEventsInsertSchema.partial();
+export type VapiPhoneCallEventsRow = z.infer<typeof vapiPhoneCallEventsRowSchema>;
+export type VapiPhoneCallEventsInsert = z.infer<typeof vapiPhoneCallEventsInsertSchema>;
+export type VapiPhoneCallEventsUpdate = z.infer<typeof vapiPhoneCallEventsUpdateSchema>;
+
 export const containerPoolConfigsStatusValues = ["active","paused","archived"] as const;
 export const containerPoolConfigsStatusSchema = z.enum(containerPoolConfigsStatusValues);
 export type ContainerPoolConfigsStatus = z.infer<typeof containerPoolConfigsStatusSchema>;

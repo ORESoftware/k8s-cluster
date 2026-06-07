@@ -54,6 +54,67 @@ pub struct AgentThreadBreadcrumbTail {
     pub source: Option<String>,
 }
 
+/// Low-latency context for a hashed caller number. Values intentionally avoid raw phone numbers and full transcripts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VapiPhoneCallerContext {
+    /// SHA-256 hex digest of the normalized caller number.
+    #[serde(rename = "callerHash")]
+    pub caller_hash: String,
+    /// Number of recent durable call events observed for this caller.
+    #[serde(rename = "recentCallCount")]
+    pub recent_call_count: i64,
+    /// Most recent Vapi call id observed for this caller, if known.
+    #[serde(rename = "lastCallId")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_call_id: Option<String>,
+    /// Most recent assistant-recorded screening signal, e.g. human_likely or spam_likely.
+    #[serde(rename = "lastSignal")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_signal: Option<String>,
+    /// Short assistant-provided reason for the last signal.
+    #[serde(rename = "lastReason")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_reason: Option<String>,
+    /// ISO-8601 timestamp of the last durable event if rebuilt from Postgres.
+    #[serde(rename = "lastEventAt")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_event_at: Option<String>,
+    /// Unix epoch milliseconds when this cache entry was generated.
+    #[serde(rename = "generatedAtMs")]
+    pub generated_at_ms: i64,
+    /// Where the snapshot came from, e.g. redis-write or postgres.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+/// Latest compact screening signal for a single call. Raw phone numbers and transcripts are excluded by contract.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VapiPhoneCallSignal {
+    /// Vapi call id.
+    #[serde(rename = "callId")]
+    pub call_id: String,
+    /// SHA-256 hex digest of the normalized caller number.
+    #[serde(rename = "callerHash")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller_hash: Option<String>,
+    /// SHA-256 hex digest of the normalized called number.
+    #[serde(rename = "calledNumberHash")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub called_number_hash: Option<String>,
+    /// Assistant-provided screening signal.
+    pub signal: String,
+    /// Assistant-provided caller kind such as recruiter, vendor, scammer, or unknown.
+    #[serde(rename = "callerKind")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller_kind: Option<String>,
+    /// Short assistant-provided reason. Keep compact and non-sensitive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Unix epoch milliseconds when the signal was recorded.
+    #[serde(rename = "recordedAtMs")]
+    pub recorded_at_ms: i64,
+}
+
 // ---------- Redis key formatters ----------
 
 /// Redis STRING containing a JSON-encoded AgentThreadBreadcrumbTail snapshot. SET with PX TTL; missing or stale entries trigger a rebuild from agent_remote_dev_breadcrumbs.
@@ -104,3 +165,17 @@ pub fn runtime_config_subscriber_key(prefix: &str, env: &str, name: &str) -> Str
 }
 
 pub const RUNTIME_CONFIG_SUBSCRIBER_KEY_DEFAULT_PREFIX: &str = "dd:rc";
+
+/// Redis STRING containing a JSON-encoded VapiPhoneCallerContext for a hashed caller number. SET with EX TTL; missing entries can be rebuilt from Postgres.
+pub fn vapi_phone_caller_context_key(prefix: &str, caller_hash: &str) -> String {
+    format!("{}:caller:{}", prefix, caller_hash)
+}
+
+pub const VAPI_PHONE_CALLER_CONTEXT_KEY_DEFAULT_PREFIX: &str = "dd:vapi-phone";
+
+/// Redis STRING containing the latest JSON-encoded VapiPhoneCallSignal for a Vapi call id. SET with EX TTL and updated by server tool calls.
+pub fn vapi_phone_call_signal_key(prefix: &str, call_id: &str) -> String {
+    format!("{}:call:{}:signal", prefix, call_id)
+}
+
+pub const VAPI_PHONE_CALL_SIGNAL_KEY_DEFAULT_PREFIX: &str = "dd:vapi-phone";

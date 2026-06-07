@@ -93,6 +93,99 @@ class AppConfigRow {
   }
 }
 
+const vapiPhoneCallEventsTable = "vapi_phone_call_events";
+const vapiPhoneCallEventsSelectSql = "select\n      id::text as id,\n      call_id,\n      event_type,\n      payload_hash,\n      caller_hash,\n      called_number_hash,\n      ended_reason,\n      duration_seconds,\n      summary,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from vapi_phone_call_events";
+
+class VapiPhoneCallEventsRow {
+  const VapiPhoneCallEventsRow({
+    required this.id,
+    required this.callId,
+    required this.eventType,
+    required this.payloadHash,
+    this.callerHash,
+    this.calledNumberHash,
+    this.endedReason,
+    this.durationSeconds,
+    this.summary,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String callId;
+  final String eventType;
+  final String payloadHash;
+  final String? callerHash;
+  final String? calledNumberHash;
+  final String? endedReason;
+  final int? durationSeconds;
+  final String? summary;
+  final Map<String, Object?> payload;
+  final String createdAt;
+
+  factory VapiPhoneCallEventsRow.fromJson(Map<String, Object?> json) {
+    return VapiPhoneCallEventsRow(
+      id: _readRequiredString(json, "id"),
+      callId: _readRequiredString(json, "callId"),
+      eventType: _readRequiredString(json, "eventType"),
+      payloadHash: _readRequiredString(json, "payloadHash"),
+      callerHash: _readOptionalString(json, "callerHash"),
+      calledNumberHash: _readOptionalString(json, "calledNumberHash"),
+      endedReason: _readOptionalString(json, "endedReason"),
+      durationSeconds: _readOptionalInt(json, "durationSeconds"),
+      summary: _readOptionalString(json, "summary"),
+      payload: _readRequiredObject(json, "payload"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "callId": callId,
+    "eventType": eventType,
+    "payloadHash": payloadHash,
+    "callerHash": callerHash,
+    "calledNumberHash": calledNumberHash,
+    "endedReason": endedReason,
+    "durationSeconds": durationSeconds,
+    "summary": summary,
+    "payload": payload,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(callId).length > 160) {
+      errors.add("vapi_phone_call_events.call_id exceeds 160 bytes");
+    }
+    if (utf8.encode(callId).length < 1) {
+      errors.add("vapi_phone_call_events.call_id is below 1 bytes");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,80}$').hasMatch(eventType)) {
+      errors.add("vapi_phone_call_events.event_type does not match the required pattern");
+    }
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(payloadHash)) {
+      errors.add("vapi_phone_call_events.payload_hash does not match the required pattern");
+    }
+    if (callerHash != null && !RegExp(r'^[a-f0-9]{64}$').hasMatch(callerHash!)) {
+      errors.add("vapi_phone_call_events.caller_hash does not match the required pattern");
+    }
+    if (calledNumberHash != null && !RegExp(r'^[a-f0-9]{64}$').hasMatch(calledNumberHash!)) {
+      errors.add("vapi_phone_call_events.called_number_hash does not match the required pattern");
+    }
+    if (durationSeconds != null && durationSeconds! < 0) {
+      errors.add("vapi_phone_call_events.duration_seconds is below the minimum");
+    }
+    if (durationSeconds != null && durationSeconds! > 86400) {
+      errors.add("vapi_phone_call_events.duration_seconds is above the maximum");
+    }
+    if (summary != null && utf8.encode(summary!).length > 4000) {
+      errors.add("vapi_phone_call_events.summary exceeds 4000 bytes");
+    }
+    return errors;
+  }
+}
+
 const containerPoolConfigsTable = "container_pool_configs";
 const containerPoolConfigsSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      image,\n      command::text as command_json,\n      env::text as env_json,\n      request_path,\n      health_path,\n      container_port,\n      min_warm,\n      max_warm,\n      max_concurrency_per_container,\n      request_timeout_ms,\n      idle_ttl_seconds,\n      nats_subject,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_configs";
 

@@ -46,6 +46,46 @@ class AgentThreadBreadcrumbTail:
     # Where the snapshot was rebuilt from, e.g. 'postgres' or 'cache'.
     source: Optional[str] = None
 
+# Low-latency context for a hashed caller number. Values intentionally avoid raw phone numbers and full transcripts.
+@dataclass
+class VapiPhoneCallerContext:
+    """Low-latency context for a hashed caller number. Values intentionally avoid raw phone numbers and full transcripts."""
+    # SHA-256 hex digest of the normalized caller number.
+    callerHash: str
+    # Number of recent durable call events observed for this caller.
+    recentCallCount: int
+    # Unix epoch milliseconds when this cache entry was generated.
+    generatedAtMs: int
+    # Most recent Vapi call id observed for this caller, if known.
+    lastCallId: Optional[str] = None
+    # Most recent assistant-recorded screening signal, e.g. human_likely or spam_likely.
+    lastSignal: Optional[str] = None
+    # Short assistant-provided reason for the last signal.
+    lastReason: Optional[str] = None
+    # ISO-8601 timestamp of the last durable event if rebuilt from Postgres.
+    lastEventAt: Optional[str] = None
+    # Where the snapshot came from, e.g. redis-write or postgres.
+    source: Optional[str] = None
+
+# Latest compact screening signal for a single call. Raw phone numbers and transcripts are excluded by contract.
+@dataclass
+class VapiPhoneCallSignal:
+    """Latest compact screening signal for a single call. Raw phone numbers and transcripts are excluded by contract."""
+    # Vapi call id.
+    callId: str
+    # Assistant-provided screening signal.
+    signal: str
+    # Unix epoch milliseconds when the signal was recorded.
+    recordedAtMs: int
+    # SHA-256 hex digest of the normalized caller number.
+    callerHash: Optional[str] = None
+    # SHA-256 hex digest of the normalized called number.
+    calledNumberHash: Optional[str] = None
+    # Assistant-provided caller kind such as recruiter, vendor, scammer, or unknown.
+    callerKind: Optional[str] = None
+    # Short assistant-provided reason. Keep compact and non-sensitive.
+    reason: Optional[str] = None
+
 # ---------- Redis key formatters ----------
 
 def agent_thread_breadcrumb_tail_key(prefix: str, thread_id: str) -> str:
@@ -89,3 +129,15 @@ def runtime_config_subscriber_key(prefix: str, env: str, name: str) -> str:
     return "{prefix}:{env}:subs:{name}".format(prefix=prefix, env=env, name=name)
 
 RUNTIME_CONFIG_SUBSCRIBER_KEY_DEFAULT_PREFIX = "dd:rc"
+
+def vapi_phone_caller_context_key(prefix: str, caller_hash: str) -> str:
+    """Redis STRING containing a JSON-encoded VapiPhoneCallerContext for a hashed caller number. SET with EX TTL; missing entries can be rebuilt from Postgres."""
+    return "{prefix}:caller:{caller_hash}".format(prefix=prefix, caller_hash=caller_hash)
+
+VAPI_PHONE_CALLER_CONTEXT_KEY_DEFAULT_PREFIX = "dd:vapi-phone"
+
+def vapi_phone_call_signal_key(prefix: str, call_id: str) -> str:
+    """Redis STRING containing the latest JSON-encoded VapiPhoneCallSignal for a Vapi call id. SET with EX TTL and updated by server tool calls."""
+    return "{prefix}:call:{call_id}:signal".format(prefix=prefix, call_id=call_id)
+
+VAPI_PHONE_CALL_SIGNAL_KEY_DEFAULT_PREFIX = "dd:vapi-phone"

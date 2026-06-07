@@ -65,6 +65,33 @@ pub fn validate_app_config_status(value: String) -> Result(String, String) {
   }
 }
 
+pub const vapi_phone_call_events_table = "vapi_phone_call_events"
+pub const vapi_phone_call_events_select_sql = "select\n      id::text as id,\n      call_id,\n      event_type,\n      payload_hash,\n      caller_hash,\n      called_number_hash,\n      ended_reason,\n      duration_seconds,\n      summary,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from vapi_phone_call_events"
+
+pub type VapiPhoneCallEventsRow {
+  VapiPhoneCallEventsRow(
+    id: String,
+    call_id: String,
+    event_type: String,
+    payload_hash: String,
+    caller_hash: Option(String),
+    called_number_hash: Option(String),
+    ended_reason: Option(String),
+    duration_seconds: Option(Int),
+    summary: Option(String),
+    payload_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_vapi_phone_call_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("vapi_phone_call_events.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const container_pool_configs_table = "container_pool_configs"
 pub const container_pool_configs_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      image,\n      command::text as command_json,\n      env::text as env_json,\n      request_path,\n      health_path,\n      container_port,\n      min_warm,\n      max_warm,\n      max_concurrency_per_container,\n      request_timeout_ms,\n      idle_ttl_seconds,\n      nats_subject,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_configs"
 

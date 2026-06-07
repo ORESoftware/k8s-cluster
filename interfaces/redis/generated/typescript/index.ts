@@ -38,6 +38,44 @@ export type AgentThreadBreadcrumbTail = {
   source?: string | null;
 };
 
+// Low-latency context for a hashed caller number. Values intentionally avoid raw phone numbers and full transcripts.
+export type VapiPhoneCallerContext = {
+  /** SHA-256 hex digest of the normalized caller number. */
+  callerHash: string;
+  /** Number of recent durable call events observed for this caller. */
+  recentCallCount: number;
+  /** Most recent Vapi call id observed for this caller, if known. */
+  lastCallId?: string | null;
+  /** Most recent assistant-recorded screening signal, e.g. human_likely or spam_likely. */
+  lastSignal?: string | null;
+  /** Short assistant-provided reason for the last signal. */
+  lastReason?: string | null;
+  /** ISO-8601 timestamp of the last durable event if rebuilt from Postgres. */
+  lastEventAt?: string | null;
+  /** Unix epoch milliseconds when this cache entry was generated. */
+  generatedAtMs: number;
+  /** Where the snapshot came from, e.g. redis-write or postgres. */
+  source?: string | null;
+};
+
+// Latest compact screening signal for a single call. Raw phone numbers and transcripts are excluded by contract.
+export type VapiPhoneCallSignal = {
+  /** Vapi call id. */
+  callId: string;
+  /** SHA-256 hex digest of the normalized caller number. */
+  callerHash?: string | null;
+  /** SHA-256 hex digest of the normalized called number. */
+  calledNumberHash?: string | null;
+  /** Assistant-provided screening signal. */
+  signal: string;
+  /** Assistant-provided caller kind such as recruiter, vendor, scammer, or unknown. */
+  callerKind?: string | null;
+  /** Short assistant-provided reason. Keep compact and non-sensitive. */
+  reason?: string | null;
+  /** Unix epoch milliseconds when the signal was recorded. */
+  recordedAtMs: number;
+};
+
 // ---------- Redis key formatters ----------
 
 /** Redis STRING containing a JSON-encoded AgentThreadBreadcrumbTail snapshot. SET with PX TTL; missing or stale entries trigger a rebuild from agent_remote_dev_breadcrumbs. */
@@ -88,3 +126,17 @@ export function runtimeConfigSubscriberKey(prefix: string, env: string, name: st
 }
 
 export const RUNTIME_CONFIG_SUBSCRIBER_KEY_DEFAULT_PREFIX = "dd:rc";
+
+/** Redis STRING containing a JSON-encoded VapiPhoneCallerContext for a hashed caller number. SET with EX TTL; missing entries can be rebuilt from Postgres. */
+export function vapiPhoneCallerContextKey(prefix: string, callerHash: string): string {
+  return `${prefix}:caller:${callerHash}`;
+}
+
+export const VAPI_PHONE_CALLER_CONTEXT_KEY_DEFAULT_PREFIX = "dd:vapi-phone";
+
+/** Redis STRING containing the latest JSON-encoded VapiPhoneCallSignal for a Vapi call id. SET with EX TTL and updated by server tool calls. */
+export function vapiPhoneCallSignalKey(prefix: string, callId: string): string {
+  return `${prefix}:call:${callId}:signal`;
+}
+
+export const VAPI_PHONE_CALL_SIGNAL_KEY_DEFAULT_PREFIX = "dd:vapi-phone";
