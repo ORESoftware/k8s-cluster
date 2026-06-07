@@ -242,6 +242,7 @@ Currently opted-in:
   `/fabrication/consumables/catalog`,
   `/fabrication/consumables/result`,
   `/fabrication/workholding/catalog`,
+  `/fabrication/workholding/preflight/catalog`,
   `/fabrication/workholding/result`,
   `/fabrication/nesting/catalog`, `/fabrication/nesting/result`,
   `/fabrication/support-strategies/catalog`, `/fabrication/support-strategies/result`,

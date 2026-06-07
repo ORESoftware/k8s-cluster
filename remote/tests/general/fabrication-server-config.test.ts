@@ -4071,6 +4071,17 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /workholding_catalog_endpoint_exposes_fixture_release_and_learning_contract/,
   );
+  assert.match(source, /async fn workholding_preflight_catalog_http/);
+  assert.match(source, /fn workholding_preflight_catalog_response/);
+  assert.match(source, /dd\.fabrication\.workholding-preflight-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/workholding\/preflight\/catalog"/);
+  assert.match(source, /stock-build-surface-and-primary-hold-state/);
+  assert.match(source, /datum-transfer-reprobe-and-clearance-state/);
+  assert.match(source, /split-combine-fixture-and-human-intervention-state/);
+  assert.match(
+    source,
+    /workholding_preflight_catalog_endpoint_exposes_fixture_release_gates/,
+  );
   assert.match(source, /async fn nesting_catalog_http/);
   assert.match(source, /fn nesting_catalog_response/);
   assert.match(source, /fn nesting_catalog_entries/);
@@ -5785,6 +5796,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /dd\.fabrication\.workholding-catalog\.v1/);
   assert.match(readme, /lathe chucks, collets, guide bushings/);
   assert.match(readme, /not\s+certified fixture designs/);
+  assert.match(readme, /`GET \/workholding\/preflight\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/workholding\/preflight\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.workholding-preflight-catalog\.v1/);
+  assert.match(readme, /stock\/build-surface primary hold state/);
+  assert.match(readme, /datum-transfer\/re-probe\/clearance state/);
+  assert.match(readme, /split-combine fixture plus\s+human-intervention state/);
   assert.match(readme, /`POST \/workholding\/result`/);
   assert.match(readme, /`POST \/fabrication\/workholding\/result`/);
   assert.match(readme, /dd\.fabrication\.workholding-result-review\.v1/);
@@ -8368,6 +8385,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/consumables\/result"/);
   assert.match(docs, /"path": "\/workholding\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/workholding\/catalog"/);
+  assert.match(docs, /"path": "\/workholding\/preflight\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/workholding\/preflight\/catalog"/);
   assert.match(docs, /"path": "\/workholding\/result"/);
   assert.match(docs, /"path": "\/fabrication\/workholding\/result"/);
   assert.match(docs, /"path": "\/nesting\/catalog"/);
@@ -8631,6 +8650,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/consumables\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/consumables\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/workholding\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/workholding\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/workholding\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/nesting\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/nesting\/result"/);
@@ -8933,6 +8953,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /consumables result review/);
   assert.match(grafanaDashboards, /\/fabrication\/workholding\/catalog/);
   assert.match(grafanaDashboards, /workholding catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/workholding\/preflight\/catalog/);
+  assert.match(grafanaDashboards, /workholding preflight catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/workholding\/result/);
   assert.match(grafanaDashboards, /workholding result review/);
   assert.match(grafanaDashboards, /\/fabrication\/nesting\/catalog/);
@@ -9105,6 +9127,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/consumables\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/consumables\/result/);
   assert.match(runtimeReadme, /\/fabrication\/workholding\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/workholding\/preflight\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/workholding\/result/);
   assert.match(runtimeReadme, /\/fabrication\/nesting\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/nesting\/result/);
@@ -9316,6 +9339,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/consumables\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/consumables\/result/);
   assert.match(observabilityReadme, /\/fabrication\/workholding\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/workholding\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/workholding\/result/);
   assert.match(observabilityReadme, /\/fabrication\/nesting\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/nesting\/result/);

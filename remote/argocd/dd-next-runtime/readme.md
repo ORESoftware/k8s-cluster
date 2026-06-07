@@ -165,6 +165,7 @@ Gateway path map:
   `/fabrication/consumables/catalog`,
   `POST /fabrication/consumables/result`,
   `/fabrication/workholding/catalog`,
+  `/fabrication/workholding/preflight/catalog`,
   `POST /fabrication/workholding/result`,
   `/fabrication/nesting/catalog`, `POST /fabrication/nesting/result`,
   `/fabrication/support-strategies/catalog`, `POST /fabrication/support-strategies/result`,
