@@ -6,7 +6,7 @@ use std::{
 };
 
 use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_s3::{config::Region, primitives::ByteStream};
+use aws_sdk_s3::{config::Region, primitives::ByteStream, types::ServerSideEncryption};
 use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
@@ -92,6 +92,8 @@ const DEFAULT_GENERATOR_INTERVAL_SECONDS: u64 = 3600;
 const DEFAULT_GENERATOR_MAX_PER_SWEEP: i64 = 2;
 const DEFAULT_GENERATION_MAX_ATTEMPTS: i64 = 8;
 const DEFAULT_SONG_DURATION_SECONDS: f64 = 180.0;
+const MIN_SONG_DURATION_SECONDS: f64 = 10.0;
+const MAX_SONG_DURATION_SECONDS: f64 = 600.0;
 const DEFAULT_MIN_LISTENABILITY_SCORE: f64 = 0.55;
 const DEFAULT_VOTE_THROTTLE_SECONDS: u64 = 5;
 const MAX_LIST_LIMIT: i64 = 100;
@@ -120,6 +122,7 @@ struct Config {
     min_listenability_score: f64,
     redis_prefix: String,
     vote_hash_salt: String,
+    vote_hash_salt_configured: bool,
     vote_throttle_seconds: u64,
     storage: StorageConfig,
 }
@@ -334,8 +337,10 @@ fn config_from_env() -> Config {
     let daily_target_min = env_i64("MUSIC_DAILY_TARGET_MIN", DEFAULT_DAILY_TARGET_MIN);
     let daily_target_max =
         env_i64("MUSIC_DAILY_TARGET_MAX", DEFAULT_DAILY_TARGET_MAX).max(daily_target_min);
-    let vote_hash_salt = first_env(&["MUSIC_VOTE_HASH_SALT", "SERVER_AUTH_SECRET"])
-        .unwrap_or_else(|| "dd-music-rs-local-anonymous-votes".to_string());
+    let vote_hash_salt = first_env(&["MUSIC_VOTE_HASH_SALT", "SERVER_AUTH_SECRET"]);
+    let vote_hash_salt_configured = vote_hash_salt.is_some();
+    let vote_hash_salt =
+        vote_hash_salt.unwrap_or_else(|| format!("dd-music-rs-local-{}", Uuid::new_v4()));
 
     Config {
         database_url: first_env(&[
@@ -369,7 +374,8 @@ fn config_from_env() -> Config {
         song_duration_seconds: env_f64(
             "MUSIC_SONG_DURATION_SECONDS",
             DEFAULT_SONG_DURATION_SECONDS,
-        ),
+        )
+        .clamp(MIN_SONG_DURATION_SECONDS, MAX_SONG_DURATION_SECONDS),
         min_listenability_score: env_f64(
             "MUSIC_MIN_LISTENABILITY_SCORE",
             DEFAULT_MIN_LISTENABILITY_SCORE,
@@ -379,6 +385,7 @@ fn config_from_env() -> Config {
             dd_redis_interfaces::MUSIC_DAILY_GENERATION_TARGET_KEY_DEFAULT_PREFIX.to_string()
         }),
         vote_hash_salt,
+        vote_hash_salt_configured,
         vote_throttle_seconds: env_u64(
             "MUSIC_VOTE_THROTTLE_SECONDS",
             DEFAULT_VOTE_THROTTLE_SECONDS,
@@ -439,7 +446,8 @@ impl AppState {
             .get_multiplexed_async_connection()
             .await
             .map_err(|error| {
-                ServiceError::Unavailable(format!("redis connection failed: {error}"))
+                eprintln!("dd-music-rs redis connection failed: {error}");
+                ServiceError::Unavailable("redis connection failed".to_string())
             })?;
         *guard = Some(connection.clone());
         Ok(connection)
@@ -460,18 +468,23 @@ fn now_ms() -> u128 {
 }
 
 async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, ServiceError> {
-    let database_url = config.database_url.as_deref().ok_or_else(|| {
-        ServiceError::Unavailable("postgres database URL is not configured".to_string())
-    })?;
+    let database_url = config
+        .database_url
+        .as_deref()
+        .ok_or_else(|| ServiceError::Unavailable("music service is not ready".to_string()))?;
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(root_store)
         .with_no_client_auth();
     let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
-    let (client, connection) = tokio_postgres::connect(database_url, tls)
-        .await
-        .map_err(|error| ServiceError::Unavailable(format!("postgres connect failed: {error}")))?;
+    let (client, connection) =
+        tokio_postgres::connect(database_url, tls)
+            .await
+            .map_err(|error| {
+                eprintln!("dd-music-rs postgres connect failed: {error}");
+                ServiceError::Unavailable("postgres connect failed".to_string())
+            })?;
     tokio::spawn(async move {
         if let Err(error) = connection.await {
             eprintln!("dd-music-rs postgres connection error: {error}");
@@ -493,7 +506,7 @@ fn require_server_auth(headers: &HeaderMap, config: &Config) -> Result<(), Servi
         .or_else(|| headers.get("Auth"))
         .and_then(|value| value.to_str().ok())
         .unwrap_or("");
-    if presented == expected {
+    if constant_time_eq(presented, expected) {
         Ok(())
     } else {
         Err(ServiceError::Unauthorized)
@@ -514,15 +527,13 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
-    let storage_ready = match &state.config.storage {
-        StorageConfig::S3(config) => {
-            !config.bucket.is_empty() && !config.public_base_url.is_empty() && state.s3.is_some()
-        }
-        StorageConfig::Local(config) => {
-            !config.root.is_empty() && !config.public_base_url.is_empty()
-        }
-    };
-    let ok = state.config.database_url.is_some() && storage_ready;
+    let storage_ready = storage_ready(&state.config.storage, state.s3.is_some());
+    let internal_auth_ready =
+        state.config.allow_unauthenticated_internal || state.config.server_auth_secret.is_some();
+    let ok = state.config.database_url.is_some()
+        && storage_ready
+        && state.config.vote_hash_salt_configured
+        && internal_auth_ready;
     let status = if ok {
         StatusCode::OK
     } else {
@@ -535,7 +546,9 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
             "ok": ok,
             "postgresConfigured": state.config.database_url.is_some(),
             "storageProvider": storage_provider_name(&state.config.storage),
-            "storageReady": storage_ready
+            "storageReady": storage_ready,
+            "voteHashSaltConfigured": state.config.vote_hash_salt_configured,
+            "internalAuthReady": internal_auth_ready
         })),
     )
 }
@@ -592,6 +605,7 @@ async fn get_song(
     State(state): State<AppState>,
     Path(song_id): Path<String>,
 ) -> Result<Json<SongRow>, ServiceError> {
+    validate_song_id(&song_id)?;
     let client = connect_postgres(&state.config).await?;
     let song = fetch_song(&client, &song_id).await?;
     record_request("GET", "/songs/:song_id", StatusCode::OK);
@@ -602,6 +616,7 @@ async fn song_audio(
     State(state): State<AppState>,
     Path(song_id): Path<String>,
 ) -> Result<Redirect, ServiceError> {
+    validate_song_id(&song_id)?;
     let client = connect_postgres(&state.config).await?;
     let sql = format!(
         "update {songs}
@@ -619,6 +634,12 @@ async fn song_audio(
     let Some(audio_url) = audio_url else {
         return Err(ServiceError::NotFound("song has no audio URL".to_string()));
     };
+    if !is_allowed_audio_url(&state.config.storage, &audio_url) {
+        eprintln!("dd-music-rs blocked untrusted audio URL for song {song_id}");
+        return Err(ServiceError::NotFound(
+            "song audio URL is not available".to_string(),
+        ));
+    }
     record_request("GET", "/songs/:song_id/audio", StatusCode::FOUND);
     Ok(Redirect::temporary(&audio_url))
 }
@@ -629,6 +650,7 @@ async fn vote_song(
     headers: HeaderMap,
     Json(request): Json<VoteRequest>,
 ) -> Result<Json<VoteResponse>, ServiceError> {
+    validate_song_id(&song_id)?;
     if !matches!(request.value, -1 | 1) {
         return Err(ServiceError::BadRequest(
             "vote value must be 1 or -1".to_string(),
@@ -899,10 +921,14 @@ async fn store_audio(state: &AppState, song: &GeneratedSong) -> Result<StoredObj
                 .bucket(&config.bucket)
                 .key(&key)
                 .content_type("audio/wav")
+                .server_side_encryption(ServerSideEncryption::Aes256)
                 .body(ByteStream::from(song.audio_bytes.clone()))
                 .send()
                 .await
-                .map_err(|error| ServiceError::Unavailable(format!("S3 upload failed: {error}")))?;
+                .map_err(|error| {
+                    eprintln!("dd-music-rs S3 upload failed: {error}");
+                    ServiceError::Unavailable("S3 upload failed".to_string())
+                })?;
             Ok(StoredObject {
                 provider: "s3".to_string(),
                 bucket: Some(config.bucket.clone()),
@@ -916,13 +942,15 @@ async fn store_audio(state: &AppState, song: &GeneratedSong) -> Result<StoredObj
             let path = std::path::Path::new(&config.root).join(&key);
             if let Some(parent) = path.parent() {
                 tokio::fs::create_dir_all(parent).await.map_err(|error| {
-                    ServiceError::Unavailable(format!("local storage mkdir failed: {error}"))
+                    eprintln!("dd-music-rs local storage mkdir failed: {error}");
+                    ServiceError::Unavailable("local storage mkdir failed".to_string())
                 })?;
             }
             tokio::fs::write(&path, &song.audio_bytes)
                 .await
                 .map_err(|error| {
-                    ServiceError::Unavailable(format!("local storage write failed: {error}"))
+                    eprintln!("dd-music-rs local storage write failed: {error}");
+                    ServiceError::Unavailable("local storage write failed".to_string())
                 })?;
             Ok(StoredObject {
                 provider: "local".to_string(),
@@ -1101,19 +1129,26 @@ async fn throttle_vote(
     );
     let mut connection = match state.redis_connection().await {
         Ok(connection) => connection,
-        Err(_) => return Ok(()),
+        Err(error) => {
+            eprintln!("dd-music-rs vote throttle unavailable: {error:?}");
+            return Ok(());
+        }
     };
-    let response: Option<String> = redis::cmd("SET")
+    let response: redis::RedisResult<Option<String>> = redis::cmd("SET")
         .arg(&key)
         .arg("1")
         .arg("NX")
         .arg("EX")
         .arg(state.config.vote_throttle_seconds)
         .query_async(&mut connection)
-        .await
-        .map_err(|error| {
-            ServiceError::Unavailable(format!("redis vote throttle failed: {error}"))
-        })?;
+        .await;
+    let response = match response {
+        Ok(response) => response,
+        Err(error) => {
+            eprintln!("dd-music-rs redis vote throttle failed: {error}");
+            return Ok(());
+        }
+    };
     if response.is_none() {
         return Err(ServiceError::TooManyRequests(
             "vote accepted too recently; wait a moment before changing it".to_string(),
@@ -1165,7 +1200,8 @@ async fn acquire_generation_lock(state: &AppState, token: &str) -> Result<bool, 
         .query_async(&mut connection)
         .await
         .map_err(|error| {
-            ServiceError::Unavailable(format!("redis generation lock failed: {error}"))
+            eprintln!("dd-music-rs redis generation lock failed: {error}");
+            ServiceError::Unavailable("redis generation lock failed".to_string())
         })?;
     Ok(response.is_some())
 }
@@ -1251,12 +1287,27 @@ fn song_from_row(row: &tokio_postgres::Row) -> SongRow {
     }
 }
 
-fn visitor_hash(headers: &HeaderMap, salt: &str) -> String {
-    let forwarded = headers
+fn client_ip_for_hash(headers: &HeaderMap) -> String {
+    if let Some(real_ip) = headers
+        .get("X-Real-IP")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return real_ip.to_string();
+    }
+    headers
         .get("X-Forwarded-For")
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(',').next())
-        .unwrap_or("unknown");
+        .and_then(|value| value.split(',').next_back())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+fn visitor_hash(headers: &HeaderMap, salt: &str) -> String {
+    let forwarded = client_ip_for_hash(headers);
     let user_agent = headers
         .get(header::USER_AGENT)
         .and_then(|value| value.to_str().ok())
@@ -1429,6 +1480,45 @@ fn join_url(base: &str, key: &str) -> String {
     )
 }
 
+fn validate_song_id(song_id: &str) -> Result<(), ServiceError> {
+    Uuid::parse_str(song_id)
+        .map(|_| ())
+        .map_err(|_| ServiceError::BadRequest("song id must be a UUID".to_string()))
+}
+
+fn storage_ready(storage: &StorageConfig, s3_client_configured: bool) -> bool {
+    match storage {
+        StorageConfig::S3(config) => {
+            !config.bucket.is_empty() && !config.public_base_url.is_empty() && s3_client_configured
+        }
+        StorageConfig::Local(config) => {
+            !config.root.is_empty() && !config.public_base_url.is_empty()
+        }
+    }
+}
+
+fn is_allowed_audio_url(storage: &StorageConfig, audio_url: &str) -> bool {
+    let base = match storage {
+        StorageConfig::S3(config) => config.public_base_url.as_str(),
+        StorageConfig::Local(config) => config.public_base_url.as_str(),
+    }
+    .trim_end_matches('/');
+    !base.is_empty() && (audio_url == base || audio_url.starts_with(&format!("{base}/")))
+}
+
+fn constant_time_eq(left: &str, right: &str) -> bool {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    let max_len = left.len().max(right.len());
+    let mut diff = left.len() ^ right.len();
+    for index in 0..max_len {
+        let left_byte = left.get(index).copied().unwrap_or(0);
+        let right_byte = right.get(index).copied().unwrap_or(0);
+        diff |= (left_byte ^ right_byte) as usize;
+    }
+    diff == 0
+}
+
 fn millis_i32(value: f64) -> i32 {
     (value.max(0.0) * 1000.0)
         .round()
@@ -1455,7 +1545,8 @@ fn storage_provider_name(storage: &StorageConfig) -> &'static str {
 }
 
 fn db_error(error: tokio_postgres::Error) -> ServiceError {
-    ServiceError::Internal(format!("postgres query failed: {error}"))
+    eprintln!("dd-music-rs postgres query failed: {error}");
+    ServiceError::Internal("postgres query failed".to_string())
 }
 
 fn app(state: AppState) -> Router {
@@ -1488,8 +1579,13 @@ async fn main() {
         .await
         .expect("failed to initialize dd-music-rs state");
 
-    if state.config.generator_enabled {
+    if state.config.generator_enabled
+        && state.config.database_url.is_some()
+        && storage_ready(&state.config.storage, state.s3.is_some())
+    {
         tokio::spawn(run_generator_loop(state.clone()));
+    } else if state.config.generator_enabled {
+        eprintln!("dd-music-rs generator disabled until postgres and storage are configured");
     }
 
     let addr: SocketAddr = format!("{host}:{port}")
@@ -1666,5 +1762,60 @@ mod tests {
     fn slug_includes_short_uuid() {
         let slug = slug_for_title("Signal Bloom", "12345678-aaaa-bbbb-cccc-123456789abc");
         assert_eq!(slug, "signal-bloom-12345678");
+    }
+
+    #[test]
+    fn client_ip_for_hash_prefers_real_ip() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Forwarded-For",
+            "198.51.100.4, 203.0.113.9".parse().unwrap(),
+        );
+        headers.insert("X-Real-IP", "192.0.2.10".parse().unwrap());
+        assert_eq!(client_ip_for_hash(&headers), "192.0.2.10");
+    }
+
+    #[test]
+    fn client_ip_for_hash_uses_gateway_appended_forwarded_for() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Forwarded-For",
+            "198.51.100.4, 203.0.113.9".parse().unwrap(),
+        );
+        assert_eq!(client_ip_for_hash(&headers), "203.0.113.9");
+    }
+
+    #[test]
+    fn validate_song_id_rejects_invalid_uuid() {
+        assert!(validate_song_id("not-a-song-id").is_err());
+        assert!(validate_song_id("12345678-aaaa-bbbb-cccc-123456789abc").is_ok());
+    }
+
+    #[test]
+    fn allowed_audio_url_stays_under_storage_base() {
+        let storage = StorageConfig::S3(S3StorageConfig {
+            bucket: "dd-music".to_string(),
+            public_base_url: "https://cdn.example.test/music".to_string(),
+            key_prefix: "generated".to_string(),
+        });
+        assert!(is_allowed_audio_url(
+            &storage,
+            "https://cdn.example.test/music/2026-06-07/song.wav"
+        ));
+        assert!(!is_allowed_audio_url(
+            &storage,
+            "https://cdn.example.test/music.evil/song.wav"
+        ));
+        assert!(!is_allowed_audio_url(
+            &storage,
+            "https://evil.example.test/music/song.wav"
+        ));
+    }
+
+    #[test]
+    fn constant_time_eq_matches_expected() {
+        assert!(constant_time_eq("secret", "secret"));
+        assert!(!constant_time_eq("secret", "secrex"));
+        assert!(!constant_time_eq("secret", "secret-longer"));
     }
 }
