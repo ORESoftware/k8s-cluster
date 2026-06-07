@@ -3,6 +3,8 @@
 Rust backend for a mobile sound-recorder "dashcam" product. It serves the public product pages,
 device registration, rolling audio segment upload sessions, S3 presigned upload URLs, and
 short-lived evidence export download links.
+It can also copy retained audio segments into user-linked Google Drive and Microsoft OneDrive
+accounts, while Apple iCloud is exposed as a client-managed copy queue for the mobile apps.
 
 ## Shape
 
@@ -18,6 +20,10 @@ short-lived evidence export download links.
   that the client exposes an active recording indicator.
 - The rolling retention cap defaults to 500 hours and is enforced in API queries. S3 lifecycle rules
   should also expire `sound-recorder/segments/*` objects at the bucket layer.
+- User cloud copies are queued after a segment is marked uploaded. Google Drive and Microsoft
+  OneDrive use server-managed OAuth tokens sealed with AES-256-GCM; Apple iCloud uses short-lived
+  S3 download URLs returned to the authenticated mobile client because iCloud Drive has no equivalent
+  server-side OAuth upload API for this product shape.
 
 ## Routes
 
@@ -38,6 +44,18 @@ short-lived evidence export download links.
   window.
 - `POST /api/mobile/v1/evidence-exports` — returns short-lived download links for an account/time
   range and writes an audit row.
+- `GET /api/mobile/v1/cloud-connections` — lists active linked user-cloud destinations.
+- `POST /api/mobile/v1/cloud-connections/oauth/start` — starts Google Drive, OneDrive, or
+  client-managed iCloud linking.
+- `POST /api/mobile/v1/cloud-connections/oauth/complete` — completes the link and backfills retained
+  segments into copy jobs.
+- `POST /api/mobile/v1/cloud-connections/:connection_id/revoke` — revokes a link and clears sealed
+  token material.
+- `GET /api/mobile/v1/cloud-copy-jobs` — returns pending client-managed iCloud copy work with
+  short-lived S3 download links.
+- `POST /api/mobile/v1/cloud-copy-jobs/:job_id/complete` — marks an iCloud client-managed copy done.
+- `POST /internal/cloud-copy/drain` — server-authenticated worker route for Google Drive/OneDrive
+  copy jobs.
 - `POST /internal/retention/sweep` — server-authenticated marker sweep for expired segment rows.
 - `GET /healthz`, `GET /readyz`, `GET /metrics`.
 - `GET /docs/api`, `GET /api/docs`, `GET /api/docs.json`.
@@ -62,11 +80,27 @@ short-lived evidence export download links.
 | `SOUND_RECORDER_MAX_SEGMENT_BYTES` | `10485760` | Upper bound accepted by the API. |
 | `SOUND_RECORDER_UPLOAD_URL_TTL_SECONDS` | `300` | Short-lived S3 PUT URL TTL. |
 | `SOUND_RECORDER_DOWNLOAD_URL_TTL_SECONDS` | `900` | Short-lived evidence GET URL TTL. |
+| `SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY` | unset | Base64-encoded 32-byte AES key required for server-managed cloud OAuth token sealing. |
+| `SOUND_RECORDER_GOOGLE_CLIENT_ID` / `SOUND_RECORDER_GOOGLE_CLIENT_SECRET` | unset | Required for Google Drive OAuth linking and copy jobs. |
+| `SOUND_RECORDER_MICROSOFT_CLIENT_ID` / `SOUND_RECORDER_MICROSOFT_CLIENT_SECRET` | unset | Required for Microsoft OneDrive OAuth linking and copy jobs. |
+| `SOUND_RECORDER_OAUTH_STATE_TTL_SECONDS` | `600` | OAuth state lifetime, clamped to `60..3600`. |
+| `SOUND_RECORDER_CLOUD_COPY_BATCH_SIZE` | `25` | Max jobs claimed by `/internal/cloud-copy/drain`, clamped to `1..100`. |
+| `SOUND_RECORDER_CLOUD_COPY_MAX_ATTEMPTS` | `3` | Retry limit for server-managed cloud copy jobs, clamped to `1..10`. |
+| `SOUND_RECORDER_CLOUD_COPY_MAX_BYTES` | `26214400` | Per-segment server copy byte limit, clamped to `1..209715200`. |
+| `SOUND_RECORDER_CLOUD_BACKFILL_SEGMENTS` | `240` | Retained uploaded segments queued when a new cloud link is completed. |
 | `SOUND_RECORDER_IOS_APP_STORE_URL` | unset | `/download/ios` target. |
 | `SOUND_RECORDER_ANDROID_PLAY_STORE_URL` | unset | `/download/android` target. |
 
 `/readyz` requires Postgres, S3, durable token pepper, registration posture, and internal auth to be
 configured. `/healthz` always reports process health and configuration booleans.
+
+## Telemetry
+
+`/metrics` exposes Prometheus counters and gauges for HTTP requests, auth decisions, configuration
+readiness, device registration, upload-session creation, S3 presign direction/result, completed
+segment bytes, S3 download bytes, cloud-link lifecycle events, cloud-copy queue/drain/provider
+upload outcomes, cloud-copy bytes, and retention sweeps. Provider upload logs avoid provider
+response bodies; failures log status/size and structured context only.
 
 ## Mobile Notes
 

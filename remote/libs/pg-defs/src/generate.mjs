@@ -1939,7 +1939,7 @@ function renderRustEnum(baseName, column) {
   lines.push(`impl TryFrom<&str> for ${enumName} {`);
   lines.push('    type Error = String;');
   lines.push('');
-  lines.push('    fn try_from(value: &str) -> Result<Self, Self::Error> {');
+  lines.push(`    fn try_from(value: &str) -> Result<Self, <${enumName} as TryFrom<&str>>::Error> {`);
   lines.push('        match value {');
   for (const value of column.enumValues) {
     lines.push(`            ${JSON.stringify(value)} => Ok(Self::${pascal(value)}),`);

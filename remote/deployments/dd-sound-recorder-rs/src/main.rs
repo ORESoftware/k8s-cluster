@@ -22,7 +22,7 @@ use base64::{
 };
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use once_cell::sync::Lazy;
-use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
+use prometheus::{Encoder, IntCounterVec, IntGauge, IntGaugeVec, Opts, TextEncoder};
 use rand::{rngs::OsRng, RngCore};
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
@@ -33,19 +33,38 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 static STARTED_AT: Lazy<Instant> = Lazy::new(Instant::now);
-static HTTP_REQUESTS: Lazy<IntCounterVec> = Lazy::new(|| {
-    let counter = IntCounterVec::new(
-        Opts::new(
-            "dd_sound_recorder_rs_http_requests_total",
-            "HTTP requests observed by dd-sound-recorder-rs.",
-        ),
-        &["method", "path", "status"],
-    )
-    .expect("failed to create dd_sound_recorder_rs_http_requests_total");
+fn register_counter_vec(
+    name: &'static str,
+    help: &'static str,
+    labels: &[&'static str],
+) -> IntCounterVec {
+    let counter = IntCounterVec::new(Opts::new(name, help), labels)
+        .unwrap_or_else(|err| panic!("failed to create {name}: {err}"));
     prometheus::default_registry()
         .register(Box::new(counter.clone()))
-        .expect("failed to register dd_sound_recorder_rs_http_requests_total");
+        .unwrap_or_else(|err| panic!("failed to register {name}: {err}"));
     counter
+}
+
+fn register_gauge_vec(
+    name: &'static str,
+    help: &'static str,
+    labels: &[&'static str],
+) -> IntGaugeVec {
+    let gauge = IntGaugeVec::new(Opts::new(name, help), labels)
+        .unwrap_or_else(|err| panic!("failed to create {name}: {err}"));
+    prometheus::default_registry()
+        .register(Box::new(gauge.clone()))
+        .unwrap_or_else(|err| panic!("failed to register {name}: {err}"));
+    gauge
+}
+
+static HTTP_REQUESTS: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_counter_vec(
+        "dd_sound_recorder_rs_http_requests_total",
+        "HTTP requests observed by dd-sound-recorder-rs.",
+        &["method", "path", "status"],
+    )
 });
 static UPTIME_SECONDS: Lazy<IntGauge> = Lazy::new(|| {
     let gauge = IntGauge::new(
@@ -59,18 +78,95 @@ static UPTIME_SECONDS: Lazy<IntGauge> = Lazy::new(|| {
     gauge
 });
 static SEGMENT_PRESIGNS: Lazy<IntCounterVec> = Lazy::new(|| {
-    let counter = IntCounterVec::new(
-        Opts::new(
-            "dd_sound_recorder_rs_segment_presigns_total",
-            "S3 upload/download presigns minted by dd-sound-recorder-rs.",
-        ),
+    register_counter_vec(
+        "dd_sound_recorder_rs_segment_presigns_total",
+        "S3 upload/download presigns minted by dd-sound-recorder-rs.",
         &["direction", "result"],
     )
-    .expect("failed to create dd_sound_recorder_rs_segment_presigns_total");
-    prometheus::default_registry()
-        .register(Box::new(counter.clone()))
-        .expect("failed to register dd_sound_recorder_rs_segment_presigns_total");
-    counter
+});
+static AUTH_ATTEMPTS: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_counter_vec(
+        "dd_sound_recorder_rs_auth_attempts_total",
+        "Authentication decisions by surface and result.",
+        &["surface", "result"],
+    )
+});
+static CONFIG_READY: Lazy<IntGaugeVec> = Lazy::new(|| {
+    register_gauge_vec(
+        "dd_sound_recorder_rs_config_ready",
+        "Configuration readiness by component. 1 means configured, 0 means missing.",
+        &["component"],
+    )
+});
+static DEVICE_REGISTRATIONS: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_counter_vec(
+        "dd_sound_recorder_rs_device_registrations_total",
+        "Device registration outcomes by platform.",
+        &["platform", "result"],
+    )
+});
+static UPLOAD_SESSIONS: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_counter_vec(
+        "dd_sound_recorder_rs_upload_sessions_total",
+        "Upload session outcomes.",
+        &["result"],
+    )
+});
+static SEGMENTS_COMPLETED: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_counter_vec(
+        "dd_sound_recorder_rs_segments_completed_total",
+        "Segment completion outcomes.",
+        &["result"],
+    )
+});
+static SEGMENT_BYTES: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_counter_vec(
+        "dd_sound_recorder_rs_segment_bytes_total",
+        "Audio segment bytes observed by source.",
+        &["source"],
+    )
+});
+static CLOUD_LINK_EVENTS: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_counter_vec(
+        "dd_sound_recorder_rs_cloud_links_total",
+        "Cloud account link lifecycle events.",
+        &["provider", "step", "result"],
+    )
+});
+static CLOUD_COPY_EVENTS: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_counter_vec(
+        "dd_sound_recorder_rs_cloud_copy_jobs_total",
+        "Cloud copy job lifecycle events.",
+        &["provider", "event", "result"],
+    )
+});
+static CLOUD_COPY_BYTES: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_counter_vec(
+        "dd_sound_recorder_rs_cloud_copy_bytes_total",
+        "Audio bytes uploaded to user cloud providers.",
+        &["provider", "result"],
+    )
+});
+static S3_TRANSFERS: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_counter_vec(
+        "dd_sound_recorder_rs_s3_object_transfers_total",
+        "S3 object transfer outcomes.",
+        &["operation", "result"],
+    )
+});
+static S3_TRANSFER_BYTES: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_counter_vec(
+        "dd_sound_recorder_rs_s3_object_bytes_total",
+        "S3 object bytes transferred by operation.",
+        &["operation"],
+    )
+});
+static RETENTION_SWEEPS: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_counter_vec(
+        "dd_sound_recorder_rs_retention_sweeps_total",
+        "Retention sweep outcomes.",
+        &["result"],
+    )
 });
 
 const SERVICE_NAME: &str = "dd-sound-recorder-rs";
@@ -643,16 +739,8 @@ struct CloudConnectionRecord {
 #[derive(Clone)]
 struct CloudCopyJobRecord {
     id: String,
-    account_id: String,
-    connection_id: String,
-    segment_id: String,
     provider: String,
-    status: String,
     destination_key: String,
-    provider_file_id: Option<String>,
-    attempts: i32,
-    completed_at: Option<DateTime<Utc>>,
-    last_error: Option<String>,
 }
 
 struct CloudCopyWorkItem {
@@ -680,18 +768,6 @@ struct OAuthTokenResponse {
     expires_in: Option<i64>,
     error: Option<String>,
     error_description: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GoogleDriveProfile {
-    resource_key: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MicrosoftDriveProfile {
-    id: Option<String>,
-    web_url: Option<String>,
 }
 
 fn first_env(keys: &[&str]) -> Option<String> {
@@ -1063,9 +1139,11 @@ impl CloudTokenSealer {
                 "cloud credential nonce has invalid length".to_string(),
             ));
         }
-        let ciphertext = BASE64_STANDARD.decode(&envelope.ciphertext_b64).map_err(|_| {
-            ServiceError::Internal("cloud credential ciphertext is invalid".to_string())
-        })?;
+        let ciphertext = BASE64_STANDARD
+            .decode(&envelope.ciphertext_b64)
+            .map_err(|_| {
+                ServiceError::Internal("cloud credential ciphertext is invalid".to_string())
+            })?;
         self.cipher
             .decrypt(
                 Nonce::from_slice(&nonce_bytes),
@@ -1082,6 +1160,89 @@ fn record_request(method: &str, path: &str, status: StatusCode) {
     HTTP_REQUESTS
         .with_label_values(&[method, path, status.as_str()])
         .inc();
+}
+
+fn record_auth(surface: &str, result: &str) {
+    AUTH_ATTEMPTS.with_label_values(&[surface, result]).inc();
+}
+
+fn record_config_state(state: &AppState) {
+    let registration_configured =
+        state.config.registration_bearer.is_some() || state.config.allow_public_device_registration;
+    let values = [
+        ("postgres", state.config.database_url.is_some()),
+        (
+            "s3",
+            state.s3.is_some() && !state.config.s3.bucket.is_empty(),
+        ),
+        ("device_token_pepper", state.config.token_pepper_configured),
+        ("registration", registration_configured),
+        ("server_auth", state.config.server_auth_secret.is_some()),
+        ("cloud_token_sealer", state.cloud_sealer.is_some()),
+        (
+            "google_drive_oauth",
+            state.config.google_oauth.client_id.is_some()
+                && state.config.google_oauth.client_secret.is_some(),
+        ),
+        (
+            "microsoft_onedrive_oauth",
+            state.config.microsoft_oauth.client_id.is_some()
+                && state.config.microsoft_oauth.client_secret.is_some(),
+        ),
+    ];
+    for (component, configured) in values {
+        CONFIG_READY
+            .with_label_values(&[component])
+            .set(if configured { 1 } else { 0 });
+    }
+}
+
+fn record_segment_bytes(source: &str, byte_count: Option<i32>) {
+    if let Some(byte_count) = byte_count.filter(|bytes| *bytes > 0) {
+        SEGMENT_BYTES
+            .with_label_values(&[source])
+            .inc_by(byte_count as u64);
+    }
+}
+
+fn record_cloud_link(provider: &str, step: &str, result: &str) {
+    CLOUD_LINK_EVENTS
+        .with_label_values(&[provider, step, result])
+        .inc();
+}
+
+fn record_cloud_copy_event(provider: &str, event: &str, result: &str) {
+    CLOUD_COPY_EVENTS
+        .with_label_values(&[provider, event, result])
+        .inc();
+}
+
+fn record_cloud_copy_events(provider: &str, event: &str, result: &str, count: u64) {
+    if count > 0 {
+        CLOUD_COPY_EVENTS
+            .with_label_values(&[provider, event, result])
+            .inc_by(count);
+    }
+}
+
+fn record_cloud_copy_bytes(provider: &str, result: &str, bytes: u64) {
+    if bytes > 0 {
+        CLOUD_COPY_BYTES
+            .with_label_values(&[provider, result])
+            .inc_by(bytes);
+    }
+}
+
+fn record_s3_transfer(operation: &str, result: &str) {
+    S3_TRANSFERS.with_label_values(&[operation, result]).inc();
+}
+
+fn record_s3_bytes(operation: &str, bytes: u64) {
+    if bytes > 0 {
+        S3_TRANSFER_BYTES
+            .with_label_values(&[operation])
+            .inc_by(bytes);
+    }
 }
 
 fn now_ms() -> u128 {
@@ -1155,7 +1316,10 @@ fn clean_string(value: Option<String>, max_len: usize) -> Option<String> {
         })
 }
 
-fn clean_optional_nonempty(value: Option<String>, max_len: usize) -> Result<Option<String>, ServiceError> {
+fn clean_optional_nonempty(
+    value: Option<String>,
+    max_len: usize,
+) -> Result<Option<String>, ServiceError> {
     let Some(value) = value else {
         return Ok(None);
     };
@@ -1256,7 +1420,10 @@ fn validate_meta(value: Option<Value>) -> Result<Value, ServiceError> {
     }
 }
 
-fn validate_redirect_uri(provider: CloudProvider, value: Option<String>) -> Result<String, ServiceError> {
+fn validate_redirect_uri(
+    provider: CloudProvider,
+    value: Option<String>,
+) -> Result<String, ServiceError> {
     if provider == CloudProvider::AppleICloud {
         return Ok("client-managed://apple-icloud".to_string());
     }
@@ -1265,16 +1432,37 @@ fn validate_redirect_uri(provider: CloudProvider, value: Option<String>) -> Resu
     })?;
     let uri = validate_nonempty(&value, "redirectUri", 512)?;
     let lower = uri.to_ascii_lowercase();
-    if lower.starts_with("https://")
-        || lower.starts_with("http://localhost")
-        || lower.starts_with("http://127.0.0.1")
-    {
+    if lower.starts_with("https://") || is_loopback_http_redirect(&lower) {
         Ok(uri)
     } else {
         Err(ServiceError::BadRequest(
             "redirectUri must be https or local loopback http".to_string(),
         ))
     }
+}
+
+fn is_loopback_http_redirect(lower: &str) -> bool {
+    ["http://localhost", "http://127.0.0.1", "http://[::1]"]
+        .iter()
+        .any(|prefix| {
+            lower
+                .strip_prefix(prefix)
+                .is_some_and(loopback_redirect_suffix_allowed)
+        })
+}
+
+fn loopback_redirect_suffix_allowed(rest: &str) -> bool {
+    if rest.is_empty() || rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#') {
+        return true;
+    }
+    let Some(port_and_path) = rest.strip_prefix(':') else {
+        return false;
+    };
+    let port = port_and_path
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    !port.is_empty() && port.chars().all(|ch| ch.is_ascii_digit())
 }
 
 fn validate_folder_path(value: Option<String>) -> Result<String, ServiceError> {
@@ -1369,7 +1557,10 @@ fn authorization_url(
     state: &str,
 ) -> Result<String, ServiceError> {
     let client_id = oauth.client_id.as_deref().ok_or_else(|| {
-        ServiceError::Unavailable(format!("{} OAuth client id is not configured", provider.as_str()))
+        ServiceError::Unavailable(format!(
+            "{} OAuth client id is not configured",
+            provider.as_str()
+        ))
     })?;
     let endpoint = provider.authorization_endpoint().ok_or_else(|| {
         ServiceError::BadRequest("provider does not use server OAuth".to_string())
@@ -1447,14 +1638,17 @@ fn db_error(error: tokio_postgres::Error) -> ServiceError {
 
 fn require_internal_auth(config: &Config, headers: &HeaderMap) -> Result<(), ServiceError> {
     let Some(expected) = config.server_auth_secret.as_deref() else {
+        record_auth("internal", "misconfigured");
         return Err(ServiceError::Unavailable(
             "internal auth secret is not configured".to_string(),
         ));
     };
     let provided = internal_token(headers).unwrap_or("");
     if !provided.is_empty() && const_time_eq(provided.as_bytes(), expected.as_bytes()) {
+        record_auth("internal", "ok");
         Ok(())
     } else {
+        record_auth("internal", "invalid");
         Err(ServiceError::Unauthorized)
     }
 }
@@ -1463,13 +1657,17 @@ fn require_registration_auth(config: &Config, headers: &HeaderMap) -> Result<(),
     if let Some(expected) = config.registration_bearer.as_deref() {
         let provided = bearer_token(headers).unwrap_or("");
         if !provided.is_empty() && const_time_eq(provided.as_bytes(), expected.as_bytes()) {
+            record_auth("registration", "ok");
             return Ok(());
         }
+        record_auth("registration", "invalid");
         return Err(ServiceError::Unauthorized);
     }
     if config.allow_public_device_registration {
+        record_auth("registration", "public_ok");
         Ok(())
     } else {
+        record_auth("registration", "disabled");
         Err(ServiceError::Unavailable(
             "device registration is disabled until SOUND_RECORDER_REGISTRATION_BEARER or SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION is configured".to_string(),
         ))
@@ -1481,11 +1679,15 @@ async fn authenticate_device(
     headers: &HeaderMap,
 ) -> Result<(DeviceAuth, tokio_postgres::Client), ServiceError> {
     if !state.config.token_pepper_configured {
+        record_auth("device", "misconfigured");
         return Err(ServiceError::Unavailable(
             "device token pepper is not configured".to_string(),
         ));
     }
-    let token = bearer_token(headers).ok_or(ServiceError::Unauthorized)?;
+    let Some(token) = bearer_token(headers) else {
+        record_auth("device", "missing");
+        return Err(ServiceError::Unauthorized);
+    };
     let token_hash = hash_secret(token, &state.config.token_pepper);
     let client = connect_postgres(&state.config).await?;
     let row = client
@@ -1499,6 +1701,7 @@ async fn authenticate_device(
         .await
         .map_err(db_error)?;
     let Some(row) = row else {
+        record_auth("device", "invalid");
         return Err(ServiceError::Unauthorized);
     };
     let auth = DeviceAuth {
@@ -1514,6 +1717,7 @@ async fn authenticate_device(
             &[&auth.device_id],
         )
         .await;
+    record_auth("device", "ok");
     Ok((auth, client))
 }
 
@@ -1654,6 +1858,7 @@ async fn download_android(State(state): State<AppState>) -> Result<Redirect, Ser
 }
 
 async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
+    record_config_state(&state);
     record_request("GET", "/healthz", StatusCode::OK);
     Json(HealthResponse {
         ok: true,
@@ -1675,6 +1880,7 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
 }
 
 async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
+    record_config_state(&state);
     let ready = state.config.database_url.is_some()
         && state.s3.is_some()
         && !state.config.s3.bucket.is_empty()
@@ -1710,7 +1916,8 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-async fn metrics() -> impl IntoResponse {
+async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
+    record_config_state(&state);
     UPTIME_SECONDS.set(STARTED_AT.elapsed().as_secs() as i64);
     let encoder = TextEncoder::new();
     let families = prometheus::gather();
@@ -1827,6 +2034,15 @@ async fn register_device(
         }),
     )
     .await;
+    DEVICE_REGISTRATIONS
+        .with_label_values(&[&platform, "ok"])
+        .inc();
+    info!(
+        account_id = %account_id,
+        device_id = %device_id,
+        platform = %platform,
+        "sound recorder device registered"
+    );
     record_request("POST", "/api/mobile/v1/devices/register", StatusCode::OK);
     Ok(Json(RegisterDeviceResponse {
         ok: true,
@@ -1923,6 +2139,13 @@ async fn create_upload_session(
         }),
     )
     .await;
+    UPLOAD_SESSIONS.with_label_values(&["ok"]).inc();
+    info!(
+        account_id = %auth.account_id,
+        device_id = %auth.device_id,
+        session_id = %session_id,
+        "sound recorder upload session created"
+    );
     record_request("POST", "/api/mobile/v1/upload-sessions", StatusCode::OK);
     Ok(Json(CreateUploadSessionResponse {
         ok: true,
@@ -2082,7 +2305,6 @@ async fn presign_segment(
         }),
     )
     .await;
-    SEGMENT_PRESIGNS.with_label_values(&["upload", "ok"]).inc();
     record_request(
         "POST",
         "/api/mobile/v1/upload-sessions/:session_id/segments/presign",
@@ -2191,6 +2413,9 @@ async fn complete_segment(
         .await;
     let cloud_jobs_queued =
         enqueue_cloud_copy_jobs_for_segment(&client, &state.config, &auth.account_id, &row).await?;
+    let uploaded_byte_count: Option<i32> = row.get("byte_count");
+    SEGMENTS_COMPLETED.with_label_values(&["ok"]).inc();
+    record_segment_bytes("completed", uploaded_byte_count);
     audit_event(
         &client,
         Some(&auth.account_id),
@@ -2447,9 +2672,6 @@ async fn create_evidence_export(
             download_expires_at,
         )
         .await?;
-        SEGMENT_PRESIGNS
-            .with_label_values(&["download", "ok"])
-            .inc();
         links.push(EvidenceSegmentLink { segment, download });
     }
     let export_id = Uuid::new_v4().to_string();
@@ -2539,6 +2761,21 @@ async fn start_cloud_link(
     let root_folder_id = clean_optional_nonempty(req.root_folder_id, 512)?;
     let display_name = clean_string(req.display_name, 160);
     let meta_data = validate_meta(req.meta_data)?;
+    if provider.is_server_managed() {
+        let oauth = provider.oauth_config(&state.config).ok_or_else(|| {
+            ServiceError::BadRequest("provider does not use server OAuth".to_string())
+        })?;
+        if state.cloud_sealer.is_none()
+            || oauth.client_id.is_none()
+            || oauth.client_secret.is_none()
+        {
+            record_cloud_link(provider.as_str(), "start", "misconfigured");
+            return Err(ServiceError::Unavailable(format!(
+                "{} OAuth client id, secret, and token encryption key are required",
+                provider.as_str()
+            )));
+        }
+    }
     let state_token = new_oauth_state();
     let state_hash = oauth_state_hash(&state.config, &state_token);
     let expires_at = Utc::now()
@@ -2591,6 +2828,14 @@ async fn start_cloud_link(
         }),
     )
     .await;
+    record_cloud_link(provider.as_str(), "start", "ok");
+    info!(
+        account_id = %auth.account_id,
+        device_id = %auth.device_id,
+        provider = provider.as_str(),
+        link_mode = provider.link_mode(),
+        "sound recorder cloud link started"
+    );
     record_request(
         "POST",
         "/api/mobile/v1/cloud-connections/oauth/start",
@@ -2627,11 +2872,17 @@ async fn complete_cloud_link(
                and state_hash = $4
                and status = 'pending'
                and expires_at > now()",
-            &[&auth.account_id, &auth.device_id, &provider.as_str(), &state_hash],
+            &[
+                &auth.account_id,
+                &auth.device_id,
+                &provider.as_str(),
+                &state_hash,
+            ],
         )
         .await
         .map_err(db_error)?;
     let Some(state_row) = state_row else {
+        record_cloud_link(provider.as_str(), "complete", "invalid_state");
         return Err(ServiceError::Unauthorized);
     };
     let oauth_state_id: String = state_row.get("id");
@@ -2665,25 +2916,34 @@ async fn complete_cloud_link(
         .unwrap_or_else(|| format!("{}-default", provider.as_str()));
 
     let (sealed, token_expires_at, oauth_scope) = if provider.is_server_managed() {
-        let sealer = state.cloud_sealer.as_ref().ok_or_else(|| {
-            ServiceError::Unavailable(
+        let Some(sealer) = state.cloud_sealer.as_ref() else {
+            record_cloud_link(provider.as_str(), "complete", "misconfigured");
+            return Err(ServiceError::Unavailable(
                 "SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY is required for server-managed cloud links".to_string(),
-            )
-        })?;
+            ));
+        };
         let authorization_code = validate_nonempty(
             req.authorization_code.as_deref().unwrap_or(""),
             "authorizationCode",
             4096,
         )?;
         let token_set =
-            exchange_authorization_code(&state, provider, &authorization_code, &redirect_uri)
-                .await?;
+            match exchange_authorization_code(&state, provider, &authorization_code, &redirect_uri)
+                .await
+            {
+                Ok(token_set) => token_set,
+                Err(err) => {
+                    record_cloud_link(provider.as_str(), "complete", "oauth_error");
+                    return Err(err);
+                }
+            };
         let plaintext = serde_json::to_vec(&token_set)
             .map_err(|_| ServiceError::Internal("cloud token encode failed".to_string()))?;
         let sealed = sealer.seal(&auth.account_id, provider, &plaintext)?;
         (Some(sealed), token_set.expires_at, token_set.scope.clone())
     } else {
         if !req.client_managed_acknowledged.unwrap_or(false) {
+            record_cloud_link(provider.as_str(), "complete", "client_ack_missing");
             return Err(ServiceError::BadRequest(
                 "clientManagedAcknowledged must be true for apple_icloud links".to_string(),
             ));
@@ -2730,6 +2990,15 @@ async fn complete_cloud_link(
         }),
     )
     .await;
+    record_cloud_link(provider.as_str(), "complete", "ok");
+    info!(
+        account_id = %auth.account_id,
+        device_id = %auth.device_id,
+        provider = provider.as_str(),
+        connection_id = %connection.id,
+        backfilled_jobs = backfilled,
+        "sound recorder cloud link completed"
+    );
     record_request(
         "POST",
         "/api/mobile/v1/cloud-connections/oauth/complete",
@@ -2762,8 +3031,8 @@ async fn revoke_cloud_connection(
 ) -> Result<Json<RevokeCloudConnectionResponse>, ServiceError> {
     let (auth, client) = authenticate_device(&state, &headers).await?;
     let connection_id = validate_uuid(&connection_id, "connectionId")?;
-    let updated = client
-        .execute(
+    let row = client
+        .query_opt(
             "update sound_recorder_cloud_connections
              set status = 'revoked',
                  token_ciphertext = null,
@@ -2772,17 +3041,19 @@ async fn revoke_cloud_connection(
                  token_version = null,
                  token_expires_at = null,
                  updated_at = now()
-             where id = $1::uuid and account_id = $2::uuid and status <> 'revoked'",
+             where id = $1::uuid and account_id = $2::uuid and status <> 'revoked'
+             returning provider",
             &[&connection_id, &auth.account_id],
         )
         .await
         .map_err(db_error)?;
-    if updated == 0 {
+    let Some(row) = row else {
         return Err(ServiceError::NotFound(
             "cloud connection not found".to_string(),
         ));
-    }
-    client
+    };
+    let provider: String = row.get("provider");
+    let skipped_jobs = client
         .execute(
             "update sound_recorder_cloud_copy_jobs
              set status = 'skipped', updated_at = now()
@@ -2791,6 +3062,8 @@ async fn revoke_cloud_connection(
         )
         .await
         .map_err(db_error)?;
+    record_cloud_link(&provider, "revoke", "ok");
+    record_cloud_copy_events(&provider, "revoked_skipped", "ok", skipped_jobs);
     audit_event(
         &client,
         Some(&auth.account_id),
@@ -2799,6 +3072,14 @@ async fn revoke_cloud_connection(
         json!({ "connectionId": connection_id }),
     )
     .await;
+    info!(
+        account_id = %auth.account_id,
+        device_id = %auth.device_id,
+        provider = %provider,
+        connection_id = %connection_id,
+        skipped_jobs = skipped_jobs,
+        "sound recorder cloud link revoked"
+    );
     record_request(
         "POST",
         "/api/mobile/v1/cloud-connections/:connection_id/revoke",
@@ -2884,6 +3165,7 @@ async fn list_client_cloud_copy_jobs(
             download,
         });
     }
+    record_cloud_copy_event(provider.as_str(), "client_list", "ok");
     record_request("GET", "/api/mobile/v1/cloud-copy-jobs", StatusCode::OK);
     Ok(Json(ListCloudCopyJobsResponse { ok: true, jobs }))
 }
@@ -2937,15 +3219,14 @@ async fn complete_client_cloud_copy_job(
         json!({ "jobId": job_id }),
     )
     .await;
+    let job = cloud_copy_job_from_row(&row);
+    record_cloud_copy_event(&job.provider, "client_completed", "ok");
     record_request(
         "POST",
         "/api/mobile/v1/cloud-copy-jobs/:job_id/complete",
         StatusCode::OK,
     );
-    Ok(Json(CompleteCloudCopyJobResponse {
-        ok: true,
-        job: cloud_copy_job_from_row(&row),
-    }))
+    Ok(Json(CompleteCloudCopyJobResponse { ok: true, job }))
 }
 
 async fn drain_cloud_copy_jobs(
@@ -2997,9 +3278,11 @@ async fn drain_cloud_copy_jobs(
     let mut results = Vec::with_capacity(rows.len());
     for row in rows {
         let item = cloud_copy_work_item_from_row(&state.config, &row);
+        let provider_name = item.job.provider.clone();
         let claimed_attempts = claim_cloud_copy_job(&client, &item.job.id).await?;
         let Some(attempts) = claimed_attempts else {
             skipped += 1;
+            record_cloud_copy_event(&provider_name, "drain_claim", "skipped");
             results.push(CloudCopyDrainResult {
                 job_id: item.job.id,
                 provider: item.job.provider,
@@ -3009,10 +3292,12 @@ async fn drain_cloud_copy_jobs(
             continue;
         };
         attempted += 1;
+        record_cloud_copy_event(&provider_name, "drain_attempt", "ok");
         match process_cloud_copy_job(&state, &client, &item).await {
             Ok(provider_file_id) => {
                 completed += 1;
                 mark_cloud_copy_job_success(&client, &item, &provider_file_id).await?;
+                record_cloud_copy_event(&provider_name, "drain", "completed");
                 results.push(CloudCopyDrainResult {
                     job_id: item.job.id,
                     provider: item.job.provider,
@@ -3025,6 +3310,7 @@ async fn drain_cloud_copy_jobs(
                 let message = service_error_message(&err);
                 mark_cloud_copy_job_error(&client, &item.job.id, attempts, &message, &state.config)
                     .await?;
+                record_cloud_copy_event(&provider_name, "drain", "failed");
                 results.push(CloudCopyDrainResult {
                     job_id: item.job.id,
                     provider: item.job.provider,
@@ -3034,6 +3320,13 @@ async fn drain_cloud_copy_jobs(
             }
         }
     }
+    info!(
+        attempted = attempted,
+        completed = completed,
+        failed = failed,
+        skipped = skipped,
+        "sound recorder cloud copy drain completed"
+    );
     record_request("POST", "/internal/cloud-copy/drain", StatusCode::OK);
     Ok(Json(DrainCloudCopyResponse {
         ok: true,
@@ -3113,18 +3406,18 @@ async fn process_cloud_copy_job(
     }
     match provider {
         CloudProvider::GoogleDrive => {
-            upload_to_google_drive(state, &item.connection, &item.segment, &item.job, bytes, &token_set)
-                .await
-        }
-        CloudProvider::MicrosoftOneDrive => {
-            upload_to_microsoft_onedrive(
+            upload_to_google_drive(
                 state,
+                &item.connection,
                 &item.segment,
                 &item.job,
                 bytes,
                 &token_set,
             )
             .await
+        }
+        CloudProvider::MicrosoftOneDrive => {
+            upload_to_microsoft_onedrive(state, &item.segment, &item.job, bytes, &token_set).await
         }
         CloudProvider::AppleICloud => Err(ServiceError::BadRequest(
             "apple_icloud is client managed".to_string(),
@@ -3136,9 +3429,10 @@ async fn download_segment_bytes(
     state: &AppState,
     segment: &SegmentResponse,
 ) -> Result<Vec<u8>, ServiceError> {
-    let s3 = state.s3.as_ref().ok_or_else(|| {
-        ServiceError::Unavailable("S3 client is not configured".to_string())
-    })?;
+    let s3 = state
+        .s3
+        .as_ref()
+        .ok_or_else(|| ServiceError::Unavailable("S3 client is not configured".to_string()))?;
     let object = s3
         .get_object()
         .bucket(&segment.storage_bucket)
@@ -3147,13 +3441,18 @@ async fn download_segment_bytes(
         .await
         .map_err(|err| {
             error!(error = %err, segment_id = segment.id, "S3 segment download failed");
+            record_s3_transfer("download", "error");
             ServiceError::Unavailable("S3 segment download failed".to_string())
         })?;
     let bytes = object.body.collect().await.map_err(|err| {
         error!(error = %err, segment_id = segment.id, "S3 segment body read failed");
+        record_s3_transfer("download", "error");
         ServiceError::Unavailable("S3 segment body read failed".to_string())
     })?;
-    Ok(bytes.into_bytes().to_vec())
+    let bytes = bytes.into_bytes();
+    record_s3_transfer("download", "ok");
+    record_s3_bytes("download", bytes.len() as u64);
+    Ok(bytes.to_vec())
 }
 
 async fn upload_to_google_drive(
@@ -3164,6 +3463,7 @@ async fn upload_to_google_drive(
     bytes: Vec<u8>,
     token_set: &CloudTokenSet,
 ) -> Result<String, ServiceError> {
+    let upload_bytes = bytes.len() as u64;
     let file_name = job
         .destination_key
         .rsplit('/')
@@ -3196,12 +3496,22 @@ async fn upload_to_google_drive(
         .await
         .map_err(|err| {
             error!(error = %err, segment_id = segment.id, "Google Drive upload request failed");
+            record_cloud_copy_event(CloudProvider::GoogleDrive.as_str(), "provider_upload", "error");
             ServiceError::Unavailable("Google Drive upload failed".to_string())
         })?;
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
-        error!(status = status.as_u16(), body = %body.chars().take(200).collect::<String>(), "Google Drive upload failed");
+        error!(
+            status = status.as_u16(),
+            body_bytes = body.len(),
+            "Google Drive upload failed"
+        );
+        record_cloud_copy_event(
+            CloudProvider::GoogleDrive.as_str(),
+            "provider_upload",
+            "error",
+        );
         return Err(ServiceError::Unavailable(format!(
             "Google Drive upload failed with status {}",
             status.as_u16()
@@ -3209,13 +3519,23 @@ async fn upload_to_google_drive(
     }
     let value = response.json::<Value>().await.map_err(|err| {
         error!(error = %err, "Google Drive upload response decode failed");
+        record_cloud_copy_event(
+            CloudProvider::GoogleDrive.as_str(),
+            "provider_upload",
+            "error",
+        );
         ServiceError::Unavailable("Google Drive upload response was invalid".to_string())
     })?;
-    value
+    let file_id = value
         .get("id")
         .and_then(Value::as_str)
         .map(ToString::to_string)
-        .ok_or_else(|| ServiceError::Unavailable("Google Drive upload did not return a file id".to_string()))
+        .ok_or_else(|| {
+            ServiceError::Unavailable("Google Drive upload did not return a file id".to_string())
+        })?;
+    record_cloud_copy_event(CloudProvider::GoogleDrive.as_str(), "provider_upload", "ok");
+    record_cloud_copy_bytes(CloudProvider::GoogleDrive.as_str(), "ok", upload_bytes);
+    Ok(file_id)
 }
 
 async fn upload_to_microsoft_onedrive(
@@ -3225,10 +3545,9 @@ async fn upload_to_microsoft_onedrive(
     bytes: Vec<u8>,
     token_set: &CloudTokenSet,
 ) -> Result<String, ServiceError> {
+    let upload_bytes = bytes.len() as u64;
     let path = graph_path_escape(&job.destination_key);
-    let url = format!(
-        "https://graph.microsoft.com/v1.0/me/drive/special/approot:/{path}:/content"
-    );
+    let url = format!("https://graph.microsoft.com/v1.0/me/drive/special/approot:/{path}:/content");
     let response = state
         .http
         .put(url)
@@ -3239,12 +3558,22 @@ async fn upload_to_microsoft_onedrive(
         .await
         .map_err(|err| {
             error!(error = %err, segment_id = segment.id, "Microsoft OneDrive upload request failed");
+            record_cloud_copy_event(CloudProvider::MicrosoftOneDrive.as_str(), "provider_upload", "error");
             ServiceError::Unavailable("Microsoft OneDrive upload failed".to_string())
         })?;
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
-        error!(status = status.as_u16(), body = %body.chars().take(200).collect::<String>(), "Microsoft OneDrive upload failed");
+        error!(
+            status = status.as_u16(),
+            body_bytes = body.len(),
+            "Microsoft OneDrive upload failed"
+        );
+        record_cloud_copy_event(
+            CloudProvider::MicrosoftOneDrive.as_str(),
+            "provider_upload",
+            "error",
+        );
         return Err(ServiceError::Unavailable(format!(
             "Microsoft OneDrive upload failed with status {}",
             status.as_u16()
@@ -3252,9 +3581,14 @@ async fn upload_to_microsoft_onedrive(
     }
     let value = response.json::<Value>().await.map_err(|err| {
         error!(error = %err, "Microsoft OneDrive upload response decode failed");
+        record_cloud_copy_event(
+            CloudProvider::MicrosoftOneDrive.as_str(),
+            "provider_upload",
+            "error",
+        );
         ServiceError::Unavailable("Microsoft OneDrive upload response was invalid".to_string())
     })?;
-    value
+    let file_id = value
         .get("id")
         .or_else(|| value.get("webUrl"))
         .and_then(Value::as_str)
@@ -3263,7 +3597,18 @@ async fn upload_to_microsoft_onedrive(
             ServiceError::Unavailable(
                 "Microsoft OneDrive upload did not return a file id".to_string(),
             )
-        })
+        })?;
+    record_cloud_copy_event(
+        CloudProvider::MicrosoftOneDrive.as_str(),
+        "provider_upload",
+        "ok",
+    );
+    record_cloud_copy_bytes(
+        CloudProvider::MicrosoftOneDrive.as_str(),
+        "ok",
+        upload_bytes,
+    );
+    Ok(file_id)
 }
 
 async fn mark_cloud_copy_job_success(
@@ -3355,6 +3700,7 @@ async fn retention_sweep(
         json!({ "expiredSegments": expired }),
     )
     .await;
+    RETENTION_SWEEPS.with_label_values(&["ok"]).inc();
     record_request("POST", "/internal/retention/sweep", StatusCode::OK);
     Ok(Json(RetentionSweepResponse {
         ok: true,
@@ -3427,6 +3773,7 @@ async fn presign_put(
             .inc();
         ServiceError::Unavailable("S3 upload presign failed".to_string())
     })?;
+    SEGMENT_PRESIGNS.with_label_values(&["upload", "ok"]).inc();
     Ok(PresignedTransfer {
         method: presigned.method().to_string(),
         url: presigned.uri().to_string(),
@@ -3464,6 +3811,9 @@ async fn presign_get(
                 .inc();
             ServiceError::Unavailable("S3 download presign failed".to_string())
         })?;
+    SEGMENT_PRESIGNS
+        .with_label_values(&["download", "ok"])
+        .inc();
     Ok(PresignedTransfer {
         method: presigned.method().to_string(),
         url: presigned.uri().to_string(),
@@ -3598,36 +3948,12 @@ fn cloud_copy_job_from_row(row: &Row) -> CloudCopyJobResponse {
     }
 }
 
-fn cloud_copy_job_record_from_row(row: &Row) -> CloudCopyJobRecord {
-    CloudCopyJobRecord {
-        id: row.get("id"),
-        account_id: row.get("account_id"),
-        connection_id: row.get("connection_id"),
-        segment_id: row.get("segment_id"),
-        provider: row.get("provider"),
-        status: row.get("status"),
-        destination_key: row.get("destination_key"),
-        provider_file_id: row.get("provider_file_id"),
-        attempts: row.get("attempts"),
-        completed_at: row.get("completed_at"),
-        last_error: row.get("last_error"),
-    }
-}
-
 fn cloud_copy_work_item_from_row(config: &Config, row: &Row) -> CloudCopyWorkItem {
     CloudCopyWorkItem {
         job: CloudCopyJobRecord {
             id: row.get("job_id"),
-            account_id: row.get("job_account_id"),
-            connection_id: row.get("connection_id"),
-            segment_id: row.get("segment_id"),
             provider: row.get("job_provider"),
-            status: row.get("job_status"),
             destination_key: row.get("destination_key"),
-            provider_file_id: row.get("provider_file_id"),
-            attempts: row.get("attempts"),
-            completed_at: row.get("completed_at"),
-            last_error: row.get("last_error"),
         },
         connection: CloudConnectionRecord {
             id: row.get("connection_id"),
@@ -3677,7 +4003,9 @@ fn token_set_from_response(response: OAuthTokenResponse) -> Result<CloudTokenSet
         .and_then(|seconds| Utc::now().checked_add_signed(ChronoDuration::seconds(seconds)));
     Ok(CloudTokenSet {
         access_token: response.access_token.ok_or_else(|| {
-            ServiceError::Unavailable("cloud OAuth token response did not include an access token".to_string())
+            ServiceError::Unavailable(
+                "cloud OAuth token response did not include an access token".to_string(),
+            )
         })?,
         refresh_token: response.refresh_token,
         token_type: response.token_type,
@@ -3729,7 +4057,10 @@ async fn exchange_authorization_code(
         ServiceError::BadRequest("provider does not use server OAuth".to_string())
     })?;
     let client_id = oauth.client_id.as_deref().ok_or_else(|| {
-        ServiceError::Unavailable(format!("{} OAuth client id is not configured", provider.as_str()))
+        ServiceError::Unavailable(format!(
+            "{} OAuth client id is not configured",
+            provider.as_str()
+        ))
     })?;
     let client_secret = oauth.client_secret.as_deref().ok_or_else(|| {
         ServiceError::Unavailable(format!(
@@ -3792,7 +4123,10 @@ async fn refresh_access_token(
         ServiceError::BadRequest("provider does not use server OAuth".to_string())
     })?;
     let client_id = oauth.client_id.as_deref().ok_or_else(|| {
-        ServiceError::Unavailable(format!("{} OAuth client id is not configured", provider.as_str()))
+        ServiceError::Unavailable(format!(
+            "{} OAuth client id is not configured",
+            provider.as_str()
+        ))
     })?;
     let client_secret = oauth.client_secret.as_deref().ok_or_else(|| {
         ServiceError::Unavailable(format!(
@@ -3850,9 +4184,8 @@ async fn token_set_for_connection(
     })?;
     let envelope = sealed_envelope_from_connection(connection)?;
     let plaintext = sealer.unseal(&connection.account_id, provider, &envelope)?;
-    let token_set: CloudTokenSet = serde_json::from_slice(&plaintext).map_err(|_| {
-        ServiceError::Internal("sealed cloud token payload is invalid".to_string())
-    })?;
+    let token_set: CloudTokenSet = serde_json::from_slice(&plaintext)
+        .map_err(|_| ServiceError::Internal("sealed cloud token payload is invalid".to_string()))?;
     let refreshed = refresh_access_token(state, provider, &token_set).await?;
     if refreshed.access_token != token_set.access_token
         || refreshed.expires_at != token_set.expires_at
@@ -4032,7 +4365,7 @@ async fn enqueue_cloud_copy_job_for_segment(
     };
     let destination_key = destination_key(&connection.folder_path, segment);
     let job_id = Uuid::new_v4().to_string();
-    client
+    let inserted = client
         .execute(
             "insert into sound_recorder_cloud_copy_jobs
               (id, account_id, connection_id, segment_id, provider, status, destination_key)
@@ -4050,7 +4383,13 @@ async fn enqueue_cloud_copy_job_for_segment(
             ],
         )
         .await
-        .map_err(db_error)
+        .map_err(db_error)?;
+    if inserted > 0 {
+        record_cloud_copy_events(&connection.provider, "queued", "ok", inserted);
+    } else {
+        record_cloud_copy_event(&connection.provider, "queued", "duplicate");
+    }
+    Ok(inserted)
 }
 
 async fn enqueue_cloud_copy_jobs_for_segment(
@@ -4114,10 +4453,6 @@ async fn enqueue_retained_cloud_copy_jobs(
     Ok(inserted)
 }
 
-fn uuid_like(value: &str) -> bool {
-    Uuid::parse_str(value).is_ok()
-}
-
 fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(home))
@@ -4166,7 +4501,10 @@ fn app(state: AppState) -> Router {
             "/api/mobile/v1/cloud-connections/:connection_id/revoke",
             post(revoke_cloud_connection),
         )
-        .route("/api/mobile/v1/cloud-copy-jobs", get(list_client_cloud_copy_jobs))
+        .route(
+            "/api/mobile/v1/cloud-copy-jobs",
+            get(list_client_cloud_copy_jobs),
+        )
         .route(
             "/api/mobile/v1/cloud-copy-jobs/:job_id/complete",
             post(complete_client_cloud_copy_job),

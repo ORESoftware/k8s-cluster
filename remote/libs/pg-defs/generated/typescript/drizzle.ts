@@ -810,6 +810,274 @@ export type SoundRecorderAuditEventsRow = z.infer<typeof soundRecorderAuditEvent
 export type SoundRecorderAuditEventsInsert = z.infer<typeof soundRecorderAuditEventsInsertSchema>;
 export type SoundRecorderAuditEventsUpdate = z.infer<typeof soundRecorderAuditEventsUpdateSchema>;
 
+export const soundRecorderOauthStatesProviderValues = ["google_drive","microsoft_onedrive","apple_icloud"] as const;
+export const soundRecorderOauthStatesProviderSchema = z.enum(soundRecorderOauthStatesProviderValues);
+export type SoundRecorderOauthStatesProvider = z.infer<typeof soundRecorderOauthStatesProviderSchema>;
+
+export const soundRecorderOauthStatesStatusValues = ["pending","consumed","expired","revoked"] as const;
+export const soundRecorderOauthStatesStatusSchema = z.enum(soundRecorderOauthStatesStatusValues);
+export type SoundRecorderOauthStatesStatus = z.infer<typeof soundRecorderOauthStatesStatusSchema>;
+
+export const soundRecorderOauthStates = pgTable(
+  "sound_recorder_oauth_states",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    accountId: uuid("account_id").notNull(),
+    deviceId: uuid("device_id").notNull(),
+    provider: varchar("provider", { length: 32 }).notNull(),
+    stateHash: varchar("state_hash", { length: 64 }).notNull(),
+    redirectUri: varchar("redirect_uri", { length: 512 }).notNull(),
+    folderPath: varchar("folder_path", { length: 512 }),
+    status: varchar("status", { length: 32 }).default(sql`'pending'`).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true, mode: "string" }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    soundRecorderOauthStatesProviderChk: check("sound_recorder_oauth_states_provider_chk", sql.raw("provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud')")),
+    soundRecorderOauthStatesStatusChk: check("sound_recorder_oauth_states_status_chk", sql.raw("status in ('pending', 'consumed', 'expired', 'revoked')")),
+    soundRecorderOauthStatesHashChk: check("sound_recorder_oauth_states_hash_chk", sql.raw("state_hash ~ '^[a-f0-9]{64}$'")),
+    soundRecorderOauthStatesRedirectUriSizeChk: check("sound_recorder_oauth_states_redirect_uri_size_chk", sql.raw("octet_length(redirect_uri) between 1 and 512")),
+    soundRecorderOauthStatesFolderPathSizeChk: check("sound_recorder_oauth_states_folder_path_size_chk", sql.raw("folder_path is null or octet_length(folder_path) between 1 and 512")),
+    soundRecorderOauthStatesMetaObjectChk: check("sound_recorder_oauth_states_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    soundRecorderOauthStatesHashUq: uniqueIndex("sound_recorder_oauth_states_hash_uq").on(table.stateHash),
+    soundRecorderOauthStatesAccountProviderIdx: index("sound_recorder_oauth_states_account_provider_idx").on(table.accountId, table.provider, table.createdAt.desc()),
+    soundRecorderOauthStatesExpiryIdx: index("sound_recorder_oauth_states_expiry_idx").on(table.expiresAt).where(sql.raw("status = 'pending'")),
+  }),
+);
+
+export const soundRecorderOauthStatesRowSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string().uuid(),
+  deviceId: z.string().uuid(),
+  provider: soundRecorderOauthStatesProviderSchema,
+  stateHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  redirectUri: z.string().max(512).refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  folderPath: z.string().max(512).refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").nullable(),
+  status: soundRecorderOauthStatesStatusSchema,
+  expiresAt: z.string().datetime(),
+  consumedAt: z.string().datetime().nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const soundRecorderOauthStatesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  accountId: z.string().uuid(),
+  deviceId: z.string().uuid(),
+  provider: soundRecorderOauthStatesProviderSchema,
+  stateHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  redirectUri: z.string().max(512).refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  folderPath: z.string().max(512).refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").nullable().optional(),
+  status: soundRecorderOauthStatesStatusSchema.optional().default("pending"),
+  expiresAt: z.string().datetime(),
+  consumedAt: z.string().datetime().nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const soundRecorderOauthStatesUpdateSchema = soundRecorderOauthStatesInsertSchema.partial();
+export type SoundRecorderOauthStatesRow = z.infer<typeof soundRecorderOauthStatesRowSchema>;
+export type SoundRecorderOauthStatesInsert = z.infer<typeof soundRecorderOauthStatesInsertSchema>;
+export type SoundRecorderOauthStatesUpdate = z.infer<typeof soundRecorderOauthStatesUpdateSchema>;
+
+export const soundRecorderCloudConnectionsProviderValues = ["google_drive","microsoft_onedrive","apple_icloud"] as const;
+export const soundRecorderCloudConnectionsProviderSchema = z.enum(soundRecorderCloudConnectionsProviderValues);
+export type SoundRecorderCloudConnectionsProvider = z.infer<typeof soundRecorderCloudConnectionsProviderSchema>;
+
+export const soundRecorderCloudConnectionsLinkModeValues = ["server_oauth","client_managed"] as const;
+export const soundRecorderCloudConnectionsLinkModeSchema = z.enum(soundRecorderCloudConnectionsLinkModeValues);
+export type SoundRecorderCloudConnectionsLinkMode = z.infer<typeof soundRecorderCloudConnectionsLinkModeSchema>;
+
+export const soundRecorderCloudConnectionsStatusValues = ["active","paused","revoked","error"] as const;
+export const soundRecorderCloudConnectionsStatusSchema = z.enum(soundRecorderCloudConnectionsStatusValues);
+export type SoundRecorderCloudConnectionsStatus = z.infer<typeof soundRecorderCloudConnectionsStatusSchema>;
+
+export const soundRecorderCloudConnections = pgTable(
+  "sound_recorder_cloud_connections",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    accountId: uuid("account_id").notNull(),
+    createdByDeviceId: uuid("created_by_device_id"),
+    provider: varchar("provider", { length: 32 }).notNull(),
+    linkMode: varchar("link_mode", { length: 32 }).default(sql`'server_oauth'`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    displayName: varchar("display_name", { length: 160 }),
+    providerAccountId: varchar("provider_account_id", { length: 240 }),
+    providerSubjectHash: varchar("provider_subject_hash", { length: 64 }),
+    rootFolderId: varchar("root_folder_id", { length: 512 }),
+    folderPath: varchar("folder_path", { length: 512 }).default(sql`'sound-recorder'`).notNull(),
+    oauthScope: text("oauth_scope"),
+    tokenCiphertext: text("token_ciphertext"),
+    tokenNonce: varchar("token_nonce", { length: 64 }),
+    tokenAad: varchar("token_aad", { length: 512 }),
+    tokenVersion: integer("token_version"),
+    tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true, mode: "string" }),
+    lastSyncAt: timestamp("last_sync_at", { withTimezone: true, mode: "string" }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    soundRecorderCloudConnectionsProviderChk: check("sound_recorder_cloud_connections_provider_chk", sql.raw("provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud')")),
+    soundRecorderCloudConnectionsLinkModeChk: check("sound_recorder_cloud_connections_link_mode_chk", sql.raw("link_mode in ('server_oauth', 'client_managed')")),
+    soundRecorderCloudConnectionsStatusChk: check("sound_recorder_cloud_connections_status_chk", sql.raw("status in ('active', 'paused', 'revoked', 'error')")),
+    soundRecorderCloudConnectionsDisplayNameSizeChk: check("sound_recorder_cloud_connections_display_name_size_chk", sql.raw("display_name is null or octet_length(display_name) between 1 and 160")),
+    soundRecorderCloudConnectionsProviderAccountIdSizeChk: check("sound_recorder_cloud_connections_provider_account_id_size_chk", sql.raw("provider_account_id is null or octet_length(provider_account_id) between 1 and 240")),
+    soundRecorderCloudConnectionsSubjectHashChk: check("sound_recorder_cloud_connections_subject_hash_chk", sql.raw("provider_subject_hash is null or provider_subject_hash ~ '^[a-f0-9]{64}$'")),
+    soundRecorderCloudConnectionsRootFolderIdSizeChk: check("sound_recorder_cloud_connections_root_folder_id_size_chk", sql.raw("root_folder_id is null or octet_length(root_folder_id) between 1 and 512")),
+    soundRecorderCloudConnectionsFolderPathSizeChk: check("sound_recorder_cloud_connections_folder_path_size_chk", sql.raw("octet_length(folder_path) between 1 and 512")),
+    soundRecorderCloudConnectionsTokenVersionChk: check("sound_recorder_cloud_connections_token_version_chk", sql.raw("token_version is null or token_version > 0")),
+    soundRecorderCloudConnectionsTokenShapeChk: check("sound_recorder_cloud_connections_token_shape_chk", sql.raw("link_mode = 'client_managed'\n      or (token_ciphertext is not null and token_nonce is not null and token_aad is not null and token_version is not null)")),
+    soundRecorderCloudConnectionsMetaObjectChk: check("sound_recorder_cloud_connections_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    soundRecorderCloudConnectionsActiveAccountProviderUq: uniqueIndex("sound_recorder_cloud_connections_active_account_provider_uq").on(table.accountId, table.provider, table.providerAccountId).where(sql.raw("status <> 'revoked' and provider_account_id is not null")),
+    soundRecorderCloudConnectionsAccountStatusIdx: index("sound_recorder_cloud_connections_account_status_idx").on(table.accountId, table.status, table.updatedAt.desc()),
+  }),
+);
+
+export const soundRecorderCloudConnectionsRowSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string().uuid(),
+  createdByDeviceId: z.string().uuid().nullable(),
+  provider: soundRecorderCloudConnectionsProviderSchema,
+  linkMode: soundRecorderCloudConnectionsLinkModeSchema,
+  status: soundRecorderCloudConnectionsStatusSchema,
+  displayName: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable(),
+  providerAccountId: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable(),
+  providerSubjectHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")).nullable(),
+  rootFolderId: z.string().max(512).refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").nullable(),
+  folderPath: z.string().max(512).refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  oauthScope: z.string().nullable(),
+  tokenCiphertext: z.string().nullable(),
+  tokenNonce: z.string().max(64).nullable(),
+  tokenAad: z.string().max(512).nullable(),
+  tokenVersion: z.number().int().min(1).nullable(),
+  tokenExpiresAt: z.string().datetime().nullable(),
+  lastSyncAt: z.string().datetime().nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const soundRecorderCloudConnectionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  accountId: z.string().uuid(),
+  createdByDeviceId: z.string().uuid().nullable().optional(),
+  provider: soundRecorderCloudConnectionsProviderSchema,
+  linkMode: soundRecorderCloudConnectionsLinkModeSchema.optional().default("server_oauth"),
+  status: soundRecorderCloudConnectionsStatusSchema.optional().default("active"),
+  displayName: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable().optional(),
+  providerAccountId: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable().optional(),
+  providerSubjectHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")).nullable().optional(),
+  rootFolderId: z.string().max(512).refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").nullable().optional(),
+  folderPath: z.string().max(512).refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").optional().default("sound-recorder"),
+  oauthScope: z.string().nullable().optional(),
+  tokenCiphertext: z.string().nullable().optional(),
+  tokenNonce: z.string().max(64).nullable().optional(),
+  tokenAad: z.string().max(512).nullable().optional(),
+  tokenVersion: z.number().int().min(1).nullable().optional(),
+  tokenExpiresAt: z.string().datetime().nullable().optional(),
+  lastSyncAt: z.string().datetime().nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const soundRecorderCloudConnectionsUpdateSchema = soundRecorderCloudConnectionsInsertSchema.partial();
+export type SoundRecorderCloudConnectionsRow = z.infer<typeof soundRecorderCloudConnectionsRowSchema>;
+export type SoundRecorderCloudConnectionsInsert = z.infer<typeof soundRecorderCloudConnectionsInsertSchema>;
+export type SoundRecorderCloudConnectionsUpdate = z.infer<typeof soundRecorderCloudConnectionsUpdateSchema>;
+
+export const soundRecorderCloudCopyJobsProviderValues = ["google_drive","microsoft_onedrive","apple_icloud"] as const;
+export const soundRecorderCloudCopyJobsProviderSchema = z.enum(soundRecorderCloudCopyJobsProviderValues);
+export type SoundRecorderCloudCopyJobsProvider = z.infer<typeof soundRecorderCloudCopyJobsProviderSchema>;
+
+export const soundRecorderCloudCopyJobsStatusValues = ["pending","running","waiting_client","completed","failed","skipped"] as const;
+export const soundRecorderCloudCopyJobsStatusSchema = z.enum(soundRecorderCloudCopyJobsStatusValues);
+export type SoundRecorderCloudCopyJobsStatus = z.infer<typeof soundRecorderCloudCopyJobsStatusSchema>;
+
+export const soundRecorderCloudCopyJobs = pgTable(
+  "sound_recorder_cloud_copy_jobs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    accountId: uuid("account_id").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    segmentId: uuid("segment_id").notNull(),
+    provider: varchar("provider", { length: 32 }).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'pending'`).notNull(),
+    destinationKey: varchar("destination_key", { length: 2048 }).notNull(),
+    providerFileId: varchar("provider_file_id", { length: 512 }),
+    attempts: integer("attempts").default(sql`0`).notNull(),
+    lockedUntil: timestamp("locked_until", { withTimezone: true, mode: "string" }),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }),
+    completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
+    lastError: varchar("last_error", { length: 500 }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    soundRecorderCloudCopyJobsProviderChk: check("sound_recorder_cloud_copy_jobs_provider_chk", sql.raw("provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud')")),
+    soundRecorderCloudCopyJobsStatusChk: check("sound_recorder_cloud_copy_jobs_status_chk", sql.raw("status in ('pending', 'running', 'waiting_client', 'completed', 'failed', 'skipped')")),
+    soundRecorderCloudCopyJobsDestinationKeySizeChk: check("sound_recorder_cloud_copy_jobs_destination_key_size_chk", sql.raw("octet_length(destination_key) between 1 and 2048")),
+    soundRecorderCloudCopyJobsProviderFileIdSizeChk: check("sound_recorder_cloud_copy_jobs_provider_file_id_size_chk", sql.raw("provider_file_id is null or octet_length(provider_file_id) between 1 and 512")),
+    soundRecorderCloudCopyJobsAttemptsChk: check("sound_recorder_cloud_copy_jobs_attempts_chk", sql.raw("attempts >= 0 and attempts <= 50")),
+    soundRecorderCloudCopyJobsLastErrorSizeChk: check("sound_recorder_cloud_copy_jobs_last_error_size_chk", sql.raw("last_error is null or octet_length(last_error) between 1 and 500")),
+    soundRecorderCloudCopyJobsMetaObjectChk: check("sound_recorder_cloud_copy_jobs_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    soundRecorderCloudCopyJobsConnectionSegmentUq: uniqueIndex("sound_recorder_cloud_copy_jobs_connection_segment_uq").on(table.connectionId, table.segmentId),
+    soundRecorderCloudCopyJobsAccountStatusIdx: index("sound_recorder_cloud_copy_jobs_account_status_idx").on(table.accountId, table.status, table.updatedAt),
+    soundRecorderCloudCopyJobsConnectionStatusIdx: index("sound_recorder_cloud_copy_jobs_connection_status_idx").on(table.connectionId, table.status, table.updatedAt),
+    soundRecorderCloudCopyJobsSegmentIdx: index("sound_recorder_cloud_copy_jobs_segment_idx").on(table.segmentId),
+  }),
+);
+
+export const soundRecorderCloudCopyJobsRowSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string().uuid(),
+  connectionId: z.string().uuid(),
+  segmentId: z.string().uuid(),
+  provider: soundRecorderCloudCopyJobsProviderSchema,
+  status: soundRecorderCloudCopyJobsStatusSchema,
+  destinationKey: z.string().max(2048).refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes"),
+  providerFileId: z.string().max(512).refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").nullable(),
+  attempts: z.number().int().min(0).max(50),
+  lockedUntil: z.string().datetime().nullable(),
+  startedAt: z.string().datetime().nullable(),
+  completedAt: z.string().datetime().nullable(),
+  lastError: z.string().max(500).refine((value) => byteLength(value) <= 500, "Must be at most 500 bytes").nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const soundRecorderCloudCopyJobsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  accountId: z.string().uuid(),
+  connectionId: z.string().uuid(),
+  segmentId: z.string().uuid(),
+  provider: soundRecorderCloudCopyJobsProviderSchema,
+  status: soundRecorderCloudCopyJobsStatusSchema.optional().default("pending"),
+  destinationKey: z.string().max(2048).refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes"),
+  providerFileId: z.string().max(512).refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").nullable().optional(),
+  attempts: z.number().int().min(0).max(50).optional().default(0),
+  lockedUntil: z.string().datetime().nullable().optional(),
+  startedAt: z.string().datetime().nullable().optional(),
+  completedAt: z.string().datetime().nullable().optional(),
+  lastError: z.string().max(500).refine((value) => byteLength(value) <= 500, "Must be at most 500 bytes").nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const soundRecorderCloudCopyJobsUpdateSchema = soundRecorderCloudCopyJobsInsertSchema.partial();
+export type SoundRecorderCloudCopyJobsRow = z.infer<typeof soundRecorderCloudCopyJobsRowSchema>;
+export type SoundRecorderCloudCopyJobsInsert = z.infer<typeof soundRecorderCloudCopyJobsInsertSchema>;
+export type SoundRecorderCloudCopyJobsUpdate = z.infer<typeof soundRecorderCloudCopyJobsUpdateSchema>;
+
 export const containerPoolConfigsStatusValues = ["active","paused","archived"] as const;
 export const containerPoolConfigsStatusSchema = z.enum(containerPoolConfigsStatusValues);
 export type ContainerPoolConfigsStatus = z.infer<typeof containerPoolConfigsStatusSchema>;

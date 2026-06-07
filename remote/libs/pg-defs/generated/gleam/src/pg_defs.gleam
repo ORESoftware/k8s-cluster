@@ -664,6 +664,326 @@ pub fn validate_sound_recorder_audit_events_slug(value: String) -> Result(String
   }
 }
 
+pub const sound_recorder_oauth_states_table = "sound_recorder_oauth_states"
+pub const sound_recorder_oauth_states_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      provider,\n      state_hash,\n      redirect_uri,\n      folder_path,\n      status,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_oauth_states"
+
+pub type SoundRecorderOauthStatesProvider {
+  SoundRecorderOauthStatesProviderGoogleDrive
+  SoundRecorderOauthStatesProviderMicrosoftOnedrive
+  SoundRecorderOauthStatesProviderAppleIcloud
+}
+
+pub fn sound_recorder_oauth_states_provider_to_string(value: SoundRecorderOauthStatesProvider) -> String {
+  case value {
+    SoundRecorderOauthStatesProviderGoogleDrive -> "google_drive"
+    SoundRecorderOauthStatesProviderMicrosoftOnedrive -> "microsoft_onedrive"
+    SoundRecorderOauthStatesProviderAppleIcloud -> "apple_icloud"
+  }
+}
+
+pub fn parse_sound_recorder_oauth_states_provider(value: String) -> Result(SoundRecorderOauthStatesProvider, String) {
+  case value {
+    "google_drive" -> Ok(SoundRecorderOauthStatesProviderGoogleDrive)
+    "microsoft_onedrive" -> Ok(SoundRecorderOauthStatesProviderMicrosoftOnedrive)
+    "apple_icloud" -> Ok(SoundRecorderOauthStatesProviderAppleIcloud)
+    _ -> Error("unsupported sound_recorder_oauth_states.provider: " <> value)
+  }
+}
+
+pub type SoundRecorderOauthStatesStatus {
+  SoundRecorderOauthStatesStatusPending
+  SoundRecorderOauthStatesStatusConsumed
+  SoundRecorderOauthStatesStatusExpired
+  SoundRecorderOauthStatesStatusRevoked
+}
+
+pub fn sound_recorder_oauth_states_status_to_string(value: SoundRecorderOauthStatesStatus) -> String {
+  case value {
+    SoundRecorderOauthStatesStatusPending -> "pending"
+    SoundRecorderOauthStatesStatusConsumed -> "consumed"
+    SoundRecorderOauthStatesStatusExpired -> "expired"
+    SoundRecorderOauthStatesStatusRevoked -> "revoked"
+  }
+}
+
+pub fn parse_sound_recorder_oauth_states_status(value: String) -> Result(SoundRecorderOauthStatesStatus, String) {
+  case value {
+    "pending" -> Ok(SoundRecorderOauthStatesStatusPending)
+    "consumed" -> Ok(SoundRecorderOauthStatesStatusConsumed)
+    "expired" -> Ok(SoundRecorderOauthStatesStatusExpired)
+    "revoked" -> Ok(SoundRecorderOauthStatesStatusRevoked)
+    _ -> Error("unsupported sound_recorder_oauth_states.status: " <> value)
+  }
+}
+
+pub type SoundRecorderOauthStatesRow {
+  SoundRecorderOauthStatesRow(
+    id: String,
+    account_id: String,
+    device_id: String,
+    provider: String,
+    state_hash: String,
+    redirect_uri: String,
+    folder_path: Option(String),
+    status: String,
+    expires_at: String,
+    consumed_at: Option(String),
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_sound_recorder_oauth_states_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sound_recorder_oauth_states.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_sound_recorder_oauth_states_provider(value: String) -> Result(String, String) {
+  case list.contains(["google_drive", "microsoft_onedrive", "apple_icloud"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_oauth_states.provider: " <> value)
+  }
+}
+
+pub fn validate_sound_recorder_oauth_states_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "consumed", "expired", "revoked"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_oauth_states.status: " <> value)
+  }
+}
+
+pub const sound_recorder_cloud_connections_table = "sound_recorder_cloud_connections"
+pub const sound_recorder_cloud_connections_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      created_by_device_id::text as created_by_device_id,\n      provider,\n      link_mode,\n      status,\n      display_name,\n      provider_account_id,\n      provider_subject_hash,\n      root_folder_id,\n      folder_path,\n      oauth_scope,\n      token_ciphertext,\n      token_nonce,\n      token_aad,\n      token_version,\n      to_char(token_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as token_expires_at,\n      to_char(last_sync_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_sync_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_connections"
+
+pub type SoundRecorderCloudConnectionsProvider {
+  SoundRecorderCloudConnectionsProviderGoogleDrive
+  SoundRecorderCloudConnectionsProviderMicrosoftOnedrive
+  SoundRecorderCloudConnectionsProviderAppleIcloud
+}
+
+pub fn sound_recorder_cloud_connections_provider_to_string(value: SoundRecorderCloudConnectionsProvider) -> String {
+  case value {
+    SoundRecorderCloudConnectionsProviderGoogleDrive -> "google_drive"
+    SoundRecorderCloudConnectionsProviderMicrosoftOnedrive -> "microsoft_onedrive"
+    SoundRecorderCloudConnectionsProviderAppleIcloud -> "apple_icloud"
+  }
+}
+
+pub fn parse_sound_recorder_cloud_connections_provider(value: String) -> Result(SoundRecorderCloudConnectionsProvider, String) {
+  case value {
+    "google_drive" -> Ok(SoundRecorderCloudConnectionsProviderGoogleDrive)
+    "microsoft_onedrive" -> Ok(SoundRecorderCloudConnectionsProviderMicrosoftOnedrive)
+    "apple_icloud" -> Ok(SoundRecorderCloudConnectionsProviderAppleIcloud)
+    _ -> Error("unsupported sound_recorder_cloud_connections.provider: " <> value)
+  }
+}
+
+pub type SoundRecorderCloudConnectionsLinkMode {
+  SoundRecorderCloudConnectionsLinkModeServerOauth
+  SoundRecorderCloudConnectionsLinkModeClientManaged
+}
+
+pub fn sound_recorder_cloud_connections_link_mode_to_string(value: SoundRecorderCloudConnectionsLinkMode) -> String {
+  case value {
+    SoundRecorderCloudConnectionsLinkModeServerOauth -> "server_oauth"
+    SoundRecorderCloudConnectionsLinkModeClientManaged -> "client_managed"
+  }
+}
+
+pub fn parse_sound_recorder_cloud_connections_link_mode(value: String) -> Result(SoundRecorderCloudConnectionsLinkMode, String) {
+  case value {
+    "server_oauth" -> Ok(SoundRecorderCloudConnectionsLinkModeServerOauth)
+    "client_managed" -> Ok(SoundRecorderCloudConnectionsLinkModeClientManaged)
+    _ -> Error("unsupported sound_recorder_cloud_connections.link_mode: " <> value)
+  }
+}
+
+pub type SoundRecorderCloudConnectionsStatus {
+  SoundRecorderCloudConnectionsStatusActive
+  SoundRecorderCloudConnectionsStatusPaused
+  SoundRecorderCloudConnectionsStatusRevoked
+  SoundRecorderCloudConnectionsStatusError
+}
+
+pub fn sound_recorder_cloud_connections_status_to_string(value: SoundRecorderCloudConnectionsStatus) -> String {
+  case value {
+    SoundRecorderCloudConnectionsStatusActive -> "active"
+    SoundRecorderCloudConnectionsStatusPaused -> "paused"
+    SoundRecorderCloudConnectionsStatusRevoked -> "revoked"
+    SoundRecorderCloudConnectionsStatusError -> "error"
+  }
+}
+
+pub fn parse_sound_recorder_cloud_connections_status(value: String) -> Result(SoundRecorderCloudConnectionsStatus, String) {
+  case value {
+    "active" -> Ok(SoundRecorderCloudConnectionsStatusActive)
+    "paused" -> Ok(SoundRecorderCloudConnectionsStatusPaused)
+    "revoked" -> Ok(SoundRecorderCloudConnectionsStatusRevoked)
+    "error" -> Ok(SoundRecorderCloudConnectionsStatusError)
+    _ -> Error("unsupported sound_recorder_cloud_connections.status: " <> value)
+  }
+}
+
+pub type SoundRecorderCloudConnectionsRow {
+  SoundRecorderCloudConnectionsRow(
+    id: String,
+    account_id: String,
+    created_by_device_id: Option(String),
+    provider: String,
+    link_mode: String,
+    status: String,
+    display_name: Option(String),
+    provider_account_id: Option(String),
+    provider_subject_hash: Option(String),
+    root_folder_id: Option(String),
+    folder_path: String,
+    oauth_scope: Option(String),
+    token_ciphertext: Option(String),
+    token_nonce: Option(String),
+    token_aad: Option(String),
+    token_version: Option(Int),
+    token_expires_at: Option(String),
+    last_sync_at: Option(String),
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_sound_recorder_cloud_connections_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sound_recorder_cloud_connections.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_sound_recorder_cloud_connections_provider(value: String) -> Result(String, String) {
+  case list.contains(["google_drive", "microsoft_onedrive", "apple_icloud"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_cloud_connections.provider: " <> value)
+  }
+}
+
+pub fn validate_sound_recorder_cloud_connections_link_mode(value: String) -> Result(String, String) {
+  case list.contains(["server_oauth", "client_managed"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_cloud_connections.link_mode: " <> value)
+  }
+}
+
+pub fn validate_sound_recorder_cloud_connections_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "paused", "revoked", "error"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_cloud_connections.status: " <> value)
+  }
+}
+
+pub const sound_recorder_cloud_copy_jobs_table = "sound_recorder_cloud_copy_jobs"
+pub const sound_recorder_cloud_copy_jobs_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      connection_id::text as connection_id,\n      segment_id::text as segment_id,\n      provider,\n      status,\n      destination_key,\n      provider_file_id,\n      attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      last_error,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_copy_jobs"
+
+pub type SoundRecorderCloudCopyJobsProvider {
+  SoundRecorderCloudCopyJobsProviderGoogleDrive
+  SoundRecorderCloudCopyJobsProviderMicrosoftOnedrive
+  SoundRecorderCloudCopyJobsProviderAppleIcloud
+}
+
+pub fn sound_recorder_cloud_copy_jobs_provider_to_string(value: SoundRecorderCloudCopyJobsProvider) -> String {
+  case value {
+    SoundRecorderCloudCopyJobsProviderGoogleDrive -> "google_drive"
+    SoundRecorderCloudCopyJobsProviderMicrosoftOnedrive -> "microsoft_onedrive"
+    SoundRecorderCloudCopyJobsProviderAppleIcloud -> "apple_icloud"
+  }
+}
+
+pub fn parse_sound_recorder_cloud_copy_jobs_provider(value: String) -> Result(SoundRecorderCloudCopyJobsProvider, String) {
+  case value {
+    "google_drive" -> Ok(SoundRecorderCloudCopyJobsProviderGoogleDrive)
+    "microsoft_onedrive" -> Ok(SoundRecorderCloudCopyJobsProviderMicrosoftOnedrive)
+    "apple_icloud" -> Ok(SoundRecorderCloudCopyJobsProviderAppleIcloud)
+    _ -> Error("unsupported sound_recorder_cloud_copy_jobs.provider: " <> value)
+  }
+}
+
+pub type SoundRecorderCloudCopyJobsStatus {
+  SoundRecorderCloudCopyJobsStatusPending
+  SoundRecorderCloudCopyJobsStatusRunning
+  SoundRecorderCloudCopyJobsStatusWaitingClient
+  SoundRecorderCloudCopyJobsStatusCompleted
+  SoundRecorderCloudCopyJobsStatusFailed
+  SoundRecorderCloudCopyJobsStatusSkipped
+}
+
+pub fn sound_recorder_cloud_copy_jobs_status_to_string(value: SoundRecorderCloudCopyJobsStatus) -> String {
+  case value {
+    SoundRecorderCloudCopyJobsStatusPending -> "pending"
+    SoundRecorderCloudCopyJobsStatusRunning -> "running"
+    SoundRecorderCloudCopyJobsStatusWaitingClient -> "waiting_client"
+    SoundRecorderCloudCopyJobsStatusCompleted -> "completed"
+    SoundRecorderCloudCopyJobsStatusFailed -> "failed"
+    SoundRecorderCloudCopyJobsStatusSkipped -> "skipped"
+  }
+}
+
+pub fn parse_sound_recorder_cloud_copy_jobs_status(value: String) -> Result(SoundRecorderCloudCopyJobsStatus, String) {
+  case value {
+    "pending" -> Ok(SoundRecorderCloudCopyJobsStatusPending)
+    "running" -> Ok(SoundRecorderCloudCopyJobsStatusRunning)
+    "waiting_client" -> Ok(SoundRecorderCloudCopyJobsStatusWaitingClient)
+    "completed" -> Ok(SoundRecorderCloudCopyJobsStatusCompleted)
+    "failed" -> Ok(SoundRecorderCloudCopyJobsStatusFailed)
+    "skipped" -> Ok(SoundRecorderCloudCopyJobsStatusSkipped)
+    _ -> Error("unsupported sound_recorder_cloud_copy_jobs.status: " <> value)
+  }
+}
+
+pub type SoundRecorderCloudCopyJobsRow {
+  SoundRecorderCloudCopyJobsRow(
+    id: String,
+    account_id: String,
+    connection_id: String,
+    segment_id: String,
+    provider: String,
+    status: String,
+    destination_key: String,
+    provider_file_id: Option(String),
+    attempts: Int,
+    locked_until: Option(String),
+    started_at: Option(String),
+    completed_at: Option(String),
+    last_error: Option(String),
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_sound_recorder_cloud_copy_jobs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sound_recorder_cloud_copy_jobs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_sound_recorder_cloud_copy_jobs_provider(value: String) -> Result(String, String) {
+  case list.contains(["google_drive", "microsoft_onedrive", "apple_icloud"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_cloud_copy_jobs.provider: " <> value)
+  }
+}
+
+pub fn validate_sound_recorder_cloud_copy_jobs_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "running", "waiting_client", "completed", "failed", "skipped"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_cloud_copy_jobs.status: " <> value)
+  }
+}
+
 pub const container_pool_configs_table = "container_pool_configs"
 pub const container_pool_configs_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      image,\n      command::text as command_json,\n      env::text as env_json,\n      request_path,\n      health_path,\n      container_port,\n      min_warm,\n      max_warm,\n      max_concurrency_per_container,\n      request_timeout_ms,\n      idle_ttl_seconds,\n      nats_subject,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_configs"
 

@@ -46,7 +46,7 @@ impl AppConfigStatus {
 impl TryFrom<&str> for AppConfigStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <AppConfigStatus as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -296,7 +296,7 @@ impl MusicSongsStatus {
 impl TryFrom<&str> for MusicSongsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <MusicSongsStatus as TryFrom<&str>>::Error> {
         match value {
             "generated" => Ok(Self::Generated),
             "published" => Ok(Self::Published),
@@ -335,7 +335,7 @@ impl MusicSongsStorageProvider {
 impl TryFrom<&str> for MusicSongsStorageProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <MusicSongsStorageProvider as TryFrom<&str>>::Error> {
         match value {
             "s3" => Ok(Self::S3),
             "r2" => Ok(Self::R2),
@@ -636,7 +636,7 @@ impl SoundRecorderAccountsStatus {
 impl TryFrom<&str> for SoundRecorderAccountsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderAccountsStatus as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -762,7 +762,7 @@ impl SoundRecorderDevicesPlatform {
 impl TryFrom<&str> for SoundRecorderDevicesPlatform {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderDevicesPlatform as TryFrom<&str>>::Error> {
         match value {
             "ios" => Ok(Self::Ios),
             "android" => Ok(Self::Android),
@@ -798,7 +798,7 @@ impl SoundRecorderDevicesStatus {
 impl TryFrom<&str> for SoundRecorderDevicesStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderDevicesStatus as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "revoked" => Ok(Self::Revoked),
@@ -963,7 +963,7 @@ impl SoundRecorderUploadSessionsStatus {
 impl TryFrom<&str> for SoundRecorderUploadSessionsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderUploadSessionsStatus as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "closed" => Ok(Self::Closed),
@@ -993,7 +993,7 @@ impl SoundRecorderUploadSessionsStorageProvider {
 impl TryFrom<&str> for SoundRecorderUploadSessionsStorageProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderUploadSessionsStorageProvider as TryFrom<&str>>::Error> {
         match value {
             "s3" => Ok(Self::S3),
             _ => Err(format!("unsupported storage_provider: {value}")),
@@ -1195,7 +1195,7 @@ impl SoundRecorderSegmentsStatus {
 impl TryFrom<&str> for SoundRecorderSegmentsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderSegmentsStatus as TryFrom<&str>>::Error> {
         match value {
             "pending" => Ok(Self::Pending),
             "uploaded" => Ok(Self::Uploaded),
@@ -1226,7 +1226,7 @@ impl SoundRecorderSegmentsStorageProvider {
 impl TryFrom<&str> for SoundRecorderSegmentsStorageProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderSegmentsStorageProvider as TryFrom<&str>>::Error> {
         match value {
             "s3" => Ok(Self::S3),
             _ => Err(format!("unsupported storage_provider: {value}")),
@@ -1411,7 +1411,7 @@ impl SoundRecorderEvidenceExportsStatus {
 impl TryFrom<&str> for SoundRecorderEvidenceExportsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderEvidenceExportsStatus as TryFrom<&str>>::Error> {
         match value {
             "requested" => Ok(Self::Requested),
             "ready" => Ok(Self::Ready),
@@ -1542,6 +1542,611 @@ pub fn validate_sound_recorder_audit_events_insert(value: &SoundRecorderAuditEve
     Ok(())
 }
 
+pub const SOUND_RECORDER_OAUTH_STATES_TABLE: &str = "sound_recorder_oauth_states";
+pub const SOUND_RECORDER_OAUTH_STATES_COLUMNS: &[&str] = &["id", "account_id", "device_id", "provider", "state_hash", "redirect_uri", "folder_path", "status", "expires_at", "consumed_at", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_OAUTH_STATES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      provider,
+      state_hash,
+      redirect_uri,
+      folder_path,
+      status,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consumed_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_oauth_states"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderOauthStatesProvider {
+    GoogleDrive,
+    MicrosoftOnedrive,
+    AppleIcloud,
+}
+
+impl SoundRecorderOauthStatesProvider {
+    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::GoogleDrive => "google_drive",
+            Self::MicrosoftOnedrive => "microsoft_onedrive",
+            Self::AppleIcloud => "apple_icloud",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderOauthStatesProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderOauthStatesProvider as TryFrom<&str>>::Error> {
+        match value {
+            "google_drive" => Ok(Self::GoogleDrive),
+            "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
+            "apple_icloud" => Ok(Self::AppleIcloud),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderOauthStatesStatus {
+    Pending,
+    Consumed,
+    Expired,
+    Revoked,
+}
+
+impl SoundRecorderOauthStatesStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "consumed", "expired", "revoked"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Consumed => "consumed",
+            Self::Expired => "expired",
+            Self::Revoked => "revoked",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderOauthStatesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderOauthStatesStatus as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "consumed" => Ok(Self::Consumed),
+            "expired" => Ok(Self::Expired),
+            "revoked" => Ok(Self::Revoked),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderOauthStatesRow {
+    pub id: String,
+    pub account_id: String,
+    pub device_id: String,
+    pub provider: String,
+    pub state_hash: String,
+    pub redirect_uri: String,
+    pub folder_path: Option<String>,
+    pub status: String,
+    pub expires_at: String,
+    pub consumed_at: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderOauthStatesInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub provider: Option<String>,
+    pub state_hash: Option<String>,
+    pub redirect_uri: Option<String>,
+    pub folder_path: Option<String>,
+    pub status: Option<String>,
+    pub expires_at: Option<String>,
+    pub consumed_at: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_oauth_states_row(value: &SoundRecorderOauthStatesRow) -> Result<(), String> {
+    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.provider: {}", &value.provider)); }
+    validate_string_length("sound_recorder_oauth_states.state_hash", &value.state_hash, None, Some(64))?;
+    validate_string_length("sound_recorder_oauth_states.redirect_uri", &value.redirect_uri, None, Some(512))?;
+    if (&value.redirect_uri).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes".to_string()); }
+    if let Some(value) = &value.folder_path {
+        validate_string_length("sound_recorder_oauth_states.folder_path", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.folder_path exceeds 512 bytes".to_string()); }
+    }
+    if !["pending", "consumed", "expired", "revoked"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.status: {}", &value.status)); }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_oauth_states.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_oauth_states_insert(value: &SoundRecorderOauthStatesInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.provider: {}", value)); }
+    }
+    if let Some(value) = &value.state_hash {
+        validate_string_length("sound_recorder_oauth_states.state_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.redirect_uri {
+        validate_string_length("sound_recorder_oauth_states.redirect_uri", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.folder_path {
+        validate_string_length("sound_recorder_oauth_states.folder_path", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.folder_path exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "consumed", "expired", "revoked"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.status: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_oauth_states.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_CLOUD_CONNECTIONS_TABLE: &str = "sound_recorder_cloud_connections";
+pub const SOUND_RECORDER_CLOUD_CONNECTIONS_COLUMNS: &[&str] = &["id", "account_id", "created_by_device_id", "provider", "link_mode", "status", "display_name", "provider_account_id", "provider_subject_hash", "root_folder_id", "folder_path", "oauth_scope", "token_ciphertext", "token_nonce", "token_aad", "token_version", "token_expires_at", "last_sync_at", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_CLOUD_CONNECTIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      created_by_device_id::text as created_by_device_id,
+      provider,
+      link_mode,
+      status,
+      display_name,
+      provider_account_id,
+      provider_subject_hash,
+      root_folder_id,
+      folder_path,
+      oauth_scope,
+      token_ciphertext,
+      token_nonce,
+      token_aad,
+      token_version,
+      to_char(token_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as token_expires_at,
+      to_char(last_sync_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_sync_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_cloud_connections"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudConnectionsProvider {
+    GoogleDrive,
+    MicrosoftOnedrive,
+    AppleIcloud,
+}
+
+impl SoundRecorderCloudConnectionsProvider {
+    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::GoogleDrive => "google_drive",
+            Self::MicrosoftOnedrive => "microsoft_onedrive",
+            Self::AppleIcloud => "apple_icloud",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudConnectionsProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderCloudConnectionsProvider as TryFrom<&str>>::Error> {
+        match value {
+            "google_drive" => Ok(Self::GoogleDrive),
+            "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
+            "apple_icloud" => Ok(Self::AppleIcloud),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudConnectionsLinkMode {
+    ServerOauth,
+    ClientManaged,
+}
+
+impl SoundRecorderCloudConnectionsLinkMode {
+    pub const VALUES: &'static [&'static str] = &["server_oauth", "client_managed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ServerOauth => "server_oauth",
+            Self::ClientManaged => "client_managed",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudConnectionsLinkMode {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderCloudConnectionsLinkMode as TryFrom<&str>>::Error> {
+        match value {
+            "server_oauth" => Ok(Self::ServerOauth),
+            "client_managed" => Ok(Self::ClientManaged),
+            _ => Err(format!("unsupported link_mode: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudConnectionsStatus {
+    Active,
+    Paused,
+    Revoked,
+    Error,
+}
+
+impl SoundRecorderCloudConnectionsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "paused", "revoked", "error"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Revoked => "revoked",
+            Self::Error => "error",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudConnectionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderCloudConnectionsStatus as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "revoked" => Ok(Self::Revoked),
+            "error" => Ok(Self::Error),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudConnectionsRow {
+    pub id: String,
+    pub account_id: String,
+    pub created_by_device_id: Option<String>,
+    pub provider: String,
+    pub link_mode: String,
+    pub status: String,
+    pub display_name: Option<String>,
+    pub provider_account_id: Option<String>,
+    pub provider_subject_hash: Option<String>,
+    pub root_folder_id: Option<String>,
+    pub folder_path: String,
+    pub oauth_scope: Option<String>,
+    pub token_ciphertext: Option<String>,
+    pub token_nonce: Option<String>,
+    pub token_aad: Option<String>,
+    pub token_version: Option<i32>,
+    pub token_expires_at: Option<String>,
+    pub last_sync_at: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudConnectionsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub created_by_device_id: Option<String>,
+    pub provider: Option<String>,
+    pub link_mode: Option<String>,
+    pub status: Option<String>,
+    pub display_name: Option<String>,
+    pub provider_account_id: Option<String>,
+    pub provider_subject_hash: Option<String>,
+    pub root_folder_id: Option<String>,
+    pub folder_path: Option<String>,
+    pub oauth_scope: Option<String>,
+    pub token_ciphertext: Option<String>,
+    pub token_nonce: Option<String>,
+    pub token_aad: Option<String>,
+    pub token_version: Option<i32>,
+    pub token_expires_at: Option<String>,
+    pub last_sync_at: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_cloud_connections_row(value: &SoundRecorderCloudConnectionsRow) -> Result<(), String> {
+    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.provider: {}", &value.provider)); }
+    if !["server_oauth", "client_managed"].contains(&(&value.link_mode).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.link_mode: {}", &value.link_mode)); }
+    if !["active", "paused", "revoked", "error"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.status: {}", &value.status)); }
+    if let Some(value) = &value.display_name {
+        validate_string_length("sound_recorder_cloud_connections.display_name", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_cloud_connections.display_name exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_account_id {
+        validate_string_length("sound_recorder_cloud_connections.provider_account_id", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_subject_hash {
+        validate_string_length("sound_recorder_cloud_connections.provider_subject_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.root_folder_id {
+        validate_string_length("sound_recorder_cloud_connections.root_folder_id", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes".to_string()); }
+    }
+    validate_string_length("sound_recorder_cloud_connections.folder_path", &value.folder_path, None, Some(512))?;
+    if (&value.folder_path).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.folder_path exceeds 512 bytes".to_string()); }
+    if let Some(value) = &value.token_nonce {
+        validate_string_length("sound_recorder_cloud_connections.token_nonce", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.token_aad {
+        validate_string_length("sound_recorder_cloud_connections.token_aad", value, None, Some(512))?;
+    }
+    if let Some(value) = &value.token_version {
+        if *(value) < 1 { return Err("sound_recorder_cloud_connections.token_version is below the minimum".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_cloud_connections.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_cloud_connections_insert(value: &SoundRecorderCloudConnectionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.provider: {}", value)); }
+    }
+    if let Some(value) = &value.link_mode {
+        if !["server_oauth", "client_managed"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.link_mode: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "paused", "revoked", "error"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.status: {}", value)); }
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("sound_recorder_cloud_connections.display_name", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_cloud_connections.display_name exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_account_id {
+        validate_string_length("sound_recorder_cloud_connections.provider_account_id", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_subject_hash {
+        validate_string_length("sound_recorder_cloud_connections.provider_subject_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.root_folder_id {
+        validate_string_length("sound_recorder_cloud_connections.root_folder_id", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.folder_path {
+        validate_string_length("sound_recorder_cloud_connections.folder_path", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.folder_path exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.token_nonce {
+        validate_string_length("sound_recorder_cloud_connections.token_nonce", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.token_aad {
+        validate_string_length("sound_recorder_cloud_connections.token_aad", value, None, Some(512))?;
+    }
+    if let Some(value) = &value.token_version {
+        if *(value) < 1 { return Err("sound_recorder_cloud_connections.token_version is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_cloud_connections.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_CLOUD_COPY_JOBS_TABLE: &str = "sound_recorder_cloud_copy_jobs";
+pub const SOUND_RECORDER_CLOUD_COPY_JOBS_COLUMNS: &[&str] = &["id", "account_id", "connection_id", "segment_id", "provider", "status", "destination_key", "provider_file_id", "attempts", "locked_until", "started_at", "completed_at", "last_error", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_CLOUD_COPY_JOBS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      connection_id::text as connection_id,
+      segment_id::text as segment_id,
+      provider,
+      status,
+      destination_key,
+      provider_file_id,
+      attempts,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as completed_at,
+      last_error,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_cloud_copy_jobs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudCopyJobsProvider {
+    GoogleDrive,
+    MicrosoftOnedrive,
+    AppleIcloud,
+}
+
+impl SoundRecorderCloudCopyJobsProvider {
+    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::GoogleDrive => "google_drive",
+            Self::MicrosoftOnedrive => "microsoft_onedrive",
+            Self::AppleIcloud => "apple_icloud",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudCopyJobsProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderCloudCopyJobsProvider as TryFrom<&str>>::Error> {
+        match value {
+            "google_drive" => Ok(Self::GoogleDrive),
+            "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
+            "apple_icloud" => Ok(Self::AppleIcloud),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudCopyJobsStatus {
+    Pending,
+    Running,
+    WaitingClient,
+    Completed,
+    Failed,
+    Skipped,
+}
+
+impl SoundRecorderCloudCopyJobsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "running", "waiting_client", "completed", "failed", "skipped"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::WaitingClient => "waiting_client",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudCopyJobsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <SoundRecorderCloudCopyJobsStatus as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "running" => Ok(Self::Running),
+            "waiting_client" => Ok(Self::WaitingClient),
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            "skipped" => Ok(Self::Skipped),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudCopyJobsRow {
+    pub id: String,
+    pub account_id: String,
+    pub connection_id: String,
+    pub segment_id: String,
+    pub provider: String,
+    pub status: String,
+    pub destination_key: String,
+    pub provider_file_id: Option<String>,
+    pub attempts: i32,
+    pub locked_until: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub last_error: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudCopyJobsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub connection_id: Option<String>,
+    pub segment_id: Option<String>,
+    pub provider: Option<String>,
+    pub status: Option<String>,
+    pub destination_key: Option<String>,
+    pub provider_file_id: Option<String>,
+    pub attempts: Option<i32>,
+    pub locked_until: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub last_error: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_cloud_copy_jobs_row(value: &SoundRecorderCloudCopyJobsRow) -> Result<(), String> {
+    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.provider: {}", &value.provider)); }
+    if !["pending", "running", "waiting_client", "completed", "failed", "skipped"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.status: {}", &value.status)); }
+    validate_string_length("sound_recorder_cloud_copy_jobs.destination_key", &value.destination_key, None, Some(2048))?;
+    if (&value.destination_key).as_bytes().len() > 2048 { return Err("sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes".to_string()); }
+    if let Some(value) = &value.provider_file_id {
+        validate_string_length("sound_recorder_cloud_copy_jobs.provider_file_id", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes".to_string()); }
+    }
+    if *(&value.attempts) < 0 { return Err("sound_recorder_cloud_copy_jobs.attempts is below the minimum".to_string()); }
+    if *(&value.attempts) > 50 { return Err("sound_recorder_cloud_copy_jobs.attempts is above the maximum".to_string()); }
+    if let Some(value) = &value.last_error {
+        validate_string_length("sound_recorder_cloud_copy_jobs.last_error", value, None, Some(500))?;
+        if (value).as_bytes().len() > 500 { return Err("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_cloud_copy_jobs.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_cloud_copy_jobs_insert(value: &SoundRecorderCloudCopyJobsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.provider: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "running", "waiting_client", "completed", "failed", "skipped"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.status: {}", value)); }
+    }
+    if let Some(value) = &value.destination_key {
+        validate_string_length("sound_recorder_cloud_copy_jobs.destination_key", value, None, Some(2048))?;
+        if (value).as_bytes().len() > 2048 { return Err("sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_file_id {
+        validate_string_length("sound_recorder_cloud_copy_jobs.provider_file_id", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.attempts {
+        if *(value) < 0 { return Err("sound_recorder_cloud_copy_jobs.attempts is below the minimum".to_string()); }
+        if *(value) > 50 { return Err("sound_recorder_cloud_copy_jobs.attempts is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.last_error {
+        validate_string_length("sound_recorder_cloud_copy_jobs.last_error", value, None, Some(500))?;
+        if (value).as_bytes().len() > 500 { return Err("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_cloud_copy_jobs.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
 pub const CONTAINER_POOL_CONFIGS_TABLE: &str = "container_pool_configs";
 pub const CONTAINER_POOL_CONFIGS_COLUMNS: &[&str] = &["id", "slug", "display_name", "image", "command", "env", "request_path", "health_path", "container_port", "min_warm", "max_warm", "max_concurrency_per_container", "request_timeout_ms", "idle_ttl_seconds", "nats_subject", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const CONTAINER_POOL_CONFIGS_SELECT_SQL: &str = r###"select
@@ -1593,7 +2198,7 @@ impl ContainerPoolConfigsStatus {
 impl TryFrom<&str> for ContainerPoolConfigsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <ContainerPoolConfigsStatus as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -1795,7 +2400,7 @@ impl KnownGitRepoProvider {
 impl TryFrom<&str> for KnownGitRepoProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <KnownGitRepoProvider as TryFrom<&str>>::Error> {
         match value {
             "github" => Ok(Self::Github),
             "gitlab" => Ok(Self::Gitlab),
@@ -1829,7 +2434,7 @@ impl KnownGitRepoStatus {
 impl TryFrom<&str> for KnownGitRepoStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <KnownGitRepoStatus as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -1954,7 +2559,7 @@ impl AgentContextBlobsStatus {
 impl TryFrom<&str> for AgentContextBlobsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <AgentContextBlobsStatus as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -2247,7 +2852,7 @@ impl AgentRemoteDevTaskStatus {
 impl TryFrom<&str> for AgentRemoteDevTaskStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <AgentRemoteDevTaskStatus as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "running" => Ok(Self::Running),
@@ -2289,7 +2894,7 @@ impl AgentRemoteDevTaskPrState {
 impl TryFrom<&str> for AgentRemoteDevTaskPrState {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <AgentRemoteDevTaskPrState as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "open" => Ok(Self::Open),
@@ -2323,7 +2928,7 @@ impl AgentRemoteDevTaskExitReason {
 impl TryFrom<&str> for AgentRemoteDevTaskExitReason {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <AgentRemoteDevTaskExitReason as TryFrom<&str>>::Error> {
         match value {
             "completed" => Ok(Self::Completed),
             "cancelled" => Ok(Self::Cancelled),
@@ -2606,7 +3211,7 @@ impl AgentRemoteDevArtifactStorageProvider {
 impl TryFrom<&str> for AgentRemoteDevArtifactStorageProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <AgentRemoteDevArtifactStorageProvider as TryFrom<&str>>::Error> {
         match value {
             "s3" => Ok(Self::S3),
             "r2" => Ok(Self::R2),
@@ -2739,7 +3344,7 @@ impl AgentRemoteDevRuntimeLockStatus {
 impl TryFrom<&str> for AgentRemoteDevRuntimeLockStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <AgentRemoteDevRuntimeLockStatus as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "released" => Ok(Self::Released),
@@ -2893,7 +3498,7 @@ impl MipSolverSolvesNodeRole {
 impl TryFrom<&str> for MipSolverSolvesNodeRole {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <MipSolverSolvesNodeRole as TryFrom<&str>>::Error> {
         match value {
             "master" => Ok(Self::Master),
             "slave" => Ok(Self::Slave),
@@ -3285,7 +3890,7 @@ impl LambdaFunctionRuntime {
 impl TryFrom<&str> for LambdaFunctionRuntime {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <LambdaFunctionRuntime as TryFrom<&str>>::Error> {
         match value {
             "nodejs" => Ok(Self::Nodejs),
             "javascript" => Ok(Self::Javascript),
@@ -3338,7 +3943,7 @@ impl LambdaFunctionContainerBuildStatus {
 impl TryFrom<&str> for LambdaFunctionContainerBuildStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <LambdaFunctionContainerBuildStatus as TryFrom<&str>>::Error> {
         match value {
             "not_requested" => Ok(Self::NotRequested),
             "pending" => Ok(Self::Pending),
@@ -3376,7 +3981,7 @@ impl LambdaFunctionStatus {
 impl TryFrom<&str> for LambdaFunctionStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <LambdaFunctionStatus as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "active" => Ok(Self::Active),
@@ -3572,7 +4177,7 @@ impl ContainerPoolImageRevisionsSource {
 impl TryFrom<&str> for ContainerPoolImageRevisionsSource {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <ContainerPoolImageRevisionsSource as TryFrom<&str>>::Error> {
         match value {
             "disk-default" => Ok(Self::DiskDefault),
             "user" => Ok(Self::User),
@@ -3605,7 +4210,7 @@ impl ContainerPoolImageRevisionsStatus {
 impl TryFrom<&str> for ContainerPoolImageRevisionsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <ContainerPoolImageRevisionsStatus as TryFrom<&str>>::Error> {
         match value {
             "candidate" => Ok(Self::Candidate),
             "active" => Ok(Self::Active),
@@ -3761,7 +4366,7 @@ impl ContainerPoolBuildRunsBuildStatus {
 impl TryFrom<&str> for ContainerPoolBuildRunsBuildStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <ContainerPoolBuildRunsBuildStatus as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "building" => Ok(Self::Building),
@@ -3805,7 +4410,7 @@ impl ContainerPoolBuildRunsTestStatus {
 impl TryFrom<&str> for ContainerPoolBuildRunsTestStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <ContainerPoolBuildRunsTestStatus as TryFrom<&str>>::Error> {
         match value {
             "not_started" => Ok(Self::NotStarted),
             "pending" => Ok(Self::Pending),
@@ -3848,7 +4453,7 @@ impl ContainerPoolBuildRunsOverallStatus {
 impl TryFrom<&str> for ContainerPoolBuildRunsOverallStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <ContainerPoolBuildRunsOverallStatus as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "running" => Ok(Self::Running),
@@ -4006,7 +4611,7 @@ impl PresenceConvsStatus {
 impl TryFrom<&str> for PresenceConvsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <PresenceConvsStatus as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -4118,7 +4723,7 @@ impl PresenceConvMembersRole {
 impl TryFrom<&str> for PresenceConvMembersRole {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <PresenceConvMembersRole as TryFrom<&str>>::Error> {
         match value {
             "owner" => Ok(Self::Owner),
             "admin" => Ok(Self::Admin),
@@ -4155,7 +4760,7 @@ impl PresenceConvMembersStatus {
 impl TryFrom<&str> for PresenceConvMembersStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <PresenceConvMembersStatus as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "muted" => Ok(Self::Muted),
@@ -4294,7 +4899,7 @@ impl PresenceEventsOp {
 impl TryFrom<&str> for PresenceEventsOp {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <PresenceEventsOp as TryFrom<&str>>::Error> {
         match value {
             "INSERT" => Ok(Self::INSERT),
             "UPDATE" => Ok(Self::UPDATE),
@@ -4421,7 +5026,7 @@ impl DesSoccerLearningExperimentsStatus {
 impl TryFrom<&str> for DesSoccerLearningExperimentsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningExperimentsStatus as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -4563,7 +5168,7 @@ impl DesSoccerLearningPolicyVersionsSourceKind {
 impl TryFrom<&str> for DesSoccerLearningPolicyVersionsSourceKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningPolicyVersionsSourceKind as TryFrom<&str>>::Error> {
         match value {
             "seed" => Ok(Self::Seed),
             "merge" => Ok(Self::Merge),
@@ -4601,7 +5206,7 @@ impl DesSoccerLearningPolicyVersionsStatus {
 impl TryFrom<&str> for DesSoccerLearningPolicyVersionsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningPolicyVersionsStatus as TryFrom<&str>>::Error> {
         match value {
             "candidate" => Ok(Self::Candidate),
             "active" => Ok(Self::Active),
@@ -4635,7 +5240,7 @@ impl DesSoccerLearningPolicyVersionsRetentionKind {
 impl TryFrom<&str> for DesSoccerLearningPolicyVersionsRetentionKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningPolicyVersionsRetentionKind as TryFrom<&str>>::Error> {
         match value {
             "branch_tip" => Ok(Self::BranchTip),
             "retain_all" => Ok(Self::RetainAll),
@@ -4799,7 +5404,7 @@ impl DesSoccerLearningPolicyEntriesTeam {
 impl TryFrom<&str> for DesSoccerLearningPolicyEntriesTeam {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningPolicyEntriesTeam as TryFrom<&str>>::Error> {
         match value {
             "home" => Ok(Self::Home),
             "away" => Ok(Self::Away),
@@ -4829,7 +5434,7 @@ impl DesSoccerLearningPolicyEntriesEntryKind {
 impl TryFrom<&str> for DesSoccerLearningPolicyEntriesEntryKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningPolicyEntriesEntryKind as TryFrom<&str>>::Error> {
         match value {
             "action" => Ok(Self::Action),
             "target" => Ok(Self::Target),
@@ -4982,7 +5587,7 @@ impl DesSoccerLearningJobsSpawnStrategy {
 impl TryFrom<&str> for DesSoccerLearningJobsSpawnStrategy {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningJobsSpawnStrategy as TryFrom<&str>>::Error> {
         match value {
             "latest" => Ok(Self::Latest),
             "elite" => Ok(Self::Elite),
@@ -5022,7 +5627,7 @@ impl DesSoccerLearningJobsStatus {
 impl TryFrom<&str> for DesSoccerLearningJobsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningJobsStatus as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "running" => Ok(Self::Running),
@@ -5188,7 +5793,7 @@ impl DesSoccerLearningRunsStatus {
 impl TryFrom<&str> for DesSoccerLearningRunsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningRunsStatus as TryFrom<&str>>::Error> {
         match value {
             "completed" => Ok(Self::Completed),
             "failed" => Ok(Self::Failed),
@@ -5220,7 +5825,7 @@ impl DesSoccerLearningRunsHomeOutcome {
 impl TryFrom<&str> for DesSoccerLearningRunsHomeOutcome {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningRunsHomeOutcome as TryFrom<&str>>::Error> {
         match value {
             "win" => Ok(Self::Win),
             "draw" => Ok(Self::Draw),
@@ -5253,7 +5858,7 @@ impl DesSoccerLearningRunsAwayOutcome {
 impl TryFrom<&str> for DesSoccerLearningRunsAwayOutcome {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningRunsAwayOutcome as TryFrom<&str>>::Error> {
         match value {
             "win" => Ok(Self::Win),
             "draw" => Ok(Self::Draw),
@@ -5444,7 +6049,7 @@ impl DesSoccerLearningRunDeltasTeam {
 impl TryFrom<&str> for DesSoccerLearningRunDeltasTeam {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningRunDeltasTeam as TryFrom<&str>>::Error> {
         match value {
             "home" => Ok(Self::Home),
             "away" => Ok(Self::Away),
@@ -5474,7 +6079,7 @@ impl DesSoccerLearningRunDeltasEntryKind {
 impl TryFrom<&str> for DesSoccerLearningRunDeltasEntryKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningRunDeltasEntryKind as TryFrom<&str>>::Error> {
         match value {
             "action" => Ok(Self::Action),
             "target" => Ok(Self::Target),
@@ -5628,7 +6233,7 @@ impl DesSoccerLearningMergeEventsStrategy {
 impl TryFrom<&str> for DesSoccerLearningMergeEventsStrategy {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesSoccerLearningMergeEventsStrategy as TryFrom<&str>>::Error> {
         match value {
             "outcome_weighted_average" => Ok(Self::OutcomeWeightedAverage),
             "elite" => Ok(Self::Elite),
@@ -5755,7 +6360,7 @@ impl DesFelElevatorLearningRunsStatus {
 impl TryFrom<&str> for DesFelElevatorLearningRunsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesFelElevatorLearningRunsStatus as TryFrom<&str>>::Error> {
         match value {
             "completed" => Ok(Self::Completed),
             "failed" => Ok(Self::Failed),
@@ -5792,7 +6397,7 @@ impl DesFelElevatorLearningRunsDispatchPolicy {
 impl TryFrom<&str> for DesFelElevatorLearningRunsDispatchPolicy {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesFelElevatorLearningRunsDispatchPolicy as TryFrom<&str>>::Error> {
         match value {
             "look" => Ok(Self::Look),
             "mdp-table" => Ok(Self::MdpTable),
@@ -6026,7 +6631,7 @@ impl DesFelElevatorPolicyStatesPolicyKind {
 impl TryFrom<&str> for DesFelElevatorPolicyStatesPolicyKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesFelElevatorPolicyStatesPolicyKind as TryFrom<&str>>::Error> {
         match value {
             "look" => Ok(Self::Look),
             "mdp-table" => Ok(Self::MdpTable),
@@ -6063,7 +6668,7 @@ impl DesFelElevatorPolicyStatesSourceKind {
 impl TryFrom<&str> for DesFelElevatorPolicyStatesSourceKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesFelElevatorPolicyStatesSourceKind as TryFrom<&str>>::Error> {
         match value {
             "run-final" => Ok(Self::RunFinal),
             "offline-training" => Ok(Self::OfflineTraining),
@@ -6188,7 +6793,7 @@ impl DesFelElevatorDispatchDecisionsPolicyKind {
 impl TryFrom<&str> for DesFelElevatorDispatchDecisionsPolicyKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesFelElevatorDispatchDecisionsPolicyKind as TryFrom<&str>>::Error> {
         match value {
             "look" => Ok(Self::Look),
             "mdp-table" => Ok(Self::MdpTable),
@@ -6299,7 +6904,7 @@ impl DesFelElevatorPomdpBeliefsAction {
 impl TryFrom<&str> for DesFelElevatorPomdpBeliefsAction {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesFelElevatorPomdpBeliefsAction as TryFrom<&str>>::Error> {
         match value {
             "hold" => Ok(Self::Hold),
             "dispatch" => Ok(Self::Dispatch),
@@ -6329,7 +6934,7 @@ impl DesFelElevatorPomdpBeliefsObservation {
 impl TryFrom<&str> for DesFelElevatorPomdpBeliefsObservation {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <DesFelElevatorPomdpBeliefsObservation as TryFrom<&str>>::Error> {
         match value {
             "quiet" => Ok(Self::Quiet),
             "call" => Ok(Self::Call),

@@ -525,6 +525,177 @@ export class SoundRecorderAuditEventsEntity {
 
 }
 
+@Index("sound_recorder_oauth_states_hash_uq", ["stateHash"], { unique: true })
+// sound_recorder_oauth_states_account_provider_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// sound_recorder_oauth_states_expiry_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "sound_recorder_oauth_states" })
+export class SoundRecorderOauthStatesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "account_id", type: "uuid" })
+  accountId!: string;
+
+  @Column({ name: "device_id", type: "uuid" })
+  deviceId!: string;
+
+  @Column({ name: "provider", type: "varchar", length: 32 })
+  provider!: string;
+
+  @Column({ name: "state_hash", type: "varchar", length: 64 })
+  stateHash!: string;
+
+  @Column({ name: "redirect_uri", type: "varchar", length: 512 })
+  redirectUri!: string;
+
+  @Column({ name: "folder_path", type: "varchar", length: 512, nullable: true })
+  folderPath!: string | null;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'pending'" })
+  status!: string;
+
+  @Column({ name: "expires_at", type: "timestamptz" })
+  expiresAt!: Date;
+
+  @Column({ name: "consumed_at", type: "timestamptz", nullable: true })
+  consumedAt!: Date | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("sound_recorder_cloud_connections_active_account_provider_uq", ["accountId", "provider", "providerAccountId"], { unique: true, where: "status <> 'revoked' and provider_account_id is not null" })
+// sound_recorder_cloud_connections_account_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "sound_recorder_cloud_connections" })
+export class SoundRecorderCloudConnectionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "account_id", type: "uuid" })
+  accountId!: string;
+
+  @Column({ name: "created_by_device_id", type: "uuid", nullable: true })
+  createdByDeviceId!: string | null;
+
+  @Column({ name: "provider", type: "varchar", length: 32 })
+  provider!: string;
+
+  @Column({ name: "link_mode", type: "varchar", length: 32, default: () => "'server_oauth'" })
+  linkMode!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "display_name", type: "varchar", length: 160, nullable: true })
+  displayName!: string | null;
+
+  @Column({ name: "provider_account_id", type: "varchar", length: 240, nullable: true })
+  providerAccountId!: string | null;
+
+  @Column({ name: "provider_subject_hash", type: "varchar", length: 64, nullable: true })
+  providerSubjectHash!: string | null;
+
+  @Column({ name: "root_folder_id", type: "varchar", length: 512, nullable: true })
+  rootFolderId!: string | null;
+
+  @Column({ name: "folder_path", type: "varchar", length: 512, default: () => "'sound-recorder'" })
+  folderPath!: string;
+
+  @Column({ name: "oauth_scope", type: "text", nullable: true })
+  oauthScope!: string | null;
+
+  @Column({ name: "token_ciphertext", type: "text", nullable: true })
+  tokenCiphertext!: string | null;
+
+  @Column({ name: "token_nonce", type: "varchar", length: 64, nullable: true })
+  tokenNonce!: string | null;
+
+  @Column({ name: "token_aad", type: "varchar", length: 512, nullable: true })
+  tokenAad!: string | null;
+
+  @Column({ name: "token_version", type: "integer", nullable: true })
+  tokenVersion!: number | null;
+
+  @Column({ name: "token_expires_at", type: "timestamptz", nullable: true })
+  tokenExpiresAt!: Date | null;
+
+  @Column({ name: "last_sync_at", type: "timestamptz", nullable: true })
+  lastSyncAt!: Date | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("sound_recorder_cloud_copy_jobs_connection_segment_uq", ["connectionId", "segmentId"], { unique: true })
+// sound_recorder_cloud_copy_jobs_account_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// sound_recorder_cloud_copy_jobs_connection_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("sound_recorder_cloud_copy_jobs_segment_idx", ["segmentId"])
+@Entity({ name: "sound_recorder_cloud_copy_jobs" })
+export class SoundRecorderCloudCopyJobsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "account_id", type: "uuid" })
+  accountId!: string;
+
+  @Column({ name: "connection_id", type: "uuid" })
+  connectionId!: string;
+
+  @Column({ name: "segment_id", type: "uuid" })
+  segmentId!: string;
+
+  @Column({ name: "provider", type: "varchar", length: 32 })
+  provider!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'pending'" })
+  status!: string;
+
+  @Column({ name: "destination_key", type: "varchar", length: 2048 })
+  destinationKey!: string;
+
+  @Column({ name: "provider_file_id", type: "varchar", length: 512, nullable: true })
+  providerFileId!: string | null;
+
+  @Column({ name: "attempts", type: "integer", default: () => "0" })
+  attempts!: number;
+
+  @Column({ name: "locked_until", type: "timestamptz", nullable: true })
+  lockedUntil!: Date | null;
+
+  @Column({ name: "started_at", type: "timestamptz", nullable: true })
+  startedAt!: Date | null;
+
+  @Column({ name: "completed_at", type: "timestamptz", nullable: true })
+  completedAt!: Date | null;
+
+  @Column({ name: "last_error", type: "varchar", length: 500, nullable: true })
+  lastError!: string | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
 @Index("container_pool_configs_slug_active_uq", ["slug"], { unique: true, where: "is_soft_deleted = false" })
 @Index("container_pool_configs_status_idx", ["status"], { where: "is_soft_deleted = false" })
 // container_pool_configs_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.

@@ -191,10 +191,10 @@
     {
       "service": "dd-sound-recorder-rs",
       "language": "rust",
-      "routeCount": 19,
+      "routeCount": 26,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 12
+        "user-generated": 19
       },
       "generated": [
         "remote/deployments/dd-sound-recorder-rs/generated/api-docs.json",
