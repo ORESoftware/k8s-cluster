@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     env,
     error::Error,
     net::SocketAddr,
@@ -18,7 +18,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 
 const SERVICE_NAME: &str = "dd-patent-filing-rs";
 const SCHEMA_VERSION: &str = "patent_filing.package.v1";
@@ -299,7 +299,10 @@ fn config_from_env() -> Config {
         server_auth_secret: optional_env("PATENT_FILING_SERVER_AUTH_SECRET")
             .or_else(|| optional_env("SERVER_AUTH_SECRET")),
         allow_unauthenticated: env_bool("PATENT_FILING_ALLOW_UNAUTHENTICATED", false),
-        patent_center_url: env_value("PATENT_FILING_CENTER_URL", "https://patentcenter.uspto.gov/"),
+        patent_center_url: env_value(
+            "PATENT_FILING_CENTER_URL",
+            "https://patentcenter.uspto.gov/",
+        ),
         max_matters: env_usize("PATENT_FILING_MAX_MATTERS", MAX_MATTERS_DEFAULT),
     }
 }
@@ -432,7 +435,9 @@ fn ui_auth_failure_response(state: &AppState, failure: AuthFailure) -> Response 
         .auth_failures_total
         .fetch_add(1, Ordering::Relaxed);
     let message = match failure {
-        AuthFailure::MissingSecret => "SERVER_AUTH_SECRET is not configured for package generation.",
+        AuthFailure::MissingSecret => {
+            "SERVER_AUTH_SECRET is not configured for package generation."
+        }
         AuthFailure::Unauthorized => "Package generation is waiting for operator authentication.",
     };
     (
@@ -471,7 +476,10 @@ fn intake_from_form(form: UiPackageForm) -> PatentIntakeRequest {
         inventor_names: split_lines(&form.inventor_names),
         applicant: clean_optional(form.applicant, MAX_SHORT_TEXT_LEN),
         invention_summary: clean_text(&form.invention_summary, MAX_TEXT_LEN),
-        technical_field: clean_text(&form.technical_field.unwrap_or_default(), MAX_SHORT_TEXT_LEN),
+        technical_field: clean_text(
+            &form.technical_field.unwrap_or_default(),
+            MAX_SHORT_TEXT_LEN,
+        ),
         problem: clean_text(&form.problem, MAX_TEXT_LEN),
         solution: clean_text(&form.solution, MAX_TEXT_LEN),
         novelty_claims: split_lines(&form.novelty_claims),
@@ -518,7 +526,9 @@ fn validate_intake(request: &PatentIntakeRequest) -> Result<(), String> {
         || request.known_prior_art.len() > MAX_LIST_ITEMS
         || request.attachments.len() > MAX_LIST_ITEMS
     {
-        return Err(format!("list fields may contain at most {MAX_LIST_ITEMS} items"));
+        return Err(format!(
+            "list fields may contain at most {MAX_LIST_ITEMS} items"
+        ));
     }
     Ok(())
 }
@@ -542,7 +552,10 @@ fn evaluate_readiness(request: &PatentIntakeRequest) -> ReadinessReview {
 
     if !request.inventor_names.is_empty() {
         score += 8;
-        strengths.push(format!("{} inventor(s) captured", request.inventor_names.len()));
+        strengths.push(format!(
+            "{} inventor(s) captured",
+            request.inventor_names.len()
+        ));
     } else {
         blockers.push(finding(
             "missing-inventors",
@@ -628,7 +641,8 @@ fn evaluate_readiness(request: &PatentIntakeRequest) -> ReadinessReview {
     if !request.alternatives.is_empty() {
         score += 5;
     } else {
-        next_actions.push("Capture alternate implementations to avoid a narrow disclosure.".to_string());
+        next_actions
+            .push("Capture alternate implementations to avoid a narrow disclosure.".to_string());
     }
 
     if !request.advantages.is_empty() {
@@ -688,7 +702,9 @@ fn evaluate_readiness(request: &PatentIntakeRequest) -> ReadinessReview {
     .to_string();
 
     if next_actions.is_empty() {
-        next_actions.push("Review draft claims, figures, and prior-art search results with counsel.".to_string());
+        next_actions.push(
+            "Review draft claims, figures, and prior-art search results with counsel.".to_string(),
+        );
     }
 
     ReadinessReview {
@@ -801,10 +817,16 @@ fn build_draft(request: &PatentIntakeRequest) -> ProvisionalDraft {
 fn abstract_draft(request: &PatentIntakeRequest) -> String {
     let mut parts = vec![request.invention_summary.trim().to_string()];
     if !request.solution.trim().is_empty() {
-        parts.push(format!("The invention addresses the problem by {}.", sentence_fragment(&request.solution)));
+        parts.push(format!(
+            "The invention addresses the problem by {}.",
+            sentence_fragment(&request.solution)
+        ));
     }
     if let Some(first) = request.novelty_claims.first() {
-        parts.push(format!("In some implementations, the system includes {}.", sentence_fragment(first)));
+        parts.push(format!(
+            "In some implementations, the system includes {}.",
+            sentence_fragment(first)
+        ));
     }
     parts
         .join(" ")
@@ -815,10 +837,7 @@ fn abstract_draft(request: &PatentIntakeRequest) -> String {
 }
 
 fn sentence_fragment(value: &str) -> String {
-    value
-        .trim()
-        .trim_end_matches(['.', ';', ':'])
-        .to_string()
+    value.trim().trim_end_matches(['.', ';', ':']).to_string()
 }
 
 fn claim_seeds(request: &PatentIntakeRequest) -> Vec<String> {
@@ -865,7 +884,10 @@ fn drawing_plan(request: &PatentIntakeRequest) -> Vec<String> {
         ));
     }
     if request.attachments.is_empty() {
-        plan.push("Evidence needed: sketches, screenshots, CAD, data-flow diagrams, or lab notes.".to_string());
+        plan.push(
+            "Evidence needed: sketches, screenshots, CAD, data-flow diagrams, or lab notes."
+                .to_string(),
+        );
     } else {
         for attachment in request.attachments.iter().take(6) {
             plan.push(format!("Existing evidence: {}", attachment.name));
@@ -949,7 +971,11 @@ fn build_search_plan(request: &PatentIntakeRequest) -> SearchPlan {
     }
 }
 
-fn build_checklist(config: &Config, request: &PatentIntakeRequest, readiness: &ReadinessReview) -> Vec<ChecklistItem> {
+fn build_checklist(
+    config: &Config,
+    request: &PatentIntakeRequest,
+    readiness: &ReadinessReview,
+) -> Vec<ChecklistItem> {
     let mut items = vec![
         ChecklistItem {
             label: "Invention disclosure intake".to_string(),
@@ -993,13 +1019,18 @@ fn build_checklist(config: &Config, request: &PatentIntakeRequest, readiness: &R
             label: "Oath/declaration and ADS".to_string(),
             status: "open".to_string(),
             owner: "counsel".to_string(),
-            notes: "Non-provisional filings usually need formal forms and claim review.".to_string(),
+            notes: "Non-provisional filings usually need formal forms and claim review."
+                .to_string(),
         });
     }
     items
 }
 
-fn build_handoff(request: &PatentIntakeRequest, draft: &ProvisionalDraft, search_plan: &SearchPlan) -> AttorneyHandoff {
+fn build_handoff(
+    request: &PatentIntakeRequest,
+    draft: &ProvisionalDraft,
+    search_plan: &SearchPlan,
+) -> AttorneyHandoff {
     AttorneyHandoff {
         summary: format!(
             "{} inventor(s), {} novelty point(s), {} draft section(s), {} search query group(s).",
@@ -1010,8 +1041,10 @@ fn build_handoff(request: &PatentIntakeRequest, draft: &ProvisionalDraft, search
         ),
         questions: vec![
             "Are all named contributors legally inventors for at least one claim?".to_string(),
-            "Does the disclosure enable a skilled person to make and use the invention?".to_string(),
-            "Should this be filed as provisional, non-provisional, design, or PCT-related work?".to_string(),
+            "Does the disclosure enable a skilled person to make and use the invention?"
+                .to_string(),
+            "Should this be filed as provisional, non-provisional, design, or PCT-related work?"
+                .to_string(),
             "Do public disclosures or offers for sale create deadline pressure?".to_string(),
             "Which claim seeds should become independent claims?".to_string(),
         ],
@@ -1027,7 +1060,10 @@ fn build_handoff(request: &PatentIntakeRequest, draft: &ProvisionalDraft, search
     }
 }
 
-fn build_package(config: &Config, request: PatentIntakeRequest) -> Result<PatentMatterPackage, String> {
+fn build_package(
+    config: &Config,
+    request: PatentIntakeRequest,
+) -> Result<PatentMatterPackage, String> {
     validate_intake(&request)?;
     let request_id = request_id(request.request_id.as_ref(), "patent-package");
     let generated_at_ms = now_ms();
@@ -1475,7 +1511,7 @@ async fn api_docs_json() -> impl IntoResponse {
 
 fn render_home() -> String {
     format!(
-        r#"<!doctype html>
+        r##"<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -1661,7 +1697,7 @@ Prototype calibration notes</textarea>
     </section>
   </main>
 </body>
-</html>"#
+</html>"##
     )
 }
 
