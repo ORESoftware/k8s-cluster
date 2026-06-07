@@ -11,7 +11,7 @@ use std::{
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, State},
+    extract::{DefaultBodyLimit, Form, State},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
@@ -168,6 +168,19 @@ struct ScrapeRequest {
     include_links: Option<bool>,
     tags: Option<Vec<String>>,
     pipeline: Option<PipelineOptions>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UiScrapeForm {
+    source: Option<String>,
+    url: String,
+    dataset_id: Option<String>,
+    strategy: Option<String>,
+    selector: Option<String>,
+    tags: Option<String>,
+    render_javascript: Option<String>,
+    include_links: Option<String>,
+    pipeline_enabled: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -518,6 +531,87 @@ fn clean_tags(values: impl IntoIterator<Item = String>) -> Vec<String> {
         }
         if out.len() >= MAX_TAGS {
             break;
+        }
+    }
+    out
+}
+
+fn form_text(value: Option<String>, max_len: usize) -> Option<String> {
+    value
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+        .map(|text| text.chars().take(max_len).collect())
+}
+
+fn form_csv(value: Option<String>) -> Vec<String> {
+    value
+        .unwrap_or_default()
+        .split(',')
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect()
+}
+
+impl UiScrapeForm {
+    fn into_scrape_request(self) -> Result<ScrapeRequest, String> {
+        let url = self.url.trim();
+        if url.is_empty() {
+            return Err("url must not be empty".to_string());
+        }
+        if url.len() > MAX_TEXT_LEN {
+            return Err(format!("url must be at most {MAX_TEXT_LEN} bytes"));
+        }
+        if url.chars().any(char::is_control) {
+            return Err("url must not contain control characters".to_string());
+        }
+        let url = url.to_string();
+        validate_public_url(&url)?;
+        let source = form_text(self.source, MAX_TOKEN_LEN)
+            .map(|value| clean_required(&value, "source"))
+            .transpose()?
+            .unwrap_or_else(|| "operator-scrape".to_string());
+        let dataset_id = form_text(self.dataset_id, MAX_TOKEN_LEN)
+            .map(|value| clean_required(&value, "datasetId"))
+            .transpose()?;
+        let strategy = form_text(self.strategy, MAX_TOKEN_LEN);
+        let selector = form_text(self.selector, MAX_TOKEN_LEN);
+        let tags = clean_tags(form_csv(self.tags));
+        let pipeline = self.pipeline_enabled.as_ref().map(|_| PipelineOptions {
+            enabled: Some(true),
+            job_type: Some("spark-etl".to_string()),
+            sink: dataset_id
+                .as_ref()
+                .map(|dataset| format!("minio://public-data/bronze/{dataset}")),
+            airflow_dag: None,
+            spark_app: Some("public-data-normalize".to_string()),
+            parameters: Some(json!({ "submittedBy": "public-data-ui" })),
+        });
+        Ok(ScrapeRequest {
+            request_id: None,
+            source,
+            url,
+            dataset_id,
+            strategy,
+            render_javascript: Some(self.render_javascript.is_some()),
+            selector,
+            selectors: None,
+            include_links: Some(self.include_links.is_some()),
+            tags: if tags.is_empty() { None } else { Some(tags) },
+            pipeline,
+        })
+    }
+}
+
+fn html_escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(ch),
         }
     }
     out
@@ -1944,6 +2038,9 @@ async fn root() -> Html<&'static str> {
     p { line-height: 1.5; max-width: 780px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 24px; }
     .card { background: white; border: 1px solid #d8dde6; border-radius: 8px; padding: 16px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+    .button { color: white; background: #1f6f70; border-radius: 6px; padding: 10px 14px; text-decoration: none; font-weight: 700; }
+    .link { color: #1f5f87; font-weight: 700; }
     code { background: #eef1f5; border-radius: 4px; padding: 2px 5px; }
   </style>
 </head>
@@ -1951,6 +2048,10 @@ async fn root() -> Html<&'static str> {
   <main>
     <h1>dd-public-data-server</h1>
     <p>Rust public-data ingestion service for webhooks, scraper orchestration, public/government source normalization, grant matching, trend/correlation graph data, white-paper evidence briefs, and Spark/Airflow pipeline job intents.</p>
+    <div class="actions">
+      <a class="button" href="./ui">Operator UI</a>
+      <a class="link" href="./docs/api">API docs</a>
+    </div>
     <div class="grid">
       <div class="card"><strong>Sources</strong><p><code>GET /sources</code></p></div>
       <div class="card"><strong>Ingest</strong><p><code>POST /ingest</code> and <code>POST /webhooks/ingest</code></p></div>
@@ -1961,6 +2062,466 @@ async fn root() -> Html<&'static str> {
 </body>
 </html>"#,
     )
+}
+
+fn render_ui_shell(state: &AppState) -> String {
+    let mut html = String::new();
+    html.push_str(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Public Data Operations</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+  <style>
+    :root { color-scheme: light; --ink: #172026; --muted: #5d6975; --line: #d8dde6; --panel: #ffffff; --page: #f5f7f8; --teal: #1f6f70; --blue: #1f5f87; --amber: #9a6615; --danger: #a43d3d; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: var(--page); }
+    header, main { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+    header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding-top: 28px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+    h1, h2, h3, p { margin-top: 0; letter-spacing: 0; }
+    h1 { margin-bottom: 4px; font-size: 28px; }
+    h2 { font-size: 18px; margin-bottom: 14px; }
+    h3 { font-size: 15px; margin-bottom: 6px; }
+    p { line-height: 1.5; }
+    nav { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+    nav a, button, .button { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px solid var(--line); padding: 8px 12px; color: var(--ink); background: #ffffff; text-decoration: none; font: inherit; font-weight: 700; cursor: pointer; }
+    button.primary { color: #ffffff; background: var(--teal); border-color: var(--teal); }
+    button:disabled { opacity: 0.6; cursor: wait; }
+    main { padding-top: 22px; padding-bottom: 44px; }
+    .kicker { margin-bottom: 4px; color: var(--teal); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+    .grid { display: grid; gap: 14px; }
+    .stats { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+    .split { grid-template-columns: minmax(300px, 420px) 1fr; align-items: start; margin-top: 16px; }
+    .panel, .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+    .stat strong { display: block; font-size: 26px; }
+    .muted { color: var(--muted); }
+    .status-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 12px; }
+    .badge, .pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 8px; font-size: 12px; font-weight: 800; background: #e9f2f2; color: #15595a; }
+    .badge.warn { background: #fff1d6; color: var(--amber); }
+    .badge.danger { background: #f8dddd; color: var(--danger); }
+    .pill { margin: 2px 4px 2px 0; background: #eef1f5; color: #35414d; }
+    form { display: grid; gap: 12px; }
+    label { display: grid; gap: 6px; font-size: 13px; font-weight: 800; color: #35414d; }
+    input, select { width: 100%; min-height: 38px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; background: #ffffff; color: var(--ink); }
+    .checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+    .check { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+    .check input { width: 16px; min-height: 16px; }
+    .result { min-height: 48px; }
+    .notice { border: 1px solid var(--line); border-left: 4px solid var(--teal); border-radius: 8px; padding: 12px; background: #ffffff; }
+    .notice.error { border-left-color: var(--danger); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: #35414d; font-size: 12px; text-transform: uppercase; }
+    code { background: #eef1f5; border-radius: 4px; padding: 2px 5px; }
+    .empty { border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); padding: 14px; background: #ffffff; }
+    @media (max-width: 820px) { header { align-items: flex-start; flex-direction: column; } nav { justify-content: flex-start; } .split { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <p class="kicker">Public data</p>
+      <h1>Evidence Operations</h1>
+      <p class="muted">Scrapes, webhooks, grants, model evidence, and pipeline handoffs.</p>
+    </div>
+    <nav aria-label="Public data navigation">
+      <a href="./">Home</a>
+      <a href="./docs/api">API docs</a>
+      <a href="./metrics">Metrics</a>
+    </nav>
+  </header>
+  <main>
+    <section id="summary" hx-get="./ui/fragments/summary" hx-trigger="load, every 15s" hx-swap="innerHTML">
+"#,
+    );
+    html.push_str(&render_ui_summary(state));
+    html.push_str(
+        r##"
+    </section>
+    <div class="grid split">
+      <section class="panel">
+        <h2>Scrape Intake</h2>
+        <form hx-post="./ui/actions/scrape" hx-target="#scrape-result" hx-swap="innerHTML" hx-disabled-elt="button">
+          <label>Source
+            <input name="source" value="sbir" autocomplete="off">
+          </label>
+          <label>Public URL
+            <input name="url" type="url" value="https://www.sbir.gov/" required>
+          </label>
+          <label>Dataset
+            <input name="dataset_id" value="sbir-opportunities" autocomplete="off">
+          </label>
+          <label>Strategy
+            <select name="strategy">
+              <option value="auto">auto</option>
+              <option value="native-fetch">native-fetch</option>
+              <option value="cheerio">cheerio</option>
+              <option value="browser">browser</option>
+            </select>
+          </label>
+          <label>Selector
+            <input name="selector" autocomplete="off" placeholder="main">
+          </label>
+          <label>Tags
+            <input name="tags" value="grants, public-data" autocomplete="off">
+          </label>
+          <div class="checks">
+            <label class="check"><input type="checkbox" name="include_links" checked> Links</label>
+            <label class="check"><input type="checkbox" name="render_javascript"> JavaScript</label>
+            <label class="check"><input type="checkbox" name="pipeline_enabled" checked> Pipeline</label>
+          </div>
+          <button class="primary" type="submit">Run Scrape</button>
+        </form>
+        <div id="scrape-result" class="result" aria-live="polite"></div>
+      </section>
+      <section id="sources" class="panel" hx-get="./ui/fragments/sources" hx-trigger="load" hx-swap="innerHTML">
+"##,
+    );
+    html.push_str(&render_ui_sources());
+    html.push_str(
+        r#"
+      </section>
+    </div>
+    <section id="recent-records" class="panel" style="margin-top:16px" hx-get="./ui/fragments/recent-records" hx-trigger="load, every 20s" hx-swap="innerHTML">
+"#,
+    );
+    html.push_str(&render_ui_recent_records(state));
+    html.push_str(
+        r#"
+    </section>
+  </main>
+</body>
+</html>"#,
+    );
+    html
+}
+
+fn render_stat(label: &str, value: impl ToString, note: &str) -> String {
+    format!(
+        r#"<div class="stat"><span class="muted">{}</span><strong>{}</strong><span class="muted">{}</span></div>"#,
+        html_escape(label),
+        html_escape(&value.to_string()),
+        html_escape(note)
+    )
+}
+
+fn render_badge(label: &str, tone: &str) -> String {
+    format!(
+        r#"<span class="badge {}">{}</span>"#,
+        html_escape(tone),
+        html_escape(label)
+    )
+}
+
+fn render_ui_summary(state: &AppState) -> String {
+    let store = state.store.read().unwrap_or_else(|lock| lock.into_inner());
+    let dataset_count = store
+        .records
+        .iter()
+        .map(|record| record.dataset_id.clone())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let grant_count = store
+        .records
+        .iter()
+        .filter(|record| record.grant.is_some())
+        .count();
+    let last_analysis = store.analyses.last().cloned();
+    let last_job = store.pipeline_jobs.last().cloned();
+    let record_count = store.records.len();
+    let webhook_count = store.webhook_receipts.len();
+    let analysis_count = store.analyses.len();
+    let job_count = store.pipeline_jobs.len();
+    drop(store);
+
+    let nats = if state.nats.is_some() {
+        render_badge("NATS connected", "")
+    } else {
+        render_badge("NATS disabled", "warn")
+    };
+    let auth = if state.config.allow_unauthenticated {
+        render_badge("auth relaxed", "warn")
+    } else if state.config.server_auth_secret.is_some() {
+        render_badge("auth configured", "")
+    } else {
+        render_badge("auth missing", "danger")
+    };
+    let last_analysis_html = last_analysis
+        .map(|analysis| {
+            format!(
+                r#"<div><strong>{}</strong><p class="muted">{}</p></div>"#,
+                html_escape(&analysis.kind),
+                html_escape(&analysis.summary)
+            )
+        })
+        .unwrap_or_else(|| r#"<div class="muted">No analyses yet.</div>"#.to_string());
+    let last_job_html = last_job
+        .map(|job| {
+            format!(
+                r#"<div><strong>{}</strong><p class="muted"><code>{}</code> {}</p></div>"#,
+                html_escape(&job.job_type),
+                html_escape(&job.job_id),
+                html_escape(&job.status)
+            )
+        })
+        .unwrap_or_else(|| r#"<div class="muted">No pipeline jobs yet.</div>"#.to_string());
+
+    format!(
+        r#"<div class="grid stats">
+  {}
+  {}
+  {}
+  {}
+  {}
+  {}
+</div>
+<div class="status-row">
+  <div class="panel"><h3>Runtime</h3>{} {} <p class="muted">NATS messages: {}; published: {}</p></div>
+  <div class="panel"><h3>Last Analysis</h3>{}</div>
+  <div class="panel"><h3>Last Pipeline Job</h3>{}</div>
+</div>"#,
+        render_stat("Records", record_count, "bounded in-process ledger"),
+        render_stat("Datasets", dataset_count, "normalized collections"),
+        render_stat("Grants", grant_count, "records with funding data"),
+        render_stat("Webhooks", webhook_count, "provider receipts"),
+        render_stat(
+            "Analyses",
+            analysis_count,
+            "trend/correlation/brief outputs"
+        ),
+        render_stat("Jobs", job_count, "pipeline intents"),
+        nats,
+        auth,
+        state.metrics.nats_messages_total.load(Ordering::Relaxed),
+        state.metrics.nats_published_total.load(Ordering::Relaxed),
+        last_analysis_html,
+        last_job_html
+    )
+}
+
+fn source_str(source: &Value, key: &str) -> String {
+    source
+        .get(key)
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string()
+}
+
+fn render_ui_sources() -> String {
+    let mut rows = String::new();
+    for source in source_catalog() {
+        rows.push_str(&format!(
+            r#"<tr><td><strong>{}</strong><div class="muted">{}</div></td><td>{}</td><td><code>{}</code></td><td>{}</td></tr>"#,
+            html_escape(&source_str(&source, "name")),
+            html_escape(&source_str(&source, "kind")),
+            html_escape(&source_str(&source, "baseUrl")),
+            html_escape(&source_str(&source, "defaultStrategy")),
+            html_escape(&source_str(&source, "notes"))
+        ));
+    }
+    format!(
+        r#"<h2>Source Catalog</h2>
+<table>
+  <thead><tr><th>Source</th><th>Base URL</th><th>Strategy</th><th>Notes</th></tr></thead>
+  <tbody>{rows}</tbody>
+</table>"#
+    )
+}
+
+fn render_pills(values: &[String]) -> String {
+    if values.is_empty() {
+        return r#"<span class="muted">none</span>"#.to_string();
+    }
+    values
+        .iter()
+        .take(8)
+        .map(|value| format!(r#"<span class="pill">{}</span>"#, html_escape(value)))
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn render_metric_pills(metrics: &BTreeMap<String, f64>) -> String {
+    if metrics.is_empty() {
+        return r#"<span class="muted">none</span>"#.to_string();
+    }
+    metrics
+        .iter()
+        .take(8)
+        .map(|(key, value)| {
+            format!(
+                r#"<span class="pill">{} {}</span>"#,
+                html_escape(key),
+                html_escape(&format!("{value:.2}"))
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn render_ui_recent_records(state: &AppState) -> String {
+    let store = state.store.read().unwrap_or_else(|lock| lock.into_inner());
+    if store.records.is_empty() {
+        return r#"<h2>Recent Records</h2><div class="empty">No records yet.</div>"#.to_string();
+    }
+    let mut rows = String::new();
+    for record in store.records.iter().rev().take(12) {
+        let title = record.title.as_deref().unwrap_or(&record.record_id);
+        rows.push_str(&format!(
+            r#"<tr><td><strong>{}</strong><div class="muted"><code>{}</code></div></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>"#,
+            html_escape(title),
+            html_escape(&record.record_id),
+            html_escape(&record.dataset_id),
+            html_escape(&record.source),
+            render_pills(&record.tags),
+            render_metric_pills(&record.metrics)
+        ));
+    }
+    format!(
+        r#"<h2>Recent Records</h2>
+<table>
+  <thead><tr><th>Record</th><th>Dataset</th><th>Source</th><th>Tags</th><th>Metrics</th></tr></thead>
+  <tbody>{rows}</tbody>
+</table>"#
+    )
+}
+
+fn render_ui_notice(title: &str, detail: &str, error: bool) -> String {
+    let class_name = if error { "notice error" } else { "notice" };
+    format!(
+        r#"<div class="{class_name}"><strong>{}</strong><p class="muted">{}</p></div>"#,
+        html_escape(title),
+        html_escape(detail)
+    )
+}
+
+fn render_ui_scrape_result(value: &Value) -> String {
+    let request_id = value
+        .get("requestId")
+        .and_then(Value::as_str)
+        .unwrap_or("scrape");
+    let dataset_id = value
+        .get("datasetId")
+        .and_then(Value::as_str)
+        .unwrap_or("dataset");
+    let record_title = value
+        .pointer("/record/title")
+        .and_then(Value::as_str)
+        .or_else(|| value.pointer("/record/recordId").and_then(Value::as_str))
+        .unwrap_or("record");
+    let status = value
+        .pointer("/scraper/status")
+        .and_then(Value::as_u64)
+        .map(|status| status.to_string())
+        .unwrap_or_else(|| "ok".to_string());
+    format!(
+        r##"<div class="notice">
+  <strong>Scrape accepted</strong>
+  <p class="muted"><code>{}</code> stored <code>{}</code> in <code>{}</code>; scraper status {}.</p>
+  <button type="button" hx-get="./ui/fragments/summary" hx-target="#summary" hx-swap="innerHTML">Refresh Board</button>
+</div>"##,
+        html_escape(request_id),
+        html_escape(record_title),
+        html_escape(dataset_id),
+        html_escape(&status)
+    )
+}
+
+fn ui_auth_failure_response(state: &AppState, failure: AuthFailure) -> Response {
+    state
+        .metrics
+        .auth_failures_total
+        .fetch_add(1, Ordering::Relaxed);
+    let message = match failure {
+        AuthFailure::MissingSecret => "server auth secret is not configured",
+        AuthFailure::Unauthorized => "unauthorized",
+    };
+    (
+        StatusCode::UNAUTHORIZED,
+        Html(render_ui_notice("Unauthorized", message, true)),
+    )
+        .into_response()
+}
+
+async fn ui_dashboard(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return ui_auth_failure_response(&state, failure);
+    }
+    Html(render_ui_shell(&state)).into_response()
+}
+
+async fn ui_summary_fragment(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return ui_auth_failure_response(&state, failure);
+    }
+    Html(render_ui_summary(&state)).into_response()
+}
+
+async fn ui_sources_fragment(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return ui_auth_failure_response(&state, failure);
+    }
+    Html(render_ui_sources()).into_response()
+}
+
+async fn ui_recent_records_fragment(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return ui_auth_failure_response(&state, failure);
+    }
+    Html(render_ui_recent_records(&state)).into_response()
+}
+
+async fn ui_scrape_action(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<UiScrapeForm>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return ui_auth_failure_response(&state, failure);
+    }
+    let request = match form.into_scrape_request() {
+        Ok(request) => request,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::BAD_REQUEST,
+                Html(render_ui_notice("Scrape rejected", &error, true)),
+            )
+                .into_response();
+        }
+    };
+    match process_scrape_request(&state, request).await {
+        Ok(value) => Html(render_ui_scrape_result(&value)).into_response(),
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Html(render_ui_notice("Scrape failed", &error, true)),
+            )
+                .into_response()
+        }
+    }
 }
 
 async fn descriptor(State(state): State<AppState>) -> impl IntoResponse {
@@ -2533,6 +3094,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let app = Router::new()
         .route("/", get(root))
+        .route("/ui", get(ui_dashboard))
+        .route("/ui/fragments/summary", get(ui_summary_fragment))
+        .route("/ui/fragments/sources", get(ui_sources_fragment))
+        .route(
+            "/ui/fragments/recent-records",
+            get(ui_recent_records_fragment),
+        )
+        .route("/ui/actions/scrape", post(ui_scrape_action))
         .route("/descriptor", get(descriptor))
         .route("/sources", get(sources))
         .route("/schema", get(schema))
@@ -2725,5 +3294,37 @@ mod tests {
             .reasons
             .iter()
             .any(|reason| reason.contains("focus-area")));
+    }
+
+    #[test]
+    fn ui_helpers_escape_html_and_build_scrape_requests() {
+        assert_eq!(
+            html_escape("SBIR <grant> & \"quotes\""),
+            "SBIR &lt;grant&gt; &amp; &quot;quotes&quot;"
+        );
+
+        let request = UiScrapeForm {
+            source: Some("SBIR".to_string()),
+            url: "https://www.sbir.gov/funding/".to_string(),
+            dataset_id: Some("sbir-ui".to_string()),
+            strategy: Some("cheerio".to_string()),
+            selector: Some("main".to_string()),
+            tags: Some("grants, energy, grants".to_string()),
+            render_javascript: None,
+            include_links: Some("on".to_string()),
+            pipeline_enabled: Some("on".to_string()),
+        }
+        .into_scrape_request()
+        .expect("ui scrape form should be accepted");
+
+        assert_eq!(request.source, "SBIR");
+        assert_eq!(request.dataset_id.as_deref(), Some("sbir-ui"));
+        assert_eq!(
+            request.tags,
+            Some(vec!["grants".to_string(), "energy".to_string()])
+        );
+        assert_eq!(request.include_links, Some(true));
+        assert_eq!(request.render_javascript, Some(false));
+        assert!(request.pipeline.is_some());
     }
 }

@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "public-data-server-rs",
   "language": "rust",
-  "routeCount": 21,
+  "routeCount": 26,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 14
+    "user-generated": 19
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -348,6 +348,91 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "sources"
+      ],
+      "sourceFiles": [
+        "remote/deployments/public-data-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ui",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "ui_dashboard"
+      ],
+      "sourceFiles": [
+        "remote/deployments/public-data-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ui/actions/scrape",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "ui_scrape_action"
+      ],
+      "sourceFiles": [
+        "remote/deployments/public-data-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ui/fragments/recent-records",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "ui_recent_records_fragment"
+      ],
+      "sourceFiles": [
+        "remote/deployments/public-data-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ui/fragments/sources",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "ui_sources_fragment"
+      ],
+      "sourceFiles": [
+        "remote/deployments/public-data-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ui/fragments/summary",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "ui_summary_fragment"
       ],
       "sourceFiles": [
         "remote/deployments/public-data-server-rs/src/main.rs"
