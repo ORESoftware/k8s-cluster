@@ -116,6 +116,8 @@ outcomes.
 - `POST /fabrication/instructions/validation/result`
 - `GET /machine-code/catalog`
 - `GET /fabrication/machine-code/catalog`
+- `GET /machine-code/preflight/catalog`
+- `GET /fabrication/machine-code/preflight/catalog`
 - `POST /machine-code/generate`
 - `POST /fabrication/machine-code/generate`
 - `POST /machine-code/result`
@@ -134,6 +136,8 @@ outcomes.
 - `GET /fabrication/boundaries/catalog`
 - `GET /boundaries/preflight/catalog`
 - `GET /fabrication/boundaries/preflight/catalog`
+- `POST /boundaries/result`
+- `POST /fabrication/boundaries/result`
 - `GET /remediation/catalog`
 - `GET /fabrication/remediation/catalog`
 - `POST /remediation/plan`
@@ -2016,6 +2020,25 @@ release probe, intervention owner, split/combine route, or learning feedback is
 absent. Failed checks feed DES, MDP/POMDP, and neural workers so future plans can
 reroute manufacturing, split parts, regenerate instructions, or require human
 intervention earlier.
+
+## `POST /fabrication/boundaries/result`
+
+`POST /boundaries/result` and the gateway-prefixed
+`POST /fabrication/boundaries/result` normalize external boundary analyzer
+evidence into `dd.fabrication.boundary-analysis-result-review.v1`. Workers can
+return findings, machine-failure boundaries, human-intervention gates,
+split/combine decisions, retained artifacts, warnings, and metadata for generated
+or imported fabrication instructions.
+
+Machine-ready release remains blocked while worker failure, blocking findings,
+machine-failure or human-intervention boundaries, split/combine decisions, or
+artifact evidence gaps remain. The response stores a boundary-analysis result job
+with separate artifacts for findings, boundaries, split/combine decisions,
+retained analyzer artifacts, and learning observations. It also drafts
+`dd.fabrication.boundary-analysis-learning-outcome-draft.v1` feedback for
+MDP/POMDP/neural learners so future plans can split work earlier, combine parts
+deliberately, choose safer machine routes, or insert operator checkpoints before
+the failure boundary.
 
 ## `GET /fabrication/remediation/catalog`
 

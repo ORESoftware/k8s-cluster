@@ -596,6 +596,91 @@ struct BoundaryRemediationResultBlocker {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct BoundaryAnalysisResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    analysis_job_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    analyzer: Option<String>,
+    analyzer_version: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    instruction_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    findings: Option<Vec<BoundaryAnalysisResultFinding>>,
+    failure_boundaries: Option<Vec<BoundaryAnalysisResultBoundary>>,
+    split_combine_decisions: Option<Vec<BoundaryAnalysisResultSplitCombineDecision>>,
+    artifacts: Option<Vec<BoundaryAnalysisResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundaryAnalysisResultFinding {
+    finding_id: String,
+    severity: String,
+    code: String,
+    message: String,
+    program_id: Option<String>,
+    operation_id: Option<String>,
+    line_ref: Option<String>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundaryAnalysisResultBoundary {
+    boundary_id: String,
+    boundary_kind: String,
+    code: String,
+    message: String,
+    program_id: Option<String>,
+    operation_id: Option<String>,
+    line_ref: Option<String>,
+    release_blocker: Option<bool>,
+    machine_failure_risk: Option<bool>,
+    human_intervention_required: Option<bool>,
+    split_required: Option<bool>,
+    combine_required: Option<bool>,
+    recommended_action: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundaryAnalysisResultSplitCombineDecision {
+    decision_id: String,
+    action: String,
+    boundary_id: Option<String>,
+    part_id: Option<String>,
+    program_id: Option<String>,
+    interface_id: Option<String>,
+    status: String,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundaryAnalysisResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct InstructionSimulationResultReviewRequest {
     request_id: Option<String>,
     plan_request_id: Option<String>,
@@ -16306,6 +16391,641 @@ fn stored_boundary_remediation_result_job(response: &Value) -> StoredFabrication
 
 fn store_boundary_remediation_result_response(state: &AppState, response: &Value) {
     store_job(state, stored_boundary_remediation_result_job(response));
+}
+
+fn validate_boundary_analysis_result_findings(
+    findings: Option<Vec<BoundaryAnalysisResultFinding>>,
+) -> Result<Vec<Value>, String> {
+    let findings = findings.unwrap_or_default();
+    if findings.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "findings must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    findings
+        .into_iter()
+        .enumerate()
+        .map(|(index, finding)| {
+            let finding_id =
+                validate_label(&finding.finding_id, &format!("findings[{index}].findingId"))?;
+            if !seen.insert(finding_id.clone()) {
+                return Err(format!(
+                    "findings must have unique findingId values; duplicate {finding_id}"
+                ));
+            }
+            Ok(json!({
+                "findingId": finding_id,
+                "severity": validate_label(&finding.severity, &format!("findings[{index}].severity"))?,
+                "code": validate_label(&finding.code, &format!("findings[{index}].code"))?,
+                "message": validate_text(&finding.message, &format!("findings[{index}].message"), MAX_TEXT_LEN)?,
+                "programId": validate_optional_label(finding.program_id, &format!("findings[{index}].programId"))?,
+                "operationId": validate_optional_label(finding.operation_id, &format!("findings[{index}].operationId"))?,
+                "lineRef": validate_optional_text(finding.line_ref, &format!("findings[{index}].lineRef"), MAX_LABEL_LEN)?,
+                "releaseBlocker": finding.release_blocker.unwrap_or(false),
+                "requiresHumanIntervention": finding.requires_human_intervention.unwrap_or(false),
+                "evidence": validate_signal_list(finding.evidence, &format!("findings[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_boundary_analysis_result_boundaries(
+    boundaries: Option<Vec<BoundaryAnalysisResultBoundary>>,
+) -> Result<Vec<Value>, String> {
+    let boundaries = boundaries.unwrap_or_default();
+    if boundaries.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "failureBoundaries must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    boundaries
+        .into_iter()
+        .enumerate()
+        .map(|(index, boundary)| {
+            let boundary_id = validate_label(
+                &boundary.boundary_id,
+                &format!("failureBoundaries[{index}].boundaryId"),
+            )?;
+            if !seen.insert(boundary_id.clone()) {
+                return Err(format!(
+                    "failureBoundaries must have unique boundaryId values; duplicate {boundary_id}"
+                ));
+            }
+            Ok(json!({
+                "boundaryId": boundary_id,
+                "boundaryKind": validate_label(&boundary.boundary_kind, &format!("failureBoundaries[{index}].boundaryKind"))?,
+                "code": validate_label(&boundary.code, &format!("failureBoundaries[{index}].code"))?,
+                "message": validate_text(&boundary.message, &format!("failureBoundaries[{index}].message"), MAX_TEXT_LEN)?,
+                "programId": validate_optional_label(boundary.program_id, &format!("failureBoundaries[{index}].programId"))?,
+                "operationId": validate_optional_label(boundary.operation_id, &format!("failureBoundaries[{index}].operationId"))?,
+                "lineRef": validate_optional_text(boundary.line_ref, &format!("failureBoundaries[{index}].lineRef"), MAX_LABEL_LEN)?,
+                "releaseBlocker": boundary.release_blocker.unwrap_or(false),
+                "machineFailureRisk": boundary.machine_failure_risk.unwrap_or(false),
+                "humanInterventionRequired": boundary.human_intervention_required.unwrap_or(false),
+                "splitRequired": boundary.split_required.unwrap_or(false),
+                "combineRequired": boundary.combine_required.unwrap_or(false),
+                "recommendedAction": validate_optional_text(boundary.recommended_action, &format!("failureBoundaries[{index}].recommendedAction"), MAX_TEXT_LEN)?,
+                "evidence": validate_signal_list(boundary.evidence, &format!("failureBoundaries[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_boundary_analysis_result_decisions(
+    decisions: Option<Vec<BoundaryAnalysisResultSplitCombineDecision>>,
+) -> Result<Vec<Value>, String> {
+    let decisions = decisions.unwrap_or_default();
+    if decisions.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "splitCombineDecisions must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    decisions
+        .into_iter()
+        .enumerate()
+        .map(|(index, decision)| {
+            let decision_id = validate_label(
+                &decision.decision_id,
+                &format!("splitCombineDecisions[{index}].decisionId"),
+            )?;
+            if !seen.insert(decision_id.clone()) {
+                return Err(format!(
+                    "splitCombineDecisions must have unique decisionId values; duplicate {decision_id}"
+                ));
+            }
+            Ok(json!({
+                "decisionId": decision_id,
+                "action": validate_label(&decision.action, &format!("splitCombineDecisions[{index}].action"))?,
+                "boundaryId": validate_optional_label(decision.boundary_id, &format!("splitCombineDecisions[{index}].boundaryId"))?,
+                "partId": validate_optional_label(decision.part_id, &format!("splitCombineDecisions[{index}].partId"))?,
+                "programId": validate_optional_label(decision.program_id, &format!("splitCombineDecisions[{index}].programId"))?,
+                "interfaceId": validate_optional_label(decision.interface_id, &format!("splitCombineDecisions[{index}].interfaceId"))?,
+                "status": validate_label(&decision.status, &format!("splitCombineDecisions[{index}].status"))?,
+                "releaseBlocker": decision.release_blocker.unwrap_or(false),
+                "requiresHumanIntervention": decision.requires_human_intervention.unwrap_or(false),
+                "evidence": validate_signal_list(decision.evidence, &format!("splitCombineDecisions[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_boundary_analysis_result_artifacts(
+    artifacts: Option<Vec<BoundaryAnalysisResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id =
+                validate_label(&artifact.artifact_id, &format!("artifacts[{index}].artifactId"))?;
+            if !seen.insert(artifact_id.clone()) {
+                return Err(format!(
+                    "artifacts must have unique artifactId values; duplicate {artifact_id}"
+                ));
+            }
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": validate_label(&artifact.artifact_kind, &format!("artifacts[{index}].artifactKind"))?,
+                "sourceRefId": validate_optional_label(artifact.source_ref_id, &format!("artifacts[{index}].sourceRefId"))?,
+                "uri": validate_optional_text(artifact.uri, &format!("artifacts[{index}].uri"), MAX_TEXT_LEN)?,
+                "sha256": validate_optional_text(artifact.sha256, &format!("artifacts[{index}].sha256"), MAX_TEXT_LEN)?,
+                "format": validate_optional_text(artifact.format, &format!("artifacts[{index}].format"), MAX_LABEL_LEN)?,
+                "evidence": validate_signal_list(artifact.evidence, &format!("artifacts[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn boundary_analysis_result_item_blocks_release(item: &Value) -> bool {
+    item.get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || item
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+fn boundary_analysis_result_boundary_blocks_release(boundary: &Value) -> bool {
+    boundary_analysis_result_item_blocks_release(boundary)
+        || boundary
+            .get("machineFailureRisk")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || boundary
+            .get("humanInterventionRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || boundary
+            .get("splitRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || boundary
+            .get("combineRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+fn boundary_analysis_result_artifact_missing_evidence(artifact: &Value) -> bool {
+    artifact.get("uri").and_then(Value::as_str).is_none()
+        || artifact.get("sha256").and_then(Value::as_str).is_none()
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn boundary_analysis_result_review_response(
+    request: BoundaryAnalysisResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "boundary-analysis-result");
+    let generated_at_ms = now_ms();
+    let boundary_result_job_id =
+        safe_job_id("boundary-analysis-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let analysis_job_id = validate_optional_label(request.analysis_job_id, "analysisJobId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let analyzer = validate_optional_text(request.analyzer, "analyzer", MAX_LABEL_LEN)?;
+    let analyzer_version =
+        validate_optional_text(request.analyzer_version, "analyzerVersion", MAX_LABEL_LEN)?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let instruction_id = validate_optional_label(request.instruction_id, "instructionId")?;
+    let release_ready = request.release_ready.unwrap_or(request.machine_ready);
+    let findings = validate_boundary_analysis_result_findings(request.findings)?;
+    let failure_boundaries =
+        validate_boundary_analysis_result_boundaries(request.failure_boundaries)?;
+    let split_combine_decisions =
+        validate_boundary_analysis_result_decisions(request.split_combine_decisions)?;
+    let artifacts = validate_boundary_analysis_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+    let blocking_finding_count = findings
+        .iter()
+        .filter(|finding| boundary_analysis_result_item_blocks_release(finding))
+        .count();
+    let boundary_blocker_count = failure_boundaries
+        .iter()
+        .filter(|boundary| boundary_analysis_result_boundary_blocks_release(boundary))
+        .count();
+    let decision_blocker_count = split_combine_decisions
+        .iter()
+        .filter(|decision| boundary_analysis_result_item_blocks_release(decision))
+        .count();
+    let machine_failure_boundary_count = failure_boundaries
+        .iter()
+        .filter(|boundary| {
+            boundary
+                .get("machineFailureRisk")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_intervention_count = findings
+        .iter()
+        .filter(|finding| {
+            finding
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count()
+        + failure_boundaries
+            .iter()
+            .filter(|boundary| {
+                boundary
+                    .get("humanInterventionRequired")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            })
+            .count()
+        + split_combine_decisions
+            .iter()
+            .filter(|decision| {
+                decision
+                    .get("requiresHumanIntervention")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            })
+            .count();
+    let split_required_count = failure_boundaries
+        .iter()
+        .filter(|boundary| {
+            boundary
+                .get("splitRequired")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count()
+        + split_combine_decisions
+            .iter()
+            .filter(|decision| {
+                decision
+                    .get("action")
+                    .and_then(Value::as_str)
+                    .is_some_and(|action| normalize_token(action).contains("split"))
+            })
+            .count();
+    let combine_required_count = failure_boundaries
+        .iter()
+        .filter(|boundary| {
+            boundary
+                .get("combineRequired")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count()
+        + split_combine_decisions
+            .iter()
+            .filter(|decision| {
+                decision
+                    .get("action")
+                    .and_then(Value::as_str)
+                    .is_some_and(|action| normalize_token(action).contains("combine"))
+            })
+            .count();
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| boundary_analysis_result_artifact_missing_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || blocking_finding_count > 0
+        || boundary_blocker_count > 0
+        || decision_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if !request.success {
+        "boundary-analysis-result-worker-failed-release-blocked"
+    } else if blocking_finding_count > 0 {
+        "boundary-analysis-result-findings-release-blocked"
+    } else if boundary_blocker_count > 0 {
+        "boundary-analysis-result-boundaries-release-blocked"
+    } else if decision_blocker_count > 0 {
+        "boundary-analysis-result-split-combine-release-blocked"
+    } else if artifact_evidence_missing {
+        "boundary-analysis-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "boundary-analysis-result-machine-ready-review-required"
+    } else if !release_ready {
+        "boundary-analysis-result-release-ready-review-required"
+    } else {
+        "boundary-analysis-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("boundary-analysis-worker:{worker_id}"),
+        format!("boundary-analysis-result:{review_status}"),
+    ];
+    if let Some(analyzer) = analyzer.as_ref() {
+        learning_observations.push(format!(
+            "boundary-analysis-analyzer:{}",
+            normalize_token(analyzer)
+        ));
+    }
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "boundary-analysis-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("boundary-analysis:release-blocked".to_string());
+    }
+    if machine_failure_boundary_count > 0 {
+        learning_observations.push("boundary-analysis:machine-failure-risk".to_string());
+    }
+    if human_intervention_count > 0 {
+        learning_observations.push("boundary-analysis:human-intervention-required".to_string());
+    }
+    if split_required_count > 0 || combine_required_count > 0 {
+        learning_observations.push("boundary-analysis:split-combine-required".to_string());
+    }
+    if artifact_evidence_missing {
+        learning_observations.push("boundary-analysis:artifact-evidence-missing".to_string());
+    }
+    learning_observations.extend(failure_boundaries.iter().filter_map(|boundary| {
+        boundary
+            .get("boundaryKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("boundary-kind:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(failure_boundaries.iter().filter_map(|boundary| {
+        boundary
+            .get("recommendedAction")
+            .and_then(Value::as_str)
+            .map(|action| format!("boundary-action:{}", normalize_token(action)))
+    }));
+    learning_observations.extend(split_combine_decisions.iter().filter_map(|decision| {
+        decision
+            .get("action")
+            .and_then(Value::as_str)
+            .map(|action| format!("split-combine-action:{}", normalize_token(action)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.boundary-analysis-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "boundaryResultJobId": boundary_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": [
+            "POST /boundaries/result",
+            "POST /fabrication/boundaries/result"
+        ],
+        "analysisRoutes": [
+            "POST /instructions/boundaries/review",
+            "POST /fabrication/instructions/boundaries/review",
+            "POST /instructions/analyze",
+            "POST /fabrication/instructions/analyze"
+        ],
+        "remediationRoutes": [
+            "POST /remediation/plan",
+            "POST /fabrication/remediation/plan",
+            "POST /remediation/result",
+            "POST /fabrication/remediation/result"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "findingCount": findings.len(),
+        "blockingFindingCount": blocking_finding_count,
+        "failureBoundaryCount": failure_boundaries.len(),
+        "boundaryBlockerCount": boundary_blocker_count,
+        "machineFailureBoundaryCount": machine_failure_boundary_count,
+        "humanInterventionCount": human_intervention_count,
+        "splitRequiredCount": split_required_count,
+        "combineRequiredCount": combine_required_count,
+        "splitCombineDecisionCount": split_combine_decisions.len(),
+        "blockedSplitCombineDecisionCount": decision_blocker_count,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "boundaryAnalysisResult": {
+            "planRequestId": plan_request_id,
+            "analysisJobId": analysis_job_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "analyzer": analyzer,
+            "analyzerVersion": analyzer_version,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "instructionId": instruction_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "findings": findings,
+            "failureBoundaries": failure_boundaries,
+            "splitCombineDecisions": split_combine_decisions,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "machine-failure and human-intervention boundaries are remediated or converted into explicit operator checkpoints",
+                "split/combine decisions name retained interfaces, part ids, and evidence before assembly or release review",
+                "boundary result artifacts carry URI, checksum, and evidence for audit and replay",
+                "remediation, validation, simulation, and release-result reviews clear any remaining blockers"
+            ],
+            "targetSurfaces": [
+                "boundaryAnalysisResult.findings",
+                "boundaryAnalysisResult.failureBoundaries",
+                "boundaryAnalysisResult.splitCombineDecisions",
+                "boundaryRemediationResult",
+                "instructionSimulationResult",
+                "releaseReadinessResult",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.boundary-analysis-learning-outcome-draft.v1",
+                "sourceKind": "boundary-analysis-result",
+                "sourceJobId": boundary_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.88 } else { 0.62 },
+                "machineKind": machine_kind,
+                "machineFailureBoundaryCount": machine_failure_boundary_count,
+                "humanInterventionCount": human_intervention_count,
+                "splitRequiredCount": split_required_count,
+                "combineRequiredCount": combine_required_count,
+                "boundaryHints": failure_boundaries
+                    .iter()
+                    .filter_map(|boundary| boundary.get("boundaryKind").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "decisionHints": split_combine_decisions
+                    .iter()
+                    .filter_map(|decision| decision.get("action").and_then(Value::as_str))
+                    .collect::<Vec<_>>(),
+                "featureHints": [
+                    format!("blocking-findings:{blocking_finding_count}"),
+                    format!("boundary-blockers:{boundary_blocker_count}"),
+                    format!("decision-blockers:{decision_blocker_count}"),
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
+        },
+        "artifactSurfaces": [
+            "boundary-analysis-result",
+            "boundary-analysis-findings",
+            "boundary-analysis-failure-boundaries",
+            "boundary-analysis-split-combine-decisions",
+            "boundary-analysis-artifacts",
+            "boundary-analysis-learning-observations",
+            "mdp-request.artifacts.boundaryAnalysisResult"
+        ],
+        "boundaryAnalysisResultPolicy": [
+            "boundary analysis result reviews normalize external machine-failure, human-intervention, and split/combine analyzer findings into retained job evidence",
+            "machine-ready release remains blocked until result blockers, retained artifacts, split/combine evidence, remediation, simulation, and release gates clear",
+            "boundary result observations feed MDP/POMDP/neural learning so future plans can choose safer routes, split work earlier, combine parts deliberately, or insert human checkpoints"
+        ]
+    }))
+}
+
+fn boundary_analysis_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("findings-release-blocked")
+        || status.contains("boundaries-release-blocked")
+        || status.contains("split-combine-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_boundary_analysis_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "boundary-analysis-result");
+    let job_id = response_str_field(
+        response,
+        "boundaryResultJobId",
+        &safe_job_id("boundary-analysis-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "boundary-analysis-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("boundaryAnalysisResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let findings = result.get("findings").cloned().unwrap_or_else(|| json!([]));
+    let failure_boundaries = result
+        .get("failureBoundaries")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let split_combine_decisions = result
+        .get("splitCombineDecisions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let boundary_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "boundary-analysis-result".to_string(),
+            "boundary-analysis-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "boundary-analysis-findings".to_string(),
+            "boundary-analysis-findings",
+            findings,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "boundary-analysis-failure-boundaries".to_string(),
+            "boundary-analysis-failure-boundaries",
+            failure_boundaries,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "boundary-analysis-split-combine-decisions".to_string(),
+            "boundary-analysis-split-combine-decisions",
+            split_combine_decisions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "boundary-analysis-artifacts".to_string(),
+            "boundary-analysis-artifacts",
+            boundary_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "boundary-analysis-learning-observations".to_string(),
+            "boundary-analysis-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "boundary-analysis-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: boundary_analysis_result_job_severity(response),
+            summary: format!("boundary analysis result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_boundary_analysis_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_boundary_analysis_result_job(response));
 }
 
 fn validate_instruction_simulation_envelope_checks(
@@ -57658,6 +58378,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/instructions/review/result",
         "GET /machine-code/catalog",
         "GET /fabrication/machine-code/catalog",
+        "GET /machine-code/preflight/catalog",
+        "GET /fabrication/machine-code/preflight/catalog",
         "POST /machine-code/generate",
         "POST /fabrication/machine-code/generate",
         "POST /machine-code/result",
@@ -57676,6 +58398,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/boundaries/catalog",
         "GET /boundaries/preflight/catalog",
         "GET /fabrication/boundaries/preflight/catalog",
+        "POST /boundaries/result",
+        "POST /fabrication/boundaries/result",
         "GET /remediation/catalog",
         "GET /fabrication/remediation/catalog",
         "POST /remediation/plan",
@@ -94895,6 +95619,138 @@ async fn machine_code_catalog_http() -> impl IntoResponse {
     Json(machine_code_catalog_response())
 }
 
+fn machine_code_preflight_catalog_response() -> Value {
+    let program_contracts = instruction_generation_catalog_program_contracts();
+    let controller_targets = controller_catalog_targets();
+    let generated_languages = unique_sorted(program_contracts.iter().flat_map(|contract| {
+        contract
+            .get("generatedLanguages")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_classes = unique_sorted(program_contracts.iter().flat_map(|contract| {
+        contract
+            .get("machineClasses")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let output_formats = unique_sorted(controller_targets.iter().filter_map(|target| {
+        target
+            .get("outputFormat")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.machine-code-preflight-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /machine-code/preflight/catalog",
+            "GET /fabrication/machine-code/preflight/catalog"
+        ],
+        "machineCodeCatalogRoutes": ["GET /machine-code/catalog", "GET /fabrication/machine-code/catalog"],
+        "generationRoutes": ["POST /machine-code/generate", "POST /fabrication/machine-code/generate"],
+        "resultRoutes": ["POST /machine-code/result", "POST /fabrication/machine-code/result"],
+        "relatedRoutes": [
+            "GET /fabrication/instructions/generation/preflight/catalog",
+            "GET /fabrication/instructions/import/preflight/catalog",
+            "GET /fabrication/controllers/preflight/catalog",
+            "GET /fabrication/toolpaths/catalog",
+            "GET /fabrication/simulation/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog",
+            "GET /fabrication/learning/preflight/catalog"
+        ],
+        "generatedLanguageCount": generated_languages.len(),
+        "generatedLanguages": generated_languages,
+        "machineClassCount": machine_classes.len(),
+        "machineClasses": machine_classes,
+        "outputFormatCount": output_formats.len(),
+        "outputFormats": output_formats,
+        "preflightGroups": [
+            {
+                "group": "program-source-and-design-state",
+                "evidence": [
+                    "design package, imported instruction stream, or generated-program request is retained",
+                    "units, coordinate system, part split/combine context, and source revision are declared",
+                    "draft generatedPrograms entries remain traceable to designInputReview or instructionImportReview"
+                ],
+                "blocks": ["machine-code generation", "controller handoff", "releasePackagePlan.readyPackageCount"]
+            },
+            {
+                "group": "controller-postprocessor-and-dialect-state",
+                "evidence": [
+                    "target controller, postprocessor, dialect family, output format, macro policy, and tool table are selected",
+                    "controllerPlan.compatibilityTargets and controllerPlan.releaseGates have no unresolved blockers",
+                    "postprocessed output checksum and source revision evidence are retained before release"
+                ],
+                "blocks": ["controllerPlan.releaseGates", "machineRelease.generatedProgramsBlocked"]
+            },
+            {
+                "group": "machine-setup-toolpath-and-process-state",
+                "evidence": [
+                    "machine profile, workholding, tooling, material/feedstock, support media, offsets, calibration, and setup evidence are current",
+                    "toolpathPlan.segments and executionPlan.programRuns identify setup changes and human checkpoints",
+                    "printer thermal/extrusion state or CNC spindle/feed/coolant/support-process state is reviewable before execution"
+                ],
+                "blocks": ["toolpathPlan.releaseGates", "executionPlan.stopPoints", "operatorInterventionPlan.requiredOperatorActions"]
+            },
+            {
+                "group": "validation-simulation-release-and-learning-state",
+                "evidence": [
+                    "validation findings, failure boundaries, dry-run or simulation results, and quality gates are retained",
+                    "releasePackagePlan.requiredArtifacts includes generated code, controller checks, setup evidence, simulation, and signoff artifacts",
+                    "DES, MDP/POMDP, reward, neural, and learning outcome records are linked without bypassing release gates"
+                ],
+                "blocks": ["machineReady release", "releasePackagePlan.releaseGates", "learning.promotion"]
+            }
+        ],
+        "responseSurfaces": [
+            "generatedPrograms",
+            "generatedPrograms.instructions",
+            "generatedPrograms.draft",
+            "generatedPrograms.machineReady",
+            "controllerPlan.compatibilityTargets",
+            "controllerPlan.releaseGates",
+            "postprocessPlan.controllerTargets",
+            "toolpathPlan.segments",
+            "simulation.programs",
+            "validation.failureBoundaries",
+            "executionPlan.programRuns",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "machineRelease.generatedProgramsBlocked",
+            "releasePackagePlan.requiredArtifacts",
+            "learning.outcomeDraft"
+        ],
+        "artifactSurfaces": [
+            "generated-machine-program",
+            "controller-plan",
+            "postprocess-plan",
+            "toolpath-plan",
+            "simulation-report",
+            "quality-plan",
+            "release-package-plan",
+            "mdp-request.artifacts.generatedPrograms"
+        ],
+        "releasePolicy": [
+            "machine-code preflight entries describe evidence required before generated or imported controller output can be trusted for release review; they do not certify machine execution",
+            "generatedPrograms remain draft=true and machineReady=false until design provenance, controller/postprocessor compatibility, machine setup, validation, simulation or dry-run, quality, release package, and signoff evidence clear",
+            "failed machine-code preflight checks feed DES, MDP/POMDP, reward, neural, and learning-outcome workers so future plans can regenerate code, choose alternate machines, split/combine parts, or add human checkpoints"
+        ]
+    })
+}
+
+async fn machine_code_preflight_catalog_http() -> impl IntoResponse {
+    Json(machine_code_preflight_catalog_response())
+}
+
 fn instruction_generation_response(
     response: &FabricationPlanResponse,
     policy: &LearningPolicySnapshot,
@@ -104371,6 +105227,36 @@ fn intake_guide() -> Value {
     ])
 }
 
+fn intake_request_package_checklist() -> Value {
+    json!([
+        {
+            "section": "design-source-and-intent",
+            "routes": ["/fabrication/design/import/catalog", "/fabrication/design/preflight/catalog", "/fabrication/design/generation/catalog"],
+            "evidence": ["native CAD, neutral CAD, mesh, slicer, or text source declared", "units, scale, topology, PMI, assembly, and tolerance intent retained", "design-generation or translation worker evidence linked when the design is generated or converted"]
+        },
+        {
+            "section": "machine-method-and-material-selection",
+            "routes": ["/fabrication/machines/catalog", "/fabrication/machines/select", "/fabrication/materials/catalog", "/fabrication/methods/catalog"],
+            "evidence": ["candidate printer, mill, router, lathe, sheet cutter, cell, or hybrid route selected", "material/feedstock compatibility and conditioning evidence attached", "machine envelope, axes, workholding, tooling, support media, and operator constraints declared"]
+        },
+        {
+            "section": "instruction-source-and-controller-state",
+            "routes": ["/fabrication/instructions/import/preflight/catalog", "/fabrication/instructions/generation/preflight/catalog", "/fabrication/controllers/preflight/catalog"],
+            "evidence": ["imported CNC, slicer, printer, setup, postprocess, or operator streams carry provenance and checksums", "generated instructions name the controller, postprocessor, dialect, toolpath, and draft/release state", "modal controller state, macro dependencies, offsets, compensation, and support-process evidence are reviewable"]
+        },
+        {
+            "section": "analysis-simulation-and-boundary-review",
+            "routes": ["/fabrication/instructions/analyze", "/fabrication/instructions/validate", "/fabrication/simulation/preflight/catalog", "/fabrication/boundaries/preflight/catalog"],
+            "evidence": ["machine-failure, human-intervention, split/combine, setup, quality, and release blockers retained", "simulation or dry-run evidence covers machine envelope, collision, fixture, process support, and material risks", "improvement patches and boundary remediation keep original and improved programs traceable"]
+        },
+        {
+            "section": "release-package-and-learning-feedback",
+            "routes": ["/fabrication/release/preflight/catalog", "/fabrication/release/preview", "/fabrication/learning/preflight/catalog", "/fabrication/learning/outcomes"],
+            "evidence": ["machineReady remains false until design, instruction, setup, simulation, quality, operator, and final release gates clear", "release bundles retain design exports, machine code, instructions, artifacts, signoffs, and blockers", "DES, MDP/POMDP, reward, neural, and outcome records are linked without bypassing release gates"]
+        }
+    ])
+}
+
 async fn intake_catalog_http() -> impl IntoResponse {
     Json(json!({
         "ok": true,
@@ -104379,6 +105265,7 @@ async fn intake_catalog_http() -> impl IntoResponse {
         "serviceSchemaVersion": SCHEMA_VERSION,
         "routes": ["GET /intake/catalog", "GET /fabrication/intake/catalog"],
         "intakeGuide": intake_guide(),
+        "requestPackageChecklist": intake_request_package_checklist(),
         "releasePolicy": [
             "intake evidence is advisory until retained design, instruction, setup, simulation, quality, and release reviews clear",
             "machine-ready release remains blocked when machine-failure, human-intervention, split/combine, or operator signoff evidence is missing",
@@ -105470,6 +106357,8 @@ async fn request_schema() -> impl IntoResponse {
             "instructionGenerationResult": ["POST /instructions/generation/result", "POST /fabrication/instructions/generation/result"],
             "instructionReviewResult": ["POST /instructions/review/result", "POST /fabrication/instructions/review/result"],
             "instructionValidationResult": ["POST /instructions/validation/result", "POST /fabrication/instructions/validation/result"],
+            "machineCodeCatalog": ["GET /machine-code/catalog", "GET /fabrication/machine-code/catalog"],
+            "machineCodePreflightCatalog": ["GET /machine-code/preflight/catalog", "GET /fabrication/machine-code/preflight/catalog"],
             "machineCodeGeneration": ["POST /machine-code/generate", "POST /fabrication/machine-code/generate"],
             "machineCodeResult": ["POST /machine-code/result", "POST /fabrication/machine-code/result"],
             "toolpathCatalog": ["GET /toolpaths/catalog", "GET /fabrication/toolpaths/catalog"],
@@ -105479,6 +106368,7 @@ async fn request_schema() -> impl IntoResponse {
             "instructionImprovementPreflightCatalog": ["GET /improvements/preflight/catalog", "GET /fabrication/improvements/preflight/catalog"],
             "boundaryCatalog": ["GET /boundaries/catalog", "GET /fabrication/boundaries/catalog"],
             "boundaryPreflightCatalog": ["GET /boundaries/preflight/catalog", "GET /fabrication/boundaries/preflight/catalog"],
+            "boundaryAnalysisResult": ["POST /boundaries/result", "POST /fabrication/boundaries/result"],
             "boundaryRemediationCatalog": ["GET /remediation/catalog", "GET /fabrication/remediation/catalog"],
             "boundaryRemediationPlan": ["POST /remediation/plan", "POST /fabrication/remediation/plan"],
             "boundaryRemediationResult": ["POST /remediation/result", "POST /fabrication/remediation/result"],
@@ -105557,6 +106447,7 @@ async fn request_schema() -> impl IntoResponse {
             "instructionValidation": ["POST /instructions/validate", "POST /fabrication/instructions/validate"],
             "instructionImprovement": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
             "instructionBoundaryReview": ["POST /instructions/boundaries/review", "POST /fabrication/instructions/boundaries/review"],
+            "boundaryAnalysisResult": ["POST /boundaries/result", "POST /fabrication/boundaries/result"],
             "boundaryRemediationPlan": ["POST /remediation/plan", "POST /fabrication/remediation/plan"],
             "boundaryRemediationResult": ["POST /remediation/result", "POST /fabrication/remediation/result"],
             "learningObserve": ["POST /learning/observe", "POST /fabrication/learning/observe"],
@@ -107660,6 +108551,23 @@ async fn boundary_remediation_result_http(
     }
 }
 
+async fn boundary_analysis_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<BoundaryAnalysisResultReviewRequest>,
+) -> Response {
+    match boundary_analysis_result_review_response(request) {
+        Ok(response) => {
+            store_boundary_analysis_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 async fn learning_observe_http(
     State(state): State<AppState>,
     Json(request): Json<FabricationOutcomeRequest>,
@@ -108265,6 +109173,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/machine-code/catalog",
             get(machine_code_catalog_http),
         )
+        .route(
+            "/machine-code/preflight/catalog",
+            get(machine_code_preflight_catalog_http),
+        )
+        .route(
+            "/fabrication/machine-code/preflight/catalog",
+            get(machine_code_preflight_catalog_http),
+        )
         .route("/machine-code/generate", post(machine_code_generate_http))
         .route(
             "/fabrication/machine-code/generate",
@@ -108309,6 +109225,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/boundaries/preflight/catalog",
             get(boundary_preflight_catalog_http),
+        )
+        .route("/boundaries/result", post(boundary_analysis_result_http))
+        .route(
+            "/fabrication/boundaries/result",
+            post(boundary_analysis_result_http),
         )
         .route(
             "/remediation/catalog",
@@ -108957,6 +109878,50 @@ mod tests {
             assert!(
                 guide_text.contains(expected),
                 "intake guide should include {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn intake_request_package_checklist_exposes_design_instruction_release_and_learning_evidence() {
+        let checklist = intake_request_package_checklist();
+        let sections: Vec<&str> = checklist
+            .as_array()
+            .expect("request package checklist should be an array")
+            .iter()
+            .filter_map(|entry| entry.get("section").and_then(Value::as_str))
+            .collect();
+
+        for expected in [
+            "design-source-and-intent",
+            "machine-method-and-material-selection",
+            "instruction-source-and-controller-state",
+            "analysis-simulation-and-boundary-review",
+            "release-package-and-learning-feedback",
+        ] {
+            assert!(
+                sections.contains(&expected),
+                "request package checklist should include {expected}"
+            );
+        }
+
+        let checklist_text =
+            serde_json::to_string(&checklist).expect("request package checklist should serialize");
+        for expected in [
+            "/fabrication/design/import/catalog",
+            "/fabrication/instructions/import/preflight/catalog",
+            "/fabrication/instructions/generation/preflight/catalog",
+            "/fabrication/controllers/preflight/catalog",
+            "/fabrication/simulation/preflight/catalog",
+            "/fabrication/boundaries/preflight/catalog",
+            "/fabrication/release/preflight/catalog",
+            "/fabrication/learning/outcomes",
+            "machineReady remains false",
+            "DES, MDP/POMDP, reward, neural, and outcome records",
+        ] {
+            assert!(
+                checklist_text.contains(expected),
+                "request package checklist should include {expected}"
             );
         }
     }
@@ -114425,6 +115390,69 @@ mod tests {
     }
 
     #[test]
+    fn machine_code_preflight_catalog_endpoint_exposes_controller_release_gates() {
+        let payload = machine_code_preflight_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.machine-code-preflight-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/machine-code/preflight/catalog")
+            })));
+        assert!(payload
+            .get("generatedLanguages")
+            .and_then(Value::as_array)
+            .is_some_and(|languages| languages
+                .iter()
+                .any(|language| language.as_str() == Some("haas-gcode"))));
+        assert!(payload
+            .get("machineClasses")
+            .and_then(Value::as_array)
+            .is_some_and(|classes| classes
+                .iter()
+                .any(|class| class.as_str() == Some("vertical-mill"))));
+
+        let groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("machine-code preflight groups should be exposed");
+        for group in [
+            "program-source-and-design-state",
+            "controller-postprocessor-and-dialect-state",
+            "machine-setup-toolpath-and-process-state",
+            "validation-simulation-release-and-learning-state",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing machine-code preflight group {group}"
+            );
+        }
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("controllerPlan.releaseGates"))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("generated-machine-program"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
+    }
+
+    #[test]
     fn machine_code_generation_endpoint_returns_controller_release_package() {
         let policy = LearningPolicySnapshot {
             outcome_count: 0,
@@ -116798,6 +117826,144 @@ mod tests {
             .and_then(|release| release.get("blockers"))
             .and_then(Value::as_array)
             .is_some_and(|blockers| !blockers.is_empty()));
+    }
+
+    #[test]
+    fn boundary_analysis_result_endpoint_reviews_machine_failure_split_and_learning() {
+        let payload =
+            boundary_analysis_result_review_response(BoundaryAnalysisResultReviewRequest {
+                request_id: Some("unit-boundary-result".to_string()),
+                plan_request_id: Some("unit-boundary-plan".to_string()),
+                analysis_job_id: Some("analysis-job-17".to_string()),
+                job_id: Some("hybrid-job-17".to_string()),
+                worker_id: "boundary-worker-01".to_string(),
+                analyzer: Some("hybrid-boundary-analyzer".to_string()),
+                analyzer_version: Some("2026.06".to_string()),
+                machine_id: Some("hybrid-cell-01".to_string()),
+                machine_kind: Some("hybrid-print-mill-cell".to_string()),
+                instruction_id: Some("legacy-gcode-17".to_string()),
+                success: true,
+                machine_ready: false,
+                release_ready: Some(false),
+                findings: Some(vec![BoundaryAnalysisResultFinding {
+                    finding_id: "finding-fixture-proof".to_string(),
+                    severity: "blocker".to_string(),
+                    code: "fixture-proof-missing".to_string(),
+                    message: "Fixture proof is missing before the first feed move".to_string(),
+                    program_id: Some("legacy-gcode-17".to_string()),
+                    operation_id: Some("op-mill-pocket".to_string()),
+                    line_ref: Some("N120".to_string()),
+                    release_blocker: Some(true),
+                    requires_human_intervention: Some(true),
+                    evidence: Some(vec![
+                        "boundary worker captured missing fixture photo".to_string()
+                    ]),
+                }]),
+                failure_boundaries: Some(vec![BoundaryAnalysisResultBoundary {
+                    boundary_id: "boundary-machine-failure".to_string(),
+                    boundary_kind: "machine-failure".to_string(),
+                    code: "unsupported-tool-change".to_string(),
+                    message: "Controller cannot complete the tool-change sequence unattended"
+                        .to_string(),
+                    program_id: Some("legacy-gcode-17".to_string()),
+                    operation_id: Some("op-tool-change".to_string()),
+                    line_ref: Some("N180".to_string()),
+                    release_blocker: Some(true),
+                    machine_failure_risk: Some(true),
+                    human_intervention_required: Some(true),
+                    split_required: Some(true),
+                    combine_required: Some(false),
+                    recommended_action: Some("split-route-with-operator-checkpoint".to_string()),
+                    evidence: Some(vec![
+                        "simulated stop occurs before datum transfer".to_string(),
+                        "operator checkpoint required before second setup".to_string(),
+                    ]),
+                }]),
+                split_combine_decisions: Some(vec![BoundaryAnalysisResultSplitCombineDecision {
+                    decision_id: "decision-split-insert".to_string(),
+                    action: "split".to_string(),
+                    boundary_id: Some("boundary-machine-failure".to_string()),
+                    part_id: Some("printed-shell".to_string()),
+                    program_id: Some("legacy-gcode-17".to_string()),
+                    interface_id: Some("datum-interface-17".to_string()),
+                    status: "release-blocked".to_string(),
+                    release_blocker: Some(true),
+                    requires_human_intervention: Some(true),
+                    evidence: Some(vec![
+                        "split insert requires datum interface inspection".to_string()
+                    ]),
+                }]),
+                artifacts: Some(vec![BoundaryAnalysisResultArtifact {
+                    artifact_id: "boundary-analysis-artifact".to_string(),
+                    artifact_kind: "boundary-analysis-report".to_string(),
+                    source_ref_id: Some("analysis-job-17".to_string()),
+                    uri: Some("s3://fabrication-boundaries/analysis-job-17.json".to_string()),
+                    sha256: Some(
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                            .to_string(),
+                    ),
+                    format: Some("json".to_string()),
+                    evidence: Some(vec![
+                        "retained boundary report checksum verified".to_string()
+                    ]),
+                }]),
+                warnings: Some(vec!["manual checkpoint remains open".to_string()]),
+                review_metadata: Some(json!({ "cell": "hybrid", "shift": "night" })),
+            })
+            .expect("boundary analysis result review should succeed");
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.boundary-analysis-result-review.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/boundaries/result"))));
+        assert_eq!(
+            payload.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload
+                .get("machineFailureBoundaryCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("humanInterventionCount")
+                .and_then(Value::as_u64),
+            Some(3)
+        );
+        assert_eq!(
+            payload.get("splitRequiredCount").and_then(Value::as_u64),
+            Some(2)
+        );
+        assert!(
+            payload
+                .get("learning")
+                .and_then(|learning| learning.get("outcomeDraft"))
+                .and_then(|draft| draft.get("sourceKind"))
+                .and_then(Value::as_str)
+                == Some("boundary-analysis-result")
+        );
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry == "boundary-kind:machine-failure"))));
+
+        let job = stored_boundary_analysis_result_job(&payload);
+        assert_eq!(job.record.kind, "boundary-analysis-result");
+        assert_eq!(job.record.severity, "error");
+        assert!(job
+            .artifacts
+            .contains_key("boundary-analysis-split-combine-decisions"));
     }
 
     #[test]
