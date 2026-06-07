@@ -131,6 +131,9 @@ spec:
                 fi
               done
               for route in \
+                '"path": "/fabrication/capabilities"' \
+                '"path": "/fabrication/schema"' \
+                '"path": "/fabrication/examples"' \
                 '"path": "/fabrication/plan"' \
                 '"path": "/fabrication/workflow/catalog"' \
                 '"path": "/fabrication/workflow/plan"' \
@@ -144,6 +147,9 @@ spec:
                 '"path": "/fabrication/materials/catalog"' \
                 '"path": "/fabrication/materials/plan"' \
                 '"path": "/fabrication/materials/result"' \
+                '"path": "/fabrication/formats/catalog"' \
+                '"path": "/fabrication/slicers/catalog"' \
+                '"path": "/fabrication/mesh-repair/catalog"' \
                 '"path": "/fabrication/design/import/catalog"' \
                 '"path": "/fabrication/design/import/review"' \
                 '"path": "/fabrication/design/convert/plan"' \
@@ -152,6 +158,7 @@ spec:
                 '"path": "/fabrication/design/generate"' \
                 '"path": "/fabrication/design/synthesis/result"' \
                 '"path": "/fabrication/handoff/catalog"' \
+                '"path": "/fabrication/subjects/catalog"' \
                 '"path": "/fabrication/instructions/validation/catalog"' \
                 '"path": "/fabrication/instructions/generation/catalog"' \
                 '"path": "/fabrication/instructions/generate"' \
@@ -174,6 +181,7 @@ spec:
                 '"path": "/fabrication/release/preview"' \
                 '"path": "/fabrication/release/result"' \
                 '"path": "/fabrication/strategy/catalog"' \
+                '"path": "/fabrication/methods/catalog"' \
                 '"path": "/fabrication/strategy/recommend"' \
                 '"path": "/fabrication/schedule/catalog"' \
                 '"path": "/fabrication/schedule/result"' \
@@ -190,6 +198,8 @@ spec:
                 '"path": "/fabrication/calibration/result"' \
                 '"path": "/fabrication/interventions/catalog"' \
                 '"path": "/fabrication/setup/catalog"' \
+                '"path": "/fabrication/tooling/catalog"' \
+                '"path": "/fabrication/process-recipes/catalog"' \
                 '"path": "/fabrication/setup/plan"' \
                 '"path": "/fabrication/setup/result"' \
                 '"path": "/fabrication/monitoring/catalog"' \
@@ -199,6 +209,7 @@ spec:
                 '"path": "/fabrication/postprocess/plan"' \
                 '"path": "/fabrication/postprocess/result"' \
                 '"path": "/fabrication/artifacts/catalog"' \
+                '"path": "/fabrication/jobs/catalog"' \
                 '"path": "/fabrication/design/formats"' \
                 '"path": "/fabrication/instructions/languages"' \
                 '"path": "/fabrication/boundaries/catalog"' \
