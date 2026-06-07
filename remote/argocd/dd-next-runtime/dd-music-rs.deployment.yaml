@@ -19,6 +19,7 @@ spec:
       annotations:
         dd.dev/telemetry-revision: '2026-06-07-music-server'
         dd.dev/des-engine-revision: '61bd09c6c86df1ffe55ac7b9c6b52ead81cb129c'
+        dd.dev/source-revision: '2026-06-07-music-degraded-readiness'
       labels:
         app: dd-music-rs
         dd.dev/redis-cache-client: 'true'
