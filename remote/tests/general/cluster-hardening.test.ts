@@ -46,6 +46,27 @@ test("gateway sets baseline browser security headers", async () => {
   assert.match(gateway, /server_tokens\s+off;/);
 });
 
+test("gateway quotes regex locations that contain quantifier braces", async () => {
+  const gateway = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
+  );
+
+  assert.match(
+    gateway,
+    /location\s+~\s+"\^\/music\/songs\/\[0-9a-fA-F\]\{8\}-\[0-9a-fA-F\]\{4\}-\[0-9a-fA-F\]\{4\}-\[0-9a-fA-F\]\{4\}-\[0-9a-fA-F\]\{12\}\/votes\$"/,
+  );
+  assert.doesNotMatch(gateway, /location\s+~\s+\^\/music\/songs\/\[0-9a-fA-F\]\{8\}/);
+});
+
+test("dd-music-rs pins a rustc image new enough for the locked AWS SDK crates", async () => {
+  const music = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-music-rs.deployment.yaml",
+  );
+
+  assert.match(music, /image:\s*docker\.io\/library\/rust:1\.91\.1-bookworm/);
+  assert.doesNotMatch(music, /image:\s*docker\.io\/library\/rust:1\.90-bookworm/);
+});
+
 test("/telemetry/ proxies websocket upgrades to grafana live", async () => {
   const gateway = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",

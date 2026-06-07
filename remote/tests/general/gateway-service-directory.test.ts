@@ -187,6 +187,9 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
   assert.match(home, /dd-gleam-lambda-runner deployment \+ Rust REST API/);
   assert.match(home, /Gleam child-process runner/);
   assertPathEntry(home, '/auth', '/auth?return=/home');
+  assertPathEntry(home, '/auth/status', '/auth/status');
+  assert.doesNotMatch(home, /PathEntry \{ label: "\/auth\/login"/);
+  assert.doesNotMatch(home, /PathEntry \{ label: "\/auth\/logout"/);
   assert.match(home, /Rust PIN auth service/);
   assert.match(home, /dd_auth/);
   assertPathEntry(home, '/bastion/runtime/deployments', '/bastion/runtime/deployments');
@@ -210,7 +213,10 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
   assertPathEntry(home, '/gleam/home', '/gleam/home');
   assertPathEntry(home, '/gleam/healthz', '/gleam/healthz');
   assertPathEntry(home, '/gleam/metrics', '/gleam/metrics');
-  assertPathEntry(home, '/presence/healthz', '/presence/healthz');
+  assertPathEntry(home, '/presence-test', '/presence-test?user=alice&device=d1');
+  assert.doesNotMatch(home, /\/presence-test\?user=alice&device=d1&autoconnect=1/);
+  assertPathEntry(home, '/presence/healthz');
+  assert.doesNotMatch(home, /PathEntry \{ label: "\/presence\/healthz", href: Some/);
   assertPathEntry(home, '/presence/ws');
   assertPathEntry(home, '/presence/user/<id>/broadcast');
   assert.match(home, /<input id="presence" value="\/presence"/);
@@ -359,6 +365,8 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
     gateway,
     /location = \/auth[\s\S]*dd-remote-auth\.default\.svc\.cluster\.local:8083/,
   );
+  assert.match(gateway, /location = \/auth\/login[\s\S]*return 302 \/auth\?return=\/home/);
+  assert.match(gateway, /location = \/auth\/logout[\s\S]*return 302 \/auth\?return=\/home/);
   assert.match(gateway, /location @auth_required/);
   assert.match(gateway, /return 302 \/auth\?return=\$request_uri/);
   assert.doesNotMatch(gateway, /location @auth_required_html/);
@@ -449,11 +457,21 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
     gateway,
     /location\s+\/telemetry\/[\s\S]*dd-grafana\.observability\.svc\.cluster\.local:3000/,
   );
+  assert.ok(
+    gateway.includes(
+      'location ~ "^/grafana/depl/(?<dd_grafana_deployment>[A-Za-z0-9][A-Za-z0-9._-]{0,126})/?$"',
+    ),
+  );
+  assert.match(
+    gateway,
+    /return 302 \/telemetry\/d\/dd-deployment-drilldown\/deployment-drilldown\?orgId=1&var-deployment=\$dd_grafana_deployment/,
+  );
   assert.match(gateway, /location = \/prometheus[\s\S]*return 302 \/prometheus\//);
   assert.match(
     gateway,
     /location\s+\/prometheus\/[\s\S]*dd-prometheus\.observability\.svc\.cluster\.local:9090\//,
   );
+  assert.match(gateway, /location = \/des\/music[\s\S]*return 302 \/des-rs\/music/);
   assert.match(gateway, /location = \/nats[\s\S]*return 302 \/nats\//);
   assert.match(
     gateway,

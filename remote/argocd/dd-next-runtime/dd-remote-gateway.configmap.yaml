@@ -131,6 +131,14 @@ data:
         proxy_pass http://dd-remote-auth.default.svc.cluster.local:8083;
       }
 
+      location = /auth/login {
+        return 302 /auth?return=/home;
+      }
+
+      location = /auth/logout {
+        return 302 /auth?return=/home;
+      }
+
       location /auth/ {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -513,6 +521,13 @@ data:
         proxy_set_header Auth $dd_gateway_auth_header;
         proxy_set_header X-Forwarded-Prefix /telemetry;
         proxy_pass http://dd-grafana.observability.svc.cluster.local:3000;
+      }
+
+      location ~ "^/grafana/depl/(?<dd_grafana_deployment>[A-Za-z0-9][A-Za-z0-9._-]{0,126})/?$" {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /telemetry/d/dd-deployment-drilldown/deployment-drilldown?orgId=1&var-deployment=$dd_grafana_deployment;
       }
 
       location = /prometheus {
@@ -1074,6 +1089,13 @@ data:
           return 401;
         }
         return 302 /des/;
+      }
+
+      location = /des/music {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /des-rs/music;
       }
 
       location /des/ {

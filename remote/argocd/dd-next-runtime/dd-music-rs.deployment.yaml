@@ -30,7 +30,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: music-rs
-          image: docker.io/library/rust:1.90-bookworm
+          image: docker.io/library/rust:1.91.1-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
