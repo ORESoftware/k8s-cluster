@@ -43,6 +43,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'bastion-rs',
   'billing-server-rs',
   'build-server-rs',
+  'cluster-mcp-rs',
   'container-pool-rs',
   'contract-service-rs',
   'dd-escrow-rs',

@@ -359,16 +359,26 @@ data:
           "targets": [
             {
               "expr": "rate(dd_gleam_mcp_http_requests_total[1m])",
-              "legendFormat": "http",
+              "legendFormat": "gleam http",
               "refId": "A"
             },
             {
               "expr": "sum(rate(dd_gleam_mcp_rpc_requests_total{method!=\"all\"}[1m])) by (method)",
-              "legendFormat": "{{method}}",
+              "legendFormat": "gleam {{method}}",
               "refId": "B"
+            },
+            {
+              "expr": "rate(dd_cluster_mcp_rs_http_requests_total[1m])",
+              "legendFormat": "rust http",
+              "refId": "C"
+            },
+            {
+              "expr": "sum(rate(dd_cluster_mcp_rs_rpc_requests_by_method_total[1m])) by (method)",
+              "legendFormat": "rust {{method}}",
+              "refId": "D"
             }
           ],
-          "title": "Gleam MCP Runtime",
+          "title": "Cluster MCP Runtime",
           "type": "timeseries"
         },
         {

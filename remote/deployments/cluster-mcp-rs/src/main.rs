@@ -1861,11 +1861,15 @@ mod tests {
 
     #[test]
     fn clip_string_preserves_utf8_boundaries() {
-        let clipped = clip_string("alpha beta gamma", 7);
-        assert!(clipped.starts_with("alpha b"));
+        let clipped = clip_string(
+            "alpha beta gamma delta epsilon zeta eta theta iota kappa",
+            40,
+        );
+        assert!(clipped.starts_with("alpha beta gamma"));
         assert!(clipped.ends_with("... clipped ..."));
-        let unicode = clip_string("hello cafe", 8);
-        assert!(unicode.starts_with("hello ca"));
+        let prefix = "a".repeat(32);
+        let unicode = clip_string(&format!("{prefix}\u{00e9}omega"), 33);
+        assert_eq!(unicode.trim_end_matches("\n... clipped ..."), prefix);
     }
 
     #[test]
