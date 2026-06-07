@@ -928,6 +928,82 @@ struct DispositionResultArtifact {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct CostingResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    machine_kind: Option<String>,
+    route_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    customer_ready: Option<bool>,
+    cost_reviews: Option<Vec<CostingResultReview>>,
+    yield_reviews: Option<Vec<CostingResultYieldReview>>,
+    route_comparisons: Option<Vec<CostingResultRouteComparison>>,
+    artifacts: Option<Vec<CostingResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CostingResultReview {
+    review_id: String,
+    cost_family: String,
+    status: String,
+    estimate_kind: String,
+    estimated_value: Option<f64>,
+    actual_value: Option<f64>,
+    unit: Option<String>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CostingResultYieldReview {
+    yield_id: String,
+    material_kind: String,
+    status: String,
+    estimated_scrap_percent: Option<f64>,
+    actual_scrap_percent: Option<f64>,
+    material_available: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CostingResultRouteComparison {
+    comparison_id: String,
+    route_kind: String,
+    status: String,
+    selected: Option<bool>,
+    cheaper_than_baseline: Option<bool>,
+    safer_than_baseline: Option<bool>,
+    requires_split_combine: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CostingResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SupportStrategyResultReviewRequest {
     request_id: Option<String>,
     plan_request_id: Option<String>,
