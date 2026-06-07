@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -46808,10 +46808,16 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/materials/result",
         "GET /design/formats",
         "GET /fabrication/design/formats",
+        "GET /slicers/catalog",
+        "GET /fabrication/slicers/catalog",
+        "GET /mesh-repair/catalog",
+        "GET /fabrication/mesh-repair/catalog",
         "GET /formats/catalog",
         "GET /fabrication/formats/catalog",
         "GET /design/import/catalog",
         "GET /fabrication/design/import/catalog",
+        "GET /subjects/catalog",
+        "GET /fabrication/subjects/catalog",
         "GET /design/generation/catalog",
         "GET /fabrication/design/generation/catalog",
         "POST /design/synthesis/result",
@@ -46866,6 +46872,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/release/result",
         "GET /strategy/catalog",
         "GET /fabrication/strategy/catalog",
+        "GET /methods/catalog",
+        "GET /fabrication/methods/catalog",
         "POST /strategy/recommend",
         "POST /fabrication/strategy/recommend",
         "GET /schedule/catalog",
@@ -46894,6 +46902,12 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/interventions/catalog",
         "GET /setup/catalog",
         "GET /fabrication/setup/catalog",
+        "GET /tooling/catalog",
+        "GET /fabrication/tooling/catalog",
+        "GET /process-recipes/catalog",
+        "GET /fabrication/process-recipes/catalog",
+        "GET /kinematics/catalog",
+        "GET /fabrication/kinematics/catalog",
         "POST /setup/plan",
         "POST /fabrication/setup/plan",
         "POST /setup/result",
@@ -50130,6 +50144,366 @@ fn strategy_catalog_response() -> Value {
 
 async fn strategy_catalog_http() -> impl IntoResponse {
     Json(strategy_catalog_response())
+}
+
+fn manufacturing_method_catalog_contracts() -> Vec<Value> {
+    vec![
+        json!({
+            "family": "additive-printing",
+            "methods": [
+                "fdm-fff-extrusion",
+                "sla-dlp-msla-resin",
+                "sls-mjf-powder-bed",
+                "metal-lpbf-ded",
+                "binder-jetting",
+                "material-jetting",
+                "clay-paste-pellet-extrusion"
+            ],
+            "machineKinds": [
+                "fdm-printer",
+                "sla-printer",
+                "sls-printer",
+                "metal-lpbf-printer",
+                "binder-jet-printer"
+            ],
+            "designInputs": ["STL", "3MF", "STEP", "AMF", "OBJ", "parametric-design"],
+            "instructionKinds": ["G-code", "3MF build payload", "resin slice package", "powder-bed build file"],
+            "primarySurfaces": ["generatedDesign", "materialPlan", "postprocessPlan", "machineRelease"],
+            "releaseBlockers": [
+                "material/feedstock compatibility",
+                "nozzle/bed/chamber/powder/resin readiness",
+                "support and orientation review",
+                "cooldown/postprocess/depowder/cure evidence"
+            ],
+            "learningSignals": [
+                "print success/failure",
+                "material profile",
+                "orientation/support outcome",
+                "extrusion/resin/powder boundary"
+            ]
+        }),
+        json!({
+            "family": "subtractive-milling-routing",
+            "methods": [
+                "vertical-milling",
+                "horizontal-milling",
+                "3-axis-routing",
+                "indexed-rotary-milling",
+                "5-axis-milling",
+                "gear-cutting"
+            ],
+            "machineKinds": [
+                "vertical-mill",
+                "horizontal-mill",
+                "cnc-router",
+                "5-axis-mill",
+                "gear-hobbing-machine"
+            ],
+            "designInputs": ["STEP", "IGES", "Parasolid", "DXF", "native CAD export", "CAM setup"],
+            "instructionKinds": ["ISO G-code", "Fanuc/Haas/LinuxCNC dialect", "toolpath setup sheet", "CAM operation plan"],
+            "primarySurfaces": ["controllerPlan", "machineSchedule", "setupPlan", "simulation", "machineRelease"],
+            "releaseBlockers": [
+                "workholding and datum evidence",
+                "tool list, tool length, cutter compensation, and spindle/feed evidence",
+                "coolant/chip/dust evacuation readiness",
+                "dry-run, stock, fixture, and collision review"
+            ],
+            "learningSignals": [
+                "cycle time",
+                "tool/process boundary",
+                "setup intervention",
+                "simulation warning"
+            ]
+        }),
+        json!({
+            "family": "turning-lathe-millturn",
+            "methods": [
+                "2-axis-turning",
+                "cnc-lathe",
+                "mill-turn",
+                "part-off-cutoff",
+                "threading"
+            ],
+            "machineKinds": ["lathe", "cnc-lathe", "mill-turn", "swiss-lathe"],
+            "designInputs": ["STEP", "IGES", "revolved profile", "turning setup sheet", "bar stock spec"],
+            "instructionKinds": ["turning G-code", "turret program", "threading cycle", "part-off operation sheet"],
+            "primarySurfaces": ["machineSelection", "setupPlan", "controllerPlan", "simulation", "machineRelease"],
+            "releaseBlockers": [
+                "chuck/collet/bar support evidence",
+                "spindle speed, feed-per-rev, threading pitch, and tool-nose compensation evidence",
+                "tailstock/subspindle/catcher support for cutoff",
+                "safe turret/tool-change state"
+            ],
+            "learningSignals": [
+                "workholding outcome",
+                "surface finish",
+                "threading/feed synchronization",
+                "part-off support boundary"
+            ]
+        }),
+        json!({
+            "family": "sheet-cutting-and-edm",
+            "methods": [
+                "laser-cutting",
+                "waterjet-cutting",
+                "plasma-cutting",
+                "knife-cutting",
+                "wire-edm",
+                "sheet-forming"
+            ],
+            "machineKinds": ["laser-cutter", "waterjet-cutter", "plasma-table", "vinyl-knife-cutter", "wire-edm"],
+            "designInputs": ["DXF", "SVG", "STEP sheet body", "nesting layout", "cut sheet"],
+            "instructionKinds": ["G-code", "DXF/SVG cut program", "nesting job", "controller-specific cut file"],
+            "primarySurfaces": ["instructionAnalysis", "setupPlan", "machineSchedule", "qualityPlan", "machineRelease"],
+            "releaseBlockers": [
+                "material thickness and kerf evidence",
+                "assist gas, abrasive, pump pressure, fume extraction, water table, or support-media readiness",
+                "pierce/lead-in/tab/nesting verification",
+                "thermal or support-media restart review after stop"
+            ],
+            "learningSignals": [
+                "kerf/edge quality",
+                "support-media boundary",
+                "nest utilization",
+                "cut failure"
+            ]
+        }),
+        json!({
+            "family": "hybrid-split-combine-assembly",
+            "methods": [
+                "print-then-machine",
+                "machine-then-print",
+                "split-for-build-volume",
+                "join-fastened",
+                "join-bonded",
+                "join-welded",
+                "press-fit"
+            ],
+            "machineKinds": ["mixed-cell", "assembly-cell", "inspection-cell", "robotic-workcell"],
+            "designInputs": ["assembly CAD", "interface control plan", "decomposition plan", "tolerance stack"],
+            "instructionKinds": ["hybrid route plan", "assembly traveler", "robot path", "operator work instruction"],
+            "primarySurfaces": ["hybridMakePlan", "decompositionPlan", "interfaceControlPlan", "assemblyPlan", "executionPlan"],
+            "releaseBlockers": [
+                "interface datum and tolerance evidence",
+                "join method/process qualification",
+                "human/automation intervention map",
+                "piece split/combine release signoff"
+            ],
+            "learningSignals": [
+                "split/combine success",
+                "join quality",
+                "operator intervention",
+                "route reward"
+            ]
+        }),
+        json!({
+            "family": "finishing-postprocess-quality",
+            "methods": [
+                "support-removal",
+                "deburr",
+                "heat-treat",
+                "surface-finishing",
+                "coating",
+                "curing",
+                "dimensional-inspection"
+            ],
+            "machineKinds": ["postprocess-cell", "inspection-cell", "oven", "deburr-station", "cmm"],
+            "designInputs": ["drawing tolerances", "finish spec", "inspection plan", "postprocess recipe"],
+            "instructionKinds": ["postprocess plan", "quality plan", "inspection result", "release package"],
+            "primarySurfaces": ["postprocessPlan", "qualityPlan", "monitoringPlan", "machineRelease", "releasePackagePlan"],
+            "releaseBlockers": [
+                "recipe and handling evidence",
+                "dimensional/finish/strength verification",
+                "traceability and release package completeness",
+                "human signoff for special processes"
+            ],
+            "learningSignals": [
+                "quality result",
+                "postprocess defect",
+                "inspection measurement",
+                "release blocker resolution"
+            ]
+        }),
+        json!({
+            "family": "inspection-calibration-monitoring",
+            "methods": [
+                "probe-datum",
+                "in-process-monitoring",
+                "camera-inspection",
+                "cmm-inspection",
+                "calibration-run",
+                "simulation-dry-run"
+            ],
+            "machineKinds": ["inspection-cell", "cmm", "probe-equipped-machine", "vision-cell"],
+            "designInputs": ["inspection plan", "calibration artifact", "simulation model", "sensor profile"],
+            "instructionKinds": ["probe routine", "inspection program", "calibration result", "simulation result"],
+            "primarySurfaces": ["calibrationPlan", "monitoringPlan", "simulation", "qualityPlan", "machineRelease"],
+            "releaseBlockers": [
+                "probe/calibration currency",
+                "sensor profile evidence",
+                "simulation/dry-run review",
+                "measurement uncertainty and acceptance criteria"
+            ],
+            "learningSignals": [
+                "probe correction",
+                "monitoring event",
+                "simulation false positive/negative",
+                "quality drift"
+            ]
+        }),
+        json!({
+            "family": "special-processes",
+            "methods": [
+                "composite-layup",
+                "molding-casting",
+                "ulam-lom-sheet-lamination",
+                "manual-fabrication",
+                "external-vendor-process"
+            ],
+            "machineKinds": ["manual-cell", "composite-cell", "molding-cell", "sheet-lamination-cell", "vendor-process"],
+            "designInputs": ["process traveler", "material datasheet", "layup schedule", "vendor package"],
+            "instructionKinds": ["traveler", "operator instruction", "special-process checklist", "vendor work order"],
+            "primarySurfaces": ["instructionAnalysis", "operatorInterventionPlan", "qualityPlan", "releasePackagePlan"],
+            "releaseBlockers": [
+                "human/operator review evidence",
+                "material handling and cure/process controls",
+                "external certificate or vendor acceptance",
+                "quality and traceability records"
+            ],
+            "learningSignals": [
+                "operator review outcome",
+                "vendor/process lead time",
+                "quality acceptance",
+                "special-process escape"
+            ]
+        }),
+    ]
+}
+
+fn manufacturing_method_catalog_response() -> Value {
+    let contracts = manufacturing_method_catalog_contracts();
+    let machines = default_machines();
+    let method_families = unique_sorted(contracts.iter().filter_map(|contract| {
+        contract
+            .get("family")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let methods = unique_sorted(contracts.iter().flat_map(|contract| {
+        contract
+            .get("methods")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(machines.iter().map(|machine| machine.kind.clone()).chain(
+        contracts.iter().flat_map(|contract| {
+            contract
+                .get("machineKinds")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned)
+        }),
+    ));
+    let process_classes = unique_sorted(
+        machines
+            .iter()
+            .map(|machine| machine_class_name(machine_class(&machine.kind)).to_string()),
+    );
+    let instruction_kinds = unique_sorted(contracts.iter().flat_map(|contract| {
+        contract
+            .get("instructionKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.manufacturing-method-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /methods/catalog", "GET /fabrication/methods/catalog"],
+        "methodFamilyCount": contracts.len(),
+        "methodCount": methods.len(),
+        "families": method_families,
+        "methods": methods,
+        "machineKinds": machine_kinds,
+        "processClasses": process_classes,
+        "instructionKinds": instruction_kinds,
+        "planningRoutes": [
+            "POST /plan",
+            "POST /fabrication/plan",
+            "POST /workflow/plan",
+            "POST /fabrication/workflow/plan"
+        ],
+        "strategyRoutes": [
+            "GET /strategy/catalog",
+            "GET /fabrication/strategy/catalog",
+            "POST /strategy/recommend",
+            "POST /fabrication/strategy/recommend"
+        ],
+        "machineRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "POST /machines/select",
+            "POST /fabrication/machines/select"
+        ],
+        "learningRoutes": [
+            "GET /learning/policy",
+            "GET /fabrication/learning/policy",
+            "GET /learning/outcomes",
+            "GET /fabrication/learning/outcomes",
+            "POST /learning/observe",
+            "POST /fabrication/learning/observe"
+        ],
+        "responseSurfaces": [
+            "strategyCandidates.methods",
+            "strategyCandidates.machineKinds",
+            "hybridMakePlan.partRoutes",
+            "hybridMakePlan.joinOperations",
+            "decompositionPlan.parts",
+            "interfaceControlPlan.interfaces",
+            "machineSelection.selectedMachineKind",
+            "machineSchedule.operations",
+            "materialPlan.routeRequirements",
+            "postprocessPlan.controllerTargets",
+            "qualityPlan.requirements",
+            "machineRelease.blockers",
+            "learning.actions",
+            "learning.rewardTerms",
+            "learning.enginePolicy"
+        ],
+        "artifactSurfaces": [
+            "mdp-request.strategyCandidates",
+            "mdp-request.hybridMakePlan",
+            "mdp-request.decompositionPlan",
+            "mdp-request.machineSelection",
+            "parametric-design.hybridMakePlan",
+            "machine-selection",
+            "machine-schedule",
+            "material-plan",
+            "controller-plan",
+            "quality-plan",
+            "release-package"
+        ],
+        "methodPolicy": [
+            "method catalog entries describe advisory manufacturing process families, accepted instruction shapes, and evidence handoffs, not certified live machine availability or release approval",
+            "learned method preferences can bias split/combine and machine-routing choices only while deterministic validation, setup, controller, simulation, quality, intervention, postprocess, and release gates remain authoritative",
+            "hybrid planners can split, combine, print, mill, turn, cut, inspect, and postprocess parts across method families when boundaries or build-volume, tolerance, support, material, or human-intervention constraints require it"
+        ],
+        "methodFamilies": contracts
+    })
+}
+
+async fn manufacturing_method_catalog_http() -> impl IntoResponse {
+    Json(manufacturing_method_catalog_response())
 }
 
 fn strategy_recommendation_response(
@@ -55384,6 +55758,467 @@ fn setup_catalog_response() -> Value {
         ],
         "setupContracts": contracts
     })
+}
+
+fn tooling_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "toolFamily": "additive-extrusion-tooling",
+            "machineKinds": ["fdm-printer", "multi-material-fdm-printer", "pellet-fgf-printer", "robotic-additive-cell", "paste-extrusion-printer", "bound-metal-fff-printer"],
+            "toolEvidence": [
+                "nozzle diameter/material and wear state",
+                "extruder drive, hotend, melt-zone, auger, syringe, or bead head configuration",
+                "material profile, volumetric-flow, purge/prime, and first-layer calibration",
+                "tool/extruder selection and temperature evidence for multi-tool systems"
+            ],
+            "releaseBlockers": [
+                "nozzle or bead-tool geometry missing",
+                "material/nozzle/temperature compatibility not verified",
+                "positive extrusion occurs before purge, prime, or flow calibration evidence",
+                "multi-tool/extruder map is not tied to selected material"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements.requiredTools", "materialPlan.routeRequirements", "machineRelease.blockers"],
+            "learningSignals": ["tooling:additive-extrusion", "volumetric-flow:*", "purge-prime:*", "tool-temperature:*"]
+        }),
+        json!({
+            "toolFamily": "subtractive-cutter-and-holder-tooling",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "rotary-indexer-mill", "cnc-router"],
+            "toolEvidence": [
+                "tool list with cutter type, diameter/radius, flute count, stickout, and holder",
+                "tool length offset, cutter compensation offset, probe, and runout evidence",
+                "spindle speed/feed-rate limits, coolant/chip evacuation, and tool-life state",
+                "postprocessor/controller tool number and magazine or operator-loaded evidence"
+            ],
+            "releaseBlockers": [
+                "selected tool lacks length or diameter/radius offset evidence",
+                "cutting feed occurs before spindle speed, feed-rate, and process support evidence",
+                "tool change occurs while spindle/process remains active",
+                "tool-life or holder/runout evidence is absent for long or precision cuts"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements.requiredTools", "controllerPlan.requiredControllerChecks", "machineRelease.blockers"],
+            "learningSignals": ["tooling:subtractive-cutter", "tool-length:*", "feed-rate:*", "tool-life:*"]
+        }),
+        json!({
+            "toolFamily": "turning-insert-turret-and-support-tooling",
+            "machineKinds": ["lathe", "mill-turn-center", "swiss-turning-center"],
+            "toolEvidence": [
+                "turret/station tool map with insert geometry, nose radius, wear/geometry offset, and orientation",
+                "boring bar, threading insert, grooving/part-off blade, live tool, or pickoff tool evidence",
+                "chuck/collet/guide-bushing/tailstock/steady-rest/subspindle/catcher support evidence",
+                "CSS, feed-per-revolution/thread pitch, spindle clamp, and transfer checks"
+            ],
+            "releaseBlockers": [
+                "tool-nose compensation lacks geometry or wear offset evidence",
+                "threading cycle lacks feed-per-revolution or pitch synchronization evidence",
+                "part-off/cutoff lacks catcher, subspindle, tailstock, or stock support",
+                "lathe tool/turret change occurs while spindle/process remains active"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements.setupChecks", "fixturePlan.setups.requiredEvidence", "machineRelease.blockers"],
+            "learningSignals": ["tooling:lathe-turret", "tool-nose-comp:*", "threading-sync:*", "partoff-support:*"]
+        }),
+        json!({
+            "toolFamily": "sheet-cutting-process-tooling",
+            "machineKinds": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter"],
+            "toolEvidence": [
+                "nozzle/orifice/lens/electrode/wire/abrasive setup and consumable state",
+                "assist gas, pump pressure, abrasive flow, plasma work clamp, dielectric, flushing, and fume extraction evidence",
+                "kerf, pierce/thread, lead-in/out, sheet support, slat/water-table, and retained-tab proof",
+                "material thickness, recipe, and edge inspection coupon"
+            ],
+            "releaseBlockers": [
+                "cut feed occurs before beam/jet/arc and support-media evidence",
+                "support media is stopped and cutting continues without restart verification",
+                "part retention or drop/slug handling is unresolved",
+                "consumable or kerf recipe is not tied to material thickness"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements.consumables", "fixturePlan.setups.workholding", "simulation.riskProfile.programRisks"],
+            "learningSignals": ["tooling:sheet-cutting", "kerf:*", "support-media:*", "part-retention:*"]
+        }),
+        json!({
+            "toolFamily": "inspection-probing-and-calibration-tooling",
+            "machineKinds": ["all-fabrication-machines", "cmm-inspection-cell"],
+            "toolEvidence": [
+                "touch probe, tool setter, dial indicator, CMM probe, camera, scanner, or gauge calibration state",
+                "work offset/datum, Z-offset, fixture datum transfer, and uncertainty evidence",
+                "first-article, in-process, and release measurement records",
+                "probe recovery and operator review path for failed measurement cycles"
+            ],
+            "releaseBlockers": [
+                "work offset or Z-offset is changed without review evidence",
+                "probe cycle lacks setup feed, recovery, or calibration evidence",
+                "machine release lacks first-article or critical-dimension verification",
+                "measurement uncertainty is not tied to tolerance requirements"
+            ],
+            "responseSurfaces": ["calibrationPlan.offsetEvidence", "qualityPlan.measurementTargets", "releaseProbePlan.probes"],
+            "learningSignals": ["tooling:inspection", "probe-offset:*", "measurement-risk:*", "first-article:*"]
+        }),
+    ]
+}
+
+fn tooling_catalog_response() -> Value {
+    let entries = tooling_catalog_entries();
+    let tool_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("toolFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.tooling-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /tooling/catalog", "GET /fabrication/tooling/catalog"],
+        "toolFamilyCount": entries.len(),
+        "toolFamilies": tool_families,
+        "machineKinds": machine_kinds,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /setup/plan", "POST /fabrication/setup/plan"],
+        "reviewRoutes": [
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate",
+            "POST /machine-code/generate",
+            "POST /fabrication/machine-code/generate",
+            "POST /toolpaths/plan",
+            "POST /fabrication/toolpaths/plan",
+            "POST /simulation/run",
+            "POST /fabrication/simulation/run"
+        ],
+        "responseSurfaces": [
+            "toolingPlan.requirements.requiredTools",
+            "toolingPlan.requirements.consumables",
+            "toolingPlan.requirements.setupChecks",
+            "toolingPlan.releaseGates",
+            "fixturePlan.setups.requiredEvidence",
+            "controllerPlan.requiredControllerChecks",
+            "calibrationPlan.offsetEvidence",
+            "qualityPlan.measurementTargets",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "tooling-plan",
+            "fixture-plan",
+            "calibration-plan",
+            "quality-plan",
+            "controller-plan",
+            "machine-release",
+            "mdp-request.artifacts.toolingPlan"
+        ],
+        "releasePolicy": [
+            "tooling catalog entries describe required tool, consumable, offset, holder, probe, and support evidence, not certified tooling setup sheets",
+            "machine-ready release remains blocked until tool identity, geometry, offsets, wear/tool-life, process support, calibration, and operator or automation signoff evidence clear",
+            "tool selection, tool-life, offset, feed/speed, support-media, and inspection outcomes are retained as MDP/POMDP/neural learning signals for future planning and instruction repair"
+        ],
+        "toolingFamilies": entries
+    })
+}
+
+async fn tooling_catalog_http() -> impl IntoResponse {
+    Json(tooling_catalog_response())
+}
+
+fn process_recipe_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "recipeFamily": "additive-slicer-and-extrusion-parameters",
+            "machineKinds": ["fdm-printer", "multi-material-fdm-printer", "pellet-fgf-printer", "robotic-additive-cell", "resin-printer", "powder-bed-printer"],
+            "recipeEvidence": [
+                "layer height, extrusion width, flow/volumetric limit, speed, acceleration, cooling, chamber, and bed/nozzle temperature profile",
+                "support, orientation, first-layer, purge/prime, material map, and tool-change script review",
+                "resin exposure, peel/lift, wash/cure, or powder-bed recoater/thermal profile where applicable"
+            ],
+            "releaseBlockers": [
+                "positive extrusion or exposure begins before temperature, profile, or material recipe evidence",
+                "first-layer/support/orientation assumptions are not reviewed",
+                "recipe target changes are not followed by wait, stabilization, or verification evidence"
+            ],
+            "responseSurfaces": ["slicerProfileCatalog", "materialPlan.routeRequirements", "simulation.riskProfile", "machineRelease.blockers"],
+            "learningSignals": ["recipe:additive", "first-layer:*", "thermal-profile:*", "volumetric-flow:*"]
+        }),
+        json!({
+            "recipeFamily": "subtractive-feeds-speeds-and-engagement",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "rotary-indexer-mill", "cnc-router"],
+            "recipeEvidence": [
+                "chip load, surface speed, spindle speed, feed rate, radial/axial engagement, ramp/plunge limits, and material/tool pairing",
+                "coolant/chip evacuation/dust collection state and tool-life/load-monitor envelope",
+                "controller dialect, compensation mode, cutter engagement, and dry-run simulation evidence"
+            ],
+            "releaseBlockers": [
+                "cutting feed appears before positive feed-rate or feeds-and-speeds approval",
+                "spindle speed or coolant/chip evacuation is missing before cutting",
+                "tool engagement or tool-life envelope is not tied to material and cutter geometry"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements.requiredTools", "controllerPlan.requiredControllerChecks", "simulation.riskProfile.programRisks", "machineRelease.blockers"],
+            "learningSignals": ["recipe:subtractive", "feed-rate:*", "tool-life:*", "spindle-load:*"]
+        }),
+        json!({
+            "recipeFamily": "turning-threading-and-partoff-parameters",
+            "machineKinds": ["lathe", "mill-turn-center", "swiss-turning-center"],
+            "recipeEvidence": [
+                "CSS or fixed RPM limits, feed-per-revolution, depth of cut, insert geometry, and chip-control envelope",
+                "thread pitch/synchronization, tool-nose compensation, part-off blade, support, and spindle-transfer parameters",
+                "bar-feed, guide-bushing, subspindle, catcher, coolant, and load-monitor checks"
+            ],
+            "releaseBlockers": [
+                "threading cycle lacks feed-per-revolution or pitch recipe evidence",
+                "part-off recipe lacks support/catcher/subspindle/tailstock evidence",
+                "CSS, spindle speed cap, or tool-nose compensation recipe is unresolved"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements.setupChecks", "fixturePlan.setups.requiredEvidence", "controllerPlan.requiredControllerChecks", "machineRelease.blockers"],
+            "learningSignals": ["recipe:turning", "threading-sync:*", "partoff-support:*", "tool-nose-comp:*"]
+        }),
+        json!({
+            "recipeFamily": "sheet-cut-cut-chart-and-process-media",
+            "machineKinds": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter"],
+            "recipeEvidence": [
+                "material/thickness cut chart, pierce/thread parameters, kerf, lead-in/out, speed, power/pressure/current, and edge-quality target",
+                "assist gas, fume extraction, abrasive flow, pump pressure, dielectric/flushing, work clamp, and support-table evidence",
+                "coupon, tab/slug retention, drop monitoring, and edge inspection result"
+            ],
+            "releaseBlockers": [
+                "feed cutting starts before cut chart and process-media evidence",
+                "support media is stopped before feed cutting without restart verification",
+                "kerf/part-retention recipe is not tied to material thickness and geometry"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements.consumables", "fixturePlan.setups.workholding", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["recipe:sheet-cutting", "kerf:*", "support-media:*", "edge-quality:*"]
+        }),
+        json!({
+            "recipeFamily": "postprocess-thermal-chemical-and-finishing",
+            "machineKinds": ["resin-printer", "binder-jet-printer", "bound-metal-fff-printer", "metal-pbf-printer", "thermal-postprocess", "surface-finishing"],
+            "recipeEvidence": [
+                "wash/cure, debind/sinter, stress-relief, heat-treat, support removal, chemistry, masking, and finishing parameters",
+                "fixture/setter/support media, atmosphere, ramp/soak/cooldown, PPE, and inspection records",
+                "distortion, hardness, surface finish, residue, shrinkage coupon, and disposition evidence"
+            ],
+            "releaseBlockers": [
+                "postprocess recipe is missing for material/process family",
+                "thermal or chemical cycle lacks fixture, atmosphere, or inspection evidence",
+                "split printed/milled parts require recomposition or finishing evidence before release"
+            ],
+            "responseSurfaces": ["postprocessPlan.requiredArtifacts", "qualityPlan.inspectionGates", "releasePackagePlan.releaseGates", "machineRelease.blockers"],
+            "learningSignals": ["recipe:postprocess", "thermal-cycle:*", "surface-finish:*", "shrinkage:*"]
+        }),
+    ]
+}
+
+fn process_recipe_catalog_response() -> Value {
+    let entries = process_recipe_catalog_entries();
+    let recipe_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("recipeFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.process-recipe-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /process-recipes/catalog", "GET /fabrication/process-recipes/catalog"],
+        "recipeFamilyCount": entries.len(),
+        "recipeFamilies": recipe_families,
+        "machineKinds": machine_kinds,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /toolpaths/plan", "POST /fabrication/toolpaths/plan"],
+        "reviewRoutes": [
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate",
+            "POST /machine-code/generate",
+            "POST /fabrication/machine-code/generate",
+            "POST /simulation/run",
+            "POST /fabrication/simulation/run",
+            "POST /postprocess/plan",
+            "POST /fabrication/postprocess/plan"
+        ],
+        "responseSurfaces": [
+            "materialPlan.routeRequirements",
+            "toolingPlan.requirements",
+            "controllerPlan.requiredControllerChecks",
+            "simulation.riskProfile",
+            "qualityPlan.measurementTargets",
+            "postprocessPlan.requiredArtifacts",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "tooling-plan",
+            "controller-plan",
+            "simulation-report",
+            "quality-plan",
+            "postprocess-plan",
+            "mdp-request.artifacts.processRecipes"
+        ],
+        "releasePolicy": [
+            "process recipe catalog entries describe required parameter, cut-chart, slicer-profile, thermal, chemical, and inspection evidence, not certified production recipes",
+            "machine-ready release remains blocked until recipe provenance, material/tool/machine compatibility, simulation, first-article or coupon evidence, and operator or automation signoff clear",
+            "recipe selections, parameter revisions, feed/speed outcomes, thermal cycles, edge quality, first-layer behavior, and postprocess results are retained as MDP/POMDP/neural learning signals"
+        ],
+        "processRecipes": entries
+    })
+}
+
+async fn process_recipe_catalog_http() -> impl IntoResponse {
+    Json(process_recipe_catalog_response())
+}
+
+fn kinematics_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "kinematicFamily": "cartesian-printer-and-router-motion",
+            "machineKinds": ["fdm-printer", "multi-material-fdm-printer", "resin-printer", "cnc-router", "laser-sheet-cutter", "plasma-sheet-cutter"],
+            "axes": ["X", "Y", "Z", "E"],
+            "requiredEvidence": [
+                "homing, soft limits, bed/work envelope, coordinate mode, and unit mode evidence",
+                "stepper enable state, acceleration/jerk/input-shaper or motion profile evidence",
+                "Z-offset, first-layer, clearance plane, or safe travel height verification"
+            ],
+            "releaseBlockers": [
+                "motion or extrusion after steppers are disabled without re-home/restart evidence",
+                "relative positioning remains active before positive extrusion or release",
+                "rapid or extrusion motion enters unsafe Z or clearance state"
+            ],
+            "responseSurfaces": ["simulation.axisExtents", "machineRelease.blockers", "releaseProbePlan.probes"],
+            "learningSignals": ["kinematics:cartesian", "axis-mode:*", "clearance-plane:*", "stepper-state:*"]
+        }),
+        json!({
+            "kinematicFamily": "rotary-index-and-five-axis-milling",
+            "machineKinds": ["rotary-indexer-mill", "five-axis-mill", "horizontal-mill"],
+            "axes": ["X", "Y", "Z", "A", "B", "C"],
+            "requiredEvidence": [
+                "rotary pivot, TCP/RTCP, kinematic calibration, and postprocessor sign-convention evidence",
+                "rotary brake/clamp, fixture sweep, tombstone/chuck/arbore clearance, and re-probe evidence",
+                "dry-run/collision simulation with axis envelope and unwind limits"
+            ],
+            "releaseBlockers": [
+                "A/B/C motion appears before fixture, clamp, clearance, and datum review",
+                "TCP/tool-center-point compensation is active without calibration/review or cancel evidence",
+                "rotary or five-axis motion exceeds retained machine envelope or postprocessor assumptions"
+            ],
+            "responseSurfaces": ["simulation.axisExtents", "simulation.riskProfile.programRisks", "controllerPlan.requiredControllerChecks", "machineRelease.blockers"],
+            "learningSignals": ["kinematics:rotary-index", "tcp-rtcp:*", "rotary-clearance:*", "axis-envelope:*"]
+        }),
+        json!({
+            "kinematicFamily": "lathe-mill-turn-and-swiss-kinematics",
+            "machineKinds": ["lathe", "mill-turn-center", "swiss-turning-center"],
+            "axes": ["X", "Z", "C", "Y", "B", "subspindle", "bar-feed"],
+            "requiredEvidence": [
+                "main/sub-spindle phase, C-axis clamp/orientation, live-tool frame, Y/B travel, and transfer macro review",
+                "guide-bushing, bar-feed, pickoff, tailstock, catcher, or subspindle support state",
+                "threading synchronization, feed-per-rev mode, CSS speed cap, and tool-nose geometry evidence"
+            ],
+            "releaseBlockers": [
+                "live-tool or C/Y/B-axis milling occurs before spindle orientation and clamp evidence",
+                "spindle transfer or part-off lacks support/catcher/subspindle evidence",
+                "threading cycle lacks pitch/feed-per-rev synchronization evidence"
+            ],
+            "responseSurfaces": ["fixturePlan.setups.requiredEvidence", "controllerPlan.requiredControllerChecks", "simulation.riskProfile.programRisks", "machineRelease.blockers"],
+            "learningSignals": ["kinematics:mill-turn", "spindle-sync:*", "c-axis-clamp:*", "part-transfer:*"]
+        }),
+        json!({
+            "kinematicFamily": "robotic-additive-and-external-axis-motion",
+            "machineKinds": ["robotic-additive-cell", "robotic-assembly-cell", "directed-energy-deposition-cell"],
+            "axes": ["J1", "J2", "J3", "J4", "J5", "J6", "external-axis", "positioner"],
+            "requiredEvidence": [
+                "robot base/workobject frame, TCP/nozzle/tool frame, reach, singularity, and collision simulation",
+                "external axis or positioner synchronization, fixture interlock, cell access, and safe-zone evidence",
+                "path speed, bead/energy process synchronization, and recovery/restart plan"
+            ],
+            "releaseBlockers": [
+                "robot path lacks TCP/frame/reach/collision evidence",
+                "external-axis synchronization or fixture interlock is unresolved",
+                "process path continues without monitored bead/energy/tool-state synchronization"
+            ],
+            "responseSurfaces": ["postprocessPlan.requiredArtifacts", "monitoringPlan.monitorPoints", "simulation.riskProfile.programRisks", "machineRelease.blockers"],
+            "learningSignals": ["kinematics:robotic", "tcp-frame:*", "external-axis-sync:*", "singularity-risk:*"]
+        }),
+    ]
+}
+
+fn kinematics_catalog_response() -> Value {
+    let entries = kinematics_catalog_entries();
+    let kinematic_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("kinematicFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let axes = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("axes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.kinematics-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /kinematics/catalog", "GET /fabrication/kinematics/catalog"],
+        "kinematicFamilyCount": entries.len(),
+        "kinematicFamilies": kinematic_families,
+        "machineKinds": machine_kinds,
+        "axes": axes,
+        "reviewRoutes": [
+            "POST /simulation/run",
+            "POST /fabrication/simulation/run",
+            "POST /toolpaths/plan",
+            "POST /fabrication/toolpaths/plan",
+            "POST /machine-code/generate",
+            "POST /fabrication/machine-code/generate",
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate"
+        ],
+        "responseSurfaces": [
+            "simulation.axisExtents",
+            "simulation.riskProfile.programRisks",
+            "controllerPlan.requiredControllerChecks",
+            "fixturePlan.setups.requiredEvidence",
+            "monitoringPlan.monitorPoints",
+            "releaseProbePlan.probes",
+            "machineRelease.blockers"
+        ],
+        "releasePolicy": [
+            "kinematics catalog entries describe required axis, coordinate-mode, TCP/frame, envelope, fixture-clearance, and synchronization evidence, not certified machine motion approvals",
+            "machine-ready release remains blocked until homing, units, coordinate state, axis envelope, rotary/robot frame, fixture clearance, simulation, and operator or automation signoff evidence clear",
+            "axis-envelope, coordinate-mode, TCP/frame, external-axis, spindle-sync, and clearance observations are retained as MDP/POMDP/neural learning signals for future program generation and validation"
+        ],
+        "kinematics": entries
+    })
+}
+
+async fn kinematics_catalog_http() -> impl IntoResponse {
+    Json(kinematics_catalog_response())
 }
 
 fn setup_planning_response(
@@ -63156,8 +63991,14 @@ async fn capabilities() -> impl IntoResponse {
                 "POST /fabrication/materials/result",
                 "GET /design/formats",
                 "GET /fabrication/design/formats",
+                "GET /slicers/catalog",
+                "GET /fabrication/slicers/catalog",
+                "GET /mesh-repair/catalog",
+                "GET /fabrication/mesh-repair/catalog",
                 "GET /design/import/catalog",
                 "GET /fabrication/design/import/catalog",
+                "GET /subjects/catalog",
+                "GET /fabrication/subjects/catalog",
                 "GET /design/generation/catalog",
                 "GET /fabrication/design/generation/catalog",
                 "POST /design/synthesis/result",
@@ -63242,6 +64083,12 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/interventions/catalog",
                 "GET /setup/catalog",
                 "GET /fabrication/setup/catalog",
+                "GET /tooling/catalog",
+                "GET /fabrication/tooling/catalog",
+                "GET /process-recipes/catalog",
+                "GET /fabrication/process-recipes/catalog",
+                "GET /kinematics/catalog",
+                "GET /fabrication/kinematics/catalog",
                 "POST /setup/plan",
                 "POST /fabrication/setup/plan",
                 "POST /setup/result",
@@ -63554,6 +64401,318 @@ fn design_format_catalog_response() -> Value {
 
 async fn design_formats() -> impl IntoResponse {
     Json(design_format_catalog_response())
+}
+
+fn slicer_profile_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "slicer": "PrusaSlicer",
+            "projectFormats": ["3mf", "ini", "gcode"],
+            "printerFamilies": ["FDM/FFF", "multi-material FDM", "SLA via exported profiles"],
+            "profileEvidence": [
+                "printer profile and firmware flavor",
+                "filament/material profile with nozzle and temperature limits",
+                "print profile with layer height, extrusion width, speeds, acceleration, and cooling",
+                "support, brim/raft, seam, infill, and first-layer assumptions"
+            ],
+            "generatedInstructionKinds": ["Marlin/RepRap G-code", "Prusa-style project package", "setup sheet"],
+            "releaseBlockers": [
+                "missing profile checksum or version",
+                "first-layer and bed-adhesion evidence absent",
+                "support/orientation assumptions not reviewed",
+                "material/nozzle/volumetric-flow mismatch"
+            ],
+            "learningSignals": ["slicer-profile:*", "first-layer:*", "support-orientation:*", "volumetric-flow:*"]
+        }),
+        json!({
+            "slicer": "OrcaSlicer",
+            "projectFormats": ["3mf", "json profile", "gcode"],
+            "printerFamilies": ["Bambu-compatible FDM", "Klipper FDM", "multi-material/toolchanger FDM"],
+            "profileEvidence": [
+                "printer, process, and filament preset IDs",
+                "pressure advance/input-shaper and acceleration evidence",
+                "AMS/material slot map or toolchanger mapping",
+                "purge, wipe tower, support interface, and first-layer review"
+            ],
+            "generatedInstructionKinds": ["Klipper/Marlin/Bambu-flavored G-code", "Orca project package", "material map"],
+            "releaseBlockers": [
+                "high-speed kinematic evidence missing",
+                "multi-material purge/resume evidence missing",
+                "selected tool temperature or material slot not verified",
+                "profile provenance not retained"
+            ],
+            "learningSignals": ["input-shaper:*", "multi-material-map:*", "purge-prime:*", "tool-temperature:*"]
+        }),
+        json!({
+            "slicer": "Cura",
+            "projectFormats": ["ufp", "curaprofile", "3mf", "gcode"],
+            "printerFamilies": ["generic FDM", "Ultimaker/UltiMaker FDM", "pellet or paste extrusion via custom profiles"],
+            "profileEvidence": [
+                "machine definition and extruder definition",
+                "material profile and temperature/cooling envelope",
+                "support, adhesion, infill, shell, and speed settings",
+                "post-processing scripts and start/end G-code review"
+            ],
+            "generatedInstructionKinds": ["Marlin/RepRap G-code", "Cura project/profile package", "postprocess script manifest"],
+            "releaseBlockers": [
+                "custom machine definition not reviewed",
+                "post-processing scripts not inspected",
+                "material flow and cooling limits missing",
+                "mesh scale/topology evidence absent"
+            ],
+            "learningSignals": ["cura-profile:*", "postprocess-script:*", "flow-cooling:*", "mesh-scale:*"]
+        }),
+        json!({
+            "slicer": "Bambu Studio",
+            "projectFormats": ["3mf", "bbs/bbl project metadata", "gcode"],
+            "printerFamilies": ["Bambu FDM", "AMS multi-material FDM", "high-speed coreXY FDM"],
+            "profileEvidence": [
+                "printer model and nozzle diameter",
+                "filament/AMS slot/color/material map",
+                "flow calibration, pressure advance, and vibration/input-shaper evidence",
+                "purge tower, support interface, first-layer, and timelapse/auxiliary actions"
+            ],
+            "generatedInstructionKinds": ["Bambu-flavored G-code", "3MF project package", "AMS material map"],
+            "releaseBlockers": [
+                "AMS/material-slot evidence missing",
+                "flow calibration or high-speed kinematic evidence missing",
+                "purge/wipe tower review absent",
+                "bed plate and first-layer evidence missing"
+            ],
+            "learningSignals": ["ams-slot-map:*", "flow-calibration:*", "high-speed-fdm:*", "first-layer:*"]
+        }),
+    ]
+}
+
+fn slicer_profile_catalog_response() -> Value {
+    let formats = design_format_catalog();
+    let slicer_formats: Vec<Value> = formats
+        .iter()
+        .filter(|format| format.category == "slicer-project")
+        .map(|format| {
+            json!({
+                "normalizedFormat": format.normalized_format,
+                "sourceSystem": format.source_system,
+                "extensions": format.extensions,
+                "aliases": format.aliases,
+                "importStrategy": format.import_strategy,
+                "preferredNeutralExports": format.preferred_neutral_exports,
+                "slicerTargets": format.slicer_targets,
+                "note": format.notes
+            })
+        })
+        .collect();
+    let entries = slicer_profile_catalog_entries();
+    let slicers = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("slicer")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let project_formats = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("projectFormats")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.slicer-profile-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /slicers/catalog", "GET /fabrication/slicers/catalog"],
+        "slicerCount": entries.len(),
+        "slicers": slicers,
+        "projectFormats": project_formats,
+        "supportedSlicerProjectFormats": slicer_formats,
+        "workerDispatch": {
+            "workerLane": "slicer-profile-reviewer",
+            "requestSubject": FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
+            "resultSubject": FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
+            "queueGroup": FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP
+        },
+        "generationRoutes": [
+            "POST /instructions/generate",
+            "POST /fabrication/instructions/generate",
+            "POST /machine-code/generate",
+            "POST /fabrication/machine-code/generate",
+            "POST /toolpaths/plan",
+            "POST /fabrication/toolpaths/plan"
+        ],
+        "reviewRoutes": [
+            "POST /design/import/review",
+            "POST /fabrication/design/import/review",
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate",
+            "POST /simulation/run",
+            "POST /fabrication/simulation/run"
+        ],
+        "responseSurfaces": [
+            "designInputReview.conversionPlan",
+            "generatedPrograms",
+            "controllerPlan.compatibilityTargets",
+            "materialPlan.routeRequirements",
+            "postprocessPlan.controllerTargets",
+            "simulation.riskProfile",
+            "machineRelease.blockers"
+        ],
+        "releasePolicy": [
+            "slicer catalog entries describe accepted slicer project/profile evidence and generated instruction handoffs, not certified printer-ready G-code",
+            "machine-ready release remains blocked until profile provenance, material/nozzle compatibility, support/orientation, first-layer, simulation, and operator or automation signoff evidence clear",
+            "slicer profile, support, first-layer, material-map, and kinematic outcomes are retained as MDP/POMDP/neural learning signals so future print jobs can choose safer slicer settings"
+        ],
+        "slicerProfiles": entries
+    })
+}
+
+async fn slicer_profile_catalog_http() -> impl IntoResponse {
+    Json(slicer_profile_catalog_response())
+}
+
+fn mesh_repair_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "repairDomain": "watertight-topology",
+            "sourceFormats": ["STL", "3MF mesh", "OBJ", "PLY", "VRML/WRL", "glTF/GLB"],
+            "requiredEvidence": [
+                "manifold shell and self-intersection report",
+                "open-edge, nonmanifold-edge, inverted-normal, and duplicate-face repair log",
+                "export checksum after repair"
+            ],
+            "releaseBlockers": [
+                "holes or nonmanifold edges remain",
+                "normals are inconsistent after repair",
+                "repair changed critical dimensions without operator approval"
+            ],
+            "learningSignals": ["mesh-topology:*", "repair-success:*", "dimension-drift:*"]
+        }),
+        json!({
+            "repairDomain": "scale-units-and-wall-thickness",
+            "sourceFormats": ["STL", "OBJ", "PLY", "scan mesh", "organic sculpt mesh"],
+            "requiredEvidence": [
+                "unit system and bounding-box confirmation",
+                "minimum wall, thin feature, and clearance report",
+                "operator-approved scale or coordinate transform when source units are ambiguous"
+            ],
+            "releaseBlockers": [
+                "unit inference is ambiguous",
+                "minimum wall thickness is below selected process capability",
+                "effective scale differs from source intent"
+            ],
+            "learningSignals": ["mesh-scale:*", "wall-thickness:*", "process-capability:*"]
+        }),
+        json!({
+            "repairDomain": "color-texture-and-material-preservation",
+            "sourceFormats": ["3MF", "PLY", "VRML/WRL", "glTF/GLB", "OBJ+MTL"],
+            "requiredEvidence": [
+                "material/color channel map and texture asset manifest",
+                "color-aware 3MF or reviewed package export",
+                "printer/material compatibility check for color or material channels"
+            ],
+            "releaseBlockers": [
+                "texture or material asset is missing",
+                "color/material channels cannot map to selected machine",
+                "repaired mesh lost per-face or vertex color evidence"
+            ],
+            "learningSignals": ["color-mesh:*", "material-channel-map:*", "texture-preservation:*"]
+        }),
+        json!({
+            "repairDomain": "orientation-support-and-slice-readiness",
+            "sourceFormats": ["repaired STL", "repaired 3MF", "repaired OBJ", "slicer project source"],
+            "requiredEvidence": [
+                "orientation, support, drain/escape, and first-layer review",
+                "support contact and fragile-feature inspection plan",
+                "slicer/profile handoff checksum with machine/material pairing"
+            ],
+            "releaseBlockers": [
+                "orientation hides critical datum or trapped material",
+                "support strategy has not been reviewed",
+                "first-layer or bed adhesion evidence is absent"
+            ],
+            "learningSignals": ["orientation:*", "support-strategy:*", "first-layer:*"]
+        }),
+    ]
+}
+
+fn mesh_repair_catalog_response() -> Value {
+    let formats = design_format_catalog();
+    let supported_mesh_formats: Vec<Value> = formats
+        .iter()
+        .filter(|format| {
+            matches!(
+                format.category.as_str(),
+                "neutral-print" | "neutral-color-mesh" | "organic-model" | "slicer-project"
+            )
+        })
+        .map(|format| {
+            json!({
+                "normalizedFormat": format.normalized_format,
+                "sourceSystem": format.source_system,
+                "category": format.category,
+                "extensions": format.extensions,
+                "importStrategy": format.import_strategy,
+                "preferredNeutralExports": format.preferred_neutral_exports,
+                "slicerTargets": format.slicer_targets,
+                "reviewGates": design_import_review_gates_for_category(&format.category)
+            })
+        })
+        .collect();
+    let entries = mesh_repair_catalog_entries();
+    let repair_domains = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("repairDomain")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.mesh-repair-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
+        "repairDomainCount": entries.len(),
+        "repairDomains": repair_domains,
+        "supportedMeshAndSlicerFormats": supported_mesh_formats,
+        "workerDispatch": {
+            "workerLane": "mesh-repair-converter",
+            "requestSubject": FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
+            "resultSubject": FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
+            "queueGroup": FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP
+        },
+        "reviewRoutes": [
+            "POST /design/import/review",
+            "POST /fabrication/design/import/review",
+            "POST /design/convert/plan",
+            "POST /fabrication/design/convert/plan",
+            "POST /simulation/run",
+            "POST /fabrication/simulation/run",
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate"
+        ],
+        "responseSurfaces": [
+            "designInputReview.reviewedInputs",
+            "designInputReview.conversionPlan",
+            "machineRelease.blockers",
+            "simulation.riskProfile",
+            "qualityPlan.inspectionGates",
+            "learning.outcomeSignals"
+        ],
+        "releasePolicy": [
+            "mesh repair catalog entries describe required repair and review evidence, not certified printable geometry",
+            "machine-ready release remains blocked until topology, scale, wall-thickness, color/material preservation, orientation/support, simulation, and operator or automation signoff evidence clear",
+            "repair outcomes, dimensional drift, orientation/support choices, and first-layer results are retained as MDP/POMDP/neural learning signals for future print-prep decisions"
+        ],
+        "repairCatalog": entries
+    })
+}
+
+async fn mesh_repair_catalog_http() -> impl IntoResponse {
+    Json(mesh_repair_catalog_response())
 }
 
 fn design_import_worker_lane_for_category(category: &str) -> &'static str {
@@ -64384,6 +65543,179 @@ async fn handoff_catalog_http() -> impl IntoResponse {
     Json(handoff_catalog_response())
 }
 
+fn subject_catalog_lanes() -> Vec<Value> {
+    vec![
+        json!({
+            "lane": "primary-fabrication-requests",
+            "purpose": "accept direct plan, instruction-analysis, learning-observation, and compact outcome envelopes for the Rust fabrication service",
+            "requestSubject": FABRICATION_REQUESTS_SUBJECT,
+            "queueGroup": FABRICATION_REQUESTS_QUEUE_GROUP,
+            "resultSubject": FABRICATION_RESULTS_SUBJECT,
+            "payloadFamilies": [
+                "fabrication plan requests",
+                "instruction analysis requests",
+                "learning observation requests",
+                "compact learning outcomes"
+            ],
+            "responseFamilies": [
+                "fabrication plan responses",
+                "instruction analysis responses",
+                "learning observation responses",
+                "compact learning outcome results"
+            ],
+            "releaseGate": "results are planning or review evidence and do not certify machine-ready release"
+        }),
+        json!({
+            "lane": "design-conversion-workers",
+            "purpose": "convert reviewed CAD, mesh, slicer, and cloud-design inputs into neutral fabrication-ready exports",
+            "requestSubject": FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
+            "queueGroup": FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP,
+            "resultSubject": FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
+            "payloadFamilies": ["designInputReview.conversionPlan", "design conversion plan"],
+            "responseFamilies": ["design conversion result review", "neutral CAD/mesh/profile exports"],
+            "releaseGate": "machine-ready release remains blocked until converted exports, topology, scale, and checksum evidence are reviewed"
+        }),
+        json!({
+            "lane": "design-synthesis-workers",
+            "purpose": "generate or refine parametric design candidates and export bundles for requested fabrication objectives",
+            "requestSubject": FABRICATION_DESIGN_SYNTHESIS_REQUESTS_SUBJECT,
+            "queueGroup": FABRICATION_DESIGN_SYNTHESIS_REQUESTS_QUEUE_GROUP,
+            "resultSubject": FABRICATION_DESIGN_SYNTHESIS_RESULTS_SUBJECT,
+            "payloadFamilies": ["design generation requests", "parametric-design candidate requests"],
+            "responseFamilies": ["design synthesis result review", "generated design candidates", "design export bundles"],
+            "releaseGate": "generated design candidates stay draft until design, export, simulation, and operator or automation review evidence clears"
+        }),
+        json!({
+            "lane": "instruction-generation-workers",
+            "purpose": "generate machine code, slicer projects, setup sheets, inspection plans, postprocess instructions, and operator travelers",
+            "requestSubject": FABRICATION_INSTRUCTION_GENERATION_REQUESTS_SUBJECT,
+            "queueGroup": FABRICATION_INSTRUCTION_GENERATION_REQUESTS_QUEUE_GROUP,
+            "resultSubject": FABRICATION_INSTRUCTION_GENERATION_RESULTS_SUBJECT,
+            "payloadFamilies": ["instruction generation package", "controller/postprocessor target", "slicer/CAM/setup worker request"],
+            "responseFamilies": ["generated machine code", "setup sheets", "inspection/postprocess instructions", "operator travelers"],
+            "releaseGate": "generated instructions remain draft until validation, simulation, controller, setup, quality, and signoff gates clear"
+        }),
+        json!({
+            "lane": "instruction-review-workers",
+            "purpose": "review imported or generated CNC, printer, slicer, setup-sheet, assembly, and operator instruction streams",
+            "requestSubject": FABRICATION_INSTRUCTION_REVIEW_REQUESTS_SUBJECT,
+            "queueGroup": FABRICATION_INSTRUCTION_REVIEW_REQUESTS_QUEUE_GROUP,
+            "resultSubject": FABRICATION_INSTRUCTION_REVIEW_RESULTS_SUBJECT,
+            "payloadFamilies": ["instruction review package", "validation findings", "improvement drafts", "boundary analysis"],
+            "responseFamilies": ["instruction review result", "boundary findings", "improved instruction drafts"],
+            "releaseGate": "review success is evidence only; unresolved findings, boundaries, or missing artifacts keep release blocked"
+        }),
+        json!({
+            "lane": "instruction-simulation-workers",
+            "purpose": "run dry-run, collision, clearance, fixture, material-flow, thermal, and controller simulations for generated or imported programs",
+            "requestSubject": FABRICATION_INSTRUCTION_SIMULATION_REQUESTS_SUBJECT,
+            "queueGroup": FABRICATION_INSTRUCTION_SIMULATION_REQUESTS_QUEUE_GROUP,
+            "resultSubject": FABRICATION_INSTRUCTION_SIMULATION_RESULTS_SUBJECT,
+            "payloadFamilies": ["simulation run package", "machine program", "fixture/setup profile", "material/process profile"],
+            "responseFamilies": ["simulation result review", "risk profile", "dry-run boundaries"],
+            "releaseGate": "passing simulation is required evidence but not a waiver of setup, quality, or operator signoff"
+        }),
+        json!({
+            "lane": "assembly-planning-workers",
+            "purpose": "review split/combine routes, recomposition interfaces, join operations, assembly travelers, and robot or fixture handoffs",
+            "requestSubject": FABRICATION_ASSEMBLY_PLANNING_REQUESTS_SUBJECT,
+            "queueGroup": FABRICATION_ASSEMBLY_PLANNING_REQUESTS_QUEUE_GROUP,
+            "resultSubject": FABRICATION_ASSEMBLY_PLANNING_RESULTS_SUBJECT,
+            "payloadFamilies": ["assembly plan", "decomposition plan", "interface control plan", "hybrid make plan"],
+            "responseFamilies": ["assembly planning result", "join/recomposition evidence", "split/combine release blockers"],
+            "releaseGate": "assembly evidence cannot clear release while interface, datum, join, metrology, or intervention gates remain unresolved"
+        }),
+        json!({
+            "lane": "execution-telemetry-workers",
+            "purpose": "ingest runtime execution evidence, machine stops, operator interventions, split/combine decisions, and completion artifacts",
+            "requestSubject": FABRICATION_EXECUTION_TELEMETRY_REQUESTS_SUBJECT,
+            "queueGroup": FABRICATION_EXECUTION_TELEMETRY_REQUESTS_QUEUE_GROUP,
+            "resultSubject": FABRICATION_EXECUTION_TELEMETRY_RESULTS_SUBJECT,
+            "payloadFamilies": ["execution telemetry", "machine stop", "operator intervention", "completion artifact"],
+            "responseFamilies": ["execution result review", "run segments", "learning observations"],
+            "releaseGate": "execution evidence updates retained jobs and learning memory; it does not retroactively certify unsafe or incomplete runs"
+        }),
+        json!({
+            "lane": "release-readiness-workers",
+            "purpose": "review final machine-ready packages, release blockers, package artifacts, operator intervention gates, and signoff evidence",
+            "requestSubject": FABRICATION_RELEASE_READINESS_REQUESTS_SUBJECT,
+            "queueGroup": FABRICATION_RELEASE_READINESS_REQUESTS_QUEUE_GROUP,
+            "resultSubject": FABRICATION_RELEASE_READINESS_RESULTS_SUBJECT,
+            "payloadFamilies": ["release package plan", "machine release", "final gate evidence"],
+            "responseFamilies": ["release readiness result", "release package review", "machine-ready blocker summary"],
+            "releaseGate": "release readiness results are final review evidence, not a bypass for shop-floor safety controls"
+        }),
+    ]
+}
+
+fn subject_catalog_response() -> Value {
+    let lanes = subject_catalog_lanes();
+    let request_subjects = unique_sorted(lanes.iter().filter_map(|lane| {
+        lane.get("requestSubject")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let result_subjects = unique_sorted(
+        lanes
+            .iter()
+            .filter_map(|lane| lane.get("resultSubject").and_then(Value::as_str))
+            .map(ToOwned::to_owned),
+    );
+    let queue_groups = unique_sorted(
+        lanes
+            .iter()
+            .filter_map(|lane| lane.get("queueGroup").and_then(Value::as_str))
+            .map(ToOwned::to_owned),
+    );
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.subject-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /subjects/catalog", "GET /fabrication/subjects/catalog"],
+        "subjectLaneCount": lanes.len(),
+        "requestSubjects": request_subjects,
+        "resultSubjects": result_subjects,
+        "queueGroups": queue_groups,
+        "eventSubjects": {
+            "runtimeEvents": RUNTIME_EVENTS_SUBJECT,
+            "mdpOptimize": MDP_OPTIMIZE_SUBJECT
+        },
+        "primarySubjects": {
+            "fabricationRequests": FABRICATION_REQUESTS_SUBJECT,
+            "fabricationQueueGroup": FABRICATION_REQUESTS_QUEUE_GROUP,
+            "fabricationResults": FABRICATION_RESULTS_SUBJECT
+        },
+        "relatedRoutes": [
+            "GET /handoff/catalog",
+            "GET /fabrication/handoff/catalog",
+            "GET /learning/capabilities",
+            "GET /fabrication/learning/capabilities",
+            "GET /jobs/catalog",
+            "GET /fabrication/jobs/catalog"
+        ],
+        "envOverrides": {
+            "requestSubject": "FABRICATION_REQUEST_SUBJECT",
+            "queueGroup": "FABRICATION_QUEUE_GROUP",
+            "resultSubject": "FABRICATION_RESULT_SUBJECT",
+            "eventSubject": "FABRICATION_EVENT_SUBJECT",
+            "mdpSubject": "FABRICATION_MDP_OPTIMIZE_SUBJECT",
+            "mdpAutopublish": "FABRICATION_MDP_AUTOPUBLISH"
+        },
+        "dispatchPolicy": [
+            "subject catalog entries describe external worker dispatch contracts, queue groups, and review-result subjects, not guaranteed worker availability",
+            "worker result subjects carry retained evidence for design conversion, generated instructions, simulation, assembly, execution, release, and learning review",
+            "machine-ready release remains blocked until worker outputs, validation, setup, simulation, quality, operator/automation signoff, and release gates clear"
+        ],
+        "subjectLanes": lanes
+    })
+}
+
+async fn subject_catalog_http() -> impl IntoResponse {
+    Json(subject_catalog_response())
+}
+
 async fn request_schema() -> impl IntoResponse {
     Json(json!({
         "ok": true,
@@ -64397,7 +65729,10 @@ async fn request_schema() -> impl IntoResponse {
             "materialPlan": ["POST /materials/plan", "POST /fabrication/materials/plan"],
             "materialResult": ["POST /materials/result", "POST /fabrication/materials/result"],
             "designFormats": ["GET /design/formats", "GET /fabrication/design/formats"],
+            "slicerProfileCatalog": ["GET /slicers/catalog", "GET /fabrication/slicers/catalog"],
+            "meshRepairCatalog": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
             "designImportCatalog": ["GET /design/import/catalog", "GET /fabrication/design/import/catalog"],
+            "subjectCatalog": ["GET /subjects/catalog", "GET /fabrication/subjects/catalog"],
             "designImportReview": ["POST /design/import/review", "POST /fabrication/design/import/review"],
             "designGenerationCatalog": ["GET /design/generation/catalog", "GET /fabrication/design/generation/catalog"],
             "designGeneration": ["POST /design/generate", "POST /fabrication/design/generate"],
@@ -64427,6 +65762,7 @@ async fn request_schema() -> impl IntoResponse {
             "executionPlan": ["POST /execution/plan", "POST /fabrication/execution/plan"],
             "executionResult": ["POST /execution/result", "POST /fabrication/execution/result"],
             "strategyCatalog": ["GET /strategy/catalog", "GET /fabrication/strategy/catalog"],
+            "manufacturingMethodCatalog": ["GET /methods/catalog", "GET /fabrication/methods/catalog"],
             "scheduleCatalog": ["GET /schedule/catalog", "GET /fabrication/schedule/catalog"],
             "scheduleResult": ["POST /schedule/result", "POST /fabrication/schedule/result"],
             "simulationCatalog": ["GET /simulation/catalog", "GET /fabrication/simulation/catalog"],
@@ -64440,6 +65776,9 @@ async fn request_schema() -> impl IntoResponse {
             "calibrationResult": ["POST /calibration/result", "POST /fabrication/calibration/result"],
             "interventionCatalog": ["GET /interventions/catalog", "GET /fabrication/interventions/catalog"],
             "setupCatalog": ["GET /setup/catalog", "GET /fabrication/setup/catalog"],
+            "toolingCatalog": ["GET /tooling/catalog", "GET /fabrication/tooling/catalog"],
+            "processRecipeCatalog": ["GET /process-recipes/catalog", "GET /fabrication/process-recipes/catalog"],
+            "kinematicsCatalog": ["GET /kinematics/catalog", "GET /fabrication/kinematics/catalog"],
             "setupPlan": ["POST /setup/plan", "POST /fabrication/setup/plan"],
             "setupResult": ["POST /setup/result", "POST /fabrication/setup/result"],
             "monitoringCatalog": ["GET /monitoring/catalog", "GET /fabrication/monitoring/catalog"],
@@ -66417,6 +67756,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/materials/result", post(material_result_http))
         .route("/design/formats", get(design_formats))
         .route("/fabrication/design/formats", get(design_formats))
+        .route("/slicers/catalog", get(slicer_profile_catalog_http))
+        .route(
+            "/fabrication/slicers/catalog",
+            get(slicer_profile_catalog_http),
+        )
+        .route("/mesh-repair/catalog", get(mesh_repair_catalog_http))
+        .route(
+            "/fabrication/mesh-repair/catalog",
+            get(mesh_repair_catalog_http),
+        )
         .route("/formats/catalog", get(design_import_catalog_http))
         .route(
             "/fabrication/formats/catalog",
@@ -66427,6 +67776,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/design/import/catalog",
             get(design_import_catalog_http),
         )
+        .route("/subjects/catalog", get(subject_catalog_http))
+        .route("/fabrication/subjects/catalog", get(subject_catalog_http))
         .route("/design/import/review", post(design_import_review_http))
         .route(
             "/fabrication/design/import/review",
@@ -66598,6 +67949,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/workflow/catalog", get(workflow_catalog_http))
         .route("/strategy/catalog", get(strategy_catalog_http))
         .route("/fabrication/strategy/catalog", get(strategy_catalog_http))
+        .route("/methods/catalog", get(manufacturing_method_catalog_http))
+        .route(
+            "/fabrication/methods/catalog",
+            get(manufacturing_method_catalog_http),
+        )
         .route("/schedule/catalog", get(schedule_catalog_http))
         .route("/fabrication/schedule/catalog", get(schedule_catalog_http))
         .route("/schedule/result", post(schedule_result_http))
@@ -66642,6 +67998,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/setup/catalog", get(setup_catalog_http))
         .route("/fabrication/setup/catalog", get(setup_catalog_http))
+        .route("/tooling/catalog", get(tooling_catalog_http))
+        .route("/fabrication/tooling/catalog", get(tooling_catalog_http))
+        .route("/process-recipes/catalog", get(process_recipe_catalog_http))
+        .route(
+            "/fabrication/process-recipes/catalog",
+            get(process_recipe_catalog_http),
+        )
+        .route("/kinematics/catalog", get(kinematics_catalog_http))
+        .route(
+            "/fabrication/kinematics/catalog",
+            get(kinematics_catalog_http),
+        )
         .route("/setup/plan", post(setup_plan_http))
         .route("/fabrication/setup/plan", post(setup_plan_http))
         .route("/setup/result", post(setup_result_http))
@@ -66686,10 +68054,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/api/docs.json", get(api_docs_json))
         .route("/metrics", get(metrics))
         .route("/jobs/catalog", get(job_evidence_catalog_http))
-        .route(
-            "/fabrication/jobs/catalog",
-            get(job_evidence_catalog_http),
-        )
+        .route("/fabrication/jobs/catalog", get(job_evidence_catalog_http))
         .route("/jobs", get(list_jobs))
         .route("/fabrication/jobs", get(list_jobs))
         .route("/jobs/:job_id", get(get_job))
@@ -67676,6 +69041,114 @@ mod tests {
     }
 
     #[test]
+    fn slicer_profile_catalog_endpoint_exposes_profile_evidence_and_release_policy() {
+        let payload = slicer_profile_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.slicer-profile-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/slicers/catalog"))));
+        assert_eq!(payload.get("slicerCount").and_then(Value::as_u64), Some(4));
+        let slicers = payload
+            .get("slicers")
+            .and_then(Value::as_array)
+            .expect("slicers should be present");
+        for slicer in ["Bambu Studio", "Cura", "OrcaSlicer", "PrusaSlicer"] {
+            assert!(
+                slicers.iter().any(|item| item.as_str() == Some(slicer)),
+                "missing slicer {slicer}"
+            );
+        }
+        assert_eq!(
+            payload
+                .get("workerDispatch")
+                .and_then(|dispatch| dispatch.get("workerLane"))
+                .and_then(Value::as_str),
+            Some("slicer-profile-reviewer")
+        );
+        assert_eq!(
+            payload
+                .get("workerDispatch")
+                .and_then(|dispatch| dispatch.get("requestSubject"))
+                .and_then(Value::as_str),
+            Some(FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT)
+        );
+        assert!(payload
+            .get("supportedSlicerProjectFormats")
+            .and_then(Value::as_array)
+            .is_some_and(|formats| formats.iter().any(|format| format
+                .get("normalizedFormat")
+                .and_then(Value::as_str)
+                == Some("prusaslicer-project"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified printer-ready G-code")))));
+    }
+
+    #[test]
+    fn mesh_repair_catalog_endpoint_exposes_repair_evidence_and_learning_policy() {
+        let payload = mesh_repair_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.mesh-repair-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/mesh-repair/catalog"))));
+        assert_eq!(
+            payload.get("repairDomainCount").and_then(Value::as_u64),
+            Some(4)
+        );
+        assert_eq!(
+            payload
+                .get("workerDispatch")
+                .and_then(|dispatch| dispatch.get("workerLane"))
+                .and_then(Value::as_str),
+            Some("mesh-repair-converter")
+        );
+        assert_eq!(
+            payload
+                .get("workerDispatch")
+                .and_then(|dispatch| dispatch.get("requestSubject"))
+                .and_then(Value::as_str),
+            Some(FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT)
+        );
+        assert!(payload
+            .get("supportedMeshAndSlicerFormats")
+            .and_then(Value::as_array)
+            .is_some_and(|formats| formats.iter().any(|format| format
+                .get("normalizedFormat")
+                .and_then(Value::as_str)
+                == Some("ply-color-scan-mesh"))));
+        assert!(payload
+            .get("repairCatalog")
+            .and_then(Value::as_array)
+            .is_some_and(|entries| entries.iter().any(|entry| entry
+                .get("requiredEvidence")
+                .and_then(Value::as_array)
+                .is_some_and(|evidence| evidence.iter().any(|item| item
+                    .as_str()
+                    .is_some_and(|item| item.contains("manifold shell")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified printable geometry")))));
+    }
+
+    #[test]
     fn design_import_catalog_endpoint_exposes_native_cad_worker_lanes() {
         let payload = design_import_catalog_response();
         assert_eq!(
@@ -68447,6 +69920,78 @@ mod tests {
                 "missing handoff lane {lane}"
             );
         }
+    }
+
+    #[test]
+    fn subject_catalog_endpoint_exposes_worker_subjects_and_queue_groups() {
+        let payload = subject_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.subject-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/subjects/catalog"))));
+        assert!(payload
+            .get("subjectLaneCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 9));
+        assert!(payload
+            .get("primarySubjects")
+            .and_then(|subjects| subjects.get("fabricationRequests"))
+            .and_then(Value::as_str)
+            .is_some_and(|subject| subject == FABRICATION_REQUESTS_SUBJECT));
+        assert!(payload
+            .get("eventSubjects")
+            .and_then(|subjects| subjects.get("mdpOptimize"))
+            .and_then(Value::as_str)
+            .is_some_and(|subject| subject == MDP_OPTIMIZE_SUBJECT));
+
+        let request_subjects = payload
+            .get("requestSubjects")
+            .and_then(Value::as_array)
+            .expect("request subjects should be present");
+        for subject in [
+            FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
+            FABRICATION_INSTRUCTION_GENERATION_REQUESTS_SUBJECT,
+            FABRICATION_INSTRUCTION_SIMULATION_REQUESTS_SUBJECT,
+            FABRICATION_RELEASE_READINESS_REQUESTS_SUBJECT,
+        ] {
+            assert!(
+                request_subjects
+                    .iter()
+                    .any(|item| item.as_str() == Some(subject)),
+                "missing request subject {subject}"
+            );
+        }
+
+        let lanes = payload
+            .get("subjectLanes")
+            .and_then(Value::as_array)
+            .expect("subject lanes should be present");
+        for lane in [
+            "primary-fabrication-requests",
+            "design-conversion-workers",
+            "instruction-generation-workers",
+            "instruction-simulation-workers",
+            "release-readiness-workers",
+        ] {
+            assert!(
+                lanes
+                    .iter()
+                    .any(|item| item.get("lane").and_then(Value::as_str) == Some(lane)),
+                "missing subject lane {lane}"
+            );
+        }
+        assert!(payload
+            .get("dispatchPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not guaranteed worker availability")))));
     }
 
     #[test]
@@ -73478,6 +75023,73 @@ mod tests {
     }
 
     #[test]
+    fn manufacturing_method_catalog_endpoint_exposes_process_families_and_learning_routes() {
+        let payload = manufacturing_method_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.manufacturing-method-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/methods/catalog"))));
+        assert!(payload
+            .get("methodFamilyCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 8));
+
+        let families = payload
+            .get("families")
+            .and_then(Value::as_array)
+            .expect("method families should be present");
+        for family in [
+            "additive-printing",
+            "subtractive-milling-routing",
+            "turning-lathe-millturn",
+            "hybrid-split-combine-assembly",
+        ] {
+            assert!(
+                families.iter().any(|item| item.as_str() == Some(family)),
+                "missing method family {family}"
+            );
+        }
+
+        let machine_kinds = payload
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .expect("machine kinds should be present");
+        for machine_kind in ["fdm-printer", "vertical-mill", "lathe", "waterjet-cutter"] {
+            assert!(
+                machine_kinds
+                    .iter()
+                    .any(|item| item.as_str() == Some(machine_kind)),
+                "missing method machine kind {machine_kind}"
+            );
+        }
+
+        assert!(payload
+            .get("learningRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/learning/outcomes"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("hybridMakePlan.partRoutes"))));
+        assert!(payload
+            .get("methodPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified live machine availability")))));
+    }
+
+    #[test]
     fn strategy_recommendation_endpoint_exposes_learned_hybrid_preview() {
         let policy = LearningPolicySnapshot {
             outcome_count: 2,
@@ -75328,6 +76940,106 @@ mod tests {
     }
 
     #[test]
+    fn tooling_catalog_endpoint_exposes_machine_tooling_release_contract() {
+        let payload = tooling_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.tooling-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/tooling/catalog"))));
+        assert_eq!(
+            payload.get("toolFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("toolFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(
+                |family| family.as_str() == Some("turning-insert-turret-and-support-tooling")
+            )));
+        assert!(payload
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|machine_kinds| machine_kinds
+                .iter()
+                .any(|machine_kind| machine_kind.as_str() == Some("horizontal-mill"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| {
+                surfaces.iter().any(|surface| {
+                    surface.as_str() == Some("toolingPlan.requirements.requiredTools")
+                })
+            }));
+        assert!(payload
+            .get("toolingFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| family
+                .get("releaseBlockers")
+                .and_then(Value::as_array)
+                .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                    .as_str()
+                    .is_some_and(|blocker| blocker.contains("tool-nose compensation")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified tooling setup sheets")))));
+    }
+
+    #[test]
+    fn process_recipe_catalog_endpoint_exposes_parameter_release_contract() {
+        let payload = process_recipe_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.process-recipe-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/process-recipes/catalog")
+            })));
+        assert_eq!(
+            payload.get("recipeFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("recipeFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("subtractive-feeds-speeds-and-engagement")
+            })));
+        assert!(payload
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|machine_kinds| machine_kinds
+                .iter()
+                .any(|machine_kind| machine_kind.as_str() == Some("wire-edm-sheet-cutter"))));
+        assert!(payload
+            .get("processRecipes")
+            .and_then(Value::as_array)
+            .is_some_and(|recipes| recipes.iter().any(|recipe| recipe
+                .get("releaseBlockers")
+                .and_then(Value::as_array)
+                .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                    .as_str()
+                    .is_some_and(|blocker| blocker.contains("feeds-and-speeds approval")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified production recipes")))));
+    }
+
+    #[test]
     fn setup_planning_endpoint_returns_tooling_fixture_monitoring_release_contract() {
         let policy = LearningPolicySnapshot {
             outcome_count: 0,
@@ -76593,6 +78305,73 @@ mod tests {
                         .any(|artifact| artifact.as_str() == Some("improved-program-*"))
                 })
         }));
+    }
+
+    #[test]
+    fn job_evidence_catalog_endpoint_exposes_retained_ledger_contract() {
+        let payload = job_evidence_catalog_response(
+            2,
+            17,
+            vec![
+                "fabrication-plan".to_string(),
+                "instruction-analysis".to_string(),
+            ],
+        );
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.job-evidence-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/jobs/catalog"))));
+        assert_eq!(
+            payload
+                .get("retention")
+                .and_then(|retention| retention.get("maxJobs"))
+                .and_then(Value::as_u64),
+            Some(MAX_STORED_JOBS as u64)
+        );
+        assert_eq!(
+            payload
+                .get("retention")
+                .and_then(|retention| retention.get("currentArtifactCount"))
+                .and_then(Value::as_u64),
+            Some(17)
+        );
+        assert!(payload
+            .get("retention")
+            .and_then(|retention| retention.get("currentJobKinds"))
+            .and_then(Value::as_array)
+            .is_some_and(|kinds| kinds
+                .iter()
+                .any(|kind| kind.as_str() == Some("fabrication-plan"))));
+        assert!(payload
+            .get("retrievalRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/jobs/:job_id/release-bundle")
+            })));
+        assert!(payload
+            .get("releaseBundleSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("machineRelease"))));
+        assert!(payload
+            .get("learningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("learningPolicySnapshot"))));
+        assert!(payload
+            .get("catalogPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not durable database storage")))));
     }
 
     #[test]

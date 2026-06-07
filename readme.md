@@ -26,10 +26,16 @@ It exposes:
 - `POST /fabrication/materials/result`
 - `GET /design/formats`
 - `GET /fabrication/design/formats`
+- `GET /slicers/catalog`
+- `GET /fabrication/slicers/catalog`
+- `GET /mesh-repair/catalog`
+- `GET /fabrication/mesh-repair/catalog`
 - `GET /formats/catalog`
 - `GET /fabrication/formats/catalog`
 - `GET /design/import/catalog`
 - `GET /fabrication/design/import/catalog`
+- `GET /subjects/catalog`
+- `GET /fabrication/subjects/catalog`
 - `POST /design/import/review`
 - `POST /fabrication/design/import/review`
 - `POST /design/convert/plan`
@@ -102,6 +108,8 @@ It exposes:
 - `POST /fabrication/execution/result`
 - `GET /strategy/catalog`
 - `GET /fabrication/strategy/catalog`
+- `GET /methods/catalog`
+- `GET /fabrication/methods/catalog`
 - `POST /strategy/recommend`
 - `POST /fabrication/strategy/recommend`
 - `GET /schedule/catalog`
@@ -130,6 +138,10 @@ It exposes:
 - `GET /fabrication/interventions/catalog`
 - `GET /setup/catalog`
 - `GET /fabrication/setup/catalog`
+- `GET /tooling/catalog`
+- `GET /fabrication/tooling/catalog`
+- `GET /process-recipes/catalog`
+- `GET /fabrication/process-recipes/catalog`
 - `POST /setup/plan`
 - `POST /fabrication/setup/plan`
 - `POST /setup/result`
@@ -157,6 +169,8 @@ It exposes:
 - `GET /docs/api`
 - `GET /api/docs`
 - `GET /api/docs.json`
+- `GET /jobs/catalog`
+- `GET /fabrication/jobs/catalog`
 - `GET /jobs`
 - `GET /fabrication/jobs`
 - `GET /jobs/:job_id`
@@ -505,6 +519,10 @@ is supplied.
 - `GET /fabrication/strategy/catalog` exposes the advisory hybrid route,
   learned preference, MDP/POMDP policy, intervention, and neural-corpus
   strategy contracts that feed those choices without clearing release gates.
+- `GET /fabrication/methods/catalog` exposes additive, milling/routing,
+  turning, sheet-cutting, hybrid split/combine, postprocess, inspection, and
+  special-process method families so clients can discover which process
+  families the planner may print, mill, turn, cut, inspect, join, or learn from.
 - A bounded in-process job and artifact ledger for generated design summaries,
   parametric design payloads, design packages, design export bundles, process plans,
   production plans, machine programs, validation reports, boundary summaries,
@@ -685,6 +703,48 @@ slicer targets, CAD design-conversion NATS request/result subjects, and release
 policy notes that keep machine-ready release blocked until translator output,
 topology/scale/profile review, simulation, and signoff evidence are attached.
 
+## `GET /fabrication/slicers/catalog`
+
+`GET /slicers/catalog` and the gateway-prefixed
+`GET /fabrication/slicers/catalog` return the live
+`dd.fabrication.slicer-profile-catalog.v1` print-preparation profile catalog for
+PrusaSlicer, OrcaSlicer, Cura, and Bambu Studio. The payload lists accepted
+slicer project/profile formats, profile evidence expectations, generated
+instruction kinds, release blockers, learning signals, the `slicer-profile-reviewer`
+worker lane, design-conversion request/result subjects, and related generation,
+validation, simulation, machine-code, and toolpath routes.
+
+Slicer catalog entries are accepted profile-evidence contracts, not certified
+printer-ready G-code. Machine-ready release remains blocked until profile
+provenance, material/nozzle compatibility, support/orientation, first-layer,
+simulation, and operator or automation signoff evidence clear. Slicer profile,
+support, first-layer, material-map, and kinematic outcomes are retained as
+MDP/POMDP/neural learning signals so future print jobs can choose safer slicer
+settings.
+
+## `GET /fabrication/mesh-repair/catalog`
+
+`GET /mesh-repair/catalog` and `GET /fabrication/mesh-repair/catalog` return the
+live `dd.fabrication.mesh-repair-catalog.v1` pre-slice geometry repair catalog.
+The catalog covers watertight topology repair, scale/unit and wall-thickness
+review, color/texture/material preservation, and orientation/support/first-layer
+readiness for STL, 3MF, OBJ, PLY, VRML/WRL, glTF/GLB, scan meshes, organic meshes,
+and repaired slicer-ready handoffs. Each domain lists required evidence, release
+blockers, and learning signals so mesh repair remains a reviewable
+design-conversion worker lane, not certified printable geometry.
+
+The response also exposes supported mesh and slicer-source formats from the
+design format catalog, the `mesh-repair-converter` worker lane, the design
+conversion request/result NATS subjects, related import/conversion/simulation
+and validation routes, and response surfaces such as
+`designInputReview.reviewedInputs`, `designInputReview.conversionPlan`,
+`simulation.riskProfile`, `qualityPlan.inspectionGates`, and
+`machineRelease.blockers`. Machine-ready release stays blocked until topology,
+scale, wall thickness, color/material preservation, orientation/support,
+simulation, and operator or automation signoff evidence clear. Repair outcomes,
+dimensional drift, support/orientation choices, and first-layer results are
+retained as MDP/POMDP/neural learning signals for later print-prep choices.
+
 ## `GET /fabrication/design/import/catalog`
 
 `GET /formats/catalog`, `GET /design/import/catalog`, and their gateway-prefixed
@@ -843,6 +903,25 @@ certified CAD, CAM, controller, fixture, inspection, or safety-system output;
 machine-ready release remains blocked while conversion, export, controller,
 setup, monitoring, split/combine, release-package, or learned-remediation
 evidence is unresolved.
+
+## `GET /fabrication/subjects/catalog`
+
+`GET /subjects/catalog` and the gateway-prefixed
+`GET /fabrication/subjects/catalog` return the live
+`dd.fabrication.subject-catalog.v1` NATS worker-dispatch contract for external
+CAD/CAM, slicer, postprocessor, simulator, assembly, execution, release, and
+learning workers. The payload lists the primary fabrication request/result
+subjects, queue group, runtime event subject, MDP optimize subject, environment
+override names, and per-lane request/result subjects for design conversion,
+design synthesis, instruction generation, instruction review, instruction
+simulation, assembly planning, execution telemetry, and release readiness.
+
+Subject catalog entries are dispatch contracts, not guaranteed worker
+availability. Worker result subjects carry retained evidence for generated
+designs, machine code, simulations, split/combine assembly, execution telemetry,
+release packages, and learning outcomes; machine-ready release remains blocked
+until worker outputs, validation, setup, simulation, quality, operator or
+automation signoff, and release gates clear.
 
 ## `GET /fabrication/instructions/languages`
 
@@ -1512,6 +1591,30 @@ preferences are absent, and machine-ready release remains blocked until
 validation, setup, simulation, quality, intervention, postprocess, schedule, and
 release blockers clear.
 
+## `GET /fabrication/methods/catalog`
+
+`GET /methods/catalog` and the gateway-prefixed
+`GET /fabrication/methods/catalog` return the live
+`dd.fabrication.manufacturing-method-catalog.v1` process-family discovery
+catalog before clients ask the planner to choose, split, combine, or learn a
+manufacturing route. The payload groups additive printing, subtractive
+milling/routing, turning and mill-turn, sheet cutting and EDM, hybrid
+split/combine assembly, finishing/postprocess/quality, inspection/calibration,
+and special-process methods with representative machine kinds, CAD/design
+inputs, instruction kinds, release blockers, response surfaces, artifact
+surfaces, and learning signals.
+
+The catalog is advisory and not certified live machine availability: it tells
+clients which method families can feed `strategyCandidates.methods`,
+`hybridMakePlan.partRoutes`,
+`decompositionPlan.parts`, `interfaceControlPlan.interfaces`,
+`machineSelection.selectedMachineKind`, `machineSchedule.operations`,
+`materialPlan.routeRequirements`, `postprocessPlan.controllerTargets`,
+`qualityPlan.requirements`, `machineRelease.blockers`, and learning reward
+terms. Learned method preferences can bias print/mill/turn/cut/inspect/join
+choices only while deterministic validation, setup, controller, simulation,
+quality, intervention, postprocess, and release gates remain authoritative.
+
 ## `POST /fabrication/strategy/recommend`
 
 `POST /strategy/recommend` and the gateway-prefixed
@@ -1835,6 +1938,56 @@ monitoring observations are retained for MDP/POMDP/neural workers so future
 planning can learn when to change workholding, split setups, add automation, or
 require human intervention.
 
+## `GET /fabrication/tooling/catalog`
+
+`GET /tooling/catalog` and the gateway-prefixed
+`GET /fabrication/tooling/catalog` return the live
+`dd.fabrication.tooling-catalog.v1` machine-tooling evidence catalog before
+generated or imported instructions are treated as ready for toolpath, controller,
+simulation, or release handoff. The catalog covers additive extrusion tooling,
+subtractive cutters/holders/probes, lathe inserts/turrets/support tooling,
+sheet-cutting process consumables, and inspection/probing/calibration tools for
+FDM, pellet/FGF, robotic additive, vertical and horizontal mills, five-axis and
+rotary mills, routers, lathes, mill-turn and Swiss machines, laser/waterjet/plasma
+and wire-EDM sheet cutting, and CMM-style inspection cells.
+
+Each tooling family lists tool evidence, release blockers, response surfaces,
+and learning signals. The response names surfaces such as
+`toolingPlan.requirements.requiredTools`, `toolingPlan.requirements.consumables`,
+`toolingPlan.releaseGates`, `fixturePlan.setups.requiredEvidence`,
+`controllerPlan.requiredControllerChecks`, `calibrationPlan.offsetEvidence`,
+`qualityPlan.measurementTargets`, and `machineRelease.blockers`. Catalog entries
+are required tool, consumable, offset, holder, probe, and support evidence
+contracts, not certified tooling setup sheets. Machine-ready release remains
+blocked until tool identity, geometry, offsets, wear/tool-life, process support,
+calibration, and operator or automation signoff evidence clear. Tool selection,
+tool-life, offset, feed/speed, support-media, and inspection outcomes are retained
+as MDP/POMDP/neural learning signals for future planning and instruction repair.
+
+## `GET /fabrication/process-recipes/catalog`
+
+`GET /process-recipes/catalog` and the gateway-prefixed
+`GET /fabrication/process-recipes/catalog` return the live
+`dd.fabrication.process-recipe-catalog.v1` parameter and recipe evidence catalog
+before generated or imported instructions are treated as ready for machine-code,
+toolpath, simulation, postprocess, or release handoff. The catalog covers additive
+slicer/extrusion profiles, subtractive feeds/speeds and cutter engagement, turning
+threading and part-off parameters, sheet-cut cut charts and process media, and
+thermal/chemical/finishing postprocess recipes.
+
+Each process recipe family lists parameter evidence, release blockers, response
+surfaces, and learning signals. The response names surfaces such as
+`materialPlan.routeRequirements`, `toolingPlan.requirements`,
+`controllerPlan.requiredControllerChecks`, `simulation.riskProfile`,
+`qualityPlan.measurementTargets`, `postprocessPlan.requiredArtifacts`, and
+`machineRelease.blockers`. Catalog entries are not certified production recipes.
+Machine-ready release remains blocked until recipe
+provenance, material/tool/machine compatibility, simulation, first-article or
+coupon evidence, and operator or automation signoff clear. Recipe choices,
+parameter revisions, feed/speed outcomes, thermal cycles, edge quality,
+first-layer behavior, and postprocess results are retained as MDP/POMDP/neural
+learning signals for future planning and instruction repair.
+
 ## `POST /fabrication/setup/plan`
 
 `POST /setup/plan` and the gateway-prefixed
@@ -2091,6 +2244,22 @@ database storage or certified machine release; generated design exports, machine
 release packages, DES/POMDP/neural artifacts, and
 learning outcomes remain draft evidence until validation, simulation,
 controller, setup, quality, and signoff gates clear.
+
+## `GET /fabrication/jobs/catalog`
+
+`GET /jobs/catalog` and the gateway-prefixed `GET /fabrication/jobs/catalog`
+return the live `dd.fabrication.job-evidence-catalog.v1` discovery payload for
+the bounded in-process job ledger before callers fetch specific jobs,
+release-bundles, or artifacts. The payload reports `maxJobs`, current retained
+job/artifact counts, current job kinds, retrieval routes, producer routes,
+record/detail/release-bundle surfaces, artifact families, and learning surfaces
+such as `learningPolicySnapshot`, `mdp-request`, `pomdp-belief-state`,
+`release-probe-plan`, `neural-training-corpus`, and `outcome-learning-event`.
+Catalog policy makes the boundary explicit: retained jobs are review evidence
+for CAD/CAM, slicer, controller, setup, simulation, release, and learning
+workers, not durable database storage or certified production history; release
+bundles remain draft evidence until machine-release blockers, controller checks,
+simulation, setup, quality, and operator or automation signoff clear.
 
 ## `GET /fabrication/learning/capabilities`
 
@@ -2728,6 +2897,10 @@ learning-outcome request is recorded in a
 bounded in-process ledger. This is not durable storage yet; it is the current
 runtime inspection boundary while the database contract is still being designed.
 
+- `GET /jobs/catalog` returns the
+  `dd.fabrication.job-evidence-catalog.v1` route, retention, artifact-family,
+  release-bundle, and learning-surface contract for the bounded ledger.
+  `GET /fabrication/jobs/catalog` is the gateway-prefixed app alias.
 - `GET /jobs` lists retained jobs with status, severity, summary, and artifact
   IDs. `GET /fabrication/jobs` is the gateway-prefixed app alias for the same
   ledger.
