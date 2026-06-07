@@ -87,6 +87,9 @@ spec:
             - name: nerdctl-bin
               mountPath: /usr/local/bin/nerdctl
               readOnly: true
+            - name: nerdctl-state
+              mountPath: /var/lib/nerdctl
+              mountPropagation: Bidirectional
       volumes:
         - name: repo
           hostPath:
@@ -100,3 +103,7 @@ spec:
           hostPath:
             path: /usr/local/bin/nerdctl
             type: File
+        - name: nerdctl-state
+          hostPath:
+            path: /var/lib/nerdctl
+            type: DirectoryOrCreate

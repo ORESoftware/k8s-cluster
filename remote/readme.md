@@ -682,6 +682,9 @@ push/open the PR.
 The same `dd-idle-reaper` deployment owns the daily worker image cron. At 4am America/New_York it
 fast-forwards the EC2 checkout and rebuilds `docker.io/library/dd-dev-server:dev` with
 `nerdctl -n k8s.io build`, so future thread pods pick up a fresh local image based on latest `dev`.
+It also runs a host/containerd backstop for `dd-pool` warm workers: every 5 minutes it removes only
+labeled managed containers that are stopped, orphaned, or surplus idle past the pool's TTL plus
+grace, while preserving each pool's `min_warm` idle floor.
 
 ## Per-user channel security
 
