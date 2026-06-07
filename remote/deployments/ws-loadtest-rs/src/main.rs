@@ -11,6 +11,8 @@ use tokio::time::{sleep, timeout, Duration, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 const DEFAULT_WS_URL: &str = "ws://dd-gleamlang-server.default.svc.cluster.local:8081/ws";
+const DEFAULT_MESSAGE_ENCODINGS: &str = "json";
+const DEFAULT_LOADTEST_TRANSPORTS: &str = "http,tcp,websocket";
 
 /// LOAD_MODE values.
 const LOAD_MODE_HOLD: &str = "hold";
@@ -19,6 +21,39 @@ const LOAD_MODE_PIPELINE: &str = "pipeline";
 /// real chat protocol rather than the akka-style echo frames. See the
 /// `run_gcs_client` block below for the wire format.
 const LOAD_MODE_GCS: &str = "gcs";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MessageEncoding {
+    Json,
+    MessagePack,
+    Protobuf,
+    FlatBuffers,
+}
+
+impl MessageEncoding {
+    fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "json" => Some(Self::Json),
+            "msgpack" | "messagepack" | "message-pack" => Some(Self::MessagePack),
+            "protobuf" | "proto" | "protocol-buffers" | "protocol_buffers" => {
+                Some(Self::Protobuf)
+            }
+            "flatbuffers" | "flatbuffer" | "flat-buffers" | "flat_buffers" => {
+                Some(Self::FlatBuffers)
+            }
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::MessagePack => "msgpack",
+            Self::Protobuf => "protobuf",
+            Self::FlatBuffers => "flatbuffers",
+        }
+    }
+}
 
 #[derive(Debug, Default)]
 struct Stats {
@@ -69,6 +104,11 @@ struct Config {
     messages_per_second_per_client: f64,
     /// Pipeline-mode: per-message payload string. Defaults to a short sample.
     message_payload: String,
+    /// Pipeline-mode: one or more encodings to round-robin over for the
+    /// `{id, payload}` message model.
+    message_encodings: Vec<MessageEncoding>,
+    /// Advertised protocol coverage for deployment/runbook automation.
+    loadtest_transports: String,
     /// Pipeline-mode: drop unmatched-request entries older than this (memory bound on
     /// pending-request map).
     correlation_timeout_seconds: u64,
@@ -103,6 +143,40 @@ fn env_f64(name: &str, default_value: f64) -> f64 {
         .unwrap_or(default_value)
 }
 
+fn env_csv(name: &str, default_value: &str) -> String {
+    env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| default_value.to_string())
+}
+
+fn parse_message_encodings() -> Vec<MessageEncoding> {
+    let raw = env::var("MESSAGE_ENCODINGS")
+        .ok()
+        .or_else(|| env::var("MESSAGE_ENCODING").ok())
+        .unwrap_or_else(|| DEFAULT_MESSAGE_ENCODINGS.to_string());
+    let mut encodings = Vec::new();
+    for part in raw.split(',') {
+        if let Some(encoding) = MessageEncoding::parse(part) {
+            if !encodings.contains(&encoding) {
+                encodings.push(encoding);
+            }
+        }
+    }
+    if encodings.is_empty() {
+        encodings.push(MessageEncoding::Json);
+    }
+    encodings
+}
+
+fn format_message_encodings(encodings: &[MessageEncoding]) -> String {
+    encodings
+        .iter()
+        .map(|encoding| encoding.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 fn load_config() -> Config {
     Config {
         target_ws_url: env::var("TARGET_WS_URL").unwrap_or_else(|_| DEFAULT_WS_URL.to_string()),
@@ -117,6 +191,8 @@ fn load_config() -> Config {
         messages_per_second_per_client: env_f64("MESSAGES_PER_SECOND_PER_CLIENT", 10.0),
         message_payload: env::var("MESSAGE_PAYLOAD")
             .unwrap_or_else(|_| "a benchmark message body".to_string()),
+        message_encodings: parse_message_encodings(),
+        loadtest_transports: env_csv("LOADTEST_TRANSPORTS", DEFAULT_LOADTEST_TRANSPORTS),
         correlation_timeout_seconds: env_u64("CORRELATION_TIMEOUT_SECONDS", 10),
         gcs_clients_per_conv: env_usize("GCS_CLIENTS_PER_CONV", 5),
         // env_usize filters out 0, so an unset/zero value falls through to this
@@ -234,6 +310,7 @@ async fn run_pipeline_client(
         Duration::from_nanos((1_000_000_000.0 / config.messages_per_second_per_client) as u64);
 
     let payload = config.message_payload.clone();
+    let encodings = config.message_encodings.clone();
 
     loop {
         stats.attempted.fetch_add(1, Ordering::Relaxed);
@@ -262,11 +339,8 @@ async fn run_pipeline_client(
                         ticker.tick().await;
                         seq = seq.wrapping_add(1);
                         let id = format!("c{client_id}-{seq}");
-                        let frame = format!(
-                            r#"{{"id":"{}","payload":"{}"}}"#,
-                            id,
-                            json_escape(&send_payload)
-                        );
+                        let encoding = encodings[(seq as usize - 1) % encodings.len()];
+                        let frame = encode_pipeline_message(&id, &send_payload, encoding);
                         if let Ok(mut map) = send_pending.lock() {
                             map.insert(id.clone(), Instant::now());
                             send_stats.in_flight.store(map.len(), Ordering::Relaxed);
@@ -281,9 +355,9 @@ async fn run_pipeline_client(
                 // Receiver task: parses each frame, extracts `id`, matches against pending map.
                 while let Some(message) = reader.next().await {
                     match message {
-                        Ok(Message::Text(text)) => {
+                        Ok(message) => {
                             stats.messages.fetch_add(1, Ordering::Relaxed);
-                            if let Some(id) = extract_id(&text) {
+                            if let Some(id) = extract_id_from_message(&message) {
                                 let sent_at_opt = pending.lock().ok().and_then(|mut map| {
                                     let v = map.remove(&id);
                                     stats.in_flight.store(map.len(), Ordering::Relaxed);
@@ -296,9 +370,6 @@ async fn run_pipeline_client(
                                     stats.correlation_misses.fetch_add(1, Ordering::Relaxed);
                                 }
                             }
-                        }
-                        Ok(_) => {
-                            // Ignore ping/pong/binary frames.
                         }
                         Err(_) => {
                             stats.receive_errors.fetch_add(1, Ordering::Relaxed);

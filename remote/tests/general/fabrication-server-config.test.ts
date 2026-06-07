@@ -3415,6 +3415,15 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"GET \/fabrication\/provenance\/catalog"/);
   assert.match(source, /"provenanceCatalog"/);
   assert.match(source, /provenance_catalog_endpoint_exposes_traceability_release_contract/);
+  assert.match(source, /async fn as_built_catalog_http/);
+  assert.match(source, /fn as_built_catalog_response/);
+  assert.match(source, /fn as_built_catalog_entries/);
+  assert.match(source, /dd\.fabrication\.as-built-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/as-built\/catalog"/);
+  assert.match(source, /"asBuiltCatalog"/);
+  assert.match(source, /"as-built-deviation-map"/);
+  assert.match(source, /"hybrid-split-combine-as-built-interface-evidence"/);
+  assert.match(source, /as_built_catalog_endpoint_exposes_deviation_scan_and_learning_contract/);
   assert.match(source, /struct ProvenanceResultReviewRequest/);
   assert.match(source, /struct ProvenanceResultLineageCheck/);
   assert.match(source, /struct ProvenanceResultArtifactCheck/);
@@ -4078,6 +4087,11 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(
     source,
     /\.route\(\s*"\/fabrication\/provenance\/catalog",\s*get\(provenance_catalog_http\),\s*\)/,
+  );
+  assert.match(source, /\.route\("\/as-built\/catalog", get\(as_built_catalog_http\)\)/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/as-built\/catalog",\s*get\(as_built_catalog_http\),\s*\)/,
   );
   assert.match(source, /\.route\("\/provenance\/result", post\(provenance_result_http\)\)/);
   assert.match(

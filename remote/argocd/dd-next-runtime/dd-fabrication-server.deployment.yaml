@@ -241,6 +241,7 @@ spec:
                 '"path": "/fabrication/environment/catalog"' \
                 '"path": "/fabrication/environment/result"' \
                 '"path": "/fabrication/provenance/catalog"' \
+                '"path": "/fabrication/as-built/catalog"' \
                 '"path": "/fabrication/provenance/result"' \
                 '"path": "/fabrication/setup/plan"' \
                 '"path": "/fabrication/setup/result"' \
