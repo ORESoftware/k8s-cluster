@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 342,
+  "routeCount": 346,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 332,
+    "user-generated": 336,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -1937,6 +1937,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/interfaces/preflight/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "interface_preflight_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/interventions/catalog",
       "methods": [
         "GET"
@@ -2884,6 +2901,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "quality_plan_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fabrication/quality/preflight/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "quality_preflight_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -4013,6 +4047,23 @@
       "notes": ""
     },
     {
+      "path": "/interfaces/preflight/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "interface_preflight_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/internal/runtime-config",
       "methods": [
         "GET"
@@ -5028,6 +5079,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "quality_plan_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/quality/preflight/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "quality_preflight_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"

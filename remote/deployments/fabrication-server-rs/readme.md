@@ -34,6 +34,8 @@ outcomes.
 - `GET /fabrication/subtractive/preflight/catalog`
 - `GET /cleanliness/preflight/catalog`
 - `GET /fabrication/cleanliness/preflight/catalog`
+- `GET /interfaces/preflight/catalog`
+- `GET /fabrication/interfaces/preflight/catalog`
 - `GET /cnc/catalog`
 - `GET /fabrication/cnc/catalog`
 - `GET /cells/catalog`
@@ -172,6 +174,8 @@ outcomes.
 - `POST /fabrication/simulation/result`
 - `GET /quality/catalog`
 - `GET /fabrication/quality/catalog`
+- `GET /quality/preflight/catalog`
+- `GET /fabrication/quality/preflight/catalog`
 - `GET /dispositions/catalog`
 - `GET /fabrication/dispositions/catalog`
 - `POST /dispositions/result`
@@ -846,6 +850,27 @@ cleaning specification. Failed checks should be retained through postprocess,
 quality, release bundles, and learning outcome routes so DES, MDP/POMDP, and
 neural workers can learn when to split, combine, clean, reroute, or require human
 intervention before contaminated parts are joined.
+
+## `GET /fabrication/interfaces/preflight/catalog`
+
+`GET /interfaces/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/interfaces/preflight/catalog` return the live
+`dd.fabrication.interface-preflight-catalog.v1` split/combine release checklist
+for recombining printed, milled, turned, molded, or processed parts. The catalog
+groups datum and locating-interface state, fit/tolerance/stackup state, and
+joining hardware/service-interface state. It calls out datum transfer,
+orientation/keying, shrink/warp compensation, machined datum cleanup,
+critical-to-function dimensions, clearance/interference fits, thread/bore/shaft
+gauges, postprocess thickness allowances, bondline/weld/seal compression,
+go/no-go and functional proof, fasteners, inserts, seals, adhesives, welds,
+service access, kit genealogy, interface revision, and release-owner evidence.
+
+Interface preflight entries are recomposition evidence contracts, not released
+drawings or assembly work instructions. Failed checks should be retained through
+decomposition, assembly, quality, release, and learning outcome routes so DES,
+MDP/POMDP, and neural workers can learn when to split differently, add datums,
+change joining methods, route rework, or require human intervention before
+parts are combined.
 
 ## `GET /fabrication/cells/catalog`
 
@@ -2483,6 +2508,26 @@ inspection, postprocess, material traceability, interface fit, or metrology
 evidence is absent. Quality observations are retained for MDP/POMDP/neural
 workers so future planning can learn when to add inspection, split parts, adjust
 processes, or require human signoff.
+
+## `GET /fabrication/quality/preflight/catalog`
+
+`GET /quality/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/quality/preflight/catalog` return the live
+`dd.fabrication.quality-preflight-catalog.v1` quality-release checklist before
+parts are assembled, packed, handed to a human, or marked machine-ready. The
+catalog groups metrology instrument/datum state, first-article/final-fit/surface
+state, and nonconformance/disposition/learning state. It calls out calibrated
+instrument and CMM/vision/scan setup evidence, datum scheme, uncertainty,
+artifact checksum, first article, final fit, surface finish, edge quality,
+cleanliness, material-process witness evidence, interface gauges, torque/leak
+or functional proof, sampling plans, nonconformance ownership, rework/remake or
+waiver disposition, and learning observations.
+
+Quality preflight entries are release evidence contracts, not certified
+acceptance results. Failed checks should be retained through quality,
+disposition, release, and learning outcome routes so DES, MDP/POMDP, and neural
+workers can learn when to add inspection, split parts, reroute manufacturing, or
+require human intervention earlier.
 
 ## `POST /fabrication/quality/plan`
 
@@ -4173,7 +4218,13 @@ intermediate intake, design and machine-code generation, instruction validation
 and improvement, split/combine planning, MDP/POMDP/DES/neural learning, retained
 job artifacts, and the release gates that keep draft plans from becoming
 machine-ready until simulation, controller/postprocessor review, setup, quality,
-and operator or automation signoff evidence clear.
+and operator or automation signoff evidence clear. It also names the native CAD,
+cloud CAD, mesh, neutral exchange, and slicer ecosystems accepted by the intake
+catalogs, including PTC Creo / Pro/ENGINEER, SOLIDWORKS, Autodesk Fusion,
+Siemens NX, CATIA, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, STEP, Parasolid,
+STL, 3MF, OBJ, AMF, PrusaSlicer, OrcaSlicer, Cura, and Bambu Studio, while
+calling out ambiguous `.prt`/`.asm` extensions as source-system or translator
+evidence gates.
 
 ## `GET /fabrication/intake/catalog`
 

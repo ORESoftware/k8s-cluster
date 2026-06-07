@@ -147,6 +147,7 @@ spec:
                 '"path": "/fabrication/subtractive/catalog"' \
                 '"path": "/fabrication/subtractive/preflight/catalog"' \
                 '"path": "/fabrication/cleanliness/preflight/catalog"' \
+                '"path": "/fabrication/interfaces/preflight/catalog"' \
                 '"path": "/fabrication/cnc/catalog"' \
                 '"path": "/fabrication/hybrid/catalog"' \
                 '"path": "/fabrication/cells/catalog"' \
@@ -210,6 +211,7 @@ spec:
                 '"path": "/fabrication/simulation/run"' \
                 '"path": "/fabrication/simulation/result"' \
                 '"path": "/fabrication/quality/catalog"' \
+                '"path": "/fabrication/quality/preflight/catalog"' \
                 '"path": "/fabrication/dispositions/catalog"' \
                 '"path": "/fabrication/dispositions/result"' \
                 '"path": "/fabrication/costing/catalog"' \
