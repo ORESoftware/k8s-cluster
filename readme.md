@@ -32,6 +32,8 @@ It exposes:
 - `POST /fabrication/slicers/result`
 - `GET /mesh-repair/catalog`
 - `GET /fabrication/mesh-repair/catalog`
+- `POST /mesh-repair/result`
+- `POST /fabrication/mesh-repair/result`
 - `GET /formats/catalog`
 - `GET /fabrication/formats/catalog`
 - `GET /design/import/catalog`
@@ -54,6 +56,8 @@ It exposes:
 - `POST /fabrication/design/synthesis/result`
 - `GET /handoff/catalog`
 - `GET /fabrication/handoff/catalog`
+- `POST /handoff/result`
+- `POST /fabrication/handoff/result`
 - `GET /instructions/languages`
 - `GET /fabrication/instructions/languages`
 - `GET /instructions/validation/catalog`
@@ -136,12 +140,26 @@ It exposes:
 - `POST /fabrication/dispositions/result`
 - `GET /costing/catalog`
 - `GET /fabrication/costing/catalog`
+- `POST /costing/result`
+- `POST /fabrication/costing/result`
 - `GET /utilities/catalog`
 - `GET /fabrication/utilities/catalog`
+- `GET /energy/catalog`
+- `GET /fabrication/energy/catalog`
+- `POST /energy/result`
+- `POST /fabrication/energy/result`
 - `POST /utilities/result`
 - `POST /fabrication/utilities/result`
 - `GET /telemetry/catalog`
 - `GET /fabrication/telemetry/catalog`
+- `GET /maintenance/catalog`
+- `GET /fabrication/maintenance/catalog`
+- `POST /maintenance/result`
+- `POST /fabrication/maintenance/result`
+- `GET /availability/catalog`
+- `GET /fabrication/availability/catalog`
+- `POST /availability/result`
+- `POST /fabrication/availability/result`
 - `POST /telemetry/result`
 - `POST /fabrication/telemetry/result`
 - `POST /quality/plan`
@@ -160,8 +178,14 @@ It exposes:
 - `GET /fabrication/setup/catalog`
 - `GET /tooling/catalog`
 - `GET /fabrication/tooling/catalog`
+- `GET /consumables/catalog`
+- `GET /fabrication/consumables/catalog`
+- `POST /consumables/result`
+- `POST /fabrication/consumables/result`
 - `GET /workholding/catalog`
 - `GET /fabrication/workholding/catalog`
+- `POST /workholding/result`
+- `POST /fabrication/workholding/result`
 - `GET /support-strategies/catalog`
 - `GET /fabrication/support-strategies/catalog`
 - `POST /support-strategies/result`
@@ -831,6 +855,25 @@ simulation, and operator or automation signoff evidence clear. Repair outcomes,
 dimensional drift, support/orientation choices, and first-layer results are
 retained as MDP/POMDP/neural learning signals for later print-prep choices.
 
+## `POST /fabrication/mesh-repair/result`
+
+`POST /mesh-repair/result` and the gateway-prefixed
+`POST /fabrication/mesh-repair/result` accept retained mesh-repair worker
+outcomes before slicer handoff. The response uses
+`dd.fabrication.mesh-repair-result-review.v1` and reviews topology checks,
+dimensional drift, wall thickness, orientation/support readiness, split/combine
+decisions, human intervention requirements, and retained repair artifacts.
+
+Machine-ready and slicer-ready release remain blocked while repaired geometry
+still has topology blockers, dimensional drift over tolerance, thin-wall or
+scale issues, unreviewed support/orientation choices, missing split/combine
+approval, or artifacts without URI/checksum/evidence labels. The result is
+stored with `mesh-repair-result`, `mesh-repair-topology-checks`,
+`mesh-repair-dimensional-reviews`, `mesh-repair-orientation-reviews`,
+`mesh-repair-artifacts`, and `mesh-repair-learning-observations` artifacts so
+future MDP/POMDP/neural planners can choose repair, redesign, split/combine,
+support, or human-review paths earlier.
+
 ## `GET /fabrication/design/import/catalog`
 
 `GET /formats/catalog`, `GET /design/import/catalog`, and their gateway-prefixed
@@ -1010,6 +1053,25 @@ certified CAD, CAM, controller, fixture, inspection, or safety-system output;
 machine-ready release remains blocked while conversion, export, controller,
 setup, monitoring, split/combine, release-package, or learned-remediation
 evidence is unresolved.
+
+## `POST /fabrication/handoff/result`
+
+`POST /handoff/result` and the gateway-prefixed
+`POST /fabrication/handoff/result` accept downstream worker handoff-review
+results after CAD, CAM, slicer, setup, split/combine assembly, transport,
+inspection, release, or learning lanes finish a handoff attempt. The request
+uses `dd.fabrication.handoff-result-review.v1` style fields for handoff
+segments, datum/interface transfers, transport or operator holds, retained
+artifacts, reviewer metadata, and warnings. The response blocks release when a
+segment is rejected, rework is required, a datum or interface is unverified,
+transport/cure/queue holds remain open, or retained artifact URI/checksum/evidence
+is missing.
+
+Stored review artifacts include `handoff-result`, `handoff-segments`,
+`handoff-datum-transfers`, `handoff-transport-holds`, `handoff-artifacts`, and
+`handoff-learning-observations`, so MDP/POMDP/neural policy workers can learn
+which worker lanes, datum transfers, split/combine interfaces, queue holds, and
+human interventions blocked or enabled machine-ready release.
 
 ## `GET /fabrication/subjects/catalog`
 
@@ -1998,6 +2060,24 @@ human intervention, or split/combine evidence. Cost, yield, scrap, cycle-time,
 and rework outcomes are retained as MDP/POMDP/neural learning signals so future
 planners can choose cheaper, safer, or more reliable fabrication routes.
 
+## `POST /fabrication/costing/result`
+
+`POST /costing/result` and the gateway-prefixed
+`POST /fabrication/costing/result` accept retained cost, yield, scrap,
+cycle-time, rework, and split/combine route outcome reviews from generated,
+imported, simulated, or completed fabrication work. The response uses
+`dd.fabrication.costing-result-review.v1` and captures estimate families,
+material-yield reviews, route comparisons, artifacts, release blockers, and
+MDP/POMDP/neural learning observations.
+
+Machine-ready and customer-ready release remain blocked while setup, material
+yield, scrap, quality, review, human-intervention, or split/combine route
+economics lack retained evidence. The result is stored with `costing-result`,
+`costing-reviews`, `costing-yield-reviews`, `costing-route-comparisons`,
+`costing-artifacts`, and `costing-learning-observations` artifacts so future
+planners can learn which one-piece, split, hybrid, rework, or remake routes are
+cheaper, safer, and reliable enough for release.
+
 ## `GET /fabrication/utilities/catalog`
 
 `GET /utilities/catalog` and the gateway-prefixed
@@ -2044,6 +2124,52 @@ and `utilities-learning-observations` artifacts so future planners can learn
 which utility readiness, restart, outage, and recovery patterns made generated
 or imported instructions releasable.
 
+## `GET /fabrication/energy/catalog`
+
+`GET /energy/catalog` and the gateway-prefixed
+`GET /fabrication/energy/catalog` return the live
+`dd.fabrication.energy-catalog.v1` machine, process, and facility power
+evidence catalog before generated, imported, simulated, scheduled, or hybrid
+fabrication work is treated as machine-ready. The catalog covers additive
+heater/motion/build energy, subtractive spindle/axis/coolant load,
+sheet-cutting beam/jet/plasma/EDM energy, and facility grid, UPS, and carbon
+window evidence.
+
+Each energy family lists required evidence, release blockers, response
+surfaces, and learning signals. The response names surfaces such as
+`scheduleResult.lanes`, `costingResult.estimateFamilies`,
+`utilitiesResult.checks`, `availabilityResult.capacityWindows`,
+`monitoringPlan.alerts`, `telemetryResult.channels`, `machineRelease.blockers`,
+and `learning.outcomes`. Catalog entries are power-readiness evidence
+contracts, not utility billing, certified electrical design, or carbon
+compliance approval. Machine-ready release remains blocked while heater,
+spindle, axis, beam, jet, pump, compressor, chiller, UPS, facility circuit, or
+thermal-load evidence is missing for the selected route. Energy outcomes are
+retained as costing, availability, schedule, maintenance, and MDP/POMDP/neural
+learning signals so future planners can split, combine, defer, or reroute
+brittle fabrication work.
+
+## `POST /fabrication/energy/result`
+
+`POST /energy/result` and the gateway-prefixed
+`POST /fabrication/energy/result` accept retained machine, process, and
+facility energy outcome reviews from generated, imported, simulated, scheduled,
+or completed fabrication work. The response uses
+`dd.fabrication.energy-result-review.v1` and captures power checks, thermal-load
+checks, recovery actions, artifacts, release blockers, and MDP/POMDP/neural
+learning observations.
+
+Machine-ready and release-ready status remains blocked while selected routes
+lack verified heater, spindle, axis, beam, jet, pump, compressor, chiller, UPS,
+facility circuit, carbon-window, or thermal-load evidence. Power overloads,
+thermal duty-cycle limits, incomplete recovery actions, missing retained
+artifacts, required operator reviews, and split/combine or defer decisions are
+stored with `energy-result`, `energy-power-checks`, `energy-thermal-checks`,
+`energy-recovery-actions`, `energy-artifacts`, and
+`energy-learning-observations` artifacts so future planners can learn which
+power budgets, cooldown windows, batch schedules, and route choices made work
+releasable.
+
 ## `GET /fabrication/telemetry/catalog`
 
 `GET /telemetry/catalog` and the gateway-prefixed
@@ -2070,6 +2196,92 @@ evidence cannot be retained. Telemetry outcomes feed MDP/POMDP/neural workers so
 future planners can learn which generated instructions, machine choices,
 utilities, split/combine handoffs, and human checkpoints prevented or caused
 failures.
+
+## `GET /fabrication/availability/catalog`
+
+`GET /availability/catalog` and the gateway-prefixed
+`GET /fabrication/availability/catalog` return the live
+`dd.fabrication.availability-catalog.v1` capacity and readiness evidence catalog
+before machine selection, scheduling, generated/imported instructions, or
+unattended release are treated as shop-ready. The catalog covers live machine
+state and queue capacity, material/fixture/tooling/utility readiness,
+operator/automation coverage, and cross-machine split/combine capacity.
+
+Each availability family lists required evidence, release blockers, response
+surfaces, artifact surfaces, and learning signals. The response names surfaces
+such as `machineSelection.candidates`, `machineSchedule.machineLanes`,
+`scheduleResult.holds`, `materialPlan.routeRequirements`,
+`toolingPlan.requirements`, `utilitiesResult.checks`,
+`operatorInterventionPlan.requiredOperatorActions`, `machineRelease.blockers`,
+and `learning.outcomes`. Catalog entries are capacity and readiness evidence
+contracts, not certified shop scheduling authority or guaranteed machine uptime.
+Machine-ready and unattended release remain blocked while live machine state,
+queue, material, tooling, fixture, utility, maintenance, operator, or automation
+capacity evidence is stale or missing. Availability outcomes feed DES,
+MDP/POMDP/neural workers so future planners can learn fallback machines,
+split/combine capacity, queue-delay risk, and reliable unattended windows.
+
+## `POST /fabrication/availability/result`
+
+`POST /availability/result` and the gateway-prefixed
+`POST /fabrication/availability/result` accept retained availability worker
+outcomes for machine windows, queue/capacity state, material/fixture/tooling and
+utility readiness, operator/automation coverage, fallback machines, and
+split/combine capacity. The response uses
+`dd.fabrication.availability-result-review.v1`.
+
+Machine-ready and unattended release remain blocked while selected machines lack
+current online/queue/setup/downtime evidence, resources are unavailable,
+operator or automation windows are missing, fallback machines are not viable, or
+split/combine capacity evidence is absent. The result is stored with
+`availability-result`, `availability-machine-windows`,
+`availability-resource-checks`, `availability-fallback-options`,
+`availability-artifacts`, and `availability-learning-observations` artifacts so
+DES/MDP/POMDP/neural planners can learn fallback-machine, queue-delay,
+operator-window, and split/combine capacity outcomes.
+
+## `GET /fabrication/maintenance/catalog`
+
+`GET /maintenance/catalog` and the gateway-prefixed
+`GET /fabrication/maintenance/catalog` return the live
+`dd.fabrication.maintenance-catalog.v1` service-readiness evidence catalog
+before generated, imported, scheduled, or unattended work is treated as
+machine-ready. The catalog covers lockout/tagout release, spindle/tooling wear,
+thermal/fluid/process-support service, and calibration/sensor/safety-channel
+service state.
+
+Each maintenance family lists required evidence, release blockers, response
+surfaces, artifact surfaces, and learning signals. The response names surfaces
+such as `machineProfile.evidence.maintenance`, `setupResult.datumReviews`,
+`calibrationResult.probeReviews`, `utilitiesResult.checks`,
+`monitoringResult.alerts`, `telemetryResult.boundaryCorrelations`,
+`safetyResult.interlocks`, `machineRelease.blockers`, and `learning.outcomes`.
+Catalog entries are service-readiness evidence contracts, not certified
+maintenance approval or regulatory lockout procedure. Machine-ready, unattended,
+and customer-ready release remain blocked while lockout, service, wear,
+calibration, sensor, process-support, or safety-channel evidence is stale or
+missing. Maintenance outcomes are retained as MDP/POMDP/neural learning signals
+so future planners can avoid brittle machines, add operator checkpoints, split
+work across healthier equipment, or schedule service before release.
+
+## `POST /fabrication/maintenance/result`
+
+`POST /maintenance/result` and the gateway-prefixed
+`POST /fabrication/maintenance/result` accept retained maintenance worker
+outcomes for service items, lockout clearances, post-service verification
+checks, residual restrictions, retained artifacts, and release warnings. The
+response uses `dd.fabrication.maintenance-result-review.v1`.
+
+Machine-ready and unattended release remain blocked while service state is
+overdue, lockout/tagout clearance lacks authorization, post-service dry-run,
+homing, interlock, safe-stop, sensor, or datum checks fail, residual
+restrictions require an operator, or artifacts lack URI, checksum, format, and
+evidence labels. The result is stored with `maintenance-result`,
+`maintenance-service-items`, `maintenance-lockout-clearances`,
+`maintenance-verification-checks`, `maintenance-residual-restrictions`,
+`maintenance-artifacts`, and `maintenance-learning-observations` artifacts so
+MDP/POMDP/neural planners can learn brittle-machine, service-schedule,
+operator-checkpoint, and route-across-healthier-equipment outcomes.
 
 ## `POST /fabrication/telemetry/result`
 
@@ -2254,6 +2466,52 @@ calibration, and operator or automation signoff evidence clear. Tool selection,
 tool-life, offset, feed/speed, support-media, and inspection outcomes are retained
 as MDP/POMDP/neural learning signals for future planning and instruction repair.
 
+## `GET /fabrication/consumables/catalog`
+
+`GET /consumables/catalog` and the gateway-prefixed
+`GET /fabrication/consumables/catalog` return the live
+`dd.fabrication.consumables-catalog.v1` material, tool-life, support-media, and
+process-consumable evidence catalog before generated/imported instructions or
+unattended jobs are released. The catalog covers additive material and extrusion
+consumables, subtractive cutters/inserts/coolant, sheet-cutting nozzle/gas/
+abrasive/wire consumables, and resin, powder, binder, and postprocess
+consumables.
+
+Each consumable family lists required evidence, release blockers, response
+surfaces, artifact surfaces, and learning signals. The response names surfaces
+such as `materialPlan.routeRequirements`,
+`toolingPlan.requirements.consumables`, `utilitiesResult.checks`,
+`supportStrategyPlan.requirements`, `monitoringPlan.alerts`,
+`qualityResult.measurements`, `postprocessPlan.requiredArtifacts`,
+`provenanceResult.lineage`, `machineRelease.blockers`, and
+`learning.outcomes`. Catalog entries are evidence contracts, not certified
+inventory, tooling, or hazardous-material approval. Machine-ready and unattended
+release remain blocked while material quantity, lot, shelf-life, dry state, tool
+life, wear, nozzle, gas, abrasive, coolant, wire, resin, powder, binder, solvent,
+media, or postprocess consumable evidence is stale or missing. Consumable
+outcomes are retained as MDP/POMDP/neural learning signals so future planners can
+learn tool-life risk, material capacity, support-media depletion, split/combine
+reroutes, and operator refill checkpoints.
+
+## `POST /fabrication/consumables/result`
+
+`POST /consumables/result` and the gateway-prefixed
+`POST /fabrication/consumables/result` accept retained consumables worker
+outcomes for material/tool/support-media inventory, lot and shelf-life state,
+remaining capacity, dry-state evidence, tool-life and wear checks, support-media
+restart checks, artifacts, and release warnings. The response uses
+`dd.fabrication.consumables-result-review.v1`.
+
+Machine-ready and unattended release remain blocked while material, resin,
+powder, binder, wire, gas, abrasive, coolant, solvent, media, or tooling capacity
+is stale, depleted, below projected program demand, not lot-traceable, expired,
+outside dry-state requirements, or missing support-media restart evidence. The
+result is stored with `consumables-result`, `consumables-inventory-checks`,
+`consumables-tool-life-checks`, `consumables-support-media-checks`,
+`consumables-artifacts`, and `consumables-learning-observations` artifacts so
+MDP/POMDP/neural planners can learn tool-life risk, material capacity,
+support-media depletion, split/combine reroutes, and operator refill checkpoints.
+
 ## `GET /fabrication/workholding/catalog`
 
 `GET /workholding/catalog` and the gateway-prefixed
@@ -2283,6 +2541,26 @@ split/combine fixture evidence is unresolved. Workholding failures and
 successful fixture choices are retained as MDP/POMDP/neural learning signals so
 future planners can split jobs, change fixtures, add probes, or require human
 intervention earlier.
+
+## `POST /fabrication/workholding/result`
+
+`POST /workholding/result` and the gateway-prefixed
+`POST /fabrication/workholding/result` accept retained workholding worker
+outcomes for fixture/build-surface/chuck/support checks, datum transfers,
+clearance checks, split/combine fixture holds, retained artifacts, and release
+warnings. The response uses `dd.fabrication.workholding-result-review.v1`.
+
+Machine-ready and unattended release remain blocked while fixture or build
+surface holding is unverified, datum transfer or re-probe evidence is missing,
+toolpath clearance intersects clamps, jaws, tabs, nests, or supports,
+split/combine recomposition fixture evidence is unresolved, or artifacts lack
+URI, checksum, format, and evidence labels. The result is stored with
+`workholding-result`, `workholding-fixture-checks`,
+`workholding-datum-transfers`, `workholding-clearance-checks`,
+`workholding-split-combine-holds`, `workholding-artifacts`, and
+`workholding-learning-observations` artifacts so MDP/POMDP/neural planners can
+learn fixture failures, datum-transfer risk, clamp collision risk,
+split/combine recomposition holds, and earlier human-intervention points.
 
 ## `GET /fabrication/support-strategies/catalog`
 

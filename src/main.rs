@@ -2018,6 +2018,70 @@ struct SlicerProfileResultArtifact {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct MeshRepairResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    source_design_id: Option<String>,
+    source_format: Option<String>,
+    target_format: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    slicer_ready: Option<bool>,
+    topology_checks: Option<Vec<MeshRepairResultCheck>>,
+    dimensional_reviews: Option<Vec<MeshRepairDimensionalReview>>,
+    orientation_reviews: Option<Vec<MeshRepairResultCheck>>,
+    artifacts: Option<Vec<MeshRepairResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MeshRepairResultCheck {
+    check_id: String,
+    repair_domain: String,
+    check_kind: String,
+    status: String,
+    passed: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    requires_split_combine: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MeshRepairDimensionalReview {
+    review_id: String,
+    feature_id: Option<String>,
+    status: String,
+    max_drift_mm: Option<f64>,
+    tolerance_mm: Option<f64>,
+    wall_thickness_mm: Option<f64>,
+    release_blocker: Option<bool>,
+    requires_redesign: Option<bool>,
+    requires_split_combine: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MeshRepairResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct QualityResultReviewRequest {
     request_id: Option<String>,
     plan_request_id: Option<String>,
@@ -2393,6 +2457,484 @@ struct UtilitiesResultOutageEvent {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UtilitiesResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnergyResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    run_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    power_checks: Option<Vec<EnergyResultPowerCheck>>,
+    thermal_checks: Option<Vec<EnergyResultThermalCheck>>,
+    recovery_actions: Option<Vec<EnergyResultRecoveryAction>>,
+    artifacts: Option<Vec<EnergyResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnergyResultPowerCheck {
+    check_id: String,
+    energy_family: String,
+    load_kind: String,
+    status: String,
+    estimated_kw: Option<f64>,
+    measured_kw: Option<f64>,
+    capacity_kw: Option<f64>,
+    within_limits: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_replan: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnergyResultThermalCheck {
+    check_id: String,
+    thermal_scope: String,
+    status: String,
+    duty_cycle_percent: Option<f64>,
+    heat_rise_c: Option<f64>,
+    within_limits: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_cooldown: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnergyResultRecoveryAction {
+    action_id: String,
+    action_kind: String,
+    status: String,
+    completed: Option<bool>,
+    verified: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnergyResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HandoffResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    route_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    handoff_segments: Option<Vec<HandoffResultSegment>>,
+    datum_transfers: Option<Vec<HandoffResultDatumTransfer>>,
+    transport_holds: Option<Vec<HandoffResultTransportHold>>,
+    artifacts: Option<Vec<HandoffResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HandoffResultSegment {
+    segment_id: String,
+    handoff_lane: String,
+    from_stage: String,
+    to_stage: String,
+    status: String,
+    accepted: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_rework: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HandoffResultDatumTransfer {
+    transfer_id: String,
+    transfer_kind: String,
+    status: String,
+    datum_preserved: Option<bool>,
+    interface_verified: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HandoffResultTransportHold {
+    hold_id: String,
+    hold_kind: String,
+    status: String,
+    resolved: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HandoffResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AvailabilityResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    route_id: Option<String>,
+    machine_ready: bool,
+    unattended_ready: Option<bool>,
+    success: bool,
+    machine_windows: Option<Vec<AvailabilityResultMachineWindow>>,
+    resource_checks: Option<Vec<AvailabilityResultResourceCheck>>,
+    fallback_options: Option<Vec<AvailabilityResultFallbackOption>>,
+    artifacts: Option<Vec<AvailabilityResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AvailabilityResultMachineWindow {
+    window_id: String,
+    availability_family: String,
+    machine_id: String,
+    machine_kind: String,
+    status: String,
+    available: Option<bool>,
+    queue_delay_minutes: Option<f64>,
+    capacity_minutes: Option<f64>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AvailabilityResultResourceCheck {
+    check_id: String,
+    resource_kind: String,
+    status: String,
+    available: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AvailabilityResultFallbackOption {
+    option_id: String,
+    option_kind: String,
+    status: String,
+    machine_id: Option<String>,
+    selected: Option<bool>,
+    viable: Option<bool>,
+    requires_split_combine: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AvailabilityResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MaintenanceResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    route_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    unattended_ready: Option<bool>,
+    service_items: Option<Vec<MaintenanceResultServiceItem>>,
+    lockout_clearances: Option<Vec<MaintenanceResultLockoutClearance>>,
+    verification_checks: Option<Vec<MaintenanceResultVerificationCheck>>,
+    residual_restrictions: Option<Vec<MaintenanceResultResidualRestriction>>,
+    artifacts: Option<Vec<MaintenanceResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MaintenanceResultServiceItem {
+    service_id: String,
+    maintenance_family: String,
+    component_kind: String,
+    status: String,
+    service_current: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MaintenanceResultLockoutClearance {
+    clearance_id: String,
+    lockout_kind: String,
+    status: String,
+    cleared: Option<bool>,
+    authorized_by: Option<String>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MaintenanceResultVerificationCheck {
+    check_id: String,
+    check_kind: String,
+    status: String,
+    passed: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MaintenanceResultResidualRestriction {
+    restriction_id: String,
+    restriction_kind: String,
+    status: String,
+    requires_operator: Option<bool>,
+    allows_unattended: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MaintenanceResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConsumablesResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    route_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    unattended_ready: Option<bool>,
+    inventory_checks: Option<Vec<ConsumablesResultInventoryCheck>>,
+    tool_life_checks: Option<Vec<ConsumablesResultToolLifeCheck>>,
+    support_media_checks: Option<Vec<ConsumablesResultSupportMediaCheck>>,
+    artifacts: Option<Vec<ConsumablesResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConsumablesResultInventoryCheck {
+    check_id: String,
+    consumable_family: String,
+    consumable_kind: String,
+    status: String,
+    available: Option<bool>,
+    lot_traceable: Option<bool>,
+    shelf_life_current: Option<bool>,
+    dry_state_current: Option<bool>,
+    capacity_remaining: Option<f64>,
+    projected_required: Option<f64>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    requires_split_combine: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConsumablesResultToolLifeCheck {
+    check_id: String,
+    tool_kind: String,
+    status: String,
+    tool_life_remaining_minutes: Option<f64>,
+    projected_cut_minutes: Option<f64>,
+    wear_within_limit: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConsumablesResultSupportMediaCheck {
+    check_id: String,
+    media_kind: String,
+    status: String,
+    available: Option<bool>,
+    restart_verified: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConsumablesResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkholdingResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    route_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    unattended_ready: Option<bool>,
+    fixture_checks: Option<Vec<WorkholdingResultFixtureCheck>>,
+    datum_transfers: Option<Vec<WorkholdingResultDatumTransfer>>,
+    clearance_checks: Option<Vec<WorkholdingResultClearanceCheck>>,
+    split_combine_holds: Option<Vec<WorkholdingResultSplitCombineHold>>,
+    artifacts: Option<Vec<WorkholdingResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkholdingResultFixtureCheck {
+    check_id: String,
+    workholding_family: String,
+    fixture_kind: String,
+    status: String,
+    holding_verified: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkholdingResultDatumTransfer {
+    transfer_id: String,
+    transfer_kind: String,
+    status: String,
+    datum_verified: Option<bool>,
+    re_probe_required: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkholdingResultClearanceCheck {
+    check_id: String,
+    clearance_kind: String,
+    status: String,
+    clearance_verified: Option<bool>,
+    collision_risk: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkholdingResultSplitCombineHold {
+    hold_id: String,
+    hold_kind: String,
+    status: String,
+    interface_verified: Option<bool>,
+    recomposition_ready: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkholdingResultArtifact {
     artifact_id: String,
     artifact_kind: String,
     source_ref_id: Option<String>,
@@ -55661,6 +56203,634 @@ async fn costing_catalog_http() -> impl IntoResponse {
     Json(costing_catalog_response())
 }
 
+fn validate_costing_result_reviews(
+    reviews: Option<Vec<CostingResultReview>>,
+) -> Result<Vec<Value>, String> {
+    let reviews = reviews.unwrap_or_default();
+    if reviews.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "costReviews must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    reviews
+        .into_iter()
+        .enumerate()
+        .map(|(index, review)| {
+            let review_id =
+                validate_label(&review.review_id, &format!("costReviews[{index}].reviewId"))?;
+            let cost_family = validate_label(
+                &review.cost_family,
+                &format!("costReviews[{index}].costFamily"),
+            )?;
+            let status = validate_label(&review.status, &format!("costReviews[{index}].status"))?;
+            let estimate_kind = validate_label(
+                &review.estimate_kind,
+                &format!("costReviews[{index}].estimateKind"),
+            )?;
+            let estimated_value = review
+                .estimated_value
+                .map(|value| {
+                    finite_non_negative(value, &format!("costReviews[{index}].estimatedValue"))
+                })
+                .transpose()?;
+            let actual_value = review
+                .actual_value
+                .map(|value| {
+                    finite_non_negative(value, &format!("costReviews[{index}].actualValue"))
+                })
+                .transpose()?;
+            let unit = validate_optional_label(review.unit, "costReviews.unit")?;
+            let evidence =
+                validate_signal_list(review.evidence, "costReviews.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "reviewId": review_id,
+                "costFamily": cost_family,
+                "status": status,
+                "estimateKind": estimate_kind,
+                "estimatedValue": estimated_value,
+                "actualValue": actual_value,
+                "unit": unit,
+                "releaseBlocker": review.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": review.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_costing_result_yield_reviews(
+    reviews: Option<Vec<CostingResultYieldReview>>,
+) -> Result<Vec<Value>, String> {
+    let reviews = reviews.unwrap_or_default();
+    if reviews.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "yieldReviews must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    reviews
+        .into_iter()
+        .enumerate()
+        .map(|(index, review)| {
+            let yield_id =
+                validate_label(&review.yield_id, &format!("yieldReviews[{index}].yieldId"))?;
+            let material_kind = validate_label(
+                &review.material_kind,
+                &format!("yieldReviews[{index}].materialKind"),
+            )?;
+            let status = validate_label(&review.status, &format!("yieldReviews[{index}].status"))?;
+            let estimated_scrap_percent = review
+                .estimated_scrap_percent
+                .map(|value| {
+                    let value = finite_non_negative(
+                        value,
+                        &format!("yieldReviews[{index}].estimatedScrapPercent"),
+                    )?;
+                    if value > 100.0 {
+                        return Err(format!(
+                            "yieldReviews[{index}].estimatedScrapPercent must be at most 100"
+                        ));
+                    }
+                    Ok(value)
+                })
+                .transpose()?;
+            let actual_scrap_percent = review
+                .actual_scrap_percent
+                .map(|value| {
+                    let value = finite_non_negative(
+                        value,
+                        &format!("yieldReviews[{index}].actualScrapPercent"),
+                    )?;
+                    if value > 100.0 {
+                        return Err(format!(
+                            "yieldReviews[{index}].actualScrapPercent must be at most 100"
+                        ));
+                    }
+                    Ok(value)
+                })
+                .transpose()?;
+            let evidence =
+                validate_signal_list(review.evidence, "yieldReviews.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "yieldId": yield_id,
+                "materialKind": material_kind,
+                "status": status,
+                "estimatedScrapPercent": estimated_scrap_percent,
+                "actualScrapPercent": actual_scrap_percent,
+                "materialAvailable": review.material_available.unwrap_or(false),
+                "releaseBlocker": review.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_costing_result_route_comparisons(
+    comparisons: Option<Vec<CostingResultRouteComparison>>,
+) -> Result<Vec<Value>, String> {
+    let comparisons = comparisons.unwrap_or_default();
+    if comparisons.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "routeComparisons must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    comparisons
+        .into_iter()
+        .enumerate()
+        .map(|(index, comparison)| {
+            let comparison_id = validate_label(
+                &comparison.comparison_id,
+                &format!("routeComparisons[{index}].comparisonId"),
+            )?;
+            let route_kind = validate_label(
+                &comparison.route_kind,
+                &format!("routeComparisons[{index}].routeKind"),
+            )?;
+            let status = validate_label(
+                &comparison.status,
+                &format!("routeComparisons[{index}].status"),
+            )?;
+            let evidence = validate_signal_list(
+                comparison.evidence,
+                "routeComparisons.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "comparisonId": comparison_id,
+                "routeKind": route_kind,
+                "status": status,
+                "selected": comparison.selected.unwrap_or(false),
+                "cheaperThanBaseline": comparison.cheaper_than_baseline.unwrap_or(false),
+                "saferThanBaseline": comparison.safer_than_baseline.unwrap_or(false),
+                "requiresSplitCombine": comparison.requires_split_combine.unwrap_or(false),
+                "releaseBlocker": comparison.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_costing_result_artifacts(
+    artifacts: Option<Vec<CostingResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn costing_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("overrun")
+        || status.contains("out-of")
+        || status.contains("scrap")
+        || status.contains("rework")
+        || status.contains("required")
+}
+
+fn costing_result_review_blocks_release(review: &Value) -> bool {
+    review
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || review
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || costing_result_status_blocks_release(
+            review.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+        || match (
+            review.get("estimatedValue").and_then(Value::as_f64),
+            review.get("actualValue").and_then(Value::as_f64),
+        ) {
+            (Some(estimated), Some(actual)) => actual > estimated,
+            _ => false,
+        }
+}
+
+fn costing_result_yield_blocks_release(review: &Value) -> bool {
+    review
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !review
+            .get("materialAvailable")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || costing_result_status_blocks_release(
+            review.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+        || match (
+            review.get("estimatedScrapPercent").and_then(Value::as_f64),
+            review.get("actualScrapPercent").and_then(Value::as_f64),
+        ) {
+            (Some(estimated), Some(actual)) => actual > estimated,
+            _ => false,
+        }
+}
+
+fn costing_result_route_blocks_release(comparison: &Value) -> bool {
+    comparison
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || costing_result_status_blocks_release(
+            comparison
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )
+}
+
+fn costing_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn costing_result_review_response(request: CostingResultReviewRequest) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "costing-result");
+    let generated_at_ms = now_ms();
+    let costing_result_job_id = safe_job_id("costing-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let route_id = validate_optional_label(request.route_id, "routeId")?;
+    let customer_ready = request.customer_ready.unwrap_or(false);
+    let cost_reviews = validate_costing_result_reviews(request.cost_reviews)?;
+    let yield_reviews = validate_costing_result_yield_reviews(request.yield_reviews)?;
+    let route_comparisons = validate_costing_result_route_comparisons(request.route_comparisons)?;
+    let artifacts = validate_costing_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let cost_blocker_count = cost_reviews
+        .iter()
+        .filter(|review| costing_result_review_blocks_release(review))
+        .count();
+    let yield_blocker_count = yield_reviews
+        .iter()
+        .filter(|review| costing_result_yield_blocks_release(review))
+        .count();
+    let route_blocker_count = route_comparisons
+        .iter()
+        .filter(|comparison| costing_result_route_blocks_release(comparison))
+        .count();
+    let human_intervention_required = cost_reviews.iter().any(|review| {
+        review
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let split_combine_required = route_comparisons.iter().any(|comparison| {
+        comparison
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let cost_overrun_detected = cost_reviews.iter().any(|review| {
+        match (
+            review.get("estimatedValue").and_then(Value::as_f64),
+            review.get("actualValue").and_then(Value::as_f64),
+        ) {
+            (Some(estimated), Some(actual)) => actual > estimated,
+            _ => false,
+        }
+    });
+    let scrap_overrun_detected = yield_reviews.iter().any(|review| {
+        match (
+            review.get("estimatedScrapPercent").and_then(Value::as_f64),
+            review.get("actualScrapPercent").and_then(Value::as_f64),
+        ) {
+            (Some(estimated), Some(actual)) => actual > estimated,
+            _ => false,
+        }
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| costing_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !customer_ready
+        || cost_reviews.is_empty()
+        || cost_blocker_count > 0
+        || yield_reviews.is_empty()
+        || yield_blocker_count > 0
+        || route_comparisons.is_empty()
+        || route_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if cost_reviews.is_empty() {
+        "costing-result-cost-reviews-required"
+    } else if !request.success {
+        "costing-result-worker-failed-release-blocked"
+    } else if cost_blocker_count > 0 {
+        "costing-result-cost-release-blocked"
+    } else if yield_reviews.is_empty() || yield_blocker_count > 0 {
+        "costing-result-yield-release-blocked"
+    } else if route_comparisons.is_empty() || route_blocker_count > 0 {
+        "costing-result-route-release-blocked"
+    } else if artifact_evidence_missing {
+        "costing-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "costing-result-machine-ready-review-required"
+    } else if !customer_ready {
+        "costing-result-customer-ready-review-required"
+    } else {
+        "costing-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("costing-worker:{worker_id}"),
+        format!("costing-result:{review_status}"),
+    ];
+    if release_blocked {
+        learning_observations.push("costing:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("costing:human-intervention-required".to_string());
+    }
+    if split_combine_required {
+        learning_observations.push("costing:split-combine-required".to_string());
+    }
+    if cost_overrun_detected {
+        learning_observations.push("costing:cost-overrun".to_string());
+    }
+    if scrap_overrun_detected {
+        learning_observations.push("costing:scrap-overrun".to_string());
+    }
+    learning_observations.extend(cost_reviews.iter().filter_map(|review| {
+        review
+            .get("costFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("costing-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(cost_reviews.iter().filter_map(|review| {
+        review
+            .get("estimateKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("costing-estimate:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(yield_reviews.iter().filter_map(|review| {
+        review
+            .get("materialKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("costing-yield-material:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(route_comparisons.iter().filter_map(|comparison| {
+        comparison
+            .get("routeKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("costing-route:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.costing-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "costingResultJobId": costing_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /costing/result", "POST /fabrication/costing/result"],
+        "catalogRoutes": ["GET /costing/catalog", "GET /fabrication/costing/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "customerReady": customer_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "costReviewCount": cost_reviews.len(),
+        "costBlockerCount": cost_blocker_count,
+        "yieldReviewCount": yield_reviews.len(),
+        "yieldBlockerCount": yield_blocker_count,
+        "routeComparisonCount": route_comparisons.len(),
+        "routeBlockerCount": route_blocker_count,
+        "humanInterventionRequired": human_intervention_required,
+        "splitCombineRequired": split_combine_required,
+        "costOverrunDetected": cost_overrun_detected,
+        "scrapOverrunDetected": scrap_overrun_detected,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "costingResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "machineKind": machine_kind,
+            "routeId": route_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "customerReady": customer_ready,
+            "costReviews": cost_reviews,
+            "yieldReviews": yield_reviews,
+            "routeComparisons": route_comparisons,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "machine time, setup, material yield, scrap, quality, review effort, and human intervention allowances are retained",
+                "route economics compare one-piece, split, hybrid, rework, and remake paths with evidence",
+                "costing result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "costing-result",
+            "costing-reviews",
+            "costing-yield-reviews",
+            "costing-route-comparisons",
+            "costing-artifacts",
+            "costing-learning-observations",
+            "mdp-request.artifacts.costingResult"
+        ]
+    }))
+}
+
+fn costing_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("cost-release-blocked")
+        || status.contains("yield-release-blocked")
+        || status.contains("route-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_costing_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "costing-result");
+    let job_id = response_str_field(
+        response,
+        "costingResultJobId",
+        &safe_job_id("costing-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "costing-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("costingResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let cost_reviews = result
+        .get("costReviews")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let yield_reviews = result
+        .get("yieldReviews")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let route_comparisons = result
+        .get("routeComparisons")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let costing_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "costing-result".to_string(),
+            "costing-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "costing-reviews".to_string(),
+            "costing-reviews",
+            cost_reviews,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "costing-yield-reviews".to_string(),
+            "costing-yield-reviews",
+            yield_reviews,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "costing-route-comparisons".to_string(),
+            "costing-route-comparisons",
+            route_comparisons,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "costing-artifacts".to_string(),
+            "costing-artifacts",
+            costing_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "costing-learning-observations".to_string(),
+            "costing-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "costing-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: costing_result_job_severity(response),
+            summary: format!("costing result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_costing_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_costing_result_job(response));
+}
+
 fn utilities_catalog_entries() -> Vec<Value> {
     vec![
         json!({
@@ -55810,6 +56980,712 @@ fn utilities_catalog_response() -> Value {
 
 async fn utilities_catalog_http() -> impl IntoResponse {
     Json(utilities_catalog_response())
+}
+
+fn energy_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "energyFamily": "additive-heater-motion-and-build-energy",
+            "appliesTo": ["fdm-printer", "multi-material-printer", "pellet-fgf-printer", "resin-printer", "powder-bed-printer"],
+            "requiredEvidence": [
+                "nozzle, bed, chamber, UV, laser, recoater, and motion power draw is estimated against machine and circuit limits",
+                "heat-up, soak, exposure, cooling, and standby energy windows are represented in schedule and costing artifacts",
+                "power-loss recovery, UPS hold time, thermal runaway monitoring, and operator restart checkpoints are retained for unattended runs",
+                "material conditioning, purge/prime, and support-media energy demand is tied to split/combine or reprint decisions"
+            ],
+            "releaseBlockers": [
+                "positive extrusion, exposure, recoating, sintering, or long heat soak starts without power and thermal-load evidence",
+                "unattended additive run depends on power-loss recovery or UPS capacity that is not verified",
+                "generated route chooses a machine whose heater, motion, or support-media energy envelope is unknown"
+            ],
+            "responseSurfaces": ["scheduleResult.lanes", "costingResult.estimateFamilies", "utilitiesResult.checks", "monitoringPlan.alerts", "machineRelease.blockers"],
+            "learningSignals": ["energy:additive-thermal", "energy:power-loss-recovery", "costing:energy-window"]
+        }),
+        json!({
+            "energyFamily": "subtractive-spindle-axis-and-coolant-load",
+            "appliesTo": ["vertical-mill", "horizontal-mill", "five-axis-mill", "cnc-router", "lathe", "mill-turn-center"],
+            "requiredEvidence": [
+                "spindle, axis, coolant, chip evacuation, mist collection, compressed-air, and hydraulic power demand is bounded before cutting feed",
+                "peak load, duty cycle, warmup, thermal growth, and regenerated braking risks are reviewed for long or high-speed jobs",
+                "tool-life, spindle-load, feed-rate, and operator recovery evidence is retained when energy demand indicates chatter, stall, or overload risk",
+                "split/combine route candidates include energy and warmup penalties across mill, lathe, router, and hybrid-machine choices"
+            ],
+            "releaseBlockers": [
+                "cutting feed requires spindle, coolant, chip, vacuum, hydraulic, or axis load evidence that is missing",
+                "rapid or heavy machining exceeds known machine/circuit duty limits without replan or operator review",
+                "machine-ready release omits warmup or thermal-stability evidence for energy-intensive tolerance-critical work"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements", "processRecipe.parameters", "telemetryResult.channels", "qualityResult.measurements", "machineRelease.blockers"],
+            "learningSignals": ["energy:subtractive-load", "spindle-load:*", "thermal-growth:*", "split-combine-energy:*"]
+        }),
+        json!({
+            "energyFamily": "sheet-cut-beam-jet-plasma-and-edm-energy",
+            "appliesTo": ["laser-cutter", "waterjet-cutter", "plasma-cutter", "wire-edm", "hot-wire-foam"],
+            "requiredEvidence": [
+                "laser beam, plasma arc, waterjet pump, abrasive feed, EDM discharge, wire feed, hot-wire, assist gas, and fume extraction energy state is verified before feed cutting",
+                "pierce, kerf, duty cycle, thermal distortion, HAZ, slug support, and restart energy are tied to cut-chart and support-media evidence",
+                "power supply, chiller, compressor, pump, and extraction loads are retained for unattended or nested sheet jobs",
+                "energy outcomes feed costing, maintenance, support-media, and failure-mode workers for future cut planning"
+            ],
+            "releaseBlockers": [
+                "sheet feed cutting starts without verified beam/arc/jet/discharge power and support-media energy evidence",
+                "power supply, chiller, pump, compressor, or extraction state is stopped or unknown before continued cutting",
+                "thermal distortion, pierce energy, or duty-cycle risk is not represented in release blockers or route selection"
+            ],
+            "responseSurfaces": ["validation.failureBoundaries", "supportStrategyPlan.requirements", "failureModeResult.failureEvents", "maintenanceResult.serviceActions", "machineRelease.blockers"],
+            "learningSignals": ["energy:sheet-cut", "beam-duty-cycle:*", "pump-pressure-energy:*", "support-media-energy:*"]
+        }),
+        json!({
+            "energyFamily": "facility-grid-ups-and-carbon-accounting",
+            "appliesTo": ["remote machine execution", "unattended batch", "hybrid fabrication cell", "facility scheduler"],
+            "requiredEvidence": [
+                "facility circuit, phase, breaker, UPS, generator, compressor, chiller, ventilation, and network power dependencies are mapped before release",
+                "energy budget, demand window, outage recovery, and critical-event routing are represented in schedule, monitoring, and release artifacts",
+                "costing, carbon, maintenance, and operator-intervention workers receive retained energy outcomes from completed or failed runs",
+                "batch scheduling can shift, split, combine, or defer jobs when power capacity, carbon policy, or utility risk makes a route brittle"
+            ],
+            "releaseBlockers": [
+                "machine or cell release depends on facility power, UPS, grid, chiller, compressor, or ventilation readiness without evidence",
+                "critical power event lacks retained alerting, operator recovery, or learning outcome publication",
+                "planner cannot compare one-piece, split, combined, or rerouted fabrication options because energy evidence is absent"
+            ],
+            "responseSurfaces": ["availabilityResult.capacityWindows", "scheduleResult.holds", "costingResult.routeComparisons", "operatorInterventionPlan.requiredOperatorActions", "learning.outcomes"],
+            "learningSignals": ["energy:facility-grid", "energy:carbon-window", "utility:power-recovery", "mdp-request.artifacts.energy"]
+        }),
+    ]
+}
+
+fn energy_catalog_response() -> Value {
+    let entries = energy_catalog_entries();
+    let energy_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("energyFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.energy-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /energy/catalog", "GET /fabrication/energy/catalog"],
+        "energyFamilyCount": entries.len(),
+        "energyFamilies": energy_families,
+        "planningRoutes": [
+            "POST /plan",
+            "POST /fabrication/plan",
+            "POST /costing/result",
+            "POST /fabrication/costing/result",
+            "POST /utilities/result",
+            "POST /fabrication/utilities/result",
+            "POST /availability/result",
+            "POST /fabrication/availability/result",
+            "POST /learning/observe",
+            "POST /fabrication/learning/observe"
+        ],
+        "responseSurfaces": [
+            "scheduleResult.lanes",
+            "costingResult.estimateFamilies",
+            "utilitiesResult.checks",
+            "availabilityResult.capacityWindows",
+            "monitoringPlan.alerts",
+            "telemetryResult.channels",
+            "machineRelease.blockers",
+            "learning.outcomes"
+        ],
+        "artifactSurfaces": [
+            "energy-budget-record",
+            "power-load-record",
+            "thermal-load-record",
+            "ups-recovery-record",
+            "carbon-window-record",
+            "energy-learning-observations",
+            "mdp-request.artifacts.energy"
+        ],
+        "releasePolicy": [
+            "energy catalog entries describe machine, process, and facility power evidence contracts, not utility billing, certified electrical design, or carbon-compliance approval",
+            "machine-ready release remains blocked while heater, spindle, axis, beam, jet, pump, compressor, chiller, UPS, facility circuit, or thermal-load evidence is missing for the selected route",
+            "energy outcomes are retained as costing, availability, schedule, maintenance, and MDP/POMDP/neural learning signals so future planners can split, combine, defer, or reroute brittle fabrication work"
+        ],
+        "energyContracts": entries
+    })
+}
+
+async fn energy_catalog_http() -> impl IntoResponse {
+    Json(energy_catalog_response())
+}
+
+fn validate_energy_result_power_checks(
+    checks: Option<Vec<EnergyResultPowerCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "powerChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id =
+                validate_label(&check.check_id, &format!("powerChecks[{index}].checkId"))?;
+            let energy_family = validate_label(
+                &check.energy_family,
+                &format!("powerChecks[{index}].energyFamily"),
+            )?;
+            let load_kind =
+                validate_label(&check.load_kind, &format!("powerChecks[{index}].loadKind"))?;
+            let status = validate_label(&check.status, &format!("powerChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "powerChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "energyFamily": energy_family,
+                "loadKind": load_kind,
+                "status": status,
+                "estimatedKw": check.estimated_kw.unwrap_or(0.0).max(0.0),
+                "measuredKw": check.measured_kw.unwrap_or(0.0).max(0.0),
+                "capacityKw": check.capacity_kw.unwrap_or(0.0).max(0.0),
+                "withinLimits": check.within_limits.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresReplan": check.requires_replan.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_energy_result_thermal_checks(
+    checks: Option<Vec<EnergyResultThermalCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "thermalChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id =
+                validate_label(&check.check_id, &format!("thermalChecks[{index}].checkId"))?;
+            let thermal_scope = validate_label(
+                &check.thermal_scope,
+                &format!("thermalChecks[{index}].thermalScope"),
+            )?;
+            let status = validate_label(&check.status, &format!("thermalChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "thermalChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "thermalScope": thermal_scope,
+                "status": status,
+                "dutyCyclePercent": check.duty_cycle_percent.unwrap_or(0.0).clamp(0.0, 100.0),
+                "heatRiseC": check.heat_rise_c.unwrap_or(0.0),
+                "withinLimits": check.within_limits.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresCooldown": check.requires_cooldown.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_energy_result_recovery_actions(
+    actions: Option<Vec<EnergyResultRecoveryAction>>,
+) -> Result<Vec<Value>, String> {
+    let actions = actions.unwrap_or_default();
+    if actions.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "recoveryActions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    actions
+        .into_iter()
+        .enumerate()
+        .map(|(index, action)| {
+            let action_id = validate_label(
+                &action.action_id,
+                &format!("recoveryActions[{index}].actionId"),
+            )?;
+            let action_kind = validate_label(
+                &action.action_kind,
+                &format!("recoveryActions[{index}].actionKind"),
+            )?;
+            let status =
+                validate_label(&action.status, &format!("recoveryActions[{index}].status"))?;
+            let evidence =
+                validate_signal_list(action.evidence, "recoveryActions.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "actionId": action_id,
+                "actionKind": action_kind,
+                "status": status,
+                "completed": action.completed.unwrap_or(false),
+                "verified": action.verified.unwrap_or(false),
+                "releaseBlocker": action.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": action.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_energy_result_artifacts(
+    artifacts: Option<Vec<EnergyResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", MAX_TEXT_LEN)?;
+            let sha256 = validate_optional_text(artifact.sha256, "artifacts.sha256", 128)?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn energy_result_status_blocks_release(status: &str) -> bool {
+    let normalized = normalize_token(status);
+    normalized.contains("blocked")
+        || normalized.contains("failed")
+        || normalized.contains("overload")
+        || normalized.contains("out-of-limit")
+        || normalized.contains("out-of-limits")
+        || normalized.contains("over-capacity")
+        || normalized.contains("unverified")
+        || normalized.contains("recovery-required")
+        || normalized.contains("cooldown-required")
+}
+
+fn energy_result_power_check_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("withinLimits")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresReplan")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || energy_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn energy_result_thermal_check_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("withinLimits")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresCooldown")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || energy_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn energy_result_recovery_blocks_release(action: &Value) -> bool {
+    action
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !action
+            .get("completed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !action
+            .get("verified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || energy_result_status_blocks_release(
+            action.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn energy_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn energy_result_review_response(request: EnergyResultReviewRequest) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "energy-result");
+    let generated_at_ms = now_ms();
+    let energy_result_job_id = safe_job_id("energy-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let run_id = validate_optional_label(request.run_id, "runId")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let power_checks = validate_energy_result_power_checks(request.power_checks)?;
+    let thermal_checks = validate_energy_result_thermal_checks(request.thermal_checks)?;
+    let recovery_actions = validate_energy_result_recovery_actions(request.recovery_actions)?;
+    let artifacts = validate_energy_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let power_blocker_count = power_checks
+        .iter()
+        .filter(|check| energy_result_power_check_blocks_release(check))
+        .count();
+    let thermal_blocker_count = thermal_checks
+        .iter()
+        .filter(|check| energy_result_thermal_check_blocks_release(check))
+        .count();
+    let recovery_blocker_count = recovery_actions
+        .iter()
+        .filter(|action| energy_result_recovery_blocks_release(action))
+        .count();
+    let replan_required = power_checks.iter().any(|check| {
+        check
+            .get("requiresReplan")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let cooldown_required = thermal_checks.iter().any(|check| {
+        check
+            .get("requiresCooldown")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let human_intervention_required = power_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || recovery_actions.iter().any(|action| {
+        action
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| energy_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || power_checks.is_empty()
+        || power_blocker_count > 0
+        || thermal_blocker_count > 0
+        || recovery_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if power_checks.is_empty() {
+        "energy-result-power-checks-required"
+    } else if !request.success {
+        "energy-result-worker-failed-release-blocked"
+    } else if power_blocker_count > 0 {
+        "energy-result-power-release-blocked"
+    } else if thermal_blocker_count > 0 {
+        "energy-result-thermal-release-blocked"
+    } else if recovery_blocker_count > 0 {
+        "energy-result-recovery-release-blocked"
+    } else if artifact_evidence_missing {
+        "energy-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "energy-result-machine-ready-review-required"
+    } else if !release_ready {
+        "energy-result-release-ready-review-required"
+    } else {
+        "energy-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("energy-worker:{worker_id}"),
+        format!("energy-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "energy-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("energy:release-blocked".to_string());
+    }
+    if replan_required {
+        learning_observations.push("energy:replan-required".to_string());
+    }
+    if cooldown_required {
+        learning_observations.push("energy:cooldown-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("energy:human-intervention-required".to_string());
+    }
+    learning_observations.extend(power_checks.iter().filter_map(|check| {
+        check
+            .get("energyFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("energy-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(power_checks.iter().filter_map(|check| {
+        check
+            .get("loadKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("energy-load:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(thermal_checks.iter().filter_map(|check| {
+        check
+            .get("thermalScope")
+            .and_then(Value::as_str)
+            .map(|scope| format!("energy-thermal:{}", normalize_token(scope)))
+    }));
+    learning_observations.extend(recovery_actions.iter().filter_map(|action| {
+        action
+            .get("actionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("energy-recovery-action:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.energy-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "energyResultJobId": energy_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /energy/result", "POST /fabrication/energy/result"],
+        "catalogRoutes": ["GET /energy/catalog", "GET /fabrication/energy/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "powerCheckCount": power_checks.len(),
+        "powerBlockerCount": power_blocker_count,
+        "thermalCheckCount": thermal_checks.len(),
+        "thermalBlockerCount": thermal_blocker_count,
+        "recoveryActionCount": recovery_actions.len(),
+        "recoveryBlockerCount": recovery_blocker_count,
+        "replanRequired": replan_required,
+        "cooldownRequired": cooldown_required,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "energyResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "runId": run_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "powerChecks": power_checks,
+            "thermalChecks": thermal_checks,
+            "recoveryActions": recovery_actions,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "machine, cell, and facility power loads are within verified capacity and duty-cycle limits",
+                "heater, spindle, beam, jet, pump, compressor, chiller, UPS, and thermal-load evidence is retained for the selected route",
+                "energy recovery actions are complete, verified, and routed to operator intervention or replan when required",
+                "energy result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "energy-result",
+            "energy-power-checks",
+            "energy-thermal-checks",
+            "energy-recovery-actions",
+            "energy-artifacts",
+            "energy-learning-observations",
+            "mdp-request.artifacts.energyResult"
+        ]
+    }))
+}
+
+fn energy_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("power-release-blocked")
+        || status.contains("thermal-release-blocked")
+        || status.contains("recovery-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_energy_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "energy-result");
+    let job_id = response_str_field(
+        response,
+        "energyResultJobId",
+        &safe_job_id("energy-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "energy-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response.get("energyResult").cloned().unwrap_or(Value::Null);
+    let power_checks = result
+        .get("powerChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let thermal_checks = result
+        .get("thermalChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let recovery_actions = result
+        .get("recoveryActions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let energy_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "energy-result".to_string(),
+            "energy-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "energy-power-checks".to_string(),
+            "energy-power-checks",
+            power_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "energy-thermal-checks".to_string(),
+            "energy-thermal-checks",
+            thermal_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "energy-recovery-actions".to_string(),
+            "energy-recovery-actions",
+            recovery_actions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "energy-artifacts".to_string(),
+            "energy-artifacts",
+            energy_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "energy-learning-observations".to_string(),
+            "energy-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "energy-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: energy_result_job_severity(response),
+            summary: format!("energy result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_energy_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_energy_result_job(response));
 }
 
 fn validate_utilities_result_checks(
@@ -56558,6 +58434,1521 @@ fn telemetry_catalog_response() -> Value {
 
 async fn telemetry_catalog_http() -> impl IntoResponse {
     Json(telemetry_catalog_response())
+}
+
+fn availability_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "availabilityFamily": "live-machine-state-and-queue-capacity",
+            "appliesTo": ["3d printer", "vertical mill", "horizontal mill", "lathe", "router", "sheet cutter", "inspection cell", "hybrid cell"],
+            "requiredEvidence": [
+                "machine online/offline state, current job, queue depth, planned downtime, setup state, operator coverage, and controller connectivity are retained",
+                "capacity windows include setup/run/teardown, postprocess, inspection, maintenance, material, and human-intervention holds",
+                "fallback machines or split/combine alternatives are named when the preferred machine is saturated, offline, under maintenance, or missing required evidence"
+            ],
+            "releaseBlockers": [
+                "selected machine has no current availability, queue, or downtime evidence",
+                "schedule releases generated or imported instructions without an available operator, automation path, material, fixture, utility, or inspection window",
+                "machine selection cannot name a viable fallback or split/combine route when the preferred equipment is unavailable"
+            ],
+            "responseSurfaces": ["machineSelection.candidates", "machineSchedule.machineLanes", "scheduleResult.holds", "operatorInterventionPlan.requiredOperatorActions", "machineRelease.blockers"],
+            "learningSignals": ["availability:live-state", "capacity-window:*", "queue-delay:*", "fallback-machine:*", "split-combine-capacity:*"]
+        }),
+        json!({
+            "availabilityFamily": "material-fixture-tooling-and-utility-readiness",
+            "appliesTo": ["additive cell", "subtractive cell", "sheet cutter", "lathe", "mill-turn", "assembly cell", "postprocess cell"],
+            "requiredEvidence": [
+                "feedstock, resin, powder, billet, sheet, cutter, insert, fixture, chuck, vise, pallet, gas, coolant, vacuum, abrasive, dielectric, and extraction availability match the route",
+                "tooling and utility readiness are joined to machine schedule lanes and release gates before unattended or machine-ready release",
+                "shortage or contention evidence records whether the planner should split parts, combine operations, reroute, rework, remake, or wait"
+            ],
+            "releaseBlockers": [
+                "material, fixture, tooling, or utility readiness is missing for the selected process and machine window",
+                "availability evidence conflicts with setup, workholding, tooling, utilities, maintenance, or material result reviews",
+                "shortage-driven split/combine or fallback decisions are not retained as learning observations"
+            ],
+            "responseSurfaces": ["materialPlan.routeRequirements", "toolingPlan.requirements", "workholdingPlan.fixtures", "utilitiesResult.checks", "learning.outcomes"],
+            "learningSignals": ["availability:material-fixture-tooling", "shortage-risk:*", "utility-capacity:*", "fixture-contention:*", "reroute-reason:*"]
+        }),
+        json!({
+            "availabilityFamily": "operator-automation-and-unattended-coverage",
+            "appliesTo": ["manual setup", "lights-out additive", "unattended CNC", "hybrid robotic cell", "inspection and postprocess cell"],
+            "requiredEvidence": [
+                "operator, robot, loader, pallet pool, toolchanger, monitor, recovery path, and escalation coverage are retained for each run segment",
+                "human intervention boundaries are mapped to staffing or automation windows before machine-ready release",
+                "lights-out jobs record monitoring, safe-stop, restart, notification, and recovery responsibility"
+            ],
+            "releaseBlockers": [
+                "requested unattended run lacks verified automation or staffed recovery coverage",
+                "machine failure boundary requires a human action outside the available operator window",
+                "operator or automation coverage cannot be joined to execution plan stop points and monitoring alerts"
+            ],
+            "responseSurfaces": ["executionPlan.stopPoints", "monitoringPlan.alerts", "operatorInterventionPlan.requiredOperatorActions", "executionTelemetryResult.operatorInterventions", "machineRelease.blockers"],
+            "learningSignals": ["availability:operator-automation", "unattended-coverage:*", "operator-window:*", "recovery-path:*", "human-boundary-capacity:*"]
+        }),
+        json!({
+            "availabilityFamily": "cross-machine-split-combine-capacity",
+            "appliesTo": ["hybrid print/mill route", "split additive/subtractive route", "multi-machine assembly", "batch and remake route"],
+            "requiredEvidence": [
+                "candidate machine windows are aligned across printed, milled, turned, sheet-cut, inspected, postprocessed, and assembled parts",
+                "interface, datum, handoff, inspection, transport, cure, queue, and recomposition timing evidence is retained",
+                "DES/MDP/POMDP/neural planners receive capacity features for one-piece, split, combine, remake, and rework alternatives"
+            ],
+            "releaseBlockers": [
+                "split/combine route schedules component operations on incompatible or unavailable machine windows",
+                "handoff, cure, transport, inspection, or recomposition capacity is missing between machines",
+                "route economics or learning feedback omits capacity delay and fallback-machine outcomes"
+            ],
+            "responseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.interfaces", "assemblyPlan.requiredEvidence", "scheduleResult.lanes", "costingResult.routeComparisons"],
+            "learningSignals": ["availability:split-combine-capacity", "handoff-window:*", "machine-window-alignment:*", "capacity-delay-reward:*", "hybrid-route-fallback:*"]
+        }),
+    ]
+}
+
+fn availability_catalog_response() -> Value {
+    let entries = availability_catalog_entries();
+    let availability_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("availabilityFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.availability-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /availability/catalog", "GET /fabrication/availability/catalog"],
+        "availabilityFamilyCount": entries.len(),
+        "availabilityFamilies": availability_families,
+        "reviewRoutes": [
+            "POST /machines/select",
+            "POST /fabrication/machines/select",
+            "POST /schedule/result",
+            "POST /fabrication/schedule/result",
+            "POST /utilities/result",
+            "POST /fabrication/utilities/result",
+            "GET /maintenance/catalog",
+            "GET /fabrication/maintenance/catalog",
+            "POST /learning/outcomes",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "responseSurfaces": [
+            "machineSelection.candidates",
+            "machineSchedule.machineLanes",
+            "scheduleResult.holds",
+            "materialPlan.routeRequirements",
+            "toolingPlan.requirements",
+            "utilitiesResult.checks",
+            "maintenanceContracts",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "machineRelease.blockers",
+            "learning.outcomes"
+        ],
+        "artifactSurfaces": [
+            "availability-snapshot",
+            "machine-capacity-window",
+            "queue-depth-report",
+            "operator-coverage-plan",
+            "fallback-machine-plan",
+            "split-combine-capacity-model",
+            "availability-learning-observations",
+            "mdp-request.artifacts.availability"
+        ],
+        "releasePolicy": [
+            "availability catalog entries describe capacity and readiness evidence contracts, not certified shop scheduling authority or guaranteed machine uptime",
+            "machine-ready and unattended release remain blocked when live machine state, queue, material, tooling, fixture, utility, maintenance, operator, or automation capacity evidence is stale or missing",
+            "availability outcomes feed DES, MDP, POMDP, and neural workers so future planners can learn fallback machines, split/combine capacity, queue-delay risk, and reliable unattended windows"
+        ],
+        "availabilityContracts": entries
+    })
+}
+
+async fn availability_catalog_http() -> impl IntoResponse {
+    Json(availability_catalog_response())
+}
+
+fn validate_availability_result_machine_windows(
+    windows: Option<Vec<AvailabilityResultMachineWindow>>,
+) -> Result<Vec<Value>, String> {
+    let windows = windows.unwrap_or_default();
+    if windows.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "machineWindows must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    windows
+        .into_iter()
+        .enumerate()
+        .map(|(index, window)| {
+            let window_id = validate_label(
+                &window.window_id,
+                &format!("machineWindows[{index}].windowId"),
+            )?;
+            let availability_family = validate_label(
+                &window.availability_family,
+                &format!("machineWindows[{index}].availabilityFamily"),
+            )?;
+            let machine_id = validate_label(
+                &window.machine_id,
+                &format!("machineWindows[{index}].machineId"),
+            )?;
+            let machine_kind = validate_label(
+                &window.machine_kind,
+                &format!("machineWindows[{index}].machineKind"),
+            )?;
+            let status =
+                validate_label(&window.status, &format!("machineWindows[{index}].status"))?;
+            let queue_delay_minutes = window
+                .queue_delay_minutes
+                .map(|value| finite_non_negative(value, "machineWindows.queueDelayMinutes"))
+                .transpose()?;
+            let capacity_minutes = window
+                .capacity_minutes
+                .map(|value| finite_non_negative(value, "machineWindows.capacityMinutes"))
+                .transpose()?;
+            let evidence =
+                validate_signal_list(window.evidence, "machineWindows.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "windowId": window_id,
+                "availabilityFamily": availability_family,
+                "machineId": machine_id,
+                "machineKind": machine_kind,
+                "status": status,
+                "available": window.available.unwrap_or(false),
+                "queueDelayMinutes": queue_delay_minutes,
+                "capacityMinutes": capacity_minutes,
+                "releaseBlocker": window.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": window.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_availability_result_resource_checks(
+    checks: Option<Vec<AvailabilityResultResourceCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "resourceChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id =
+                validate_label(&check.check_id, &format!("resourceChecks[{index}].checkId"))?;
+            let resource_kind = validate_label(
+                &check.resource_kind,
+                &format!("resourceChecks[{index}].resourceKind"),
+            )?;
+            let status = validate_label(&check.status, &format!("resourceChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "resourceChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "resourceKind": resource_kind,
+                "status": status,
+                "available": check.available.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_availability_result_fallback_options(
+    options: Option<Vec<AvailabilityResultFallbackOption>>,
+) -> Result<Vec<Value>, String> {
+    let options = options.unwrap_or_default();
+    if options.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "fallbackOptions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    options
+        .into_iter()
+        .enumerate()
+        .map(|(index, option)| {
+            let option_id = validate_label(
+                &option.option_id,
+                &format!("fallbackOptions[{index}].optionId"),
+            )?;
+            let option_kind = validate_label(
+                &option.option_kind,
+                &format!("fallbackOptions[{index}].optionKind"),
+            )?;
+            let status =
+                validate_label(&option.status, &format!("fallbackOptions[{index}].status"))?;
+            let machine_id =
+                validate_optional_label(option.machine_id, "fallbackOptions.machineId")?;
+            let evidence =
+                validate_signal_list(option.evidence, "fallbackOptions.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "optionId": option_id,
+                "optionKind": option_kind,
+                "status": status,
+                "machineId": machine_id,
+                "selected": option.selected.unwrap_or(false),
+                "viable": option.viable.unwrap_or(false),
+                "requiresSplitCombine": option.requires_split_combine.unwrap_or(false),
+                "releaseBlocker": option.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_availability_result_artifacts(
+    artifacts: Option<Vec<AvailabilityResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn availability_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("offline")
+        || status.contains("unavailable")
+        || status.contains("saturated")
+        || status.contains("required")
+}
+
+fn availability_result_machine_window_blocks_release(window: &Value) -> bool {
+    window
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !window
+            .get("available")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || window
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || availability_result_status_blocks_release(
+            window.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn availability_result_resource_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("available")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || availability_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn availability_result_fallback_blocks_release(option: &Value) -> bool {
+    option
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !option
+            .get("viable")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || availability_result_status_blocks_release(
+            option.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn availability_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn availability_result_review_response(
+    request: AvailabilityResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "availability-result");
+    let generated_at_ms = now_ms();
+    let availability_result_job_id =
+        safe_job_id("availability-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let route_id = validate_optional_label(request.route_id, "routeId")?;
+    let unattended_ready = request.unattended_ready.unwrap_or(false);
+    let machine_windows = validate_availability_result_machine_windows(request.machine_windows)?;
+    let resource_checks = validate_availability_result_resource_checks(request.resource_checks)?;
+    let fallback_options = validate_availability_result_fallback_options(request.fallback_options)?;
+    let artifacts = validate_availability_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let machine_window_blocker_count = machine_windows
+        .iter()
+        .filter(|window| availability_result_machine_window_blocks_release(window))
+        .count();
+    let resource_blocker_count = resource_checks
+        .iter()
+        .filter(|check| availability_result_resource_blocks_release(check))
+        .count();
+    let fallback_blocker_count = fallback_options
+        .iter()
+        .filter(|option| availability_result_fallback_blocks_release(option))
+        .count();
+    let selected_fallback_count = fallback_options
+        .iter()
+        .filter(|option| {
+            option
+                .get("selected")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let split_combine_required = fallback_options.iter().any(|option| {
+        option
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let human_intervention_required = machine_windows.iter().any(|window| {
+        window
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || resource_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| availability_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !unattended_ready
+        || machine_windows.is_empty()
+        || machine_window_blocker_count > 0
+        || resource_blocker_count > 0
+        || fallback_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if machine_windows.is_empty() {
+        "availability-result-machine-windows-required"
+    } else if !request.success {
+        "availability-result-worker-failed-release-blocked"
+    } else if machine_window_blocker_count > 0 {
+        "availability-result-machine-window-release-blocked"
+    } else if resource_blocker_count > 0 {
+        "availability-result-resource-release-blocked"
+    } else if fallback_blocker_count > 0 {
+        "availability-result-fallback-release-blocked"
+    } else if artifact_evidence_missing {
+        "availability-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "availability-result-machine-ready-review-required"
+    } else if !unattended_ready {
+        "availability-result-unattended-ready-review-required"
+    } else {
+        "availability-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("availability-worker:{worker_id}"),
+        format!("availability-result:{review_status}"),
+    ];
+    if release_blocked {
+        learning_observations.push("availability:release-blocked".to_string());
+    }
+    if split_combine_required {
+        learning_observations.push("availability:split-combine-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("availability:human-intervention-required".to_string());
+    }
+    learning_observations.extend(machine_windows.iter().filter_map(|window| {
+        window
+            .get("availabilityFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("availability-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(machine_windows.iter().filter_map(|window| {
+        window
+            .get("machineKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("availability-machine-kind:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(resource_checks.iter().filter_map(|check| {
+        check
+            .get("resourceKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("availability-resource:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(fallback_options.iter().filter_map(|option| {
+        option
+            .get("optionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("availability-fallback:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.availability-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "availabilityResultJobId": availability_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /availability/result", "POST /fabrication/availability/result"],
+        "catalogRoutes": ["GET /availability/catalog", "GET /fabrication/availability/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "unattendedReady": unattended_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "machineWindowCount": machine_windows.len(),
+        "machineWindowBlockerCount": machine_window_blocker_count,
+        "resourceCheckCount": resource_checks.len(),
+        "resourceBlockerCount": resource_blocker_count,
+        "fallbackOptionCount": fallback_options.len(),
+        "fallbackBlockerCount": fallback_blocker_count,
+        "selectedFallbackCount": selected_fallback_count,
+        "splitCombineRequired": split_combine_required,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "availabilityResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "routeId": route_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "unattendedReady": unattended_ready,
+            "machineWindows": machine_windows,
+            "resourceChecks": resource_checks,
+            "fallbackOptions": fallback_options,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "selected machines have current online state, queue, setup, downtime, and capacity evidence",
+                "material, fixture, tooling, utility, maintenance, operator, and automation resources are available for the route",
+                "fallback machines or split/combine capacity plans are viable when preferred equipment is saturated, offline, or blocked",
+                "availability result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["DES", "MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "availability-result",
+            "availability-machine-windows",
+            "availability-resource-checks",
+            "availability-fallback-options",
+            "availability-artifacts",
+            "availability-learning-observations",
+            "mdp-request.artifacts.availabilityResult"
+        ],
+        "availabilityResultPolicy": [
+            "availability results are retained capacity and readiness evidence, not certified shop scheduling authority or guaranteed machine uptime",
+            "machine-ready and unattended release remain blocked until machine windows, resources, fallback options, and artifacts clear",
+            "availability observations feed DES/MDP/POMDP/neural learning so future planners can choose fallback machines, split/combine capacity, operator windows, or safer unattended routes"
+        ]
+    }))
+}
+
+fn availability_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("machine-window-release-blocked")
+        || status.contains("resource-release-blocked")
+        || status.contains("fallback-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_availability_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "availability-result");
+    let job_id = response_str_field(
+        response,
+        "availabilityResultJobId",
+        &safe_job_id("availability-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "availability-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("availabilityResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let machine_windows = result
+        .get("machineWindows")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let resource_checks = result
+        .get("resourceChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let fallback_options = result
+        .get("fallbackOptions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let availability_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "availability-result".to_string(),
+            "availability-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "availability-machine-windows".to_string(),
+            "availability-machine-windows",
+            machine_windows,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "availability-resource-checks".to_string(),
+            "availability-resource-checks",
+            resource_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "availability-fallback-options".to_string(),
+            "availability-fallback-options",
+            fallback_options,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "availability-artifacts".to_string(),
+            "availability-artifacts",
+            availability_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "availability-learning-observations".to_string(),
+            "availability-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "availability-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: availability_result_job_severity(response),
+            summary: format!("availability result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_availability_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_availability_result_job(response));
+}
+
+fn maintenance_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "maintenanceFamily": "lockout-tagout-and-service-release",
+            "appliesTo": ["vertical mill", "horizontal mill", "lathe", "router", "sheet cutter", "3d printer", "hybrid cell"],
+            "requiredEvidence": [
+                "active lockout, maintenance, service, or hold tags are cleared by authorized personnel before machine-ready release",
+                "operator/controller release record names machine ID, work order, service scope, authorizer, timestamp, and residual restrictions",
+                "post-service dry-run, homing, interlock, and safe-stop checks are retained before generated or imported programs run unattended"
+            ],
+            "releaseBlockers": [
+                "machine profile, runtime telemetry, or operator note shows active maintenance lockout without release evidence",
+                "service work changes axes, guards, interlocks, firmware, toolchanger, heater, pump, spindle, chuck, fixture, or sensors without post-service verification",
+                "unattended release is requested while residual service restrictions require human presence"
+            ],
+            "responseSurfaces": ["machineProfile.evidence.maintenance", "setupResult.datumReviews", "monitoringResult.alerts", "executionTelemetryResult.machineStops", "machineRelease.blockers"],
+            "learningSignals": ["maintenance:lockout-release", "maintenance:service-scope", "operator-release:*", "unattended-restriction:*"]
+        }),
+        json!({
+            "maintenanceFamily": "spindle-tooling-and-wear-state",
+            "appliesTo": ["vertical mill", "horizontal mill", "router", "lathe", "mill-turn", "grinder", "wire edm"],
+            "requiredEvidence": [
+                "spindle, bearings, collet/chuck, turret, ATC, magazine, toolholder, insert, wheel, wire, or electrode service state is current",
+                "tool life, runout, balance, torque, cutter compensation, tool-length, and tool-nose geometry evidence matches the selected route",
+                "post-maintenance probe, test cut, calibration coupon, or controller diagnostic is retained for high-risk cuts"
+            ],
+            "releaseBlockers": [
+                "tooling or spindle maintenance is overdue for the requested material, speed, cut length, threading, part-off, or high-load operation",
+                "tool change, cutter compensation, tool-length compensation, or tool-nose compensation depends on serviced tooling without matching geometry evidence",
+                "wear-state evidence cannot be joined to generated machine code, imported CNC instructions, or release package artifacts"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements", "workholdingPlan.fixtures", "validation.failureBoundaries", "qualityResult.measurements", "learning.outcomes"],
+            "learningSignals": ["maintenance:spindle-tooling", "tool-wear-risk:*", "geometry-offset-review:*", "route-load-history:*"]
+        }),
+        json!({
+            "maintenanceFamily": "thermal-fluid-and-process-support-service",
+            "appliesTo": ["fdm printer", "resin printer", "powder bed printer", "laser cutter", "waterjet", "plasma", "mill", "lathe", "hybrid cell"],
+            "requiredEvidence": [
+                "heater, bed, chamber, laser, pump, abrasive feed, coolant, chip evacuation, dust/fume extraction, vacuum, pneumatic, hydraulic, dielectric, or gas service state is current",
+                "post-service warmup, pressure/flow, thermal soak, leak, purge, filtration, extraction, or media-restart checks are retained",
+                "process support utilities are tied to machine schedule, monitoring alerts, and release gates"
+            ],
+            "releaseBlockers": [
+                "thermal or fluid/process support service is incomplete for the selected printer, sheet cutter, mill, lathe, or hybrid process",
+                "generated instructions require heaters, coolant, assist gas, fume extraction, abrasive flow, vacuum, or dielectric support without current service evidence",
+                "support-media restart after maintenance lacks telemetry or operator verification"
+            ],
+            "responseSurfaces": ["utilitiesResult.checks", "monitoringPlan.alerts", "telemetryResult.sensorWindows", "scheduleResult.holds", "machineRelease.blockers"],
+            "learningSignals": ["maintenance:thermal-fluid", "process-support-service:*", "support-restart-evidence:*", "utility-maintenance-risk:*"]
+        }),
+        json!({
+            "maintenanceFamily": "calibration-sensor-and-safety-channel-service",
+            "appliesTo": ["cmm", "printer", "mill", "router", "lathe", "sheet cutter", "robotic cell", "assembly cell"],
+            "requiredEvidence": [
+                "probe, encoder, limit switch, load cell, camera, runout sensor, filament sensor, gas/current/pressure sensor, interlock, guard, E-stop, and fire channel service state is current",
+                "calibration certificate, sensor self-test, interlock test, safe-stop proof, and datum verification are retained before release",
+                "sensor and safety service evidence is joined to monitoring, telemetry, quality, and learning artifacts"
+            ],
+            "releaseBlockers": [
+                "calibration, sensor, interlock, or safety channel service is overdue or failed for the requested machine route",
+                "machine-ready release depends on a boundary detector, probe, or safety interlock whose service state is unverified",
+                "learning outcomes cannot distinguish actual process failures from stale sensor or calibration state"
+            ],
+            "responseSurfaces": ["calibrationResult.probeReviews", "safetyResult.interlocks", "monitoringResult.alerts", "telemetryResult.boundaryCorrelations", "learning.outcomes"],
+            "learningSignals": ["maintenance:sensor-calibration", "safety-channel-service:*", "probe-service-state:*", "stale-sensor-risk:*"]
+        }),
+    ]
+}
+
+fn maintenance_catalog_response() -> Value {
+    let entries = maintenance_catalog_entries();
+    let maintenance_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("maintenanceFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.maintenance-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /maintenance/catalog", "GET /fabrication/maintenance/catalog"],
+        "maintenanceFamilyCount": entries.len(),
+        "maintenanceFamilies": maintenance_families,
+        "reviewRoutes": [
+            "POST /setup/result",
+            "POST /fabrication/setup/result",
+            "POST /calibration/result",
+            "POST /fabrication/calibration/result",
+            "POST /utilities/result",
+            "POST /fabrication/utilities/result",
+            "POST /monitoring/result",
+            "POST /fabrication/monitoring/result",
+            "POST /telemetry/result",
+            "POST /fabrication/telemetry/result"
+        ],
+        "responseSurfaces": [
+            "machineProfile.evidence.maintenance",
+            "setupResult.datumReviews",
+            "calibrationResult.probeReviews",
+            "utilitiesResult.checks",
+            "monitoringResult.alerts",
+            "telemetryResult.boundaryCorrelations",
+            "safetyResult.interlocks",
+            "machineRelease.blockers",
+            "learning.outcomes"
+        ],
+        "artifactSurfaces": [
+            "maintenance-release-record",
+            "service-work-order",
+            "lockout-clearance-proof",
+            "post-service-dry-run",
+            "sensor-calibration-certificate",
+            "safety-channel-test",
+            "maintenance-learning-observations",
+            "mdp-request.artifacts.maintenance"
+        ],
+        "releasePolicy": [
+            "maintenance catalog entries describe service-readiness evidence contracts, not certified machine maintenance approval or regulatory lockout/tagout procedure",
+            "machine-ready, unattended, and customer-ready release remain blocked when lockout, service, wear, calibration, sensor, process-support, or safety-channel evidence is stale or missing",
+            "maintenance outcomes feed MDP/POMDP/neural workers so future planners can avoid brittle machines, add operator checkpoints, split work across healthier equipment, or schedule service before release"
+        ],
+        "maintenanceContracts": entries
+    })
+}
+
+async fn maintenance_catalog_http() -> impl IntoResponse {
+    Json(maintenance_catalog_response())
+}
+
+fn validate_maintenance_result_service_items(
+    items: Option<Vec<MaintenanceResultServiceItem>>,
+) -> Result<Vec<Value>, String> {
+    let items = items.unwrap_or_default();
+    if items.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "serviceItems must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    items
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let service_id = validate_label(
+                &item.service_id,
+                &format!("serviceItems[{index}].serviceId"),
+            )?;
+            let maintenance_family = validate_label(
+                &item.maintenance_family,
+                &format!("serviceItems[{index}].maintenanceFamily"),
+            )?;
+            let component_kind = validate_label(
+                &item.component_kind,
+                &format!("serviceItems[{index}].componentKind"),
+            )?;
+            let status = validate_label(&item.status, &format!("serviceItems[{index}].status"))?;
+            let evidence =
+                validate_signal_list(item.evidence, "serviceItems.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "serviceId": service_id,
+                "maintenanceFamily": maintenance_family,
+                "componentKind": component_kind,
+                "status": status,
+                "serviceCurrent": item.service_current.unwrap_or(false),
+                "releaseBlocker": item.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": item.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_maintenance_result_lockout_clearances(
+    clearances: Option<Vec<MaintenanceResultLockoutClearance>>,
+) -> Result<Vec<Value>, String> {
+    let clearances = clearances.unwrap_or_default();
+    if clearances.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "lockoutClearances must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    clearances
+        .into_iter()
+        .enumerate()
+        .map(|(index, clearance)| {
+            let clearance_id = validate_label(
+                &clearance.clearance_id,
+                &format!("lockoutClearances[{index}].clearanceId"),
+            )?;
+            let lockout_kind = validate_label(
+                &clearance.lockout_kind,
+                &format!("lockoutClearances[{index}].lockoutKind"),
+            )?;
+            let status = validate_label(
+                &clearance.status,
+                &format!("lockoutClearances[{index}].status"),
+            )?;
+            let authorized_by =
+                validate_optional_label(clearance.authorized_by, "lockoutClearances.authorizedBy")?;
+            let evidence = validate_signal_list(
+                clearance.evidence,
+                "lockoutClearances.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "clearanceId": clearance_id,
+                "lockoutKind": lockout_kind,
+                "status": status,
+                "cleared": clearance.cleared.unwrap_or(false),
+                "authorizedBy": authorized_by,
+                "releaseBlocker": clearance.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_maintenance_result_verification_checks(
+    checks: Option<Vec<MaintenanceResultVerificationCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "verificationChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id = validate_label(
+                &check.check_id,
+                &format!("verificationChecks[{index}].checkId"),
+            )?;
+            let check_kind = validate_label(
+                &check.check_kind,
+                &format!("verificationChecks[{index}].checkKind"),
+            )?;
+            let status = validate_label(
+                &check.status,
+                &format!("verificationChecks[{index}].status"),
+            )?;
+            let evidence =
+                validate_signal_list(check.evidence, "verificationChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "checkKind": check_kind,
+                "status": status,
+                "passed": check.passed.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_maintenance_result_residual_restrictions(
+    restrictions: Option<Vec<MaintenanceResultResidualRestriction>>,
+) -> Result<Vec<Value>, String> {
+    let restrictions = restrictions.unwrap_or_default();
+    if restrictions.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "residualRestrictions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    restrictions
+        .into_iter()
+        .enumerate()
+        .map(|(index, restriction)| {
+            let restriction_id = validate_label(
+                &restriction.restriction_id,
+                &format!("residualRestrictions[{index}].restrictionId"),
+            )?;
+            let restriction_kind = validate_label(
+                &restriction.restriction_kind,
+                &format!("residualRestrictions[{index}].restrictionKind"),
+            )?;
+            let status = validate_label(
+                &restriction.status,
+                &format!("residualRestrictions[{index}].status"),
+            )?;
+            let evidence = validate_signal_list(
+                restriction.evidence,
+                "residualRestrictions.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "restrictionId": restriction_id,
+                "restrictionKind": restriction_kind,
+                "status": status,
+                "requiresOperator": restriction.requires_operator.unwrap_or(false),
+                "allowsUnattended": restriction.allows_unattended.unwrap_or(false),
+                "releaseBlocker": restriction.release_blocker.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_maintenance_result_artifacts(
+    artifacts: Option<Vec<MaintenanceResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn maintenance_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("overdue")
+        || status.contains("uncleared")
+        || status.contains("expired")
+        || status.contains("required")
+}
+
+fn maintenance_result_service_item_blocks_release(item: &Value) -> bool {
+    item.get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !item
+            .get("serviceCurrent")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || item
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || maintenance_result_status_blocks_release(
+            item.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn maintenance_result_lockout_blocks_release(clearance: &Value) -> bool {
+    clearance
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !clearance
+            .get("cleared")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || clearance
+            .get("authorizedBy")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        || maintenance_result_status_blocks_release(
+            clearance
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )
+}
+
+fn maintenance_result_verification_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("passed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || maintenance_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn maintenance_result_restriction_blocks_release(restriction: &Value) -> bool {
+    restriction
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || restriction
+            .get("requiresOperator")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !restriction
+            .get("allowsUnattended")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || maintenance_result_status_blocks_release(
+            restriction
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )
+}
+
+fn maintenance_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn maintenance_result_review_response(
+    request: MaintenanceResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "maintenance-result");
+    let generated_at_ms = now_ms();
+    let maintenance_result_job_id = safe_job_id("maintenance-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let route_id = validate_optional_label(request.route_id, "routeId")?;
+    let unattended_ready = request.unattended_ready.unwrap_or(false);
+    let service_items = validate_maintenance_result_service_items(request.service_items)?;
+    let lockout_clearances =
+        validate_maintenance_result_lockout_clearances(request.lockout_clearances)?;
+    let verification_checks =
+        validate_maintenance_result_verification_checks(request.verification_checks)?;
+    let residual_restrictions =
+        validate_maintenance_result_residual_restrictions(request.residual_restrictions)?;
+    let artifacts = validate_maintenance_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let service_blocker_count = service_items
+        .iter()
+        .filter(|item| maintenance_result_service_item_blocks_release(item))
+        .count();
+    let lockout_blocker_count = lockout_clearances
+        .iter()
+        .filter(|clearance| maintenance_result_lockout_blocks_release(clearance))
+        .count();
+    let verification_blocker_count = verification_checks
+        .iter()
+        .filter(|check| maintenance_result_verification_blocks_release(check))
+        .count();
+    let residual_restriction_blocker_count = residual_restrictions
+        .iter()
+        .filter(|restriction| maintenance_result_restriction_blocks_release(restriction))
+        .count();
+    let human_intervention_required = service_items.iter().any(|item| {
+        item.get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || residual_restrictions.iter().any(|restriction| {
+        restriction
+            .get("requiresOperator")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| maintenance_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !unattended_ready
+        || service_items.is_empty()
+        || lockout_clearances.is_empty()
+        || verification_checks.is_empty()
+        || service_blocker_count > 0
+        || lockout_blocker_count > 0
+        || verification_blocker_count > 0
+        || residual_restriction_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if service_items.is_empty() {
+        "maintenance-result-service-items-required"
+    } else if lockout_clearances.is_empty() {
+        "maintenance-result-lockout-clearance-required"
+    } else if verification_checks.is_empty() {
+        "maintenance-result-verification-checks-required"
+    } else if !request.success {
+        "maintenance-result-worker-failed-release-blocked"
+    } else if service_blocker_count > 0 {
+        "maintenance-result-service-release-blocked"
+    } else if lockout_blocker_count > 0 {
+        "maintenance-result-lockout-release-blocked"
+    } else if verification_blocker_count > 0 {
+        "maintenance-result-verification-release-blocked"
+    } else if residual_restriction_blocker_count > 0 {
+        "maintenance-result-residual-restriction-release-blocked"
+    } else if artifact_evidence_missing {
+        "maintenance-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "maintenance-result-machine-ready-review-required"
+    } else if !unattended_ready {
+        "maintenance-result-unattended-ready-review-required"
+    } else {
+        "maintenance-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("maintenance-worker:{worker_id}"),
+        format!("maintenance-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "maintenance-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("maintenance:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("maintenance:human-intervention-required".to_string());
+    }
+    learning_observations.extend(service_items.iter().filter_map(|item| {
+        item.get("maintenanceFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("maintenance-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(service_items.iter().filter_map(|item| {
+        item.get("componentKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("maintenance-component:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(lockout_clearances.iter().filter_map(|clearance| {
+        clearance
+            .get("lockoutKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("maintenance-lockout:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(verification_checks.iter().filter_map(|check| {
+        check
+            .get("checkKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("maintenance-verification:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(residual_restrictions.iter().filter_map(|restriction| {
+        restriction
+            .get("restrictionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("maintenance-restriction:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.maintenance-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "maintenanceResultJobId": maintenance_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /maintenance/result", "POST /fabrication/maintenance/result"],
+        "catalogRoutes": ["GET /maintenance/catalog", "GET /fabrication/maintenance/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "unattendedReady": unattended_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "serviceItemCount": service_items.len(),
+        "serviceBlockerCount": service_blocker_count,
+        "lockoutClearanceCount": lockout_clearances.len(),
+        "lockoutBlockerCount": lockout_blocker_count,
+        "verificationCheckCount": verification_checks.len(),
+        "verificationBlockerCount": verification_blocker_count,
+        "residualRestrictionCount": residual_restrictions.len(),
+        "residualRestrictionBlockerCount": residual_restriction_blocker_count,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "maintenanceResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "routeId": route_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "unattendedReady": unattended_ready,
+            "serviceItems": service_items,
+            "lockoutClearances": lockout_clearances,
+            "verificationChecks": verification_checks,
+            "residualRestrictions": residual_restrictions,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "lockout, service, and maintenance tags are cleared by authorized personnel",
+                "spindle, tooling, thermal, fluid, calibration, sensor, and safety-channel service state is current for the selected route",
+                "post-service dry-run, homing, interlock, safe-stop, sensor, and datum verification checks pass",
+                "residual restrictions do not require human presence before unattended release",
+                "maintenance result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "maintenance-result",
+            "maintenance-service-items",
+            "maintenance-lockout-clearances",
+            "maintenance-verification-checks",
+            "maintenance-residual-restrictions",
+            "maintenance-artifacts",
+            "maintenance-learning-observations",
+            "mdp-request.artifacts.maintenanceResult"
+        ],
+        "maintenanceResultPolicy": [
+            "maintenance results are retained service-readiness evidence, not certified maintenance approval or regulatory lockout/tagout procedure",
+            "machine-ready and unattended release remain blocked until service, lockout, verification, residual restriction, and artifact evidence clears",
+            "maintenance observations feed MDP/POMDP/neural learning so future planners can avoid brittle machines, add operator checkpoints, schedule service, or route work across healthier equipment"
+        ]
+    }))
+}
+
+fn maintenance_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("service-release-blocked")
+        || status.contains("lockout-release-blocked")
+        || status.contains("verification-release-blocked")
+        || status.contains("residual-restriction-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_maintenance_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "maintenance-result");
+    let job_id = response_str_field(
+        response,
+        "maintenanceResultJobId",
+        &safe_job_id("maintenance-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "maintenance-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let maintenance_result = response
+        .get("maintenanceResult")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let service_items = maintenance_result
+        .get("serviceItems")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let lockout_clearances = maintenance_result
+        .get("lockoutClearances")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let verification_checks = maintenance_result
+        .get("verificationChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let residual_restrictions = maintenance_result
+        .get("residualRestrictions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let maintenance_artifacts = maintenance_result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "maintenance-result".to_string(),
+            "maintenance-result",
+            maintenance_result,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "maintenance-service-items".to_string(),
+            "maintenance-service-items",
+            service_items,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "maintenance-lockout-clearances".to_string(),
+            "maintenance-lockout-clearances",
+            lockout_clearances,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "maintenance-verification-checks".to_string(),
+            "maintenance-verification-checks",
+            verification_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "maintenance-residual-restrictions".to_string(),
+            "maintenance-residual-restrictions",
+            residual_restrictions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "maintenance-artifacts".to_string(),
+            "maintenance-artifacts",
+            maintenance_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "maintenance-learning-observations".to_string(),
+            "maintenance-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "maintenance-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: maintenance_result_job_severity(response),
+            summary: format!("maintenance result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_maintenance_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_maintenance_result_job(response));
 }
 
 fn validate_telemetry_result_sensor_windows(
@@ -61005,6 +64396,782 @@ async fn tooling_catalog_http() -> impl IntoResponse {
     Json(tooling_catalog_response())
 }
 
+fn consumables_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "consumableFamily": "additive-material-and-extrusion-consumables",
+            "machineKinds": ["fdm-printer", "multi-material-fdm-printer", "pellet-fgf-printer", "robotic-additive-cell", "paste-extrusion-printer", "bound-metal-fff-printer"],
+            "requiredEvidence": [
+                "filament, pellet, paste, syringe, bound-metal, support material, spool weight, lot, dry-storage, dryer, desiccant, and runout evidence",
+                "nozzle, drive gear, hotend, bead head, purge/prime, flow calibration, and pressure-advance or volumetric-flow evidence",
+                "material-change, color-change, tool-change, and selected-tool temperature evidence before resumed extrusion"
+            ],
+            "releaseBlockers": [
+                "positive extrusion occurs without retained material lot, dry-state, remaining-material, or runout evidence",
+                "nozzle, hotend, bead head, purge, prime, or flow consumable state is stale after material or tool change",
+                "long unattended print lacks enough consumable capacity and recovery evidence"
+            ],
+            "responseSurfaces": ["materialPlan.routeRequirements", "toolingPlan.requirements.consumables", "monitoringPlan.alerts", "machineRelease.blockers"],
+            "artifactSurfaces": ["material-lot-record", "spool-weight-record", "purge-prime-record", "flow-calibration-record"],
+            "learningSignals": ["consumables:additive-material", "material-lot:*", "dry-state:*", "remaining-material:*", "purge-prime:*"]
+        }),
+        json!({
+            "consumableFamily": "subtractive-cutter-insert-and-coolant-consumables",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "rotary-indexer-mill", "cnc-router", "lathe", "mill-turn-center", "swiss-turning-center"],
+            "requiredEvidence": [
+                "fresh cutter, insert, drill, tap, reamer, boring bar, part-off blade, wheel, holder, collet, and measured runout or stickout evidence",
+                "tool-life remaining, edge wear, geometry/wear offset, tool-length, tool-nose radius, cutter compensation, and load-monitor envelope evidence",
+                "coolant concentration, chip evacuation, dust extraction, mist, air blast, lubricant, and fire/fume recovery evidence for long cuts"
+            ],
+            "releaseBlockers": [
+                "long or precision cutting starts before tool-life, wear, fresh-edge, load-monitor, or coolant/chip consumable evidence",
+                "tool compensation depends on cutter, insert, or nose geometry without current wear evidence",
+                "cutting route consumes tooling or coolant beyond verified capacity without fallback or operator intervention plan"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements.requiredTools", "toolingPlan.requirements.consumables", "validation.failureBoundaries", "telemetryResult.sensorWindows", "learning.outcomes"],
+            "artifactSurfaces": ["tool-life-record", "wear-inspection-record", "coolant-check-record", "spindle-load-envelope"],
+            "learningSignals": ["consumables:subtractive-tooling", "tool-life:*", "wear-offset:*", "coolant-state:*", "spindle-load:*"]
+        }),
+        json!({
+            "consumableFamily": "sheet-cutting-nozzle-gas-abrasive-and-wire-consumables",
+            "machineKinds": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter", "sinker-edm-cell"],
+            "requiredEvidence": [
+                "nozzle, lens, focus, electrode, shield, wire, orifice, mixing tube, abrasive, gas, dielectric, filter, and fire-watch consumable state",
+                "pump pressure, abrasive flow, assist gas, plasma gas, work clamp, dielectric flushing, wire threading, and fume extraction evidence",
+                "kerf coupon, pierce/thread setup, edge inspection, dross/recast/taper review, and consumable replacement threshold"
+            ],
+            "releaseBlockers": [
+                "beam, jet, arc, or wire cutting feed starts before consumable and support-media evidence",
+                "support media or consumable feed stops and cutting continues without restart/reverification",
+                "kerf, pierce, taper, recast, dross, or drop risk is not tied to consumable wear and material thickness"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements.consumables", "utilitiesResult.checks", "supportStrategyPlan.requirements", "qualityResult.measurements", "machineRelease.blockers"],
+            "artifactSurfaces": ["cut-chart-consumable-record", "kerf-coupon-record", "abrasive-flow-record", "wire-thread-record"],
+            "learningSignals": ["consumables:sheet-cutting", "kerf-consumable:*", "abrasive-flow:*", "assist-gas:*", "support-media-depletion:*", "wire-wear:*"]
+        }),
+        json!({
+            "consumableFamily": "resin-powder-binder-and-postprocess-consumables",
+            "machineKinds": ["resin-printer", "sls-mjf-powder-bed-printer", "metal-pbf-printer", "binder-jet-printer", "material-jetting-printer", "thermal-postprocess-cell", "surface-finishing-cell"],
+            "requiredEvidence": [
+                "resin, vat film, powder lot/reuse ratio, binder, cleaning solvent, wash, cure, depowder, filter, gas, furnace atmosphere, media, mask, and coating consumable state",
+                "exposure/profile, build powder, recoater clearance, vat capacity, binder saturation, UV/thermal cure, and postprocess batch capacity evidence",
+                "waste, PPE, fume/extraction, shelf-life, contamination, and traceability records"
+            ],
+            "releaseBlockers": [
+                "resin, powder, binder, cleaning, cure, or finishing consumable state is stale before print/postprocess release",
+                "postprocess or depowder operation lacks consumable capacity, atmosphere, solvent, media, or waste-control evidence",
+                "reused powder, resin, binder, or finishing media lacks lot, reuse, contamination, or shelf-life traceability"
+            ],
+            "responseSurfaces": ["materialPlan.lotTrace", "postprocessPlan.requiredArtifacts", "environmentResult.conditions", "provenanceResult.lineage", "learning.outcomes"],
+            "artifactSurfaces": ["resin-lot-record", "powder-reuse-record", "binder-lot-record", "postprocess-consumable-record"],
+            "learningSignals": ["consumables:resin-powder-postprocess", "powder-reuse:*", "resin-vat:*", "binder-saturation:*", "postprocess-media:*"]
+        }),
+    ]
+}
+
+fn consumables_catalog_response() -> Value {
+    let entries = consumables_catalog_entries();
+    let consumable_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("consumableFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.consumables-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /consumables/catalog", "GET /fabrication/consumables/catalog"],
+        "consumableFamilyCount": entries.len(),
+        "consumableFamilies": consumable_families,
+        "machineKinds": machine_kinds,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /materials/plan", "POST /fabrication/materials/plan"],
+        "reviewRoutes": [
+            "POST /materials/result",
+            "POST /fabrication/materials/result",
+            "POST /utilities/result",
+            "POST /fabrication/utilities/result",
+            "POST /toolpaths/result",
+            "POST /fabrication/toolpaths/result",
+            "POST /telemetry/result",
+            "POST /fabrication/telemetry/result"
+        ],
+        "responseSurfaces": [
+            "materialPlan.routeRequirements",
+            "toolingPlan.requirements.consumables",
+            "utilitiesResult.checks",
+            "supportStrategyPlan.requirements",
+            "monitoringPlan.alerts",
+            "qualityResult.measurements",
+            "postprocessPlan.requiredArtifacts",
+            "provenanceResult.lineage",
+            "machineRelease.blockers",
+            "learning.outcomes"
+        ],
+        "artifactSurfaces": [
+            "consumable-lot-record",
+            "tool-life-record",
+            "wear-inspection-record",
+            "kerf-coupon-record",
+            "powder-reuse-record",
+            "purge-prime-record",
+            "consumables-learning-observations",
+            "mdp-request.artifacts.consumables"
+        ],
+        "releasePolicy": [
+            "consumables catalog entries describe material, tool, support-media, and process-consumable evidence contracts, not certified inventory, tooling, or hazardous-material approval",
+            "machine-ready and unattended release remain blocked when material quantity, lot, shelf-life, dry state, tool life, wear, nozzle, gas, abrasive, coolant, wire, resin, powder, binder, solvent, media, or postprocess consumable evidence is stale or missing",
+            "consumable outcomes feed MDP/POMDP/neural workers so future planners can learn tool-life risk, material capacity, support-media depletion, split/combine reroutes, and operator refill checkpoints"
+        ],
+        "consumableContracts": entries
+    })
+}
+
+async fn consumables_catalog_http() -> impl IntoResponse {
+    Json(consumables_catalog_response())
+}
+
+fn validate_consumables_result_inventory_checks(
+    checks: Option<Vec<ConsumablesResultInventoryCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "inventoryChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id = validate_label(
+                &check.check_id,
+                &format!("inventoryChecks[{index}].checkId"),
+            )?;
+            let consumable_family = validate_label(
+                &check.consumable_family,
+                &format!("inventoryChecks[{index}].consumableFamily"),
+            )?;
+            let consumable_kind = validate_label(
+                &check.consumable_kind,
+                &format!("inventoryChecks[{index}].consumableKind"),
+            )?;
+            let status =
+                validate_label(&check.status, &format!("inventoryChecks[{index}].status"))?;
+            let capacity_remaining = check
+                .capacity_remaining
+                .map(|value| finite_non_negative(value, "inventoryChecks.capacityRemaining"))
+                .transpose()?;
+            let projected_required = check
+                .projected_required
+                .map(|value| finite_non_negative(value, "inventoryChecks.projectedRequired"))
+                .transpose()?;
+            let evidence =
+                validate_signal_list(check.evidence, "inventoryChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "consumableFamily": consumable_family,
+                "consumableKind": consumable_kind,
+                "status": status,
+                "available": check.available.unwrap_or(false),
+                "lotTraceable": check.lot_traceable.unwrap_or(false),
+                "shelfLifeCurrent": check.shelf_life_current.unwrap_or(false),
+                "dryStateCurrent": check.dry_state_current.unwrap_or(false),
+                "capacityRemaining": capacity_remaining,
+                "projectedRequired": projected_required,
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "requiresSplitCombine": check.requires_split_combine.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_consumables_result_tool_life_checks(
+    checks: Option<Vec<ConsumablesResultToolLifeCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "toolLifeChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id =
+                validate_label(&check.check_id, &format!("toolLifeChecks[{index}].checkId"))?;
+            let tool_kind = validate_label(
+                &check.tool_kind,
+                &format!("toolLifeChecks[{index}].toolKind"),
+            )?;
+            let status = validate_label(&check.status, &format!("toolLifeChecks[{index}].status"))?;
+            let tool_life_remaining_minutes = check
+                .tool_life_remaining_minutes
+                .map(|value| finite_non_negative(value, "toolLifeChecks.toolLifeRemainingMinutes"))
+                .transpose()?;
+            let projected_cut_minutes = check
+                .projected_cut_minutes
+                .map(|value| finite_non_negative(value, "toolLifeChecks.projectedCutMinutes"))
+                .transpose()?;
+            let evidence =
+                validate_signal_list(check.evidence, "toolLifeChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "toolKind": tool_kind,
+                "status": status,
+                "toolLifeRemainingMinutes": tool_life_remaining_minutes,
+                "projectedCutMinutes": projected_cut_minutes,
+                "wearWithinLimit": check.wear_within_limit.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_consumables_result_support_media_checks(
+    checks: Option<Vec<ConsumablesResultSupportMediaCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "supportMediaChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id = validate_label(
+                &check.check_id,
+                &format!("supportMediaChecks[{index}].checkId"),
+            )?;
+            let media_kind = validate_label(
+                &check.media_kind,
+                &format!("supportMediaChecks[{index}].mediaKind"),
+            )?;
+            let status = validate_label(
+                &check.status,
+                &format!("supportMediaChecks[{index}].status"),
+            )?;
+            let evidence =
+                validate_signal_list(check.evidence, "supportMediaChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "mediaKind": media_kind,
+                "status": status,
+                "available": check.available.unwrap_or(false),
+                "restartVerified": check.restart_verified.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_consumables_result_artifacts(
+    artifacts: Option<Vec<ConsumablesResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn consumables_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("depleted")
+        || status.contains("expired")
+        || status.contains("stale")
+        || status.contains("shortfall")
+        || status.contains("required")
+}
+
+fn consumables_result_inventory_blocks_release(check: &Value) -> bool {
+    let capacity_shortfall = check
+        .get("capacityRemaining")
+        .and_then(Value::as_f64)
+        .zip(check.get("projectedRequired").and_then(Value::as_f64))
+        .is_some_and(|(remaining, required)| remaining < required);
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("available")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !check
+            .get("lotTraceable")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !check
+            .get("shelfLifeCurrent")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !check
+            .get("dryStateCurrent")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || capacity_shortfall
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || consumables_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn consumables_result_tool_life_blocks_release(check: &Value) -> bool {
+    let tool_life_shortfall = check
+        .get("toolLifeRemainingMinutes")
+        .and_then(Value::as_f64)
+        .zip(check.get("projectedCutMinutes").and_then(Value::as_f64))
+        .is_some_and(|(remaining, required)| remaining < required);
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("wearWithinLimit")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || tool_life_shortfall
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || consumables_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn consumables_result_support_media_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("available")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !check
+            .get("restartVerified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || consumables_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn consumables_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn consumables_result_review_response(
+    request: ConsumablesResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "consumables-result");
+    let generated_at_ms = now_ms();
+    let consumables_result_job_id = safe_job_id("consumables-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let route_id = validate_optional_label(request.route_id, "routeId")?;
+    let unattended_ready = request.unattended_ready.unwrap_or(false);
+    let inventory_checks = validate_consumables_result_inventory_checks(request.inventory_checks)?;
+    let tool_life_checks = validate_consumables_result_tool_life_checks(request.tool_life_checks)?;
+    let support_media_checks =
+        validate_consumables_result_support_media_checks(request.support_media_checks)?;
+    let artifacts = validate_consumables_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let inventory_blocker_count = inventory_checks
+        .iter()
+        .filter(|check| consumables_result_inventory_blocks_release(check))
+        .count();
+    let tool_life_blocker_count = tool_life_checks
+        .iter()
+        .filter(|check| consumables_result_tool_life_blocks_release(check))
+        .count();
+    let support_media_blocker_count = support_media_checks
+        .iter()
+        .filter(|check| consumables_result_support_media_blocks_release(check))
+        .count();
+    let split_combine_required = inventory_checks.iter().any(|check| {
+        check
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let human_intervention_required = inventory_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || tool_life_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || support_media_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| consumables_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !unattended_ready
+        || inventory_checks.is_empty()
+        || inventory_blocker_count > 0
+        || tool_life_blocker_count > 0
+        || support_media_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if inventory_checks.is_empty() {
+        "consumables-result-inventory-checks-required"
+    } else if !request.success {
+        "consumables-result-worker-failed-release-blocked"
+    } else if inventory_blocker_count > 0 {
+        "consumables-result-inventory-release-blocked"
+    } else if tool_life_blocker_count > 0 {
+        "consumables-result-tool-life-release-blocked"
+    } else if support_media_blocker_count > 0 {
+        "consumables-result-support-media-release-blocked"
+    } else if artifact_evidence_missing {
+        "consumables-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "consumables-result-machine-ready-review-required"
+    } else if !unattended_ready {
+        "consumables-result-unattended-ready-review-required"
+    } else {
+        "consumables-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("consumables-worker:{worker_id}"),
+        format!("consumables-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "consumables-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("consumables:release-blocked".to_string());
+    }
+    if split_combine_required {
+        learning_observations.push("consumables:split-combine-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("consumables:human-intervention-required".to_string());
+    }
+    learning_observations.extend(inventory_checks.iter().filter_map(|check| {
+        check
+            .get("consumableFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("consumables-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(inventory_checks.iter().filter_map(|check| {
+        check
+            .get("consumableKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("consumables-kind:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(tool_life_checks.iter().filter_map(|check| {
+        check
+            .get("toolKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("consumables-tool-life:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(support_media_checks.iter().filter_map(|check| {
+        check
+            .get("mediaKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("consumables-support-media:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.consumables-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "consumablesResultJobId": consumables_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /consumables/result", "POST /fabrication/consumables/result"],
+        "catalogRoutes": ["GET /consumables/catalog", "GET /fabrication/consumables/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "unattendedReady": unattended_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "inventoryCheckCount": inventory_checks.len(),
+        "inventoryBlockerCount": inventory_blocker_count,
+        "toolLifeCheckCount": tool_life_checks.len(),
+        "toolLifeBlockerCount": tool_life_blocker_count,
+        "supportMediaCheckCount": support_media_checks.len(),
+        "supportMediaBlockerCount": support_media_blocker_count,
+        "splitCombineRequired": split_combine_required,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "consumablesResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "routeId": route_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "unattendedReady": unattended_ready,
+            "inventoryChecks": inventory_checks,
+            "toolLifeChecks": tool_life_checks,
+            "supportMediaChecks": support_media_checks,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "material, resin, powder, binder, wire, gas, abrasive, coolant, solvent, and media lots are traceable and current",
+                "remaining consumable capacity covers the generated or imported program, unattended window, and planned split/combine route",
+                "tool life, wear, fresh edge, insert, nozzle, wire, and support-media restart evidence clears before machine-ready release",
+                "consumables result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "consumables-result",
+            "consumables-inventory-checks",
+            "consumables-tool-life-checks",
+            "consumables-support-media-checks",
+            "consumables-artifacts",
+            "consumables-learning-observations",
+            "mdp-request.artifacts.consumablesResult"
+        ],
+        "consumablesResultPolicy": [
+            "consumables results are retained material/tool/support-media readiness evidence, not certified inventory, tooling, or hazardous-material approval",
+            "machine-ready and unattended release remain blocked until inventory, capacity, lot, shelf-life, dry-state, tool-life, support-media, and artifact evidence clears",
+            "consumables observations feed MDP/POMDP/neural learning so future planners can avoid depleted routes, add refill checkpoints, split/combine work, or choose healthier tooling and media states"
+        ]
+    }))
+}
+
+fn consumables_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("inventory-release-blocked")
+        || status.contains("tool-life-release-blocked")
+        || status.contains("support-media-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_consumables_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "consumables-result");
+    let job_id = response_str_field(
+        response,
+        "consumablesResultJobId",
+        &safe_job_id("consumables-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "consumables-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let consumables_result = response
+        .get("consumablesResult")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let inventory_checks = consumables_result
+        .get("inventoryChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let tool_life_checks = consumables_result
+        .get("toolLifeChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let support_media_checks = consumables_result
+        .get("supportMediaChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let consumables_artifacts = consumables_result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "consumables-result".to_string(),
+            "consumables-result",
+            consumables_result,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "consumables-inventory-checks".to_string(),
+            "consumables-inventory-checks",
+            inventory_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "consumables-tool-life-checks".to_string(),
+            "consumables-tool-life-checks",
+            tool_life_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "consumables-support-media-checks".to_string(),
+            "consumables-support-media-checks",
+            support_media_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "consumables-artifacts".to_string(),
+            "consumables-artifacts",
+            consumables_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "consumables-learning-observations".to_string(),
+            "consumables-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "consumables-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: consumables_result_job_severity(response),
+            summary: format!("consumables result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_consumables_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_consumables_result_job(response));
+}
+
 fn workholding_catalog_entries() -> Vec<Value> {
     vec![
         json!({
@@ -61173,6 +65340,670 @@ fn workholding_catalog_response() -> Value {
 
 async fn workholding_catalog_http() -> impl IntoResponse {
     Json(workholding_catalog_response())
+}
+
+fn validate_workholding_result_fixture_checks(
+    checks: Option<Vec<WorkholdingResultFixtureCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "fixtureChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id =
+                validate_label(&check.check_id, &format!("fixtureChecks[{index}].checkId"))?;
+            let workholding_family = validate_label(
+                &check.workholding_family,
+                &format!("fixtureChecks[{index}].workholdingFamily"),
+            )?;
+            let fixture_kind = validate_label(
+                &check.fixture_kind,
+                &format!("fixtureChecks[{index}].fixtureKind"),
+            )?;
+            let status = validate_label(&check.status, &format!("fixtureChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "fixtureChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "workholdingFamily": workholding_family,
+                "fixtureKind": fixture_kind,
+                "status": status,
+                "holdingVerified": check.holding_verified.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_workholding_result_datum_transfers(
+    transfers: Option<Vec<WorkholdingResultDatumTransfer>>,
+) -> Result<Vec<Value>, String> {
+    let transfers = transfers.unwrap_or_default();
+    if transfers.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "datumTransfers must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    transfers
+        .into_iter()
+        .enumerate()
+        .map(|(index, transfer)| {
+            let transfer_id = validate_label(
+                &transfer.transfer_id,
+                &format!("datumTransfers[{index}].transferId"),
+            )?;
+            let transfer_kind = validate_label(
+                &transfer.transfer_kind,
+                &format!("datumTransfers[{index}].transferKind"),
+            )?;
+            let status =
+                validate_label(&transfer.status, &format!("datumTransfers[{index}].status"))?;
+            let evidence =
+                validate_signal_list(transfer.evidence, "datumTransfers.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "transferId": transfer_id,
+                "transferKind": transfer_kind,
+                "status": status,
+                "datumVerified": transfer.datum_verified.unwrap_or(false),
+                "reProbeRequired": transfer.re_probe_required.unwrap_or(false),
+                "releaseBlocker": transfer.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_workholding_result_clearance_checks(
+    checks: Option<Vec<WorkholdingResultClearanceCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "clearanceChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id = validate_label(
+                &check.check_id,
+                &format!("clearanceChecks[{index}].checkId"),
+            )?;
+            let clearance_kind = validate_label(
+                &check.clearance_kind,
+                &format!("clearanceChecks[{index}].clearanceKind"),
+            )?;
+            let status =
+                validate_label(&check.status, &format!("clearanceChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "clearanceChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "clearanceKind": clearance_kind,
+                "status": status,
+                "clearanceVerified": check.clearance_verified.unwrap_or(false),
+                "collisionRisk": check.collision_risk.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_workholding_result_split_combine_holds(
+    holds: Option<Vec<WorkholdingResultSplitCombineHold>>,
+) -> Result<Vec<Value>, String> {
+    let holds = holds.unwrap_or_default();
+    if holds.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "splitCombineHolds must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    holds
+        .into_iter()
+        .enumerate()
+        .map(|(index, hold)| {
+            let hold_id =
+                validate_label(&hold.hold_id, &format!("splitCombineHolds[{index}].holdId"))?;
+            let hold_kind = validate_label(
+                &hold.hold_kind,
+                &format!("splitCombineHolds[{index}].holdKind"),
+            )?;
+            let status =
+                validate_label(&hold.status, &format!("splitCombineHolds[{index}].status"))?;
+            let evidence =
+                validate_signal_list(hold.evidence, "splitCombineHolds.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "holdId": hold_id,
+                "holdKind": hold_kind,
+                "status": status,
+                "interfaceVerified": hold.interface_verified.unwrap_or(false),
+                "recompositionReady": hold.recomposition_ready.unwrap_or(false),
+                "releaseBlocker": hold.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": hold.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_workholding_result_artifacts(
+    artifacts: Option<Vec<WorkholdingResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn workholding_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unverified")
+        || status.contains("collision")
+        || status.contains("required")
+}
+
+fn workholding_result_fixture_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("holdingVerified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || workholding_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn workholding_result_datum_blocks_release(transfer: &Value) -> bool {
+    transfer
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !transfer
+            .get("datumVerified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || transfer
+            .get("reProbeRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || workholding_result_status_blocks_release(
+            transfer.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn workholding_result_clearance_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("clearanceVerified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("collisionRisk")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || workholding_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn workholding_result_split_combine_blocks_release(hold: &Value) -> bool {
+    hold.get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !hold
+            .get("interfaceVerified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !hold
+            .get("recompositionReady")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || hold
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || workholding_result_status_blocks_release(
+            hold.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn workholding_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn workholding_result_review_response(
+    request: WorkholdingResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "workholding-result");
+    let generated_at_ms = now_ms();
+    let workholding_result_job_id = safe_job_id("workholding-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let route_id = validate_optional_label(request.route_id, "routeId")?;
+    let unattended_ready = request.unattended_ready.unwrap_or(false);
+    let fixture_checks = validate_workholding_result_fixture_checks(request.fixture_checks)?;
+    let datum_transfers = validate_workholding_result_datum_transfers(request.datum_transfers)?;
+    let clearance_checks = validate_workholding_result_clearance_checks(request.clearance_checks)?;
+    let split_combine_holds =
+        validate_workholding_result_split_combine_holds(request.split_combine_holds)?;
+    let artifacts = validate_workholding_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let fixture_blocker_count = fixture_checks
+        .iter()
+        .filter(|check| workholding_result_fixture_blocks_release(check))
+        .count();
+    let datum_blocker_count = datum_transfers
+        .iter()
+        .filter(|transfer| workholding_result_datum_blocks_release(transfer))
+        .count();
+    let clearance_blocker_count = clearance_checks
+        .iter()
+        .filter(|check| workholding_result_clearance_blocks_release(check))
+        .count();
+    let split_combine_blocker_count = split_combine_holds
+        .iter()
+        .filter(|hold| workholding_result_split_combine_blocks_release(hold))
+        .count();
+    let split_combine_required = !split_combine_holds.is_empty()
+        || fixture_checks.iter().any(|check| {
+            check
+                .get("workholdingFamily")
+                .and_then(Value::as_str)
+                .is_some_and(|family| normalize_token(family).contains("hybrid"))
+        });
+    let human_intervention_required = fixture_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || clearance_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || split_combine_holds.iter().any(|hold| {
+        hold.get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| workholding_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !unattended_ready
+        || fixture_checks.is_empty()
+        || fixture_blocker_count > 0
+        || datum_blocker_count > 0
+        || clearance_blocker_count > 0
+        || split_combine_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if fixture_checks.is_empty() {
+        "workholding-result-fixture-checks-required"
+    } else if !request.success {
+        "workholding-result-worker-failed-release-blocked"
+    } else if fixture_blocker_count > 0 {
+        "workholding-result-fixture-release-blocked"
+    } else if datum_blocker_count > 0 {
+        "workholding-result-datum-release-blocked"
+    } else if clearance_blocker_count > 0 {
+        "workholding-result-clearance-release-blocked"
+    } else if split_combine_blocker_count > 0 {
+        "workholding-result-split-combine-release-blocked"
+    } else if artifact_evidence_missing {
+        "workholding-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "workholding-result-machine-ready-review-required"
+    } else if !unattended_ready {
+        "workholding-result-unattended-ready-review-required"
+    } else {
+        "workholding-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("workholding-worker:{worker_id}"),
+        format!("workholding-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "workholding-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("workholding:release-blocked".to_string());
+    }
+    if split_combine_required {
+        learning_observations.push("workholding:split-combine-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("workholding:human-intervention-required".to_string());
+    }
+    learning_observations.extend(fixture_checks.iter().filter_map(|check| {
+        check
+            .get("workholdingFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("workholding-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(fixture_checks.iter().filter_map(|check| {
+        check
+            .get("fixtureKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("workholding-fixture:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(datum_transfers.iter().filter_map(|transfer| {
+        transfer
+            .get("transferKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("workholding-datum-transfer:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(clearance_checks.iter().filter_map(|check| {
+        check
+            .get("clearanceKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("workholding-clearance:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(split_combine_holds.iter().filter_map(|hold| {
+        hold.get("holdKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("workholding-split-combine:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.workholding-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "workholdingResultJobId": workholding_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /workholding/result", "POST /fabrication/workholding/result"],
+        "catalogRoutes": ["GET /workholding/catalog", "GET /fabrication/workholding/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "unattendedReady": unattended_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "fixtureCheckCount": fixture_checks.len(),
+        "fixtureBlockerCount": fixture_blocker_count,
+        "datumTransferCount": datum_transfers.len(),
+        "datumBlockerCount": datum_blocker_count,
+        "clearanceCheckCount": clearance_checks.len(),
+        "clearanceBlockerCount": clearance_blocker_count,
+        "splitCombineHoldCount": split_combine_holds.len(),
+        "splitCombineBlockerCount": split_combine_blocker_count,
+        "splitCombineRequired": split_combine_required,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "workholdingResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "routeId": route_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "unattendedReady": unattended_ready,
+            "fixtureChecks": fixture_checks,
+            "datumTransfers": datum_transfers,
+            "clearanceChecks": clearance_checks,
+            "splitCombineHolds": split_combine_holds,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "fixture, build surface, chuck, support, tab, nest, and recomposition holding evidence clears for the selected route",
+                "datum transfers, work offsets, re-probe requirements, and clearance checks are retained before generated or imported programs run",
+                "split/combine fixture and interface-control evidence is ready before recomposition or assembly release",
+                "workholding result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "workholding-result",
+            "workholding-fixture-checks",
+            "workholding-datum-transfers",
+            "workholding-clearance-checks",
+            "workholding-split-combine-holds",
+            "workholding-artifacts",
+            "workholding-learning-observations",
+            "mdp-request.artifacts.workholdingResult"
+        ],
+        "workholdingResultPolicy": [
+            "workholding results are retained stock, build, fixture, support, retention, and recomposition holding evidence, not certified fixture designs",
+            "machine-ready and unattended release remain blocked until fixture, datum-transfer, clearance, split/combine, and artifact evidence clears",
+            "workholding observations feed MDP/POMDP/neural learning so future planners can split jobs, change fixtures, add probes, or require human intervention earlier"
+        ]
+    }))
+}
+
+fn workholding_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("fixture-release-blocked")
+        || status.contains("datum-release-blocked")
+        || status.contains("clearance-release-blocked")
+        || status.contains("split-combine-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_workholding_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "workholding-result");
+    let job_id = response_str_field(
+        response,
+        "workholdingResultJobId",
+        &safe_job_id("workholding-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "workholding-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let workholding_result = response
+        .get("workholdingResult")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let fixture_checks = workholding_result
+        .get("fixtureChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let datum_transfers = workholding_result
+        .get("datumTransfers")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let clearance_checks = workholding_result
+        .get("clearanceChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let split_combine_holds = workholding_result
+        .get("splitCombineHolds")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let workholding_artifacts = workholding_result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "workholding-result".to_string(),
+            "workholding-result",
+            workholding_result,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "workholding-fixture-checks".to_string(),
+            "workholding-fixture-checks",
+            fixture_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "workholding-datum-transfers".to_string(),
+            "workholding-datum-transfers",
+            datum_transfers,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "workholding-clearance-checks".to_string(),
+            "workholding-clearance-checks",
+            clearance_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "workholding-split-combine-holds".to_string(),
+            "workholding-split-combine-holds",
+            split_combine_holds,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "workholding-artifacts".to_string(),
+            "workholding-artifacts",
+            workholding_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "workholding-learning-observations".to_string(),
+            "workholding-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "workholding-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: workholding_result_job_severity(response),
+            summary: format!("workholding result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_workholding_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_workholding_result_job(response));
 }
 
 fn support_strategy_catalog_entries() -> Vec<Value> {
@@ -69892,6 +74723,91 @@ async fn utilities_result_http(
     }
 }
 
+async fn energy_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<EnergyResultReviewRequest>,
+) -> Response {
+    match energy_result_review_response(request) {
+        Ok(response) => {
+            store_energy_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn availability_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<AvailabilityResultReviewRequest>,
+) -> Response {
+    match availability_result_review_response(request) {
+        Ok(response) => {
+            store_availability_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn maintenance_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<MaintenanceResultReviewRequest>,
+) -> Response {
+    match maintenance_result_review_response(request) {
+        Ok(response) => {
+            store_maintenance_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn consumables_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<ConsumablesResultReviewRequest>,
+) -> Response {
+    match consumables_result_review_response(request) {
+        Ok(response) => {
+            store_consumables_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn workholding_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<WorkholdingResultReviewRequest>,
+) -> Response {
+    match workholding_result_review_response(request) {
+        Ok(response) => {
+            store_workholding_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 async fn telemetry_result_http(
     State(state): State<AppState>,
     Json(request): Json<TelemetryResultReviewRequest>,
@@ -78373,6 +83289,573 @@ fn store_slicer_profile_result_response(state: &AppState, response: &Value) {
     store_job(state, stored_slicer_profile_result_job(response));
 }
 
+fn validate_mesh_repair_result_checks(
+    checks: Option<Vec<MeshRepairResultCheck>>,
+    field_name: &str,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "{field_name} must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id =
+                validate_label(&check.check_id, &format!("{field_name}[{index}].checkId"))?;
+            let repair_domain = validate_label(
+                &check.repair_domain,
+                &format!("{field_name}[{index}].repairDomain"),
+            )?;
+            let check_kind = validate_label(
+                &check.check_kind,
+                &format!("{field_name}[{index}].checkKind"),
+            )?;
+            let status = validate_label(&check.status, &format!("{field_name}[{index}].status"))?;
+            let evidence = validate_signal_list(
+                check.evidence,
+                &format!("{field_name}.evidence"),
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "checkId": check_id,
+                "repairDomain": repair_domain,
+                "checkKind": check_kind,
+                "status": status,
+                "passed": check.passed.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "requiresSplitCombine": check.requires_split_combine.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_mesh_repair_dimensional_reviews(
+    reviews: Option<Vec<MeshRepairDimensionalReview>>,
+) -> Result<Vec<Value>, String> {
+    let reviews = reviews.unwrap_or_default();
+    if reviews.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "dimensionalReviews must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    reviews
+        .into_iter()
+        .enumerate()
+        .map(|(index, review)| {
+            let review_id = validate_label(
+                &review.review_id,
+                &format!("dimensionalReviews[{index}].reviewId"),
+            )?;
+            let feature_id =
+                validate_optional_label(review.feature_id, "dimensionalReviews.featureId")?;
+            let status = validate_label(
+                &review.status,
+                &format!("dimensionalReviews[{index}].status"),
+            )?;
+            let max_drift_mm = review
+                .max_drift_mm
+                .map(|value| finite_non_negative(value, "dimensionalReviews.maxDriftMm"))
+                .transpose()?;
+            let tolerance_mm = review
+                .tolerance_mm
+                .map(|value| finite_positive(value, "dimensionalReviews.toleranceMm"))
+                .transpose()?;
+            let wall_thickness_mm = review
+                .wall_thickness_mm
+                .map(|value| finite_positive(value, "dimensionalReviews.wallThicknessMm"))
+                .transpose()?;
+            let evidence =
+                validate_signal_list(review.evidence, "dimensionalReviews.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "reviewId": review_id,
+                "featureId": feature_id,
+                "status": status,
+                "maxDriftMm": max_drift_mm,
+                "toleranceMm": tolerance_mm,
+                "wallThicknessMm": wall_thickness_mm,
+                "releaseBlocker": review.release_blocker.unwrap_or(true),
+                "requiresRedesign": review.requires_redesign.unwrap_or(false),
+                "requiresSplitCombine": review.requires_split_combine.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_mesh_repair_result_artifacts(
+    artifacts: Option<Vec<MeshRepairResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn mesh_repair_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("nonmanifold")
+        || status.contains("drift")
+        || status.contains("thin")
+        || status.contains("required")
+}
+
+fn mesh_repair_result_check_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("passed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || mesh_repair_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn mesh_repair_dimensional_review_blocks_release(review: &Value) -> bool {
+    review
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || review
+            .get("requiresRedesign")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || review
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || mesh_repair_result_status_blocks_release(
+            review.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+        || match (
+            review.get("maxDriftMm").and_then(Value::as_f64),
+            review.get("toleranceMm").and_then(Value::as_f64),
+        ) {
+            (Some(drift), Some(tolerance)) => drift > tolerance,
+            _ => false,
+        }
+}
+
+fn mesh_repair_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn mesh_repair_result_review_response(
+    request: MeshRepairResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "mesh-repair-result");
+    let generated_at_ms = now_ms();
+    let mesh_repair_result_job_id = safe_job_id("mesh-repair-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let source_design_id = validate_optional_label(request.source_design_id, "sourceDesignId")?;
+    let source_format = validate_optional_label(request.source_format, "sourceFormat")?;
+    let target_format = validate_optional_label(request.target_format, "targetFormat")?;
+    let slicer_ready = request.slicer_ready.unwrap_or(false);
+    let topology_checks =
+        validate_mesh_repair_result_checks(request.topology_checks, "topologyChecks")?;
+    let dimensional_reviews =
+        validate_mesh_repair_dimensional_reviews(request.dimensional_reviews)?;
+    let orientation_reviews =
+        validate_mesh_repair_result_checks(request.orientation_reviews, "orientationReviews")?;
+    let artifacts = validate_mesh_repair_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let topology_blocker_count = topology_checks
+        .iter()
+        .filter(|check| mesh_repair_result_check_blocks_release(check))
+        .count();
+    let dimensional_blocker_count = dimensional_reviews
+        .iter()
+        .filter(|review| mesh_repair_dimensional_review_blocks_release(review))
+        .count();
+    let orientation_blocker_count = orientation_reviews
+        .iter()
+        .filter(|check| mesh_repair_result_check_blocks_release(check))
+        .count();
+    let human_intervention_required = topology_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || orientation_reviews.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let split_combine_required = topology_checks.iter().any(|check| {
+        check
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || dimensional_reviews.iter().any(|review| {
+        review
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || orientation_reviews.iter().any(|check| {
+        check
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let redesign_required = dimensional_reviews.iter().any(|review| {
+        review
+            .get("requiresRedesign")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let drift_over_tolerance = dimensional_reviews.iter().any(|review| {
+        match (
+            review.get("maxDriftMm").and_then(Value::as_f64),
+            review.get("toleranceMm").and_then(Value::as_f64),
+        ) {
+            (Some(drift), Some(tolerance)) => drift > tolerance,
+            _ => false,
+        }
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| mesh_repair_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !slicer_ready
+        || topology_checks.is_empty()
+        || topology_blocker_count > 0
+        || dimensional_blocker_count > 0
+        || orientation_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if topology_checks.is_empty() {
+        "mesh-repair-result-topology-checks-required"
+    } else if !request.success {
+        "mesh-repair-result-worker-failed-release-blocked"
+    } else if topology_blocker_count > 0 {
+        "mesh-repair-result-topology-release-blocked"
+    } else if dimensional_blocker_count > 0 {
+        "mesh-repair-result-dimensions-release-blocked"
+    } else if orientation_blocker_count > 0 {
+        "mesh-repair-result-orientation-release-blocked"
+    } else if artifact_evidence_missing {
+        "mesh-repair-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "mesh-repair-result-machine-ready-review-required"
+    } else if !slicer_ready {
+        "mesh-repair-result-slicer-ready-review-required"
+    } else {
+        "mesh-repair-result-ready-for-slicing-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("mesh-repair-worker:{worker_id}"),
+        format!("mesh-repair-result:{review_status}"),
+    ];
+    if release_blocked {
+        learning_observations.push("mesh-repair:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("mesh-repair:human-intervention-required".to_string());
+    }
+    if split_combine_required {
+        learning_observations.push("mesh-repair:split-combine-required".to_string());
+    }
+    if redesign_required {
+        learning_observations.push("mesh-repair:redesign-required".to_string());
+    }
+    if drift_over_tolerance {
+        learning_observations.push("mesh-repair:dimension-drift-over-tolerance".to_string());
+    }
+    learning_observations.extend(topology_checks.iter().filter_map(|check| {
+        check
+            .get("repairDomain")
+            .and_then(Value::as_str)
+            .map(|domain| format!("mesh-repair-domain:{}", normalize_token(domain)))
+    }));
+    learning_observations.extend(topology_checks.iter().filter_map(|check| {
+        check
+            .get("checkKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("mesh-repair-check:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(orientation_reviews.iter().filter_map(|check| {
+        check
+            .get("checkKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("mesh-repair-orientation:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.mesh-repair-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "meshRepairResultJobId": mesh_repair_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /mesh-repair/result", "POST /fabrication/mesh-repair/result"],
+        "catalogRoutes": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "slicerReady": slicer_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "topologyCheckCount": topology_checks.len(),
+        "topologyBlockerCount": topology_blocker_count,
+        "dimensionalReviewCount": dimensional_reviews.len(),
+        "dimensionalBlockerCount": dimensional_blocker_count,
+        "orientationReviewCount": orientation_reviews.len(),
+        "orientationBlockerCount": orientation_blocker_count,
+        "humanInterventionRequired": human_intervention_required,
+        "splitCombineRequired": split_combine_required,
+        "redesignRequired": redesign_required,
+        "driftOverTolerance": drift_over_tolerance,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "meshRepairResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "sourceDesignId": source_design_id,
+            "sourceFormat": source_format,
+            "targetFormat": target_format,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "slicerReady": slicer_ready,
+            "topologyChecks": topology_checks,
+            "dimensionalReviews": dimensional_reviews,
+            "orientationReviews": orientation_reviews,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "topology repair checks prove watertight manifold geometry, repaired normals, and self-intersection clearance",
+                "dimensional drift, wall thickness, scale, unit, and process-capability reviews are inside tolerance or routed to redesign",
+                "orientation, support, first-layer, and split/combine decisions are reviewed before slicer or machine-code release",
+                "mesh repair result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "mesh-repair-result",
+            "mesh-repair-topology-checks",
+            "mesh-repair-dimensional-reviews",
+            "mesh-repair-orientation-reviews",
+            "mesh-repair-artifacts",
+            "mesh-repair-learning-observations",
+            "mdp-request.artifacts.meshRepairResult"
+        ],
+        "meshRepairResultPolicy": [
+            "mesh repair results are retained pre-slice geometry repair evidence, not certified printable geometry",
+            "machine-ready release remains blocked until topology, dimensional drift, wall thickness, orientation, support, split/combine, and artifact evidence clear",
+            "mesh repair observations feed MDP/POMDP/neural learning so future planners can choose repair, redesign, split/combine, support, or human-review paths earlier"
+        ]
+    }))
+}
+
+fn mesh_repair_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("topology-release-blocked")
+        || status.contains("dimensions-release-blocked")
+        || status.contains("orientation-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_mesh_repair_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "mesh-repair-result");
+    let job_id = response_str_field(
+        response,
+        "meshRepairResultJobId",
+        &safe_job_id("mesh-repair-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "mesh-repair-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("meshRepairResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let topology_checks = result
+        .get("topologyChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let dimensional_reviews = result
+        .get("dimensionalReviews")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let orientation_reviews = result
+        .get("orientationReviews")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let mesh_repair_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "mesh-repair-result".to_string(),
+            "mesh-repair-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "mesh-repair-topology-checks".to_string(),
+            "mesh-repair-topology-checks",
+            topology_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "mesh-repair-dimensional-reviews".to_string(),
+            "mesh-repair-dimensional-reviews",
+            dimensional_reviews,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "mesh-repair-orientation-reviews".to_string(),
+            "mesh-repair-orientation-reviews",
+            orientation_reviews,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "mesh-repair-artifacts".to_string(),
+            "mesh-repair-artifacts",
+            mesh_repair_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "mesh-repair-learning-observations".to_string(),
+            "mesh-repair-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "mesh-repair-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: mesh_repair_result_job_severity(response),
+            summary: format!("mesh repair result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_mesh_repair_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_mesh_repair_result_job(response));
+}
+
 fn mesh_repair_catalog_entries() -> Vec<Value> {
     vec![
         json!({
@@ -79341,6 +84824,549 @@ fn handoff_catalog_response() -> Value {
 
 async fn handoff_catalog_http() -> impl IntoResponse {
     Json(handoff_catalog_response())
+}
+
+fn validate_handoff_result_segments(
+    segments: Option<Vec<HandoffResultSegment>>,
+) -> Result<Vec<Value>, String> {
+    let segments = segments.unwrap_or_default();
+    if segments.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "handoffSegments must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    segments
+        .into_iter()
+        .enumerate()
+        .map(|(index, segment)| {
+            let segment_id = validate_label(
+                &segment.segment_id,
+                &format!("handoffSegments[{index}].segmentId"),
+            )?;
+            let handoff_lane = validate_label(
+                &segment.handoff_lane,
+                &format!("handoffSegments[{index}].handoffLane"),
+            )?;
+            let from_stage = validate_label(
+                &segment.from_stage,
+                &format!("handoffSegments[{index}].fromStage"),
+            )?;
+            let to_stage = validate_label(
+                &segment.to_stage,
+                &format!("handoffSegments[{index}].toStage"),
+            )?;
+            let status =
+                validate_label(&segment.status, &format!("handoffSegments[{index}].status"))?;
+            let evidence =
+                validate_signal_list(segment.evidence, "handoffSegments.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "segmentId": segment_id,
+                "handoffLane": handoff_lane,
+                "fromStage": from_stage,
+                "toStage": to_stage,
+                "status": status,
+                "accepted": segment.accepted.unwrap_or(false),
+                "releaseBlocker": segment.release_blocker.unwrap_or(true),
+                "requiresRework": segment.requires_rework.unwrap_or(false),
+                "requiresHumanIntervention": segment.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_handoff_result_datum_transfers(
+    transfers: Option<Vec<HandoffResultDatumTransfer>>,
+) -> Result<Vec<Value>, String> {
+    let transfers = transfers.unwrap_or_default();
+    if transfers.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "datumTransfers must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    transfers
+        .into_iter()
+        .enumerate()
+        .map(|(index, transfer)| {
+            let transfer_id = validate_label(
+                &transfer.transfer_id,
+                &format!("datumTransfers[{index}].transferId"),
+            )?;
+            let transfer_kind = validate_label(
+                &transfer.transfer_kind,
+                &format!("datumTransfers[{index}].transferKind"),
+            )?;
+            let status =
+                validate_label(&transfer.status, &format!("datumTransfers[{index}].status"))?;
+            let evidence =
+                validate_signal_list(transfer.evidence, "datumTransfers.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "transferId": transfer_id,
+                "transferKind": transfer_kind,
+                "status": status,
+                "datumPreserved": transfer.datum_preserved.unwrap_or(false),
+                "interfaceVerified": transfer.interface_verified.unwrap_or(false),
+                "releaseBlocker": transfer.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_handoff_result_transport_holds(
+    holds: Option<Vec<HandoffResultTransportHold>>,
+) -> Result<Vec<Value>, String> {
+    let holds = holds.unwrap_or_default();
+    if holds.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "transportHolds must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    holds
+        .into_iter()
+        .enumerate()
+        .map(|(index, hold)| {
+            let hold_id =
+                validate_label(&hold.hold_id, &format!("transportHolds[{index}].holdId"))?;
+            let hold_kind = validate_label(
+                &hold.hold_kind,
+                &format!("transportHolds[{index}].holdKind"),
+            )?;
+            let status = validate_label(&hold.status, &format!("transportHolds[{index}].status"))?;
+            let evidence =
+                validate_signal_list(hold.evidence, "transportHolds.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "holdId": hold_id,
+                "holdKind": hold_kind,
+                "status": status,
+                "resolved": hold.resolved.unwrap_or(false),
+                "releaseBlocker": hold.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": hold.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_handoff_result_artifacts(
+    artifacts: Option<Vec<HandoffResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", MAX_TEXT_LEN)?;
+            let sha256 = validate_optional_text(artifact.sha256, "artifacts.sha256", 128)?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn handoff_result_status_blocks_release(status: &str) -> bool {
+    let normalized = normalize_token(status);
+    normalized.contains("blocked")
+        || normalized.contains("failed")
+        || normalized.contains("missing")
+        || normalized.contains("unverified")
+        || normalized.contains("rework")
+        || normalized.contains("hold")
+}
+
+fn handoff_result_segment_blocks_release(segment: &Value) -> bool {
+    segment
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !segment
+            .get("accepted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || segment
+            .get("requiresRework")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || handoff_result_status_blocks_release(
+            segment.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn handoff_result_datum_transfer_blocks_release(transfer: &Value) -> bool {
+    transfer
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !transfer
+            .get("datumPreserved")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !transfer
+            .get("interfaceVerified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || handoff_result_status_blocks_release(
+            transfer.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn handoff_result_transport_hold_blocks_release(hold: &Value) -> bool {
+    hold.get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !hold
+            .get("resolved")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || handoff_result_status_blocks_release(
+            hold.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn handoff_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn handoff_result_review_response(request: HandoffResultReviewRequest) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "handoff-result");
+    let generated_at_ms = now_ms();
+    let handoff_result_job_id = safe_job_id("handoff-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let route_id = validate_optional_label(request.route_id, "routeId")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let handoff_segments = validate_handoff_result_segments(request.handoff_segments)?;
+    let datum_transfers = validate_handoff_result_datum_transfers(request.datum_transfers)?;
+    let transport_holds = validate_handoff_result_transport_holds(request.transport_holds)?;
+    let artifacts = validate_handoff_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let handoff_blocker_count = handoff_segments
+        .iter()
+        .filter(|segment| handoff_result_segment_blocks_release(segment))
+        .count();
+    let datum_blocker_count = datum_transfers
+        .iter()
+        .filter(|transfer| handoff_result_datum_transfer_blocks_release(transfer))
+        .count();
+    let transport_blocker_count = transport_holds
+        .iter()
+        .filter(|hold| handoff_result_transport_hold_blocks_release(hold))
+        .count();
+    let rework_required = handoff_segments.iter().any(|segment| {
+        segment
+            .get("requiresRework")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let human_intervention_required = handoff_segments.iter().any(|segment| {
+        segment
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || transport_holds.iter().any(|hold| {
+        hold.get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| handoff_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || handoff_segments.is_empty()
+        || handoff_blocker_count > 0
+        || datum_blocker_count > 0
+        || transport_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if handoff_segments.is_empty() {
+        "handoff-result-segments-required"
+    } else if !request.success {
+        "handoff-result-worker-failed-release-blocked"
+    } else if handoff_blocker_count > 0 {
+        "handoff-result-segment-release-blocked"
+    } else if datum_blocker_count > 0 {
+        "handoff-result-datum-release-blocked"
+    } else if transport_blocker_count > 0 {
+        "handoff-result-transport-release-blocked"
+    } else if artifact_evidence_missing {
+        "handoff-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "handoff-result-machine-ready-review-required"
+    } else if !release_ready {
+        "handoff-result-release-ready-review-required"
+    } else {
+        "handoff-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("handoff-worker:{worker_id}"),
+        format!("handoff-result:{review_status}"),
+    ];
+    if release_blocked {
+        learning_observations.push("handoff:release-blocked".to_string());
+    }
+    if rework_required {
+        learning_observations.push("handoff:rework-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("handoff:human-intervention-required".to_string());
+    }
+    learning_observations.extend(handoff_segments.iter().filter_map(|segment| {
+        segment
+            .get("handoffLane")
+            .and_then(Value::as_str)
+            .map(|lane| format!("handoff-lane:{}", normalize_token(lane)))
+    }));
+    learning_observations.extend(datum_transfers.iter().filter_map(|transfer| {
+        transfer
+            .get("transferKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("handoff-datum:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(transport_holds.iter().filter_map(|hold| {
+        hold.get("holdKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("handoff-transport:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.handoff-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "handoffResultJobId": handoff_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /handoff/result", "POST /fabrication/handoff/result"],
+        "catalogRoutes": ["GET /handoff/catalog", "GET /fabrication/handoff/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "handoffSegmentCount": handoff_segments.len(),
+        "handoffBlockerCount": handoff_blocker_count,
+        "datumTransferCount": datum_transfers.len(),
+        "datumBlockerCount": datum_blocker_count,
+        "transportHoldCount": transport_holds.len(),
+        "transportBlockerCount": transport_blocker_count,
+        "reworkRequired": rework_required,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "handoffResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "routeId": route_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "handoffSegments": handoff_segments,
+            "datumTransfers": datum_transfers,
+            "transportHolds": transport_holds,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "each handoff segment is accepted with retained evidence before downstream machine, assembly, or release work starts",
+                "datum transfer and interface verification preserve geometry, orientation, and mating-surface assumptions across split/combine work",
+                "transport, queue, cure, hold, or operator reload blockers are resolved before machine-ready release",
+                "handoff result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "handoff-result",
+            "handoff-segments",
+            "handoff-datum-transfers",
+            "handoff-transport-holds",
+            "handoff-artifacts",
+            "handoff-learning-observations",
+            "mdp-request.artifacts.handoffResult"
+        ]
+    }))
+}
+
+fn handoff_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("segment-release-blocked")
+        || status.contains("datum-release-blocked")
+        || status.contains("transport-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_handoff_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "handoff-result");
+    let job_id = response_str_field(
+        response,
+        "handoffResultJobId",
+        &safe_job_id("handoff-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "handoff-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("handoffResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let handoff_segments = result
+        .get("handoffSegments")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let datum_transfers = result
+        .get("datumTransfers")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let transport_holds = result
+        .get("transportHolds")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let handoff_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "handoff-result".to_string(),
+            "handoff-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "handoff-segments".to_string(),
+            "handoff-segments",
+            handoff_segments,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "handoff-datum-transfers".to_string(),
+            "handoff-datum-transfers",
+            datum_transfers,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "handoff-transport-holds".to_string(),
+            "handoff-transport-holds",
+            transport_holds,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "handoff-artifacts".to_string(),
+            "handoff-artifacts",
+            handoff_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "handoff-learning-observations".to_string(),
+            "handoff-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "handoff-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: handoff_result_job_severity(response),
+            summary: format!("handoff result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_handoff_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_handoff_result_job(response));
 }
 
 fn subject_catalog_lanes() -> Vec<Value> {
@@ -80342,6 +86368,23 @@ async fn slicer_profile_result_http(
     }
 }
 
+async fn mesh_repair_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<MeshRepairResultReviewRequest>,
+) -> Response {
+    match mesh_repair_result_review_response(request) {
+        Ok(response) => {
+            store_mesh_repair_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 async fn design_conversion_plan_http(Json(request): Json<DesignImportReviewRequest>) -> Response {
     match design_conversion_plan_response(request) {
         Ok(response) => Json(response).into_response(),
@@ -80371,6 +86414,23 @@ async fn design_synthesis_result_http(
 ) -> Response {
     match design_synthesis_result_review_response(request) {
         Ok(response) => Json(response).into_response(),
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn handoff_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<HandoffResultReviewRequest>,
+) -> Response {
+    match handoff_result_review_response(request) {
+        Ok(response) => {
+            store_handoff_result_response(&state, &response);
+            Json(response).into_response()
+        }
         Err(error) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "ok": false, "error": error })),
@@ -80505,6 +86565,23 @@ async fn disposition_result_http(
     match disposition_result_review_response(request) {
         Ok(response) => {
             store_disposition_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn costing_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<CostingResultReviewRequest>,
+) -> Response {
+    match costing_result_review_response(request) {
+        Ok(response) => {
+            store_costing_result_response(&state, &response);
             Json(response).into_response()
         }
         Err(error) => (
@@ -81832,6 +87909,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/mesh-repair/catalog",
             get(mesh_repair_catalog_http),
         )
+        .route("/mesh-repair/result", post(mesh_repair_result_http))
+        .route(
+            "/fabrication/mesh-repair/result",
+            post(mesh_repair_result_http),
+        )
         .route("/formats/catalog", get(design_import_catalog_http))
         .route(
             "/fabrication/formats/catalog",
@@ -81887,6 +87969,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/design/generate", post(design_generate_http))
         .route("/handoff/catalog", get(handoff_catalog_http))
         .route("/fabrication/handoff/catalog", get(handoff_catalog_http))
+        .route("/handoff/result", post(handoff_result_http))
+        .route("/fabrication/handoff/result", post(handoff_result_http))
         .route("/instructions/languages", get(instruction_languages))
         .route(
             "/fabrication/instructions/languages",
@@ -82058,17 +88142,43 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/costing/catalog", get(costing_catalog_http))
         .route("/fabrication/costing/catalog", get(costing_catalog_http))
+        .route("/costing/result", post(costing_result_http))
+        .route("/fabrication/costing/result", post(costing_result_http))
         .route("/utilities/catalog", get(utilities_catalog_http))
         .route(
             "/fabrication/utilities/catalog",
             get(utilities_catalog_http),
         )
+        .route("/energy/catalog", get(energy_catalog_http))
+        .route("/fabrication/energy/catalog", get(energy_catalog_http))
+        .route("/energy/result", post(energy_result_http))
+        .route("/fabrication/energy/result", post(energy_result_http))
         .route("/utilities/result", post(utilities_result_http))
         .route("/fabrication/utilities/result", post(utilities_result_http))
         .route("/telemetry/catalog", get(telemetry_catalog_http))
         .route(
             "/fabrication/telemetry/catalog",
             get(telemetry_catalog_http),
+        )
+        .route("/maintenance/catalog", get(maintenance_catalog_http))
+        .route(
+            "/fabrication/maintenance/catalog",
+            get(maintenance_catalog_http),
+        )
+        .route("/maintenance/result", post(maintenance_result_http))
+        .route(
+            "/fabrication/maintenance/result",
+            post(maintenance_result_http),
+        )
+        .route("/availability/catalog", get(availability_catalog_http))
+        .route(
+            "/fabrication/availability/catalog",
+            get(availability_catalog_http),
+        )
+        .route("/availability/result", post(availability_result_http))
+        .route(
+            "/fabrication/availability/result",
+            post(availability_result_http),
         )
         .route("/telemetry/result", post(telemetry_result_http))
         .route("/fabrication/telemetry/result", post(telemetry_result_http))
@@ -82097,10 +88207,25 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/setup/catalog", get(setup_catalog_http))
         .route("/tooling/catalog", get(tooling_catalog_http))
         .route("/fabrication/tooling/catalog", get(tooling_catalog_http))
+        .route("/consumables/catalog", get(consumables_catalog_http))
+        .route(
+            "/fabrication/consumables/catalog",
+            get(consumables_catalog_http),
+        )
+        .route("/consumables/result", post(consumables_result_http))
+        .route(
+            "/fabrication/consumables/result",
+            post(consumables_result_http),
+        )
         .route("/workholding/catalog", get(workholding_catalog_http))
         .route(
             "/fabrication/workholding/catalog",
             get(workholding_catalog_http),
+        )
+        .route("/workholding/result", post(workholding_result_http))
+        .route(
+            "/fabrication/workholding/result",
+            post(workholding_result_http),
         )
         .route(
             "/support-strategies/catalog",
@@ -83496,6 +89621,175 @@ mod tests {
     }
 
     #[test]
+    fn mesh_repair_result_endpoint_reviews_topology_drift_split_and_learning() {
+        let response = mesh_repair_result_review_response(MeshRepairResultReviewRequest {
+            request_id: Some("mesh-repair-result-001".to_string()),
+            plan_request_id: Some("plan-mesh-repair-001".to_string()),
+            job_id: Some("job-mesh-repair-001".to_string()),
+            worker_id: "mesh-repair-worker".to_string(),
+            reviewer: Some("geometry-repair-reviewer".to_string()),
+            reviewer_version: Some("2026.06-mesh".to_string()),
+            source_design_id: Some("scan-bust-001".to_string()),
+            source_format: Some("ply-color-scan-mesh".to_string()),
+            target_format: Some("3mf".to_string()),
+            success: true,
+            machine_ready: false,
+            slicer_ready: Some(false),
+            topology_checks: Some(vec![MeshRepairResultCheck {
+                check_id: "topology-check-001".to_string(),
+                repair_domain: "watertight-topology".to_string(),
+                check_kind: "nonmanifold-edge-repair".to_string(),
+                status: "split-combine-review-required".to_string(),
+                passed: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                requires_split_combine: Some(true),
+                evidence: Some(vec![
+                    "scan shell repaired except undercut region that needs split review"
+                        .to_string(),
+                    "operator must approve topology change before slicer handoff".to_string(),
+                ]),
+            }]),
+            dimensional_reviews: Some(vec![MeshRepairDimensionalReview {
+                review_id: "dimension-review-001".to_string(),
+                feature_id: Some("mounting-boss".to_string()),
+                status: "dimension-drift-over-tolerance".to_string(),
+                max_drift_mm: Some(0.42),
+                tolerance_mm: Some(0.20),
+                wall_thickness_mm: Some(0.85),
+                release_blocker: Some(true),
+                requires_redesign: Some(true),
+                requires_split_combine: Some(true),
+                evidence: Some(vec![
+                    "repair drift exceeds tolerance at mounting boss".to_string()
+                ]),
+            }]),
+            orientation_reviews: Some(vec![MeshRepairResultCheck {
+                check_id: "orientation-review-001".to_string(),
+                repair_domain: "orientation-support-and-slice-readiness".to_string(),
+                check_kind: "support-contact-preview".to_string(),
+                status: "first-layer-review-required".to_string(),
+                passed: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                requires_split_combine: Some(false),
+                evidence: Some(vec![
+                    "support scars would cross visible color texture region".to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![MeshRepairResultArtifact {
+                artifact_id: "mesh-repair-report-001".to_string(),
+                artifact_kind: "mesh-repair-report".to_string(),
+                source_ref_id: Some("topology-check-001".to_string()),
+                uri: Some("s3://fabrication/mesh-repair-report-001.json".to_string()),
+                sha256: Some("e".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained topology, drift, orientation, and split review evidence".to_string(),
+                ]),
+            }]),
+            warnings: Some(vec![
+                "slicer release remains blocked until split and drift review clear".to_string(),
+            ]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("mesh repair result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.mesh-repair-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/mesh-repair/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("mesh-repair-result-topology-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("topologyBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("dimensionalBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("orientationBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("splitCombineRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("redesignRequired").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("driftOverTolerance").and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "mesh-repair:release-blocked",
+            "mesh-repair:human-intervention-required",
+            "mesh-repair:split-combine-required",
+            "mesh-repair:redesign-required",
+            "mesh-repair:dimension-drift-over-tolerance",
+            "mesh-repair-domain:watertight-topology",
+            "mesh-repair-check:nonmanifold-edge-repair",
+            "mesh-repair-orientation:support-contact-preview",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_mesh_repair_result_job(&response);
+        assert_eq!(job.record.kind, "mesh-repair-result");
+        assert_eq!(
+            job.record.status,
+            "mesh-repair-result-topology-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "mesh-repair-result",
+            "mesh-repair-topology-checks",
+            "mesh-repair-dimensional-reviews",
+            "mesh-repair-orientation-reviews",
+            "mesh-repair-artifacts",
+            "mesh-repair-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
+    }
+
+    #[test]
     fn design_import_catalog_endpoint_exposes_native_cad_worker_lanes() {
         let payload = design_import_catalog_response();
         assert_eq!(
@@ -84397,6 +90691,148 @@ mod tests {
                     .iter()
                     .any(|item| item.get("lane").and_then(Value::as_str) == Some(lane)),
                 "missing handoff lane {lane}"
+            );
+        }
+    }
+
+    #[test]
+    fn handoff_result_endpoint_reviews_datum_transport_and_learning() {
+        let response = handoff_result_review_response(HandoffResultReviewRequest {
+            request_id: Some("handoff-result-001".to_string()),
+            plan_request_id: Some("plan-handoff-001".to_string()),
+            job_id: Some("job-handoff-001".to_string()),
+            worker_id: "handoff-review-worker".to_string(),
+            reviewer: Some("handoff-release-reviewer".to_string()),
+            reviewer_version: Some("2026.06-handoff".to_string()),
+            route_id: Some("split-combine-route-001".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            handoff_segments: Some(vec![HandoffResultSegment {
+                segment_id: "handoff-segment-001".to_string(),
+                handoff_lane: "hybrid-split-combine-assembly".to_string(),
+                from_stage: "horizontal-mill".to_string(),
+                to_stage: "robotic-assembly-cell".to_string(),
+                status: "interface-rework-release-blocked".to_string(),
+                accepted: Some(false),
+                release_blocker: Some(true),
+                requires_rework: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "mating face burr blocks recomposition handoff".to_string(),
+                    "operator must deburr and reinspect datum before assembly".to_string(),
+                ]),
+            }]),
+            datum_transfers: Some(vec![HandoffResultDatumTransfer {
+                transfer_id: "datum-transfer-001".to_string(),
+                transfer_kind: "pallet-to-assembly-datum".to_string(),
+                status: "datum-unverified".to_string(),
+                datum_preserved: Some(false),
+                interface_verified: Some(false),
+                release_blocker: Some(true),
+                evidence: Some(vec![
+                    "fixture datum was not probed after pallet unload".to_string()
+                ]),
+            }]),
+            transport_holds: Some(vec![HandoffResultTransportHold {
+                hold_id: "transport-hold-001".to_string(),
+                hold_kind: "operator-queue-and-cure-hold".to_string(),
+                status: "hold-open".to_string(),
+                resolved: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "adhesive cure timer and operator reload window remain open".to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![HandoffResultArtifact {
+                artifact_id: "handoff-report-001".to_string(),
+                artifact_kind: "handoff-datum-transfer-record".to_string(),
+                source_ref_id: Some("handoff-segment-001".to_string()),
+                uri: Some("s3://fabrication/handoff-report-001.json".to_string()),
+                sha256: Some("h".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained interface, datum, transport, and rework evidence".to_string(),
+                ]),
+            }]),
+            warnings: Some(vec![
+                "recomposition remains blocked until datum transfer is verified".to_string(),
+            ]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("handoff result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.handoff-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/handoff/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("handoff-result-segment-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("handoffBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("datumBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("transportBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("reworkRequired").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations");
+        assert!(observations
+            .iter()
+            .any(|observation| observation.as_str() == Some("handoff:rework-required")));
+        assert!(observations.iter().any(|observation| {
+            observation.as_str() == Some("handoff-lane:hybrid-split-combine-assembly")
+        }));
+
+        let job = stored_handoff_result_job(&response);
+        assert_eq!(job.record.kind, "handoff-result");
+        assert_eq!(job.record.status, "handoff-result-segment-release-blocked");
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "handoff-result",
+            "handoff-segments",
+            "handoff-datum-transfers",
+            "handoff-transport-holds",
+            "handoff-artifacts",
+            "handoff-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
             );
         }
     }
@@ -90967,6 +97403,151 @@ mod tests {
     }
 
     #[test]
+    fn costing_result_endpoint_reviews_yield_routes_and_learning() {
+        let response = costing_result_review_response(CostingResultReviewRequest {
+            request_id: Some("costing-result-001".to_string()),
+            plan_request_id: Some("plan-costing-001".to_string()),
+            job_id: Some("job-costing-001".to_string()),
+            worker_id: "costing-review-worker".to_string(),
+            reviewer: Some("hybrid-route-costing-reviewer".to_string()),
+            reviewer_version: Some("2026.06".to_string()),
+            machine_kind: Some("hybrid-print-mill-route".to_string()),
+            route_id: Some("split-route-001".to_string()),
+            success: true,
+            machine_ready: false,
+            customer_ready: Some(false),
+            cost_reviews: Some(vec![CostingResultReview {
+                review_id: "cost-review-001".to_string(),
+                cost_family: "split-combine-route-economics".to_string(),
+                status: "overrun-review-required".to_string(),
+                estimate_kind: "assembly-and-rework-labor".to_string(),
+                estimated_value: Some(120.0),
+                actual_value: Some(260.0),
+                unit: Some("minutes".to_string()),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec!["reviewed traveler labor variance".to_string()]),
+            }]),
+            yield_reviews: Some(vec![CostingResultYieldReview {
+                yield_id: "yield-review-001".to_string(),
+                material_kind: "aluminum-billet".to_string(),
+                status: "scrap-allowance-exceeded".to_string(),
+                estimated_scrap_percent: Some(8.0),
+                actual_scrap_percent: Some(22.0),
+                material_available: Some(false),
+                release_blocker: Some(true),
+                evidence: Some(vec!["verified billet shortage".to_string()]),
+            }]),
+            route_comparisons: Some(vec![CostingResultRouteComparison {
+                comparison_id: "route-comparison-001".to_string(),
+                route_kind: "split-combine-hybrid-route".to_string(),
+                status: "route-economics-blocked".to_string(),
+                selected: Some(true),
+                cheaper_than_baseline: Some(false),
+                safer_than_baseline: Some(true),
+                requires_split_combine: Some(true),
+                release_blocker: Some(true),
+                evidence: Some(vec!["hybrid fixture route estimate retained".to_string()]),
+            }]),
+            artifacts: Some(vec![CostingResultArtifact {
+                artifact_id: "costing-artifact-001".to_string(),
+                artifact_kind: "split-combine-route-comparison".to_string(),
+                source_ref_id: Some("route-comparison-001".to_string()),
+                uri: Some("s3://fabrication-costing/job-costing-001.json".to_string()),
+                sha256: Some("d".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec!["checksum verified".to_string()]),
+            }]),
+            warnings: Some(vec!["requires commercial review before release".to_string()]),
+            review_metadata: Some(json!({"currency": "USD", "plant": "alpha"})),
+        })
+        .expect("costing result response");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.costing-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/costing/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("costing-result-cost-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("costBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("yieldBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("routeBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("splitCombineRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        let observations = response
+            .pointer("/learning/observations")
+            .and_then(Value::as_array)
+            .expect("learning observations");
+        for expected in [
+            "costing:release-blocked",
+            "costing:human-intervention-required",
+            "costing:split-combine-required",
+            "costing:cost-overrun",
+            "costing:scrap-overrun",
+            "costing-family:split-combine-route-economics",
+            "costing-estimate:assembly-and-rework-labor",
+            "costing-yield-material:aluminum-billet",
+            "costing-route:split-combine-hybrid-route",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|observation| observation.as_str() == Some(expected)),
+                "missing learning observation {expected}"
+            );
+        }
+
+        let job = stored_costing_result_job(&response);
+        assert_eq!(job.record.kind, "costing-result");
+        assert_eq!(job.record.status, "costing-result-cost-release-blocked");
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "costing-result",
+            "costing-reviews",
+            "costing-yield-reviews",
+            "costing-route-comparisons",
+            "costing-artifacts",
+            "costing-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
+    }
+
+    #[test]
     fn utilities_catalog_endpoint_exposes_process_support_and_recovery_learning_contract() {
         let payload = utilities_catalog_response();
         assert_eq!(
@@ -91016,6 +97597,214 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("process-support")))));
+    }
+
+    #[test]
+    fn energy_catalog_endpoint_exposes_power_load_and_route_learning_contract() {
+        let payload = energy_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.energy-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/energy/catalog"))));
+        assert_eq!(
+            payload.get("energyFamilyCount").and_then(Value::as_u64),
+            Some(4)
+        );
+        assert!(payload
+            .get("energyFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("sheet-cut-beam-jet-plasma-and-edm-energy")
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("power-load-record"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("costingResult.estimateFamilies"))));
+        assert!(payload
+            .get("energyContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| {
+                contract
+                    .get("learningSignals")
+                    .and_then(Value::as_array)
+                    .is_some_and(|signals| {
+                        signals
+                            .iter()
+                            .any(|signal| signal.as_str() == Some("mdp-request.artifacts.energy"))
+                    })
+            })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("split, combine, defer, or reroute")))));
+    }
+
+    #[test]
+    fn energy_result_endpoint_reviews_power_thermal_recovery_and_learning() {
+        let response = energy_result_review_response(EnergyResultReviewRequest {
+            request_id: Some("energy-result-001".to_string()),
+            plan_request_id: Some("plan-energy-001".to_string()),
+            job_id: Some("job-energy-001".to_string()),
+            worker_id: "energy-review-worker".to_string(),
+            reviewer: Some("energy-release-reviewer".to_string()),
+            reviewer_version: Some("2026.06-energy".to_string()),
+            machine_id: Some("laser-cell-01".to_string()),
+            machine_kind: Some("laser-cutter".to_string()),
+            run_id: Some("run-energy-001".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            power_checks: Some(vec![EnergyResultPowerCheck {
+                check_id: "energy-power-001".to_string(),
+                energy_family: "sheet-cut-beam-jet-plasma-and-edm-energy".to_string(),
+                load_kind: "laser-power-supply-and-chiller".to_string(),
+                status: "over-capacity-release-blocked".to_string(),
+                estimated_kw: Some(11.2),
+                measured_kw: Some(12.4),
+                capacity_kw: Some(10.0),
+                within_limits: Some(false),
+                release_blocker: Some(true),
+                requires_replan: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "laser power supply plus chiller exceeds retained circuit capacity".to_string(),
+                    "nested sheet job must be deferred, split, or moved to another cell"
+                        .to_string(),
+                ]),
+            }]),
+            thermal_checks: Some(vec![EnergyResultThermalCheck {
+                check_id: "energy-thermal-001".to_string(),
+                thermal_scope: "beam-duty-cycle-and-thermal-distortion".to_string(),
+                status: "cooldown-required".to_string(),
+                duty_cycle_percent: Some(92.0),
+                heat_rise_c: Some(18.5),
+                within_limits: Some(false),
+                release_blocker: Some(true),
+                requires_cooldown: Some(true),
+                evidence: Some(vec![
+                    "kerf coupon review requires cooldown before continued profile cutting"
+                        .to_string(),
+                ]),
+            }]),
+            recovery_actions: Some(vec![EnergyResultRecoveryAction {
+                action_id: "energy-recovery-001".to_string(),
+                action_kind: "defer-split-and-operator-power-review".to_string(),
+                status: "recovery-required".to_string(),
+                completed: Some(false),
+                verified: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "operator must verify power budget before release".to_string()
+                ]),
+            }]),
+            artifacts: Some(vec![EnergyResultArtifact {
+                artifact_id: "energy-report-001".to_string(),
+                artifact_kind: "power-load-record".to_string(),
+                source_ref_id: Some("energy-power-001".to_string()),
+                uri: Some("s3://fabrication/energy-report-001.json".to_string()),
+                sha256: Some("e".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained power load, thermal load, and route defer evidence".to_string(),
+                ]),
+            }]),
+            warnings: Some(vec![
+                "machine-ready release blocked until energy review is resolved".to_string(),
+            ]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("energy result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.energy-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/energy/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("energy-result-power-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("powerBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("thermalBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("recoveryBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("replanRequired").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("cooldownRequired").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations");
+        assert!(observations
+            .iter()
+            .any(|observation| observation.as_str() == Some("energy:replan-required")));
+        assert!(observations.iter().any(|observation| observation.as_str()
+            == Some("energy-family:sheet-cut-beam-jet-plasma-and-edm-energy")));
+
+        let job = stored_energy_result_job(&response);
+        assert_eq!(job.record.kind, "energy-result");
+        assert_eq!(job.record.status, "energy-result-power-release-blocked");
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "energy-result",
+            "energy-power-checks",
+            "energy-thermal-checks",
+            "energy-recovery-actions",
+            "energy-artifacts",
+            "energy-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
     }
 
     #[test]
@@ -91232,6 +98021,458 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("runtime evidence contracts")))));
+    }
+
+    #[test]
+    fn maintenance_catalog_endpoint_exposes_lockout_service_and_learning_contract() {
+        let payload = maintenance_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.maintenance-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/maintenance/catalog") })));
+        assert_eq!(
+            payload
+                .get("maintenanceFamilyCount")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+        assert!(payload
+            .get("maintenanceFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families
+                .iter()
+                .any(|family| { family.as_str() == Some("lockout-tagout-and-service-release") })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("lockout-clearance-proof") })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("machineProfile.evidence.maintenance")
+            })));
+        assert!(payload
+            .get("maintenanceContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("learningSignals")
+                .and_then(Value::as_array)
+                .is_some_and(|signals| signals.iter().any(|signal| signal
+                    .as_str()
+                    .is_some_and(|signal| signal.contains("stale-sensor-risk")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("unattended")))));
+    }
+
+    #[test]
+    fn maintenance_result_endpoint_reviews_lockout_service_and_learning() {
+        let response = maintenance_result_review_response(MaintenanceResultReviewRequest {
+            request_id: Some("maintenance-result-001".to_string()),
+            plan_request_id: Some("plan-maintenance-001".to_string()),
+            job_id: Some("job-maintenance-001".to_string()),
+            worker_id: "maintenance-review-worker".to_string(),
+            reviewer: Some("service-release-reviewer".to_string()),
+            reviewer_version: Some("2026.06-maintenance".to_string()),
+            machine_id: Some("vf2-mill-01".to_string()),
+            machine_kind: Some("vertical-mill".to_string()),
+            route_id: Some("hybrid-bracket-route".to_string()),
+            success: true,
+            machine_ready: false,
+            unattended_ready: Some(false),
+            service_items: Some(vec![MaintenanceResultServiceItem {
+                service_id: "service-item-001".to_string(),
+                maintenance_family: "spindle-tooling-and-wear-state".to_string(),
+                component_kind: "spindle-bearing-and-toolholder".to_string(),
+                status: "tooling-service-overdue-release-blocked".to_string(),
+                service_current: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "spindle service work order is still open for the selected aluminum roughing route"
+                        .to_string(),
+                    "toolholder runout verification was not retained after maintenance".to_string(),
+                ]),
+            }]),
+            lockout_clearances: Some(vec![MaintenanceResultLockoutClearance {
+                clearance_id: "lockout-clearance-001".to_string(),
+                lockout_kind: "maintenance-lockout-tagout".to_string(),
+                status: "lockout-uncleared-release-blocked".to_string(),
+                cleared: Some(false),
+                authorized_by: None,
+                release_blocker: Some(true),
+                evidence: Some(vec![
+                    "operator note shows active lockout tag on spindle enable circuit".to_string(),
+                ]),
+            }]),
+            verification_checks: Some(vec![MaintenanceResultVerificationCheck {
+                check_id: "verification-check-001".to_string(),
+                check_kind: "post-service-dry-run-and-safe-stop".to_string(),
+                status: "safe-stop-verification-missing".to_string(),
+                passed: Some(false),
+                release_blocker: Some(true),
+                evidence: Some(vec![
+                    "post-service homing, spindle warmup, and E-stop restart evidence is missing"
+                        .to_string(),
+                ]),
+            }]),
+            residual_restrictions: Some(vec![MaintenanceResultResidualRestriction {
+                restriction_id: "restriction-001".to_string(),
+                restriction_kind: "operator-required-after-service".to_string(),
+                status: "unattended-release-requires-operator".to_string(),
+                requires_operator: Some(true),
+                allows_unattended: Some(false),
+                release_blocker: Some(true),
+                evidence: Some(vec![
+                    "service note requires operator observation for first article after repair"
+                        .to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![MaintenanceResultArtifact {
+                artifact_id: "maintenance-artifact-001".to_string(),
+                artifact_kind: "service-work-order".to_string(),
+                source_ref_id: Some("work-order-42".to_string()),
+                uri: Some("s3://fabrication-maintenance/vf2/work-order-42.json".to_string()),
+                sha256: Some(
+                    "abababababababababababababababababababababababababababababababab"
+                        .to_string(),
+                ),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained service record links lockout and verification blockers".to_string(),
+                ]),
+            }]),
+            warnings: Some(vec![
+                "machine route must be rescheduled or released by maintenance authority".to_string(),
+            ]),
+            review_metadata: Some(json!({
+                "source": "maintenance-worker-result",
+                "shift": "night"
+            })),
+        })
+        .expect("maintenance result review should validate");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.maintenance-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/maintenance/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("maintenance-result-service-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            response.get("unattendedReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            response.get("serviceBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("lockoutBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("verificationBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("residualRestrictionBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations
+                .iter()
+                .any(|observation| observation.as_str()
+                    == Some("maintenance:human-intervention-required"))));
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations
+                .iter()
+                .any(|observation| observation.as_str()
+                    == Some("maintenance-family:spindle-tooling-and-wear-state"))));
+        assert!(response
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("maintenance-learning-observations"))));
+
+        let stored = stored_maintenance_result_job(&response);
+        assert_eq!(stored.record.kind, "maintenance-result");
+        assert_eq!(stored.record.ok, false);
+        assert_eq!(stored.record.severity, "error");
+        assert!(stored.artifacts.contains_key("maintenance-result"));
+        assert!(stored.artifacts.contains_key("maintenance-service-items"));
+        assert!(stored
+            .artifacts
+            .contains_key("maintenance-lockout-clearances"));
+        assert!(stored
+            .artifacts
+            .contains_key("maintenance-verification-checks"));
+        assert!(stored
+            .artifacts
+            .contains_key("maintenance-residual-restrictions"));
+        assert!(stored
+            .artifacts
+            .contains_key("maintenance-learning-observations"));
+    }
+
+    #[test]
+    fn availability_catalog_endpoint_exposes_capacity_fallback_and_learning_contract() {
+        let payload = availability_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.availability-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/availability/catalog") })));
+        assert_eq!(
+            payload
+                .get("availabilityFamilyCount")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+        assert!(payload
+            .get("availabilityFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("cross-machine-split-combine-capacity")
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("fallback-machine-plan") })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("machineSchedule.machineLanes") })));
+        assert!(payload
+            .get("availabilityContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("learningSignals")
+                .and_then(Value::as_array)
+                .is_some_and(|signals| signals.iter().any(|signal| signal
+                    .as_str()
+                    .is_some_and(|signal| signal.contains("split-combine-capacity")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("queue-delay risk")))));
+    }
+
+    #[test]
+    fn availability_result_endpoint_reviews_capacity_fallback_and_learning() {
+        let response = availability_result_review_response(AvailabilityResultReviewRequest {
+            request_id: Some("availability-result-001".to_string()),
+            plan_request_id: Some("plan-availability-001".to_string()),
+            job_id: Some("job-availability-001".to_string()),
+            worker_id: "availability-review-worker".to_string(),
+            reviewer: Some("capacity-release-reviewer".to_string()),
+            reviewer_version: Some("2026.06-availability".to_string()),
+            route_id: Some("hybrid-bracket-route".to_string()),
+            machine_ready: false,
+            unattended_ready: Some(false),
+            success: true,
+            machine_windows: Some(vec![AvailabilityResultMachineWindow {
+                window_id: "machine-window-001".to_string(),
+                availability_family: "cross-machine-split-combine-capacity".to_string(),
+                machine_id: "vf2-mill-01".to_string(),
+                machine_kind: "vertical-mill".to_string(),
+                status: "queue-saturated-release-blocked".to_string(),
+                available: Some(false),
+                queue_delay_minutes: Some(180.0),
+                capacity_minutes: Some(0.0),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "preferred mill has no capacity before assembly handoff window".to_string(),
+                    "operator coverage is outside the recovery stop-point window".to_string(),
+                ]),
+            }]),
+            resource_checks: Some(vec![AvailabilityResultResourceCheck {
+                check_id: "resource-check-001".to_string(),
+                resource_kind: "fixture-and-operator-window".to_string(),
+                status: "operator-window-missing".to_string(),
+                available: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "fixture pallet and operator reload window are not aligned".to_string(),
+                ]),
+            }]),
+            fallback_options: Some(vec![AvailabilityResultFallbackOption {
+                option_id: "fallback-option-001".to_string(),
+                option_kind: "split-print-then-lathe-fallback".to_string(),
+                status: "fallback-split-combine-review-required".to_string(),
+                machine_id: Some("lathe-02".to_string()),
+                selected: Some(true),
+                viable: Some(false),
+                requires_split_combine: Some(true),
+                release_blocker: Some(true),
+                evidence: Some(vec![
+                    "fallback route needs new datum handoff and recomposition inspection"
+                        .to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![AvailabilityResultArtifact {
+                artifact_id: "availability-report-001".to_string(),
+                artifact_kind: "split-combine-capacity-model".to_string(),
+                source_ref_id: Some("fallback-option-001".to_string()),
+                uri: Some("s3://fabrication/availability-report-001.json".to_string()),
+                sha256: Some("f".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained machine window, resource, and fallback capacity evidence".to_string(),
+                ]),
+            }]),
+            warnings: Some(vec![
+                "release blocked until capacity fallback and operator window are viable"
+                    .to_string(),
+            ]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("availability result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.availability-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/availability/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("availability-result-machine-window-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("machineWindowBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("resourceBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("fallbackBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("splitCombineRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "availability:release-blocked",
+            "availability:split-combine-required",
+            "availability:human-intervention-required",
+            "availability-family:cross-machine-split-combine-capacity",
+            "availability-machine-kind:vertical-mill",
+            "availability-resource:fixture-and-operator-window",
+            "availability-fallback:split-print-then-lathe-fallback",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_availability_result_job(&response);
+        assert_eq!(job.record.kind, "availability-result");
+        assert_eq!(
+            job.record.status,
+            "availability-result-machine-window-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "availability-result",
+            "availability-machine-windows",
+            "availability-resource-checks",
+            "availability-fallback-options",
+            "availability-artifacts",
+            "availability-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
     }
 
     #[test]
@@ -92345,6 +99586,247 @@ mod tests {
     }
 
     #[test]
+    fn consumables_catalog_endpoint_exposes_tool_life_material_and_support_media_contract() {
+        let payload = consumables_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.consumables-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/consumables/catalog") })));
+        assert_eq!(
+            payload.get("consumableFamilyCount").and_then(Value::as_u64),
+            Some(4)
+        );
+        assert!(payload
+            .get("consumableFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("subtractive-cutter-insert-and-coolant-consumables")
+            })));
+        assert!(payload
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|machine_kinds| machine_kinds
+                .iter()
+                .any(|machine_kind| machine_kind.as_str() == Some("wire-edm-sheet-cutter"))));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("tool-life-record"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("toolingPlan.requirements.consumables")
+            })));
+        assert!(payload
+            .get("consumableContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("learningSignals")
+                .and_then(Value::as_array)
+                .is_some_and(|signals| signals.iter().any(|signal| signal
+                    .as_str()
+                    .is_some_and(|signal| signal.contains("support-media")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("operator refill checkpoints")))));
+    }
+
+    #[test]
+    fn consumables_result_endpoint_reviews_capacity_tool_life_and_learning() {
+        let response = consumables_result_review_response(ConsumablesResultReviewRequest {
+            request_id: Some("consumables-result-001".to_string()),
+            plan_request_id: Some("plan-consumables-001".to_string()),
+            job_id: Some("job-consumables-001".to_string()),
+            worker_id: "consumables-review-worker".to_string(),
+            reviewer: Some("inventory-release-reviewer".to_string()),
+            reviewer_version: Some("2026.06-consumables".to_string()),
+            machine_id: Some("vf2-mill-01".to_string()),
+            machine_kind: Some("vertical-mill".to_string()),
+            route_id: Some("hybrid-bracket-route".to_string()),
+            success: true,
+            machine_ready: false,
+            unattended_ready: Some(false),
+            inventory_checks: Some(vec![ConsumablesResultInventoryCheck {
+                check_id: "inventory-check-001".to_string(),
+                consumable_family: "subtractive-cutter-insert-and-coolant-consumables".to_string(),
+                consumable_kind: "coolant-and-fresh-edge-capacity".to_string(),
+                status: "capacity-shortfall-release-blocked".to_string(),
+                available: Some(false),
+                lot_traceable: Some(true),
+                shelf_life_current: Some(true),
+                dry_state_current: Some(true),
+                capacity_remaining: Some(15.0),
+                projected_required: Some(45.0),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                requires_split_combine: Some(true),
+                evidence: Some(vec![
+                    "coolant concentration is traceable but below the long roughing route capacity"
+                        .to_string(),
+                    "planner must split work or schedule operator refill before unattended release"
+                        .to_string(),
+                ]),
+            }]),
+            tool_life_checks: Some(vec![ConsumablesResultToolLifeCheck {
+                check_id: "tool-life-check-001".to_string(),
+                tool_kind: "carbide-endmill-fresh-edge".to_string(),
+                status: "tool-life-shortfall-release-blocked".to_string(),
+                tool_life_remaining_minutes: Some(12.0),
+                projected_cut_minutes: Some(35.0),
+                wear_within_limit: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "tool-life record shows edge wear exceeds finish-pass allowance".to_string(),
+                ]),
+            }]),
+            support_media_checks: Some(vec![ConsumablesResultSupportMediaCheck {
+                check_id: "support-media-check-001".to_string(),
+                media_kind: "chip-evacuation-and-mist-coolant".to_string(),
+                status: "support-media-restart-missing".to_string(),
+                available: Some(false),
+                restart_verified: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "chip evacuation restart was not verified after coolant refill".to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![ConsumablesResultArtifact {
+                artifact_id: "consumables-artifact-001".to_string(),
+                artifact_kind: "tool-life-record".to_string(),
+                source_ref_id: Some("tool-life-ledger-42".to_string()),
+                uri: Some("s3://fabrication-consumables/vf2/tool-life-42.json".to_string()),
+                sha256: Some(
+                    "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd".to_string(),
+                ),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained tool-life and coolant capacity record links release blockers"
+                        .to_string(),
+                ]),
+            }]),
+            warnings: Some(vec![
+                "route should split roughing and finishing across a fresh tool window".to_string(),
+            ]),
+            review_metadata: Some(json!({
+                "source": "consumables-worker-result",
+                "shift": "day"
+            })),
+        })
+        .expect("consumables result review should validate");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.consumables-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/consumables/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("consumables-result-inventory-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            response.get("unattendedReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            response
+                .get("inventoryBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("toolLifeBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("supportMediaBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("splitCombineRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations
+                .iter()
+                .any(|observation| observation.as_str()
+                    == Some("consumables:split-combine-required"))));
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(
+                |observations| observations.iter().any(|observation| observation.as_str()
+                    == Some(
+                        "consumables-family:subtractive-cutter-insert-and-coolant-consumables"
+                    ))
+            ));
+        assert!(response
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("consumables-learning-observations"))));
+
+        let stored = stored_consumables_result_job(&response);
+        assert_eq!(stored.record.kind, "consumables-result");
+        assert_eq!(stored.record.ok, false);
+        assert_eq!(stored.record.severity, "error");
+        assert!(stored.artifacts.contains_key("consumables-result"));
+        assert!(stored
+            .artifacts
+            .contains_key("consumables-inventory-checks"));
+        assert!(stored
+            .artifacts
+            .contains_key("consumables-tool-life-checks"));
+        assert!(stored
+            .artifacts
+            .contains_key("consumables-support-media-checks"));
+        assert!(stored
+            .artifacts
+            .contains_key("consumables-learning-observations"));
+    }
+
+    #[test]
     fn workholding_catalog_endpoint_exposes_fixture_release_and_learning_contract() {
         let payload = workholding_catalog_response();
         assert_eq!(
@@ -92396,6 +99878,188 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified fixture designs")))));
+    }
+
+    #[test]
+    fn workholding_result_endpoint_reviews_fixture_datum_split_and_learning() {
+        let response = workholding_result_review_response(WorkholdingResultReviewRequest {
+            request_id: Some("workholding-result-001".to_string()),
+            plan_request_id: Some("plan-workholding-001".to_string()),
+            job_id: Some("job-workholding-001".to_string()),
+            worker_id: "workholding-review-worker".to_string(),
+            reviewer: Some("fixture-release-reviewer".to_string()),
+            reviewer_version: Some("2026.06-workholding".to_string()),
+            machine_id: Some("vf2-mill-01".to_string()),
+            machine_kind: Some("vertical-mill".to_string()),
+            route_id: Some("hybrid-bracket-route".to_string()),
+            success: true,
+            machine_ready: false,
+            unattended_ready: Some(false),
+            fixture_checks: Some(vec![WorkholdingResultFixtureCheck {
+                check_id: "fixture-check-001".to_string(),
+                workholding_family: "mill-router-fixture-clamp-and-vacuum".to_string(),
+                fixture_kind: "soft-jaw-and-tabbed-bridge-fixture".to_string(),
+                status: "fixture-holding-unverified-release-blocked".to_string(),
+                holding_verified: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "soft jaw clamp force and tab bridge support were not retained".to_string(),
+                    "thin-wall roughing needs operator fixture review before unattended release"
+                        .to_string(),
+                ]),
+            }]),
+            datum_transfers: Some(vec![WorkholdingResultDatumTransfer {
+                transfer_id: "datum-transfer-001".to_string(),
+                transfer_kind: "multi-setup-work-offset-transfer".to_string(),
+                status: "datum-reprobe-required".to_string(),
+                datum_verified: Some(false),
+                re_probe_required: Some(true),
+                release_blocker: Some(true),
+                evidence: Some(vec![
+                    "second setup work offset cannot be joined to the first setup datum".to_string(),
+                ]),
+            }]),
+            clearance_checks: Some(vec![WorkholdingResultClearanceCheck {
+                check_id: "clearance-check-001".to_string(),
+                clearance_kind: "clamp-and-toolpath-clearance".to_string(),
+                status: "collision-risk-release-blocked".to_string(),
+                clearance_verified: Some(false),
+                collision_risk: Some(true),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "simulation shows finish toolpath approaches clamp exclusion zone".to_string(),
+                ]),
+            }]),
+            split_combine_holds: Some(vec![WorkholdingResultSplitCombineHold {
+                hold_id: "split-combine-hold-001".to_string(),
+                hold_kind: "hybrid-assembly-fixture-datum-and-recomposition".to_string(),
+                status: "interface-fixture-review-required".to_string(),
+                interface_verified: Some(false),
+                recomposition_ready: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "printed insert and milled bracket need recomposition fixture metrology"
+                        .to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![WorkholdingResultArtifact {
+                artifact_id: "workholding-artifact-001".to_string(),
+                artifact_kind: "fixture-plan".to_string(),
+                source_ref_id: Some("fixture-plan-42".to_string()),
+                uri: Some("s3://fabrication-workholding/vf2/fixture-plan-42.json".to_string()),
+                sha256: Some(
+                    "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
+                        .to_string(),
+                ),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained fixture plan links clamp, datum, clearance, and recomposition blockers"
+                        .to_string(),
+                ]),
+            }]),
+            warnings: Some(vec![
+                "planner should split roughing and recomposition until fixture metrology clears"
+                    .to_string(),
+            ]),
+            review_metadata: Some(json!({
+                "source": "workholding-worker-result",
+                "shift": "day"
+            })),
+        })
+        .expect("workholding result review should validate");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.workholding-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/workholding/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("workholding-result-fixture-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("fixtureBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("datumBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("clearanceBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("splitCombineBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("splitCombineRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations
+                .iter()
+                .any(|observation| observation.as_str()
+                    == Some("workholding:split-combine-required"))));
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations
+                .iter()
+                .any(|observation| observation.as_str()
+                    == Some("workholding-family:mill-router-fixture-clamp-and-vacuum"))));
+        assert!(response
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("workholding-learning-observations"))));
+
+        let stored = stored_workholding_result_job(&response);
+        assert_eq!(stored.record.kind, "workholding-result");
+        assert_eq!(stored.record.ok, false);
+        assert_eq!(stored.record.severity, "error");
+        assert!(stored.artifacts.contains_key("workholding-result"));
+        assert!(stored.artifacts.contains_key("workholding-fixture-checks"));
+        assert!(stored.artifacts.contains_key("workholding-datum-transfers"));
+        assert!(stored
+            .artifacts
+            .contains_key("workholding-clearance-checks"));
+        assert!(stored
+            .artifacts
+            .contains_key("workholding-split-combine-holds"));
+        assert!(stored
+            .artifacts
+            .contains_key("workholding-learning-observations"));
     }
 
     #[test]
