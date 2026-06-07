@@ -6428,12 +6428,24 @@ struct TextInstructionSignals {
     has_text_adhesive_bonding_context: bool,
     has_text_adhesive_bonding_prep_evidence: bool,
     has_text_adhesive_bonding_cure_release_evidence: bool,
+    has_text_plastic_joining_context: bool,
+    has_text_plastic_joining_setup_evidence: bool,
+    has_text_plastic_joining_release_evidence: bool,
     has_text_fastener_installation_context: bool,
     has_text_fastener_installation_setup_evidence: bool,
     has_text_fastener_installation_release_evidence: bool,
     has_text_rivet_installation_context: bool,
     has_text_rivet_installation_setup_evidence: bool,
     has_text_rivet_installation_release_evidence: bool,
+    has_text_seal_installation_context: bool,
+    has_text_seal_installation_setup_evidence: bool,
+    has_text_seal_installation_release_evidence: bool,
+    has_text_bearing_installation_context: bool,
+    has_text_bearing_installation_setup_evidence: bool,
+    has_text_bearing_installation_release_evidence: bool,
+    has_text_dynamic_balancing_context: bool,
+    has_text_dynamic_balancing_setup_evidence: bool,
+    has_text_dynamic_balancing_release_evidence: bool,
     has_text_part_marking_context: bool,
     has_text_part_marking_setup_evidence: bool,
     has_text_part_marking_readability_evidence: bool,
@@ -7656,6 +7668,19 @@ fn wants_surface_finishing(value: &str) -> bool {
 
 fn wants_metal_joining(value: &str) -> bool {
     let token = normalize_token(value);
+    if token.contains("plastic-joining")
+        || token.contains("plastic-welding")
+        || token.contains("ultrasonic-welding")
+        || token.contains("ultrasonic-weld")
+        || token.contains("heat-staking")
+        || token.contains("heat-stake")
+        || token.contains("solvent-welding")
+        || token.contains("solvent-weld")
+        || token.contains("vibration-welding")
+        || token.contains("spin-welding")
+    {
+        return false;
+    }
     let token_parts = token.split('-').collect::<Vec<_>>();
     let has_word = |word: &str| token_parts.iter().any(|part| *part == word);
     let has_joining_cell = token.contains("metal-joining-cell")
@@ -8008,6 +8033,33 @@ fn wants_adhesive_bonding(value: &str) -> bool {
         || token.contains("bond-release")
 }
 
+fn wants_plastic_joining(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("plastic-joining-cell")
+        || token.contains("plastic-joining")
+        || token.contains("plastic-joining-job")
+        || token.contains("plastic-welding")
+        || token.contains("plastic-weld")
+        || token.contains("polymer-welding")
+        || token.contains("thermoplastic-weld")
+        || token.contains("ultrasonic-welding")
+        || token.contains("ultrasonic-weld")
+        || token.contains("ultrasonic-staking")
+        || token.contains("heat-staking")
+        || token.contains("heat-stake")
+        || token.contains("thermal-staking")
+        || token.contains("hot-plate-welding")
+        || token.contains("hot-plate-weld")
+        || token.contains("solvent-welding")
+        || token.contains("solvent-weld")
+        || token.contains("vibration-welding")
+        || token.contains("spin-welding")
+        || token.contains("melt-flow")
+        || token.contains("energy-director")
+        || token.contains("weld-collapse")
+        || token.contains("weld-release")
+}
+
 fn wants_fastener_installation(value: &str) -> bool {
     let token = normalize_token(value);
     token.contains("fastener-installation-cell")
@@ -8057,6 +8109,84 @@ fn wants_rivet_installation(value: &str) -> bool {
         || token.contains("swaging")
         || token.contains("peening")
         || token.contains("rivet-release")
+}
+
+fn wants_seal_installation(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("seal-installation-cell")
+        || token.contains("seal-installation")
+        || token.contains("seal-installation-job")
+        || token.contains("gasket-installation")
+        || token.contains("gasket-fit")
+        || token.contains("gasket-compression")
+        || token.contains("oring-installation")
+        || token.contains("o-ring-installation")
+        || token.contains("o-ring")
+        || token.contains("oring")
+        || token.contains("seal-groove")
+        || token.contains("gland")
+        || token.contains("gland-fill")
+        || token.contains("compression-set")
+        || token.contains("seal-lube")
+        || token.contains("seal-lubricant")
+        || token.contains("rtv-sealant")
+        || token.contains("liquid-gasket")
+        || token.contains("form-in-place-gasket")
+        || token.contains("leak-test")
+        || token.contains("pressure-test")
+        || token.contains("vacuum-decay")
+        || token.contains("bubble-test")
+        || token.contains("seal-release")
+}
+
+fn wants_bearing_installation(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("bearing-installation-cell")
+        || token.contains("bearing-installation")
+        || token.contains("bearing-installation-job")
+        || token.contains("bearing-press")
+        || token.contains("bearing-fit")
+        || token.contains("bearing-seat")
+        || token.contains("bearing-preload")
+        || token.contains("bearing-retention")
+        || token.contains("interference-fit")
+        || token.contains("press-fit-assembly")
+        || token.contains("shrink-fit")
+        || token.contains("thermal-fit")
+        || token.contains("arbor-press")
+        || token.contains("hydraulic-press")
+        || token.contains("sleeve-installation")
+        || token.contains("bushing-press")
+        || token.contains("shaft-fit")
+        || token.contains("housing-bore")
+        || token.contains("bore-gage")
+        || token.contains("runout-check")
+        || token.contains("rotation-torque")
+        || token.contains("bearing-release")
+}
+
+fn wants_dynamic_balancing(value: &str) -> bool {
+    let token = normalize_token(value);
+    token.contains("dynamic-balancing-cell")
+        || token.contains("dynamic-balancing")
+        || token.contains("dynamic-balancing-job")
+        || token.contains("rotor-balancing")
+        || token.contains("rotor-balance")
+        || token.contains("impeller-balancing")
+        || token.contains("fan-balancing")
+        || token.contains("wheel-balancing")
+        || token.contains("shaft-balancing")
+        || token.contains("spin-balance")
+        || token.contains("balancing-machine")
+        || token.contains("trial-weight")
+        || token.contains("correction-weight")
+        || token.contains("correction-plane")
+        || token.contains("residual-unbalance")
+        || token.contains("vibration-spectrum")
+        || token.contains("vibration-limit")
+        || token.contains("balance-grade")
+        || token.contains("iso-21940")
+        || token.contains("balance-release")
 }
 
 fn wants_sheet_forming(value: &str) -> bool {
@@ -8727,6 +8857,22 @@ fn is_rivet_installation_kind(kind: &str) -> bool {
     wants_rivet_installation(kind)
 }
 
+fn is_seal_installation_kind(kind: &str) -> bool {
+    wants_seal_installation(kind)
+}
+
+fn is_bearing_installation_kind(kind: &str) -> bool {
+    wants_bearing_installation(kind)
+}
+
+fn is_plastic_joining_kind(kind: &str) -> bool {
+    wants_plastic_joining(kind)
+}
+
+fn is_dynamic_balancing_kind(kind: &str) -> bool {
+    wants_dynamic_balancing(kind)
+}
+
 fn is_composite_layup_kind(kind: &str) -> bool {
     wants_composite_layup(kind)
 }
@@ -8986,6 +9132,10 @@ fn machine_class(kind: &str) -> MachineClass {
         || is_adhesive_bonding_kind(&token)
         || is_fastener_installation_kind(&token)
         || is_rivet_installation_kind(&token)
+        || is_seal_installation_kind(&token)
+        || is_bearing_installation_kind(&token)
+        || is_plastic_joining_kind(&token)
+        || is_dynamic_balancing_kind(&token)
         || is_part_marking_kind(&token)
         || is_packaging_labeling_kind(&token)
     {
@@ -10198,6 +10348,38 @@ fn default_machines() -> Vec<MachineProfile> {
             profile_evidence: None,
         },
         MachineProfile {
+            id: "plastic-joining-cell-1".to_string(),
+            kind: "plastic-joining-cell".to_string(),
+            controller: Some("plastic-joining-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "resin".to_string(),
+                "thermoplastic".to_string(),
+                "printed-part".to_string(),
+                "machined-part".to_string(),
+                "composite".to_string(),
+                "abs".to_string(),
+                "pc".to_string(),
+                "nylon".to_string(),
+                "pp".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![700.0, 450.0, 240.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "plastic-joining".to_string(),
+                "ultrasonic-welding".to_string(),
+                "heat-staking".to_string(),
+                "solvent-welding".to_string(),
+                "hot-plate-welding".to_string(),
+                "vibration-welding".to_string(),
+                "spin-welding".to_string(),
+                "energy-director-verification".to_string(),
+                "weld-collapse-inspection".to_string(),
+                "weld-release".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
             id: "rivet-installation-cell-1".to_string(),
             kind: "rivet-installation-cell".to_string(),
             controller: Some("rivet-installation-job".to_string()),
@@ -10227,6 +10409,111 @@ fn default_machines() -> Vec<MachineProfile> {
                 "mandrel-break-verification".to_string(),
                 "shop-head-inspection".to_string(),
                 "rivet-release".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "seal-installation-cell-1".to_string(),
+            kind: "seal-installation-cell".to_string(),
+            controller: Some("seal-installation-job".to_string()),
+            materials: Some(vec![
+                "polymer".to_string(),
+                "rubber".to_string(),
+                "elastomer".to_string(),
+                "silicone".to_string(),
+                "metal".to_string(),
+                "aluminum".to_string(),
+                "printed-part".to_string(),
+                "machined-part".to_string(),
+                "gasket".to_string(),
+                "o-ring".to_string(),
+                "sealant".to_string(),
+                "hardware".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![900.0, 600.0, 260.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "seal-installation".to_string(),
+                "gasket-installation".to_string(),
+                "o-ring-installation".to_string(),
+                "seal-groove-verification".to_string(),
+                "gland-fill-check".to_string(),
+                "seal-lubrication".to_string(),
+                "rtv-sealant-application".to_string(),
+                "compression-verification".to_string(),
+                "leak-test".to_string(),
+                "pressure-test".to_string(),
+                "seal-release".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "bearing-installation-cell-1".to_string(),
+            kind: "bearing-installation-cell".to_string(),
+            controller: Some("bearing-installation-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "steel".to_string(),
+                "aluminum".to_string(),
+                "polymer".to_string(),
+                "printed-part".to_string(),
+                "machined-part".to_string(),
+                "bearing".to_string(),
+                "bushing".to_string(),
+                "shaft".to_string(),
+                "sleeve".to_string(),
+                "retaining-ring".to_string(),
+                "hardware".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![650.0, 450.0, 300.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "bearing-installation".to_string(),
+                "bearing-press".to_string(),
+                "interference-fit".to_string(),
+                "shrink-fit".to_string(),
+                "thermal-fit".to_string(),
+                "bore-shaft-measurement".to_string(),
+                "arbor-press-installation".to_string(),
+                "bearing-preload".to_string(),
+                "runout-check".to_string(),
+                "rotation-torque-check".to_string(),
+                "bearing-release".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "dynamic-balancing-cell-1".to_string(),
+            kind: "dynamic-balancing-cell".to_string(),
+            controller: Some("dynamic-balancing-job".to_string()),
+            materials: Some(vec![
+                "metal".to_string(),
+                "aluminum".to_string(),
+                "steel".to_string(),
+                "polymer".to_string(),
+                "composite".to_string(),
+                "printed-part".to_string(),
+                "machined-part".to_string(),
+                "rotor".to_string(),
+                "impeller".to_string(),
+                "fan".to_string(),
+                "wheel".to_string(),
+                "shaft".to_string(),
+                "hardware".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![700.0, 450.0, 450.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "dynamic-balancing".to_string(),
+                "rotor-balancing".to_string(),
+                "impeller-balancing".to_string(),
+                "fan-balancing".to_string(),
+                "spin-balance".to_string(),
+                "trial-weight-run".to_string(),
+                "correction-weight-installation".to_string(),
+                "vibration-spectrum-check".to_string(),
+                "residual-unbalance-check".to_string(),
+                "balance-release".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -18643,8 +18930,12 @@ fn infer_requested_parts(
     let needs_adaptive_compensation_part = wants_adaptive_compensation(&objective_token);
     let needs_insert_installation_part = wants_insert_installation(&objective_token);
     let needs_adhesive_bonding_part = wants_adhesive_bonding(&objective_token);
+    let needs_plastic_joining_part = wants_plastic_joining(&objective_token);
     let needs_fastener_installation_part = wants_fastener_installation(&objective_token);
     let needs_rivet_installation_part = wants_rivet_installation(&objective_token);
+    let needs_seal_installation_part = wants_seal_installation(&objective_token);
+    let needs_bearing_installation_part = wants_bearing_installation(&objective_token);
+    let needs_dynamic_balancing_part = wants_dynamic_balancing(&objective_token);
     let needs_part_marking_part = wants_part_marking(&objective_token);
     let needs_packaging_labeling_part = wants_packaging_labeling(&objective_token);
     let needs_assembly_join_part = !needs_pcb_fabrication_part
@@ -18653,8 +18944,12 @@ fn infer_requested_parts(
         && !needs_adaptive_compensation_part
         && !needs_insert_installation_part
         && !needs_adhesive_bonding_part
+        && !needs_plastic_joining_part
         && !needs_fastener_installation_part
         && !needs_rivet_installation_part
+        && !needs_seal_installation_part
+        && !needs_bearing_installation_part
+        && !needs_dynamic_balancing_part
         && !needs_part_marking_part
         && !needs_packaging_labeling_part
         && wants_assembly_joining(&objective_token);
@@ -18664,8 +18959,12 @@ fn infer_requested_parts(
         && !needs_adaptive_compensation_part
         && !needs_insert_installation_part
         && !needs_adhesive_bonding_part
+        && !needs_plastic_joining_part
         && !needs_fastener_installation_part
         && !needs_rivet_installation_part
+        && !needs_seal_installation_part
+        && !needs_bearing_installation_part
+        && !needs_dynamic_balancing_part
         && !needs_part_marking_part
         && !needs_packaging_labeling_part
         && wants_metal_joining(&objective_token);
@@ -18683,8 +18982,12 @@ fn infer_requested_parts(
         && !needs_adaptive_compensation_part
         && !needs_insert_installation_part
         && !needs_adhesive_bonding_part
+        && !needs_plastic_joining_part
         && !needs_fastener_installation_part
         && !needs_rivet_installation_part
+        && !needs_seal_installation_part
+        && !needs_bearing_installation_part
+        && !needs_dynamic_balancing_part
         && !needs_part_marking_part
         && !needs_packaging_labeling_part
         && !needs_composite_layup_part
@@ -18726,8 +19029,12 @@ fn infer_requested_parts(
         && !needs_adaptive_compensation_part
         && !needs_insert_installation_part
         && !needs_adhesive_bonding_part
+        && !needs_plastic_joining_part
         && !needs_fastener_installation_part
         && !needs_rivet_installation_part
+        && !needs_seal_installation_part
+        && !needs_bearing_installation_part
+        && !needs_dynamic_balancing_part
         && !needs_part_marking_part
         && !needs_packaging_labeling_part
         && !needs_sheet_forming_part
@@ -18770,8 +19077,12 @@ fn infer_requested_parts(
             && !needs_adaptive_compensation_part
             && !needs_insert_installation_part
             && !needs_adhesive_bonding_part
+            && !needs_plastic_joining_part
             && !needs_fastener_installation_part
             && !needs_rivet_installation_part
+            && !needs_seal_installation_part
+            && !needs_bearing_installation_part
+            && !needs_dynamic_balancing_part
             && !needs_part_marking_part
             && !needs_packaging_labeling_part
             && !needs_gear_cutting_part)
@@ -18788,8 +19099,12 @@ fn infer_requested_parts(
             && !needs_adaptive_compensation_part
             && !needs_insert_installation_part
             && !needs_adhesive_bonding_part
+            && !needs_plastic_joining_part
             && !needs_fastener_installation_part
             && !needs_rivet_installation_part
+            && !needs_seal_installation_part
+            && !needs_bearing_installation_part
+            && !needs_dynamic_balancing_part
             && !needs_part_marking_part
             && !needs_packaging_labeling_part
             && !needs_sheet_forming_part
@@ -19038,6 +19353,17 @@ fn infer_requested_parts(
             tolerance_mm: Some(tolerance_mm.max(0.10)),
         });
     }
+    if needs_plastic_joining_part {
+        parts.push(RequestedPart {
+            id: "plastic-joining-release".to_string(),
+            description:
+                "plastic joining, ultrasonic welding, heat staking, solvent welding, hot-plate welding, energy-director verification, weld collapse, pull/peel proof, leak or visual inspection, and release evidence inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("plastic-joining".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.10)),
+        });
+    }
     if needs_fastener_installation_part {
         parts.push(RequestedPart {
             id: "fastener-installation-release".to_string(),
@@ -19058,6 +19384,39 @@ fn infer_requested_parts(
             material: Some(material.clone()),
             preferred_method: Some("rivet-installation".to_string()),
             tolerance_mm: Some(tolerance_mm.max(0.12)),
+        });
+    }
+    if needs_seal_installation_part {
+        parts.push(RequestedPart {
+            id: "seal-installation-release".to_string(),
+            description:
+                "gasket, O-ring, sealant, groove or gland verification, compression, lubricant, leak/pressure/vacuum test, inspection, and seal release evidence inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("seal-installation".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.12)),
+        });
+    }
+    if needs_bearing_installation_part {
+        parts.push(RequestedPart {
+            id: "bearing-installation-release".to_string(),
+            description:
+                "bearing, bushing, sleeve, shaft, bore, interference/shrink/thermal fit, press force, preload, runout, rotation torque, retention, damage inspection, and bearing release evidence inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("bearing-installation".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.05)),
+        });
+    }
+    if needs_dynamic_balancing_part {
+        parts.push(RequestedPart {
+            id: "dynamic-balancing-release".to_string(),
+            description:
+                "rotor, impeller, fan, wheel, shaft, fixture arbor, guarded spin, trial weights, correction weights, correction planes, vibration spectrum, residual unbalance, balance grade, and balance release evidence inferred from objective"
+                    .to_string(),
+            material: Some(material.clone()),
+            preferred_method: Some("dynamic-balancing".to_string()),
+            tolerance_mm: Some(tolerance_mm.max(0.05)),
         });
     }
     if needs_part_marking_part {
@@ -19437,6 +19796,10 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_adhesive_bonding(value));
+    let wants_plastic_joining_cell = preferred.as_deref().is_some_and(wants_plastic_joining)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_plastic_joining(value));
     let wants_fastener_installation_cell = preferred
         .as_deref()
         .is_some_and(wants_fastener_installation)
@@ -19447,6 +19810,19 @@ fn choose_machine<'a>(
         || preferred_methods
             .iter()
             .any(|value| wants_rivet_installation(value));
+    let wants_seal_installation_cell = preferred.as_deref().is_some_and(wants_seal_installation)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_seal_installation(value));
+    let wants_bearing_installation_cell =
+        preferred.as_deref().is_some_and(wants_bearing_installation)
+            || preferred_methods
+                .iter()
+                .any(|value| wants_bearing_installation(value));
+    let wants_dynamic_balancing_cell = preferred.as_deref().is_some_and(wants_dynamic_balancing)
+        || preferred_methods
+            .iter()
+            .any(|value| wants_dynamic_balancing(value));
     let wants_packaging_labeling_cell = preferred.as_deref().is_some_and(wants_packaging_labeling)
         || preferred_methods
             .iter()
@@ -19676,6 +20052,13 @@ fn choose_machine<'a>(
             return machine;
         }
     }
+    if wants_plastic_joining_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_plastic_joining_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
     if wants_surface_finishing_cell {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_surface_finishing_kind(&machine.kind)
@@ -19735,6 +20118,27 @@ fn choose_machine<'a>(
     if wants_rivet_installation_cell {
         if let Some(machine) = select_machine(machines, material, |machine| {
             is_rivet_installation_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_seal_installation_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_seal_installation_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_bearing_installation_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_bearing_installation_kind(&machine.kind)
+        }) {
+            return machine;
+        }
+    }
+    if wants_dynamic_balancing_cell {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            is_dynamic_balancing_kind(&machine.kind)
         }) {
             return machine;
         }
@@ -20045,10 +20449,14 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         .any(|token| wants_adaptive_compensation(token));
     let wants_insert_installation = tokens.iter().any(|token| wants_insert_installation(token));
     let wants_adhesive_bonding = tokens.iter().any(|token| wants_adhesive_bonding(token));
+    let wants_plastic_joining = tokens.iter().any(|token| wants_plastic_joining(token));
     let wants_fastener_installation = tokens
         .iter()
         .any(|token| wants_fastener_installation(token));
     let wants_rivet_installation = tokens.iter().any(|token| wants_rivet_installation(token));
+    let wants_seal_installation = tokens.iter().any(|token| wants_seal_installation(token));
+    let wants_bearing_installation = tokens.iter().any(|token| wants_bearing_installation(token));
+    let wants_dynamic_balancing = tokens.iter().any(|token| wants_dynamic_balancing(token));
     let wants_part_marking = tokens.iter().any(|token| wants_part_marking(token));
     let wants_packaging_labeling = tokens.iter().any(|token| wants_packaging_labeling(token));
     let wants_sheet_forming = tokens.iter().any(|token| wants_sheet_forming(token));
@@ -20089,8 +20497,12 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         || wants_adaptive_compensation
         || wants_insert_installation
         || wants_adhesive_bonding
+        || wants_plastic_joining
         || wants_fastener_installation
         || wants_rivet_installation
+        || wants_seal_installation
+        || wants_bearing_installation
+        || wants_dynamic_balancing
         || wants_part_marking
         || wants_packaging_labeling
         || wants_sheet_forming
@@ -20134,8 +20546,12 @@ fn special_process_matches(machine: &MachineProfile, tokens: &[String]) -> bool 
         && (!wants_adaptive_compensation || is_adaptive_compensation_kind(&machine.kind))
         && (!wants_insert_installation || is_insert_installation_kind(&machine.kind))
         && (!wants_adhesive_bonding || is_adhesive_bonding_kind(&machine.kind))
+        && (!wants_plastic_joining || is_plastic_joining_kind(&machine.kind))
         && (!wants_fastener_installation || is_fastener_installation_kind(&machine.kind))
         && (!wants_rivet_installation || is_rivet_installation_kind(&machine.kind))
+        && (!wants_seal_installation || is_seal_installation_kind(&machine.kind))
+        && (!wants_bearing_installation || is_bearing_installation_kind(&machine.kind))
+        && (!wants_dynamic_balancing || is_dynamic_balancing_kind(&machine.kind))
         && (!wants_part_marking || is_part_marking_kind(&machine.kind))
         && (!wants_packaging_labeling || is_packaging_labeling_kind(&machine.kind))
         && (!wants_sheet_forming || is_sheet_forming_kind(&machine.kind))
@@ -20425,6 +20841,18 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
                 || operation.contains("lap-shear")
                 || operation.contains("peel-inspection")
                 || operation.contains("bond-release")))
+        || (wants_plastic_joining(preference)
+            && (operation.contains("plastic-joining")
+                || operation.contains("plastic-welding")
+                || operation.contains("ultrasonic-welding")
+                || operation.contains("heat-staking")
+                || operation.contains("solvent-welding")
+                || operation.contains("hot-plate-welding")
+                || operation.contains("vibration-welding")
+                || operation.contains("spin-welding")
+                || operation.contains("energy-director")
+                || operation.contains("weld-collapse")
+                || operation.contains("weld-release")))
         || (wants_fastener_installation(preference)
             && (operation.contains("fastener-installation")
                 || operation.contains("mechanical-fastening")
@@ -20451,6 +20879,42 @@ fn operation_token_matches(preference: &str, operation: &str) -> bool {
                 || operation.contains("swaging")
                 || operation.contains("peening")
                 || operation.contains("rivet-release")))
+        || (wants_seal_installation(preference)
+            && (operation.contains("seal-installation")
+                || operation.contains("gasket-installation")
+                || operation.contains("o-ring-installation")
+                || operation.contains("seal-groove")
+                || operation.contains("gland-fill")
+                || operation.contains("seal-lubrication")
+                || operation.contains("rtv-sealant")
+                || operation.contains("compression-verification")
+                || operation.contains("leak-test")
+                || operation.contains("pressure-test")
+                || operation.contains("seal-release")))
+        || (wants_bearing_installation(preference)
+            && (operation.contains("bearing-installation")
+                || operation.contains("bearing-press")
+                || operation.contains("interference-fit")
+                || operation.contains("shrink-fit")
+                || operation.contains("thermal-fit")
+                || operation.contains("bore-shaft")
+                || operation.contains("arbor-press")
+                || operation.contains("bearing-preload")
+                || operation.contains("runout-check")
+                || operation.contains("rotation-torque")
+                || operation.contains("bearing-release")))
+        || (wants_dynamic_balancing(preference)
+            && (operation.contains("dynamic-balancing")
+                || operation.contains("rotor-balancing")
+                || operation.contains("impeller-balancing")
+                || operation.contains("fan-balancing")
+                || operation.contains("spin-balance")
+                || operation.contains("trial-weight")
+                || operation.contains("correction-weight")
+                || operation.contains("correction-plane")
+                || operation.contains("vibration-spectrum")
+                || operation.contains("residual-unbalance")
+                || operation.contains("balance-release")))
         || (wants_sheet_forming(preference)
             && (operation.contains("press-brake")
                 || operation.contains("sheet-forming")
@@ -20792,11 +21256,23 @@ fn operation_for_part(part: &PartPlan) -> &'static str {
         MachineClass::Other if is_adhesive_bonding_kind(&part.machine_kind) => {
             "verify substrate surface prep and adhesive lot, mix or dispense adhesive, control bondline and fixture clamp, cure under reviewed limits, inspect bond quality, and record bonded assembly release"
         }
+        MachineClass::Other if is_plastic_joining_kind(&part.machine_kind) => {
+            "verify polymer compatibility, joint design, energy directors or staking bosses, fixture nest, weld/stake recipe, collapse or melt-flow limits, proof test, visual/leak inspection, and record plastic-join release"
+        }
         MachineClass::Other if is_fastener_installation_kind(&part.machine_kind) => {
             "verify fastener kit and joint stack, install washers or spacers, apply threadlocker when required, torque in reviewed sequence, mark fasteners, retorque or inspect witness marks, and record fastener release"
         }
         MachineClass::Other if is_rivet_installation_kind(&part.machine_kind) => {
             "verify rivet specification, hole stack, grip length, access, and tool setup, set or buck rivets, inspect mandrel break or shop head, verify clinch/stake/swage deformation, and record rivet release"
+        }
+        MachineClass::Other if is_seal_installation_kind(&part.machine_kind) => {
+            "verify gasket or O-ring specification, groove/gland geometry, cleanliness, lubricant or sealant, and compression targets, install seal, run leak or pressure test, and record seal release"
+        }
+        MachineClass::Other if is_bearing_installation_kind(&part.machine_kind) => {
+            "measure housing bore and shaft journals, verify interference or clearance fit, control press or thermal-fit setup, install bearings without brinelling, set preload or retention, check runout and rotation torque, and record bearing release"
+        }
+        MachineClass::Other if is_dynamic_balancing_kind(&part.machine_kind) => {
+            "verify rotor or impeller revision, fixture arbor/runout, balance grade, speed limit, guard/interlock, and trial-weight plan; spin and measure vibration, apply correction, verify residual unbalance, and record balance release"
         }
         MachineClass::Other if is_part_marking_kind(&part.machine_kind) => {
             "verify mark artwork, serial/UDI/data-matrix content, datum and fixture, run reviewed laser/dot-peen/inkjet/pad-print mark, vision-verify readability and permanence, and record traceability release"
@@ -22802,6 +23278,34 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                     .to_string(),
             ],
         ),
+        MachineClass::Other if is_plastic_joining_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "plastic-joining-job".to_string()),
+            vec![
+                "; draft plastic joining / ultrasonic welding / heat staking job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [plastic-joining-setup-boundary]: verify part revisions, polymer/material compatibility, joint design, energy director or staking boss geometry, fixture nest, weld/stake/solvent recipe, amplitude/force/time or solvent dwell limits, melt-flow/collapse target, cooling/clamp plan, and stop criteria"
+                    .to_string(),
+                "VERIFY_PLASTIC_JOIN_SETUP part_revisions=operator-reviewed polymer_compatibility=verified joint_design=operator-reviewed energy_director_or_stake_boss=verified fixture_nest=verified recipe=operator-reviewed collapse_target=recorded cooling_clamp=recorded"
+                    .to_string(),
+                "RUN_PLASTIC_JOIN process=ultrasonic_or_heat_stake_or_solvent amplitude_force_time=operator-reviewed solvent_dwell=operator-reviewed melt_flow=controlled collapse=recorded fixture_clamp=verified"
+                    .to_string(),
+                "CHECKPOINT [plastic-joining-release-boundary]: verify weld collapse or stake head, flash, cracks/crazing, pull/peel/torsion proof, leak/visual inspection, dimensional fit, cosmetic impact, first article, and plastic-join release"
+                    .to_string(),
+                "VERIFY_PLASTIC_JOIN_RELEASE collapse_or_stake=recorded flash=inspected cracks_crazing=inspected proof_test=operator-reviewed leak_or_visual=passed dimensional_fit=verified first_article=required"
+                    .to_string(),
+                "COMPLETE record material compatibility, joint geometry, fixture nest, recipe, amplitude/force/time or solvent dwell, collapse/melt-flow trace, cooling/clamp plan, proof test, visual or leak result, first article, and release owner"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final plastic-joining parameters must come from released part revisions, polymer compatibility data, joint design, energy-director or boss geometry, fixture model, weld/stake/solvent recipe, collapse or melt-flow limits, and inspection criteria."
+                    .to_string(),
+                "Human signoff is required for fixture nesting, amplitude/force/time or solvent dwell, cooling/clamp plan, flash, cracks or crazing, collapse/stake head, pull/peel/torsion proof, leak or visual inspection, first article, and plastic-join release."
+                    .to_string(),
+            ],
+        ),
         MachineClass::Other if is_fastener_installation_kind(&machine.kind) => (
             machine
                 .controller
@@ -22854,6 +23358,92 @@ fn generate_program(part: &PartPlan, machine: &MachineProfile) -> GeneratedProgr
                 "Draft only: final rivet-installation parameters must come from released part revisions, rivet specification, material stack, hole-prep evidence, grip-length calculation, tool calibration, backing support, and pull/squeeze/press force limits."
                     .to_string(),
                 "Human signoff is required for hole alignment, access, buck bar or nosepiece fit, rivet lot, mandrel break or shop head, clamp-up, clinch/stake/swage deformation, cracks, looseness, proof test, first article, and release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_seal_installation_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "seal-installation-job".to_string()),
+            vec![
+                "; draft seal / gasket / O-ring installation job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [seal-installation-setup-boundary]: verify part revisions, seal or gasket specification, groove/gland geometry, gland fill, material compatibility, cleanliness, lubricant or sealant, compression target, installation tool, cure limits, and leak-test criteria"
+                    .to_string(),
+                "VERIFY_SEAL_SETUP part_revisions=operator-reviewed seal_spec=operator-reviewed groove_gland=verified material_compatibility=verified cleanliness=verified lubricant_or_sealant=recorded compression_target=operator-reviewed leak_test_criteria=recorded"
+                    .to_string(),
+                "INSTALL_SEAL method=operator-reviewed gasket_or_oring=verified lubricant_or_sealant=operator-reviewed twist_pinch_check=required compression=controlled cure_or_settle=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [seal-installation-release-boundary]: verify compression, gland fill, pinch/twist/extrusion, sealant cure when applicable, leak/pressure/vacuum result, first article, and seal release"
+                    .to_string(),
+                "VERIFY_SEAL_RELEASE compression=recorded gland_fill=verified pinch_twist_extrusion=inspected leak_or_pressure_test=passed leak_rate=recorded first_article=required"
+                    .to_string(),
+                "COMPLETE record seal or gasket specification, groove/gland inspection, material compatibility, lubricant or sealant, compression limits, cure when applicable, leak/pressure/vacuum result, first article, and release owner"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final seal-installation parameters must come from released part revisions, seal or gasket specification, material compatibility data, groove/gland model, lubricant or sealant datasheet, compression limits, cure limits, and leak-test criteria."
+                    .to_string(),
+                "Human signoff is required for cleanliness, seal orientation, stretch or squeeze, gland fill, lubricant or sealant application, pinch/twist/extrusion inspection, leak or pressure test, first article, and release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_bearing_installation_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "bearing-installation-job".to_string()),
+            vec![
+                "; draft bearing / interference-fit installation job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [bearing-installation-setup-boundary]: verify part revisions, bearing specification, bearing lot, housing bore, shaft journal, fit class, interference or clearance target, temperature delta, press tooling, support mandrel, lubrication, cleanliness, and force/displacement limits"
+                    .to_string(),
+                "VERIFY_BEARING_SETUP part_revisions=operator-reviewed bearing_spec=operator-reviewed bearing_lot=recorded bore=measured shaft=measured fit_class=verified temperature_delta=operator-reviewed press_tooling=verified force_displacement_limits=recorded"
+                    .to_string(),
+                "INSTALL_BEARING method=operator-reviewed arbor_or_thermal_fit=operator-reviewed support_mandrel=verified load_path=verified alignment=controlled brinelling_check=required retention=operator-reviewed"
+                    .to_string(),
+                "CHECKPOINT [bearing-installation-release-boundary]: verify seating depth, shoulder contact, preload/endplay, retaining ring or adhesive retention, runout, axial/radial play, rotation torque, noise/roughness, damage inspection, first article, and bearing release"
+                    .to_string(),
+                "VERIFY_BEARING_RELEASE seating_depth=recorded preload_or_endplay=recorded runout=recorded rotation_torque=recorded axial_radial_play=verified damage=inspected first_article=required"
+                    .to_string(),
+                "COMPLETE record bearing specification, lot, bore/shaft measurements, fit class, temperature or press profile, force/displacement trace, seating depth, preload/endplay, runout, rotation torque, damage inspection, first article, and release owner"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final bearing-installation parameters must come from released part revisions, bearing specification and lot, measured housing bore and shaft journal, fit-class calculation, thermal expansion plan, press tooling, lubrication/cleanliness record, and force/displacement limits."
+                    .to_string(),
+                "Human signoff is required for bore/shaft metrology, interference or clearance fit, temperature delta, press alignment, mandrel support, seating depth, preload or endplay, retention, runout, rotation torque, noise/roughness, damage inspection, first article, and release."
+                    .to_string(),
+            ],
+        ),
+        MachineClass::Other if is_dynamic_balancing_kind(&machine.kind) => (
+            machine
+                .controller
+                .clone()
+                .unwrap_or_else(|| "dynamic-balancing-job".to_string()),
+            vec![
+                "; draft dynamic balancing / rotor balance job generated by dd-fabrication-server"
+                    .to_string(),
+                "CHECKPOINT [dynamic-balancing-setup-boundary]: verify part revisions, rotor/impeller/fan identification, mass properties, balance grade, target RPM, fixture arbor/runout, guard/interlock, trial-weight plan, correction planes, speed ramp, vibration sensor calibration, and stop criteria"
+                    .to_string(),
+                "VERIFY_BALANCE_SETUP part_revisions=operator-reviewed rotor_id=operator-reviewed balance_grade=operator-reviewed target_rpm=recorded arbor_runout=verified guard_interlock=verified sensor_calibration=recorded correction_planes=verified"
+                    .to_string(),
+                "RUN_TRIAL_BALANCE speed_ramp=operator-reviewed trial_weight=operator-reviewed vibration_baseline=recorded phase_reference=recorded stop_criteria=armed"
+                    .to_string(),
+                "APPLY_BALANCE_CORRECTION correction_planes=operator-reviewed correction_weights=recorded material_removal=operator-reviewed retention=verified"
+                    .to_string(),
+                "CHECKPOINT [dynamic-balancing-release-boundary]: verify residual unbalance, vibration spectrum, phase, correction weight retention, overspeed/guard status, runout, noise, first article, and balance release"
+                    .to_string(),
+                "VERIFY_BALANCE_RELEASE residual_unbalance=recorded vibration_limit=passed phase=recorded correction_retention=verified runout=verified overspeed_guard=verified first_article=required"
+                    .to_string(),
+                "COMPLETE record rotor identity, balance grade, target RPM, fixture/arbor runout, sensor calibration, trial run, correction weights or material removal, residual unbalance, vibration spectrum, first article, and release owner"
+                    .to_string(),
+            ],
+            vec![
+                "Draft only: final dynamic-balancing parameters must come from released part revisions, rotor or impeller identity, mass properties, balance grade such as ISO 21940, target speed, fixture/arbor runout, guarding, sensor calibration, correction planes, and trial/correction evidence."
+                    .to_string(),
+                "Human signoff is required for speed ramp, trial weight, phase reference, correction weights or material removal, retention, residual unbalance, vibration spectrum, overspeed/guard status, runout, noise, first article, and balance release."
                     .to_string(),
             ],
         ),
@@ -29402,6 +29992,98 @@ fn has_text_adhesive_bonding_cure_release_evidence(line: &str) -> bool {
     )
 }
 
+fn has_text_plastic_joining_context(language: &str, line: &str) -> bool {
+    if wants_plastic_joining(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "plastic joining",
+            "plastic-joining",
+            "plastic welding",
+            "polymer welding",
+            "thermoplastic weld",
+            "ultrasonic welding",
+            "ultrasonic weld",
+            "ultrasonic staking",
+            "heat staking",
+            "thermal staking",
+            "hot plate welding",
+            "solvent welding",
+            "vibration welding",
+            "spin welding",
+            "energy director",
+            "weld collapse",
+            "plastic join release",
+        ],
+    )
+}
+
+fn has_text_plastic_joining_setup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "part revisions",
+            "polymer compatibility",
+            "material compatibility",
+            "joint design",
+            "energy director",
+            "staking boss",
+            "stake boss",
+            "fixture nest",
+            "nest fixture",
+            "weld recipe",
+            "stake recipe",
+            "solvent recipe",
+            "amplitude",
+            "force time",
+            "weld time",
+            "solvent dwell",
+            "collapse target",
+            "melt flow",
+            "cooling clamp",
+            "stop criteria",
+            "verify_plastic_join_setup",
+            "run_plastic_join",
+            "polymer_compatibility",
+            "energy_director_or_stake_boss",
+            "fixture_nest",
+            "collapse_target",
+        ],
+    )
+}
+
+fn has_text_plastic_joining_release_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "weld collapse",
+            "stake head",
+            "collapse recorded",
+            "flash",
+            "cracks",
+            "crazing",
+            "pull proof",
+            "peel proof",
+            "torsion proof",
+            "proof test",
+            "leak inspection",
+            "visual inspection",
+            "dimensional fit",
+            "cosmetic impact",
+            "first article",
+            "plastic join release",
+            "weld release",
+            "verify_plastic_join_release",
+            "collapse_or_stake",
+            "cracks_crazing",
+            "leak_or_visual",
+        ],
+    )
+}
+
 fn has_text_fastener_installation_context(language: &str, line: &str) -> bool {
     if wants_fastener_installation(language) {
         return true;
@@ -29557,6 +30239,281 @@ fn has_text_rivet_installation_release_evidence(line: &str) -> bool {
             "rivet release",
             "verify_rivet_release",
             "mandrel_break_or_shop_head",
+        ],
+    )
+}
+
+fn has_text_seal_installation_context(language: &str, line: &str) -> bool {
+    if wants_seal_installation(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "seal installation",
+            "seal-installation",
+            "gasket installation",
+            "gasket fit",
+            "gasket compression",
+            "o-ring installation",
+            "oring installation",
+            "o-ring",
+            "seal groove",
+            "gland",
+            "gland fill",
+            "compression set",
+            "seal lubricant",
+            "seal lube",
+            "rtv sealant",
+            "liquid gasket",
+            "form in place gasket",
+            "leak test",
+            "pressure test",
+            "vacuum decay",
+            "bubble test",
+            "seal release",
+        ],
+    )
+}
+
+fn has_text_seal_installation_setup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "part revisions",
+            "seal specification",
+            "seal spec",
+            "gasket specification",
+            "gasket spec",
+            "o-ring spec",
+            "oring spec",
+            "groove",
+            "gland",
+            "gland fill",
+            "compression target",
+            "squeeze",
+            "stretch",
+            "material compatibility",
+            "cleanliness",
+            "lubricant",
+            "sealant",
+            "rtv",
+            "leak test criteria",
+            "verify_seal_setup",
+            "install_seal",
+            "groove_gland",
+            "lubricant_or_sealant",
+        ],
+    )
+}
+
+fn has_text_seal_installation_release_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "leak test",
+            "pressure test",
+            "vacuum decay",
+            "bubble test",
+            "hold pressure",
+            "leak rate",
+            "compression set",
+            "compression recorded",
+            "gland fill",
+            "extrusion",
+            "pinch",
+            "twist",
+            "sealant cure",
+            "first article",
+            "seal release",
+            "verify_seal_release",
+            "leak_or_pressure_test",
+            "pinch_twist_extrusion",
+        ],
+    )
+}
+
+fn has_text_bearing_installation_context(language: &str, line: &str) -> bool {
+    if wants_bearing_installation(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "bearing installation",
+            "bearing-installation",
+            "bearing press",
+            "bearing fit",
+            "bearing seat",
+            "bearing preload",
+            "interference fit",
+            "press fit assembly",
+            "shrink fit",
+            "thermal fit",
+            "arbor press",
+            "hydraulic press",
+            "bushing press",
+            "sleeve installation",
+            "shaft fit",
+            "housing bore",
+            "bore gage",
+            "runout check",
+            "rotation torque",
+            "bearing release",
+        ],
+    )
+}
+
+fn has_text_bearing_installation_setup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "part revisions",
+            "bearing specification",
+            "bearing spec",
+            "bearing lot",
+            "housing bore",
+            "shaft journal",
+            "bore measurement",
+            "shaft measurement",
+            "fit class",
+            "interference target",
+            "clearance target",
+            "temperature delta",
+            "thermal expansion",
+            "press tooling",
+            "support mandrel",
+            "lubrication",
+            "cleanliness",
+            "force displacement",
+            "force/displacement",
+            "verify_bearing_setup",
+            "install_bearing",
+            "bearing_spec",
+            "bearing_lot",
+            "fit_class",
+            "temperature_delta",
+            "press_tooling",
+            "force_displacement",
+            "force_displacement_limits",
+        ],
+    )
+}
+
+fn has_text_bearing_installation_release_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "seating depth",
+            "shoulder contact",
+            "preload",
+            "endplay",
+            "retaining ring",
+            "bearing retention",
+            "runout",
+            "axial play",
+            "radial play",
+            "rotation torque",
+            "noise",
+            "roughness",
+            "brinelling",
+            "damage inspection",
+            "first article",
+            "bearing release",
+            "verify_bearing_release",
+            "seating_depth",
+            "preload_or_endplay",
+            "rotation_torque",
+            "axial_radial_play",
+            "first_article",
+        ],
+    )
+}
+
+fn has_text_dynamic_balancing_context(language: &str, line: &str) -> bool {
+    if wants_dynamic_balancing(language) {
+        return true;
+    }
+    language_or_line_has_any(
+        language,
+        line,
+        &[
+            "dynamic balancing",
+            "dynamic-balancing",
+            "rotor balancing",
+            "rotor balance",
+            "impeller balancing",
+            "fan balancing",
+            "wheel balancing",
+            "shaft balancing",
+            "spin balance",
+            "balancing machine",
+            "trial weight",
+            "correction weight",
+            "correction plane",
+            "residual unbalance",
+            "vibration spectrum",
+            "vibration limit",
+            "balance grade",
+            "iso 21940",
+            "balance release",
+        ],
+    )
+}
+
+fn has_text_dynamic_balancing_setup_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "part revisions",
+            "rotor id",
+            "rotor identification",
+            "impeller id",
+            "fan id",
+            "mass properties",
+            "balance grade",
+            "target rpm",
+            "target speed",
+            "fixture arbor",
+            "arbor runout",
+            "guard interlock",
+            "guard and interlock",
+            "trial weight plan",
+            "correction plane",
+            "speed ramp",
+            "vibration sensor",
+            "sensor calibration",
+            "phase reference",
+            "stop criteria",
+            "verify_balance_setup",
+            "run_trial_balance",
+            "balance_grade",
+            "target_rpm",
+            "arbor_runout",
+            "sensor_calibration",
+        ],
+    )
+}
+
+fn has_text_dynamic_balancing_release_evidence(line: &str) -> bool {
+    text_has_any(
+        line,
+        &[
+            "residual unbalance",
+            "vibration spectrum",
+            "vibration limit",
+            "correction retention",
+            "overspeed",
+            "guard status",
+            "noise",
+            "first article",
+            "balance release",
+            "verify_balance_release",
+            "residual_unbalance",
+            "vibration_limit",
+            "correction_retention",
         ],
     )
 }
@@ -30712,6 +31669,20 @@ fn inspect_text_instruction_line(
         signals.has_text_adhesive_bonding_cure_release_evidence = true;
         signals.has_process_preparation = true;
     }
+    let plastic_joining_context = has_text_plastic_joining_context(language, raw_line);
+    if plastic_joining_context {
+        signals.has_text_plastic_joining_context = true;
+        signals.has_process_preparation = true;
+    }
+    if plastic_joining_context && has_text_plastic_joining_setup_evidence(raw_line) {
+        signals.has_text_plastic_joining_setup_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if plastic_joining_context && has_text_plastic_joining_release_evidence(raw_line) {
+        signals.has_text_plastic_joining_release_evidence = true;
+        signals.has_process_preparation = true;
+    }
     let fastener_installation_context = has_text_fastener_installation_context(language, raw_line);
     if fastener_installation_context {
         signals.has_text_fastener_installation_context = true;
@@ -30738,6 +31709,48 @@ fn inspect_text_instruction_line(
     }
     if rivet_installation_context && has_text_rivet_installation_release_evidence(raw_line) {
         signals.has_text_rivet_installation_release_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let seal_installation_context = has_text_seal_installation_context(language, raw_line);
+    if seal_installation_context {
+        signals.has_text_seal_installation_context = true;
+        signals.has_process_preparation = true;
+    }
+    if seal_installation_context && has_text_seal_installation_setup_evidence(raw_line) {
+        signals.has_text_seal_installation_setup_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if seal_installation_context && has_text_seal_installation_release_evidence(raw_line) {
+        signals.has_text_seal_installation_release_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let bearing_installation_context = has_text_bearing_installation_context(language, raw_line);
+    if bearing_installation_context {
+        signals.has_text_bearing_installation_context = true;
+        signals.has_process_preparation = true;
+    }
+    if bearing_installation_context && has_text_bearing_installation_setup_evidence(raw_line) {
+        signals.has_text_bearing_installation_setup_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if bearing_installation_context && has_text_bearing_installation_release_evidence(raw_line) {
+        signals.has_text_bearing_installation_release_evidence = true;
+        signals.has_process_preparation = true;
+    }
+    let dynamic_balancing_context = has_text_dynamic_balancing_context(language, raw_line);
+    if dynamic_balancing_context {
+        signals.has_text_dynamic_balancing_context = true;
+        signals.has_process_preparation = true;
+    }
+    if dynamic_balancing_context && has_text_dynamic_balancing_setup_evidence(raw_line) {
+        signals.has_text_dynamic_balancing_setup_evidence = true;
+        signals.has_setup_reference = true;
+        signals.has_process_preparation = true;
+    }
+    if dynamic_balancing_context && has_text_dynamic_balancing_release_evidence(raw_line) {
+        signals.has_text_dynamic_balancing_release_evidence = true;
         signals.has_process_preparation = true;
     }
     let part_marking_context = has_text_part_marking_context(language, raw_line);
@@ -31246,12 +32259,24 @@ fn analyze_instruction_programs(
         let mut has_text_adhesive_bonding_context = false;
         let mut has_text_adhesive_bonding_prep_evidence = false;
         let mut has_text_adhesive_bonding_cure_release_evidence = false;
+        let mut has_text_plastic_joining_context = false;
+        let mut has_text_plastic_joining_setup_evidence = false;
+        let mut has_text_plastic_joining_release_evidence = false;
         let mut has_text_fastener_installation_context = false;
         let mut has_text_fastener_installation_setup_evidence = false;
         let mut has_text_fastener_installation_release_evidence = false;
         let mut has_text_rivet_installation_context = false;
         let mut has_text_rivet_installation_setup_evidence = false;
         let mut has_text_rivet_installation_release_evidence = false;
+        let mut has_text_seal_installation_context = false;
+        let mut has_text_seal_installation_setup_evidence = false;
+        let mut has_text_seal_installation_release_evidence = false;
+        let mut has_text_bearing_installation_context = false;
+        let mut has_text_bearing_installation_setup_evidence = false;
+        let mut has_text_bearing_installation_release_evidence = false;
+        let mut has_text_dynamic_balancing_context = false;
+        let mut has_text_dynamic_balancing_setup_evidence = false;
+        let mut has_text_dynamic_balancing_release_evidence = false;
         let mut has_text_part_marking_context = false;
         let mut has_text_part_marking_setup_evidence = false;
         let mut has_text_part_marking_readability_evidence = false;
@@ -31481,6 +32506,11 @@ fn analyze_instruction_programs(
                     signals.has_text_adhesive_bonding_prep_evidence;
                 has_text_adhesive_bonding_cure_release_evidence |=
                     signals.has_text_adhesive_bonding_cure_release_evidence;
+                has_text_plastic_joining_context |= signals.has_text_plastic_joining_context;
+                has_text_plastic_joining_setup_evidence |=
+                    signals.has_text_plastic_joining_setup_evidence;
+                has_text_plastic_joining_release_evidence |=
+                    signals.has_text_plastic_joining_release_evidence;
                 has_text_fastener_installation_context |=
                     signals.has_text_fastener_installation_context;
                 has_text_fastener_installation_setup_evidence |=
@@ -31492,6 +32522,22 @@ fn analyze_instruction_programs(
                     signals.has_text_rivet_installation_setup_evidence;
                 has_text_rivet_installation_release_evidence |=
                     signals.has_text_rivet_installation_release_evidence;
+                has_text_seal_installation_context |= signals.has_text_seal_installation_context;
+                has_text_seal_installation_setup_evidence |=
+                    signals.has_text_seal_installation_setup_evidence;
+                has_text_seal_installation_release_evidence |=
+                    signals.has_text_seal_installation_release_evidence;
+                has_text_bearing_installation_context |=
+                    signals.has_text_bearing_installation_context;
+                has_text_bearing_installation_setup_evidence |=
+                    signals.has_text_bearing_installation_setup_evidence;
+                has_text_bearing_installation_release_evidence |=
+                    signals.has_text_bearing_installation_release_evidence;
+                has_text_dynamic_balancing_context |= signals.has_text_dynamic_balancing_context;
+                has_text_dynamic_balancing_setup_evidence |=
+                    signals.has_text_dynamic_balancing_setup_evidence;
+                has_text_dynamic_balancing_release_evidence |=
+                    signals.has_text_dynamic_balancing_release_evidence;
                 has_text_part_marking_context |= signals.has_text_part_marking_context;
                 has_text_part_marking_setup_evidence |=
                     signals.has_text_part_marking_setup_evidence;
@@ -37657,6 +38703,202 @@ fn analyze_instruction_programs(
                             .to_string(),
                 });
             }
+            if has_text_seal_installation_context && !has_text_seal_installation_setup_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "seal-installation-setup-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "seal-installation text job lacks seal/gasket/O-ring specification, groove/gland geometry, gland fill, material compatibility, cleanliness, lubricant/sealant, compression, cure, or leak-test criteria evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "seal-installation-setup-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Sealed assemblies can pinch, twist, extrude, under-compress, over-compress, cure incorrectly, or leak when seal specification, groove/gland geometry, material compatibility, cleanliness, lubricant or sealant, compression limits, and test criteria are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record part revisions, seal/gasket/O-ring specification, groove/gland geometry, gland fill, material compatibility, cleanliness, lubricant or sealant, compression targets, cure limits, and leak-test criteria before installation"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-seal-installation-setup-evidence".to_string(),
+                    reason:
+                        "seal-installation instructions should retain seal spec, groove/gland, compatibility, cleanliness, lubricant/sealant, compression, cure, and test criteria before installation"
+                            .to_string(),
+                });
+            }
+            if has_text_seal_installation_context && !has_text_seal_installation_release_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "seal-installation-release-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "seal-installation text job lacks compression/gland-fill, pinch/twist/extrusion, sealant cure, leak/pressure/vacuum result, leak-rate, first-article, or release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "seal-installation-release-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Seal jobs may need disassembly, cleaning, replacement, cure recovery, or retest when compression, gland fill, pinch/twist/extrusion inspection, leak or pressure results, first article, and release ownership are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record compression, gland fill, pinch/twist/extrusion inspection, sealant cure when applicable, leak/pressure/vacuum result, leak rate, first article, and seal release owner"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-seal-installation-release-evidence".to_string(),
+                    reason:
+                        "seal-installation instructions should retain compression, gland-fill, defect inspection, leak/pressure/vacuum test, first-article, and release evidence"
+                            .to_string(),
+                });
+            }
+            if has_text_bearing_installation_context
+                && !has_text_bearing_installation_setup_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "bearing-installation-setup-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "bearing-installation text job lacks bearing specification/lot, housing bore, shaft journal, fit class, interference/clearance, temperature delta, press tooling, support mandrel, lubrication, cleanliness, or force/displacement evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "bearing-installation-setup-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Bearing and interference-fit assemblies can brinell races, crack printed housings, gall shafts, miss preload, or require operator recovery when bore/shaft metrology, fit class, temperature delta, press tooling, mandrel support, lubrication, cleanliness, and force/displacement limits are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record part revisions, bearing specification and lot, housing bore and shaft journal measurements, fit class, interference or clearance target, temperature delta, press tooling, support mandrel, lubrication, cleanliness, and force/displacement limits before installation"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-bearing-installation-setup-evidence".to_string(),
+                    reason:
+                        "bearing-installation instructions should retain bearing spec, lot, bore/shaft metrology, fit, temperature, tooling, mandrel, lubrication, cleanliness, and force evidence before pressing"
+                            .to_string(),
+                });
+            }
+            if has_text_bearing_installation_context
+                && !has_text_bearing_installation_release_evidence
+            {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "bearing-installation-release-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "bearing-installation text job lacks seating depth, shoulder contact, preload/endplay, retention, runout, axial/radial play, rotation torque, noise/roughness, damage, first-article, or release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "bearing-installation-release-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Pressed bearings may bind, loosen, run out, overheat, or hide race damage when seating depth, shoulder contact, preload/endplay, retention, runout, play, rotation torque, noise/roughness, damage inspection, first article, and release ownership are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record seating depth, shoulder contact, preload or endplay, retention method, runout, axial/radial play, rotation torque, noise/roughness, damage inspection, first article, and bearing release owner"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-bearing-installation-release-evidence".to_string(),
+                    reason:
+                        "bearing-installation instructions should retain seating, preload/endplay, retention, runout, play, rotation torque, noise/roughness, damage, first-article, and release evidence"
+                            .to_string(),
+                });
+            }
+            if has_text_dynamic_balancing_context && !has_text_dynamic_balancing_setup_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "dynamic-balancing-setup-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "dynamic-balancing text job lacks rotor identity, mass properties, balance grade, target RPM, fixture/arbor runout, guard/interlock, trial-weight plan, correction-plane, sensor calibration, or stop-criteria evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "dynamic-balancing-setup-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Dynamic balancing can overspeed guarded rotors, chase bad phase data, damage fixtures, or require operator recovery when identity, mass properties, balance grade, target speed, arbor/runout, guards, trial-weight plan, correction planes, sensor calibration, and stop criteria are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record part revisions, rotor or impeller identity, mass properties, balance grade, target RPM, fixture/arbor runout, guard and interlock status, trial-weight plan, correction planes, speed ramp, vibration sensor calibration, phase reference, and stop criteria before spin-up"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-dynamic-balancing-setup-evidence".to_string(),
+                    reason:
+                        "dynamic-balancing instructions should retain rotor identity, grade, speed, fixture/runout, guarding, trial-weight, correction-plane, sensor, and stop evidence before spin-up"
+                            .to_string(),
+                });
+            }
+            if has_text_dynamic_balancing_context && !has_text_dynamic_balancing_release_evidence {
+                findings.push(ValidationFinding {
+                    severity: "warning".to_string(),
+                    code: "dynamic-balancing-release-evidence-missing".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    message:
+                        "dynamic-balancing text job lacks residual unbalance, vibration spectrum/limit, phase, correction retention, overspeed/guard, runout, noise, first-article, or balance-release evidence"
+                            .to_string(),
+                });
+                boundaries.push(FailureBoundary {
+                    kind: "dynamic-balancing-release-boundary".to_string(),
+                    severity: "warning".to_string(),
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    reason:
+                        "Balanced rotors can leave excessive residual unbalance, throw correction weights, fail vibration limits, or require rework when residual unbalance, vibration spectrum, phase, correction retention, overspeed/guard status, runout, noise, first article, and release ownership are implicit"
+                            .to_string(),
+                    requires_human_intervention: true,
+                    suggested_resolution:
+                        "record residual unbalance, vibration spectrum and limit, phase, correction weights or material removal, correction retention, overspeed/guard status, runout, noise check, first article, and balance release owner"
+                            .to_string(),
+                });
+                improvements.push(InstructionImprovement {
+                    program_id: Some(program_id.clone()),
+                    line: None,
+                    action: "add-dynamic-balancing-release-evidence".to_string(),
+                    reason:
+                        "dynamic-balancing instructions should retain residual-unbalance, vibration, phase, correction-retention, overspeed/guard, runout, first-article, and release evidence"
+                            .to_string(),
+                });
+            }
             if has_text_part_marking_context && !has_text_part_marking_setup_evidence {
                 findings.push(ValidationFinding {
                     severity: "warning".to_string(),
@@ -38245,6 +39487,36 @@ fn instruction_patch_content_for_improvement(
             "CHECKPOINT [rivet-installation-release-boundary]: record mandrel break or shop-head inspection, head height, clinch/stake/swage deformation, clamp-up, cracks, looseness, pull or shear proof, first article, and rivet release owner"
                 .to_string(),
         ]
+    } else if action == "add-seal-installation-setup-evidence" {
+        vec![
+            "CHECKPOINT [seal-installation-setup-boundary]: record part revisions, seal/gasket/O-ring specification, groove/gland geometry, gland fill, material compatibility, cleanliness, lubricant or sealant, compression targets, cure limits, and leak-test criteria before installation"
+                .to_string(),
+        ]
+    } else if action == "add-seal-installation-release-evidence" {
+        vec![
+            "CHECKPOINT [seal-installation-release-boundary]: record compression, gland fill, pinch/twist/extrusion inspection, sealant cure when applicable, leak/pressure/vacuum result, leak rate, first article, and seal release owner"
+                .to_string(),
+        ]
+    } else if action == "add-bearing-installation-setup-evidence" {
+        vec![
+            "CHECKPOINT [bearing-installation-setup-boundary]: record part revisions, bearing specification, bearing lot, housing bore, shaft journal, fit class, interference or clearance target, temperature delta, press tooling, support mandrel, lubrication, cleanliness, and force/displacement limits before installation"
+                .to_string(),
+        ]
+    } else if action == "add-bearing-installation-release-evidence" {
+        vec![
+            "CHECKPOINT [bearing-installation-release-boundary]: record seating depth, shoulder contact, preload or endplay, retaining ring or retention method, runout, axial/radial play, rotation torque, noise/roughness, damage inspection, first article, and bearing release owner"
+                .to_string(),
+        ]
+    } else if action == "add-dynamic-balancing-setup-evidence" {
+        vec![
+            "CHECKPOINT [dynamic-balancing-setup-boundary]: record part revisions, rotor or impeller identity, mass properties, balance grade, target RPM, fixture/arbor runout, guard and interlock status, trial-weight plan, correction planes, speed ramp, vibration sensor calibration, phase reference, and stop criteria before spin-up"
+                .to_string(),
+        ]
+    } else if action == "add-dynamic-balancing-release-evidence" {
+        vec![
+            "CHECKPOINT [dynamic-balancing-release-boundary]: record residual unbalance, vibration spectrum and limit, phase, correction weights or material removal, correction retention, overspeed/guard status, runout, noise check, first article, and balance release owner"
+                .to_string(),
+        ]
     } else if action == "add-part-marking-setup-evidence" {
         vec![
             "CHECKPOINT [part-marking-setup-boundary]: record released artwork/text, part revision, serial or UDI/data-matrix payload, duplicate-serial check, datum and fixture, mark location, material finish, contrast zone, and marking recipe before marking"
@@ -38831,6 +40103,66 @@ fn improve_instruction_programs(
                 ) {
                     notes.push(
                         "Rivet-installation job needs mandrel-break or shop-head, head height, deformation, clamp-up, crack/looseness, proof-test, first article, and release-owner evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-seal-installation-setup-evidence",
+                ) {
+                    notes.push(
+                        "Seal-installation job needs seal/gasket/O-ring specification, groove/gland geometry, material compatibility, cleanliness, lubricant/sealant, compression, cure, and leak-test criteria evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-seal-installation-release-evidence",
+                ) {
+                    notes.push(
+                        "Seal-installation job needs compression, gland-fill, pinch/twist/extrusion inspection, sealant cure, leak/pressure/vacuum test, first article, and release-owner evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-bearing-installation-setup-evidence",
+                ) {
+                    notes.push(
+                        "Bearing-installation job needs bearing specification, lot, housing bore, shaft journal, fit class, temperature delta, press tooling, support mandrel, lubrication, cleanliness, and force/displacement evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-bearing-installation-release-evidence",
+                ) {
+                    notes.push(
+                        "Bearing-installation job needs seating depth, shoulder contact, preload/endplay, retention, runout, axial/radial play, rotation torque, noise/roughness, damage, first article, and release-owner evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-dynamic-balancing-setup-evidence",
+                ) {
+                    notes.push(
+                        "Dynamic-balancing job needs rotor identity, mass properties, balance grade, target RPM, fixture/arbor runout, guarding, correction planes, sensor calibration, trial-weight plan, phase reference, and stop criteria evidence"
+                            .to_string(),
+                    );
+                }
+                if improvement_applies(
+                    improvements,
+                    &program_id,
+                    "add-dynamic-balancing-release-evidence",
+                ) {
+                    notes.push(
+                        "Dynamic-balancing job needs residual unbalance, vibration spectrum/limit, phase, correction retention, overspeed/guard status, runout, noise, first article, and balance-release evidence"
                             .to_string(),
                     );
                 }
@@ -42147,6 +43479,12 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "fastener-installation-job-packager"
     } else if wants_rivet_installation(&token) {
         "rivet-installation-job-packager"
+    } else if wants_seal_installation(&token) {
+        "seal-installation-job-packager"
+    } else if wants_bearing_installation(&token) {
+        "bearing-installation-job-packager"
+    } else if wants_dynamic_balancing(&token) {
+        "dynamic-balancing-job-packager"
     } else if wants_part_marking(&token) {
         "part-marking-job-packager"
     } else if wants_packaging_labeling(&token) {
@@ -42253,6 +43591,12 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "fastener-installation-job-packager"
     } else if wants_rivet_installation(&token) {
         "rivet-installation-job-packager"
+    } else if wants_seal_installation(&token) {
+        "seal-installation-job-packager"
+    } else if wants_bearing_installation(&token) {
+        "bearing-installation-job-packager"
+    } else if wants_dynamic_balancing(&token) {
+        "dynamic-balancing-job-packager"
     } else if wants_part_marking(&token) {
         "part-marking-job-packager"
     } else if wants_packaging_labeling(&token) {
@@ -42305,6 +43649,12 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "fastener-installation-job-package".to_string()
     } else if wants_rivet_installation(&token) {
         "rivet-installation-job-package".to_string()
+    } else if wants_seal_installation(&token) {
+        "seal-installation-job-package".to_string()
+    } else if wants_bearing_installation(&token) {
+        "bearing-installation-job-package".to_string()
+    } else if wants_dynamic_balancing(&token) {
+        "dynamic-balancing-job-package".to_string()
     } else if wants_part_marking(&token) {
         "part-marking-job-package".to_string()
     } else if wants_packaging_labeling(&token) {
@@ -42395,6 +43745,12 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "fastener-installation-job-package".to_string()
     } else if wants_rivet_installation(&token) {
         "rivet-installation-job-package".to_string()
+    } else if wants_seal_installation(&token) {
+        "seal-installation-job-package".to_string()
+    } else if wants_bearing_installation(&token) {
+        "bearing-installation-job-package".to_string()
+    } else if wants_dynamic_balancing(&token) {
+        "dynamic-balancing-job-package".to_string()
     } else if wants_part_marking(&token) {
         "part-marking-job-package".to_string()
     } else if wants_packaging_labeling(&token) {
@@ -42505,6 +43861,39 @@ fn postprocess_required_artifacts(targets: &[PostprocessTarget]) -> Vec<String> 
             artifacts.insert("rivet-tool-access-and-force-record".to_string());
             artifacts.insert("mandrel-shop-head-and-deformation-record".to_string());
             artifacts.insert("rivet-proof-first-article-and-release-record".to_string());
+            continue;
+        }
+        if is_seal_installation_kind(&target.machine_kind)
+            || wants_seal_installation(&target.output_format)
+            || wants_seal_installation(&target.controller)
+        {
+            artifacts.insert("seal-spec-groove-and-material-compatibility-record".to_string());
+            artifacts.insert("gasket-oring-lubricant-and-compression-record".to_string());
+            artifacts.insert("sealant-cure-or-installation-inspection-record".to_string());
+            artifacts.insert("leak-pressure-first-article-and-release-record".to_string());
+            continue;
+        }
+        if is_bearing_installation_kind(&target.machine_kind)
+            || wants_bearing_installation(&target.output_format)
+            || wants_bearing_installation(&target.controller)
+        {
+            artifacts.insert("bearing-spec-lot-and-fit-class-record".to_string());
+            artifacts.insert("bore-shaft-temperature-and-press-tooling-record".to_string());
+            artifacts.insert("force-displacement-seating-and-retention-record".to_string());
+            artifacts.insert("runout-rotation-first-article-and-release-record".to_string());
+            continue;
+        }
+        if is_dynamic_balancing_kind(&target.machine_kind)
+            || wants_dynamic_balancing(&target.output_format)
+            || wants_dynamic_balancing(&target.controller)
+        {
+            artifacts.insert("rotor-identity-balance-grade-and-speed-record".to_string());
+            artifacts
+                .insert("fixture-arbor-runout-guard-and-sensor-calibration-record".to_string());
+            artifacts.insert("trial-correction-weight-and-material-removal-record".to_string());
+            artifacts.insert(
+                "residual-unbalance-vibration-first-article-and-release-record".to_string(),
+            );
             continue;
         }
         if is_part_marking_kind(&target.machine_kind)
@@ -43083,6 +44472,12 @@ fn controller_dialect_family(
         "fastener-installation-controller-dialect".to_string()
     } else if wants_rivet_installation(&token) {
         "rivet-installation-controller-dialect".to_string()
+    } else if wants_seal_installation(&token) {
+        "seal-installation-controller-dialect".to_string()
+    } else if wants_bearing_installation(&token) {
+        "bearing-installation-controller-dialect".to_string()
+    } else if wants_dynamic_balancing(&token) {
+        "dynamic-balancing-controller-dialect".to_string()
     } else if wants_part_marking(&token) {
         "part-marking-controller-dialect".to_string()
     } else if wants_packaging_labeling(&token) {
@@ -43777,6 +45172,10 @@ fn canonical_policy_method(value: &str) -> Option<String> {
         Some("fastener-installation".to_string())
     } else if wants_rivet_installation(&token) {
         Some("rivet-installation".to_string())
+    } else if wants_seal_installation(&token) {
+        Some("seal-installation".to_string())
+    } else if wants_bearing_installation(&token) {
+        Some("bearing-installation".to_string())
     } else if wants_part_marking(&token) {
         Some("part-marking".to_string())
     } else if wants_packaging_labeling(&token) {
@@ -44415,6 +45814,12 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
             "fastener-installation"
         } else if is_rivet_installation_kind(&machine.kind) {
             "rivet-installation"
+        } else if is_seal_installation_kind(&machine.kind) {
+            "seal-installation"
+        } else if is_bearing_installation_kind(&machine.kind) {
+            "bearing-installation"
+        } else if is_dynamic_balancing_kind(&machine.kind) {
+            "dynamic-balancing"
         } else if is_assembly_cell_kind(&machine.kind) {
             "assembly-joining"
         } else if is_precision_grinder_kind(&machine.kind) {
@@ -47883,6 +49288,15 @@ fn material_feedstock_kind(part: &PartPlan) -> &'static str {
         }
         MachineClass::Other if is_rivet_installation_kind(&part.machine_kind) => {
             "rivet-clinch-stake-tooling-hole-stack-and-inspection-kit"
+        }
+        MachineClass::Other if is_seal_installation_kind(&part.machine_kind) => {
+            "gasket-oring-sealant-groove-cleaning-and-leak-test-kit"
+        }
+        MachineClass::Other if is_bearing_installation_kind(&part.machine_kind) => {
+            "bearing-bushing-shaft-press-thermal-fit-and-runout-kit"
+        }
+        MachineClass::Other if is_dynamic_balancing_kind(&part.machine_kind) => {
+            "rotor-fixture-arbor-trial-weight-correction-and-vibration-kit"
         }
         MachineClass::Other if is_part_marking_kind(&part.machine_kind) => {
             "marked-part-artwork-serial-and-fixture-kit"
@@ -90115,6 +91529,27 @@ fn accepted_instruction_languages() -> Vec<&'static str> {
         "clinch-stake-job",
         "swage-peen-job",
         "rivet-inspection-job",
+        "seal-installation-job",
+        "gasket-installation-job",
+        "oring-installation-job",
+        "o-ring-installation-job",
+        "rtv-sealant-job",
+        "leak-test-job",
+        "pressure-test-job",
+        "bearing-installation-job",
+        "bearing-press-job",
+        "interference-fit-job",
+        "shrink-fit-job",
+        "bearing-preload-job",
+        "runout-check-job",
+        "rotation-torque-job",
+        "dynamic-balancing-job",
+        "rotor-balancing-job",
+        "impeller-balancing-job",
+        "fan-balancing-job",
+        "wheel-balancing-job",
+        "spin-balance-job",
+        "vibration-analysis-job",
         "part-marking-job",
         "laser-marking-job",
         "laser-engraving-job",
@@ -90251,6 +91686,12 @@ fn instruction_language_family(language: &str) -> &'static str {
         "fastener-installation-job-sheet"
     } else if wants_rivet_installation(&token) {
         "rivet-installation-job-sheet"
+    } else if wants_seal_installation(&token) {
+        "seal-installation-job-sheet"
+    } else if wants_bearing_installation(&token) {
+        "bearing-installation-job-sheet"
+    } else if wants_dynamic_balancing(&token) {
+        "dynamic-balancing-job-sheet"
     } else if wants_part_marking(&token) {
         "part-marking-job-sheet"
     } else if wants_packaging_labeling(&token) {
@@ -90347,6 +91788,12 @@ fn instruction_language_machine_classes(language: &str) -> Vec<String> {
         vec!["fastener-installation-cell", "manual-or-special-process"]
     } else if wants_rivet_installation(&token) {
         vec!["rivet-installation-cell", "manual-or-special-process"]
+    } else if wants_seal_installation(&token) {
+        vec!["seal-installation-cell", "manual-or-special-process"]
+    } else if wants_bearing_installation(&token) {
+        vec!["bearing-installation-cell", "manual-or-special-process"]
+    } else if wants_dynamic_balancing(&token) {
+        vec!["dynamic-balancing-cell", "manual-or-special-process"]
     } else if wants_part_marking(&token) {
         vec!["part-marking-cell", "manual-or-special-process"]
     } else if wants_packaging_labeling(&token) {
@@ -90492,6 +91939,15 @@ fn instruction_language_analysis_focus(language: &str) -> Vec<String> {
         "rivet-installation-job-sheet" => focus.extend([
             "part revisions, rivet specification, hardware lot, material stack, hole diameter and alignment, grip length, access, backing support, buck bar or nosepiece, tool calibration, pull/squeeze/press force, mandrel break or shop head, head height, clinch/stake/swage deformation, clamp-up, crack or looseness inspection, proof test, first article, and release evidence".to_string(),
         ]),
+        "seal-installation-job-sheet" => focus.extend([
+            "part revisions, seal/gasket/O-ring specification, groove or gland geometry, gland fill, material compatibility, cleanliness, lubricant or sealant, compression target, stretch or squeeze, sealant cure, pinch/twist/extrusion inspection, leak/pressure/vacuum test, leak rate, first article, and seal release evidence".to_string(),
+        ]),
+        "bearing-installation-job-sheet" => focus.extend([
+            "part revisions, bearing specification, bearing lot, housing bore, shaft journal, fit class, interference or clearance target, temperature delta, press tooling, support mandrel, lubrication, cleanliness, force/displacement trace, seating depth, shoulder contact, preload or endplay, retention, runout, axial/radial play, rotation torque, noise/roughness, damage inspection, first article, and bearing release evidence".to_string(),
+        ]),
+        "dynamic-balancing-job-sheet" => focus.extend([
+            "part revisions, rotor or impeller identity, mass properties, balance grade, target RPM, fixture arbor, runout, guard and interlock, speed ramp, vibration sensor calibration, trial weight, correction planes, phase reference, correction weights or material removal, retention, residual unbalance, vibration spectrum, first article, and balance release evidence".to_string(),
+        ]),
         "part-marking-job-sheet" => focus.extend([
             "released artwork or text, revision, serial/UDI/data-matrix payload, duplicate check, datum, fixture, mark location, material finish, contrast zone, recipe, laser safety or guarding, fume extraction, readability grade, permanence, cosmetic disposition, traceability, and release evidence".to_string(),
         ]),
@@ -90606,6 +92062,26 @@ fn instruction_language_release_gates(language: &str) -> Vec<String> {
         gates.push(
             "attach-mandrel-shop-head-deformation-proof-first-article-and-release-evidence"
                 .to_string(),
+        );
+    } else if family == "seal-installation-job-sheet" {
+        gates.push(
+            "attach-seal-spec-groove-gland-compatibility-and-compression-evidence".to_string(),
+        );
+        gates.push(
+            "attach-leak-pressure-vacuum-first-article-and-seal-release-evidence".to_string(),
+        );
+    } else if family == "bearing-installation-job-sheet" {
+        gates.push(
+            "attach-bearing-fit-bore-shaft-temperature-tooling-and-force-evidence".to_string(),
+        );
+        gates
+            .push("attach-seating-preload-runout-rotation-damage-and-release-evidence".to_string());
+    } else if family == "dynamic-balancing-job-sheet" {
+        gates.push(
+            "attach-rotor-identity-balance-grade-speed-fixture-and-sensor-evidence".to_string(),
+        );
+        gates.push(
+            "attach-trial-correction-residual-unbalance-vibration-and-release-evidence".to_string(),
         );
     } else if family == "part-marking-job-sheet" {
         gates.push("attach-released-mark-data-fixture-location-and-recipe-evidence".to_string());
@@ -91075,6 +92551,36 @@ fn instruction_generation_catalog_program_contracts() -> Vec<Value> {
             "releaseGates": ["part revisions", "rivet specification", "hardware lot", "material stack", "hole diameter", "hole alignment", "grip length", "backing support", "buck bar or nosepiece", "tool calibration", "pull/squeeze/press force", "mandrel break or shop head", "head height", "deformation", "clamp-up", "proof test", "first article", "rivet release"],
             "boundarySignals": ["rivet-installation-setup-boundary", "rivet-installation-release-boundary"],
             "artifactKinds": ["generated-machine-program", "program-*", "rivet-spec-lot-and-hole-stack-record", "rivet-tool-access-and-force-record", "mandrel-shop-head-and-deformation-record", "rivet-proof-first-article-and-release-record"]
+        }),
+        json!({
+            "family": "seal-installation-release",
+            "generatedLanguages": ["seal-installation-job", "gasket-installation-job", "oring-installation-job", "o-ring-installation-job", "rtv-sealant-job", "leak-test-job", "pressure-test-job"],
+            "machineClasses": ["seal-installation-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other seal installation cell",
+            "generatedInstructionKinds": ["part revision, seal/gasket/O-ring specification, groove/gland geometry, material compatibility, cleanliness, lubricant or sealant, compression target, cure limits, and leak-test criteria review", "gasket, O-ring, RTV sealant, liquid gasket, or form-in-place-gasket installation", "compression, gland fill, pinch/twist/extrusion, leak/pressure/vacuum, leak-rate, first-article, and seal-release verification"],
+            "releaseGates": ["part revisions", "seal/gasket/O-ring specification", "groove or gland geometry", "gland fill", "material compatibility", "cleanliness", "lubricant or sealant", "compression target", "stretch or squeeze", "sealant cure", "leak/pressure/vacuum criteria", "pinch/twist/extrusion inspection", "leak rate", "first article", "seal release"],
+            "boundarySignals": ["seal-installation-setup-boundary", "seal-installation-release-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "seal-spec-groove-and-material-compatibility-record", "gasket-oring-lubricant-and-compression-record", "sealant-cure-or-installation-inspection-record", "leak-pressure-first-article-and-release-record"]
+        }),
+        json!({
+            "family": "bearing-installation-release",
+            "generatedLanguages": ["bearing-installation-job", "bearing-press-job", "interference-fit-job", "shrink-fit-job", "bearing-preload-job", "runout-check-job", "rotation-torque-job"],
+            "machineClasses": ["bearing-installation-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other bearing installation cell",
+            "generatedInstructionKinds": ["part revision, bearing specification, lot, housing bore, shaft journal, fit class, interference/clearance, temperature delta, press tooling, support mandrel, lubrication, cleanliness, and force/displacement review", "bearing, bushing, sleeve, shaft, arbor-press, hydraulic-press, interference-fit, shrink-fit, or thermal-fit installation", "seating depth, shoulder contact, preload/endplay, retention, runout, play, rotation torque, noise/roughness, damage, first-article, and bearing-release verification"],
+            "releaseGates": ["part revisions", "bearing specification", "bearing lot", "housing bore", "shaft journal", "fit class", "interference or clearance target", "temperature delta", "press tooling", "support mandrel", "lubrication and cleanliness", "force/displacement limits", "seating depth", "preload or endplay", "retention", "runout", "axial/radial play", "rotation torque", "damage inspection", "first article", "bearing release"],
+            "boundarySignals": ["bearing-installation-setup-boundary", "bearing-installation-release-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "bearing-spec-lot-and-fit-class-record", "bore-shaft-temperature-and-press-tooling-record", "force-displacement-seating-and-retention-record", "runout-rotation-first-article-and-release-record"]
+        }),
+        json!({
+            "family": "dynamic-balancing-release",
+            "generatedLanguages": ["dynamic-balancing-job", "rotor-balancing-job", "impeller-balancing-job", "fan-balancing-job", "wheel-balancing-job", "spin-balance-job", "vibration-analysis-job"],
+            "machineClasses": ["dynamic-balancing-cell", "manual-or-special-process"],
+            "generatorBranch": "generate_program::MachineClass::Other dynamic balancing cell",
+            "generatedInstructionKinds": ["rotor identity, mass properties, balance grade, target speed, fixture/arbor runout, guarding, correction planes, sensor calibration, and stop criteria review", "trial-weight run with speed ramp, vibration baseline, phase reference, and stop criteria", "correction weights or material removal with retention proof", "residual unbalance, vibration spectrum, phase, runout, noise, first-article, and balance-release verification"],
+            "releaseGates": ["part revisions", "rotor identity", "balance grade", "target RPM", "fixture arbor and runout", "guard/interlock", "vibration sensor calibration", "trial weight", "correction planes", "correction retention", "residual unbalance", "vibration spectrum", "first article", "balance release"],
+            "boundarySignals": ["dynamic-balancing-setup-boundary", "dynamic-balancing-release-boundary"],
+            "artifactKinds": ["generated-machine-program", "program-*", "rotor-identity-balance-grade-and-speed-record", "fixture-arbor-runout-guard-and-sensor-calibration-record", "trial-correction-weight-and-material-removal-record", "residual-unbalance-vibration-first-article-and-release-record"]
         }),
         json!({
             "family": "part-marking-release",
@@ -93007,6 +94513,12 @@ fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
                 "add-fastener-installation-release-evidence",
                 "add-rivet-installation-setup-evidence",
                 "add-rivet-installation-release-evidence",
+                "add-seal-installation-setup-evidence",
+                "add-seal-installation-release-evidence",
+                "add-bearing-installation-setup-evidence",
+                "add-bearing-installation-release-evidence",
+                "add-dynamic-balancing-setup-evidence",
+                "add-dynamic-balancing-release-evidence",
                 "add-part-marking-setup-evidence",
                 "add-part-marking-readability-evidence",
                 "add-composite-layup-tooling-evidence",
@@ -93018,7 +94530,7 @@ fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
                 "add-indexed-setup-evidence",
                 "add-structured-text-checkpoints"
             ],
-            "appliesTo": ["operator-checklist", "assembly-cell-job", "part-separation-checklist", "thermal-postprocess", "surface-finishing", "metal-joining", "welding-job", "brazing-job", "soldering-job", "molding-casting", "molding-casting-job", "casting-job", "molding-job", "urethane-casting-job", "silicone-molding-job", "vacuum-casting-job", "fixture-tooling", "fixture-tooling-job", "soft-jaw-job", "fixture-plate-job", "drill-jig-job", "inspection-fixture-job", "assembly-fixture-job", "vacuum-fixture-job", "adaptive-compensation", "adaptive-compensation-job", "closed-loop-machining-job", "in-process-probing-job", "inspection-feedback-job", "offset-update-job", "tool-wear-update-job", "compensated-rerun-job", "insert-installation", "insert-installation-job", "threaded-insert-job", "heat-set-insert-job", "press-fit-insert-job", "helicoil-installation-job", "dowel-pin-installation-job", "bushing-installation-job", "adhesive-bonding", "adhesive-bonding-job", "structural-adhesive-job", "epoxy-bonding-job", "bondline-control-job", "adhesive-cure-job", "lap-shear-peel-test-job", "fastener-installation", "fastener-installation-job", "mechanical-fastening-job", "screw-installation-job", "bolt-installation-job", "torque-sequence-job", "threadlocker-job", "retorque-inspection-job", "rivet-installation", "rivet-installation-job", "blind-rivet-job", "solid-rivet-job", "clinch-stake-job", "swage-peen-job", "rivet-inspection-job", "part-marking", "part-marking-job", "laser-marking-job", "laser-engraving-job", "dot-peen-job", "data-matrix-marking-job", "udi-marking-job", "composite-layup", "composite-layup-job", "wet-layup-job", "prepreg-layup-job", "vacuum-bag-job", "autoclave-cure-job", "resin-infusion-job", "hot-wire-foam", "hot-wire-foam-job", "hot-wire-job", "foam-cutting-job", "foam-core-job", "wing-core-job", "press-brake", "sheet-forming", "gear-cutting", "gear-cutting-job", "gear-hobbing-job", "spline-broaching-job", "indexed-setup"],
+            "appliesTo": ["operator-checklist", "assembly-cell-job", "part-separation-checklist", "thermal-postprocess", "surface-finishing", "metal-joining", "welding-job", "brazing-job", "soldering-job", "molding-casting", "molding-casting-job", "casting-job", "molding-job", "urethane-casting-job", "silicone-molding-job", "vacuum-casting-job", "fixture-tooling", "fixture-tooling-job", "soft-jaw-job", "fixture-plate-job", "drill-jig-job", "inspection-fixture-job", "assembly-fixture-job", "vacuum-fixture-job", "adaptive-compensation", "adaptive-compensation-job", "closed-loop-machining-job", "in-process-probing-job", "inspection-feedback-job", "offset-update-job", "tool-wear-update-job", "compensated-rerun-job", "insert-installation", "insert-installation-job", "threaded-insert-job", "heat-set-insert-job", "press-fit-insert-job", "helicoil-installation-job", "dowel-pin-installation-job", "bushing-installation-job", "adhesive-bonding", "adhesive-bonding-job", "structural-adhesive-job", "epoxy-bonding-job", "bondline-control-job", "adhesive-cure-job", "lap-shear-peel-test-job", "fastener-installation", "fastener-installation-job", "mechanical-fastening-job", "screw-installation-job", "bolt-installation-job", "torque-sequence-job", "threadlocker-job", "retorque-inspection-job", "rivet-installation", "rivet-installation-job", "blind-rivet-job", "solid-rivet-job", "clinch-stake-job", "swage-peen-job", "rivet-inspection-job", "seal-installation", "seal-installation-job", "gasket-installation-job", "oring-installation-job", "o-ring-installation-job", "rtv-sealant-job", "leak-test-job", "pressure-test-job", "bearing-installation", "bearing-installation-job", "bearing-press-job", "interference-fit-job", "shrink-fit-job", "bearing-preload-job", "runout-check-job", "rotation-torque-job", "dynamic-balancing", "dynamic-balancing-job", "rotor-balancing-job", "impeller-balancing-job", "fan-balancing-job", "wheel-balancing-job", "spin-balance-job", "vibration-analysis-job", "part-marking", "part-marking-job", "laser-marking-job", "laser-engraving-job", "dot-peen-job", "data-matrix-marking-job", "udi-marking-job", "composite-layup", "composite-layup-job", "wet-layup-job", "prepreg-layup-job", "vacuum-bag-job", "autoclave-cure-job", "resin-infusion-job", "hot-wire-foam", "hot-wire-foam-job", "hot-wire-job", "foam-cutting-job", "foam-core-job", "wing-core-job", "press-brake", "sheet-forming", "gear-cutting", "gear-cutting-job", "gear-hobbing-job", "spline-broaching-job", "indexed-setup"],
             "operationKinds": ["insert-review-checkpoint", "review-line"],
             "generatedContent": ["setup-boundary, process-boundary, and completion-boundary checkpoints"],
             "sourceSurfaces": ["improvements", "improvedPrograms.instructions", "operatorInterventionPlan.requiredOperatorActions"],
@@ -93368,6 +94880,36 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
             languages.insert("rivet-inspection-job".to_string());
             languages.insert("operator-checklist".to_string());
         }
+        MachineClass::Other if is_seal_installation_kind(&machine.kind) => {
+            languages.insert("seal-installation-job".to_string());
+            languages.insert("gasket-installation-job".to_string());
+            languages.insert("oring-installation-job".to_string());
+            languages.insert("o-ring-installation-job".to_string());
+            languages.insert("rtv-sealant-job".to_string());
+            languages.insert("leak-test-job".to_string());
+            languages.insert("pressure-test-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_bearing_installation_kind(&machine.kind) => {
+            languages.insert("bearing-installation-job".to_string());
+            languages.insert("bearing-press-job".to_string());
+            languages.insert("interference-fit-job".to_string());
+            languages.insert("shrink-fit-job".to_string());
+            languages.insert("bearing-preload-job".to_string());
+            languages.insert("runout-check-job".to_string());
+            languages.insert("rotation-torque-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
+        MachineClass::Other if is_dynamic_balancing_kind(&machine.kind) => {
+            languages.insert("dynamic-balancing-job".to_string());
+            languages.insert("rotor-balancing-job".to_string());
+            languages.insert("impeller-balancing-job".to_string());
+            languages.insert("fan-balancing-job".to_string());
+            languages.insert("wheel-balancing-job".to_string());
+            languages.insert("spin-balance-job".to_string());
+            languages.insert("vibration-analysis-job".to_string());
+            languages.insert("operator-checklist".to_string());
+        }
         MachineClass::Other if is_part_marking_kind(&machine.kind) => {
             languages.insert("part-marking-job".to_string());
             languages.insert("laser-marking-job".to_string());
@@ -93526,6 +95068,14 @@ fn machine_catalog_release_gates(machine: &MachineProfile) -> Vec<String> {
         ),
         MachineClass::Other if is_rivet_installation_kind(&machine.kind) => gates.push(
             "verify part revisions, rivet specification, hardware lot, material stack, hole diameter/alignment, grip length, access, backing support, buck bar or nosepiece, tool calibration, pull/squeeze/press force, mandrel break or shop-head inspection, deformation, clamp-up, proof test, first article, and rivet-release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_seal_installation_kind(&machine.kind) => gates.push(
+            "verify part revisions, seal/gasket/O-ring specification, groove/gland geometry, gland fill, material compatibility, cleanliness, lubricant or sealant, compression target, stretch or squeeze, sealant cure when applicable, leak/pressure/vacuum result, leak rate, first article, and seal-release evidence"
+                .to_string(),
+        ),
+        MachineClass::Other if is_bearing_installation_kind(&machine.kind) => gates.push(
+            "verify part revisions, bearing specification, bearing lot, housing bore, shaft journal, fit class, interference or clearance target, temperature delta, press tooling, support mandrel, lubrication, cleanliness, force/displacement trace, seating depth, preload or endplay, retention, runout, axial/radial play, rotation torque, damage inspection, first article, and bearing-release evidence"
                 .to_string(),
         ),
         MachineClass::Other if is_packaging_labeling_kind(&machine.kind) => gates.push(
@@ -100123,6 +101673,237 @@ fn request_templates() -> Value {
             }
         },
         {
+            "id": "native-cad-intake-review",
+            "label": "Review native CAD, cloud CAD, and 3MF inputs",
+            "route": "POST /fabrication/design/import/review",
+            "machineKind": "design-intake",
+            "preferredMethods": ["design-import-review", "native-cad-translation", "neutral-export-review"],
+            "requiredEvidence": ["source system declared", "native translator or neutral export available", "units and topology review", "PMI or assembly metadata retained", "release review required before machine code"],
+            "releaseGateHints": ["designInputReview.supportedFormats", "designInputReview.blockers", "designExports.reviewGates", "translationWorkerEvidence", "machineRelease.blockers"],
+            "request": {
+                "templateId": "native-cad-intake-review",
+                "templateVersion": "v1",
+                "requestId": "review-native-cad-001",
+                "designInputs": [
+                    {
+                        "id": "solidworks-part",
+                        "fileName": "mounting-bracket.SLDPRT",
+                        "format": "SLDPRT",
+                        "sourceSystem": "SOLIDWORKS",
+                        "role": "source CAD",
+                        "notes": ["retain translator version or request STEP/3MF/STL export before release"]
+                    },
+                    {
+                        "id": "creo-assembly",
+                        "fileName": "fixture.asm",
+                        "format": "Pro/ENGINEER assembly",
+                        "sourceSystem": "PTC Creo",
+                        "role": "source CAD assembly",
+                        "notes": ["disambiguate .prt/.asm family and retain PMI or assembly export evidence"]
+                    },
+                    {
+                        "id": "printer-package",
+                        "fileName": "print-handoff.3mf",
+                        "format": "3MF",
+                        "sourceSystem": "3MF",
+                        "role": "additive handoff package",
+                        "notes": ["inspect units, materials, build plate, and slicer metadata before machine-code release"]
+                    }
+                ]
+            }
+        },
+        {
+            "id": "design-to-machine-code-generation",
+            "label": "Generate design exports, machine code, and instructions",
+            "route": "POST /fabrication/design/generate",
+            "machineKind": "mixed-fleet",
+            "preferredMethods": ["design-generation", "design-export", "machine-code-generation", "instruction-generation"],
+            "requiredEvidence": ["design intent and dimensions", "target neutral exports", "machine profile candidates", "postprocessor target", "simulation or dry-run required"],
+            "releaseGateHints": ["designPackage.releaseGates", "designExports.reviewGates", "machineCode.releaseGates", "postprocessPlan.releaseGates", "machineRelease.blockers"],
+            "request": {
+                "templateId": "design-to-machine-code-generation",
+                "templateVersion": "v1",
+                "requestId": "generate-design-machine-code-001",
+                "objective": "Generate a parametric mounting bracket design, export STEP/3MF/STL, and prepare printer or mill machine-code handoff",
+                "material": { "name": "PETG or 6061 aluminum", "family": "candidate" },
+                "parts": [
+                    {
+                        "id": "mounting-bracket",
+                        "description": "parametric bracket with two mounting holes, datum face, and load-path ribs",
+                        "role": "primary-part",
+                        "quantity": 1,
+                        "toleranceMm": 0.15,
+                        "preferredMethods": ["additive-print", "milling"]
+                    }
+                ],
+                "designInputs": [
+                    {
+                        "id": "design-intent",
+                        "format": "text-requirements",
+                        "sourceSystem": "operator",
+                        "description": "hole pattern, envelope, load path, datum faces, and tolerance notes"
+                    }
+                ],
+                "constraints": {
+                    "preferredMethods": ["additive-print", "milling"],
+                    "allowMultiPartAssembly": true,
+                    "requireDryRun": true
+                }
+            }
+        },
+        {
+            "id": "machine-code-fdm-slicer-handoff",
+            "label": "Generate printer-ready FDM machine code",
+            "route": "POST /fabrication/machine-code/generate",
+            "machineKind": "fdm-printer",
+            "preferredMethods": ["machine-code-generation", "slicer-profile-handoff", "additive-print"],
+            "requiredEvidence": ["retained mesh or 3MF export", "printer profile", "filament and color loaded", "nozzle and bed temperature profile", "simulation or dry-run required"],
+            "releaseGateHints": ["machineCode.releaseGates", "slicerProfileReview", "temperatureStateEvidence", "extrusionStateEvidence", "simulation.programs", "machineRelease.blockers"],
+            "request": {
+                "templateId": "machine-code-fdm-slicer-handoff",
+                "templateVersion": "v1",
+                "requestId": "generate-fdm-machine-code-001",
+                "objective": "Generate draft printer G-code for a retained 3MF bracket export with PETG slicer settings",
+                "material": { "name": "PETG", "family": "polymer" },
+                "parts": [
+                    {
+                        "id": "retained-3mf-bracket",
+                        "description": "retained 3MF bracket mesh with dimensional envelope and first-layer-critical faces",
+                        "role": "printed-functional-part",
+                        "quantity": 1,
+                        "toleranceMm": 0.20,
+                        "preferredMethods": ["additive-print"]
+                    }
+                ],
+                "constraints": {
+                    "preferredMethods": ["additive-print"],
+                    "requireDryRun": true
+                }
+            }
+        },
+        {
+            "id": "machine-code-cnc-controller-handoff",
+            "label": "Generate CNC controller machine code",
+            "route": "POST /fabrication/machine-code/generate",
+            "machineKind": "cnc-subtractive",
+            "preferredMethods": ["machine-code-generation", "postprocessor-handoff", "milling", "turning"],
+            "requiredEvidence": ["retained STEP or CAM source", "machine and controller profile", "postprocessor target", "tooling and workholding evidence", "simulation or dry-run required"],
+            "releaseGateHints": ["machineCode.releaseGates", "controllerPlan.releaseGates", "postprocessPlan.controllerTargets", "toolingPlan.releaseGates", "workholdingPlan.releaseGates", "machineRelease.blockers"],
+            "request": {
+                "templateId": "machine-code-cnc-controller-handoff",
+                "templateVersion": "v1",
+                "requestId": "generate-cnc-machine-code-001",
+                "objective": "Generate draft Fanuc-compatible mill or lathe controller code from retained CAM/toolpath evidence",
+                "material": { "name": "6061 aluminum", "family": "metal" },
+                "parts": [
+                    {
+                        "id": "machined-insert",
+                        "description": "machined insert with datum faces, bore, and tight-fit interface geometry",
+                        "role": "cnc-machined-feature",
+                        "quantity": 1,
+                        "toleranceMm": 0.05,
+                        "preferredMethods": ["milling", "turning"]
+                    }
+                ],
+                "constraints": {
+                    "preferredMethods": ["milling", "turning"],
+                    "requireDryRun": true
+                }
+            }
+        },
+        {
+            "id": "imported-cnc-program-review",
+            "label": "Imported CNC program validation and improvement",
+            "route": "POST /fabrication/instructions/analyze",
+            "machineKind": "cnc-subtractive",
+            "preferredMethods": ["instruction-analysis", "program-validation", "machine-code-improvement"],
+            "requiredEvidence": ["machine profile attached", "controller dialect known", "work offset reviewed", "tooling/workholding evidence attached", "dry-run or simulation required"],
+            "releaseGateHints": ["instructionValidation.boundaries", "controllerPlan.releaseGates", "simulation.riskProfile", "machineRelease.blockers", "improvedProgramReview"],
+            "request": {
+                "templateId": "imported-cnc-program-review",
+                "templateVersion": "v1",
+                "requestId": "review-imported-cnc-001",
+                "material": { "name": "6061 aluminum", "family": "metal" },
+                "programs": [
+                    {
+                        "id": "legacy-mill-program",
+                        "machineKind": "vertical-mill",
+                        "language": "fanuc-gcode",
+                        "instructions": ["G21 G90 G54", "T1 M6", "S8000 M3", "G1 X25.0 Y12.0 F250", "M30"]
+                    }
+                ]
+            }
+        },
+        {
+            "id": "imported-printer-gcode-review",
+            "label": "Imported printer G-code validation and improvement",
+            "route": "POST /fabrication/instructions/analyze",
+            "machineKind": "fdm-printer",
+            "preferredMethods": ["instruction-analysis", "slicer-gcode-validation", "print-program-improvement"],
+            "requiredEvidence": ["printer profile attached", "filament loaded", "nozzle and bed temperature evidence", "extrusion mode reviewed", "first-layer or dry-run evidence required"],
+            "releaseGateHints": ["instructionValidation.boundaries", "slicerProfileReview", "temperatureStateEvidence", "extrusionStateEvidence", "machineRelease.blockers"],
+            "request": {
+                "templateId": "imported-printer-gcode-review",
+                "templateVersion": "v1",
+                "requestId": "review-imported-print-001",
+                "material": { "name": "PETG", "family": "polymer" },
+                "programs": [
+                    {
+                        "id": "legacy-slicer-gcode",
+                        "machineKind": "fdm-printer",
+                        "language": "marlin-gcode",
+                        "instructions": ["M140 S80", "M104 S240", "G28", "M190 S80", "M109 S240", "G1 X10.0 Y10.0 E0.8 F900"]
+                    }
+                ]
+            }
+        },
+        {
+            "id": "imported-resin-job-review",
+            "label": "Imported resin/SLA job validation and improvement",
+            "route": "POST /fabrication/instructions/analyze",
+            "machineKind": "sla-printer",
+            "preferredMethods": ["instruction-analysis", "resin-job-validation", "postprocess-plan-improvement"],
+            "requiredEvidence": ["printer and resin profile attached", "support and island review retained", "vat capacity evidence", "wash and cure traveler evidence", "PPE and ventilation evidence"],
+            "releaseGateHints": ["instructionValidation.boundaries", "resinProfileEvidence", "resinVatCapacityEvidence", "resinPostprocessEvidence", "machineRelease.blockers"],
+            "request": {
+                "templateId": "imported-resin-job-review",
+                "templateVersion": "v1",
+                "requestId": "review-imported-resin-001",
+                "material": { "name": "engineering resin", "family": "photopolymer" },
+                "programs": [
+                    {
+                        "id": "legacy-resin-job-sheet",
+                        "machineKind": "sla-printer",
+                        "language": "resin-job-sheet",
+                        "instructions": ["Print clear resin enclosure from sliced project", "Verify supports and islands", "Wash in IPA", "UV cure", "Inspect datum windows"]
+                    }
+                ]
+            }
+        },
+        {
+            "id": "imported-powder-bed-build-review",
+            "label": "Imported powder-bed build packet validation and improvement",
+            "route": "POST /fabrication/instructions/analyze",
+            "machineKind": "powder-bed-printer",
+            "preferredMethods": ["instruction-analysis", "powder-bed-build-validation", "thermal-pack-improvement"],
+            "requiredEvidence": ["powder lot and refresh ratio", "build nesting and recoater clearance", "thermal pack or cooldown evidence", "depowder and powder-recovery evidence", "operator signoff required"],
+            "releaseGateHints": ["instructionValidation.boundaries", "powderBedProfileEvidence", "recoaterClearanceEvidence", "thermalPackEvidence", "powderHandlingEvidence", "machineRelease.blockers"],
+            "request": {
+                "templateId": "imported-powder-bed-build-review",
+                "templateVersion": "v1",
+                "requestId": "review-imported-powder-bed-001",
+                "material": { "name": "nylon powder", "family": "polymer-powder" },
+                "programs": [
+                    {
+                        "id": "legacy-powder-bed-build",
+                        "machineKind": "powder-bed-printer",
+                        "language": "powder-bed-build-packet",
+                        "instructions": ["Nest powder-bed parts", "Print build with operator-reviewed energy profile", "Cool powder cake", "Depowder with approved recovery workflow", "Inspect shrink-compensated features"]
+                    }
+                ]
+            }
+        },
+        {
             "id": "vertical-mill-fixture-plate",
             "label": "Vertical mill fixture plate",
             "route": "POST /fabrication/plan",
@@ -100197,6 +101978,58 @@ fn request_templates() -> Value {
                     "allowHumanIntervention": true,
                     "requireDryRun": true
                 }
+            }
+        },
+        {
+            "id": "hybrid-outcome-learning-feedback",
+            "label": "Hybrid fabrication outcome learning feedback",
+            "route": "POST /fabrication/learning/outcomes",
+            "machineKind": "hybrid-fleet",
+            "preferredMethods": ["learning-outcome", "mdp-pomdp-feedback", "neural-training-example"],
+            "requiredEvidence": ["source request and job retained", "operation sequence recorded", "split/combine result observed", "reward or success outcome scored", "release blockers and interventions captured"],
+            "releaseGateHints": ["learning.outcomeMemory", "decompositionPlan.learningObservations", "pomdpBeliefState.hiddenStates", "neuralTrainingCorpus.examples", "machineRelease.blockers"],
+            "request": {
+                "templateId": "hybrid-outcome-learning-feedback",
+                "templateVersion": "v1",
+                "sourceRequestId": "demo-hybrid-001",
+                "sourceJobId": "retained-job-id",
+                "objective": "Learn from a printed, milled, and turned split/combine assembly outcome",
+                "material": { "name": "PETG plus brass", "family": "hybrid" },
+                "manufacturingMethods": ["additive-print", "milling", "turning", "assembly"],
+                "machineKind": "hybrid-fleet",
+                "operationSequence": ["additive-print", "milling", "turning", "assembly"],
+                "assemblyStrategy": "printed body plus turned insert with milled datum pads",
+                "sourceKind": "release-result",
+                "success": true,
+                "rewardHint": 0.92,
+                "observations": ["split/combine succeeded", "milled datum pads improved assembly fit", "turned insert retained torque evidence"],
+                "notes": ["keep release blockers, interventions, and inspection results with the retained outcome"]
+            }
+        },
+        {
+            "id": "boundary-failure-learning-feedback",
+            "label": "Machine-failure boundary learning feedback",
+            "route": "POST /fabrication/learning/outcomes",
+            "machineKind": "mixed-fleet",
+            "preferredMethods": ["learning-outcome", "boundary-memory", "remediation-risk-learning"],
+            "requiredEvidence": ["source request and job retained", "boundary kind and severity retained", "human-intervention or split/combine blocker recorded", "recommended remediation captured", "negative reward scored"],
+            "releaseGateHints": ["learning.boundaryMemory", "remediationRisks", "releaseProbePlan.requiredBeforeRelease", "pomdpBeliefState.hiddenStates", "machineRelease.blockers"],
+            "request": {
+                "templateId": "boundary-failure-learning-feedback",
+                "templateVersion": "v1",
+                "sourceRequestId": "blocked-fabrication-001",
+                "sourceJobId": "retained-blocked-job-id",
+                "objective": "Learn from a fabrication job blocked by machine-failure or intervention boundaries",
+                "material": { "name": "PETG plus aluminum", "family": "hybrid" },
+                "manufacturingMethods": ["additive-print", "milling", "assembly"],
+                "machineKind": "mixed-fleet",
+                "operationSequence": ["additive-print", "milling", "assembly"],
+                "assemblyStrategy": "split printed shell and milled insert after boundary review",
+                "sourceKind": "boundary-analysis-result",
+                "success": false,
+                "rewardHint": -0.82,
+                "observations": ["boundary-kind:machine-failure", "boundary-severity:release-blocker", "human-intervention-required", "split-combine-boundary:split-required", "resolution-action:reroute-with-fixture-and-operator-review"],
+                "notes": ["retain blocked program lines, release-probe actions, remediation risks, and operator intervention evidence before retry"]
             }
         }
     ])
@@ -103558,10 +105391,58 @@ mod tests {
 
         for expected in [
             "fdm-print-functional-part",
+            "native-cad-intake-review",
+            "design-to-machine-code-generation",
+            "machine-code-fdm-slicer-handoff",
+            "machine-code-cnc-controller-handoff",
+            "imported-cnc-program-review",
+            "imported-printer-gcode-review",
+            "imported-resin-job-review",
+            "imported-powder-bed-build-review",
             "vertical-mill-fixture-plate",
             "horizontal-mill-side-feature",
             "lathe-turned-insert",
             "hybrid-printed-milled-turned-assembly",
+            "hybrid-outcome-learning-feedback",
+            "boundary-failure-learning-feedback",
+            "POST /fabrication/design/generate",
+            "POST /fabrication/design/import/review",
+            "POST /fabrication/machine-code/generate",
+            "POST /fabrication/instructions/analyze",
+            "POST /fabrication/learning/outcomes",
+            "machine-code-generation",
+            "design-import-review",
+            "native-cad-translation",
+            "neutral-export-review",
+            "slicer-profile-handoff",
+            "postprocessor-handoff",
+            "instruction-generation",
+            "designExports.reviewGates",
+            "designInputReview.supportedFormats",
+            "translationWorkerEvidence",
+            "postprocessPlan.releaseGates",
+            "machineCode.releaseGates",
+            "postprocessPlan.controllerTargets",
+            "machine-code-improvement",
+            "slicer-gcode-validation",
+            "resin-job-validation",
+            "powder-bed-build-validation",
+            "mdp-pomdp-feedback",
+            "neural-training-example",
+            "learning.outcomeMemory",
+            "learning.boundaryMemory",
+            "remediation-risk-learning",
+            "boundary-kind:machine-failure",
+            "human-intervention-required",
+            "split-combine-boundary:split-required",
+            "operationSequence",
+            "rewardHint",
+            "improvedProgramReview",
+            "temperatureStateEvidence",
+            "extrusionStateEvidence",
+            "resinPostprocessEvidence",
+            "recoaterClearanceEvidence",
+            "powderHandlingEvidence",
             "clearanceSweepEvidence",
             "split/combine rationale",
             "interface-control plan",
@@ -103576,6 +105457,206 @@ mod tests {
             assert!(
                 template_text.contains(expected),
                 "request templates should include {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn request_template_plan_bodies_match_fabrication_plan_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let plan_routes = [
+            "POST /fabrication/plan",
+            "POST /fabrication/design/generate",
+            "POST /fabrication/machine-code/generate",
+        ];
+        let mut checked = 0;
+
+        for template in template_entries {
+            let route = template
+                .get("route")
+                .and_then(Value::as_str)
+                .expect("template should expose route");
+            if !plan_routes.contains(&route) {
+                continue;
+            }
+            let request = template
+                .get("request")
+                .cloned()
+                .expect("template should include request body");
+            let parsed: FabricationPlanRequest =
+                serde_json::from_value(request).expect("template request should match plan schema");
+            assert!(
+                !parsed.objective.trim().is_empty(),
+                "template request objective should be non-empty"
+            );
+            for part in parsed.parts.unwrap_or_default() {
+                assert!(
+                    !part.description.trim().is_empty(),
+                    "template request part {} should include description",
+                    part.id
+                );
+            }
+            checked += 1;
+        }
+
+        assert!(
+            checked >= 5,
+            "expected plan/design/machine-code starter requests to parse"
+        );
+    }
+
+    #[test]
+    fn request_template_design_import_bodies_match_review_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let mut checked = 0;
+        let mut source_systems = BTreeSet::new();
+
+        for template in template_entries {
+            let route = template
+                .get("route")
+                .and_then(Value::as_str)
+                .expect("template should expose route");
+            if route != "POST /fabrication/design/import/review" {
+                continue;
+            }
+            let request = template
+                .get("request")
+                .cloned()
+                .expect("design import template should include request body");
+            let parsed: DesignImportReviewRequest = serde_json::from_value(request)
+                .expect("design import template request should match review schema");
+            let design_inputs = parsed
+                .design_inputs
+                .expect("design import template should include designInputs");
+            assert!(
+                !design_inputs.is_empty(),
+                "design import template should include at least one design input"
+            );
+            for input in design_inputs {
+                assert!(input.format.is_some(), "design input should include format");
+                if let Some(source_system) = input.source_system {
+                    source_systems.insert(source_system);
+                }
+            }
+            checked += 1;
+        }
+
+        assert_eq!(checked, 1, "expected native CAD intake template");
+        for expected in ["SOLIDWORKS", "PTC Creo", "3MF"] {
+            assert!(
+                source_systems.contains(expected),
+                "design import template should include {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn request_template_instruction_bodies_match_analysis_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let mut checked = 0;
+        let mut languages = BTreeSet::new();
+
+        for template in template_entries {
+            let route = template
+                .get("route")
+                .and_then(Value::as_str)
+                .expect("template should expose route");
+            if route != "POST /fabrication/instructions/analyze" {
+                continue;
+            }
+            let request = template
+                .get("request")
+                .cloned()
+                .expect("instruction template should include request body");
+            let parsed: InstructionAnalysisRequest = serde_json::from_value(request)
+                .expect("instruction template request should match analysis schema");
+            assert!(
+                !parsed.programs.is_empty(),
+                "instruction template should include at least one program"
+            );
+            for program in parsed.programs {
+                assert!(
+                    !program.instructions.is_empty(),
+                    "instruction template program should include instructions"
+                );
+                if let Some(language) = program.language {
+                    languages.insert(language);
+                }
+            }
+            checked += 1;
+        }
+
+        assert_eq!(checked, 4, "expected imported instruction review templates");
+        for expected in [
+            "fanuc-gcode",
+            "marlin-gcode",
+            "resin-job-sheet",
+            "powder-bed-build-packet",
+        ] {
+            assert!(
+                languages.contains(expected),
+                "instruction templates should include {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn request_template_learning_bodies_match_outcome_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let mut checked = 0;
+        let mut observation_text = String::new();
+
+        for template in template_entries {
+            let route = template
+                .get("route")
+                .and_then(Value::as_str)
+                .expect("template should expose route");
+            if route != "POST /fabrication/learning/outcomes" {
+                continue;
+            }
+            let request = template
+                .get("request")
+                .cloned()
+                .expect("learning template should include request body");
+            let parsed: LearningOutcomeRequest = serde_json::from_value(request)
+                .expect("learning template request should match outcome schema");
+            assert!(
+                parsed.reward.is_some(),
+                "learning template should include rewardHint"
+            );
+            assert!(
+                parsed
+                    .manufacturing_methods
+                    .as_ref()
+                    .is_some_and(|methods| !methods.is_empty()),
+                "learning template should include manufacturingMethods"
+            );
+            observation_text.push_str(&parsed.observations.clone().unwrap_or_default().join("|"));
+            checked += 1;
+        }
+
+        assert_eq!(checked, 2, "expected learning outcome starter requests");
+        for expected in [
+            "split/combine succeeded",
+            "boundary-kind:machine-failure",
+            "human-intervention-required",
+            "split-combine-boundary:split-required",
+        ] {
+            assert!(
+                observation_text.contains(expected),
+                "learning templates should include {expected}"
             );
         }
     }
@@ -126232,6 +128313,254 @@ mod tests {
     }
 
     #[test]
+    fn default_special_process_fleet_generates_seal_installation_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-seal-installation".to_string()),
+            objective:
+                "Install an O-ring and form-in-place gasket seal joining a printed polymer cover to a milled aluminum pump body with seal specification, gasket specification, groove gland geometry, gland fill, material compatibility, cleanliness, seal lubricant, RTV sealant, compression target, leak test criteria, pressure test, vacuum decay, leak rate, first article, and seal release"
+                    .to_string(),
+            material: Some(material("silicone o-ring gasket sealant kit", "elastomer")),
+            stock: Some(StockSpec {
+                form: "printed cover, machined pump body, o-ring, gasket, RTV sealant, and leak-test fixture"
+                    .to_string(),
+                dimensions_mm: Some(vec![300.0, 180.0, 85.0]),
+            }),
+            tolerance_mm: Some(0.12),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("seal installation plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "seal-installation-release"
+                && part.machine_kind == "seal-installation-cell"
+                && part.manufacturing_method == "seal-installation"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "seal-installation-cell"
+                && step
+                    .operation
+                    .contains("verify gasket or O-ring specification")
+        }));
+        let seal_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "seal-installation-cell")
+            .expect("seal installation program should be generated");
+        assert_eq!(seal_program.language, "seal-installation-job");
+        for expected in [
+            "draft seal / gasket / O-ring installation job",
+            "seal-installation-setup-boundary",
+            "VERIFY_SEAL_SETUP",
+            "INSTALL_SEAL",
+            "seal-installation-release-boundary",
+            "VERIFY_SEAL_RELEASE",
+            "COMPLETE record seal or gasket specification",
+        ] {
+            assert!(
+                seal_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing seal installation instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "seal-installation-cell"
+                    && target.postprocessor == "seal-installation-job-packager"
+                    && target.output_format == "seal-installation-job-package"
+            }));
+        for artifact in [
+            "seal-spec-groove-and-material-compatibility-record",
+            "gasket-oring-lubricant-and-compression-record",
+            "sealant-cure-or-installation-inspection-record",
+            "leak-pressure-first-article-and-release-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing seal installation artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_bearing_installation_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-bearing-installation".to_string()),
+            objective:
+                "Install precision bearings into a milled aluminum housing and printed polymer carrier with bearing specification, bearing lot, housing bore, shaft journal, fit class, interference target, shrink fit temperature delta, arbor press tooling, support mandrel, lubrication, cleanliness, force displacement limits, seating depth, preload endplay, retaining ring retention, runout, axial radial play, rotation torque, noise roughness, damage inspection, first article, and bearing release"
+                    .to_string(),
+            material: Some(material("bearing shaft housing kit", "metal")),
+            stock: Some(StockSpec {
+                form: "machined housing, printed carrier, bearings, shaft, sleeve, and retaining rings"
+                    .to_string(),
+                dimensions_mm: Some(vec![240.0, 180.0, 120.0]),
+            }),
+            tolerance_mm: Some(0.04),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("bearing installation plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "bearing-installation-release"
+                && part.machine_kind == "bearing-installation-cell"
+                && part.manufacturing_method == "bearing-installation"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "bearing-installation-cell"
+                && step
+                    .operation
+                    .contains("measure housing bore and shaft journals")
+        }));
+        let bearing_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "bearing-installation-cell")
+            .expect("bearing installation program should be generated");
+        assert_eq!(bearing_program.language, "bearing-installation-job");
+        for expected in [
+            "draft bearing / interference-fit installation job",
+            "bearing-installation-setup-boundary",
+            "VERIFY_BEARING_SETUP",
+            "INSTALL_BEARING",
+            "bearing-installation-release-boundary",
+            "VERIFY_BEARING_RELEASE",
+            "COMPLETE record bearing specification",
+        ] {
+            assert!(
+                bearing_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing bearing installation instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "bearing-installation-cell"
+                    && target.postprocessor == "bearing-installation-job-packager"
+                    && target.output_format == "bearing-installation-job-package"
+            }));
+        for artifact in [
+            "bearing-spec-lot-and-fit-class-record",
+            "bore-shaft-temperature-and-press-tooling-record",
+            "force-displacement-seating-and-retention-record",
+            "runout-rotation-first-article-and-release-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing bearing installation artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_special_process_fleet_generates_dynamic_balancing_job() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-dynamic-balancing".to_string()),
+            objective:
+                "Dynamic balancing for a machined rotor and printed fan assembly with rotor identification, mass properties, ISO 21940 balance grade, target RPM, fixture arbor runout, guard interlock, trial weight plan, correction planes, speed ramp, vibration sensor calibration, phase reference, stop criteria, correction weights, material removal, correction retention, residual unbalance, vibration spectrum, runout, noise, first article, and balance release"
+                    .to_string(),
+            material: Some(material("rotor impeller fan balancing kit", "metal")),
+            stock: Some(StockSpec {
+                form: "rotor, fan, arbor, trial weights, correction weights, sensors"
+                    .to_string(),
+                dimensions_mm: Some(vec![260.0, 180.0, 180.0]),
+            }),
+            tolerance_mm: Some(0.05),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("dynamic balancing plan should be generated");
+
+        assert!(response.design.parts.iter().any(|part| {
+            part.id == "dynamic-balancing-release"
+                && part.machine_kind == "dynamic-balancing-cell"
+                && part.manufacturing_method == "dynamic-balancing"
+        }));
+        assert!(response.process_plan.iter().any(|step| {
+            step.machine_kind == "dynamic-balancing-cell"
+                && step.operation.contains("verify rotor or impeller revision")
+        }));
+        let balancing_program = response
+            .generated_programs
+            .iter()
+            .find(|program| program.machine_kind == "dynamic-balancing-cell")
+            .expect("dynamic balancing program should be generated");
+        assert_eq!(balancing_program.language, "dynamic-balancing-job");
+        for expected in [
+            "draft dynamic balancing / rotor balance job",
+            "dynamic-balancing-setup-boundary",
+            "VERIFY_BALANCE_SETUP",
+            "RUN_TRIAL_BALANCE",
+            "APPLY_BALANCE_CORRECTION",
+            "dynamic-balancing-release-boundary",
+            "VERIFY_BALANCE_RELEASE",
+            "COMPLETE record rotor identity",
+        ] {
+            assert!(
+                balancing_program
+                    .instructions
+                    .iter()
+                    .any(|line| line.contains(expected)),
+                "missing dynamic balancing instruction {expected}"
+            );
+        }
+        assert!(response
+            .postprocess_plan
+            .controller_targets
+            .iter()
+            .any(|target| {
+                target.machine_kind == "dynamic-balancing-cell"
+                    && target.postprocessor == "dynamic-balancing-job-packager"
+                    && target.output_format == "dynamic-balancing-job-package"
+            }));
+        for artifact in [
+            "rotor-identity-balance-grade-and-speed-record",
+            "fixture-arbor-runout-guard-and-sensor-calibration-record",
+            "trial-correction-weight-and-material-removal-record",
+            "residual-unbalance-vibration-first-article-and-release-record",
+        ] {
+            assert!(
+                response
+                    .postprocess_plan
+                    .required_artifacts
+                    .contains(&artifact.to_string()),
+                "missing dynamic balancing artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
     fn default_special_process_fleet_generates_part_marking_job() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-part-marking".to_string()),
@@ -127814,7 +130143,6 @@ mod tests {
         )];
 
         let (_, validation, improvements) = analyze_instruction_programs(&programs);
-
         assert!(matches!(validation.severity.as_str(), "warning" | "error"));
         assert!(validation.findings.iter().any(|finding| {
             finding.code == "missing-tool-length-compensation"
@@ -127874,7 +130202,6 @@ mod tests {
         assert!(has_work_coordinate_offset_cancel("G92.2"));
 
         let (_, validation, improvements) = analyze_instruction_programs(&programs);
-
         assert!(matches!(validation.severity.as_str(), "warning" | "error"));
         assert!(validation.findings.iter().any(|finding| {
             finding.code == "missing-tool-length-compensation"
@@ -135433,6 +137760,301 @@ mod tests {
     }
 
     #[test]
+    fn text_seal_installation_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("seal-installation-missing-evidence".to_string()),
+                machine_id: Some("seal-installation-cell-1".to_string()),
+                machine_kind: Some("seal-installation-cell".to_string()),
+                language: Some("seal-installation-job".to_string()),
+                instructions: vec![
+                    "Install gasket and O-ring seals per traveler".to_string(),
+                    "Operator review pending".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("seal-installation-with-evidence".to_string()),
+                machine_id: Some("seal-installation-cell-1".to_string()),
+                machine_kind: Some("seal-installation-cell".to_string()),
+                language: Some("seal-installation-job".to_string()),
+                instructions: vec![
+                    "Install gasket and O-ring seals per traveler".to_string(),
+                    "Seal specification, gasket specification, O-ring spec, groove gland geometry, gland fill, material compatibility, cleanliness, lubricant, sealant, compression target, and leak test criteria recorded".to_string(),
+                    "Compression recorded, gland fill, pinch twist extrusion inspection, sealant cure, pressure test, vacuum decay, leak rate, first article, and seal release evidence recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "seal-installation-setup-evidence-missing",
+            "seal-installation-release-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref()
+                            == Some("seal-installation-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing seal installation finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("seal-installation-with-evidence")
+            }));
+        }
+        for boundary in [
+            "seal-installation-setup-boundary",
+            "seal-installation-release-boundary",
+        ] {
+            assert!(
+                validation.failure_boundaries.iter().any(|item| {
+                    item.kind == boundary
+                        && item.program_id.as_deref() == Some("seal-installation-missing-evidence")
+                        && item.requires_human_intervention
+                }),
+                "missing seal installation boundary {boundary}"
+            );
+        }
+        for action in [
+            "add-seal-installation-setup-evidence",
+            "add-seal-installation-release-evidence",
+        ] {
+            assert!(
+                improvements.iter().any(|improvement| {
+                    improvement.action == action
+                        && improvement.program_id.as_deref()
+                            == Some("seal-installation-missing-evidence")
+                }),
+                "missing seal installation improvement {action}"
+            );
+        }
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        for boundary in [
+            "CHECKPOINT [seal-installation-setup-boundary]",
+            "CHECKPOINT [seal-installation-release-boundary]",
+        ] {
+            assert!(
+                improved[0]
+                    .instructions
+                    .iter()
+                    .any(|line| line.starts_with(boundary)),
+                "missing improved seal installation checkpoint {boundary}"
+            );
+        }
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Seal-installation job needs seal/gasket/O-ring")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [seal-installation-")));
+    }
+
+    #[test]
+    fn text_bearing_installation_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("bearing-installation-missing-evidence".to_string()),
+                machine_id: Some("bearing-installation-cell-1".to_string()),
+                machine_kind: Some("bearing-installation-cell".to_string()),
+                language: Some("bearing-installation-job".to_string()),
+                instructions: vec![
+                    "Install bearings with arbor press per traveler".to_string(),
+                    "Operator review pending".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("bearing-installation-with-evidence".to_string()),
+                machine_id: Some("bearing-installation-cell-1".to_string()),
+                machine_kind: Some("bearing-installation-cell".to_string()),
+                language: Some("bearing-installation-job".to_string()),
+                instructions: vec![
+                    "Install bearings with arbor press per traveler".to_string(),
+                    "Bearing specification, bearing lot, housing bore, shaft journal, fit class, interference target, temperature delta, press tooling, support mandrel, lubrication, cleanliness, and force displacement evidence recorded".to_string(),
+                    "Seating depth, shoulder contact, preload, endplay, bearing retention, runout, axial play, radial play, rotation torque, noise roughness, damage inspection, first article, and bearing release evidence recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "bearing-installation-setup-evidence-missing",
+            "bearing-installation-release-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref()
+                            == Some("bearing-installation-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing bearing installation finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("bearing-installation-with-evidence")
+            }));
+        }
+        for boundary in [
+            "bearing-installation-setup-boundary",
+            "bearing-installation-release-boundary",
+        ] {
+            assert!(
+                validation.failure_boundaries.iter().any(|item| {
+                    item.kind == boundary
+                        && item.program_id.as_deref()
+                            == Some("bearing-installation-missing-evidence")
+                        && item.requires_human_intervention
+                }),
+                "missing bearing installation boundary {boundary}"
+            );
+        }
+        for action in [
+            "add-bearing-installation-setup-evidence",
+            "add-bearing-installation-release-evidence",
+        ] {
+            assert!(
+                improvements.iter().any(|improvement| {
+                    improvement.action == action
+                        && improvement.program_id.as_deref()
+                            == Some("bearing-installation-missing-evidence")
+                }),
+                "missing bearing installation improvement {action}"
+            );
+        }
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        for boundary in [
+            "CHECKPOINT [bearing-installation-setup-boundary]",
+            "CHECKPOINT [bearing-installation-release-boundary]",
+        ] {
+            assert!(
+                improved[0]
+                    .instructions
+                    .iter()
+                    .any(|line| line.starts_with(boundary)),
+                "missing improved bearing installation checkpoint {boundary}"
+            );
+        }
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Bearing-installation job needs bearing specification")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [bearing-installation-")));
+    }
+
+    #[test]
+    fn text_dynamic_balancing_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("dynamic-balancing-missing-evidence".to_string()),
+                machine_id: Some("dynamic-balancing-cell-1".to_string()),
+                machine_kind: Some("dynamic-balancing-cell".to_string()),
+                language: Some("dynamic-balancing-job".to_string()),
+                instructions: vec![
+                    "Dynamic balancing for rotor assembly per traveler".to_string(),
+                    "Operator review pending".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("dynamic-balancing-with-evidence".to_string()),
+                machine_id: Some("dynamic-balancing-cell-1".to_string()),
+                machine_kind: Some("dynamic-balancing-cell".to_string()),
+                language: Some("dynamic-balancing-job".to_string()),
+                instructions: vec![
+                    "Dynamic balancing for rotor assembly per traveler".to_string(),
+                    "Rotor id, mass properties, balance grade, target rpm, fixture arbor, arbor runout, guard interlock, trial weight plan, correction plane, speed ramp, vibration sensor, sensor calibration, phase reference, stop criteria, verify_balance_setup, and run_trial_balance evidence recorded".to_string(),
+                    "Residual unbalance, vibration spectrum, vibration limit, phase, correction weight, correction retention, material removal, overspeed guard status, runout, noise, first article, verify_balance_release, and balance release evidence recorded".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        for code in [
+            "dynamic-balancing-setup-evidence-missing",
+            "dynamic-balancing-release-evidence-missing",
+        ] {
+            assert!(
+                validation.findings.iter().any(|finding| {
+                    finding.code == code
+                        && finding.program_id.as_deref()
+                            == Some("dynamic-balancing-missing-evidence")
+                        && finding.line.is_none()
+                }),
+                "missing dynamic balancing finding {code}"
+            );
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("dynamic-balancing-with-evidence")
+            }));
+        }
+        for boundary in [
+            "dynamic-balancing-setup-boundary",
+            "dynamic-balancing-release-boundary",
+        ] {
+            assert!(
+                validation.failure_boundaries.iter().any(|item| {
+                    item.kind == boundary
+                        && item.program_id.as_deref() == Some("dynamic-balancing-missing-evidence")
+                        && item.requires_human_intervention
+                }),
+                "missing dynamic balancing boundary {boundary}"
+            );
+        }
+        for action in [
+            "add-dynamic-balancing-setup-evidence",
+            "add-dynamic-balancing-release-evidence",
+        ] {
+            assert!(
+                improvements.iter().any(|improvement| {
+                    improvement.action == action
+                        && improvement.program_id.as_deref()
+                            == Some("dynamic-balancing-missing-evidence")
+                }),
+                "missing dynamic balancing improvement {action}"
+            );
+        }
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        for boundary in [
+            "CHECKPOINT [dynamic-balancing-setup-boundary]",
+            "CHECKPOINT [dynamic-balancing-release-boundary]",
+        ] {
+            assert!(
+                improved[0]
+                    .instructions
+                    .iter()
+                    .any(|line| line.starts_with(boundary)),
+                "missing improved dynamic balancing checkpoint {boundary}"
+            );
+        }
+        assert!(improved[0]
+            .notes
+            .iter()
+            .any(|note| note.contains("Dynamic-balancing job needs rotor identity")));
+        assert!(!improved[1]
+            .instructions
+            .iter()
+            .any(|line| line.starts_with("CHECKPOINT [dynamic-balancing-")));
+    }
+
+    #[test]
     fn text_part_marking_jobs_require_setup_and_readability_evidence() {
         let programs = vec![
             InstructionProgram {
@@ -135988,6 +138610,233 @@ mod tests {
                     .iter()
                     .any(|improvement| improvement.action == action),
                 "missing generated rivet installation improvement {action}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_seal_installation_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("generated-seal-missing-setup".to_string()),
+                machine_id: Some("seal-installation-cell-1".to_string()),
+                machine_kind: Some("seal-installation-cell".to_string()),
+                language: Some("seal-installation-job".to_string()),
+                instructions: vec![
+                    "; draft seal / gasket / O-ring installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_SEAL_RELEASE leak_or_pressure_test=passed leak_rate=recorded first_article=required seal_release=recorded".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-seal-missing-release".to_string()),
+                machine_id: Some("seal-installation-cell-1".to_string()),
+                machine_kind: Some("seal-installation-cell".to_string()),
+                language: Some("seal-installation-job".to_string()),
+                instructions: vec![
+                    "; draft seal / gasket / O-ring installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_SEAL_SETUP part_revisions=operator-reviewed seal_spec=operator-reviewed groove_gland=verified material_compatibility=verified cleanliness=verified lubricant_or_sealant=recorded compression_target=operator-reviewed".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-seal-with-evidence".to_string()),
+                machine_id: Some("seal-installation-cell-1".to_string()),
+                machine_kind: Some("seal-installation-cell".to_string()),
+                language: Some("seal-installation-job".to_string()),
+                instructions: vec![
+                    "; draft seal / gasket / O-ring installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_SEAL_SETUP part_revisions=operator-reviewed seal_spec=operator-reviewed groove_gland=verified material_compatibility=verified cleanliness=verified lubricant_or_sealant=recorded compression_target=operator-reviewed leak_test_criteria=recorded".to_string(),
+                    "INSTALL_SEAL method=operator-reviewed gasket_or_oring=verified lubricant_or_sealant=operator-reviewed twist_pinch_check=required compression=controlled cure_or_settle=operator-reviewed".to_string(),
+                    "VERIFY_SEAL_RELEASE compression=recorded gland_fill=verified pinch_twist_extrusion=inspected leak_or_pressure_test=passed leak_rate=recorded first_article=required".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "seal-installation-setup-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-seal-missing-setup")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "seal-installation-release-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-seal-missing-release")
+                && finding.line.is_none()
+        }));
+        for code in [
+            "seal-installation-setup-evidence-missing",
+            "seal-installation-release-evidence-missing",
+        ] {
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("generated-seal-with-evidence")
+            }));
+        }
+        for action in [
+            "add-seal-installation-setup-evidence",
+            "add-seal-installation-release-evidence",
+        ] {
+            assert!(
+                improvements
+                    .iter()
+                    .any(|improvement| improvement.action == action),
+                "missing generated seal installation improvement {action}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_bearing_installation_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("generated-bearing-missing-setup".to_string()),
+                machine_id: Some("bearing-installation-cell-1".to_string()),
+                machine_kind: Some("bearing-installation-cell".to_string()),
+                language: Some("bearing-installation-job".to_string()),
+                instructions: vec![
+                    "; draft bearing / interference-fit installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_BEARING_RELEASE seating_depth=recorded preload_or_endplay=recorded runout=recorded rotation_torque=recorded axial_radial_play=verified damage=inspected first_article=required".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-bearing-missing-release".to_string()),
+                machine_id: Some("bearing-installation-cell-1".to_string()),
+                machine_kind: Some("bearing-installation-cell".to_string()),
+                language: Some("bearing-installation-job".to_string()),
+                instructions: vec![
+                    "; draft bearing / interference-fit installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_BEARING_SETUP part_revisions=operator-reviewed bearing_spec=operator-reviewed bearing_lot=recorded bore=measured shaft=measured fit_class=verified temperature_delta=operator-reviewed press_tooling=verified force_displacement_limits=recorded".to_string(),
+                    "INSTALL_BEARING method=operator-reviewed arbor_or_thermal_fit=operator-reviewed support_mandrel=verified load_path=verified alignment=controlled".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-bearing-with-evidence".to_string()),
+                machine_id: Some("bearing-installation-cell-1".to_string()),
+                machine_kind: Some("bearing-installation-cell".to_string()),
+                language: Some("bearing-installation-job".to_string()),
+                instructions: vec![
+                    "; draft bearing / interference-fit installation job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_BEARING_SETUP part_revisions=operator-reviewed bearing_spec=operator-reviewed bearing_lot=recorded bore=measured shaft=measured fit_class=verified temperature_delta=operator-reviewed press_tooling=verified force_displacement_limits=recorded".to_string(),
+                    "INSTALL_BEARING method=operator-reviewed arbor_or_thermal_fit=operator-reviewed support_mandrel=verified load_path=verified alignment=controlled brinelling_check=required".to_string(),
+                    "VERIFY_BEARING_RELEASE seating_depth=recorded preload_or_endplay=recorded runout=recorded rotation_torque=recorded axial_radial_play=verified damage=inspected first_article=required".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "bearing-installation-setup-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-bearing-missing-setup")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "bearing-installation-release-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-bearing-missing-release")
+                && finding.line.is_none()
+        }));
+        for code in [
+            "bearing-installation-setup-evidence-missing",
+            "bearing-installation-release-evidence-missing",
+        ] {
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("generated-bearing-with-evidence")
+            }));
+        }
+        for action in [
+            "add-bearing-installation-setup-evidence",
+            "add-bearing-installation-release-evidence",
+        ] {
+            assert!(
+                improvements
+                    .iter()
+                    .any(|improvement| improvement.action == action),
+                "missing generated bearing installation improvement {action}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_dynamic_balancing_jobs_require_setup_and_release_evidence() {
+        let programs = vec![
+            InstructionProgram {
+                id: Some("generated-balancing-missing-setup".to_string()),
+                machine_id: Some("dynamic-balancing-cell-1".to_string()),
+                machine_kind: Some("dynamic-balancing-cell".to_string()),
+                language: Some("dynamic-balancing-job".to_string()),
+                instructions: vec![
+                    "; draft dynamic balancing / rotor balance job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_BALANCE_RELEASE residual_unbalance=recorded vibration_limit=passed phase=recorded correction_retention=verified runout=verified overspeed_guard=verified first_article=required".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-balancing-missing-release".to_string()),
+                machine_id: Some("dynamic-balancing-cell-1".to_string()),
+                machine_kind: Some("dynamic-balancing-cell".to_string()),
+                language: Some("dynamic-balancing-job".to_string()),
+                instructions: vec![
+                    "; draft dynamic balancing / rotor balance job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_BALANCE_SETUP part_revisions=operator-reviewed rotor_id=operator-reviewed balance_grade=operator-reviewed target_rpm=recorded arbor_runout=verified guard_interlock=verified sensor_calibration=recorded correction_planes=verified".to_string(),
+                    "RUN_TRIAL_BALANCE speed_ramp=operator-reviewed trial_weight=operator-reviewed vibration_baseline=recorded phase_reference=recorded stop_criteria=armed".to_string(),
+                    "APPLY_BALANCE_CORRECTION correction_planes=operator-reviewed correction_weights=recorded material_removal=operator-reviewed retention=verified".to_string(),
+                ],
+            },
+            InstructionProgram {
+                id: Some("generated-balancing-with-evidence".to_string()),
+                machine_id: Some("dynamic-balancing-cell-1".to_string()),
+                machine_kind: Some("dynamic-balancing-cell".to_string()),
+                language: Some("dynamic-balancing-job".to_string()),
+                instructions: vec![
+                    "; draft dynamic balancing / rotor balance job generated by dd-fabrication-server"
+                        .to_string(),
+                    "VERIFY_BALANCE_SETUP part_revisions=operator-reviewed rotor_id=operator-reviewed balance_grade=operator-reviewed target_rpm=recorded arbor_runout=verified guard_interlock=verified sensor_calibration=recorded correction_planes=verified".to_string(),
+                    "RUN_TRIAL_BALANCE speed_ramp=operator-reviewed trial_weight=operator-reviewed vibration_baseline=recorded phase_reference=recorded stop_criteria=armed".to_string(),
+                    "APPLY_BALANCE_CORRECTION correction_planes=operator-reviewed correction_weights=recorded material_removal=operator-reviewed retention=verified".to_string(),
+                    "VERIFY_BALANCE_RELEASE residual_unbalance=recorded vibration_limit=passed phase=recorded correction_retention=verified runout=verified overspeed_guard=verified first_article=required".to_string(),
+                ],
+            },
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "dynamic-balancing-setup-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-balancing-missing-setup")
+                && finding.line.is_none()
+        }));
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "dynamic-balancing-release-evidence-missing"
+                && finding.program_id.as_deref() == Some("generated-balancing-missing-release")
+                && finding.line.is_none()
+        }));
+        for code in [
+            "dynamic-balancing-setup-evidence-missing",
+            "dynamic-balancing-release-evidence-missing",
+        ] {
+            assert!(!validation.findings.iter().any(|finding| {
+                finding.code == code
+                    && finding.program_id.as_deref() == Some("generated-balancing-with-evidence")
+            }));
+        }
+        for action in [
+            "add-dynamic-balancing-setup-evidence",
+            "add-dynamic-balancing-release-evidence",
+        ] {
+            assert!(
+                improvements
+                    .iter()
+                    .any(|improvement| improvement.action == action),
+                "missing generated dynamic balancing improvement {action}"
             );
         }
     }
