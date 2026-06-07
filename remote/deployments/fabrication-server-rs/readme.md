@@ -32,6 +32,8 @@ outcomes.
 - `GET /fabrication/subtractive/catalog`
 - `GET /subtractive/preflight/catalog`
 - `GET /fabrication/subtractive/preflight/catalog`
+- `GET /cleanliness/preflight/catalog`
+- `GET /fabrication/cleanliness/preflight/catalog`
 - `GET /cnc/catalog`
 - `GET /fabrication/cnc/catalog`
 - `GET /cells/catalog`
@@ -823,6 +825,27 @@ Subtractive preflight entries are release evidence contracts, not live machine
 approvals. Failed checks should be retained through setup, simulation, quality,
 telemetry, and learning outcome routes so DES, MDP/POMDP, and neural workers can
 learn safer split/combine and machine-routing strategies.
+
+## `GET /fabrication/cleanliness/preflight/catalog`
+
+`GET /cleanliness/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/cleanliness/preflight/catalog` return the live
+`dd.fabrication.cleanliness-preflight-catalog.v1` release checklist for residue,
+FOD, drying, and interface cleanliness before printed and machined parts are
+joined, inspected, coated, packed, or handed to an operator. The catalog groups
+additive residue and powder state, machining coolant/chip/FOD state, and
+assembly-interface cleanliness. It calls out resin drip/wash/cure evidence,
+powder depowdering and trapped-powder removal, soluble support and moisture
+state, coolant/oil/abrasive/dielectric/chip removal, blind-hole or internal
+channel cleaning, chemistry compatibility, critical surface cleanliness, swab or
+particle evidence, packout cleanliness class, caps/plugs, desiccant, traveler,
+and release-owner proof.
+
+Cleanliness preflight entries are release evidence contracts, not a released
+cleaning specification. Failed checks should be retained through postprocess,
+quality, release bundles, and learning outcome routes so DES, MDP/POMDP, and
+neural workers can learn when to split, combine, clean, reroute, or require human
+intervention before contaminated parts are joined.
 
 ## `GET /fabrication/cells/catalog`
 

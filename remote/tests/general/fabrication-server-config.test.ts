@@ -2914,6 +2914,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /stock-workholding-and-datum-state/);
   assert.match(source, /tool-process-and-media-state/);
   assert.match(source, /controller-geometry-and-simulation-state/);
+  assert.match(source, /async fn cleanliness_preflight_catalog_http/);
+  assert.match(source, /fn cleanliness_preflight_catalog_response/);
+  assert.match(source, /dd\.fabrication\.cleanliness-preflight-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/cleanliness\/preflight\/catalog"/);
+  assert.match(source, /additive-residue-and-powder-state/);
+  assert.match(source, /machining-coolant-chip-and-fod-state/);
+  assert.match(source, /assembly-interface-and-release-cleanliness/);
   assert.match(
     source,
     /subtractive_catalog_endpoint_exposes_machining_fleet_and_release_contract/,
@@ -2921,6 +2928,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(
     source,
     /subtractive_preflight_catalog_endpoint_exposes_setup_process_and_simulation_gates/,
+  );
+  assert.match(
+    source,
+    /cleanliness_preflight_catalog_endpoint_exposes_residue_fod_and_release_gates/,
   );
   assert.match(source, /async fn cnc_catalog_http/);
   assert.match(source, /fn cnc_catalog_response/);
@@ -4904,6 +4915,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /\.route\(\s*"\/fabrication\/subtractive\/preflight\/catalog",\s*get\(subtractive_preflight_catalog_http\),\s*\)/,
   );
+  assert.match(
+    source,
+    /\.route\(\s*"\/cleanliness\/preflight\/catalog",\s*get\(cleanliness_preflight_catalog_http\),\s*\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/cleanliness\/preflight\/catalog",\s*get\(cleanliness_preflight_catalog_http\),\s*\)/,
+  );
   assert.match(source, /\.route\("\/cnc\/catalog", get\(cnc_catalog_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/cnc\/catalog", get\(cnc_catalog_http\)\)/);
   assert.match(source, /\.route\("\/machines\/select", post\(machine_select_http\)\)/);
@@ -5583,6 +5602,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /tool\/process\/media state/);
   assert.match(readme, /controller\/geometry\/simulation state/);
   assert.match(readme, /fixtures, vises, chucks, collets/);
+  assert.match(readme, /`GET \/cleanliness\/preflight\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/cleanliness\/preflight\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.cleanliness-preflight-catalog\.v1/);
+  assert.match(readme, /residue,\s+FOD,\s+drying,\s+and interface cleanliness/);
+  assert.match(readme, /resin drip\/wash\/cure evidence/);
+  assert.match(readme, /coolant\/oil\/abrasive\/dielectric\/chip removal/);
   assert.match(readme, /`GET \/slicers\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/slicers\/catalog`/);
   assert.match(readme, /`POST \/slicers\/result`/);
@@ -8434,6 +8459,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/printers\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/printers\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/subtractive\/preflight\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/cleanliness\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/cnc\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/design\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/hybrid\/catalog"/);
@@ -8662,6 +8688,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /subtractive catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/subtractive\/preflight\/catalog/);
   assert.match(grafanaDashboards, /subtractive preflight catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/cleanliness\/preflight\/catalog/);
+  assert.match(grafanaDashboards, /cleanliness preflight catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/cnc\/catalog/);
   assert.match(grafanaDashboards, /CNC intake catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/hybrid\/catalog/);
@@ -9039,6 +9067,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/learning\/corpus/);
   assert.match(runtimeReadme, /\/fabrication\/subtractive\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/subtractive\/preflight\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/cleanliness\/preflight\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/cnc\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/hybrid\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/jobs\/<jobId>\/release-bundle/);
@@ -9086,6 +9115,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/printers\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/subtractive\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/subtractive\/preflight\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/cleanliness\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/cnc\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/hybrid\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/cells\/catalog/);
