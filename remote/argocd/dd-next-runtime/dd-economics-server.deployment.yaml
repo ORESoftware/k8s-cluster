@@ -6,7 +6,7 @@ metadata:
   labels:
     app: dd-economics-server
 spec:
-  replicas: 2
+  replicas: 0
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
