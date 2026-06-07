@@ -52,8 +52,10 @@ readiness, metrics, and generated API docs are operator-authenticated at the gat
 | `MUSIC_SERVER_AUTH_SECRET` / `SERVER_AUTH_SECRET` | unset | Required for `/internal/generate` unless local unauth is enabled. |
 | `MUSIC_VOTE_HASH_SALT` | `SERVER_AUTH_SECRET` or local fallback | Salt for anonymous visitor hashes; readiness requires either this or `SERVER_AUTH_SECRET`. |
 
-`/readyz` only reports ready when Postgres, storage, internal auth, and a configured vote hash salt
-are all present. The background generator only starts after Postgres and storage are configured.
+`/readyz` reports HTTP readiness for Kubernetes and includes `generationReady` plus degraded-mode
+fields for Postgres, storage, internal auth, and vote hash salt configuration. Public read pages stay
+reachable in degraded mode; the background generator only starts after Postgres and storage are
+configured.
 
 ## Local Smoke
 

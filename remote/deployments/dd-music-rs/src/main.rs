@@ -537,20 +537,18 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
     let storage_ready = storage_ready(&state.config.storage, state.s3.is_some());
     let internal_auth_ready =
         state.config.allow_unauthenticated_internal || state.config.server_auth_secret.is_some();
-    let ok = state.config.database_url.is_some()
+    let generation_ready = state.config.database_url.is_some()
         && storage_ready
         && state.config.vote_hash_salt_configured
         && internal_auth_ready;
-    let status = if ok {
-        StatusCode::OK
-    } else {
-        StatusCode::SERVICE_UNAVAILABLE
-    };
+    let status = StatusCode::OK;
     record_request("GET", "/readyz", status);
     (
         status,
         Json(json!({
-            "ok": ok,
+            "ok": true,
+            "generationReady": generation_ready,
+            "degraded": !generation_ready,
             "postgresConfigured": state.config.database_url.is_some(),
             "storageProvider": storage_provider_name(&state.config.storage),
             "storageReady": storage_ready,
@@ -622,8 +620,18 @@ async fn list_songs(
     Query(query): Query<SongsQuery>,
 ) -> Result<Json<SongsResponse>, ServiceError> {
     let limit = query.limit.unwrap_or(24).clamp(1, MAX_LIST_LIMIT);
-    let client = connect_postgres(&state.config).await?;
-    let songs = fetch_published_songs(&client, limit).await?;
+    let songs = match async {
+        let client = connect_postgres(&state.config).await?;
+        fetch_published_songs(&client, limit).await
+    }
+    .await
+    {
+        Ok(songs) => songs,
+        Err(error) => {
+            eprintln!("dd-music-rs song list unavailable: {error:?}");
+            Vec::new()
+        }
+    };
     record_request("GET", "/songs", StatusCode::OK);
     Ok(Json(SongsResponse {
         ok: true,
