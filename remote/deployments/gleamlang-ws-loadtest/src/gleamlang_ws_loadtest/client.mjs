@@ -49,6 +49,10 @@ function parseMessageEncodings(raw) {
   return unique.length > 0 ? unique : [...DEFAULT_MESSAGE_ENCODINGS];
 }
 
+function parseMessageEncoding(raw) {
+  return parseMessageEncodings(raw)[0] || "json";
+}
+
 export function run() {
   if (process.env.CONTAINER_POOL_URL) {
     runContainerPoolSmoke().catch((error) => {
@@ -70,6 +74,9 @@ export function run() {
   const messagePayload = process.env.MESSAGE_PAYLOAD || "a benchmark message body";
   const messageEncodings = parseMessageEncodings(
     process.env.MESSAGE_ENCODINGS || process.env.MESSAGE_ENCODING || DEFAULT_MESSAGE_ENCODINGS[0],
+  );
+  const gcsMessageEncoding = parseMessageEncoding(
+    process.env.GCS_MESSAGE_ENCODING || process.env.MESSAGE_ENCODING || "json",
   );
   const loadtestTransports = process.env.LOADTEST_TRANSPORTS || DEFAULT_LOADTEST_TRANSPORTS;
   const correlationTimeoutMs = parsePositiveInt("CORRELATION_TIMEOUT_MS", 10_000);
@@ -109,6 +116,7 @@ export function run() {
       `report_interval_seconds=${reportIntervalSeconds}`,
       `messages_per_second_per_client=${messagesPerSecondPerClient}`,
       `message_encodings=${messageEncodings.join(",")}`,
+      `gcs_message_encoding=${gcsMessageEncoding}`,
       `loadtest_transports=${loadtestTransports}`,
       `correlation_timeout_ms=${correlationTimeoutMs}`,
     ].join(" "),
@@ -269,7 +277,7 @@ export function run() {
     const deviceId = objectId();
     const members = convMembers[c];
     const isSender = idx < gcsSendersPerConv;
-    const url = gcsConnectUrl(targetWsUrl, userId, deviceId, convId);
+    const url = gcsConnectUrl(targetWsUrl, userId, deviceId, convId, gcsMessageEncoding);
 
     const socket = new WebSocket(url, {
       perMessageDeflate: false,
@@ -288,9 +296,9 @@ export function run() {
         sendTimer = setInterval(() => {
           seq += 1;
           const marker = `gcsrt-${clientId}-${seq}-${Math.round(performance.now() * 1000)}`;
-          const frame = buildGcsFrame(convId, userId, members, marker);
+          const frame = buildGcsFrame(convId, userId, members, marker, gcsMessageEncoding);
           try {
-            socket.send(frame);
+            socket.send(frame, { binary: gcsMessageEncoding === "protobuf" });
             sent += 1;
           } catch (_error) {
             receiveErrors += 1;
@@ -301,7 +309,7 @@ export function run() {
 
     socket.on("message", (data) => {
       messages += 1;
-      const text = typeof data === "string" ? data : data.toString();
+      const text = typeof data === "string" ? data : rawDataToBuffer(data).toString("utf8");
       const now = Math.round(performance.now() * 1000);
       for (const sendUs of parseGcsSendMicros(text)) {
         received += 1;
@@ -482,6 +490,19 @@ function encodeProtobufStringField(fieldNumber, value) {
   return Buffer.concat([encodeVarint((fieldNumber << 3) | 2), encodeVarint(body.length), body]);
 }
 
+function encodeProtobufBytesField(fieldNumber, value) {
+  return Buffer.concat([encodeVarint((fieldNumber << 3) | 2), encodeVarint(value.length), value]);
+}
+
+function encodeProtobufVarintField(fieldNumber, value) {
+  if (!value) return Buffer.alloc(0);
+  return Buffer.concat([encodeVarint(fieldNumber << 3), encodeVarint(value)]);
+}
+
+function encodeProtobufBoolField(fieldNumber, value) {
+  return value ? encodeProtobufVarintField(fieldNumber, 1) : Buffer.alloc(0);
+}
+
 function encodeVarint(value) {
   const out = [];
   let remaining = value;
@@ -624,14 +645,19 @@ function objectId() {
 }
 
 /** chat.vibe connect URL: query params carry the subscription (no auth in-cluster). */
-function gcsConnectUrl(base, userId, deviceId, convId) {
+function gcsConnectUrl(base, userId, deviceId, convId, encoding = "json") {
   const b = base.replace(/\/$/, "");
   const convIds = encodeURIComponent(JSON.stringify([convId]));
-  return `${b}/gcs/ws/?userId=${userId}&deviceId=${deviceId}&conversationIds=${convIds}`;
+  const wire = encoding === "protobuf" ? "&wire=protobuf" : "";
+  return `${b}/gcs/ws/?userId=${userId}&deviceId=${deviceId}&conversationIds=${convIds}${wire}`;
 }
 
 /** Outer envelope holding one MongoChatMessage; @vibe-data is a JSON string. */
-function buildGcsFrame(convId, userId, members, marker) {
+function buildGcsFrame(convId, userId, members, marker, encoding = "json") {
+  if (encoding === "protobuf") {
+    return encodeGcsProtobufFrame(convId, userId, members, marker);
+  }
+
   const now = new Date().toISOString();
   const inner = JSON.stringify({
     _id: objectId(),
@@ -649,6 +675,27 @@ function buildGcsFrame(convId, userId, members, marker) {
     Meta: {},
     List: [{ "@vibe-meta": {}, "@vibe-type": "MongoChatMessage", "@vibe-data": inner }],
   });
+}
+
+function encodeGcsProtobufFrame(convId, userId, members, marker) {
+  const nowMs = Date.now();
+  const message = Buffer.concat([
+    encodeProtobufStringField(1, objectId()),
+    encodeProtobufStringField(3, userId),
+    encodeProtobufStringField(4, convId),
+    ...members.map((member) => encodeProtobufStringField(5, member)),
+    encodeProtobufBoolField(7, members.length > 2),
+    encodeProtobufVarintField(9, members.length),
+    encodeProtobufStringField(10, marker),
+    encodeProtobufVarintField(15, nowMs),
+    encodeProtobufVarintField(16, nowMs),
+    encodeProtobufStringField(23, userId),
+    encodeProtobufVarintField(25, nowMs),
+  ]);
+  return Buffer.concat([
+    encodeProtobufStringField(1, "MongoChatMessage"),
+    encodeProtobufBytesField(2, message),
+  ]);
 }
 
 const GCS_MARKER_RE = /gcsrt-\d+-\d+-(\d+)/g;

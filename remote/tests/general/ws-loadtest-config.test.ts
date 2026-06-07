@@ -119,6 +119,17 @@ test('gcs websocket loadtest deployments advertise the encoding and transport ma
   assertLoadtestMatrix(rustGcs, 'rust gcs loadtest');
   assertLoadtestMatrix(nodeGcs, 'nodejs gcs loadtest');
   assertLoadtestMatrix(gleamGcs, 'gleam gcs loadtest');
+  for (const [label, manifest] of [
+    ['rust gcs loadtest', rustGcs],
+    ['nodejs gcs loadtest', nodeGcs],
+    ['gleam gcs loadtest', gleamGcs],
+  ] as const) {
+    assert.match(
+      manifest,
+      /name:\s*GCS_MESSAGE_ENCODING[\s\S]*value:\s*"protobuf"/,
+      `${label} should run the GCS hot path with protobuf frames`,
+    );
+  }
 });
 
 test('argo applications point to both websocket loadtest deployments', async () => {
@@ -154,6 +165,8 @@ test('websocket loadtest clients include container-pool smoke mode', async () =>
   assert.match(rustSource, /MessageEncoding::Protobuf/);
   assert.match(rustSource, /MessageEncoding::FlatBuffers/);
   assert.match(rustSource, /encode_pipeline_message/);
+  assert.match(rustSource, /GCS_MESSAGE_ENCODING/);
+  assert.match(rustSource, /encode_gcs_protobuf_chat_frame/);
   assert.match(rustSource, /extract_id_from_binary/);
   assert.match(rustSource, /DEFAULT_LOADTEST_TRANSPORTS/);
   assert.match(rustSource, /run_container_pool_smoke/);
@@ -165,6 +178,8 @@ test('websocket loadtest clients include container-pool smoke mode', async () =>
   assert.match(gleamClient, /SUPPORTED_MESSAGE_ENCODINGS/);
   assert.match(gleamClient, /encodeMsgpackPipelineMessage/);
   assert.match(gleamClient, /encodeProtobufPipelineMessage/);
+  assert.match(gleamClient, /GCS_MESSAGE_ENCODING/);
+  assert.match(gleamClient, /encodeGcsProtobufFrame/);
   assert.match(gleamClient, /encodeFlatbuffersPipelineMessage/);
   assert.match(gleamClient, /DEFAULT_LOADTEST_TRANSPORTS/);
   assert.match(gleamClient, /CONTAINER_POOL_POOL \|\| "gleamlang"/);

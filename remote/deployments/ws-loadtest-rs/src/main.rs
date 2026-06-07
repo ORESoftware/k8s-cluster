@@ -570,6 +570,27 @@ fn push_protobuf_string_field(out: &mut Vec<u8>, field_number: u64, value: &str)
     out.extend_from_slice(value.as_bytes());
 }
 
+fn push_protobuf_bytes_field(out: &mut Vec<u8>, field_number: u64, value: &[u8]) {
+    push_varint(out, (field_number << 3) | 2);
+    push_varint(out, value.len() as u64);
+    out.extend_from_slice(value);
+}
+
+fn push_protobuf_varint_field(out: &mut Vec<u8>, field_number: u64, value: u64) {
+    if value == 0 {
+        return;
+    }
+    push_varint(out, field_number << 3);
+    push_varint(out, value);
+}
+
+fn push_protobuf_bool_field(out: &mut Vec<u8>, field_number: u64, value: bool) {
+    if !value {
+        return;
+    }
+    push_protobuf_varint_field(out, field_number, 1);
+}
+
 fn push_varint(out: &mut Vec<u8>, mut value: u64) {
     while value >= 0x80 {
         out.push((value as u8) | 0x80);
@@ -756,6 +777,13 @@ fn now_micros() -> u64 {
         .as_micros() as u64
 }
 
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
 /// 24-hex-char value shaped like a Mongo ObjectId (8 hex seconds + 16 hex of
 /// process/counter entropy). Unique within the process; the server only needs a
 /// valid non-zero ObjectId.
@@ -923,7 +951,7 @@ fn parse_gcs_marker_bytes(bytes: &[u8], out: &mut Vec<u64>) {
         // (re)serialized.
         let marker_len = rest
             .iter()
-            .take_while(|b| b.is_ascii_alphanumeric() || *b == b'-')
+            .take_while(|&&b| b.is_ascii_alphanumeric() || b == b'-')
             .count();
         let marker = std::str::from_utf8(&rest[..marker_len]).unwrap_or("");
         if let Some(send_us) = marker
@@ -941,7 +969,9 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() {
         return Some(0);
     }
-    haystack.windows(needle.len()).position(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 struct GcsAssignment {
@@ -1000,6 +1030,14 @@ where
                     stats.record_latency_us(latency_us, latencies);
                 }
             }
+            Ok(Message::Binary(bytes)) => {
+                stats.messages.fetch_add(1, Ordering::Relaxed);
+                lat_buf.clear();
+                parse_gcs_marker_bytes(&bytes, &mut lat_buf);
+                for latency_us in lat_buf.drain(..) {
+                    stats.record_latency_us(latency_us, latencies);
+                }
+            }
             Ok(_) => {}
             Err(_) => {
                 stats.receive_errors.fetch_add(1, Ordering::Relaxed);
@@ -1025,6 +1063,7 @@ async fn run_gcs_client(
         &assignment.user_id,
         &assignment.device_id,
         &assignment.conv_id,
+        config.gcs_message_encoding,
     );
 
     loop {
@@ -1040,6 +1079,7 @@ async fn run_gcs_client(
                     let conv = assignment.conv_id.clone();
                     let user = assignment.user_id.clone();
                     let members = Arc::clone(&assignment.members);
+                    let encoding = config.gcs_message_encoding;
                     let sender = tokio::spawn(async move {
                         let mut seq: u64 = 0;
                         let mut ticker = tokio::time::interval(send_interval);
@@ -1048,8 +1088,9 @@ async fn run_gcs_client(
                             ticker.tick().await;
                             seq = seq.wrapping_add(1);
                             let marker = format!("gcsrt-{}-{}-{}", client_id, seq, now_micros());
-                            let frame = build_gcs_chat_frame(&conv, &user, &members, &marker);
-                            if writer.send(Message::Text(frame)).await.is_err() {
+                            let frame =
+                                build_gcs_chat_frame(&conv, &user, &members, &marker, encoding);
+                            if writer.send(frame).await.is_err() {
                                 break;
                             }
                             send_stats.sent.fetch_add(1, Ordering::Relaxed);
@@ -1226,7 +1267,7 @@ async fn main() {
         "ws-loadtest-rs starting target_ws_url={} client_count={} load_mode={} hold_seconds={} \
          connect_timeout_seconds={} receive_timeout_seconds={} reconnect_delay_ms={} \
          ramp_delay_ms={} report_interval_seconds={} messages_per_second_per_client={} \
-         message_payload={:?} message_encodings={} loadtest_transports={} \
+         message_payload={:?} message_encodings={} gcs_message_encoding={} loadtest_transports={} \
          correlation_timeout_seconds={}",
         config.target_ws_url,
         config.client_count,
@@ -1240,6 +1281,7 @@ async fn main() {
         config.messages_per_second_per_client,
         config.message_payload,
         format_message_encodings(&config.message_encodings),
+        config.gcs_message_encoding.as_str(),
         config.loadtest_transports,
         config.correlation_timeout_seconds
     );
