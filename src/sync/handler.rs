@@ -184,7 +184,13 @@ impl JobHandler for ConnectionSyncJob {
                 ProviderKind::Remitly
                 | ProviderKind::Robinhood
                 | ProviderKind::MoneyGram
-                | ProviderKind::WesternUnion => limited_fit(&conn).await,
+                | ProviderKind::WesternUnion
+                | ProviderKind::UsBankZelle
+                | ProviderKind::JpmorganZelle
+                | ProviderKind::BofaCashProGdd
+                | ProviderKind::ModernTreasury
+                | ProviderKind::Dwolla
+                | ProviderKind::EthereumWallet => limited_fit(&conn).await,
             }
         }
         .await;
@@ -327,11 +333,10 @@ async fn not_implemented(conn: &ProviderConnection) -> AppResult<SyncSummary> {
     })
 }
 
-/// Sync stub for providers we accept but that don't have a usable
-/// programmatic surface today (Remitly, Robinhood). Returns Ok with a
-/// zero-summary so the connection is marked synced + healthy rather
-/// than escalating as a job failure — these providers are intentionally
-/// observation-only with no expected events.
+/// Sync stub for providers we accept but that are contract-specific,
+/// observer-only, or not yet mapped into canonical postings. Returns Ok with
+/// a zero-summary so the connection is marked synced + healthy rather than
+/// escalating as a job failure.
 async fn limited_fit(conn: &ProviderConnection) -> AppResult<SyncSummary> {
     Ok(SyncSummary {
         new_postings: 0,

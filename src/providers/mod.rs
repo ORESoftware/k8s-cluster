@@ -21,9 +21,12 @@ pub mod circle;
 pub mod coinbase;
 pub mod coinflow;
 pub mod connection;
+pub mod dwolla;
+pub mod ethereum;
 pub mod fireblocks;
 pub mod gocardless;
 pub mod mercury;
+pub mod modern_treasury;
 pub mod moneygram;
 pub mod oauth_common;
 pub mod paypal;
@@ -36,6 +39,7 @@ pub mod stripe;
 pub mod swift;
 pub mod western_union;
 pub mod wise;
+pub mod zelle_disbursements;
 
 #[cfg(test)]
 mod api_mocks_tests;
@@ -80,6 +84,26 @@ pub enum ProviderKind {
     #[sqlx(rename = "western_union")]
     #[serde(rename = "western_union")]
     WesternUnion,
+    // Bank-sponsored Zelle disbursement APIs (added 2026-06-07).
+    #[sqlx(rename = "us_bank_zelle")]
+    #[serde(rename = "us_bank_zelle")]
+    UsBankZelle,
+    #[sqlx(rename = "jpmorgan_zelle")]
+    #[serde(rename = "jpmorgan_zelle")]
+    JpmorganZelle,
+    #[sqlx(rename = "bofa_cashpro_gdd")]
+    #[serde(rename = "bofa_cashpro_gdd")]
+    BofaCashProGdd,
+    // Faster payment and on-chain observer rails (added 2026-06-07).
+    #[sqlx(rename = "modern_treasury")]
+    #[serde(rename = "modern_treasury")]
+    ModernTreasury,
+    #[sqlx(rename = "dwolla")]
+    #[serde(rename = "dwolla")]
+    Dwolla,
+    #[sqlx(rename = "ethereum_wallet")]
+    #[serde(rename = "ethereum_wallet")]
+    EthereumWallet,
 }
 
 impl ProviderKind {
@@ -106,6 +130,12 @@ impl ProviderKind {
             Self::Circle => "circle",
             Self::MoneyGram => "moneygram",
             Self::WesternUnion => "western_union",
+            Self::UsBankZelle => "us_bank_zelle",
+            Self::JpmorganZelle => "jpmorgan_zelle",
+            Self::BofaCashProGdd => "bofa_cashpro_gdd",
+            Self::ModernTreasury => "modern_treasury",
+            Self::Dwolla => "dwolla",
+            Self::EthereumWallet => "ethereum_wallet",
         }
     }
 
@@ -132,7 +162,13 @@ impl ProviderKind {
             | Self::Fireblocks
             | Self::Circle
             | Self::MoneyGram
-            | Self::WesternUnion => ProviderAuthKind::ApiKey,
+            | Self::WesternUnion
+            | Self::UsBankZelle
+            | Self::JpmorganZelle
+            | Self::BofaCashProGdd
+            | Self::ModernTreasury
+            | Self::Dwolla
+            | Self::EthereumWallet => ProviderAuthKind::ApiKey,
 
             Self::SwiftWire | Self::AchDirect => ProviderAuthKind::BankCoordinates,
             Self::SolanaWallet => ProviderAuthKind::WalletPubkey,
@@ -151,7 +187,15 @@ impl ProviderKind {
             Self::Paypal | Self::Braintree | Self::PlaidBank | Self::CoinbasePrime => Full,
             Self::Fireblocks | Self::Circle => Full,
             Self::SwiftWire | Self::AchDirect => Stub,
-            Self::Remitly | Self::Robinhood | Self::MoneyGram | Self::WesternUnion => LimitedFit,
+            Self::ModernTreasury | Self::Dwolla => LimitedFit,
+            Self::EthereumWallet => LimitedFit,
+            Self::Remitly
+            | Self::Robinhood
+            | Self::MoneyGram
+            | Self::WesternUnion
+            | Self::UsBankZelle
+            | Self::JpmorganZelle
+            | Self::BofaCashProGdd => LimitedFit,
         }
     }
 }

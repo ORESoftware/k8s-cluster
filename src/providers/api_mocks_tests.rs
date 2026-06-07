@@ -13,10 +13,16 @@ use super::bridge::{BridgeApi, BridgeCredential};
 use super::circle::{CircleApi, CircleCredential};
 use super::coinbase::{CoinbaseCommerceApi, CoinbaseCredential, CoinbasePrimeApi, CoinbaseVariant};
 use super::coinflow::{CoinflowApi, CoinflowCredential};
+use super::dwolla::{DwollaApi, DwollaCredential, DwollaTransferInput, DwollaTransferRail};
+use super::ethereum::{EthereumWalletApi, EthereumWalletCredential};
 use super::fireblocks::{FireblocksApi, FireblocksCredential};
 use super::gocardless::{GoCardlessApi, GoCardlessCredential};
 use super::mercury::{MercuryApi, MercuryCredential};
 use super::mock_http::{ExpectedRequest, ProviderMock};
+use super::modern_treasury::{
+    ModernTreasuryApi, ModernTreasuryCredential, ModernTreasuryDirection,
+    ModernTreasuryPaymentOrderInput, ModernTreasuryPaymentType,
+};
 use super::moneygram::{MoneyGramApi, MoneyGramCredential};
 use super::paypal::{PaypalOAuth, verify_webhook_signature as verify_paypal_webhook_signature};
 use super::plaid::PlaidLink;
@@ -25,6 +31,10 @@ use super::revolut::{RevolutApi, RevolutCredential};
 use super::stripe::StripeApi;
 use super::western_union::{WesternUnionApi, WesternUnionCredential};
 use super::wise::{WiseApi, WiseCredential};
+use super::zelle_disbursements::{
+    BofaCashProGddApi, BofaCashProGddCredential, JpmorganZelleApi, JpmorganZelleCredential,
+    UsBankZelleApi, UsBankZelleCredential, ZelleAlias, ZelleAliasKind, ZelleDisbursementInput,
+};
 
 #[tokio::test]
 async fn stripe_balance_transactions_use_connected_account_headers() {
@@ -611,6 +621,401 @@ async fn western_union_batch_payments_percent_encodes_path_segments() {
 }
 
 #[tokio::test]
+async fn jpmorgan_zelle_initiates_payment_and_reads_status() {
+    let mock = ProviderMock::start(vec![
+        ExpectedRequest::post("/tsapi/v1/payments")
+            .header("authorization", "Bearer jpm_access")
+            .header("accept", "application/json")
+            .header_present("request-id")
+            .json_body(json!({
+                "payments": {
+                    "requestedExecutionDate": "2026-06-07",
+                    "paymentIdentifiers": { "endToEndId": "e2e_123" },
+                    "paymentCurrency": "USD",
+                    "paymentAmount": 25.50,
+                    "transferType": "CREDIT",
+                    "debtor": {
+                        "debtorName": "Example Corp",
+                        "debtorAccount": { "accountId": "acct_123" }
+                    },
+                    "debtorAgent": {
+                        "financialInstitutionId": { "bic": "CHASUS33" }
+                    },
+                    "creditor": {
+                        "creditorName": "Alice Example",
+                        "creditorAccount": {
+                            "accountType": "ZELLE",
+                            "alternateAccountIdentifier": "alice@example.com",
+                            "schemeName": { "proprietary": "EMAL" }
+                        }
+                    },
+                    "remittanceInformation": {
+                        "unstructuredInformation": [{ "text": "refund" }]
+                    }
+                }
+            }))
+            .respond_json(json!({
+                "paymentInitiationResponse": {
+                    "firmRootId": "firm_1",
+                    "endToEndId": "e2e_123"
+                }
+            })),
+        ExpectedRequest::get("/tsapi/v1/payments/status")
+            .query("endToEndId", "e2e_123")
+            .header("authorization", "Bearer jpm_access")
+            .header("accept", "application/json")
+            .header_present("request-id")
+            .respond_json(json!({
+                "paymentStatus": {
+                    "status": "ACCEPTED",
+                    "endToEndId": "e2e_123",
+                    "firmRootId": "firm_1"
+                }
+            })),
+    ])
+    .await;
+
+    let api = JpmorganZelleApi::with_base_url_for_tests(
+        JpmorganZelleCredential {
+            access_token: "jpm_access".into(),
+            debtor_account_id: "acct_123".into(),
+            debtor_name: "Example Corp".into(),
+            debtor_bic: "CHASUS33".into(),
+            environment: "sandbox".into(),
+            api_base_url: None,
+        },
+        format!("{}/tsapi/v1", mock.base_url()),
+    );
+    let created = api.initiate_zelle_payment(zelle_input()).await.unwrap();
+    let status = api.get_status_by_end_to_end_id("e2e_123").await.unwrap();
+
+    assert_eq!(
+        created
+            .payment_initiation_response
+            .and_then(|r| r.end_to_end_id)
+            .as_deref(),
+        Some("e2e_123")
+    );
+    assert_eq!(
+        status.payment_status.and_then(|s| s.status).as_deref(),
+        Some("ACCEPTED")
+    );
+    mock.assert_finished().await;
+}
+
+#[tokio::test]
+async fn us_bank_zelle_checks_enrollment_and_submits_payment() {
+    let mock = ProviderMock::start(vec![
+        ExpectedRequest::post("/enrollments")
+            .header("authorization", "Bearer usb_access")
+            .header("x-client-id", "usb_client")
+            .json_body(json!({
+                "programId": "program_1",
+                "aliases": [{
+                    "type": "EMAIL",
+                    "value": "alice@example.com"
+                }]
+            }))
+            .respond_json(json!({
+                "aliases": [{
+                    "value": "alice@example.com",
+                    "enrolled": true
+                }]
+            })),
+        ExpectedRequest::post("/payments")
+            .header("authorization", "Bearer usb_access")
+            .header("x-client-id", "usb_client")
+            .json_body(json!({
+                "programId": "program_1",
+                "endToEndId": "e2e_123",
+                "amount": { "value": 25.50, "currency": "USD" },
+                "recipient": {
+                    "name": "Alice Example",
+                    "alias": {
+                        "type": "EMAIL",
+                        "value": "alice@example.com"
+                    }
+                },
+                "memo": "refund",
+                "requestedExecutionDate": "2026-06-07"
+            }))
+            .respond_json(json!({
+                "paymentId": "usb_pay_1",
+                "status": "submitted",
+                "endToEndId": "e2e_123"
+            })),
+    ])
+    .await;
+
+    let api = UsBankZelleApi::with_base_url_for_tests(
+        UsBankZelleCredential {
+            access_token: "usb_access".into(),
+            client_id: "usb_client".into(),
+            program_id: "program_1".into(),
+            api_base_url: "https://api.usbank.example".into(),
+            payments_path: "/payments".into(),
+            enrollment_path: "/enrollments".into(),
+            environment: "sandbox".into(),
+        },
+        mock.base_url(),
+    );
+    let enrollment = api
+        .check_enrollment(vec![ZelleAlias {
+            kind: ZelleAliasKind::Email,
+            value: "alice@example.com".into(),
+        }])
+        .await
+        .unwrap();
+    let payment = api.submit_payment(zelle_input()).await.unwrap();
+
+    assert_eq!(enrollment.aliases[0].enrolled, Some(true));
+    assert_eq!(payment.payment_id.as_deref(), Some("usb_pay_1"));
+    mock.assert_finished().await;
+}
+
+#[tokio::test]
+async fn bofa_cashpro_gdd_submits_zelle_disbursement() {
+    let mock = ProviderMock::start(vec![
+        ExpectedRequest::post("/cashpro/gdd/disbursements")
+            .header("authorization", "Bearer bofa_access")
+            .header("x-client-id", "bofa_client")
+            .json_body(json!({
+                "cashProCompanyId": "company_1",
+                "rail": "ZELLE",
+                "endToEndId": "e2e_123",
+                "amount": 25.50,
+                "currency": "USD",
+                "recipient": {
+                    "name": "Alice Example",
+                    "aliasType": "EMAIL",
+                    "alias": "alice@example.com"
+                },
+                "memo": "refund",
+                "requestedExecutionDate": "2026-06-07"
+            }))
+            .respond_json(json!({
+                "disbursementId": "gdd_1",
+                "status": "accepted",
+                "endToEndId": "e2e_123"
+            })),
+    ])
+    .await;
+
+    let api = BofaCashProGddApi::with_base_url_for_tests(
+        BofaCashProGddCredential {
+            client_id: "bofa_client".into(),
+            client_secret: "bofa_secret".into(),
+            cashpro_company_id: "company_1".into(),
+            access_token: Some("bofa_access".into()),
+            api_base_url: "https://cashpro-api.bankofamerica.example".into(),
+            disbursements_path: "/cashpro/gdd/disbursements".into(),
+            environment: "sandbox".into(),
+        },
+        mock.base_url(),
+    );
+    let response = api.submit_disbursement(zelle_input()).await.unwrap();
+
+    assert_eq!(response.disbursement_id.as_deref(), Some("gdd_1"));
+    mock.assert_finished().await;
+}
+
+#[tokio::test]
+async fn modern_treasury_creates_rtp_with_ach_fallback() {
+    let auth = format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode("org_123:mt_key")
+    );
+    let mock = ProviderMock::start(vec![
+        ExpectedRequest::post("/api/payment_orders")
+            .header("authorization", auth)
+            .header("idempotency-key", "mt_idem_1")
+            .json_body(json!({
+                "type": "rtp",
+                "fallback_type": "ach",
+                "amount": 2500,
+                "currency": "USD",
+                "direction": "credit",
+                "originating_account_id": "ia_1",
+                "receiving_account_id": "ea_1",
+                "remittance_information": "refund",
+                "metadata": { "customer_id": "cust_1" }
+            }))
+            .respond_json(json!({
+                "id": "po_1",
+                "type": "rtp",
+                "status": "approved",
+                "amount": 2500,
+                "currency": "USD",
+                "direction": "credit"
+            })),
+    ])
+    .await;
+
+    let api = ModernTreasuryApi::with_base_url_for_tests(
+        ModernTreasuryCredential {
+            organization_id: "org_123".into(),
+            api_key: "mt_key".into(),
+            environment: "production".into(),
+            api_base_url: None,
+            default_originating_account_id: Some("ia_1".into()),
+            webhook_secret: None,
+        },
+        mock.base_url(),
+    )
+    .unwrap();
+    let order = api
+        .create_payment_order(ModernTreasuryPaymentOrderInput {
+            payment_type: ModernTreasuryPaymentType::Rtp,
+            fallback_type: Some(ModernTreasuryPaymentType::Ach),
+            amount: 2500,
+            currency: "USD".into(),
+            direction: ModernTreasuryDirection::Credit,
+            originating_account_id: "ia_1".into(),
+            receiving_account_id: "ea_1".into(),
+            remittance_information: Some("refund".into()),
+            metadata: Some(json!({ "customer_id": "cust_1" })),
+            idempotency_key: Some("mt_idem_1".into()),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(order.id, "po_1");
+    assert_eq!(order.payment_type.as_deref(), Some("rtp"));
+    mock.assert_finished().await;
+}
+
+#[tokio::test]
+async fn dwolla_initiates_instant_transfer_and_reads_status() {
+    let mock = ProviderMock::start(vec![
+        ExpectedRequest::post("/transfers")
+            .header("authorization", "Bearer dwolla_access")
+            .header("idempotency-key", "dwolla_idem_1")
+            .json_body(json!({
+                "_links": {
+                    "source": {
+                        "href": "https://api-sandbox.dwolla.com/funding-sources/source_1"
+                    },
+                    "destination": {
+                        "href": "https://api-sandbox.dwolla.com/funding-sources/dest_1"
+                    }
+                },
+                "amount": { "currency": "USD", "value": "25.50" },
+                "correlationId": "corr_1",
+                "metadata": { "customer_id": "cust_1" },
+                "rtpDetails": { "destination": "instant" }
+            }))
+            .respond_json(json!({
+                "id": "tr_1",
+                "status": "pending",
+                "amount": { "value": "25.50", "currency": "USD" },
+                "rtpDetails": { "network": "RTP" }
+            })),
+        ExpectedRequest::get("/transfers/tr_1")
+            .header("authorization", "Bearer dwolla_access")
+            .respond_json(json!({
+                "id": "tr_1",
+                "status": "processed",
+                "amount": { "value": "25.50", "currency": "USD" },
+                "rtpDetails": { "network": "RTP" }
+            })),
+    ])
+    .await;
+
+    let api = DwollaApi::with_base_url_for_tests(
+        DwollaCredential {
+            access_token: "dwolla_access".into(),
+            environment: "sandbox".into(),
+            api_base_url: None,
+            account_id: Some("acct_1".into()),
+            webhook_secret: None,
+        },
+        mock.base_url(),
+    )
+    .unwrap();
+    let created = api
+        .initiate_transfer(DwollaTransferInput {
+            source_funding_source_url: "https://api-sandbox.dwolla.com/funding-sources/source_1"
+                .into(),
+            destination_funding_source_url: "https://api-sandbox.dwolla.com/funding-sources/dest_1"
+                .into(),
+            amount: "25.50".into(),
+            currency: "USD".into(),
+            rail: DwollaTransferRail::Rtp,
+            correlation_id: Some("corr_1".into()),
+            metadata: Some(json!({ "customer_id": "cust_1" })),
+            idempotency_key: Some("dwolla_idem_1".into()),
+        })
+        .await
+        .unwrap();
+    let status = api.get_transfer("tr_1").await.unwrap();
+
+    assert_eq!(
+        created.transfer.and_then(|transfer| transfer.id).as_deref(),
+        Some("tr_1")
+    );
+    assert_eq!(status.status.as_deref(), Some("processed"));
+    assert!(status.rtp_details.is_some());
+    mock.assert_finished().await;
+}
+
+#[tokio::test]
+async fn ethereum_wallet_reads_native_and_erc20_balances() {
+    let address = "0x1111111111111111111111111111111111111111";
+    let contract = "0x2222222222222222222222222222222222222222";
+    let mock = ProviderMock::start(vec![
+        ExpectedRequest::post("/")
+            .json_body(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "eth_getBalance",
+                "params": [address, "latest"]
+            }))
+            .respond_json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": "0xde0b6b3a7640000"
+            })),
+        ExpectedRequest::post("/")
+            .json_body(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "eth_call",
+                "params": [{
+                    "to": contract,
+                    "data": "0x70a082310000000000000000000000001111111111111111111111111111111111111111"
+                }, "latest"]
+            }))
+            .respond_json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": "0x0000000000000000000000000000000000000000000000000000000000f4240"
+            })),
+    ])
+    .await;
+
+    let api = EthereumWalletApi::with_rpc_url_for_tests(
+        EthereumWalletCredential {
+            address: address.into(),
+            rpc_url: "https://eth-rpc.example".into(),
+            chain_id: 1,
+            rpc_bearer_token: None,
+            tracked_assets: Vec::new(),
+        },
+        mock.base_url(),
+    )
+    .unwrap();
+    let eth_balance = api.get_native_balance_wei(None).await.unwrap();
+    let usdc_balance = api.get_erc20_balance(contract, None).await.unwrap();
+
+    assert_eq!(eth_balance, "0xde0b6b3a7640000");
+    assert_eq!(
+        usdc_balance,
+        "0x0000000000000000000000000000000000000000000000000000000000f4240"
+    );
+    mock.assert_finished().await;
+}
+
+#[tokio::test]
 async fn provider_client_surfaces_non_success_body() {
     let mock = ProviderMock::start(vec![
         ExpectedRequest::get("/transfers")
@@ -839,6 +1244,21 @@ fn utc(value: &str) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(value)
         .unwrap()
         .with_timezone(&Utc)
+}
+
+fn zelle_input() -> ZelleDisbursementInput {
+    ZelleDisbursementInput {
+        end_to_end_id: "e2e_123".into(),
+        amount: 25.50,
+        currency: "USD".into(),
+        recipient_name: "Alice Example".into(),
+        recipient_alias: ZelleAlias {
+            kind: ZelleAliasKind::Email,
+            value: "alice@example.com".into(),
+        },
+        memo: Some("refund".into()),
+        requested_execution_date: Some(chrono::NaiveDate::from_ymd_opt(2026, 6, 7).unwrap()),
+    }
 }
 
 fn test_rsa_private_pem() -> String {
